@@ -1,0 +1,3 @@
+[submodule "references/wgpui"]
+	path = references/wgpui
+	url = https://github.com/coleleavitt/WGPUI.git
