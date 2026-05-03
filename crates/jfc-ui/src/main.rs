@@ -212,6 +212,7 @@ impl Render for RootView {
             .flex()
             .flex_row()
             .overflow_hidden()
+            .bg(theme.background)
             .key_context("RootView")
             .track_focus(&self.focus_handle(cx))
             .on_action(cx.listener(Self::toggle_command_palette))
