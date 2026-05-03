@@ -8,7 +8,13 @@ use theme::Theme;
 
 actions!(
     jfc,
-    [ToggleCommandPalette, DismissCommandPalette, ToggleSidebar, Quit]
+    [
+        ToggleCommandPalette,
+        DismissCommandPalette,
+        ToggleSidebar,
+        SubmitPrompt,
+        Quit
+    ]
 );
 
 #[derive(Clone, Copy, PartialEq)]
@@ -17,60 +23,450 @@ enum Role {
     Assistant,
 }
 
+enum MessagePart {
+    Text(String),
+    Reasoning(String),
+    Tool(ToolCall),
+}
+
+struct ToolCall {
+    id: String,
+    kind: ToolKind,
+    status: ToolStatus,
+    input: ToolInput,
+    output: ToolOutput,
+    is_collapsed: bool,
+}
+
+enum ToolKind {
+    Edit,
+    Write,
+    Read,
+    Bash,
+    Search,
+    ApplyPatch,
+    Generic(String),
+}
+
+#[derive(Clone, Copy)]
+enum ToolStatus {
+    Pending,
+    Running,
+    Complete,
+    Failed,
+}
+
+enum ToolInput {
+    Edit {
+        file_path: String,
+        old_string: String,
+        new_string: String,
+    },
+    Write {
+        file_path: String,
+        content: String,
+    },
+    Read {
+        file_path: String,
+        offset: Option<usize>,
+        limit: Option<usize>,
+    },
+    Bash {
+        command: String,
+        workdir: Option<String>,
+    },
+    Search {
+        query: String,
+        path: Option<String>,
+    },
+    ApplyPatch {
+        patch: String,
+    },
+    Generic {
+        summary: String,
+    },
+}
+
+enum ToolOutput {
+    Text(String),
+    Diff(DiffView),
+    FileContent {
+        path: String,
+        content: String,
+        language: String,
+    },
+    Command {
+        stdout: String,
+        stderr: String,
+        exit_code: Option<i32>,
+    },
+    FileList(Vec<String>),
+    Empty,
+}
+
+struct DiffView {
+    file_path: String,
+    hunks: Vec<DiffHunk>,
+    additions: usize,
+    deletions: usize,
+}
+
+struct DiffHunk {
+    old_start: usize,
+    new_start: usize,
+    header: String,
+    lines: Vec<DiffLine>,
+}
+
+struct DiffLine {
+    kind: DiffLineKind,
+    old_line: Option<usize>,
+    new_line: Option<usize>,
+    content: String,
+}
+
+#[derive(Clone, Copy)]
+enum DiffLineKind {
+    Context,
+    Added,
+    Removed,
+}
+
 struct ChatMessage {
     role: Role,
-    content: String,
+    parts: Vec<MessagePart>,
     agent_name: Option<String>,
     model_name: Option<String>,
     cost_tier: Option<String>,
     elapsed: Option<String>,
-    tool_name: Option<String>,
-    tool_content: Option<String>,
-    is_tool_collapsed: bool,
 }
 
 impl ChatMessage {
     fn user(content: String) -> Self {
         Self {
             role: Role::User,
-            content,
+            parts: vec![MessagePart::Text(content)],
             agent_name: None,
             model_name: None,
             cost_tier: None,
             elapsed: None,
-            tool_name: None,
-            tool_content: None,
-            is_tool_collapsed: true,
         }
     }
 
     fn assistant(content: String) -> Self {
         Self {
             role: Role::Assistant,
-            content,
+            parts: vec![MessagePart::Text(content)],
             agent_name: Some("Sisyphus - Ultraworker".into()),
             model_name: Some("Anthropic - Claude Opus 4.6".into()),
             cost_tier: Some("$$$$".into()),
             elapsed: Some("3.9s".into()),
-            tool_name: None,
-            tool_content: None,
-            is_tool_collapsed: true,
         }
     }
 
-    fn tool_result(tool_name: String, tool_content: String) -> Self {
+    fn assistant_parts(parts: Vec<MessagePart>) -> Self {
         Self {
             role: Role::Assistant,
-            content: String::new(),
-            agent_name: None,
-            model_name: None,
-            cost_tier: None,
-            elapsed: None,
-            tool_name: Some(tool_name),
-            tool_content: Some(tool_content),
-            is_tool_collapsed: true,
+            parts,
+            agent_name: Some("Sisyphus - Ultraworker".into()),
+            model_name: Some("Anthropic - Claude Opus 4.6".into()),
+            cost_tier: Some("$$$$".into()),
+            elapsed: Some("3.9s".into()),
         }
     }
+}
+
+impl ToolKind {
+    fn label(&self) -> &str {
+        match self {
+            Self::Edit => "Edit",
+            Self::Write => "Write",
+            Self::Read => "Read",
+            Self::Bash => "Bash",
+            Self::Search => "Search",
+            Self::ApplyPatch => "Patch",
+            Self::Generic(name) => name.as_str(),
+        }
+    }
+}
+
+impl ToolStatus {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Complete => "done",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl ToolInput {
+    fn summary(&self) -> String {
+        match self {
+            Self::Edit {
+                file_path,
+                old_string,
+                new_string,
+            } => format!(
+                "{} ({} → {} chars)",
+                file_path,
+                old_string.len(),
+                new_string.len()
+            ),
+            Self::Write { file_path, content } => {
+                format!("{} ({} bytes)", file_path, content.len())
+            }
+            Self::Read {
+                file_path,
+                offset,
+                limit,
+            } => match (offset, limit) {
+                (Some(offset), Some(limit)) => format!("{file_path}:{offset} (+{limit})"),
+                _ => file_path.clone(),
+            },
+            Self::Bash { command, workdir } => match workdir {
+                Some(workdir) => format!("{command} in {workdir}"),
+                None => command.clone(),
+            },
+            Self::Search { query, path } => match path {
+                Some(path) => format!("{query} in {path}"),
+                None => query.clone(),
+            },
+            Self::ApplyPatch { patch } => format!("apply patch ({} bytes)", patch.len()),
+            Self::Generic { summary } => summary.clone(),
+        }
+    }
+}
+
+fn sample_tool_harness_message() -> ChatMessage {
+    let diff = parse_unified_diff(
+        "references/wgpui/crates/gpui_linux/src/linux/wayland/window.rs",
+        r#"@@ -1502,2 +1502,2 @@
+-let w = state.bounds.size.width.0 as i32;
+-let h = state.bounds.size.height.0 as i32;
++let w = f32::from(state.bounds.size.width) as i32;
++let h = f32::from(state.bounds.size.height) as i32;
+"#,
+    );
+
+    ChatMessage::assistant_parts(vec![
+        MessagePart::Reasoning("Pixels has private fields. Use the same f32::from pattern.".into()),
+        MessagePart::Tool(ToolCall {
+            id: "edit-1".into(),
+            kind: ToolKind::Edit,
+            status: ToolStatus::Complete,
+            input: ToolInput::Edit {
+                file_path: "references/wgpui/crates/gpui_linux/src/linux/wayland/window.rs".into(),
+                old_string: "let w = state.bounds.size.width.0 as i32;".into(),
+                new_string: "let w = f32::from(state.bounds.size.width) as i32;".into(),
+            },
+            output: ToolOutput::Diff(diff),
+            is_collapsed: false,
+        }),
+        MessagePart::Tool(ToolCall {
+            id: "bash-1".into(),
+            kind: ToolKind::Bash,
+            status: ToolStatus::Complete,
+            input: ToolInput::Bash {
+                command: "cargo check -p gpui_linux".into(),
+                workdir: Some("references/wgpui".into()),
+            },
+            output: ToolOutput::Command {
+                stdout: "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.38s"
+                    .into(),
+                stderr: String::new(),
+                exit_code: Some(0),
+            },
+            is_collapsed: false,
+        }),
+        MessagePart::Tool(ToolCall {
+            id: "read-1".into(),
+            kind: ToolKind::Read,
+            status: ToolStatus::Complete,
+            input: ToolInput::Read {
+                file_path: "crates/jfc-ui/src/main.rs".into(),
+                offset: Some(1),
+                limit: Some(80),
+            },
+            output: ToolOutput::FileContent {
+                path: "crates/jfc-ui/src/main.rs".into(),
+                language: "rust".into(),
+                content: "mod text_input;\nmod theme;\n\nuse gpui::*;\nuse theme::Theme;".into(),
+            },
+            is_collapsed: true,
+        }),
+        MessagePart::Tool(ToolCall {
+            id: "write-1".into(),
+            kind: ToolKind::Write,
+            status: ToolStatus::Pending,
+            input: ToolInput::Write {
+                file_path: "crates/jfc-ui/src/tool_harness.rs".into(),
+                content: "pub enum MessagePart { Text(String), Tool(ToolCall) }".into(),
+            },
+            output: ToolOutput::Text("Waiting for approval".into()),
+            is_collapsed: true,
+        }),
+        MessagePart::Tool(ToolCall {
+            id: "search-1".into(),
+            kind: ToolKind::Search,
+            status: ToolStatus::Running,
+            input: ToolInput::Search {
+                query: "ToolRegistry|DiffChanges|tool_result".into(),
+                path: Some("research/opencode".into()),
+            },
+            output: ToolOutput::FileList(vec![
+                "packages/ui/src/components/message-part.tsx".into(),
+                "packages/ui/src/components/diff-changes.tsx".into(),
+                "packages/opencode/src/tool/edit.ts".into(),
+            ]),
+            is_collapsed: true,
+        }),
+        MessagePart::Tool(ToolCall {
+            id: "patch-1".into(),
+            kind: ToolKind::ApplyPatch,
+            status: ToolStatus::Complete,
+            input: ToolInput::ApplyPatch {
+                patch: "*** Begin Patch\n*** Update File: crates/jfc-ui/src/main.rs".into(),
+            },
+            output: ToolOutput::Diff(parse_unified_diff(
+                "crates/jfc-ui/src/main.rs",
+                r#"@@ -10,1 +10,1 @@
+-struct ChatMessage;
++enum MessagePart;
+"#,
+            )),
+            is_collapsed: true,
+        }),
+        MessagePart::Tool(ToolCall {
+            id: "generic-1".into(),
+            kind: ToolKind::Generic("Delegate".into()),
+            status: ToolStatus::Failed,
+            input: ToolInput::Generic {
+                summary: "OpenClaude remote lookup".into(),
+            },
+            output: ToolOutput::Empty,
+            is_collapsed: true,
+        }),
+    ])
+}
+
+fn parse_unified_diff(file_path: &str, patch: &str) -> DiffView {
+    let mut hunks = Vec::new();
+    let mut current: Option<DiffHunk> = None;
+    let mut old_line = 0usize;
+    let mut new_line = 0usize;
+    let mut additions = 0usize;
+    let mut deletions = 0usize;
+
+    for raw_line in patch.lines() {
+        if raw_line.starts_with("@@") {
+            if let Some(hunk) = current.take() {
+                hunks.push(hunk);
+            }
+
+            let (old_start, new_start, header) = parse_hunk_header(raw_line);
+            old_line = old_start;
+            new_line = new_start;
+            current = Some(DiffHunk {
+                old_start,
+                new_start,
+                header,
+                lines: Vec::new(),
+            });
+            continue;
+        }
+
+        let Some(hunk) = current.as_mut() else {
+            continue;
+        };
+
+        let (kind, content) = match raw_line.chars().next() {
+            Some('+') => (DiffLineKind::Added, &raw_line[1..]),
+            Some('-') => (DiffLineKind::Removed, &raw_line[1..]),
+            Some(' ') => (DiffLineKind::Context, &raw_line[1..]),
+            _ => (DiffLineKind::Context, raw_line),
+        };
+
+        match kind {
+            DiffLineKind::Added => {
+                additions += 1;
+                hunk.lines.push(DiffLine {
+                    kind,
+                    old_line: None,
+                    new_line: Some(new_line),
+                    content: content.into(),
+                });
+                new_line += 1;
+            }
+            DiffLineKind::Removed => {
+                deletions += 1;
+                hunk.lines.push(DiffLine {
+                    kind,
+                    old_line: Some(old_line),
+                    new_line: None,
+                    content: content.into(),
+                });
+                old_line += 1;
+            }
+            DiffLineKind::Context => {
+                hunk.lines.push(DiffLine {
+                    kind,
+                    old_line: Some(old_line),
+                    new_line: Some(new_line),
+                    content: content.into(),
+                });
+                old_line += 1;
+                new_line += 1;
+            }
+        }
+    }
+
+    if let Some(hunk) = current {
+        hunks.push(hunk);
+    }
+
+    DiffView {
+        file_path: file_path.into(),
+        hunks,
+        additions,
+        deletions,
+    }
+}
+
+fn parse_hunk_header(header: &str) -> (usize, usize, String) {
+    let mut parts = header.split_whitespace();
+    let _at = parts.next();
+    let old = parts.next().unwrap_or("-1");
+    let new = parts.next().unwrap_or("+1");
+    let tail = parts.collect::<Vec<_>>().join(" ");
+    (parse_hunk_start(old), parse_hunk_start(new), tail)
+}
+
+fn parse_hunk_start(token: &str) -> usize {
+    token
+        .trim_start_matches(['-', '+'])
+        .split(',')
+        .next()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(1)
+}
+
+fn truncate_lines(text: &str, max_lines: usize) -> String {
+    let lines: Vec<_> = text.lines().collect();
+    let mut result = lines
+        .iter()
+        .take(max_lines)
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n");
+    if lines.len() > max_lines {
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(&format!("… {} more lines", lines.len() - max_lines));
+    }
+    result
 }
 
 struct RootView {
@@ -131,8 +527,7 @@ impl RootView {
             "I received your message: \"{}\". This is a **placeholder** response with `inline code` and *italic text*.\n\n### Example\n```rust\nfn main() {{\n    let greeting = \"Hello, world!\";\n    println!(\"{{}}{{}}\", greeting);\n}}\n```\nLet me know if you need anything else!",
             truncated
         );
-        self.messages
-            .push(ChatMessage::tool_result("Read".into(), "/home/cole/RustProjects/active/jfc/crates/jfc-ui/src/main.rs (296 lines)".into()));
+        self.messages.push(sample_tool_harness_message());
         self.messages.push(ChatMessage::assistant(response));
 
         self.scroll_handle.scroll_to_bottom();
@@ -160,21 +555,27 @@ impl RootView {
         cx.notify();
     }
 
-    fn toggle_sidebar(
-        &mut self,
-        _: &ToggleSidebar,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn toggle_sidebar(&mut self, _: &ToggleSidebar, _window: &mut Window, cx: &mut Context<Self>) {
         self.is_sidebar_visible = !self.is_sidebar_visible;
         cx.notify();
     }
 
     fn toggle_tool_collapsed(&mut self, index: usize, cx: &mut Context<Self>) {
         if let Some(message) = self.messages.get_mut(index) {
-            message.is_tool_collapsed = !message.is_tool_collapsed;
-            cx.notify();
+            for part in &mut message.parts {
+                if let MessagePart::Tool(tool) = part {
+                    tool.is_collapsed = !tool.is_collapsed;
+                    cx.notify();
+                    break;
+                }
+            }
         }
+    }
+
+    fn submit_prompt(&mut self, _: &SubmitPrompt, _window: &mut Window, cx: &mut Context<Self>) {
+        self.text_input.update(cx, |input, cx| {
+            input.submit_current(cx);
+        });
     }
 }
 
@@ -218,6 +619,7 @@ impl Render for RootView {
             .on_action(cx.listener(Self::toggle_command_palette))
             .on_action(cx.listener(Self::dismiss_command_palette))
             .on_action(cx.listener(Self::toggle_sidebar))
+            .on_action(cx.listener(Self::submit_prompt))
             .child(main_content);
 
         let layout = if self.is_sidebar_visible {
@@ -320,12 +722,7 @@ impl RootView {
         let mut message_list = div().flex().flex_col().gap(px(12.0)).p(px(16.0));
 
         for (index, message) in self.messages.iter().enumerate() {
-            if message.tool_name.is_some() {
-                message_list =
-                    message_list.child(self.render_tool_result(message, index, cx));
-            } else {
-                message_list = message_list.child(self.render_message(message));
-            }
+            message_list = message_list.child(self.render_message(message, index, cx));
         }
 
         div()
@@ -338,14 +735,14 @@ impl RootView {
             .child(message_list)
     }
 
-    fn render_message(&self, message: &ChatMessage) -> Div {
+    fn render_message(&self, message: &ChatMessage, index: usize, cx: &Context<Self>) -> Div {
         let theme = &self.theme;
         let (role_label, role_color, bubble_bg) = match message.role {
             Role::User => ("you", theme.accent, theme.user_bubble),
             Role::Assistant => ("assistant", theme.text_secondary, theme.assistant_bubble),
         };
 
-        let content_elements = render_markdown(&message.content, theme);
+        let content_elements = self.render_message_parts(&message.parts, index, cx);
 
         let mut container = div()
             .w_full()
@@ -372,9 +769,7 @@ impl RootView {
             );
 
         if message.role == Role::Assistant {
-            if let (Some(agent), Some(model)) =
-                (&message.agent_name, &message.model_name)
-            {
+            if let (Some(agent), Some(model)) = (&message.agent_name, &message.model_name) {
                 let mut meta_text = format!("■ {} · {}", agent, model);
                 if let Some(cost) = &message.cost_tier {
                     meta_text.push_str(&format!(" ({})", cost));
@@ -395,56 +790,314 @@ impl RootView {
         container
     }
 
-    fn render_tool_result(
+    fn render_message_parts(
         &self,
-        message: &ChatMessage,
-        index: usize,
+        parts: &[MessagePart],
+        message_index: usize,
         cx: &Context<Self>,
-    ) -> Div {
-        let theme = &self.theme;
-        let tool_name = message
-            .tool_name
-            .as_deref()
-            .unwrap_or("tool");
-        let is_collapsed = message.is_tool_collapsed;
+    ) -> Vec<Div> {
+        let mut elements = Vec::new();
 
-        let arrow = if is_collapsed { "▶" } else { "▼" };
-        let header_text = format!("{} {}", arrow, tool_name);
-
-        let mut container = div().w_full().flex().flex_col().child(
-            div()
-                .id(ElementId::Name(format!("tool-{}", index).into()))
-                .cursor(CursorStyle::PointingHand)
-                .text_color(theme.text_secondary)
-                .text_size(px(12.0))
-                .px(px(12.0))
-                .py(px(4.0))
-                .bg(theme.surface)
-                .rounded(px(4.0))
-                .hover(|style| style.bg(theme.surface_raised))
-                .on_click(cx.listener(move |this, _event, _window, _cx| {
-                    this.toggle_tool_collapsed(index, _cx);
-                }))
-                .child(header_text),
-        );
-
-        if !is_collapsed {
-            if let Some(tool_content) = &message.tool_content {
-                container = container.child(
-                    div()
-                        .w_full()
-                        .bg(theme.surface_code)
-                        .rounded_b(px(4.0))
-                        .px(px(12.0))
-                        .py(px(8.0))
-                        .text_color(theme.text_secondary)
-                        .text_size(px(12.0))
-                        .child(tool_content.clone()),
-                );
+        for part in parts {
+            match part {
+                MessagePart::Text(text) => elements.extend(render_markdown(text, &self.theme)),
+                MessagePart::Reasoning(text) => elements.push(self.render_reasoning_part(text)),
+                MessagePart::Tool(tool) => {
+                    elements.push(self.render_tool_call(tool, message_index, cx));
+                }
             }
         }
 
+        elements
+    }
+
+    fn render_reasoning_part(&self, text: &str) -> Div {
+        div()
+            .w_full()
+            .border_l_2()
+            .border_color(self.theme.border)
+            .pl(px(10.0))
+            .py(px(4.0))
+            .text_color(self.theme.text_muted)
+            .text_size(px(12.0))
+            .child(text.to_string())
+    }
+
+    fn render_tool_call(&self, tool: &ToolCall, message_index: usize, cx: &Context<Self>) -> Div {
+        let theme = &self.theme;
+        let status_color = match tool.status {
+            ToolStatus::Pending => theme.warning,
+            ToolStatus::Running => theme.accent,
+            ToolStatus::Complete => theme.success,
+            ToolStatus::Failed => theme.error,
+        };
+        let arrow = if tool.is_collapsed { "▶" } else { "▼" };
+        let title = format!("{} {} {}", arrow, tool.kind.label(), tool.input.summary());
+
+        let mut container = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .my(px(6.0))
+            .border_1()
+            .border_color(theme.border)
+            .rounded(px(6.0))
+            .overflow_hidden()
+            .child(
+                div()
+                    .id(ElementId::Name(
+                        format!("tool-{}-{}", message_index, tool.id).into(),
+                    ))
+                    .w_full()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .justify_between()
+                    .cursor(CursorStyle::PointingHand)
+                    .px(px(12.0))
+                    .py(px(7.0))
+                    .bg(theme.surface)
+                    .hover(|style| style.bg(theme.surface_raised))
+                    .on_click(cx.listener(move |this, _event, _window, _cx| {
+                        this.toggle_tool_collapsed(message_index, _cx);
+                    }))
+                    .child(
+                        div()
+                            .text_color(theme.text_secondary)
+                            .text_size(px(12.0))
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .text_color(status_color)
+                            .text_size(px(11.0))
+                            .child(tool.status.label()),
+                    ),
+            );
+
+        if !tool.is_collapsed {
+            container = container.child(self.render_tool_output(tool));
+        }
+
         container
+    }
+
+    fn render_tool_output(&self, tool: &ToolCall) -> Div {
+        match &tool.output {
+            ToolOutput::Diff(diff) => self.render_diff_view(diff),
+            ToolOutput::FileContent {
+                path,
+                content,
+                language,
+            } => self.render_file_content(path, content, language),
+            ToolOutput::Command {
+                stdout,
+                stderr,
+                exit_code,
+            } => self.render_command_output(stdout, stderr, *exit_code),
+            ToolOutput::FileList(files) => self.render_file_list(files),
+            ToolOutput::Text(text) => self.render_plain_tool_output(text),
+            ToolOutput::Empty => self.render_plain_tool_output("No output"),
+        }
+    }
+
+    fn render_diff_view(&self, diff: &DiffView) -> Div {
+        let theme = &self.theme;
+        let mut body = div().w_full().flex().flex_col();
+
+        for hunk in &diff.hunks {
+            body = body.child(
+                div()
+                    .w_full()
+                    .px(px(10.0))
+                    .py(px(4.0))
+                    .bg(theme.surface)
+                    .text_color(theme.text_muted)
+                    .text_size(px(11.0))
+                    .child(format!(
+                        "@@ -{} +{} @@ {}",
+                        hunk.old_start, hunk.new_start, hunk.header
+                    )),
+            );
+
+            for line in &hunk.lines {
+                body = body.child(self.render_diff_line(line));
+            }
+        }
+
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .bg(theme.surface_code)
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_row()
+                    .justify_between()
+                    .px(px(10.0))
+                    .py(px(6.0))
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .child(
+                        div()
+                            .text_color(theme.text_secondary)
+                            .text_size(px(12.0))
+                            .child(diff.file_path.clone()),
+                    )
+                    .child(
+                        div()
+                            .text_color(theme.text_muted)
+                            .text_size(px(11.0))
+                            .child(format!("+{} -{}", diff.additions, diff.deletions)),
+                    ),
+            )
+            .child(body)
+    }
+
+    fn render_diff_line(&self, line: &DiffLine) -> Div {
+        let theme = &self.theme;
+        let (prefix, bg, text_color) = match line.kind {
+            DiffLineKind::Context => (" ", theme.surface_code, theme.text_secondary),
+            DiffLineKind::Added => ("+", theme.diff_added_bg, theme.diff_added_text),
+            DiffLineKind::Removed => ("-", theme.diff_removed_bg, theme.diff_removed_text),
+        };
+        let old_line = line
+            .old_line
+            .map_or(String::from("   "), |n| format!("{n:>3}"));
+        let new_line = line
+            .new_line
+            .map_or(String::from("   "), |n| format!("{n:>3}"));
+
+        div()
+            .w_full()
+            .flex()
+            .flex_row()
+            .bg(bg)
+            .px(px(10.0))
+            .py(px(1.0))
+            .text_size(px(12.0))
+            .text_color(text_color)
+            .child(
+                div()
+                    .w(px(74.0))
+                    .text_color(theme.text_muted)
+                    .child(format!("{old_line} {new_line} {prefix}")),
+            )
+            .child(div().child(line.content.clone()))
+    }
+
+    fn render_file_content(&self, path: &str, content: &str, language: &str) -> Div {
+        let header = if language.is_empty() {
+            path.to_string()
+        } else {
+            format!("{} ({})", path, language)
+        };
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .bg(self.theme.surface_code)
+            .child(
+                div()
+                    .px(px(10.0))
+                    .py(px(6.0))
+                    .border_b_1()
+                    .border_color(self.theme.border)
+                    .text_color(self.theme.text_secondary)
+                    .text_size(px(12.0))
+                    .child(header),
+            )
+            .child(
+                div()
+                    .px(px(10.0))
+                    .py(px(8.0))
+                    .text_color(self.theme.text_secondary)
+                    .text_size(px(12.0))
+                    .child(truncate_lines(content, 16)),
+            )
+    }
+
+    fn render_command_output(&self, stdout: &str, stderr: &str, exit_code: Option<i32>) -> Div {
+        let mut output = String::new();
+        if !stdout.is_empty() {
+            output.push_str(stdout);
+        }
+        if !stderr.is_empty() {
+            if !output.is_empty() {
+                output.push('\n');
+            }
+            output.push_str(stderr);
+        }
+        if output.is_empty() {
+            output.push_str("Command produced no output");
+        }
+
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .bg(self.theme.surface_code)
+            .child(
+                div()
+                    .px(px(10.0))
+                    .py(px(6.0))
+                    .border_b_1()
+                    .border_color(self.theme.border)
+                    .text_color(self.theme.text_muted)
+                    .text_size(px(11.0))
+                    .child(format!(
+                        "exit {}",
+                        exit_code.map_or(String::from("?"), |c| c.to_string())
+                    )),
+            )
+            .child(
+                div()
+                    .px(px(10.0))
+                    .py(px(8.0))
+                    .text_color(self.theme.text_secondary)
+                    .text_size(px(12.0))
+                    .child(truncate_lines(&output, 20)),
+            )
+    }
+
+    fn render_file_list(&self, files: &[String]) -> Div {
+        let mut list = div().w_full().flex().flex_col().gap(px(2.0));
+        for file in files.iter().take(24) {
+            list = list.child(
+                div()
+                    .text_color(self.theme.text_secondary)
+                    .text_size(px(12.0))
+                    .child(format!("• {file}")),
+            );
+        }
+        if files.len() > 24 {
+            list = list.child(
+                div()
+                    .text_color(self.theme.text_muted)
+                    .text_size(px(12.0))
+                    .child(format!("… {} more", files.len() - 24)),
+            );
+        }
+
+        div()
+            .w_full()
+            .bg(self.theme.surface_code)
+            .px(px(10.0))
+            .py(px(8.0))
+            .child(list)
+    }
+
+    fn render_plain_tool_output(&self, text: &str) -> Div {
+        div()
+            .w_full()
+            .bg(self.theme.surface_code)
+            .px(px(10.0))
+            .py(px(8.0))
+            .text_color(self.theme.text_secondary)
+            .text_size(px(12.0))
+            .child(text.to_string())
     }
 
     fn render_input_area(&self) -> impl IntoElement {
@@ -461,13 +1114,15 @@ impl RootView {
                     .w_full()
                     .bg(theme.surface_raised)
                     .border_1()
-                    .border_color(theme.border)
+                    .border_color(theme.border_focus)
                     .rounded(px(8.0))
                     .px(px(12.0))
                     .py(px(10.0))
                     .h(px(44.0))
                     .text_size(px(14.0))
-                    .child(self.text_input.clone()),
+                    .child(
+                        AnyView::from(self.text_input.clone()).cached(StyleRefinement::default()),
+                    ),
             )
     }
 
@@ -503,11 +1158,7 @@ impl RootView {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("NORMAL"),
                     )
-                    .child(
-                        div()
-                            .text_color(theme.text_muted)
-                            .child("session: default"),
-                    ),
+                    .child(div().text_color(theme.text_muted).child("session: default")),
             )
             .child(
                 div()
@@ -534,21 +1185,14 @@ impl RootView {
             .border_color(theme.border)
             .bg(theme.surface)
             .overflow_hidden()
-            .child(self.render_sidebar_section(
-                "Quick note",
-                vec![("Session", "ses_default")],
-            ))
+            .child(self.render_sidebar_section("Quick note", vec![("Session", "ses_default")]))
             .child(self.render_sidebar_context())
             .child(self.render_sidebar_mcp())
             .child(self.render_sidebar_lsp())
             .child(self.render_sidebar_footer())
     }
 
-    fn render_sidebar_section(
-        &self,
-        title: &str,
-        items: Vec<(&str, &str)>,
-    ) -> impl IntoElement {
+    fn render_sidebar_section(&self, title: &str, items: Vec<(&str, &str)>) -> impl IntoElement {
         let theme = &self.theme;
 
         let mut section = div()
@@ -575,8 +1219,16 @@ impl RootView {
                     .flex_row()
                     .justify_between()
                     .text_size(px(12.0))
-                    .child(div().text_color(theme.text_secondary).child(label.to_string()))
-                    .child(div().text_color(theme.text_primary).child(value.to_string())),
+                    .child(
+                        div()
+                            .text_color(theme.text_secondary)
+                            .child(label.to_string()),
+                    )
+                    .child(
+                        div()
+                            .text_color(theme.text_primary)
+                            .child(value.to_string()),
+                    ),
             );
         }
 
@@ -706,11 +1358,7 @@ impl RootView {
             } else {
                 theme.text_muted
             };
-            let status_label = if connected {
-                "Connected"
-            } else {
-                "Disabled"
-            };
+            let status_label = if connected { "Connected" } else { "Disabled" };
 
             section = section.child(
                 div()
@@ -959,10 +1607,7 @@ fn parse_markdown(text: &str) -> Vec<MarkdownBlock> {
             .checked_sub(0)
             .filter(|&count| count > 0 && count <= 6)
         {
-            let header_text = line
-                .trim_start_matches('#')
-                .trim()
-                .to_string();
+            let header_text = line.trim_start_matches('#').trim().to_string();
             if !header_text.is_empty() {
                 blocks.push(MarkdownBlock::Header(header_level as u8, header_text));
             } else {
@@ -1037,14 +1682,11 @@ fn render_markdown(text: &str, theme: &Theme) -> Vec<Div> {
                             paragraph = paragraph.child(div().child(text));
                         }
                         MarkdownSpan::Bold(text) => {
-                            paragraph = paragraph.child(
-                                div().font_weight(FontWeight::BOLD).child(text),
-                            );
+                            paragraph =
+                                paragraph.child(div().font_weight(FontWeight::BOLD).child(text));
                         }
                         MarkdownSpan::Italic(text) => {
-                            paragraph = paragraph.child(
-                                div().italic().child(text),
-                            );
+                            paragraph = paragraph.child(div().italic().child(text));
                         }
                         MarkdownSpan::InlineCode(text) => {
                             paragraph = paragraph.child(
@@ -1114,11 +1756,7 @@ fn render_code_block(language: &str, code: &str, theme: &Theme) -> Div {
         );
     }
 
-    let mut code_container = div()
-        .w_full()
-        .px(px(12.0))
-        .py(px(8.0))
-        .text_size(px(13.0));
+    let mut code_container = div().w_full().px(px(12.0)).py(px(8.0)).text_size(px(13.0));
 
     for line in code.lines() {
         code_container = code_container.child(render_syntax_line(line, language, theme));
@@ -1133,10 +1771,10 @@ fn render_syntax_line(line: &str, language: &str, theme: &Theme) -> Div {
     }
 
     let rust_keywords = [
-        "fn", "let", "mut", "pub", "use", "mod", "struct", "enum", "impl", "trait", "for",
-        "while", "loop", "if", "else", "match", "return", "self", "Self", "super", "crate",
-        "async", "await", "move", "ref", "const", "static", "type", "where", "as", "in",
-        "unsafe", "extern", "dyn", "true", "false",
+        "fn", "let", "mut", "pub", "use", "mod", "struct", "enum", "impl", "trait", "for", "while",
+        "loop", "if", "else", "match", "return", "self", "Self", "super", "crate", "async",
+        "await", "move", "ref", "const", "static", "type", "where", "as", "in", "unsafe", "extern",
+        "dyn", "true", "false",
     ];
 
     let trimmed = line.trim_start();
@@ -1169,7 +1807,9 @@ fn render_syntax_line(line: &str, language: &str, theme: &Theme) -> Div {
         let mut found_keyword = false;
         for keyword in &rust_keywords {
             if remaining.starts_with(keyword) {
-                let after = remaining.get(keyword.len()..keyword.len() + 1).unwrap_or(" ");
+                let after = remaining
+                    .get(keyword.len()..keyword.len() + 1)
+                    .unwrap_or(" ");
                 let is_boundary = !after
                     .chars()
                     .next()
@@ -1253,6 +1893,9 @@ fn main() {
             KeyBinding::new("home", text_input::Home, Some("TextInput")),
             KeyBinding::new("end", text_input::End, Some("TextInput")),
             KeyBinding::new("enter", text_input::Submit, Some("TextInput")),
+            KeyBinding::new("ctrl-r", text_input::Submit, Some("TextInput")),
+            KeyBinding::new("ctrl-r", SubmitPrompt, Some("RootView")),
+            KeyBinding::new("ctrl-r", SubmitPrompt, None),
             KeyBinding::new("ctrl-p", ToggleCommandPalette, Some("RootView")),
             KeyBinding::new("escape", DismissCommandPalette, Some("RootView")),
         ]);

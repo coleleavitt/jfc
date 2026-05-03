@@ -17,6 +17,10 @@ pub struct Theme {
     pub success: Hsla,
     pub warning: Hsla,
     pub error: Hsla,
+    pub diff_added_bg: Hsla,
+    pub diff_added_text: Hsla,
+    pub diff_removed_bg: Hsla,
+    pub diff_removed_text: Hsla,
     pub code_keyword: Hsla,
     pub code_string: Hsla,
     pub code_comment: Hsla,
@@ -43,6 +47,10 @@ impl Theme {
             success: hex_to_hsla(0x22c55e),
             warning: hex_to_hsla(0xeab308),
             error: hex_to_hsla(0xef4444),
+            diff_added_bg: hex_to_hsla(0x052e16),
+            diff_added_text: hex_to_hsla(0x86efac),
+            diff_removed_bg: hex_to_hsla(0x450a0a),
+            diff_removed_text: hex_to_hsla(0xfca5a5),
             code_keyword: hex_to_hsla(0xc084fc),
             code_string: hex_to_hsla(0x86efac),
             code_comment: hex_to_hsla(0x6b7280),
@@ -63,11 +71,5 @@ fn hex_to_hsla_alpha(hex: u32, alpha: f32) -> Hsla {
     let r = ((hex >> 16) & 0xFF) as f32 / 255.0;
     let g = ((hex >> 8) & 0xFF) as f32 / 255.0;
     let b = (hex & 0xFF) as f32 / 255.0;
-    Rgba {
-        r,
-        g,
-        b,
-        a: alpha,
-    }
-    .into()
+    Rgba { r, g, b, a: alpha }.into()
 }

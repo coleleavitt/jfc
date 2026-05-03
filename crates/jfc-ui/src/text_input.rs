@@ -189,7 +189,7 @@ impl TextInput {
         }
     }
 
-    fn submit(&mut self, _: &Submit, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn submit_current(&mut self, cx: &mut Context<Self>) {
         let text = self.content.to_string();
         if text.trim().is_empty() {
             return;
@@ -200,6 +200,10 @@ impl TextInput {
         self.marked_range = None;
         cx.emit(SubmitEvent { content: text });
         cx.notify();
+    }
+
+    fn submit(&mut self, _: &Submit, _window: &mut Window, cx: &mut Context<Self>) {
+        self.submit_current(cx);
     }
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
