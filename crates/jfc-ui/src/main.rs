@@ -1120,9 +1120,7 @@ impl RootView {
                     .py(px(10.0))
                     .h(px(44.0))
                     .text_size(px(14.0))
-                    .child(
-                        AnyView::from(self.text_input.clone()).cached(StyleRefinement::default()),
-                    ),
+                    .child(self.text_input.clone()),
             )
     }
 
