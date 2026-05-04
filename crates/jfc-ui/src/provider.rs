@@ -1,7 +1,80 @@
-use std::pin::Pin;
+#![allow(dead_code)]
+
+use std::{borrow::Borrow, fmt, ops::Deref, pin::Pin};
 
 use async_trait::async_trait;
 use futures::Stream;
+
+macro_rules! string_id {
+    ($name:ident) => {
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+        #[serde(transparent)]
+        pub struct $name(String);
+
+        impl $name {
+            pub fn new(value: impl Into<String>) -> Self {
+                Self(value.into())
+            }
+
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl AsRef<str> for $name {
+            fn as_ref(&self) -> &str {
+                self.as_str()
+            }
+        }
+
+        impl Borrow<str> for $name {
+            fn borrow(&self) -> &str {
+                self.as_str()
+            }
+        }
+
+        impl Deref for $name {
+            type Target = str;
+
+            fn deref(&self) -> &Self::Target {
+                self.as_str()
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+
+        impl From<String> for $name {
+            fn from(value: String) -> Self {
+                Self(value)
+            }
+        }
+
+        impl From<&str> for $name {
+            fn from(value: &str) -> Self {
+                Self(value.to_string())
+            }
+        }
+
+        impl PartialEq<&str> for $name {
+            fn eq(&self, other: &&str) -> bool {
+                self.as_str() == *other
+            }
+        }
+
+        impl PartialEq<$name> for &str {
+            fn eq(&self, other: &$name) -> bool {
+                *self == other.as_str()
+            }
+        }
+    };
+}
+
+string_id!(ProviderId);
+string_id!(ModelId);
 
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
@@ -37,6 +110,8 @@ pub enum StreamEvent {
     Usage {
         input_tokens: u32,
         output_tokens: u32,
+        cache_read_tokens: u32,
+        cache_write_tokens: u32,
     },
     Error {
         message: String,
@@ -88,7 +163,7 @@ pub struct ToolDef {
 
 #[derive(Debug, Clone)]
 pub struct StreamOptions {
-    pub model: String,
+    pub model: ModelId,
     pub system: Option<String>,
     pub max_tokens: u32,
     pub tools: Vec<ToolDef>,
@@ -96,7 +171,7 @@ pub struct StreamOptions {
 }
 
 impl StreamOptions {
-    pub fn new(model: impl Into<String>) -> Self {
+    pub fn new(model: impl Into<ModelId>) -> Self {
         Self {
             model: model.into(),
             system: None,
@@ -150,22 +225,29 @@ impl TokenUsage {
 
 #[derive(Debug, Clone)]
 pub struct ModelInfo {
-    pub id: String,
+    pub id: ModelId,
     pub display_name: String,
-    pub provider: String,
+    pub provider: ProviderId,
+    pub context_window_tokens: Option<usize>,
 }
 
 impl ModelInfo {
     pub fn new(
-        id: impl Into<String>,
+        id: impl Into<ModelId>,
         display_name: impl Into<String>,
-        provider: impl Into<String>,
+        provider: impl Into<ProviderId>,
     ) -> Self {
         Self {
             id: id.into(),
             display_name: display_name.into(),
             provider: provider.into(),
+            context_window_tokens: None,
         }
+    }
+
+    pub fn with_context_window_tokens(mut self, tokens: impl Into<Option<usize>>) -> Self {
+        self.context_window_tokens = tokens.into();
+        self
     }
 }
 

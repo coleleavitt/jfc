@@ -2,17 +2,14 @@ use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
-    widgets::{
-        Block, Borders, Cell, Clear, LineGauge, List, ListItem, Paragraph, Row, Table, Wrap,
-    },
+    text::{Line, Span},
+    widgets::{Block, Borders, Cell, Clear, LineGauge, List, ListItem, Paragraph, Row, Table},
 };
 
 #[allow(unused_imports)]
 use ratatui::style::Stylize as _;
 
 use crate::app::{App, ApprovalChoice, SPINNER};
-use crate::inline_tools::{self, Segment as InlineSeg};
 use crate::input::{filtered_models, palette_items};
 use crate::markdown;
 use crate::theme::Theme;
@@ -25,31 +22,61 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 
     let input_lines = input_visual_line_count(app, f.area().width.saturating_sub(4) as usize);
     let input_height = (input_lines + 2).min(8) as u16;
+    let subagent_footer_height: u16 = if app.viewing_task_id.is_some() { 1 } else { 0 };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(3),
+            Constraint::Length(subagent_footer_height),
             Constraint::Length(input_height),
             Constraint::Length(2),
         ])
         .split(f.area());
 
-    // When the sessions sidebar is toggled on, split the messages row
-    // horizontally: 28-col sidebar on the left, chat on the right. Hidden by
-    // default so the chat stays full-width on narrow terminals.
-    if app.show_sidebar {
-        let split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(28), Constraint::Min(20)])
-            .split(chunks[0]);
-        sidebar(f, app, split[0]);
-        messages(f, app, split[1]);
-    } else {
-        messages(f, app, chunks[0]);
+    let show_left = app.show_sidebar;
+    let show_right = app.show_info_sidebar && f.area().width >= 100;
+
+    match (show_left, show_right) {
+        (true, true) => {
+            let split = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Length(28),
+                    Constraint::Min(20),
+                    Constraint::Length(42),
+                ])
+                .split(chunks[0]);
+            sidebar(f, app, split[0]);
+            messages(f, app, split[1]);
+            info_sidebar(f, app, split[2]);
+        }
+        (true, false) => {
+            let split = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(28), Constraint::Min(20)])
+                .split(chunks[0]);
+            sidebar(f, app, split[0]);
+            messages(f, app, split[1]);
+        }
+        (false, true) => {
+            let split = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Min(20), Constraint::Length(42)])
+                .split(chunks[0]);
+            messages(f, app, split[0]);
+            info_sidebar(f, app, split[1]);
+        }
+        (false, false) => {
+            messages(f, app, chunks[0]);
+        }
     }
-    input(f, app, chunks[1]);
-    status(f, app, chunks[2]);
+
+    if app.viewing_task_id.is_some() {
+        subagent_footer(f, app, chunks[1]);
+    }
+    input(f, app, chunks[2]);
+    status(f, app, chunks[3]);
 
     if app.show_palette {
         palette(f, app);
@@ -65,6 +92,305 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 
     if app.pending_approval.is_some() {
         approval(f, app);
+    }
+}
+
+fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
+    use crate::types::{LspStatus, McpStatus};
+
+    let t = app.theme;
+
+    let block = Block::default()
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(t.border));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(Line::from(vec![Span::styled(
+        "Session",
+        Style::default()
+            .fg(t.text_primary)
+            .add_modifier(Modifier::BOLD),
+    )]));
+
+    let title = app
+        .current_session_id
+        .as_deref()
+        .unwrap_or("untitled")
+        .to_owned();
+    lines.push(Line::from(vec![Span::styled(
+        truncate_str(&title, inner.width as usize),
+        Style::default().fg(t.text_secondary),
+    )]));
+
+    lines.push(Line::from(""));
+
+    lines.push(Line::from(vec![Span::styled(
+        "Context",
+        Style::default()
+            .fg(t.text_primary)
+            .add_modifier(Modifier::BOLD),
+    )]));
+
+    let total_tokens = (app.last_usage_input as u64).max(app.tool_ctx.approx_tokens as u64);
+    let ctx_max = app.selected_context_window_tokens().max(1) as u64;
+    let pct = (total_tokens as f64 / ctx_max as f64 * 100.0).min(100.0);
+
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("{} tokens", fmt_number(total_tokens)),
+            Style::default().fg(t.text_secondary),
+        ),
+        Span::styled(
+            format!(" · {:.0}%", pct),
+            Style::default().fg(gauge_color(pct, t)),
+        ),
+    ]));
+
+    let bar_width = inner.width.saturating_sub(2) as usize;
+    if bar_width > 4 {
+        let filled = ((pct / 100.0) * bar_width as f64).round() as usize;
+        let filled = filled.min(bar_width);
+        lines.push(Line::from(vec![
+            Span::styled("█".repeat(filled), Style::default().fg(gauge_color(pct, t))),
+            Span::styled(
+                "░".repeat(bar_width - filled),
+                Style::default().fg(t.border),
+            ),
+        ]));
+    }
+
+    let out_tokens = app.last_usage_output;
+    if out_tokens > 0 {
+        lines.push(Line::from(vec![Span::styled(
+            format!("{} output", fmt_number(out_tokens as u64)),
+            Style::default().fg(t.text_muted),
+        )]));
+    }
+
+    let total_cache_read: u64 = app
+        .usage_by_model
+        .values()
+        .map(|u| u.cache_read_tokens)
+        .sum();
+    let total_input: u64 = app.usage_by_model.values().map(|u| u.input_tokens).sum();
+    if total_cache_read > 0 && total_input > 0 {
+        let global_hit_pct = (total_cache_read as f64 / total_input as f64 * 100.0).min(100.0);
+        lines.push(Line::from(vec![
+            Span::styled("cache hit: ", Style::default().fg(t.text_muted)),
+            Span::styled(
+                format!("{:.0}%", global_hit_pct),
+                Style::default().fg(t.success),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+
+    if !app.usage_by_model.is_empty() {
+        lines.push(Line::from(vec![Span::styled(
+            "Usage by model",
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        )]));
+
+        let mut model_entries: Vec<(&String, &crate::types::ModelUsage)> =
+            app.usage_by_model.iter().collect();
+        model_entries.sort_by_key(|(k, _)| k.as_str());
+
+        for (model_name, usage) in &model_entries {
+            lines.push(Line::from(vec![Span::styled(
+                format!(
+                    " {}:",
+                    truncate_str(model_name, inner.width.saturating_sub(2) as usize)
+                ),
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+            )]));
+
+            lines.push(Line::from(vec![Span::styled(
+                format!(
+                    "  {} in, {} out",
+                    fmt_number(usage.input_tokens),
+                    fmt_number(usage.output_tokens),
+                ),
+                Style::default().fg(t.text_muted),
+            )]));
+
+            if usage.cache_read_tokens > 0 || usage.cache_write_tokens > 0 {
+                lines.push(Line::from(vec![Span::styled(
+                    format!(
+                        "  {} cache read, {} write",
+                        fmt_number(usage.cache_read_tokens),
+                        fmt_number(usage.cache_write_tokens),
+                    ),
+                    Style::default().fg(t.text_muted),
+                )]));
+
+                let hit_pct = usage.cache_hit_pct();
+                if hit_pct > 0.0 {
+                    lines.push(Line::from(vec![
+                        Span::styled("  cache hit: ", Style::default().fg(t.text_muted)),
+                        Span::styled(format!("{:.0}%", hit_pct), Style::default().fg(t.success)),
+                    ]));
+                }
+            }
+
+            if let Some(cost) = usage.cost_usd {
+                lines.push(Line::from(vec![Span::styled(
+                    format!("  ${:.2} spent", cost),
+                    Style::default().fg(t.text_secondary),
+                )]));
+            }
+        }
+
+        lines.push(Line::from(""));
+    }
+
+    if !app.mcp_servers.is_empty() {
+        lines.push(Line::from(vec![Span::styled(
+            "▼ MCP",
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        )]));
+
+        for srv in &app.mcp_servers {
+            let (dot_color, status_color) = match srv.status {
+                McpStatus::Connected => (t.success, t.text_muted),
+                McpStatus::Disabled => (t.text_muted, t.text_muted),
+                McpStatus::Error => (t.error, t.error),
+            };
+            lines.push(Line::from(vec![
+                Span::styled("• ", Style::default().fg(dot_color)),
+                Span::styled(
+                    truncate_str(&srv.name, inner.width.saturating_sub(14) as usize),
+                    Style::default().fg(t.accent),
+                ),
+                Span::raw(" "),
+                Span::styled(srv.status.label(), Style::default().fg(status_color)),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from(vec![Span::styled(
+        "LSP",
+        Style::default()
+            .fg(t.text_primary)
+            .add_modifier(Modifier::BOLD),
+    )]));
+
+    if app.lsp_servers.is_empty() {
+        lines.push(Line::from(vec![Span::styled(
+            "LSPs will activate as files are read",
+            Style::default().fg(t.text_muted),
+        )]));
+    } else {
+        for srv in &app.lsp_servers {
+            let (dot_color, label) = match srv.status {
+                LspStatus::Active => (t.success, "Active"),
+                LspStatus::Inactive => (t.text_muted, "Inactive"),
+            };
+            lines.push(Line::from(vec![
+                Span::styled("• ", Style::default().fg(dot_color)),
+                Span::styled(
+                    truncate_str(&srv.name, inner.width.saturating_sub(12) as usize),
+                    Style::default().fg(t.accent),
+                ),
+                Span::raw(" "),
+                Span::styled(label, Style::default().fg(dot_color)),
+            ]));
+        }
+    }
+
+    let used = lines.len() as u16;
+    let available = inner.height.saturating_sub(3);
+    if used < available {
+        for _ in used..available {
+            lines.push(Line::from(""));
+        }
+    }
+
+    lines.push(Line::from(vec![Span::styled(
+        "─".repeat(inner.width as usize),
+        Style::default().fg(t.border),
+    )]));
+
+    let cwd_str = std::env::current_dir()
+        .map(|p| {
+            let s = p.display().to_string();
+            let home = std::env::var("HOME").unwrap_or_default();
+            if !home.is_empty() && s.starts_with(&home) {
+                format!("~{}", &s[home.len()..])
+            } else {
+                s
+            }
+        })
+        .unwrap_or_else(|_| "?".into());
+    lines.push(Line::from(vec![Span::styled(
+        truncate_str(&cwd_str, inner.width as usize),
+        Style::default().fg(t.text_muted),
+    )]));
+
+    let provider_name = app.provider.name();
+    lines.push(Line::from(vec![
+        Span::styled("• ", Style::default().fg(t.success)),
+        Span::styled(
+            truncate_str(provider_name, inner.width.saturating_sub(10) as usize),
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" "),
+        Span::styled("local", Style::default().fg(t.text_muted)),
+    ]));
+
+    let para = Paragraph::new(lines).style(Style::default().bg(t.bg));
+    f.render_widget(para, inner);
+}
+
+fn gauge_color(pct: f64, t: crate::theme::Theme) -> Color {
+    if pct >= 85.0 {
+        t.error
+    } else if pct >= 60.0 {
+        t.warning
+    } else {
+        t.success
+    }
+}
+
+fn fmt_number(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        let s = n.to_string();
+        let mut out = String::with_capacity(s.len() + s.len() / 3);
+        for (i, c) in s.chars().rev().enumerate() {
+            if i > 0 && i % 3 == 0 {
+                out.push(',');
+            }
+            out.push(c);
+        }
+        out.chars().rev().collect()
+    } else {
+        n.to_string()
+    }
+}
+
+fn truncate_str(s: &str, max: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max {
+        s.to_owned()
+    } else {
+        let trunc: String = chars[..max.saturating_sub(1)].iter().collect();
+        format!("{}…", trunc)
     }
 }
 
@@ -148,97 +474,33 @@ fn session_display(id: &str) -> String {
 }
 
 fn messages(f: &mut Frame, app: &mut App, area: Rect) {
+    use crate::message_view::MessageView;
+    use ratatui::widgets::Widget;
+
     let t = app.theme;
-    let inner_width = area.width.saturating_sub(4) as usize;
-    let mut lines: Vec<Line> = Vec::new();
 
-    if app.messages.is_empty() && app.streaming_text.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            "What can I help you with?",
-            Style::default().fg(t.text_muted),
-        )));
-    } else {
-        for (idx, msg) in app.messages.iter().enumerate() {
-            if app.streaming_assistant_idx == Some(idx) && app.is_streaming {
-                continue;
-            }
-            let expanded = app.reasoning_expanded.get(&idx).copied().unwrap_or(false);
-            message_lines(
-                &mut lines,
-                msg,
-                &t,
-                inner_width,
-                expanded,
-                idx,
-                app.provider.stream_convention(),
-            );
-            lines.push(Line::from(""));
-        }
-
-        if app.is_streaming || !app.streaming_text.is_empty() || !app.streaming_reasoning.is_empty()
-        {
-            lines.push(Line::from(Span::styled("assistant", t.asst_label())));
-
-            if !app.streaming_reasoning.is_empty() {
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "∴ Thinking",
-                        Style::default()
-                            .fg(t.text_muted)
-                            .add_modifier(Modifier::ITALIC),
-                    ),
-                    Span::styled(" [streaming…]", Style::default().fg(t.text_muted)),
-                ]));
-            }
-
-            render_assistant_text(
-                &mut lines,
-                &app.streaming_text,
-                &t,
-                inner_width,
-                app.provider.stream_convention(),
-            );
-            if app.is_streaming {
-                lines.push(Line::from(Span::styled(
-                    format!(" {} ", SPINNER[app.spinner_frame]),
-                    Style::default().fg(t.text_muted),
-                )));
-                // v126 SpinnerWithTasks: surface the open task list below the
-                // streaming indicator so the user can see what's in flight.
-                render_task_footer(&mut lines, app);
-            }
-            lines.push(Line::from(""));
-        }
+    if let Some(ref task_id) = app.viewing_task_id.clone() {
+        messages_task_view(f, app, area, task_id);
+        return;
     }
 
-    let content_width = area.width.saturating_sub(2) as usize;
-    let wrapped_total: usize = lines
-        .iter()
-        .map(|line| {
-            let w = line.width();
-            if w == 0 || content_width == 0 {
-                1
-            } else {
-                (w + content_width - 1) / content_width
-            }
-        })
-        .sum();
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let total_lines = message_view_total_lines(app, inner_width);
 
-    app.total_lines = wrapped_total;
+    app.total_lines = total_lines;
 
     let visible = area.height.saturating_sub(2) as usize;
     app.viewport_height = visible;
 
     if app.follow_bottom {
-        app.scroll_offset = wrapped_total.saturating_sub(visible);
-    } else if app.scroll_offset + visible > wrapped_total {
-        app.scroll_offset = wrapped_total.saturating_sub(visible);
+        app.scroll_offset = total_lines.saturating_sub(visible);
+    } else if app.scroll_offset + visible > total_lines {
+        app.scroll_offset = total_lines.saturating_sub(visible);
     }
 
     let at_bottom = app.is_at_bottom();
     let title_right = if !at_bottom {
-        let remaining = wrapped_total.saturating_sub(app.scroll_offset + visible);
+        let remaining = total_lines.saturating_sub(app.scroll_offset + visible);
         format!(" ↓ {remaining} more ")
     } else {
         String::new()
@@ -251,523 +513,204 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
             " jfc ",
             Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
         ))
-        .title(
-            ratatui::widgets::block::Title::from(Span::styled(
-                title_right,
-                Style::default().fg(t.text_muted),
-            ))
-            .alignment(ratatui::layout::Alignment::Right),
+        .title_top(
+            Line::from(Span::styled(title_right, Style::default().fg(t.text_muted)))
+                .right_aligned(),
         )
         .style(Style::default().bg(t.bg));
 
-    let para = Paragraph::new(Text::from(lines))
-        .block(block)
-        .scroll((app.scroll_offset as u16, 0))
-        .wrap(Wrap { trim: false });
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
-    f.render_widget(para, area);
-}
-
-/// v126 task footer (`SpinnerWithTasks`). Shows up to 5 open tasks indented
-/// under the streaming spinner so the user can see what's queued. Status
-/// icons match v126's iP_ table:
-///   pending     → □  (muted)
-///   in_progress → ▣  (accent, bold subject)
-///   completed   → ✓  (success, hidden in default footer view)
-/// Overflow summary `… +N pending, M completed` matches the v126 component.
-fn render_task_footer(lines: &mut Vec<Line<'static>>, app: &App) {
-    let tasks = app.task_store.list(false);
-    if tasks.is_empty() {
-        return;
-    }
-    let t = app.theme;
-    let counts = app.task_store.counts();
-
-    // Collect completed task IDs so we can filter blocked_by to only open blockers.
-    let completed_ids: std::collections::HashSet<&str> = tasks
-        .iter()
-        .filter(|tk| tk.status == crate::tasks::TaskStatus::Completed)
-        .map(|tk| tk.id.as_str())
-        .collect();
-
-    // Recently-completed tasks still within the 30 s fade-out window.
-    let fade_dur = std::time::Duration::from_secs(30);
-    let now = std::time::Instant::now();
-    let recently_completed: Vec<&crate::tasks::Task> = tasks
-        .iter()
-        .filter(|tk| {
-            tk.status == crate::tasks::TaskStatus::Completed
-                && app
-                    .task_completion_times
-                    .get(&tk.id)
-                    .map_or(false, |&t| now.duration_since(t) < fade_dur)
-        })
-        .collect();
-
-    // Open (pending / in-progress) tasks first, then recently-completed.
-    let open_tasks: Vec<&crate::tasks::Task> = tasks
-        .iter()
-        .filter(|task| {
-            matches!(
-                task.status,
-                crate::tasks::TaskStatus::Pending | crate::tasks::TaskStatus::InProgress
-            )
-        })
-        .collect();
-
-    let mut visible = 0usize;
-    let max_visible = 5usize;
-
-    for tk in open_tasks.iter().chain(recently_completed.iter()) {
-        if visible >= max_visible {
-            break;
-        }
-        visible += 1;
-
-        let is_recently_completed = tk.status == crate::tasks::TaskStatus::Completed;
-
-        let (icon, icon_style) = match tk.status {
-            crate::tasks::TaskStatus::Pending => ("□ ", Style::default().fg(t.text_muted)),
-            crate::tasks::TaskStatus::InProgress => ("▣ ", Style::default().fg(t.accent)),
-            crate::tasks::TaskStatus::Completed => (
-                "✓ ",
-                Style::default().fg(t.success).add_modifier(Modifier::DIM),
-            ),
-            _ => ("✗ ", Style::default().fg(t.error)),
-        };
-
-        let subj_style = if is_recently_completed {
-            Style::default()
-                .fg(t.text_muted)
-                .add_modifier(Modifier::CROSSED_OUT | Modifier::DIM)
-        } else if tk.status == crate::tasks::TaskStatus::InProgress {
-            Style::default()
-                .fg(t.text_primary)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(t.text_secondary)
-        };
-
-        let mut spans = vec![
-            Span::styled("    ", Style::default()),
-            Span::styled(icon, icon_style),
-            Span::styled(tk.subject.clone(), subj_style),
-        ];
-
-        if let Some(owner) = &tk.owner {
-            spans.push(Span::styled(
-                format!(" (@{owner})"),
-                Style::default()
-                    .fg(t.text_muted)
-                    .add_modifier(Modifier::ITALIC),
-            ));
-        }
-
-        // Blocked-by indicator: only show blockers that are still open.
-        if !tk.blocked_by.is_empty() {
-            let open_blockers: Vec<&str> = tk
-                .blocked_by
-                .iter()
-                .filter(|id| !completed_ids.contains(id.as_str()))
-                .map(String::as_str)
-                .collect();
-            if !open_blockers.is_empty() {
-                spans.push(Span::styled(
-                    format!(" ▸ blocked by {}", open_blockers.join(", ")),
-                    Style::default().fg(t.text_muted),
-                ));
-            }
-        }
-
-        lines.push(Line::from(spans));
-    }
-
-    let total_open = counts.pending + counts.in_progress;
-    if total_open > visible || counts.completed > 0 {
-        let overflow_open = total_open.saturating_sub(visible);
-        let mut parts: Vec<String> = Vec::new();
-        if overflow_open > 0 {
-            parts.push(format!("+{overflow_open} pending"));
-        }
-        if counts.completed > 0 {
-            parts.push(format!("{} completed", counts.completed));
-        }
-        if !parts.is_empty() {
-            lines.push(Line::from(Span::styled(
-                format!("    … {}", parts.join(", ")),
-                Style::default()
-                    .fg(t.text_muted)
-                    .add_modifier(Modifier::ITALIC),
-            )));
-        }
+    if app.messages.is_empty() && app.streaming_text.is_empty() {
+        let placeholder = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "What can I help you with?",
+                Style::default().fg(t.text_muted),
+            )),
+        ])
+        .style(Style::default().bg(t.bg));
+        f.render_widget(placeholder, inner);
+    } else {
+        MessageView { app }.render(inner, f.buffer_mut());
     }
 }
 
-/// Render assistant text using the active provider's stream convention. The
-/// `AnthropicNative` / `OpenAiNative` paths render verbatim through markdown;
-/// the `InlineXmlTags` path splits the text into [`InlineSeg`]s first so
-/// `<tool_call>` / `<tool_result>` blocks become compact tool widgets instead
-/// of raw XML walls.
-///
-/// All `Span`s here use `String` (via `format!`) rather than borrowed `&str`
-/// because the caller's `Vec<Line<'static>>` is invariant over its lifetime
-/// parameter, so any borrowed `&str` from a local would fail to satisfy `'static`.
-fn render_assistant_text(
-    lines: &mut Vec<Line<'static>>,
-    text: &str,
-    t: &Theme,
-    width: usize,
-    convention: crate::provider::StreamConvention,
-) {
-    use crate::provider::StreamConvention as SC;
-    let needs_inline_parse = matches!(convention, SC::InlineXmlTags)
-        || (matches!(convention, SC::AnthropicNative | SC::OpenAiNative)
-            && inline_tools::contains_inline_tools(text));
-    if !needs_inline_parse {
-        lines.extend(markdown::to_lines(text, t, width));
-        return;
-    }
-    for seg in inline_tools::parse(text) {
-        match seg {
-            InlineSeg::Text(s) => {
-                if !s.trim().is_empty() {
-                    lines.extend(markdown::to_lines(&s, t, width));
-                }
-            }
-            InlineSeg::ToolCall { raw_body, parsed } => {
-                let header = match parsed {
-                    Some(p) => format!("▸ {} · {}", p.name, truncate_inline(&p.summary, 80)),
-                    None => format!("▸ tool_call · {}", truncate_inline(&raw_body, 80)),
-                };
-                lines.push(Line::from(vec![
-                    Span::styled(String::from("┌─ "), Style::default().fg(t.border)),
-                    Span::styled(header, Style::default().fg(t.accent)),
-                ]));
-            }
-            InlineSeg::ToolResult(body) => {
-                let preview_line_count = 6;
-                let total = body.lines().count();
-                let mut emitted = 0usize;
-                for ln in body.lines().take(preview_line_count) {
-                    let clean = sanitize_terminal_text(ln);
-                    let truncated = truncate_inline(&clean, width.saturating_sub(4).max(20));
-                    lines.push(Line::from(vec![
-                        Span::styled(String::from("│ "), Style::default().fg(t.border)),
-                        Span::styled(truncated, Style::default().fg(t.text_secondary)),
-                    ]));
-                    emitted += 1;
-                }
-                if total > emitted {
-                    lines.push(Line::from(vec![
-                        Span::styled(String::from("│ "), Style::default().fg(t.border)),
-                        Span::styled(
-                            format!("… {} more lines", total - emitted),
-                            Style::default()
-                                .fg(t.text_muted)
-                                .add_modifier(Modifier::ITALIC),
-                        ),
-                    ]));
-                }
-                lines.push(Line::from(Span::styled(
-                    String::from("└─"),
-                    Style::default().fg(t.border),
-                )));
-            }
-        }
-    }
-}
+fn message_view_total_lines(app: &App, inner_width: usize) -> usize {
+    use crate::types::*;
 
-/// Single-line truncate helper local to this module — keeps tool headers tidy.
-fn truncate_inline(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_owned();
-    }
-    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
-    out.push('…');
-    out
-}
+    let mut total = 0usize;
 
-fn message_lines(
-    lines: &mut Vec<Line<'static>>,
-    msg: &ChatMessage,
-    t: &Theme,
-    width: usize,
-    reasoning_expanded: bool,
-    reasoning_key: usize,
-    convention: crate::provider::StreamConvention,
-) {
-    match msg.role {
-        Role::User => {
-            lines.push(Line::from(Span::styled("you", t.user_label())));
-            for part in &msg.parts {
-                if let MessagePart::Text(text) = part {
-                    lines.extend(markdown::to_lines(text, t, width));
-                }
-            }
-        }
-        Role::Assistant => {
-            lines.push(Line::from(Span::styled("assistant", t.asst_label())));
-            for part in &msg.parts {
-                match part {
-                    MessagePart::Text(text) => {
-                        render_assistant_text(lines, text, t, width, convention);
-                    }
-                    MessagePart::Reasoning(text) => {
-                        if reasoning_expanded {
-                            lines.push(Line::from(vec![
-                                Span::styled(
-                                    "∴ Thinking",
-                                    Style::default()
-                                        .fg(t.text_muted)
-                                        .add_modifier(Modifier::ITALIC),
-                                ),
-                                Span::styled(
-                                    format!(" [Ctrl+O to collapse | key={}]", reasoning_key),
-                                    Style::default().fg(t.text_muted),
-                                ),
-                            ]));
-                            for l in text.lines() {
-                                lines.push(Line::from(vec![
-                                    Span::styled("  ", Style::default()),
-                                    Span::styled(l.to_string(), t.reasoning()),
-                                ]));
-                            }
-                        } else {
-                            let preview: String = text.chars().take(60).collect();
-                            let ellipsis = if text.chars().count() > 60 { "…" } else { "" };
-                            lines.push(Line::from(vec![
-                                Span::styled(
-                                    "∴ Thinking",
-                                    Style::default()
-                                        .fg(t.text_muted)
-                                        .add_modifier(Modifier::ITALIC),
-                                ),
-                                Span::styled(
-                                    format!(" — {preview}{ellipsis}  [Ctrl+O to expand]"),
-                                    Style::default().fg(t.text_muted),
-                                ),
-                            ]));
-                        }
-                    }
-                    MessagePart::Tool(tool) => {
-                        lines.extend(tool_lines(tool, t, width));
-                    }
-                    MessagePart::CompactBoundary { pre_tokens } => {
-                        lines.push(Line::from(vec![
-                            Span::styled("─── ", Style::default().fg(t.border)),
-                            Span::styled(
-                                format!("compacted ({pre_tokens} tokens summarized)"),
-                                t.muted(),
-                            ),
-                            Span::styled(" ───", Style::default().fg(t.border)),
-                        ]));
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn sanitize_terminal_text(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        if ch == '\u{1b}' {
-            match chars.peek().copied() {
-                Some('[') => {
-                    chars.next();
-                    for next in chars.by_ref() {
-                        if ('@'..='~').contains(&next) {
-                            break;
-                        }
-                    }
-                }
-                Some(']') => {
-                    chars.next();
-                    let mut saw_esc = false;
-                    for next in chars.by_ref() {
-                        if saw_esc && next == '\\' {
-                            break;
-                        }
-                        if next == '\u{7}' {
-                            break;
-                        }
-                        saw_esc = next == '\u{1b}';
-                    }
-                }
-                Some(_) => {
-                    chars.next();
-                }
-                None => {}
-            }
+    for (idx, msg) in app.messages.iter().enumerate() {
+        if app.streaming_assistant_idx == Some(idx) && app.is_streaming {
             continue;
         }
 
-        match ch {
-            '\n' => out.push('\n'),
-            '\t' => out.push_str("    "),
-            ch if ch.is_control() => {}
-            ch => out.push(ch),
-        }
-    }
+        total += 1;
 
-    out
-}
+        let reasoning_expanded = app.reasoning_expanded.get(&idx).copied().unwrap_or(false);
 
-#[cfg(test)]
-mod tests {
-    use super::sanitize_terminal_text;
-
-    #[test]
-    fn sanitize_terminal_text_removes_ansi_and_control_sequences() {
-        let input = "ok\u{1b}[31mred\u{1b}[0m\rbad\u{1b}]0;title\u{7}\tend";
-        assert_eq!(sanitize_terminal_text(input), "okredbad    end");
-    }
-}
-
-fn push_prefixed_wrapped(
-    out: &mut Vec<Line<'static>>,
-    text: &str,
-    max_lines: usize,
-    width: usize,
-    style: Style,
-    border: Color,
-) {
-    let content_width = width.saturating_sub(2).max(1);
-    for raw_line in text.lines().take(max_lines) {
-        let clean = sanitize_terminal_text(raw_line);
-        for chunk in markdown::hard_wrap_str(&clean, content_width) {
-            out.push(Line::from(vec![
-                Span::styled("│ ", Style::default().fg(border)),
-                Span::styled(chunk, style),
-            ]));
-        }
-    }
-}
-
-fn push_diff_wrapped(
-    out: &mut Vec<Line<'static>>,
-    prefix: &str,
-    text: &str,
-    width: usize,
-    style: Style,
-    border: Color,
-) {
-    let clean = sanitize_terminal_text(text);
-    let content_width = width.saturating_sub(4).max(1);
-    for chunk in markdown::hard_wrap_str(&clean, content_width) {
-        out.push(Line::from(vec![
-            Span::styled("│ ", Style::default().fg(border)),
-            Span::styled(format!("{prefix} {chunk}"), style),
-        ]));
-    }
-}
-
-fn tool_lines(tool: &ToolCall, t: &Theme, width: usize) -> Vec<Line<'static>> {
-    let status_style = match tool.status {
-        ToolStatus::Pending => Style::default().fg(t.warning),
-        ToolStatus::Running => Style::default().fg(t.accent),
-        ToolStatus::Complete => Style::default().fg(t.success),
-        ToolStatus::Failed => Style::default().fg(t.error),
-    };
-    let arrow = if tool.is_collapsed { "▶" } else { "▼" };
-    let header = format!("{} {} {}", arrow, tool.kind.label(), tool.input.summary());
-
-    let mut out = vec![Line::from(vec![
-        Span::styled("┌─ ", Style::default().fg(t.border)),
-        Span::styled(header, status_style),
-    ])];
-
-    if !tool.is_collapsed {
-        match &tool.output {
-            ToolOutput::Text(s) => {
-                push_prefixed_wrapped(
-                    &mut out,
-                    s,
-                    20,
-                    width,
-                    Style::default().fg(t.text_secondary),
-                    t.border,
-                );
-            }
-            ToolOutput::Command {
-                stdout,
-                stderr,
-                exit_code,
-            } => {
-                let code_style = match exit_code {
-                    Some(0) => Style::default().fg(t.success),
-                    Some(_) => Style::default().fg(t.error),
-                    None => Style::default().fg(t.text_muted),
-                };
-                let code_str = exit_code
-                    .map(|c| format!("exit {c}"))
-                    .unwrap_or_else(|| "running".into());
-                out.push(Line::from(vec![
-                    Span::styled("│ ", Style::default().fg(t.border)),
-                    Span::styled(code_str, code_style),
-                ]));
-                push_prefixed_wrapped(
-                    &mut out,
-                    stdout,
-                    15,
-                    width,
-                    Style::default().fg(t.text_secondary),
-                    t.border,
-                );
-                push_prefixed_wrapped(
-                    &mut out,
-                    stderr,
-                    5,
-                    width,
-                    Style::default().fg(t.error),
-                    t.border,
-                );
-            }
-            ToolOutput::Diff(diff) => {
-                for hunk in &diff.hunks {
-                    push_prefixed_wrapped(
-                        &mut out,
-                        &hunk.header,
-                        1,
-                        width,
-                        Style::default().fg(t.text_muted),
-                        t.border,
-                    );
-                    for dl in hunk.lines.iter().take(30) {
-                        let (prefix, style) = match dl.kind {
-                            DiffLineKind::Added => ("+", Style::default().fg(t.success)),
-                            DiffLineKind::Removed => ("-", Style::default().fg(t.error)),
-                            DiffLineKind::Context => (" ", Style::default().fg(t.text_secondary)),
-                        };
-                        push_diff_wrapped(&mut out, prefix, &dl.content, width, style, t.border);
+        for part in &msg.parts {
+            match part {
+                MessagePart::Text(text) => {
+                    total += crate::markdown::to_lines(text, &app.theme, inner_width).len();
+                }
+                MessagePart::Reasoning(text) => {
+                    if reasoning_expanded {
+                        total += 1 + text.lines().count();
+                    } else {
+                        total += 1;
                     }
                 }
-            }
-            ToolOutput::FileContent { content, .. } => {
-                push_prefixed_wrapped(&mut out, content, 20, width, t.code_block(), t.border);
-            }
-            ToolOutput::FileList(files) => {
-                for f in files.iter().take(15) {
-                    out.push(Line::from(vec![
-                        Span::styled("│ ", Style::default().fg(t.border)),
-                        Span::styled(
-                            sanitize_terminal_text(f),
-                            Style::default().fg(t.text_secondary),
-                        ),
-                    ]));
+                MessagePart::Tool(tool) => {
+                    total += crate::message_view::tool_block_height_pub(tool, inner_width);
+                }
+                MessagePart::TaskStatus(ts) => {
+                    total += 1;
+                    if ts.error.is_some() {
+                        total += 1;
+                    }
+                }
+                MessagePart::CompactBoundary { .. } => {
+                    total += 1;
                 }
             }
-            ToolOutput::Empty => {}
         }
-        out.push(Line::from(Span::styled(
-            "└─",
-            Style::default().fg(t.border),
-        )));
+
+        total += 1;
     }
 
-    out
+    if app.is_streaming || !app.streaming_text.is_empty() || !app.streaming_reasoning.is_empty() {
+        total += 1;
+        if !app.streaming_reasoning.is_empty() {
+            total += 1;
+        }
+        total += crate::markdown::to_lines(&app.streaming_text, &app.theme, inner_width).len();
+        if app.is_streaming {
+            total += 1;
+        }
+        total += 1;
+    }
+
+    total
+}
+
+fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
+    let t = app.theme;
+
+    let (title_str, body_lines) = match app.background_tasks.get(task_id) {
+        None => (format!("task {task_id} (not found)"), Vec::new()),
+        Some(bt) => {
+            let title = format!(
+                " {} · {} ",
+                &bt.task_id[..bt.task_id.len().min(12)],
+                bt.description
+            );
+            let lines: Vec<Line<'static>> = bt
+                .messages
+                .iter()
+                .map(|m| {
+                    Line::from(Span::styled(
+                        m.clone(),
+                        Style::default().fg(t.text_secondary),
+                    ))
+                })
+                .collect();
+            (title, lines)
+        }
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(t.accent))
+        .title(Span::styled(
+            title_str,
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().bg(t.bg));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let total_lines = body_lines.len();
+    let visible = inner.height as usize;
+
+    if app.follow_bottom {
+        app.scroll_offset = total_lines.saturating_sub(visible);
+    }
+
+    app.total_lines = total_lines;
+    app.viewport_height = visible;
+
+    if body_lines.is_empty() {
+        let placeholder = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "No messages yet for this background task.",
+                Style::default().fg(t.text_muted),
+            )),
+        ])
+        .style(Style::default().bg(t.bg));
+        f.render_widget(placeholder, inner);
+    } else {
+        let visible_lines: Vec<Line> = body_lines
+            .into_iter()
+            .skip(app.scroll_offset)
+            .take(visible)
+            .collect();
+        let para = Paragraph::new(visible_lines)
+            .style(Style::default().bg(t.bg))
+            .wrap(ratatui::widgets::Wrap { trim: false });
+        f.render_widget(para, inner);
+    }
+}
+
+fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
+    let t = app.theme;
+    let task_ids: Vec<&String> = app.background_tasks.keys().collect();
+    let task_count = task_ids.len();
+
+    let (task_desc, pos_label) = match &app.viewing_task_id {
+        None => (String::from("no task"), String::from("─")),
+        Some(id) => {
+            let desc = app
+                .background_tasks
+                .get(id)
+                .map(|bt| bt.description.as_str())
+                .unwrap_or(id.as_str())
+                .to_owned();
+            let pos = task_ids.iter().position(|t| *t == id).unwrap_or(0);
+            let label = format!("{} of {}", pos + 1, task_count);
+            (desc, label)
+        }
+    };
+
+    let short_id = app
+        .viewing_task_id
+        .as_deref()
+        .and_then(|id| id.get(..8))
+        .unwrap_or("");
+
+    let line = Line::from(vec![
+        Span::styled("◀ back (↑)  ", Style::default().fg(t.text_muted)),
+        Span::styled("task  ", Style::default().fg(t.accent)),
+        Span::styled(
+            format!("{short_id}  "),
+            Style::default().fg(t.text_secondary),
+        ),
+        Span::styled(
+            truncate_str(&task_desc, 40),
+            Style::default().fg(t.text_primary),
+        ),
+        Span::styled(
+            format!("  [{}]  ", pos_label),
+            Style::default().fg(t.text_muted),
+        ),
+        Span::styled("▶ next (→)", Style::default().fg(t.text_muted)),
+    ]);
+
+    f.render_widget(Paragraph::new(line).style(Style::default().bg(t.bg)), area);
 }
 
 fn input(f: &mut Frame, app: &mut App, area: Rect) {
@@ -792,6 +735,7 @@ fn input(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(block, area);
 
     let content_width = inner.width.max(1) as usize;
+    app.input_wrap_width = content_width;
     let (lines, cursor_row, cursor_col) = input_soft_wrapped_lines(app, content_width);
     let visible_rows = inner.height.max(1) as usize;
     let start = cursor_row.saturating_add(1).saturating_sub(visible_rows);
@@ -899,12 +843,19 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
         String::new()
     };
 
+    let leader_badge = if app.leader_key_active {
+        "  [^X …]".to_string()
+    } else if app.viewing_task_id.is_some() {
+        "  [task view]".to_string()
+    } else {
+        String::new()
+    };
+
     let left = format!(
-        " {}{}{}{}  {}  {} msgs ",
-        app.model, profile_badge, auto_badge, queue_badge, cwd_display, msg_count
+        " {}{}{}{}{}  {}  {} msgs ",
+        app.model, profile_badge, auto_badge, queue_badge, leader_badge, cwd_display, msg_count
     );
-    let right =
-        " Ctrl+C: quit  Ctrl+B: sidebar  Ctrl+P: palette  Ctrl+M: models  Ctrl+O: thinking ";
+    let right = " Ctrl+C: clear/quit  Ctrl+B: sessions  Ctrl+S: info  Ctrl+P: palette  Ctrl+M: models  Ctrl+O: thinking ";
 
     let total_width = area.width as usize;
     let right_start = total_width.saturating_sub(right.len());
@@ -945,13 +896,17 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
     } else {
         t.error
     };
-    let label = format!(" ctx {}k / {}k · {}% ", used / 1000, max / 1000, pct);
+    let label = context_gauge_label(used, max, pct);
     let gauge = LineGauge::default()
         .filled_style(Style::default().fg(bar_color))
         .unfilled_style(Style::default().fg(t.border))
         .label(Span::styled(label, Style::default().fg(t.text_secondary)))
         .ratio(ratio);
     f.render_widget(gauge, rows[1]);
+}
+
+fn context_gauge_label(used: usize, max: usize, pct: u32) -> String {
+    format!(" ctx {}k / {}k · {}% ", used / 1000, max / 1000, pct)
 }
 
 fn palette(f: &mut Frame, app: &App) {
@@ -1150,7 +1105,7 @@ fn model_picker(f: &mut Frame, app: &mut App) {
                 Cell::from(Span::styled(marker, Style::default().fg(t.accent))),
                 Cell::from(Span::styled(m.display_name.clone(), name_style)),
                 Cell::from(Span::styled(
-                    m.id.clone(),
+                    m.id.to_string(),
                     Style::default().fg(t.text_muted),
                 )),
                 Cell::from(Span::styled(
@@ -1196,7 +1151,7 @@ fn task_panel(f: &mut Frame, app: &mut App) {
 
     f.render_widget(Clear, popup);
 
-    let all_tasks = app.task_store.list(false);
+    let all_tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
     let counts = app.task_store.counts();
 
     let completed_ids: std::collections::HashSet<&str> = all_tasks
@@ -1273,11 +1228,11 @@ fn task_panel(f: &mut Frame, app: &mut App) {
                 .blocked_by
                 .iter()
                 .filter(|id| !completed_ids.contains(id.as_str()))
-                .map(String::as_str)
+                .map(|id| id.as_str())
                 .collect();
 
             Row::new(vec![
-                Cell::from(tk.id.clone()).style(Style::default().fg(t.text_muted)),
+                Cell::from(tk.id.to_string()).style(Style::default().fg(t.text_muted)),
                 Cell::from(icon).style(status_style),
                 Cell::from(tk.subject.clone()).style(subj_style),
                 Cell::from(tk.owner.clone().unwrap_or_default())

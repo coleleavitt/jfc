@@ -7,8 +7,8 @@
 //!
 //! The response is a single JSON document keyed by provider id (`"anthropic"`,
 //! `"google-vertex-anthropic"`, `"openrouter"`, …). Each provider has a `models`
-//! map keyed by model id; only `id` and `name` are used here — the rest of the
-//! per-model metadata (cost, context limits, modalities) is left for callers.
+//! map keyed by model id. We consume the display name plus the context window so
+//! the footer reflects the active model instead of a static fallback.
 //!
 //! Network failures degrade gracefully — callers fall back to
 //! `anthropic_models::anthropic_first_party_models()` so the picker still works
@@ -37,6 +37,14 @@ struct ModelEntry {
     name: Option<String>,
     #[serde(default)]
     release_date: Option<String>,
+    #[serde(default)]
+    limit: ModelLimit,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ModelLimit {
+    #[serde(default)]
+    context: Option<usize>,
 }
 
 /// Fetch the model list for a given models.dev provider id (e.g. `"anthropic"`,
@@ -69,6 +77,7 @@ pub async fn fetch_provider_models(
         .map(|m| {
             let display = m.name.clone().unwrap_or_else(|| m.id.clone());
             ModelInfo::new(m.id.clone(), display, provider_tag)
+                .with_context_window_tokens(m.limit.context)
         })
         .collect())
 }
@@ -76,6 +85,27 @@ pub async fn fetch_provider_models(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn limit_context_deserializes_from_catalog_entries() {
+        let catalog: HashMap<String, ProviderEntry> = serde_json::from_value(serde_json::json!({
+            "anthropic": {
+                "models": {
+                    "claude-sonnet-4-5-20250929": {
+                        "id": "claude-sonnet-4-5-20250929",
+                        "name": "Claude Sonnet 4.5",
+                        "limit": { "context": 200000 }
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let model = catalog["anthropic"].models["claude-sonnet-4-5-20250929"]
+            .limit
+            .context;
+        assert_eq!(model, Some(200_000));
+    }
 
     // Robust: network unreachable / DNS fail / non-2xx → returns Err, never panics.
     // We exercise the error path with an obviously bogus URL via a custom client.

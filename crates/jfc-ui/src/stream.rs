@@ -6,7 +6,7 @@ use tokio::sync::{Mutex, mpsc};
 use crate::app::{App, AppEvent};
 use crate::context::ReadDedupCache;
 use crate::provider::{
-    Provider, ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent,
+    ModelId, Provider, ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent,
     StreamOptions,
 };
 use crate::scheduler;
@@ -123,16 +123,9 @@ mod truncate_tests {
 pub async fn stream_response(
     provider: Arc<dyn Provider>,
     messages: Vec<ProviderMessage>,
-    model: String,
+    model: ModelId,
     tx: mpsc::UnboundedSender<AppEvent>,
 ) {
-    // Default system prompt — without this, Sonnet-on-Bedrock (and some
-    // other tool-aware models) will see tools in the request and respond by
-    // *describing* them rather than calling them. The screenshot bug:
-    // "I appreciate your enthusiasm for using the bash tools! However, I need
-    // to clarify what these tools are actually for…". Telling the model
-    // explicitly that it's an agent in a working directory and should USE the
-    // tools to accomplish requests fixes this without changing the tool defs.
     let cwd = std::env::current_dir()
         .ok()
         .and_then(|p| p.to_str().map(str::to_owned))
@@ -143,7 +136,15 @@ pub async fn stream_response(
          (Bash, Read, Write, Edit, Glob, Grep). When the user asks you to do \
          something — read a file, run a command, write code — USE the tools to \
          do it directly. Don't describe how the user could do it manually; you \
-         are the one doing it. Working directory: {cwd}"
+         are the one doing it. Working directory: {cwd}\n\n\
+         ## Task tracking\n\
+         For any request with 2 or more distinct steps, use TaskCreate to plan \
+         before starting. Call TaskCreate once per step with a short description. \
+         Mark each step complete with TaskDone immediately after finishing it — \
+         never batch completions. Update a step's description mid-work with \
+         TaskUpdate if scope changes. TaskList shows the user your current plan \
+         in the sidebar. This is the primary way users track your progress, so \
+         use it consistently on all non-trivial work."
     );
 
     // v126 CLAUDE.md hierarchy — managed → user → project → .claude/ → local
@@ -255,10 +256,14 @@ pub async fn stream_response(
             StreamEvent::Usage {
                 input_tokens,
                 output_tokens,
+                cache_read_tokens,
+                cache_write_tokens,
             } => {
                 let _ = tx.send(AppEvent::StreamUsage {
                     input_tokens,
                     output_tokens,
+                    cache_read_tokens,
+                    cache_write_tokens,
                 });
             }
             StreamEvent::Error { message } => {
@@ -271,20 +276,94 @@ pub async fn stream_response(
     let _ = tx.send(AppEvent::StreamDone(stop_reason));
 }
 
-#[tracing::instrument(target = "jfc::stream", skip(tx, dedup, task_store), fields(n = tool_calls.len()))]
+#[tracing::instrument(target = "jfc::stream", skip(tx, dedup, task_store, provider, model), fields(n = tool_calls.len()))]
 pub fn dispatch_tools_batched(
     tool_calls: Vec<ToolCall>,
     tx: &mpsc::UnboundedSender<AppEvent>,
     dedup: Arc<Mutex<ReadDedupCache>>,
     task_store: Option<Arc<crate::tasks::TaskStore>>,
+    provider: Arc<dyn crate::provider::Provider>,
+    model: crate::provider::ModelId,
 ) {
+    use crate::tools::execute_task;
+    use crate::types::ToolInput;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     let cwd = std::env::current_dir().unwrap_or_default();
-    let batches = scheduler::schedule_tools(tool_calls);
-    let tx_clone = tx.clone();
-    tokio::spawn(async move {
-        scheduler::execute_batches(batches, &tx_clone, cwd, dedup, task_store).await;
-        let _ = tx_clone.send(AppEvent::AllToolsComplete);
-    });
+
+    let mut regular_calls: Vec<ToolCall> = Vec::new();
+    let mut task_calls: Vec<ToolCall> = Vec::new();
+    for tc in tool_calls {
+        match &tc.input {
+            ToolInput::Task(_) => task_calls.push(tc),
+            _ => regular_calls.push(tc),
+        }
+    }
+
+    let task_count = task_calls.len();
+    let pending = Arc::new(AtomicUsize::new(
+        task_count + usize::from(!regular_calls.is_empty()),
+    ));
+    let tx_done = tx.clone();
+    let send_all_complete = move || {
+        if pending.fetch_sub(1, Ordering::AcqRel) == 1 {
+            let _ = tx_done.send(AppEvent::AllToolsComplete);
+        }
+    };
+
+    for tc in task_calls {
+        let task_input = match tc.input.clone() {
+            ToolInput::Task(ti) => ti,
+            _ => unreachable!(),
+        };
+        let tx_task = tx.clone();
+        let provider_task = provider.clone();
+        let model_task = model.clone();
+        let task_id = tc.id.clone();
+        let description = task_input.description.clone();
+        let done = send_all_complete.clone();
+
+        tokio::spawn(async move {
+            let _ = tx_task.send(AppEvent::TaskStarted {
+                task_id: task_id.clone(),
+                description,
+            });
+
+            let started = std::time::Instant::now();
+            let result = execute_task(&task_input, provider_task.as_ref(), model_task).await;
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+
+            if result.is_error() {
+                let _ = tx_task.send(AppEvent::TaskFailed {
+                    task_id: task_id.clone(),
+                    error: result.output.clone(),
+                });
+            } else {
+                let _ = tx_task.send(AppEvent::TaskCompleted {
+                    task_id: task_id.clone(),
+                    summary: result.output.clone(),
+                    elapsed_ms,
+                });
+            }
+
+            let _ = tx_task.send(AppEvent::ToolResult {
+                tool_id: task_id,
+                result,
+            });
+
+            done();
+        });
+    }
+
+    if !regular_calls.is_empty() {
+        let batches = scheduler::schedule_tools(regular_calls);
+        let tx_clone = tx.clone();
+        let done = send_all_complete.clone();
+        tokio::spawn(async move {
+            scheduler::execute_batches(batches, &tx_clone, cwd, dedup, task_store).await;
+            done();
+        });
+    }
 }
 
 pub fn should_continue_loop(messages: &[ChatMessage]) -> bool {
@@ -400,6 +479,7 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
                         ToolStatus::Complete | ToolStatus::Failed => {
                             let text = match &tc.output {
                                 ToolOutput::Text(s) => s.clone(),
+                                ToolOutput::LargeText(lt) => lt.content.clone(),
                                 ToolOutput::Command {
                                     stdout,
                                     stderr,

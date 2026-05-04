@@ -25,14 +25,128 @@
 //! What's intentionally not here:
 //! - Live activity descriptions (no teammate runtime yet).
 //! - Animation / fade-out for recently-completed tasks (UI polish).
-//! - Cycle detection across `blocks`/`blockedBy` graphs — we detect immediate
-//!   self-cycles and reject, but full cycle detection is deferred.
+//! - Live activity descriptions (no teammate runtime yet).
+//! - Animation / fade-out for recently-completed tasks (UI polish).
 
+#![allow(dead_code)]
+
+use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::fmt;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
+
+/// Stable task identity. Kept as a transparent string on disk/wire, but typed
+/// in-process so task ids cannot be accidentally mixed with subjects, owners,
+/// or tool ids.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TaskId(String);
+
+impl TaskId {
+    pub fn new(raw: impl Into<String>) -> Self {
+        Self(raw.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<str> for TaskId {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for TaskId {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl Deref for TaskId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for TaskId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl PartialEq<&str> for TaskId {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<TaskId> for &str {
+    fn eq(&self, other: &TaskId) -> bool {
+        *self == other.as_str()
+    }
+}
+
+impl From<String> for TaskId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for TaskId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeletedFilter {
+    Exclude,
+    Include,
+}
+
+impl DeletedFilter {
+    fn includes_deleted(self) -> bool {
+        matches!(self, Self::Include)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskError {
+    UnknownTask { id: TaskId },
+    UnknownDependency { id: TaskId },
+    SelfCycle { id: TaskId },
+    DependencyCycle { path: Vec<TaskId> },
+}
+
+impl fmt::Display for TaskError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnknownTask { id } => write!(f, "unknown task id `{id}`"),
+            Self::UnknownDependency { id } => {
+                write!(f, "blockedBy references unknown task id `{id}`")
+            }
+            Self::SelfCycle { .. } => f.write_str("a task cannot block itself"),
+            Self::DependencyCycle { path } => {
+                let chain = path
+                    .iter()
+                    .map(TaskId::as_str)
+                    .collect::<Vec<_>>()
+                    .join(" -> ");
+                write!(f, "blockedBy would create dependency cycle: {chain}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for TaskError {}
 
 /// A task's lifecycle status. `Deleted` is a tombstone — `TaskList` filters it
 /// out by default but it remains in the store for audit purposes.
@@ -54,7 +168,7 @@ impl Default for TaskStatus {
 /// One task. Field names match v126's wire shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
-    pub id: String,
+    pub id: TaskId,
     pub subject: String,
     #[serde(default)]
     pub description: String,
@@ -65,9 +179,9 @@ pub struct Task {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
     #[serde(default)]
-    pub blocks: Vec<String>,
+    pub blocks: Vec<TaskId>,
     #[serde(default, rename = "blockedBy")]
-    pub blocked_by: Vec<String>,
+    pub blocked_by: Vec<TaskId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
     /// Monotonic creation counter, used for stable sort by recency.
@@ -96,7 +210,7 @@ struct TaskStoreInner {
     /// Next free numeric suffix for `t<N>` task ids.
     next_id: u64,
     /// All tasks keyed by id.
-    tasks: HashMap<String, Task>,
+    tasks: HashMap<TaskId, Task>,
 }
 
 impl TaskStore {
@@ -142,21 +256,25 @@ impl TaskStore {
     /// Create a new task. Returns Err on duplicate `subject` if you'd want to
     /// dedupe — currently always succeeds. Validates that any `blocked_by`
     /// targets exist.
-    pub fn create(
+    pub fn create<B>(
         &self,
         subject: String,
         description: String,
         active_form: Option<String>,
-        blocked_by: Vec<String>,
-    ) -> Result<Task, String> {
+        blocked_by: Vec<B>,
+    ) -> Result<Task, TaskError>
+    where
+        B: Into<TaskId>,
+    {
         let mut inner = self.inner.lock().unwrap();
+        let blocked_by = blocked_by.into_iter().map(Into::into).collect::<Vec<_>>();
         for dep in &blocked_by {
-            if !inner.tasks.contains_key(dep) {
-                return Err(format!("blockedBy references unknown task id `{dep}`"));
+            if !inner.tasks.contains_key(dep.as_str()) {
+                return Err(TaskError::UnknownDependency { id: dep.clone() });
             }
         }
         inner.next_id += 1;
-        let id = format!("t{}", inner.next_id);
+        let id = TaskId::new(format!("t{}", inner.next_id));
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -165,7 +283,7 @@ impl TaskStore {
         // its `blocks` list.
         let blocked_by_clone = blocked_by.clone();
         for dep in &blocked_by_clone {
-            if let Some(t) = inner.tasks.get_mut(dep) {
+            if let Some(t) = inner.tasks.get_mut(dep.as_str()) {
                 if !t.blocks.contains(&id) {
                     t.blocks.push(id.clone());
                 }
@@ -183,7 +301,7 @@ impl TaskStore {
             metadata: None,
             created_at_ms: now_ms,
         };
-        inner.tasks.insert(id.clone(), task.clone());
+        inner.tasks.insert(id, task.clone());
         self.persist(&inner);
         Ok(task)
     }
@@ -195,18 +313,28 @@ impl TaskStore {
     /// Update a task's mutable fields. Returns Err if the task doesn't exist
     /// or the update would create an immediate self-cycle. Cascading
     /// `unblock` happens automatically when status flips to `Completed`.
-    pub fn update(&self, id: &str, patch: TaskPatch) -> Result<Task, String> {
+    pub fn update(&self, id: &str, patch: TaskPatch) -> Result<Task, TaskError> {
         let mut inner = self.inner.lock().unwrap();
+        let task_id = TaskId::from(id);
         if !inner.tasks.contains_key(id) {
-            return Err(format!("unknown task id `{id}`"));
+            return Err(TaskError::UnknownTask { id: task_id });
         }
-        if let Some(deps) = &patch.blocked_by {
-            if deps.iter().any(|d| d == id) {
-                return Err("a task cannot block itself".into());
+        let next_blocked_by = patch.blocked_by.as_ref().map(|deps| {
+            deps.iter()
+                .map(|dep| TaskId::from(dep.as_str()))
+                .collect::<Vec<_>>()
+        });
+        if let Some(deps) = &next_blocked_by {
+            if deps.iter().any(|d| d.as_str() == id) {
+                return Err(TaskError::SelfCycle { id: task_id });
             }
             for dep in deps {
-                if !inner.tasks.contains_key(dep) {
-                    return Err(format!("blockedBy references unknown task id `{dep}`"));
+                if !inner.tasks.contains_key(dep.as_str()) {
+                    return Err(TaskError::UnknownDependency { id: dep.clone() });
+                }
+                if let Some(mut path) = dependency_path_to(&inner, dep, id) {
+                    path.insert(0, TaskId::from(id));
+                    return Err(TaskError::DependencyCycle { path });
                 }
             }
         }
@@ -227,7 +355,7 @@ impl TaskStore {
         if let Some(o) = patch.owner {
             task.owner = Some(o);
         }
-        if let Some(deps) = patch.blocked_by {
+        if let Some(deps) = next_blocked_by {
             task.blocked_by = deps;
         }
         if let Some(m) = patch.metadata {
@@ -243,15 +371,17 @@ impl TaskStore {
     }
 
     /// Remove a task permanently (sets status: deleted, removes from blockers).
-    pub fn delete(&self, id: &str) -> Result<(), String> {
+    pub fn delete(&self, id: &str) -> Result<(), TaskError> {
         let mut inner = self.inner.lock().unwrap();
         if !inner.tasks.contains_key(id) {
-            return Err(format!("unknown task id `{id}`"));
+            return Err(TaskError::UnknownTask {
+                id: TaskId::from(id),
+            });
         }
         // Strip references from other tasks' blocks/blockedBy.
         for t in inner.tasks.values_mut() {
-            t.blocks.retain(|b| b != id);
-            t.blocked_by.retain(|b| b != id);
+            t.blocks.retain(|b| b.as_str() != id);
+            t.blocked_by.retain(|b| b.as_str() != id);
         }
         if let Some(t) = inner.tasks.get_mut(id) {
             t.status = TaskStatus::Deleted;
@@ -264,18 +394,19 @@ impl TaskStore {
     /// Sort key is the numeric suffix of the task id (`t1`, `t2`, …) so we
     /// get strict monotonic order even when multiple creates fall in the
     /// same millisecond.
-    pub fn list(&self, include_deleted: bool) -> Vec<Task> {
+    pub fn list(&self, deleted_filter: DeletedFilter) -> Vec<Task> {
         let mut out: Vec<Task> = self
             .inner
             .lock()
             .unwrap()
             .tasks
             .values()
-            .filter(|t| include_deleted || t.status != TaskStatus::Deleted)
+            .filter(|t| deleted_filter.includes_deleted() || t.status != TaskStatus::Deleted)
             .cloned()
             .collect();
         out.sort_by_key(|t| {
-            t.id.strip_prefix('t')
+            t.id.as_str()
+                .strip_prefix('t')
                 .and_then(|n| n.parse::<u64>().ok())
                 .unwrap_or(0)
         });
@@ -309,6 +440,22 @@ pub struct TaskPatch {
     pub metadata: Option<serde_json::Value>,
 }
 
+fn dependency_path_to(inner: &TaskStoreInner, start: &TaskId, target: &str) -> Option<Vec<TaskId>> {
+    let task = inner.tasks.get(start.as_str())?;
+    if task.blocked_by.iter().any(|dep| dep.as_str() == target) {
+        return Some(vec![start.clone(), TaskId::from(target)]);
+    }
+
+    for dep in &task.blocked_by {
+        if let Some(mut path) = dependency_path_to(inner, dep, target) {
+            path.insert(0, start.clone());
+            return Some(path);
+        }
+    }
+
+    None
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TaskCounts {
     pub pending: usize,
@@ -329,7 +476,7 @@ mod tests {
                 "Fix auth bug".into(),
                 "details".into(),
                 Some("Fixing auth bug".into()),
-                vec![],
+                Vec::<TaskId>::new(),
             )
             .unwrap();
         assert_eq!(task.id, "t1");
@@ -352,7 +499,7 @@ mod tests {
         assert_eq!(updated.status, TaskStatus::InProgress);
         assert_eq!(updated.owner.as_deref(), Some("impl"));
 
-        let list = store.list(false);
+        let list = store.list(DeletedFilter::Exclude);
         assert_eq!(list.len(), 1);
     }
 
@@ -362,7 +509,7 @@ mod tests {
     fn blocked_by_cross_links_normal() {
         let store = TaskStore::in_memory();
         let t1 = store
-            .create("first".into(), "".into(), None, vec![])
+            .create("first".into(), "".into(), None, Vec::<TaskId>::new())
             .unwrap();
         let t2 = store
             .create("second".into(), "".into(), None, vec![t1.id.clone()])
@@ -376,7 +523,12 @@ mod tests {
     #[test]
     fn create_with_unknown_dep_errors_robust() {
         let store = TaskStore::in_memory();
-        let result = store.create("needs ghost".into(), "".into(), None, vec!["t999".into()]);
+        let result = store.create(
+            "needs ghost".into(),
+            "".into(),
+            None,
+            vec![TaskId::from("t999")],
+        );
         assert!(result.is_err());
     }
 
@@ -386,16 +538,44 @@ mod tests {
     fn update_self_cycle_rejected_robust() {
         let store = TaskStore::in_memory();
         let t = store
-            .create("solo".into(), "".into(), None, vec![])
+            .create("solo".into(), "".into(), None, Vec::<TaskId>::new())
             .unwrap();
         let result = store.update(
             &t.id,
             TaskPatch {
-                blocked_by: Some(vec![t.id.clone()]),
+                blocked_by: Some(vec![t.id.to_string()]),
                 ..Default::default()
             },
         );
         assert!(result.is_err());
+    }
+
+    // Robust: transitive blocked_by cycles are rejected with a proof-like path.
+    #[test]
+    fn update_transitive_cycle_rejected_robust() {
+        let store = TaskStore::in_memory();
+        let t1 = store
+            .create("a".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        let t2 = store
+            .create("b".into(), "".into(), None, vec![t1.id.clone()])
+            .unwrap();
+
+        let err = store
+            .update(
+                t1.id.as_str(),
+                TaskPatch {
+                    blocked_by: Some(vec![t2.id.to_string()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, TaskError::DependencyCycle { .. }));
+        assert_eq!(
+            err.to_string(),
+            "blockedBy would create dependency cycle: t1 -> t2 -> t1"
+        );
     }
 
     // Robust: deleting a task strips it from other tasks' blocks/blockedBy
@@ -403,7 +583,9 @@ mod tests {
     #[test]
     fn delete_strips_dependent_links_robust() {
         let store = TaskStore::in_memory();
-        let t1 = store.create("a".into(), "".into(), None, vec![]).unwrap();
+        let t1 = store
+            .create("a".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
         let t2 = store
             .create("b".into(), "".into(), None, vec![t1.id.clone()])
             .unwrap();
@@ -414,18 +596,23 @@ mod tests {
         let t1_after = store.get(&t1.id).unwrap();
         assert_eq!(t1_after.status, TaskStatus::Deleted);
         // Default list excludes deleted.
-        assert_eq!(store.list(false).len(), 1);
-        // include_deleted=true returns it.
-        assert_eq!(store.list(true).len(), 2);
+        assert_eq!(store.list(DeletedFilter::Exclude).len(), 1);
+        assert_eq!(store.list(DeletedFilter::Include).len(), 2);
     }
 
     // Normal: counts() bins by status.
     #[test]
     fn counts_bins_by_status_normal() {
         let store = TaskStore::in_memory();
-        let t1 = store.create("a".into(), "".into(), None, vec![]).unwrap();
-        let t2 = store.create("b".into(), "".into(), None, vec![]).unwrap();
-        let t3 = store.create("c".into(), "".into(), None, vec![]).unwrap();
+        let t1 = store
+            .create("a".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        let t2 = store
+            .create("b".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        let t3 = store
+            .create("c".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
         store
             .update(
                 &t1.id,
@@ -458,9 +645,15 @@ mod tests {
         let store = TaskStore::in_memory();
         let names = ["a", "b", "c", "d"];
         for n in names {
-            store.create(n.into(), "".into(), None, vec![]).unwrap();
+            store
+                .create(n.into(), "".into(), None, Vec::<TaskId>::new())
+                .unwrap();
         }
-        let listed: Vec<String> = store.list(false).into_iter().map(|t| t.subject).collect();
+        let listed: Vec<String> = store
+            .list(DeletedFilter::Exclude)
+            .into_iter()
+            .map(|t| t.subject)
+            .collect();
         assert_eq!(listed, names);
     }
 

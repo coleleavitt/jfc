@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -94,11 +96,148 @@ struct ModelsResponse {
 struct ApiModelInfo {
     id: String,
     name: Option<String>,
+    #[serde(flatten)]
+    metadata: Value,
+}
+
+fn context_window_from_value(value: &Value) -> Option<usize> {
+    const KEYS: &[&str] = &[
+        "context_length",
+        "max_context_length",
+        "context_window",
+        "context_window_tokens",
+        "max_context_window",
+        "max_context",
+        "max_ctx",
+        "num_ctx",
+        "n_ctx",
+        "ctx_len",
+        "max_position_embeddings",
+        "general.context_length",
+    ];
+
+    match value {
+        Value::Object(map) => {
+            for key in KEYS {
+                if let Some(tokens) = map.get(*key).and_then(value_as_usize) {
+                    return Some(tokens);
+                }
+            }
+
+            for (key, value) in map {
+                if key.ends_with(".context_length") {
+                    if let Some(tokens) = value_as_usize(value) {
+                        return Some(tokens);
+                    }
+                }
+            }
+
+            map.values().find_map(context_window_from_value)
+        }
+        Value::Array(items) => items.iter().find_map(context_window_from_value),
+        _ => None,
+    }
+}
+
+fn context_window_from_model(model: &ApiModelInfo) -> usize {
+    context_window_from_value(&model.metadata)
+        .unwrap_or_else(|| infer_context_window_from_model_name(&model.id, model.name.as_deref()))
+}
+
+fn infer_context_window_from_model_name(id: &str, name: Option<&str>) -> usize {
+    let haystack = format!("{} {}", id, name.unwrap_or_default()).to_lowercase();
+    let has = |needle: &str| haystack.contains(needle);
+    let has_version = |major: &str, minor: &str| {
+        has(&format!("{major}.{minor}"))
+            || has(&format!("{major}_{minor}"))
+            || has(&format!("{major}-{minor}"))
+    };
+
+    if has("claude") && has("opus") && has_version("4", "6") {
+        1_000_000
+    } else if has("claude") {
+        200_000
+    } else if has("gpt") && has("5") {
+        1_000_000
+    } else if has("gpt") && (has("4o") || has("4")) {
+        128_000
+    } else if has("llama") && has("4") && has("maverick") {
+        1_048_576
+    } else if has("llama") && (has("4") || has("3")) {
+        131_072
+    } else if has("gemma") && has("3") {
+        128_000
+    } else if has("gemini") && has("2") {
+        1_048_576
+    } else if has("nova") && (has("pro") || has("lite")) {
+        300_000
+    } else {
+        128_000
+    }
+}
+
+fn value_as_usize(value: &Value) -> Option<usize> {
+    match value {
+        Value::Number(n) => n.as_u64().and_then(|v| usize::try_from(v).ok()),
+        Value::String(s) => s.parse::<usize>().ok(),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn context_window_is_read_from_common_openwebui_shapes() {
+        let direct = serde_json::json!({ "context_length": 131072 });
+        assert_eq!(context_window_from_value(&direct), Some(131_072));
+
+        let nested = serde_json::json!({
+            "info": {
+                "params": { "num_ctx": "32768" }
+            }
+        });
+        assert_eq!(context_window_from_value(&nested), Some(32_768));
+
+        let ollama_details = serde_json::json!({
+            "details": {
+                "model_info": { "llama.context_length": 65536 }
+            }
+        });
+        assert_eq!(context_window_from_value(&ollama_details), Some(65_536));
+    }
+
+    #[test]
+    fn openwebui_model_context_falls_back_to_provider_inference() {
+        let claude = ApiModelInfo {
+            id: "anthropic/claude-sonnet-4-5".to_string(),
+            name: None,
+            metadata: Value::Null,
+        };
+        assert_eq!(context_window_from_model(&claude), 200_000);
+
+        let claude_opus_46 = ApiModelInfo {
+            id: "anthropic/claude-opus-4-6".to_string(),
+            name: None,
+            metadata: Value::Null,
+        };
+        assert_eq!(context_window_from_model(&claude_opus_46), 1_000_000);
+
+        let gpt5 = ApiModelInfo {
+            id: "openai/gpt-5-mini".to_string(),
+            name: None,
+            metadata: Value::Null,
+        };
+        assert_eq!(context_window_from_model(&gpt5), 1_000_000);
+
+        let custom = ApiModelInfo {
+            id: "local/custom-model".to_string(),
+            name: None,
+            metadata: Value::Null,
+        };
+        assert_eq!(context_window_from_model(&custom), 128_000);
+    }
 
     // ── Real-API integration tests (gated #[ignore]) ──────────────────────
     // Run with: cargo test --bin jfc -- --ignored openwebui
@@ -1142,8 +1281,10 @@ impl Provider for OpenWebUIProvider {
             .data
             .into_iter()
             .map(|m| {
+                let context_window_tokens = context_window_from_model(&m);
                 let display = m.name.unwrap_or_else(|| m.id.clone());
                 ModelInfo::new(m.id, display, "openwebui")
+                    .with_context_window_tokens(context_window_tokens)
             })
             .collect())
     }
@@ -1274,6 +1415,8 @@ impl Provider for OpenWebUIProvider {
                                         emitted.push(Ok(StreamEvent::Usage {
                                             input_tokens: u.prompt_tokens,
                                             output_tokens: u.completion_tokens,
+                                            cache_read_tokens: 0,
+                                            cache_write_tokens: 0,
                                         }));
                                     }
                                     push_chunk_events_stateful(chunk, state, &mut emitted);

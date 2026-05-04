@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use itertools::{Itertools, Position};
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options as ParseOptions, Parser, Tag, TagEnd};
 use ratatui::{

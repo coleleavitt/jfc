@@ -6,8 +6,10 @@ mod context;
 mod inline_tools;
 mod input;
 mod markdown;
+mod message_view;
 mod provider;
 mod providers;
+mod query;
 mod render;
 mod scheduler;
 mod session;
@@ -32,7 +34,7 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::mpsc;
 
 use app::{App, AppEvent, PendingApproval, SPINNER, TICK_MS};
-use provider::Provider;
+use provider::{ModelId, Provider, ProviderId};
 use providers::{AnthropicOAuthProvider, AnthropicProvider, OpenWebUIProvider};
 use types::*;
 
@@ -56,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
     let oauth_handle = init.oauth;
     let provider = providers[active_idx].clone();
 
+    install_terminal_panic_hook();
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -78,6 +81,15 @@ async fn main() -> anyhow::Result<()> {
     terminal.show_cursor()?;
 
     result
+}
+
+fn install_terminal_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+        previous(info);
+    }));
 }
 
 /// Initialize tracing so structured logs flow to `~/.config/jfc/logs/jfc.log`
@@ -269,7 +281,7 @@ fn enable_keyboard_enhancement(stdout: &mut io::Stdout) -> bool {
 struct ProvidersInit {
     providers: Vec<Arc<dyn Provider>>,
     active_idx: usize,
-    model: String,
+    model: ModelId,
     oauth: Option<Arc<AnthropicOAuthProvider>>,
 }
 
@@ -281,7 +293,8 @@ struct ProvidersInit {
 fn build_providers() -> ProvidersInit {
     let model = std::env::var("ANTHROPIC_MODEL")
         .or_else(|_| std::env::var("OPENWEBUI_MODEL"))
-        .unwrap_or_else(|_| "claude-opus-4-5".to_string());
+        .map(ModelId::from)
+        .unwrap_or_else(|_| ModelId::from("claude-opus-4-5"));
 
     let mut providers: Vec<Arc<dyn Provider>> = Vec::new();
     let mut prefer: Option<&'static str> = None;
@@ -339,7 +352,7 @@ async fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     providers: Vec<Arc<dyn Provider>>,
     provider: Arc<dyn Provider>,
-    model: String,
+    model: ModelId,
     oauth_handle: Option<Arc<AnthropicOAuthProvider>>,
 ) -> anyhow::Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
@@ -352,7 +365,7 @@ async fn run(
     for p in &providers {
         let tx = tx.clone();
         let p = Arc::clone(p);
-        let name = p.name().to_owned();
+        let name = ProviderId::from(p.name());
         tokio::spawn(async move {
             let models = p.fetch_models().await.unwrap_or_default();
             let _ = tx.send(AppEvent::ModelsLoaded {
@@ -521,7 +534,7 @@ async fn run(
                         .await;
                         let _ = tx_cls.send(AppEvent::ClassifierDecision {
                             tool: tool_for_task,
-                            blocked: decision.should_block,
+                            blocked: decision.should_block(),
                             reason: decision.reason,
                         });
                     });
@@ -631,6 +644,8 @@ async fn run(
                             &tx,
                             std::sync::Arc::clone(&app.dedup_cache),
                             Some(std::sync::Arc::clone(&app.task_store)),
+                            std::sync::Arc::clone(&app.provider),
+                            app.model.clone(),
                         );
                     } else if app.pending_approval.is_some() || !app.approval_queue.is_empty() {
                         tracing::info!(
@@ -686,16 +701,31 @@ async fn run(
             AppEvent::StreamUsage {
                 input_tokens,
                 output_tokens,
+                cache_read_tokens,
+                cache_write_tokens,
             } => {
                 app.last_usage_input = input_tokens;
                 app.last_usage_output = output_tokens;
                 app.tool_ctx.approx_tokens = input_tokens as usize + output_tokens as usize;
+                let model_key = app.model.as_str().to_owned();
+                app.usage_by_model.entry(model_key).or_default().add_delta(
+                    input_tokens,
+                    output_tokens,
+                    cache_read_tokens,
+                    cache_write_tokens,
+                );
+            }
+            AppEvent::McpUpdated { servers } => {
+                app.mcp_servers = servers;
+            }
+            AppEvent::LspUpdated { servers } => {
+                app.lsp_servers = servers;
             }
             AppEvent::ToolResult { tool_id, result } => {
                 tracing::info!(
                     target: "jfc::stream",
                     tool_id = %tool_id,
-                    is_error = result.is_error,
+                    is_error = result.is_error(),
                     output_len = result.output.len(),
                     "tool_result received"
                 );
@@ -704,8 +734,15 @@ async fn run(
                     for part in &mut msg.parts {
                         if let MessagePart::Tool(tc) = part {
                             if tc.id == tool_id {
-                                tc.output = ToolOutput::Text(result.output.clone());
-                                tc.status = if result.is_error {
+                                tc.output = if LargeText::should_collapse(&result.output) {
+                                    ToolOutput::LargeText(LargeText::new(result.output.clone()))
+                                } else {
+                                    ToolOutput::Text(result.output.clone())
+                                };
+                                if LargeText::should_collapse(&result.output) {
+                                    tc.is_collapsed = true;
+                                }
+                                tc.status = if result.is_error() {
                                     ToolStatus::Failed
                                 } else {
                                     ToolStatus::Complete
@@ -790,16 +827,19 @@ async fn run(
             AppEvent::CompactionDone {
                 messages,
                 tool_ctx,
-                pre_tokens: _,
+                pre_tokens,
                 post_tokens,
             } => {
+                let _compacted_tokens = pre_tokens.saturating_sub(post_tokens);
                 app.messages = messages;
                 app.tool_ctx = tool_ctx;
                 app.tool_ctx.approx_tokens = post_tokens;
             }
             AppEvent::CompactionFailed(_reason) => {}
             AppEvent::ModelsLoaded { provider, models } => {
+                app.model_picker_query_cache.clear();
                 app.provider_models.insert(provider, models);
+                app.sync_selected_context_window();
                 if app.show_model_picker {
                     app.model_picker_models = input::collect_all_models(&app);
                 }
@@ -816,6 +856,97 @@ async fn run(
                     app.model_picker_models = input::collect_all_models(&app);
                 }
             }
+            AppEvent::TaskStarted {
+                task_id,
+                description,
+            } => {
+                use types::{TaskLifecycle, TaskStatusPart};
+                app.background_tasks.insert(
+                    task_id.clone(),
+                    app::BackgroundTask {
+                        task_id: task_id.clone(),
+                        description: description.clone(),
+                        status: TaskLifecycle::Running,
+                        started_at: std::time::Instant::now(),
+                        summary: None,
+                        error: None,
+                        last_tool: None,
+                        messages: Vec::new(),
+                    },
+                );
+                let part = MessagePart::TaskStatus(TaskStatusPart {
+                    task_id,
+                    description,
+                    status: TaskLifecycle::Running,
+                    summary: None,
+                    error: None,
+                    elapsed_ms: None,
+                });
+                if let Some(idx) = app.streaming_assistant_idx {
+                    if let Some(msg) = app.messages.get_mut(idx) {
+                        msg.parts.push(part);
+                    }
+                } else if let Some(msg) = app.messages.last_mut() {
+                    msg.parts.push(part);
+                }
+            }
+            AppEvent::TaskProgress {
+                task_id,
+                last_tool,
+                elapsed_ms,
+            } => {
+                if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                    bt.last_tool = last_tool;
+                }
+                for msg in &mut app.messages {
+                    for part in &mut msg.parts {
+                        if let MessagePart::TaskStatus(ts) = part {
+                            if ts.task_id == task_id {
+                                ts.elapsed_ms = Some(elapsed_ms);
+                            }
+                        }
+                    }
+                }
+            }
+            AppEvent::TaskCompleted {
+                task_id,
+                summary,
+                elapsed_ms,
+            } => {
+                use types::TaskLifecycle;
+                if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                    bt.status = TaskLifecycle::Completed;
+                    bt.summary = Some(summary.clone());
+                }
+                for msg in &mut app.messages {
+                    for part in &mut msg.parts {
+                        if let MessagePart::TaskStatus(ts) = part {
+                            if ts.task_id == task_id {
+                                ts.status = TaskLifecycle::Completed;
+                                ts.summary = Some(summary.clone());
+                                ts.elapsed_ms = Some(elapsed_ms);
+                            }
+                        }
+                    }
+                }
+            }
+            AppEvent::TaskFailed { task_id, error } => {
+                use types::TaskLifecycle;
+                if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                    bt.status = TaskLifecycle::Failed;
+                    bt.error = Some(error.clone());
+                }
+                for msg in &mut app.messages {
+                    for part in &mut msg.parts {
+                        if let MessagePart::TaskStatus(ts) = part {
+                            if ts.task_id == task_id {
+                                ts.status = TaskLifecycle::Failed;
+                                ts.error = Some(error.clone());
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         app.sync_task_completions();
@@ -826,9 +957,9 @@ async fn run(
 }
 
 fn update_task_activities(app: &mut app::App, calls: &[types::ToolCall]) {
-    let in_progress: Vec<String> = app
+    let in_progress: Vec<tasks::TaskId> = app
         .task_store
-        .list(false)
+        .list(tasks::DeletedFilter::Exclude)
         .iter()
         .filter(|t| matches!(t.status, tasks::TaskStatus::InProgress))
         .map(|t| t.id.clone())

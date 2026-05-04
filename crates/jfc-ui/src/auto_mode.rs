@@ -31,13 +31,35 @@ use crate::provider::{
 };
 use crate::types::{ChatMessage, MessagePart, Role, ToolCall};
 
-/// Result returned by the classifier. `should_block: true` denies the tool.
+/// Result returned by the classifier.
 #[derive(Debug, Clone)]
 pub struct ClassifyResult {
-    pub should_block: bool,
+    pub decision: AutoDecision,
     pub reason: String,
     #[allow(dead_code)]
     pub thinking: String,
+}
+
+impl ClassifyResult {
+    pub fn should_block(&self) -> bool {
+        matches!(self.decision, AutoDecision::Block)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoDecision {
+    Allow,
+    Block,
+}
+
+impl AutoDecision {
+    fn from_should_block(should_block: bool) -> Self {
+        if should_block {
+            Self::Block
+        } else {
+            Self::Allow
+        }
+    }
 }
 
 /// User-customizable rule lists. The serialized form lives in
@@ -292,19 +314,19 @@ pub async fn classify(
 
     let result = match provider.complete(messages, &opts).await {
         Ok(resp) => parse_classification(&resp).unwrap_or_else(|| ClassifyResult {
-            should_block: true,
+            decision: AutoDecision::Block,
             reason: "classifier returned no parseable decision".into(),
             thinking: String::new(),
         }),
         Err(e) => ClassifyResult {
-            should_block: true,
+            decision: AutoDecision::Block,
             reason: format!("classifier_error: {e}"),
             thinking: String::new(),
         },
     };
     tracing::info!(
         target: "jfc::auto_mode",
-        should_block = result.should_block,
+        should_block = result.should_block(),
         reason = %result.reason,
         "classifier_decision"
     );
@@ -353,7 +375,7 @@ fn parse_from_value(v: &Value) -> Option<ClassifyResult> {
         .unwrap_or("")
         .to_owned();
     Some(ClassifyResult {
-        should_block,
+        decision: AutoDecision::from_should_block(should_block),
         reason,
         thinking,
     })
@@ -462,7 +484,7 @@ mod tests {
             usage: Default::default(),
         };
         let r = parse_classification(&resp).expect("parsed");
-        assert!(r.should_block);
+        assert!(r.should_block());
         assert_eq!(r.reason, "r");
     }
 
@@ -473,7 +495,7 @@ mod tests {
             usage: Default::default(),
         };
         let r = parse_classification(&resp).expect("parsed");
-        assert!(!r.should_block);
+        assert!(!r.should_block());
     }
 
     // Robust: garbage content returns None so the caller falls through to deny.

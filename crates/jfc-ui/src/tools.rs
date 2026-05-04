@@ -1,13 +1,21 @@
+#![allow(dead_code)]
+
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
 
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
+#[cfg(unix)]
+unsafe extern "C" {
+    fn setsid() -> i32;
+}
+
 use crate::context::ReadDedupCache;
 use crate::provider::ToolDef;
-use crate::tasks::{TaskPatch, TaskStatus, TaskStore};
-use crate::types::{ToolInput, ToolKind};
+use crate::tasks::{DeletedFilter, TaskPatch, TaskStatus, TaskStore};
+use crate::types::{ReplacementMode, ToolInput, ToolKind};
 
 /// REQ-TOOLS-001: Tool definitions sent to Anthropic API.
 /// Field names and schemas match claude-code source exactly to avoid 400 errors.
@@ -237,12 +245,202 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                 "required": ["task_id"]
             }),
         },
+        ToolDef {
+            name: "Task".into(),
+            description: "Spawn a sub-agent to handle a focused task. The sub-agent runs with the same provider/model and returns a result. Use run_in_background=true for parallel work.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "Short label for the task (3-5 words)"
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Full prompt for the sub-agent"
+                    },
+                    "subagent_type": {
+                        "type": "string",
+                        "description": "Agent type to use (e.g. 'build', 'explore')"
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Task category for model selection"
+                    },
+                    "run_in_background": {
+                        "type": "boolean",
+                        "description": "When true, returns immediately with a task_id and runs asynchronously"
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Optional model override in 'provider/model' format"
+                    }
+                },
+                "required": ["description", "prompt", "run_in_background"]
+            }),
+        },
     ]
 }
 
+#[derive(Debug, Clone)]
 pub struct ExecutionResult {
     pub output: String,
-    pub is_error: bool,
+    pub outcome: ToolOutcome,
+    pub diagnostics: Vec<ToolDiagnostic>,
+    pub provenance: Option<ToolProvenance>,
+}
+
+impl ExecutionResult {
+    pub fn success(output: impl Into<String>) -> Self {
+        Self {
+            output: output.into(),
+            outcome: ToolOutcome::Success,
+            diagnostics: Vec::new(),
+            provenance: None,
+        }
+    }
+
+    pub fn failure(output: impl Into<String>) -> Self {
+        let output = output.into();
+        Self {
+            diagnostics: vec![ToolDiagnostic::error(output.clone())],
+            output,
+            outcome: ToolOutcome::Failed,
+            provenance: None,
+        }
+    }
+
+    pub fn with_provenance(mut self, provenance: ToolProvenance) -> Self {
+        self.provenance = Some(provenance);
+        self
+    }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self.outcome, ToolOutcome::Failed)
+    }
+}
+
+fn configure_tool_command(command: &mut Command) {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("SUDO_ASKPASS", "/bin/false")
+        .env("SSH_ASKPASS", "/bin/false");
+
+    #[cfg(unix)]
+    unsafe {
+        command.pre_exec(|| {
+            if setsid() == -1 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+    }
+}
+
+fn terminal_safe_text(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\u{1b}' => match chars.peek().copied() {
+                Some('[') => {
+                    chars.next();
+                    for c in chars.by_ref() {
+                        if ('@'..='~').contains(&c) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    chars.next();
+                    let mut previous_was_esc = false;
+                    for c in chars.by_ref() {
+                        if c == '\u{7}' || (previous_was_esc && c == '\\') {
+                            break;
+                        }
+                        previous_was_esc = c == '\u{1b}';
+                    }
+                }
+                Some(_) => {
+                    chars.next();
+                }
+                None => {}
+            },
+            '\t' | '\n' | '\r' => out.push(ch),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+
+    out
+}
+
+fn non_interactive_shell_command(command: &str) -> String {
+    let trimmed = command.trim_start();
+    let leading_len = command.len() - trimmed.len();
+
+    if trimmed == "sudo" {
+        return format!("{}sudo -n", &command[..leading_len]);
+    }
+
+    let Some(rest) = trimmed.strip_prefix("sudo ") else {
+        return command.to_string();
+    };
+
+    if rest.starts_with("-n ") || rest == "-n" || rest.starts_with("--non-interactive ") {
+        command.to_string()
+    } else {
+        format!("{}sudo -n {}", &command[..leading_len], rest)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolOutcome {
+    Success,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolDiagnostic {
+    pub level: DiagnosticLevel,
+    pub message: String,
+    pub help: Option<String>,
+}
+
+impl ToolDiagnostic {
+    fn error(message: impl Into<String>) -> Self {
+        Self {
+            level: DiagnosticLevel::Error,
+            message: message.into(),
+            help: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum DiagnosticLevel {
+    Error,
+    Warning,
+    Help,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolProvenance {
+    pub cwd: PathBuf,
+    pub source: ToolSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum ToolSource {
+    ModelRequested,
+    LocalExecutor,
 }
 
 /// REQ-TOOLS-002: Tool executors — bash/read/write/edit/glob/grep/task via tokio + fs.
@@ -270,7 +468,7 @@ pub async fn execute_tool(
         ) => execute_read(&file_path, offset, limit, dedup.as_ref()).await,
         (ToolKind::Write, ToolInput::Write { file_path, content }) => {
             let result = execute_write(&file_path, &content).await;
-            if !result.is_error {
+            if !result.is_error() {
                 if let Some(cache) = &dedup {
                     cache.lock().await.invalidate(Path::new(&file_path));
                 }
@@ -283,11 +481,11 @@ pub async fn execute_tool(
                 file_path,
                 old_string,
                 new_string,
-                replace_all,
+                replacement,
             },
         ) => {
-            let result = execute_edit(&file_path, &old_string, &new_string, replace_all).await;
-            if !result.is_error {
+            let result = execute_edit(&file_path, &old_string, &new_string, replacement).await;
+            if !result.is_error() {
                 if let Some(cache) = &dedup {
                     cache.lock().await.invalidate(Path::new(&file_path));
                 }
@@ -348,18 +546,19 @@ pub async fn execute_tool(
         (ToolKind::TaskDone, ToolInput::TaskDone { task_id }) => {
             execute_task_done(task_store, &task_id)
         }
-        (kind, _) => ExecutionResult {
-            output: format!("Tool {:?} not yet implemented", kind),
-            is_error: true,
-        },
+        (ToolKind::Task, ToolInput::Task(_)) => {
+            ExecutionResult::failure("Task tool must be dispatched via the streaming executor")
+        }
+        (kind, _) => ExecutionResult::failure(format!("Tool {:?} not yet implemented", kind)),
     }
 }
 
 async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> ExecutionResult {
     let timeout = timeout_ms.unwrap_or(120_000);
+    let command = non_interactive_shell_command(command);
     let mut cmd = Command::new("bash");
     cmd.arg("-c")
-        .arg(command)
+        .arg(&command)
         .current_dir(cwd)
         .env("CI", "true")
         .env("TERM", "dumb")
@@ -382,6 +581,7 @@ async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> Exe
         .env_remove("FORCE_COLOR")
         .env_remove("GREP_COLORS")
         .env_remove("LS_COLORS");
+    configure_tool_command(&mut cmd);
     let result =
         tokio::time::timeout(std::time::Duration::from_millis(timeout), cmd.output()).await;
 
@@ -409,19 +609,14 @@ async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> Exe
             } else {
                 format!("{stdout}\n---stderr---\n{stderr}")
             };
-            ExecutionResult {
-                output: format!("{header}{}", body.trim_end()),
-                is_error: false,
-            }
+            let body = terminal_safe_text(body.trim_end());
+            ExecutionResult::success(format!("{header}{body}")).with_provenance(ToolProvenance {
+                cwd: cwd.to_path_buf(),
+                source: ToolSource::LocalExecutor,
+            })
         }
-        Ok(Err(e)) => ExecutionResult {
-            output: format!("Failed to spawn bash: {e}"),
-            is_error: true,
-        },
-        Err(_) => ExecutionResult {
-            output: format!("Command timed out after {timeout}ms"),
-            is_error: true,
-        },
+        Ok(Err(e)) => ExecutionResult::failure(format!("Failed to spawn bash: {e}")),
+        Err(_) => ExecutionResult::failure(format!("Command timed out after {timeout}ms")),
     }
 }
 
@@ -446,27 +641,20 @@ async fn execute_read(
                     }
                 }
                 names.sort();
-                ExecutionResult {
-                    output: names.join("\n"),
-                    is_error: false,
-                }
+                ExecutionResult::success(names.join("\n"))
             }
-            Err(e) => ExecutionResult {
-                output: format!("Cannot read directory: {e}"),
-                is_error: true,
-            },
+            Err(e) => ExecutionResult::failure(format!("Cannot read directory: {e}")),
         }
     } else {
         if let Some(cache) = dedup {
             let guard = cache.lock().await;
             if guard.is_unchanged(&path) {
-                return ExecutionResult {
-                    output: "File unchanged since last read. The content from the \
+                return ExecutionResult::success(
+                    "File unchanged since last read. The content from the \
                              earlier Read tool_result in this conversation is still \
                              current — refer to that instead of re-reading."
                         .to_string(),
-                    is_error: false,
-                };
+                );
             }
             drop(guard);
         }
@@ -489,15 +677,9 @@ async fn execute_read(
                     cache.lock().await.record_read(path);
                 }
 
-                ExecutionResult {
-                    output: numbered,
-                    is_error: false,
-                }
+                ExecutionResult::success(numbered)
             }
-            Err(e) => ExecutionResult {
-                output: format!("Cannot read file: {e}"),
-                is_error: true,
-            },
+            Err(e) => ExecutionResult::failure(format!("Cannot read file: {e}")),
         }
     }
 }
@@ -506,21 +688,14 @@ async fn execute_write(file_path: &str, content: &str) -> ExecutionResult {
     let path = PathBuf::from(file_path);
     if let Some(parent) = path.parent() {
         if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            return ExecutionResult {
-                output: format!("Cannot create directories: {e}"),
-                is_error: true,
-            };
+            return ExecutionResult::failure(format!("Cannot create directories: {e}"));
         }
     }
     match tokio::fs::write(&path, content).await {
-        Ok(_) => ExecutionResult {
-            output: format!("Written {} bytes to {file_path}", content.len()),
-            is_error: false,
-        },
-        Err(e) => ExecutionResult {
-            output: format!("Cannot write file: {e}"),
-            is_error: true,
-        },
+        Ok(_) => {
+            ExecutionResult::success(format!("Written {} bytes to {file_path}", content.len()))
+        }
+        Err(e) => ExecutionResult::failure(format!("Cannot write file: {e}")),
     }
 }
 
@@ -528,62 +703,41 @@ async fn execute_edit(
     file_path: &str,
     old_string: &str,
     new_string: &str,
-    replace_all: bool,
+    replacement: ReplacementMode,
 ) -> ExecutionResult {
     match tokio::fs::read_to_string(file_path).await {
         Ok(content) => {
             if old_string.is_empty() && !content.is_empty() {
-                return ExecutionResult {
-                    output: "old_string is empty but file is not empty. Provide text to replace."
-                        .into(),
-                    is_error: true,
-                };
+                return ExecutionResult::failure(
+                    "old_string is empty but file is not empty. Provide text to replace.",
+                );
             }
             let count = content.matches(old_string).count();
             if count == 0 {
-                return ExecutionResult {
-                    output: format!("old_string not found in {file_path}"),
-                    is_error: true,
-                };
+                return ExecutionResult::failure(format!("old_string not found in {file_path}"));
             }
-            if count > 1 && !replace_all {
-                return ExecutionResult {
-                    output: format!(
-                        "Found {count} matches for old_string in {file_path}. Use replace_all=true or provide more context."
-                    ),
-                    is_error: true,
-                };
+            if count > 1 && !replacement.replace_all() {
+                return ExecutionResult::failure(format!(
+                    "Found {count} matches for old_string in {file_path}. Use replace_all=true or provide more context."
+                ));
             }
-            let new_content = if replace_all {
+            let new_content = if replacement.replace_all() {
                 content.replace(old_string, new_string)
             } else {
                 content.replacen(old_string, new_string, 1)
             };
             match tokio::fs::write(file_path, &new_content).await {
-                Ok(_) => ExecutionResult {
-                    output: format!("Replaced {count} occurrence(s) in {file_path}"),
-                    is_error: false,
-                },
-                Err(e) => ExecutionResult {
-                    output: format!("Cannot write file after edit: {e}"),
-                    is_error: true,
-                },
+                Ok(_) => ExecutionResult::success(format!(
+                    "Replaced {count} occurrence(s) in {file_path}"
+                )),
+                Err(e) => ExecutionResult::failure(format!("Cannot write file after edit: {e}")),
             }
         }
         Err(_) if old_string.is_empty() => match tokio::fs::write(file_path, new_string).await {
-            Ok(_) => ExecutionResult {
-                output: format!("Created new file {file_path}"),
-                is_error: false,
-            },
-            Err(e2) => ExecutionResult {
-                output: format!("Cannot create file: {e2}"),
-                is_error: true,
-            },
+            Ok(_) => ExecutionResult::success(format!("Created new file {file_path}")),
+            Err(e2) => ExecutionResult::failure(format!("Cannot create file: {e2}")),
         },
-        Err(e) => ExecutionResult {
-            output: format!("Cannot read file: {e}"),
-            is_error: true,
-        },
+        Err(e) => ExecutionResult::failure(format!("Cannot read file: {e}")),
     }
 }
 
@@ -594,19 +748,14 @@ async fn execute_glob(pattern: &str, path: Option<&str>, cwd: &Path) -> Executio
         .arg("--glob")
         .arg(pattern)
         .current_dir(&base);
+    configure_tool_command(&mut cmd);
     match cmd.output().await {
         Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let stdout = terminal_safe_text(String::from_utf8_lossy(&out.stdout).trim());
             if stdout.is_empty() {
-                ExecutionResult {
-                    output: "No files matched".into(),
-                    is_error: false,
-                }
+                ExecutionResult::success("No files matched")
             } else {
-                ExecutionResult {
-                    output: stdout,
-                    is_error: false,
-                }
+                ExecutionResult::success(stdout)
             }
         }
         Err(_) => {
@@ -646,32 +795,21 @@ async fn execute_grep(
     }
 
     cmd.arg(pattern).arg(search_path).current_dir(cwd);
+    configure_tool_command(&mut cmd);
 
     match cmd.output().await {
         Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            let stdout = terminal_safe_text(String::from_utf8_lossy(&out.stdout).trim());
+            let stderr = terminal_safe_text(String::from_utf8_lossy(&out.stderr).trim());
             if stdout.is_empty() && out.status.code() == Some(1) {
-                ExecutionResult {
-                    output: "No matches found".into(),
-                    is_error: false,
-                }
+                ExecutionResult::success("No matches found")
             } else if !stderr.is_empty() && stdout.is_empty() {
-                ExecutionResult {
-                    output: stderr,
-                    is_error: true,
-                }
+                ExecutionResult::failure(stderr)
             } else {
-                ExecutionResult {
-                    output: stdout,
-                    is_error: false,
-                }
+                ExecutionResult::success(stdout)
             }
         }
-        Err(e) => ExecutionResult {
-            output: format!("rg not found or failed: {e}"),
-            is_error: true,
-        },
+        Err(e) => ExecutionResult::failure(format!("rg not found or failed: {e}")),
     }
 }
 
@@ -683,20 +821,13 @@ fn execute_task_create(
     blocked_by: Vec<String>,
 ) -> ExecutionResult {
     let Some(store) = store else {
-        return ExecutionResult {
-            output: "Task store not available".into(),
-            is_error: true,
-        };
+        return ExecutionResult::failure("Task store not available");
     };
     match store.create(subject, description, active_form, blocked_by) {
-        Ok(task) => ExecutionResult {
-            output: serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
-            is_error: false,
-        },
-        Err(e) => ExecutionResult {
-            output: e,
-            is_error: true,
-        },
+        Ok(task) => ExecutionResult::success(
+            serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
+        ),
+        Err(e) => ExecutionResult::failure(e.to_string()),
     }
 }
 
@@ -709,10 +840,7 @@ fn execute_task_update(
     owner: Option<String>,
 ) -> ExecutionResult {
     let Some(store) = store else {
-        return ExecutionResult {
-            output: "Task store not available".into(),
-            is_error: true,
-        };
+        return ExecutionResult::failure("Task store not available");
     };
     let parsed_status = status.as_deref().and_then(|s| match s {
         "pending" => Some(TaskStatus::Pending),
@@ -729,14 +857,10 @@ fn execute_task_update(
         ..Default::default()
     };
     match store.update(task_id, patch) {
-        Ok(task) => ExecutionResult {
-            output: serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
-            is_error: false,
-        },
-        Err(e) => ExecutionResult {
-            output: e,
-            is_error: true,
-        },
+        Ok(task) => ExecutionResult::success(
+            serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
+        ),
+        Err(e) => ExecutionResult::failure(e.to_string()),
     }
 }
 
@@ -746,12 +870,9 @@ fn execute_task_list(
     owner_filter: Option<&str>,
 ) -> ExecutionResult {
     let Some(store) = store else {
-        return ExecutionResult {
-            output: "Task store not available".into(),
-            is_error: true,
-        };
+        return ExecutionResult::failure("Task store not available");
     };
-    let mut tasks = store.list(false);
+    let mut tasks = store.list(DeletedFilter::Exclude);
     if let Some(sf) = status_filter {
         tasks.retain(|t| {
             let s = serde_json::to_value(&t.status)
@@ -765,31 +886,145 @@ fn execute_task_list(
     }
     let output =
         serde_json::to_string_pretty(&tasks).unwrap_or_else(|_| format!("{} tasks", tasks.len()));
-    ExecutionResult {
-        output,
-        is_error: false,
-    }
+    ExecutionResult::success(output)
 }
 
 fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) -> ExecutionResult {
     let Some(store) = store else {
-        return ExecutionResult {
-            output: "Task store not available".into(),
-            is_error: true,
-        };
+        return ExecutionResult::failure("Task store not available");
     };
     let patch = TaskPatch {
         status: Some(TaskStatus::Completed),
         ..Default::default()
     };
     match store.update(task_id, patch) {
-        Ok(task) => ExecutionResult {
-            output: serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
-            is_error: false,
-        },
-        Err(e) => ExecutionResult {
-            output: e,
-            is_error: true,
-        },
+        Ok(task) => ExecutionResult::success(
+            serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
+        ),
+        Err(e) => ExecutionResult::failure(e.to_string()),
+    }
+}
+
+pub async fn execute_task(
+    task_input: &crate::types::TaskInput,
+    provider: &dyn crate::provider::Provider,
+    model_id: crate::provider::ModelId,
+) -> ExecutionResult {
+    use crate::provider::{
+        ProviderContent, ProviderMessage, ProviderRole, StreamEvent, StreamOptions,
+    };
+    use futures::StreamExt;
+
+    let messages = vec![ProviderMessage {
+        role: ProviderRole::User,
+        content: vec![ProviderContent::Text(task_input.prompt.clone())],
+    }];
+
+    let model = if let Some(m) = &task_input.model {
+        crate::provider::ModelId::new(m.clone())
+    } else {
+        model_id
+    };
+
+    let options = StreamOptions::new(model);
+
+    let stream = match provider.stream(messages, &options).await {
+        Ok(s) => s,
+        Err(e) => return ExecutionResult::failure(format!("Task stream error: {e}")),
+    };
+
+    tokio::pin!(stream);
+
+    let mut text = String::new();
+    let mut error: Option<String> = None;
+
+    while let Some(event) = stream.next().await {
+        match event {
+            Ok(StreamEvent::TextDelta { delta, .. }) => text.push_str(&delta),
+            Ok(StreamEvent::TextDone { text: t, .. }) => {
+                if text.is_empty() {
+                    text = t;
+                }
+            }
+            Ok(StreamEvent::Error { message }) => {
+                error = Some(message);
+                break;
+            }
+            Err(e) => {
+                error = Some(e.to_string());
+                break;
+            }
+            Ok(_) => {}
+        }
+    }
+
+    if let Some(err) = error {
+        ExecutionResult::failure(err)
+    } else {
+        ExecutionResult::success(text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn execution_result_failure_carries_diagnostic() {
+        let result = ExecutionResult::failure("command failed");
+
+        assert!(result.is_error());
+        assert_eq!(result.outcome, ToolOutcome::Failed);
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(result.diagnostics[0].level, DiagnosticLevel::Error);
+        assert_eq!(result.diagnostics[0].message, "command failed");
+    }
+
+    #[tokio::test]
+    async fn bash_runs_without_inherited_terminal_or_stdin() {
+        let result = execute_bash(
+            "read -t 0.1 value || true; (cat /dev/tty >/dev/null 2>&1 && echo has-tty || echo no-tty); if [ -n \"${value:-}\" ]; then echo stdin-leaked; fi",
+            Some(5_000),
+            Path::new("."),
+        )
+        .await;
+
+        assert!(!result.is_error(), "{}", result.output);
+        assert!(result.output.contains("no-tty"), "{}", result.output);
+        assert!(!result.output.contains("stdin-leaked"), "{}", result.output);
+    }
+
+    #[test]
+    fn leading_sudo_is_forced_non_interactive() {
+        assert_eq!(non_interactive_shell_command("sudo true"), "sudo -n true");
+        assert_eq!(
+            non_interactive_shell_command("  sudo --non-interactive true"),
+            "  sudo --non-interactive true"
+        );
+        assert_eq!(
+            non_interactive_shell_command("echo sudo true"),
+            "echo sudo true"
+        );
+    }
+
+    #[tokio::test]
+    async fn sudo_prompt_does_not_escape_or_hang() {
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            execute_bash("sudo true", Some(4_000), Path::new(".")),
+        )
+        .await
+        .expect("sudo command should fail or succeed without hanging");
+
+        assert!(!result.output.contains("Password:"), "{}", result.output);
+        assert!(!result.output.contains('\u{1b}'), "{}", result.output);
+    }
+
+    #[test]
+    fn terminal_safe_text_strips_control_sequences() {
+        let raw =
+            "\u{1b}[31mred\u{1b}[0m \u{1b}[<35;82;42MPassword:\u{7}\u{1b}]0;title\u{7} ok\u{0}";
+
+        assert_eq!(terminal_safe_text(raw), "red Password: ok");
     }
 }

@@ -51,7 +51,9 @@ pub fn anthropic_first_party_models(provider_tag: &str) -> Vec<ModelInfo> {
         ("claude-3-5-haiku-20241022", "Claude Haiku 3.5"),
     ]
     .into_iter()
-    .map(|(id, display)| ModelInfo::new(id, display, provider_tag))
+    .map(|(id, display)| {
+        ModelInfo::new(id, display, provider_tag).with_context_window_tokens(200_000)
+    })
     .collect();
 
     // ANTHROPIC_CUSTOM_MODEL_OPTION — v126 reads this env var and surfaces the value

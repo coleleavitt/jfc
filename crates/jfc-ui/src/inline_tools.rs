@@ -71,22 +71,13 @@ pub fn parse(input: &str) -> Vec<Segment> {
 
         let (offset, tag_kind) = match (next_call, next_result) {
             (Some(a), Some(b)) if a <= b => (a, TagKind::Call),
-            (Some(a), Some(_)) => (a, TagKind::Call).clone_if(false), // placeholder, see below
+            (Some(_), Some(b)) => (b, TagKind::Result),
             (Some(a), None) => (a, TagKind::Call),
             (None, Some(b)) => (b, TagKind::Result),
             (None, None) => {
                 text_buf.push_str(&input[i..]);
                 break;
             }
-        };
-        // Re-evaluate the (offset, tag) properly — the placeholder above is just
-        // to make the match exhaustive without an extra `if`. Actually compute it:
-        let (offset, tag_kind) = match (next_call, next_result) {
-            (Some(a), Some(b)) if a <= b => (a, TagKind::Call),
-            (Some(_), Some(b)) => (b, TagKind::Result),
-            (Some(a), None) => (a, TagKind::Call),
-            (None, Some(b)) => (b, TagKind::Result),
-            (None, None) => unreachable!(),
         };
 
         // Flush any plain text that preceded the tag.
@@ -147,17 +138,6 @@ pub fn parse(input: &str) -> Vec<Segment> {
 enum TagKind {
     Call,
     Result,
-}
-
-/// Minimal trait helper just to keep the placeholder match exhaustive without
-/// a stylistic `if let`. Not exported.
-trait CloneIf {
-    fn clone_if(self, _: bool) -> Self;
-}
-impl<T> CloneIf for T {
-    fn clone_if(self, _: bool) -> Self {
-        self
-    }
 }
 
 fn parse_tool_call_body(body: &str) -> Option<ParsedToolCall> {

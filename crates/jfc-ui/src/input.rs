@@ -23,6 +23,70 @@ fn reset_input(app: &mut App) {
         .set_placeholder_text("Type a message… (Enter to send, Shift+Enter for newline)");
 }
 
+fn input_line_char_len(app: &App, line: usize) -> usize {
+    app.textarea
+        .lines()
+        .get(line)
+        .map(|line| line.chars().count())
+        .unwrap_or_default()
+}
+
+fn cursor_index(value: usize) -> u16 {
+    value.min(u16::MAX as usize) as u16
+}
+
+fn move_input_cursor_visual_up(app: &mut App) {
+    let width = app.input_wrap_width.max(1);
+    let (line, col) = app.textarea.cursor();
+
+    if col >= width {
+        app.textarea.move_cursor(CursorMove::Jump(
+            cursor_index(line),
+            cursor_index(col - width),
+        ));
+        return;
+    }
+
+    if line == 0 {
+        app.textarea.move_cursor(CursorMove::Head);
+        return;
+    }
+
+    let prev_len = input_line_char_len(app, line - 1);
+    let prev_visual_start = (prev_len / width) * width;
+    let target_col = prev_len.min(prev_visual_start + col);
+    app.textarea.move_cursor(CursorMove::Jump(
+        cursor_index(line - 1),
+        cursor_index(target_col),
+    ));
+}
+
+fn move_input_cursor_visual_down(app: &mut App) {
+    let width = app.input_wrap_width.max(1);
+    let (line, col) = app.textarea.cursor();
+    let line_len = input_line_char_len(app, line);
+
+    if col + width <= line_len {
+        app.textarea.move_cursor(CursorMove::Jump(
+            cursor_index(line),
+            cursor_index(col + width),
+        ));
+        return;
+    }
+
+    let next_line = line + 1;
+    if next_line >= app.textarea.lines().len() {
+        app.textarea.move_cursor(CursorMove::End);
+        return;
+    }
+
+    let target_col = input_line_char_len(app, next_line).min(col % width);
+    app.textarea.move_cursor(CursorMove::Jump(
+        cursor_index(next_line),
+        cursor_index(target_col),
+    ));
+}
+
 fn input_has_text(app: &App) -> bool {
     app.textarea.lines().iter().any(|line| !line.is_empty())
 }
@@ -40,6 +104,8 @@ fn dispatch_approved_tool(app: &App, tool: ToolCall, tx: &mpsc::UnboundedSender<
         tx,
         Arc::clone(&app.dedup_cache),
         Some(Arc::clone(&app.task_store)),
+        Arc::clone(&app.provider),
+        app.model.clone(),
     );
 }
 
@@ -85,6 +151,8 @@ fn advance_approval_queue(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent>) {
             tx,
             Arc::clone(&app.dedup_cache),
             Some(Arc::clone(&app.task_store)),
+            Arc::clone(&app.provider),
+            app.model.clone(),
         );
     }
 }
@@ -186,7 +254,10 @@ pub async fn handle_key(
     }
 
     if app.show_task_panel {
-        let total = app.task_store.list(false).len();
+        let total = app
+            .task_store
+            .list(crate::tasks::DeletedFilter::Exclude)
+            .len();
         match key.code {
             KeyCode::Esc => {
                 app.show_task_panel = false;
@@ -301,11 +372,12 @@ pub async fn handle_key(
                     if let Some(p) = app
                         .providers
                         .iter()
-                        .find(|p| p.name() == chosen_provider_name)
+                        .find(|p| chosen_provider_name == p.name())
                     {
                         app.provider = Arc::clone(p);
                     }
                     app.model = chosen_id;
+                    app.sync_selected_context_window();
                     app.show_model_picker = false;
                     app.model_picker_filter.clear();
                     app.model_picker_selected = 0;
@@ -354,6 +426,63 @@ pub async fn handle_key(
                 app.model_picker_filter.pop();
                 app.model_picker_selected = 0;
                 app.model_picker_state.select(Some(0));
+            }
+            _ => {}
+        }
+        return Ok(false);
+    }
+
+    if app.leader_key_active {
+        if let Some(t) = app.leader_key_timeout {
+            if t.elapsed() >= std::time::Duration::from_secs(2) {
+                app.leader_key_active = false;
+                app.leader_key_timeout = None;
+            }
+        }
+    }
+
+    if app.leader_key_active {
+        app.leader_key_active = false;
+        app.leader_key_timeout = None;
+
+        let task_ids: Vec<String> = app.background_tasks.keys().cloned().collect();
+        let task_count = task_ids.len();
+
+        match key.code {
+            KeyCode::Esc => {}
+            KeyCode::Down | KeyCode::Char('j') => {
+                if task_count > 0 {
+                    let current_pos = app
+                        .viewing_task_id
+                        .as_ref()
+                        .and_then(|id| task_ids.iter().position(|t| t == id));
+                    let next = match current_pos {
+                        None => 0,
+                        Some(i) => (i + 1).min(task_count - 1),
+                    };
+                    app.viewing_task_id = task_ids.into_iter().nth(next);
+                    app.scroll_to_bottom();
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                app.viewing_task_id = None;
+                app.scroll_to_bottom();
+            }
+            KeyCode::Left | KeyCode::Char('h') => {
+                if let Some(ref id) = app.viewing_task_id.clone() {
+                    let pos = task_ids.iter().position(|t| t == id).unwrap_or(0);
+                    if pos > 0 {
+                        app.viewing_task_id = task_ids.into_iter().nth(pos - 1);
+                    }
+                }
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                if let Some(ref id) = app.viewing_task_id.clone() {
+                    let pos = task_ids.iter().position(|t| t == id).unwrap_or(0);
+                    if pos + 1 < task_count {
+                        app.viewing_task_id = task_ids.into_iter().nth(pos + 1);
+                    }
+                }
             }
             _ => {}
         }
@@ -456,7 +585,25 @@ pub async fn handle_key(
     }
 
     match (key.modifiers, key.code) {
-        (KeyModifiers::CONTROL, KeyCode::Char('c')) => return Ok(true),
+        (KeyModifiers::NONE, KeyCode::Up) => {
+            move_input_cursor_visual_up(app);
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::Down) => {
+            move_input_cursor_visual_down(app);
+            return Ok(false);
+        }
+        _ => {}
+    }
+
+    match (key.modifiers, key.code) {
+        (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
+            if input_has_text(app) {
+                reset_input(app);
+                return Ok(false);
+            }
+            return Ok(true);
+        }
         (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
             app.show_palette = true;
             app.palette_input.clear();
@@ -480,6 +627,19 @@ pub async fn handle_key(
             }
             return Ok(false);
         }
+        (KeyModifiers::CONTROL, KeyCode::Char('x')) => {
+            app.leader_key_active = true;
+            app.leader_key_timeout = Some(std::time::Instant::now());
+            return Ok(false);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('i')) => {
+            app.show_info_sidebar = !app.show_info_sidebar;
+            return Ok(false);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('s')) => {
+            app.show_info_sidebar = !app.show_info_sidebar;
+            return Ok(false);
+        }
         (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
             if let Some(idx) = app.streaming_assistant_idx {
                 let entry = app.reasoning_expanded.entry(idx).or_insert(false);
@@ -491,7 +651,27 @@ pub async fn handle_key(
             }
             return Ok(false);
         }
+        (KeyModifiers::NONE, KeyCode::Char('o')) if !input_has_text(app) => {
+            'toggle: {
+                let messages = &mut app.messages;
+                for msg in messages.iter_mut().rev() {
+                    for part in msg.parts.iter_mut().rev() {
+                        if let MessagePart::Tool(tc) = part {
+                            if matches!(tc.output, ToolOutput::LargeText(_)) {
+                                tc.is_collapsed = !tc.is_collapsed;
+                                break 'toggle;
+                            }
+                        }
+                    }
+                }
+            }
+            return Ok(false);
+        }
         (KeyModifiers::NONE, KeyCode::Esc) => {
+            if app.viewing_task_id.is_some() {
+                app.viewing_task_id = None;
+                return Ok(false);
+            }
             reset_input(app);
             return Ok(false);
         }
@@ -529,12 +709,43 @@ pub async fn handle_key(
             app.textarea.move_cursor(CursorMove::End);
             return Ok(false);
         }
+        (KeyModifiers::CONTROL, KeyCode::Char('a')) => {
+            app.textarea.move_cursor(CursorMove::Head);
+            return Ok(false);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('e')) => {
+            app.textarea.move_cursor(CursorMove::End);
+            return Ok(false);
+        }
         (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
-            app.scroll_page_up();
+            app.textarea.delete_line_by_head();
+            return Ok(false);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('k')) => {
+            app.textarea.delete_line_by_end();
+            return Ok(false);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('w')) => {
+            app.textarea.delete_word();
             return Ok(false);
         }
         (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
-            app.scroll_page_down();
+            if input_has_text(app) {
+                app.textarea.delete_next_char();
+                return Ok(false);
+            }
+            return Ok(true);
+        }
+        (KeyModifiers::ALT, KeyCode::Char('d')) => {
+            app.textarea.delete_next_word();
+            return Ok(false);
+        }
+        (KeyModifiers::ALT, KeyCode::Char('b')) => {
+            app.textarea.move_cursor(CursorMove::WordBack);
+            return Ok(false);
+        }
+        (KeyModifiers::ALT, KeyCode::Char('f')) => {
+            app.textarea.move_cursor(CursorMove::WordForward);
             return Ok(false);
         }
         // Ctrl+B is sidebar toggle (defined above). Ctrl+F is full-page-down.
@@ -732,7 +943,7 @@ fn handle_slash_command(app: &mut App, text: &str) {
             app.messages.push(ChatMessage::assistant(body));
         }
         "/task-list" | "/tasks" => {
-            let tasks = app.task_store.list(false);
+            let tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
             let body = if tasks.is_empty() {
                 "No tasks. Use `/task-add <subject>` to create one.".to_owned()
             } else {
@@ -776,10 +987,12 @@ fn handle_slash_command(app: &mut App, text: &str) {
                     "Usage: `/task-add <subject>`".into(),
                 ));
             } else {
-                match app
-                    .task_store
-                    .create(subject.to_owned(), String::new(), None, vec![])
-                {
+                match app.task_store.create(
+                    subject.to_owned(),
+                    String::new(),
+                    None,
+                    Vec::<crate::tasks::TaskId>::new(),
+                ) {
                     Ok(t) => {
                         app.messages
                             .push(ChatMessage::user(format!("/task-add {subject}")));
@@ -958,17 +1171,152 @@ pub fn palette_items(app: &App) -> Vec<&'static str> {
 /// union, apply the OAuth seat-tier filter (v126's `XwH()` equivalent) so the
 /// picker hides Opus variants the account can't use.
 pub fn collect_all_models(app: &App) -> Vec<crate::provider::ModelInfo> {
-    let merged: Vec<_> = app
+    let fingerprint_input: Vec<_> = app
         .providers
         .iter()
-        .flat_map(|p| {
-            app.provider_models
+        .map(|p| {
+            let models = app
+                .provider_models
                 .get(p.name())
                 .cloned()
-                .unwrap_or_else(|| p.available_models())
+                .unwrap_or_else(|| p.available_models());
+            (
+                p.name().to_string(),
+                models
+                    .iter()
+                    .map(|m| {
+                        (
+                            m.provider.to_string(),
+                            m.id.to_string(),
+                            m.display_name.clone(),
+                            m.context_window_tokens,
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            )
         })
-        .collect();
-    crate::providers::anthropic_models::apply_seat_tier_filter(merged, app.seat_tier.as_deref())
+        .collect::<Vec<_>>();
+    let key = crate::query::QueryKey::ModelPickerModels(crate::query::Fingerprint::new((
+        &fingerprint_input,
+        app.seat_tier.as_deref(),
+    )));
+
+    app.model_picker_query_cache.get_or_insert_with(key, || {
+        let merged = fingerprint_input
+            .iter()
+            .flat_map(|(provider_name, _)| {
+                app.provider_models
+                    .get(provider_name.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        app.providers
+                            .iter()
+                            .find(|p| p.name() == provider_name)
+                            .map(|p| p.available_models())
+                            .unwrap_or_default()
+                    })
+            })
+            .collect();
+        crate::providers::anthropic_models::apply_seat_tier_filter(merged, app.seat_tier.as_deref())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    use super::*;
+    use crate::app::App;
+    use crate::provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    fn test_app_with_input(input: &str, wrap_width: usize) -> App {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.input_wrap_width = wrap_width;
+        app.textarea = TextArea::from(input.lines().map(str::to_string).collect::<Vec<_>>());
+        app
+    }
+
+    #[tokio::test]
+    async fn up_and_down_move_across_soft_wrapped_input_rows() {
+        let mut app = test_app_with_input("abcdefghij", 5);
+        app.textarea.move_cursor(CursorMove::Jump(0, 8));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
+            &tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(app.textarea.cursor(), (0, 3));
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(app.textarea.cursor(), (0, 8));
+    }
+
+    #[tokio::test]
+    async fn up_and_down_still_cross_logical_input_lines() {
+        let mut app = test_app_with_input("abc\ndefghijkl", 5);
+        app.textarea.move_cursor(CursorMove::Jump(0, 2));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(app.textarea.cursor(), (1, 2));
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(app.textarea.cursor(), (1, 7));
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
+            &tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(app.textarea.cursor(), (1, 2));
+    }
 }
 
 pub fn filtered_models(app: &App) -> Vec<crate::provider::ModelInfo> {

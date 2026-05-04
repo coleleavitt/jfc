@@ -126,10 +126,7 @@ pub async fn execute_batches(
                     if let Ok(exec) = handle.await {
                         let _ = tx.send(AppEvent::ToolResult {
                             tool_id: exec.tool_id.clone(),
-                            result: ExecutionResult {
-                                output: exec.result.output.clone(),
-                                is_error: exec.result.is_error,
-                            },
+                            result: exec.result.clone(),
                         });
                         all_results.push(exec);
                     }
@@ -149,10 +146,7 @@ pub async fn execute_batches(
                 .await;
                 let _ = tx.send(AppEvent::ToolResult {
                     tool_id: id.clone(),
-                    result: ExecutionResult {
-                        output: result.output.clone(),
-                        is_error: result.is_error,
-                    },
+                    result: result.clone(),
                 });
                 all_results.push(ToolExecution {
                     tool_id: id,

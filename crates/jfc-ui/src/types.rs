@@ -1,3 +1,65 @@
+#![allow(dead_code)]
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum McpStatus {
+    Connected,
+    Disabled,
+    Error,
+}
+
+impl McpStatus {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Connected => "Connected",
+            Self::Disabled => "Disabled",
+            Self::Error => "Error",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct McpServerInfo {
+    pub name: String,
+    pub status: McpStatus,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LspStatus {
+    Active,
+    Inactive,
+}
+
+#[derive(Clone, Debug)]
+pub struct LspServerInfo {
+    pub name: String,
+    pub status: LspStatus,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ModelUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_tokens: u64,
+    pub cost_usd: Option<f64>,
+}
+
+impl ModelUsage {
+    pub fn add_delta(&mut self, input: u32, output: u32, cache_read: u32, cache_write: u32) {
+        self.input_tokens += input as u64;
+        self.output_tokens += output as u64;
+        self.cache_read_tokens += cache_read as u64;
+        self.cache_write_tokens += cache_write as u64;
+    }
+
+    pub fn cache_hit_pct(&self) -> f64 {
+        if self.input_tokens == 0 {
+            return 0.0;
+        }
+        (self.cache_read_tokens as f64 / self.input_tokens as f64 * 100.0).min(100.0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Role {
     User,
@@ -9,6 +71,7 @@ pub enum MessagePart {
     Text(String),
     Reasoning(String),
     Tool(ToolCall),
+    TaskStatus(TaskStatusPart),
     CompactBoundary { pre_tokens: usize },
 }
 
@@ -17,6 +80,9 @@ impl MessagePart {
         match self {
             Self::Text(s) | Self::Reasoning(s) => s.len(),
             Self::Tool(tc) => tc.input.summary().len() + tc.output.approx_text_len(),
+            Self::TaskStatus(ts) => {
+                ts.description.len() + ts.summary.as_deref().map_or(0, |s| s.len())
+            }
             Self::CompactBoundary { .. } => 0,
         }
     }
@@ -26,6 +92,9 @@ impl MessagePart {
             Self::Text(s) | Self::Reasoning(s) => s.clone(),
             Self::Tool(tc) => {
                 format!("[Tool: {} → {}]", tc.kind.label(), tc.output.text_only())
+            }
+            Self::TaskStatus(ts) => {
+                format!("[Task {}: {}]", ts.task_id, ts.description)
             }
             Self::CompactBoundary { pre_tokens } => {
                 format!("[Compact boundary, pre={pre_tokens} tokens]")
@@ -45,6 +114,12 @@ impl MessagePart {
                     tc.output.to_display_string(),
                 )
             }
+            Self::TaskStatus(ts) => {
+                format!(
+                    "[Task {} | {} | {:?}]",
+                    ts.task_id, ts.description, ts.status
+                )
+            }
             Self::CompactBoundary { pre_tokens } => {
                 format!("[Compact boundary, pre={pre_tokens} tokens]")
             }
@@ -62,6 +137,97 @@ pub struct ToolCall {
     pub is_collapsed: bool,
 }
 
+/// The lifecycle state of a spawned sub-agent task.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TaskLifecycle {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl TaskLifecycle {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TaskStatusPart {
+    pub task_id: String,
+    pub description: String,
+    pub status: TaskLifecycle,
+    pub summary: Option<String>,
+    pub error: Option<String>,
+    pub elapsed_ms: Option<u64>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct TaskInput {
+    pub description: String,
+    pub prompt: String,
+    pub subagent_type: Option<String>,
+    pub category: Option<String>,
+    pub run_in_background: bool,
+    pub model: Option<String>,
+}
+
+impl TaskInput {
+    pub fn summary(&self) -> String {
+        format!(
+            "{} ({})",
+            self.description,
+            if self.run_in_background {
+                "background"
+            } else {
+                "foreground"
+            }
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct LargeText {
+    pub content: String,
+    pub line_count: usize,
+    pub byte_count: usize,
+}
+
+impl LargeText {
+    pub const COLLAPSE_LINES: usize = 500;
+    pub const COLLAPSE_BYTES: usize = 30_720;
+
+    pub fn new(content: String) -> Self {
+        let line_count = content.lines().count();
+        let byte_count = content.len();
+        Self {
+            content,
+            line_count,
+            byte_count,
+        }
+    }
+
+    pub fn should_collapse(text: &str) -> bool {
+        text.len() > Self::COLLAPSE_BYTES || text.lines().count() > Self::COLLAPSE_LINES
+    }
+
+    pub fn size_label(&self) -> String {
+        let kb = self.byte_count as f64 / 1024.0;
+        format!("{} lines · {:.1} KB", self.line_count, kb)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ToolKind {
     Edit,
@@ -76,6 +242,7 @@ pub enum ToolKind {
     TaskUpdate,
     TaskList,
     TaskDone,
+    Task,
     Generic(String),
 }
 
@@ -93,7 +260,7 @@ pub enum ToolInput {
         file_path: String,
         old_string: String,
         new_string: String,
-        replace_all: bool,
+        replacement: ReplacementMode,
     },
     Write {
         file_path: String,
@@ -126,6 +293,7 @@ pub enum ToolInput {
     ApplyPatch {
         patch: String,
     },
+    Task(TaskInput),
     TaskCreate {
         subject: String,
         description: String,
@@ -151,9 +319,30 @@ pub enum ToolInput {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub enum ReplacementMode {
+    FirstOnly,
+    All,
+}
+
+impl ReplacementMode {
+    pub fn from_replace_all(replace_all: bool) -> Self {
+        if replace_all {
+            Self::All
+        } else {
+            Self::FirstOnly
+        }
+    }
+
+    pub fn replace_all(self) -> bool {
+        matches!(self, Self::All)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ToolOutput {
     Text(String),
+    LargeText(LargeText),
     Diff(DiffView),
     FileContent {
         path: String,
@@ -173,6 +362,7 @@ impl ToolOutput {
     pub fn approx_text_len(&self) -> usize {
         match self {
             Self::Text(s) => s.len(),
+            Self::LargeText(lt) => lt.byte_count,
             Self::Diff(d) => d
                 .hunks
                 .iter()
@@ -189,6 +379,7 @@ impl ToolOutput {
     pub fn text_only(&self) -> String {
         match self {
             Self::Text(s) => s.clone(),
+            Self::LargeText(lt) => format!("[large: {}]", lt.size_label()),
             Self::Diff(d) => format!("{} (+{}/-{})", d.file_path, d.additions, d.deletions),
             Self::FileContent { path, .. } => format!("[file: {}]", path),
             Self::Command {
@@ -214,6 +405,7 @@ impl ToolOutput {
     pub fn to_display_string(&self) -> String {
         match self {
             Self::Text(s) => s.clone(),
+            Self::LargeText(lt) => lt.content.clone(),
             Self::Diff(d) => format!("{} (+{}/-{})", d.file_path, d.additions, d.deletions),
             Self::FileContent { path, content, .. } => {
                 format!("{} ({} chars)", path, content.len())
@@ -233,6 +425,13 @@ impl ToolOutput {
             }
             Self::FileList(files) => format!("{} files", files.len()),
             Self::Empty => "[empty]".into(),
+        }
+    }
+
+    pub fn to_api_text(&self) -> String {
+        match self {
+            Self::LargeText(lt) => lt.content.clone(),
+            other => other.to_display_string(),
         }
     }
 }
@@ -352,6 +551,7 @@ impl ToolKind {
             "TaskUpdate" | "task_update" => Self::TaskUpdate,
             "TaskList" | "task_list" => Self::TaskList,
             "TaskDone" | "task_done" => Self::TaskDone,
+            "Task" | "task" => Self::Task,
             other => Self::Generic(other.to_owned()),
         }
     }
@@ -370,6 +570,7 @@ impl ToolKind {
             Self::TaskUpdate => "TaskUpdate",
             Self::TaskList => "TaskList",
             Self::TaskDone => "TaskDone",
+            Self::Task => "Task",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -388,6 +589,7 @@ impl ToolKind {
             Self::TaskUpdate => "TaskUpdate",
             Self::TaskList => "TaskList",
             Self::TaskDone => "TaskDone",
+            Self::Task => "Task",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -436,6 +638,7 @@ impl ToolInput {
                 None => "list tasks".into(),
             },
             Self::TaskDone { task_id } => format!("done: {task_id}"),
+            Self::Task(ti) => ti.summary(),
             Self::Generic { summary } => summary.clone(),
         }
     }
@@ -468,7 +671,7 @@ impl ToolInput {
                 file_path: str_field("file_path"),
                 old_string: str_field("old_string"),
                 new_string: str_field("new_string"),
-                replace_all: bool_field("replace_all"),
+                replacement: ReplacementMode::from_replace_all(bool_field("replace_all")),
             },
             ToolKind::Write => Self::Write {
                 file_path: str_field("file_path"),
@@ -532,6 +735,14 @@ impl ToolInput {
             ToolKind::TaskDone => Self::TaskDone {
                 task_id: str_field("task_id"),
             },
+            ToolKind::Task => Self::Task(TaskInput {
+                description: str_field("description"),
+                prompt: str_field("prompt"),
+                subagent_type: opt_str_field("subagent_type"),
+                category: opt_str_field("category"),
+                run_in_background: bool_field("run_in_background"),
+                model: opt_str_field("model"),
+            }),
             ToolKind::Generic(_) => Self::Generic {
                 summary: v.to_string(),
             },
@@ -545,10 +756,10 @@ impl ToolInput {
                 file_path,
                 old_string,
                 new_string,
-                replace_all,
+                replacement,
             } => {
                 let mut v = json!({ "file_path": file_path, "old_string": old_string, "new_string": new_string });
-                if *replace_all {
+                if replacement.replace_all() {
                     v["replace_all"] = json!(true);
                 }
                 v
@@ -668,6 +879,23 @@ impl ToolInput {
                 v
             }
             Self::TaskDone { task_id } => json!({ "task_id": task_id }),
+            Self::Task(ti) => {
+                let mut v = json!({
+                    "description": ti.description,
+                    "prompt": ti.prompt,
+                    "run_in_background": ti.run_in_background,
+                });
+                if let Some(s) = &ti.subagent_type {
+                    v["subagent_type"] = json!(s);
+                }
+                if let Some(c) = &ti.category {
+                    v["category"] = json!(c);
+                }
+                if let Some(m) = &ti.model {
+                    v["model"] = json!(m);
+                }
+                v
+            }
             Self::Generic { summary } => {
                 serde_json::from_str(summary).unwrap_or(json!({ "input": summary }))
             }
@@ -696,7 +924,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                 file_path: "crates/jfc-ui/src/tools.rs".into(),
                 old_string: "let timeout = timeout_ms.unwrap_or(120_000);".into(),
                 new_string: "let timeout = timeout_ms.unwrap_or(300_000);".into(),
-                replace_all: false,
+                replacement: ReplacementMode::FirstOnly,
             },
             output: ToolOutput::Diff(diff),
             is_collapsed: false,
@@ -906,4 +1134,117 @@ pub fn truncate_lines(text: &str, max_lines: usize) -> String {
         result.push_str(&format!("… {} more lines", lines.len() - max_lines));
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn edit_input_json_snapshot_omits_default_replacement_mode() {
+        let input = ToolInput::Edit {
+            file_path: "src/main.rs".into(),
+            old_string: "old".into(),
+            new_string: "new".into(),
+            replacement: ReplacementMode::FirstOnly,
+        };
+
+        assert_eq!(
+            input.to_value().to_string(),
+            r#"{"file_path":"src/main.rs","old_string":"old","new_string":"new"}"#
+        );
+    }
+
+    #[test]
+    fn edit_input_json_snapshot_preserves_replace_all_wire_shape() {
+        let input = ToolInput::Edit {
+            file_path: "src/main.rs".into(),
+            old_string: "old".into(),
+            new_string: "new".into(),
+            replacement: ReplacementMode::All,
+        };
+
+        assert_eq!(
+            input.to_value().to_string(),
+            r#"{"file_path":"src/main.rs","old_string":"old","new_string":"new","replace_all":true}"#
+        );
+    }
+
+    #[test]
+    fn large_text_collapses_above_threshold() {
+        let short = "line\n".repeat(10);
+        assert!(!LargeText::should_collapse(&short));
+
+        let tall = "line\n".repeat(LargeText::COLLAPSE_LINES + 1);
+        assert!(LargeText::should_collapse(&tall));
+
+        let fat = "x".repeat(LargeText::COLLAPSE_BYTES + 1);
+        assert!(LargeText::should_collapse(&fat));
+    }
+
+    #[test]
+    fn large_text_size_label_formats_correctly() {
+        let lt = LargeText::new("hello\nworld\n".into());
+        assert_eq!(lt.line_count, 2);
+        assert!(lt.size_label().contains("lines"));
+        assert!(lt.size_label().contains("KB"));
+    }
+
+    #[test]
+    fn task_lifecycle_is_terminal() {
+        assert!(TaskLifecycle::Completed.is_terminal());
+        assert!(TaskLifecycle::Failed.is_terminal());
+        assert!(TaskLifecycle::Cancelled.is_terminal());
+        assert!(!TaskLifecycle::Running.is_terminal());
+        assert!(!TaskLifecycle::Pending.is_terminal());
+    }
+
+    #[test]
+    fn task_input_summary_background_flag() {
+        let fg = TaskInput {
+            description: "do thing".into(),
+            prompt: "please do it".into(),
+            subagent_type: None,
+            category: None,
+            run_in_background: false,
+            model: None,
+        };
+        assert!(fg.summary().contains("foreground"));
+
+        let bg = TaskInput {
+            run_in_background: true,
+            ..fg
+        };
+        assert!(bg.summary().contains("background"));
+    }
+
+    #[test]
+    fn task_input_to_value_roundtrip() {
+        let input = ToolInput::Task(TaskInput {
+            description: "research".into(),
+            prompt: "find patterns".into(),
+            subagent_type: Some("explore".into()),
+            category: None,
+            run_in_background: true,
+            model: None,
+        });
+        let v = input.to_value();
+        assert_eq!(v["description"], "research");
+        assert_eq!(v["subagent_type"], "explore");
+        assert_eq!(v["run_in_background"], true);
+        assert!(v.get("category").is_none() || v["category"].is_null());
+    }
+
+    #[test]
+    fn tool_kind_task_parses_from_string() {
+        assert_eq!(ToolKind::from_name("Task"), ToolKind::Task);
+        assert_eq!(ToolKind::from_name("task"), ToolKind::Task);
+    }
+
+    #[test]
+    fn tool_output_large_text_api_text_returns_full_content() {
+        let lt = LargeText::new("abc\ndef\n".into());
+        let out = ToolOutput::LargeText(lt);
+        assert_eq!(out.to_api_text(), "abc\ndef\n");
+    }
 }

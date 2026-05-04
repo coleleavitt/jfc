@@ -125,6 +125,14 @@ fn serialize_part(part: &MessagePart) -> SerializedPart {
         MessagePart::CompactBoundary { pre_tokens } => SerializedPart::Text {
             content: format!("[compact_boundary: pre={pre_tokens}]"),
         },
+        MessagePart::TaskStatus(ts) => SerializedPart::Text {
+            content: format!(
+                "[task {} | {} | {}]",
+                ts.task_id,
+                ts.status.label(),
+                ts.summary.as_deref().unwrap_or(&ts.description)
+            ),
+        },
     }
 }
 

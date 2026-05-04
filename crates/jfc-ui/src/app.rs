@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use crossterm::event::Event;
 use ratatui::style::Style;
-use ratatui::widgets::{ListState, TableState};
+use ratatui::widgets::TableState;
 use tokio::sync::Mutex;
 
 use tui_textarea::TextArea;
@@ -10,10 +10,14 @@ use tui_textarea::TextArea;
 use crate::auto_mode::AutoModeConfig;
 
 use crate::context::{ReadDedupCache, ToolContext};
-use crate::provider::{ModelInfo, Provider, StopReason};
+use crate::provider::{ModelId, ModelInfo, Provider, ProviderId, StopReason};
+use crate::query::QueryCache;
+use crate::tasks::TaskId;
 use crate::theme::Theme;
 use crate::tools::ExecutionResult;
 use crate::types::*;
+
+pub const DEFAULT_CONTEXT_WINDOW_TOKENS: usize = 200_000;
 
 pub enum AppEvent {
     StreamChunk {
@@ -26,6 +30,8 @@ pub enum AppEvent {
     StreamUsage {
         input_tokens: u32,
         output_tokens: u32,
+        cache_read_tokens: u32,
+        cache_write_tokens: u32,
     },
     ToolResult {
         tool_id: String,
@@ -44,7 +50,7 @@ pub enum AppEvent {
     /// the result belongs to. `models` is empty on a remote failure so the picker can
     /// fall back to the static `available_models()` set without showing a hung row.
     ModelsLoaded {
-        provider: String,
+        provider: ProviderId,
         models: Vec<ModelInfo>,
     },
     /// Background OAuth `/api/oauth/profile` finished. `seat_tier` drives the picker's
@@ -62,6 +68,30 @@ pub enum AppEvent {
         tool: ToolCall,
         blocked: bool,
         reason: String,
+    },
+    TaskStarted {
+        task_id: String,
+        description: String,
+    },
+    TaskProgress {
+        task_id: String,
+        last_tool: Option<String>,
+        elapsed_ms: u64,
+    },
+    TaskCompleted {
+        task_id: String,
+        summary: String,
+        elapsed_ms: u64,
+    },
+    TaskFailed {
+        task_id: String,
+        error: String,
+    },
+    McpUpdated {
+        servers: Vec<crate::types::McpServerInfo>,
+    },
+    LspUpdated {
+        servers: Vec<crate::types::LspServerInfo>,
     },
     Term(Event),
     Tick,
@@ -105,6 +135,17 @@ pub struct QueuedPrompt {
 pub const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 pub const TICK_MS: u64 = 80;
 
+pub struct BackgroundTask {
+    pub task_id: String,
+    pub description: String,
+    pub status: crate::types::TaskLifecycle,
+    pub started_at: std::time::Instant,
+    pub summary: Option<String>,
+    pub error: Option<String>,
+    pub last_tool: Option<String>,
+    pub messages: Vec<String>,
+}
+
 pub struct App {
     pub theme: Theme,
     pub messages: Vec<ChatMessage>,
@@ -121,7 +162,7 @@ pub struct App {
     pub spinner_frame: usize,
     pub provider: Arc<dyn Provider>,
     pub providers: Vec<Arc<dyn Provider>>,
-    pub model: String,
+    pub model: ModelId,
     pub cwd: String,
     pub reasoning_expanded: HashMap<usize, bool>,
     pub pending_approval: Option<PendingApproval>,
@@ -149,6 +190,7 @@ pub struct App {
     pub max_context_tokens: usize,
     /// Set each frame by the renderer. Used for page-scroll math.
     pub viewport_height: usize,
+    pub input_wrap_width: usize,
     pub tool_ctx: ToolContext,
     pub dedup_cache: Arc<Mutex<ReadDedupCache>>,
     pub show_model_picker: bool,
@@ -163,7 +205,8 @@ pub struct App {
     /// Cache of `Provider::fetch_models()` results, keyed by `Provider::name()`. Populated
     /// asynchronously at startup; consulted by the picker before falling back to the
     /// provider's static `available_models()`.
-    pub provider_models: HashMap<String, Vec<ModelInfo>>,
+    pub provider_models: HashMap<ProviderId, Vec<ModelInfo>>,
+    pub model_picker_query_cache: QueryCache<Vec<ModelInfo>>,
     /// OAuth seat tier from `/api/oauth/profile` (e.g. `"opus"`, `"opusplan"`,
     /// `"claude-opus-4-6[1m]"`). Drives `apply_seat_tier_filter()` in the picker.
     pub seat_tier: Option<String>,
@@ -195,7 +238,7 @@ pub struct App {
     pub task_store: std::sync::Arc<crate::tasks::TaskStore>,
     /// Records when each task transitioned to `Completed` so the footer can
     /// keep showing them for 30 seconds with dimmed/strikethrough styling.
-    pub task_completion_times: HashMap<String, Instant>,
+    pub task_completion_times: HashMap<TaskId, Instant>,
     /// Whether the full-screen task panel overlay is visible (Ctrl+T).
     pub show_task_panel: bool,
     /// Currently-selected row in the task panel.
@@ -205,13 +248,21 @@ pub struct App {
     /// Transient per-session map of task_id → current activity description.
     /// Updated by the tool execution loop to show what an in_progress task is
     /// doing (e.g. "Running bash: cargo test", "Reading src/main.rs").
-    pub task_activities: HashMap<String, String>,
+    pub task_activities: HashMap<TaskId, String>,
     pub last_usage_input: u32,
     pub last_usage_output: u32,
+    pub background_tasks: HashMap<String, BackgroundTask>,
+    pub show_info_sidebar: bool,
+    pub mcp_servers: Vec<crate::types::McpServerInfo>,
+    pub lsp_servers: Vec<crate::types::LspServerInfo>,
+    pub usage_by_model: HashMap<String, crate::types::ModelUsage>,
+    pub leader_key_active: bool,
+    pub leader_key_timeout: Option<std::time::Instant>,
+    pub viewing_task_id: Option<String>,
 }
 
 impl App {
-    pub fn new(provider: Arc<dyn Provider>, model: String) -> Self {
+    pub fn new(provider: Arc<dyn Provider>, model: impl Into<ModelId>) -> Self {
         let providers = vec![Arc::clone(&provider)];
         let mut textarea = TextArea::default();
         textarea.set_cursor_line_style(Style::default());
@@ -222,7 +273,7 @@ impl App {
             .and_then(|p| p.to_str().map(str::to_owned))
             .unwrap_or_default();
 
-        Self {
+        let mut app = Self {
             theme: Theme::dark(),
             messages: Vec::new(),
             streaming_text: String::new(),
@@ -238,7 +289,7 @@ impl App {
             spinner_frame: 0,
             provider,
             providers,
-            model,
+            model: model.into(),
             cwd,
             reasoning_expanded: HashMap::new(),
             pending_approval: None,
@@ -250,14 +301,16 @@ impl App {
             tool_ctx: ToolContext::new(),
             dedup_cache: Arc::new(Mutex::new(ReadDedupCache::new())),
             pending_tool_calls: Vec::new(),
-            max_context_tokens: 200_000,
+            max_context_tokens: DEFAULT_CONTEXT_WINDOW_TOKENS,
             viewport_height: 0,
+            input_wrap_width: 1,
             show_model_picker: false,
             model_picker_filter: String::new(),
             model_picker_selected: 0,
             model_picker_models: Vec::new(),
             model_picker_state: TableState::default().with_selected(Some(0)),
             provider_models: HashMap::new(),
+            model_picker_query_cache: QueryCache::default(),
             seat_tier: None,
             subscription_type: None,
             account_email: None,
@@ -275,7 +328,17 @@ impl App {
             task_activities: HashMap::new(),
             last_usage_input: 0,
             last_usage_output: 0,
-        }
+            background_tasks: HashMap::new(),
+            show_info_sidebar: true,
+            mcp_servers: Vec::new(),
+            lsp_servers: Vec::new(),
+            usage_by_model: HashMap::new(),
+            leader_key_active: false,
+            leader_key_timeout: None,
+            viewing_task_id: None,
+        };
+        app.sync_selected_context_window();
+        app
     }
 
     pub fn scroll_to_bottom(&mut self) {
@@ -315,6 +378,34 @@ impl App {
         self.scroll_offset >= self.max_scroll()
     }
 
+    pub fn selected_model_info(&self) -> Option<ModelInfo> {
+        let provider_name = self.provider.name();
+        self.provider_models
+            .get(provider_name)
+            .and_then(|models| models.iter().find(|model| model.id == self.model).cloned())
+            .or_else(|| {
+                self.providers
+                    .iter()
+                    .find(|provider| provider.name() == provider_name)
+                    .and_then(|provider| {
+                        provider
+                            .available_models()
+                            .into_iter()
+                            .find(|model| model.id == self.model)
+                    })
+            })
+    }
+
+    pub fn selected_context_window_tokens(&self) -> usize {
+        self.selected_model_info()
+            .and_then(|model| model.context_window_tokens)
+            .unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS)
+    }
+
+    pub fn sync_selected_context_window(&mut self) {
+        self.max_context_tokens = self.selected_context_window_tokens();
+    }
+
     fn max_scroll(&self) -> usize {
         self.total_lines.saturating_sub(self.viewport_height.max(1))
     }
@@ -341,7 +432,7 @@ impl App {
     /// completion instant so the footer can fade them out after 30 s.
     pub fn sync_task_completions(&mut self) {
         use crate::tasks::TaskStatus;
-        for task in self.task_store.list(false) {
+        for task in self.task_store.list(crate::tasks::DeletedFilter::Exclude) {
             if task.status == TaskStatus::Completed
                 && !self.task_completion_times.contains_key(&task.id)
             {

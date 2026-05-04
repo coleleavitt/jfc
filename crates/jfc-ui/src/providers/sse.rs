@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use eventsource_stream::Eventsource;
 use futures::{StreamExt, TryStreamExt};
 use serde::Deserialize;
@@ -212,6 +214,8 @@ pub fn translate(
             usage.map(|usage| StreamEvent::Usage {
                 input_tokens: usage.input_total(),
                 output_tokens: usage.output_total(),
+                cache_read_tokens: usage.cache_read_input_tokens.unwrap_or_default(),
+                cache_write_tokens: usage.cache_creation_input_tokens.unwrap_or_default(),
             })
         }
         SseEvent::MessageStop => Some(StreamEvent::Done {
@@ -223,6 +227,8 @@ pub fn translate(
         SseEvent::MessageStart { message } => message.usage.map(|usage| StreamEvent::Usage {
             input_tokens: usage.input_total(),
             output_tokens: usage.output_total(),
+            cache_read_tokens: usage.cache_read_input_tokens.unwrap_or_default(),
+            cache_write_tokens: usage.cache_creation_input_tokens.unwrap_or_default(),
         }),
         SseEvent::Ping => None,
     }
@@ -751,6 +757,7 @@ mod tests {
             Some(StreamEvent::Usage {
                 input_tokens: 0,
                 output_tokens: 42,
+                ..
             })
         ));
         assert_eq!(sr, Some(StopReason::EndTurn));
@@ -767,6 +774,7 @@ mod tests {
             Some(StreamEvent::Usage {
                 input_tokens: 20,
                 output_tokens: 0,
+                ..
             })
         ));
     }
