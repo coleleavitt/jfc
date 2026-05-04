@@ -246,6 +246,24 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: "Skill".into(),
+            description: "Invoke a registered skill by name. The skill's body is rendered as guidance and acted upon. Pass `args` as additional context.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The registered skill name (matches the `name` frontmatter or filename stem under `.claude/skills/`)"
+                    },
+                    "args": {
+                        "type": "string",
+                        "description": "Optional additional context appended to the skill body"
+                    }
+                },
+                "required": ["name"]
+            }),
+        },
+        ToolDef {
             name: "Task".into(),
             description: "Spawn a sub-agent to handle a focused task. The sub-agent runs with the same provider/model and returns a result. Use run_in_background=true for parallel work.".into(),
             input_schema: serde_json::json!({
@@ -548,6 +566,9 @@ pub async fn execute_tool(
         }
         (ToolKind::Task, ToolInput::Task(_)) => {
             ExecutionResult::failure("Task tool must be dispatched via the streaming executor")
+        }
+        (ToolKind::Skill, ToolInput::Skill { name, args }) => {
+            execute_skill(&name, args.as_deref()).await
         }
         (kind, _) => ExecutionResult::failure(format!("Tool {:?} not yet implemented", kind)),
     }
@@ -941,6 +962,34 @@ fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) -> ExecutionR
     }
 }
 
+/// Resolve a registered skill by name and return its markdown body as the
+/// tool result. Optional `args` (when non-empty) are appended under an
+/// `# Args` header so the model can incorporate the caller's context.
+///
+/// This is read-only by construction — `load_skills` walks the filesystem
+/// but doesn't mutate anything, and the body returned here is just a string
+/// the model already has the right to read (it's already in the system
+/// prompt listing).
+pub async fn execute_skill(name: &str, args: Option<&str>) -> ExecutionResult {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+    execute_skill_in(&cwd, name, args).await
+}
+
+/// Cwd-parameterized form used by tests so skill discovery is hermetic.
+async fn execute_skill_in(cwd: &Path, name: &str, args: Option<&str>) -> ExecutionResult {
+    let skills = crate::agents::load_skills(cwd);
+    match crate::agents::find_skill_by_name(&skills, name) {
+        Some(skill) => {
+            let body = match args.filter(|s| !s.is_empty()) {
+                Some(a) => format!("{}\n\n# Args\n{}", skill.body, a),
+                None => skill.body.clone(),
+            };
+            ExecutionResult::success(body)
+        }
+        None => ExecutionResult::failure(format!("Unknown skill: {name}")),
+    }
+}
+
 pub async fn execute_task(
     task_input: &crate::types::TaskInput,
     provider: &dyn crate::provider::Provider,
@@ -1077,5 +1126,99 @@ mod tests {
             "\u{1b}[31mred\u{1b}[0m \u{1b}[<35;82;42MPassword:\u{7}\u{1b}]0;title\u{7} ok\u{0}";
 
         assert_eq!(terminal_safe_text(raw), "red Password: ok");
+    }
+
+    /// Best-effort temp-dir helper — returns `None` if temp creation
+    /// fails so tests skip rather than fail on sandboxes without
+    /// writable temp.
+    fn skill_tempdir_or_skip() -> Option<PathBuf> {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "jfc_skill_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(p.join(".claude/skills")).ok()?;
+        Some(p)
+    }
+
+    fn write_skill(root: &Path, name: &str, body: &str) {
+        let path = root.join(".claude/skills").join(format!("{name}.md"));
+        let frontmatter = format!("---\nname: {name}\n---\n{body}");
+        std::fs::write(&path, frontmatter).expect("write skill");
+    }
+
+    #[tokio::test]
+    async fn execute_skill_unknown_returns_failure_robust() {
+        let Some(root) = skill_tempdir_or_skip() else {
+            return;
+        };
+        // Use a very unlikely name so a stray user-level skill at
+        // ~/.claude/skills cannot satisfy the lookup.
+        let result =
+            execute_skill_in(&root, "definitely-not-a-real-skill-xyz-9831", None).await;
+        assert!(result.is_error(), "unknown skill must report failure");
+        assert!(
+            result.output.contains("Unknown skill"),
+            "expected 'Unknown skill' marker, got: {}",
+            result.output
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_skill_known_returns_body_normal() {
+        let Some(root) = skill_tempdir_or_skip() else {
+            return;
+        };
+        write_skill(&root, "jfc-test-known", "Do the thing carefully.");
+
+        let result = execute_skill_in(&root, "jfc-test-known", None).await;
+        assert!(!result.is_error(), "known skill must succeed: {:?}", result);
+        assert!(
+            result.output.contains("Do the thing carefully."),
+            "skill body should be returned, got: {}",
+            result.output
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_skill_appends_args_normal() {
+        let Some(root) = skill_tempdir_or_skip() else {
+            return;
+        };
+        write_skill(&root, "jfc-test-args", "Body content.");
+
+        let result =
+            execute_skill_in(&root, "jfc-test-args", Some("focus on auth")).await;
+        assert!(!result.is_error(), "skill with args must succeed");
+        assert!(result.output.contains("Body content."));
+        assert!(
+            result.output.contains("# Args"),
+            "args block should have header, got: {}",
+            result.output
+        );
+        assert!(
+            result.output.contains("focus on auth"),
+            "args text should be embedded, got: {}",
+            result.output
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_skill_no_args_no_header_normal() {
+        let Some(root) = skill_tempdir_or_skip() else {
+            return;
+        };
+        write_skill(&root, "jfc-test-no-args", "Plain body.");
+
+        let result = execute_skill_in(&root, "jfc-test-no-args", None).await;
+        assert!(!result.is_error());
+        assert!(
+            !result.output.contains("# Args"),
+            "no args means no Args section, got: {}",
+            result.output
+        );
     }
 }

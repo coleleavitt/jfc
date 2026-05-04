@@ -134,6 +134,13 @@ pub fn load_skills(project_root: &Path) -> Vec<Skill> {
     out
 }
 
+/// Look up a skill in a previously-loaded list by exact name match. Returned
+/// as a borrow so callers can clone only the fields they need (typically the
+/// `body` for the Skill tool's tool_result payload).
+pub fn find_skill_by_name<'a>(skills: &'a [Skill], name: &str) -> Option<&'a Skill> {
+    skills.iter().find(|s| s.name == name)
+}
+
 /// Same precedence rules as `load_skills`, but for agent definitions.
 pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
     let mut out: Vec<AgentDef> = Vec::new();
