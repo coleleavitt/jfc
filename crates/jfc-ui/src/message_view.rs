@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Widget, Wrap},
+    widgets::{Paragraph, Widget, Wrap},
 };
 
 use crate::app::App;
@@ -110,8 +110,25 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
     let mut items: Vec<RenderItem<'a>> = Vec::new();
 
     for (idx, msg) in app.messages.iter().enumerate() {
-        if app.streaming_assistant_idx == Some(idx) && app.is_streaming {
-            continue;
+        // The streaming-placeholder assistant message gets mutated in place
+        // by the StreamChunk handler — text/reasoning chunks append to its
+        // parts as they arrive. We render it inline like any other message
+        // so the user sees content arriving in the chat timeline (rather
+        // than a duplicate "assistant" header pinned to the bottom). When
+        // the placeholder still has no content (parts are all empty Text /
+        // empty Reasoning), skip it so we don't show a label with nothing
+        // under it — the dedicated spinner row above the input is the
+        // visual cue that work is in flight.
+        let is_streaming_placeholder = app.streaming_assistant_idx == Some(idx) && app.is_streaming;
+        if is_streaming_placeholder {
+            let has_content = msg.parts.iter().any(|p| match p {
+                MessagePart::Text(s) => !s.is_empty(),
+                MessagePart::Reasoning(s) => !s.is_empty(),
+                _ => true,
+            });
+            if !has_content {
+                continue;
+            }
         }
 
         let label_line = match msg.role {
@@ -151,44 +168,34 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
             }
         }
 
-        items.push(RenderItem::Blank);
-    }
-
-    if app.is_streaming || !app.streaming_text.is_empty() || !app.streaming_reasoning.is_empty() {
-        items.push(RenderItem::TextLine(Line::from(Span::styled(
-            "assistant",
-            t.asst_label(),
-        ))));
-
-        if !app.streaming_reasoning.is_empty() {
-            items.push(RenderItem::TextLine(Line::from(vec![
-                Span::styled(
-                    "∴ Thinking",
+        // v126 cli.js:341376 — `Cooked for Nm Ns` post-turn footer with a
+        // randomized past-tense verb. Only attached to completed assistant
+        // turns (skip user messages, skip the in-flight placeholder which
+        // already has its own spinner row). `msg.elapsed` carries the
+        // duration string written at StreamDone time.
+        if msg.role == Role::Assistant && !is_streaming_placeholder {
+            if let Some(elapsed) = &msg.elapsed {
+                items.push(RenderItem::TextLine(Line::from(Span::styled(
+                    format!("  {elapsed}"),
                     Style::default()
                         .fg(t.text_muted)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-                Span::styled(" [streaming…]", Style::default().fg(t.text_muted)),
-            ])));
-        }
-
-        let convention = app.provider.stream_convention();
-        for line in render_assistant_text_lines(&app.streaming_text, &t, inner_w, convention) {
-            items.push(RenderItem::TextLine(line));
-        }
-
-        if app.is_streaming {
-            items.push(RenderItem::TextLine(Line::from(Span::styled(
-                format!(" {} ", crate::app::SPINNER[app.spinner_frame]),
-                Style::default().fg(t.text_muted),
-            ))));
-            for line in streaming_task_footer_lines(app, &t) {
-                items.push(RenderItem::TextLine(line));
+                        .add_modifier(Modifier::DIM),
+                ))));
             }
         }
 
         items.push(RenderItem::Blank);
     }
+
+    // Pre-spinner-row architecture used to emit a duplicate "assistant"
+    // header + streaming text + spinner here, on top of also pushing those
+    // chunks into the placeholder message's parts via StreamChunk. With
+    // the dedicated `spinner_row()` widget above the input bar (see
+    // `render::spinner_row`), this block is dead weight — it produced the
+    // doubled `assistant / ∴ Thinking [streaming…]` the user reported.
+    // The placeholder now renders inline like any other message; when it
+    // has no content yet the loop above skips it so only the spinner row
+    // signals activity.
 
     items
 }
@@ -197,7 +204,13 @@ fn tool_block_height(tool: &ToolCall, inner_w: usize) -> usize {
     if tool.is_collapsed {
         return 1;
     }
-    2 + tool_content_height(&tool.output, inner_w.saturating_sub(2))
+    // v126-style flat layout: 1 title row + content rows. The previous
+    // rounded-box version added 2 rows of border padding (top + bottom)
+    // and reserved 2 cols of side border (`│ … │`), which made every tool
+    // call visually loud and ate horizontal space. Flat: title sits at the
+    // left margin, content indents 2 chars under it. Mirrors v126 cli.js's
+    // `* TaskCreate create: Foo` followed by indented JSON body.
+    1 + tool_content_height(&tool.output, inner_w.saturating_sub(2))
 }
 
 pub fn tool_block_height_pub(tool: &ToolCall, inner_w: usize) -> usize {
@@ -273,90 +286,47 @@ fn render_tool_block(tool: &ToolCall, area: Rect, t: Theme, buf: &mut Buffer, sk
     }
 
     let (status_icon, status_style) = tool_status_icon(tool, &t);
-    let border_color = border_color_for_status(tool, &t);
-    let title_line = Line::from(build_title_spans(
+    let title_spans = build_title_spans(
         tool,
         &t,
         status_icon,
         status_style,
-        area.width.saturating_sub(6) as usize,
-    ));
+        area.width.saturating_sub(2) as usize,
+    );
 
     let full_h = tool_block_height(tool, area.width as usize) as u16;
     if skip >= full_h as usize {
         return;
     }
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(border_color))
-        .title(title_line)
-        .style(Style::default().bg(t.bg));
-
-    if skip == 0 {
-        let inner = block.inner(area);
-        block.render(area, buf);
-        if inner.height > 0 {
-            render_tool_content_clipped(tool, inner, t, buf);
-        }
-        return;
+    // Row 0: title — only draw it if scrolling hasn't pushed it out of view.
+    if skip == 0 && area.height > 0 {
+        let title_area = Rect { height: 1, ..area };
+        Paragraph::new(Line::from(title_spans))
+            .style(Style::default().bg(t.bg))
+            .render(title_area, buf);
     }
 
+    // Rows 1..N: indented content, 2-char left gutter to mirror v126's
+    // visual hierarchy (the title's leading status icon "owns" the column,
+    // so the body sits two cells in). When `skip == 0` we already consumed
+    // row 0 for the title; otherwise skip-1 rows of content have scrolled
+    // off and we keep going from there.
+    let title_consumed: u16 = if skip == 0 { 1 } else { 0 };
     let content_skip = skip.saturating_sub(1);
-    let bottom_border_screen_y = (full_h as usize).saturating_sub(1).saturating_sub(skip) as u16;
-
-    let content_h = if bottom_border_screen_y < area.height {
-        bottom_border_screen_y
-    } else {
-        area.height
-    };
-
+    let content_y = area.y + title_consumed;
+    let content_h = area.height.saturating_sub(title_consumed);
+    if content_h == 0 {
+        return;
+    }
     let content_area = Rect {
-        x: area.x + 1,
-        y: area.y,
+        x: area.x + 2,
+        y: content_y,
         width: area.width.saturating_sub(2),
         height: content_h,
     };
-
-    if content_area.width > 0 && content_area.height > 0 {
+    if content_area.width > 0 {
         render_tool_content_with_skip(tool, content_area, t, buf, content_skip);
-    }
-
-    for row_offset in 0..content_h {
-        let ry = area.y + row_offset;
-        if ry >= area.y + area.height {
-            break;
-        }
-        if area.x < buf.area.right() {
-            buf[(area.x, ry)]
-                .set_char('│')
-                .set_style(Style::default().fg(border_color));
-        }
-        let rx = area.x + area.width.saturating_sub(1);
-        if rx < buf.area.right() {
-            buf[(rx, ry)]
-                .set_char('│')
-                .set_style(Style::default().fg(border_color));
-        }
-    }
-
-    if bottom_border_screen_y < area.height {
-        let by = area.y + bottom_border_screen_y;
-        for col in area.x..area.x + area.width {
-            if col < buf.area.right() {
-                let ch = if col == area.x {
-                    '╰'
-                } else if col == area.x + area.width - 1 {
-                    '╯'
-                } else {
-                    '─'
-                };
-                buf[(col, by)]
-                    .set_char(ch)
-                    .set_style(Style::default().fg(border_color));
-            }
-        }
     }
 }
 
@@ -371,6 +341,21 @@ fn build_collapsed_header<'a>(tool: &'a ToolCall, t: &Theme, width: usize) -> Li
     Line::from(spans)
 }
 
+/// Cap the visible tool title at a sensible length even on wide terminals.
+/// A 200-column terminal showing a sprawling `bash uname -a && cat … |
+/// head -5 && echo --- && lscpu | head -10 && echo --- && free -h`
+/// across a full row reads as one giant ribbon of grey instead of as a
+/// labeled invocation. v126 keeps tool titles brief; the full command is
+/// visible in the expanded body. Tunable via `JFC_TOOL_TITLE_WIDTH` for
+/// users who want the full command on a wide screen.
+fn tool_title_width_cap() -> usize {
+    std::env::var("JFC_TOOL_TITLE_WIDTH")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|n| *n >= 20)
+        .unwrap_or(100)
+}
+
 fn build_title_spans<'a>(
     tool: &'a ToolCall,
     t: &Theme,
@@ -383,7 +368,8 @@ fn build_title_spans<'a>(
         Span::styled(status_icon.to_owned(), status_style),
         Span::raw(" "),
     ];
-    spans.extend(build_header_inner_spans(tool, t, width.saturating_sub(4)));
+    let effective = width.min(tool_title_width_cap()).saturating_sub(4);
+    spans.extend(build_header_inner_spans(tool, t, effective));
     spans
 }
 
@@ -1042,8 +1028,46 @@ fn push_reasoning_lines<'a>(
             ])));
         }
     } else {
-        let preview: String = text.chars().take(60).collect();
-        let ellipsis = if text.chars().count() > 60 { "…" } else { "" };
+        // The collapsed preview is a single-line teaser. Without flattening
+        // newlines / collapsing whitespace runs, multi-line thinking like
+        //     "The user wants me to:\n1. Show the diff\n2. Stage..."
+        // renders as "The user wants me to:1. Show the diff2. Stage..." —
+        // newlines vanish in single-line layout, leaving the digits jammed
+        // against the trailing punctuation. Replace ANY whitespace run
+        // (including newlines, tabs, multi-space) with a single space so
+        // the preview reads naturally.
+        const PREVIEW_MAX_CHARS: usize = 60;
+        let mut flattened = String::with_capacity(PREVIEW_MAX_CHARS);
+        let mut char_count: usize = 0;
+        let mut last_was_space = true; // suppress leading whitespace
+        let mut truncated = false;
+        for ch in text.chars() {
+            if char_count >= PREVIEW_MAX_CHARS {
+                truncated = true;
+                break;
+            }
+            if ch.is_whitespace() {
+                if !last_was_space {
+                    flattened.push(' ');
+                    char_count += 1;
+                    last_was_space = true;
+                }
+            } else {
+                flattened.push(ch);
+                char_count += 1;
+                last_was_space = false;
+            }
+        }
+        if flattened.ends_with(' ') {
+            flattened.pop();
+        }
+        let ellipsis = if truncated { "…" } else { "" };
+        // v126 cli.js never repeats "(ctrl+o to expand)" on every collapsed
+        // thinking summary — it's reserved for collapsed long *output* and
+        // the diagnostic line. Repeating it on every Thinking row clutters
+        // the chat (see screenshot — it appears 5+ times in a single scroll).
+        // The summary itself signals collapsibility; the keybind is
+        // discoverable through the palette.
         items.push(RenderItem::TextLine(Line::from(vec![
             Span::styled(
                 "∴ Thinking",
@@ -1052,10 +1076,99 @@ fn push_reasoning_lines<'a>(
                     .add_modifier(Modifier::ITALIC),
             ),
             Span::styled(
-                format!(" — {preview}{ellipsis}  [Ctrl+O to expand]"),
+                format!(" — {flattened}{ellipsis}"),
                 Style::default().fg(t.text_muted),
             ),
         ])));
+    }
+}
+
+#[cfg(test)]
+mod reasoning_preview_tests {
+    use super::*;
+
+    fn collapsed_preview(text: &str) -> String {
+        let mut items: Vec<RenderItem<'_>> = Vec::new();
+        let theme = crate::theme::Theme::dark();
+        push_reasoning_lines(&mut items, text, false, 0, &theme);
+        // The single line we pushed has two spans; the second contains the
+        // preview. Concatenate the visible text so tests can assert on it.
+        match items.into_iter().next() {
+            Some(RenderItem::TextLine(line)) => line
+                .spans
+                .into_iter()
+                .map(|s| s.content.into_owned())
+                .collect::<String>(),
+            _ => String::new(),
+        }
+    }
+
+    #[test]
+    fn flattens_newlines_in_multiline_thinking_normal() {
+        let s =
+            collapsed_preview("The user wants me to:\n1. Show the git diff\n2. Stage the changes");
+        assert!(
+            s.contains("The user wants me to: 1. Show"),
+            "newlines should be replaced with spaces; got: {s:?}"
+        );
+        assert!(!s.contains(":1."), "digits jammed into prior text: {s:?}");
+    }
+
+    #[test]
+    fn collapses_whitespace_runs_normal() {
+        let s = collapsed_preview("aaa     bbb\t\tccc");
+        assert!(s.contains("aaa bbb ccc"), "got: {s:?}");
+    }
+
+    #[test]
+    fn handles_leading_whitespace_robust() {
+        // A reasoning that starts with newlines/spaces shouldn't render with
+        // a leading run of blanks before the first word.
+        let s = collapsed_preview("\n\n   Thinking through the problem now");
+        // The visible preview begins after " — "; ensure the next char is
+        // a letter, not space.
+        let dash = s.find(" — ").expect("preview separator missing");
+        let after = &s[dash + " — ".len()..];
+        assert!(
+            after.starts_with("Thinking"),
+            "leading whitespace not trimmed; got: {after:?}"
+        );
+    }
+
+    #[test]
+    fn no_per_line_expand_hint_normal() {
+        // v126 doesn't put `(ctrl+o to expand)` on every collapsed thinking
+        // — repeating it 5+ times in one scroll clutters the chat. The
+        // summary itself signals collapsibility; the binding is in the
+        // palette. Pin this so a future "helpful" change doesn't add it back.
+        let s = collapsed_preview("a quick thinking note");
+        assert!(!s.to_lowercase().contains("ctrl+o"), "got: {s:?}");
+        assert!(!s.to_lowercase().contains("expand"), "got: {s:?}");
+    }
+
+    #[test]
+    fn empty_reasoning_does_not_panic_robust() {
+        // No content → empty preview, no ellipsis. Just shouldn't panic.
+        let s = collapsed_preview("");
+        assert!(s.contains("∴ Thinking"));
+    }
+
+    #[test]
+    fn unicode_grapheme_count_correct_robust() {
+        // 60-char cap must be by char count, not byte count, so emoji /
+        // CJK don't truncate mid-codepoint. Input of 80 CJK chars (each
+        // 3 bytes) → 80 chars total, capped to 60, ellipsis present.
+        let input: String = std::iter::repeat('日').take(80).collect();
+        let s = collapsed_preview(&input);
+        assert!(s.contains('…'), "expected truncation indicator; got: {s:?}");
+    }
+
+    #[test]
+    fn no_ellipsis_when_under_cap_robust() {
+        // Whitespace collapse can shrink the visible preview below the
+        // input's char count, but that's not truncation — no ellipsis.
+        let s = collapsed_preview("a   b   c");
+        assert!(!s.contains('…'), "false truncation marker; got: {s:?}");
     }
 }
 

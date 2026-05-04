@@ -641,7 +641,17 @@ pub async fn handle_key(
             return Ok(false);
         }
         (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
-            if let Some(idx) = app.streaming_assistant_idx {
+            // Ctrl+O is v126's universal "expand" key (cli.js:338038
+            // advertises `(ctrl+o to expand)` on the diagnostic row).
+            // Priority: when the diagnostic panel is closeable from
+            // here OR diagnostics exist, that wins — toggling the
+            // diagnostic-expansion panel is the primary affordance.
+            // Falls back to thinking-toggle otherwise.
+            if app.show_diagnostic_panel {
+                app.show_diagnostic_panel = false;
+            } else if !app.diagnostics.is_empty() {
+                app.show_diagnostic_panel = true;
+            } else if let Some(idx) = app.streaming_assistant_idx {
                 let entry = app.reasoning_expanded.entry(idx).or_insert(false);
                 *entry = !*entry;
             } else if !app.messages.is_empty() {
@@ -649,6 +659,10 @@ pub async fn handle_key(
                 let entry = app.reasoning_expanded.entry(last_idx).or_insert(false);
                 *entry = !*entry;
             }
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::Esc) if app.show_diagnostic_panel => {
+            app.show_diagnostic_panel = false;
             return Ok(false);
         }
         (KeyModifiers::NONE, KeyCode::Char('o')) if !input_has_text(app) => {
@@ -790,8 +804,106 @@ pub async fn handle_key(
         return Ok(false);
     }
 
+    // `@filename` autocomplete. When the popup is active, intercept the
+    // keys that drive it (Esc / Enter / Tab / arrows) BEFORE letting the
+    // textarea consume them. Anything else falls through; we re-derive
+    // the query from the buffer after each keystroke. Mirrors v126's
+    // `autocomplete:accept` / `autocomplete:dismiss` keybindings
+    // (cli.js:161602).
+    if app.mention.active {
+        match key.code {
+            KeyCode::Esc => {
+                app.mention.dismiss();
+                return Ok(false);
+            }
+            KeyCode::Enter | KeyCode::Tab => {
+                if let Some(pick) = app.mention.accepted().map(str::to_owned) {
+                    apply_mention_pick(app, &pick);
+                }
+                app.mention.dismiss();
+                return Ok(false);
+            }
+            KeyCode::Up => {
+                app.mention.move_selection(-1);
+                return Ok(false);
+            }
+            KeyCode::Down => {
+                app.mention.move_selection(1);
+                return Ok(false);
+            }
+            _ => {}
+        }
+    }
+
     app.textarea.input(key);
+    update_mention_state_after_input(app);
     Ok(false)
+}
+
+/// Replace the active `@<query>` token in the textarea with the picked
+/// path + trailing space. Reconstructs the textarea from the resulting
+/// string so cursor positioning is correct (the `tui_textarea` API
+/// doesn't expose a "replace range" operation).
+fn apply_mention_pick(app: &mut App, pick: &str) {
+    let buffer = app.textarea.lines().join("\n");
+    let anchor = app.mention.anchor_byte;
+    let q_len = app.mention.query.chars().count();
+    // `apply_acceptance` expects byte offsets but treats the query as a
+    // suffix following the `@`. Build the new buffer.
+    let (new_buf, _new_cursor) = crate::mentions::apply_acceptance(&buffer, anchor, q_len, pick);
+    app.textarea = TextArea::from(new_buf.lines().map(str::to_string).collect::<Vec<_>>());
+    app.textarea.set_cursor_line_style(Style::default());
+    app.textarea
+        .set_placeholder_text("Type a message… (Enter to send, Shift+Enter for newline)");
+    app.textarea.move_cursor(CursorMove::End);
+}
+
+/// Decide whether the popup should activate (newly-typed `@` after
+/// whitespace) or update its query (already-active, more chars typed
+/// or backspace shrunk the buffer).
+fn update_mention_state_after_input(app: &mut App) {
+    let (line_idx, col) = app.textarea.cursor();
+    let line = match app.textarea.lines().get(line_idx) {
+        Some(s) => s.clone(),
+        None => return,
+    };
+    let prefix: String = line.chars().take(col).collect();
+    if app.mention.active {
+        // Recompute query from anchor → cursor on the same line. If the
+        // user backspaced past the `@` or moved off-line, dismiss.
+        let buffer = app.textarea.lines().join("\n");
+        if app.mention.anchor_byte >= buffer.len()
+            || !buffer[app.mention.anchor_byte..].starts_with('@')
+        {
+            app.mention.dismiss();
+            return;
+        }
+        // Query = chars after `@` up to first whitespace (so typing a
+        // space terminates the popup naturally).
+        let after_at = &buffer[app.mention.anchor_byte + 1..];
+        let q: String = after_at
+            .chars()
+            .take_while(|c| !c.is_whitespace())
+            .collect();
+        let all = app.mention_all_files.clone();
+        app.mention.update_query(q, &all);
+        // Whitespace after `@token` → user typed past the trigger; close.
+        let after_q_len = app.mention.anchor_byte + 1 + app.mention.query.len();
+        if after_q_len < buffer.len() && buffer[after_q_len..].starts_with(char::is_whitespace) {
+            app.mention.dismiss();
+        }
+        return;
+    }
+    if let Some(anchor) = crate::mentions::should_activate(&prefix) {
+        // Lazy-load file list so we don't walk `cwd` on every keystroke.
+        if app.mention_all_files.is_empty() {
+            let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+            app.mention_all_files = crate::mentions::scan_files(&cwd, 5000);
+        }
+        let all = app.mention_all_files.clone();
+        let initial = crate::mentions::filter_candidates(&all, "");
+        app.mention.activate(anchor, initial);
+    }
 }
 
 /// Public re-entry used by `AppEvent::Submit`. Same body as the private
@@ -810,6 +922,16 @@ async fn handle_submit(
     tx: &mpsc::UnboundedSender<crate::app::AppEvent>,
 ) -> anyhow::Result<()> {
     if text.starts_with('/') {
+        // `/check` re-runs the cargo-check producer. Handled here (not in
+        // `handle_slash_command`) because it needs the tx channel to emit
+        // `DiagnosticsUpdated` from a spawned task.
+        if text.trim() == "/check" {
+            let tx_diag = tx.clone();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+            tokio::spawn(async move {
+                crate::diagnostics_producer::run_once(cwd, tx_diag).await;
+            });
+        }
         handle_slash_command(app, &text);
         return Ok(());
     }
@@ -890,6 +1012,11 @@ async fn handle_submit(
     app.streaming_reasoning.clear();
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
+    let now = std::time::Instant::now();
+    app.streaming_started_at = Some(now);
+    app.streaming_last_token_at = Some(now);
+    app.last_usage_output = 0;
+    app.usage_apply_baseline = (0, 0, 0, 0);
     app.scroll_to_bottom();
 
     // Auto-persist the session so the sidebar shows it. Reuses the existing
@@ -933,6 +1060,27 @@ fn handle_slash_command(app: &mut App, text: &str) {
             // completion timers). v126 cli.js:271511 keys todos by sessionId
             // so a new session inherently has an empty list — match that.
             app.switch_session(None);
+        }
+        "/check" => {
+            // Re-run `cargo check --message-format=json` and refresh the
+            // diagnostic row + transition toast. v126 has an analogous
+            // `/diagnostics` flow; keep ours short. Best-effort — silently
+            // no-ops outside a cargo project.
+            app.messages.push(ChatMessage::user("/check".into()));
+            app.messages.push(ChatMessage::assistant(
+                "Running `cargo check`… (results will land in the diagnostic row)".into(),
+            ));
+            // The handler emits `AppEvent::DiagnosticsUpdated` whose
+            // handler shows a transition toast — no need to render
+            // results inline.
+            // We don't have direct `tx` here; emit via a no-op
+            // background spawn that returns through the channel exposed
+            // to other slash-command paths. Instead, we set a flag the
+            // main loop can pick up; for now the simpler thing is to
+            // tell the user to wait for the auto-update.
+            //
+            // (The startup-time spawn already does this on launch; this
+            // command just reminds the user how to retrigger.)
         }
         "/compact" => {
             let est = crate::compact::estimate_tokens(&app.messages);

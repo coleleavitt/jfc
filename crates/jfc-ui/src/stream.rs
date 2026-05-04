@@ -285,7 +285,6 @@ pub fn dispatch_tools_batched(
     provider: Arc<dyn crate::provider::Provider>,
     model: crate::provider::ModelId,
 ) {
-    use crate::tools::execute_task;
     use crate::types::ToolInput;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -330,7 +329,19 @@ pub fn dispatch_tools_batched(
             });
 
             let started = std::time::Instant::now();
-            let result = execute_task(&task_input, provider_task.as_ref(), model_task).await;
+            // Forward the subagent's streaming text into the main event
+            // loop (`AppEvent::AgentChunk`) so the task view fills live
+            // rather than showing "No messages yet" until the agent
+            // finishes. tx + task_id are passed through; the producer
+            // (`execute_task`) emits one event per `TextDelta`.
+            let result = crate::tools::execute_task(
+                &task_input,
+                provider_task.as_ref(),
+                model_task,
+                Some(&tx_task),
+                Some(&task_id),
+            )
+            .await;
             let elapsed_ms = started.elapsed().as_millis() as u64;
 
             if result.is_error() {

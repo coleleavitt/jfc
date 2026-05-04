@@ -52,11 +52,112 @@ impl ModelUsage {
         self.cache_write_tokens += cache_write as u64;
     }
 
+    /// Apply a cumulative reading from a streaming provider that emits
+    /// running totals (Anthropic `message_delta`) — subtract the previous
+    /// in-turn baseline before adding to per-model totals so we don't
+    /// triple-count. Returns the new baseline so the caller can persist
+    /// it for the next event.
+    ///
+    /// Example: deltas {output: 10}, {output: 20}, {output: 30} arrive.
+    /// Naive `add_delta` would give 60 total; this function gives 30.
+    pub fn apply_cumulative(
+        &mut self,
+        cumulative: (u32, u32, u32, u32),
+        baseline: (u32, u32, u32, u32),
+    ) -> (u32, u32, u32, u32) {
+        let (c_in, c_out, c_cr, c_cw) = cumulative;
+        let (b_in, b_out, b_cr, b_cw) = baseline;
+        let d_in = c_in.saturating_sub(b_in);
+        let d_out = c_out.saturating_sub(b_out);
+        let d_cr = c_cr.saturating_sub(b_cr);
+        let d_cw = c_cw.saturating_sub(b_cw);
+        if d_in > 0 || d_out > 0 || d_cr > 0 || d_cw > 0 {
+            self.add_delta(d_in, d_out, d_cr, d_cw);
+            cumulative
+        } else {
+            baseline
+        }
+    }
+
     pub fn cache_hit_pct(&self) -> f64 {
         if self.input_tokens == 0 {
             return 0.0;
         }
         (self.cache_read_tokens as f64 / self.input_tokens as f64 * 100.0).min(100.0)
+    }
+}
+
+#[cfg(test)]
+mod cumulative_usage_tests {
+    use super::ModelUsage;
+
+    #[test]
+    fn cumulative_deltas_dont_triple_count_normal() {
+        // Anthropic streams 5 message_delta events for a single turn,
+        // each carrying the running output_tokens count. Naive add_delta
+        // produces 1+5+15+50+200 = 271; correct answer is the final 200.
+        let mut u = ModelUsage::default();
+        let mut baseline = (0u32, 0, 0, 0);
+        for cum in [
+            (100, 1, 0, 0),
+            (100, 5, 0, 0),
+            (100, 15, 0, 0),
+            (100, 50, 0, 0),
+            (100, 200, 0, 0),
+        ] {
+            baseline = u.apply_cumulative(cum, baseline);
+        }
+        assert_eq!(u.input_tokens, 100, "input shouldn't double-count");
+        assert_eq!(u.output_tokens, 200, "output should be final cumulative");
+    }
+
+    #[test]
+    fn second_turn_resets_baseline_normal() {
+        // Each new turn the caller resets baseline to (0,0,0,0); the
+        // function then correctly attributes the full new turn's count.
+        let mut u = ModelUsage::default();
+        let _ = u.apply_cumulative((100, 50, 0, 0), (0, 0, 0, 0));
+        // Turn 2: caller passes baseline = (0,0,0,0) again
+        let _ = u.apply_cumulative((80, 30, 0, 0), (0, 0, 0, 0));
+        assert_eq!(u.input_tokens, 180, "two turns add: 100 + 80");
+        assert_eq!(u.output_tokens, 80, "two turns add: 50 + 30");
+    }
+
+    #[test]
+    fn no_op_when_cumulative_unchanged_robust() {
+        // Some providers emit redundant usage events with the same count.
+        // The apply should be a no-op (no double-charge, baseline unchanged).
+        let mut u = ModelUsage::default();
+        let b1 = u.apply_cumulative((100, 50, 0, 0), (0, 0, 0, 0));
+        let b2 = u.apply_cumulative((100, 50, 0, 0), b1);
+        assert_eq!(b1, b2, "baseline shouldn't move on duplicate event");
+        assert_eq!(u.input_tokens, 100);
+        assert_eq!(u.output_tokens, 50);
+    }
+
+    #[test]
+    fn saturating_handles_decreasing_cumulative_robust() {
+        // If a provider misbehaves and reports a lower cumulative than
+        // last time, saturating_sub yields zero — we don't underflow or
+        // negatively adjust. The next higher reading recovers.
+        let mut u = ModelUsage::default();
+        let b1 = u.apply_cumulative((100, 50, 0, 0), (0, 0, 0, 0));
+        let b2 = u.apply_cumulative((90, 30, 0, 0), b1); // bogus regression
+        assert_eq!(b1, b2, "regression event must not move baseline");
+        assert_eq!(u.output_tokens, 50, "no negative or wraparound charge");
+        let _ = u.apply_cumulative((100, 80, 0, 0), b2);
+        assert_eq!(u.output_tokens, 80, "next valid reading still works");
+    }
+
+    #[test]
+    fn cache_tokens_apply_independently_robust() {
+        let mut u = ModelUsage::default();
+        let mut baseline = (0u32, 0, 0, 0);
+        baseline = u.apply_cumulative((100, 0, 50, 0), baseline);
+        baseline = u.apply_cumulative((100, 0, 75, 25), baseline);
+        let _ = u.apply_cumulative((100, 0, 75, 100), baseline);
+        assert_eq!(u.cache_read_tokens, 75);
+        assert_eq!(u.cache_write_tokens, 100);
     }
 }
 
@@ -490,13 +591,19 @@ impl ChatMessage {
     }
 
     pub fn assistant(content: String) -> Self {
+        // No placeholder values — fields are set authentically by the
+        // stream pipeline (`elapsed` at StreamDone via `Cooked for Xs`,
+        // `model_name` from the active provider). Earlier hardcoded
+        // strings ("Sisyphus - Ultraworker", "$$$$", "3.9s") leaked into
+        // session.json files and showed up under loaded sessions before
+        // the next turn could overwrite them.
         Self {
             role: Role::Assistant,
             parts: vec![MessagePart::Text(content)],
-            agent_name: Some("Sisyphus - Ultraworker".into()),
-            model_name: Some("Anthropic - Claude Opus 4.6".into()),
-            cost_tier: Some("$$$$".into()),
-            elapsed: Some("3.9s".into()),
+            agent_name: None,
+            model_name: None,
+            cost_tier: None,
+            elapsed: None,
         }
     }
 
@@ -504,10 +611,10 @@ impl ChatMessage {
         Self {
             role: Role::Assistant,
             parts,
-            agent_name: Some("Sisyphus - Ultraworker".into()),
-            model_name: Some("Anthropic - Claude Opus 4.6".into()),
-            cost_tier: Some("$$$$".into()),
-            elapsed: Some("3.9s".into()),
+            agent_name: None,
+            model_name: None,
+            cost_tier: None,
+            elapsed: None,
         }
     }
 

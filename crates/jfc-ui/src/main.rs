@@ -3,9 +3,13 @@ mod app;
 mod auto_mode;
 mod compact;
 mod context;
+mod diagnostics;
+mod diagnostics_producer;
 mod inline_tools;
 mod input;
+mod lsp_rpc;
 mod markdown;
+mod mentions;
 mod message_view;
 mod provider;
 mod providers;
@@ -13,9 +17,11 @@ mod query;
 mod render;
 mod scheduler;
 mod session;
+mod spinner;
 mod stream;
 mod tasks;
 mod theme;
+mod toast;
 mod tools;
 mod types;
 
@@ -316,6 +322,16 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent
     app.streaming_reasoning.clear();
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
+    let now = std::time::Instant::now();
+    app.streaming_started_at = Some(now);
+    app.streaming_last_token_at = Some(now);
+    // Wire-truth output_tokens are cumulative *per request* — Anthropic
+    // restarts the counter at zero for each `messages` call. Reset our
+    // mirror so the spinner doesn't carry the prior turn's leftover until
+    // the next `message_delta` arrives. Same reasoning for the per-model
+    // delta baseline — see `usage_apply_baseline` doc on `App`.
+    app.last_usage_output = 0;
+    app.usage_apply_baseline = (0, 0, 0, 0);
     app.scroll_to_bottom();
 
     let provider = app.provider.clone();
@@ -525,6 +541,21 @@ async fn run(
         });
     }
 
+    // Initial `cargo check` so the diagnostic row populates without
+    // waiting for `/check`. Skipped via `JFC_DISABLE_CARGO_CHECK=1` for
+    // CI / non-Rust workspaces. Best-effort — `run_once` silently no-ops
+    // if cargo isn't on PATH or the cwd isn't a cargo project.
+    if !matches!(
+        std::env::var("JFC_DISABLE_CARGO_CHECK").as_deref(),
+        Ok("1") | Ok("true")
+    ) {
+        let tx_diag = tx.clone();
+        let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+        tokio::spawn(async move {
+            diagnostics_producer::run_once(cwd, tx_diag).await;
+        });
+    }
+
     app.sync_task_completions();
     terminal.draw(|f| render::frame(f, &mut app))?;
 
@@ -537,6 +568,11 @@ async fn run(
         app.messages.push(ChatMessage::assistant(String::new()));
         app.streaming_assistant_idx = Some(assistant_idx);
         app.is_streaming = true;
+        let now = std::time::Instant::now();
+        app.streaming_started_at = Some(now);
+        app.streaming_last_token_at = Some(now);
+        app.last_usage_output = 0;
+        app.usage_apply_baseline = (0, 0, 0, 0);
 
         // Create session if not resuming one
         let session_id = app
@@ -604,8 +640,16 @@ async fn run(
             AppEvent::Term(_) => {}
             AppEvent::Tick => {
                 app.spinner_frame = (app.spinner_frame + 1) % SPINNER.len();
+                // Auto-clear expired toasts every tick. Cheap (O(N) over
+                // a tiny vec capped at MAX_TOASTS) and the only reliable
+                // place to do it — toasts have no creation-time timer.
+                toast::prune_expired(&mut app.toasts, std::time::Instant::now());
             }
             AppEvent::StreamChunk { text, reasoning } => {
+                // Reset the stall clock on every chunk so the spinner's
+                // sub-status (`warming up` / `thinking` / `almost done`)
+                // reflects time-since-last-byte, not time-since-stream-start.
+                app.streaming_last_token_at = Some(std::time::Instant::now());
                 if let Some(chunk) = text {
                     app.streaming_text.push_str(&chunk);
                     if let Some(idx) = app.streaming_assistant_idx {
@@ -761,6 +805,23 @@ async fn run(
             }
             AppEvent::StreamDone(stop_reason) => {
                 app.is_streaming = false;
+                // v126's "Cooked for Nm Ns" post-turn footer: stamp the
+                // assistant message with a randomized past-tense verb +
+                // formatted duration the moment the stream resolves. The
+                // renderer reads `msg.elapsed` and prints it under the
+                // assistant's content. Mirrors cli.js:341376
+                // (`${A} for ${w}` where A = past-tense verb, w = duration).
+                if let (Some(start), Some(idx)) =
+                    (app.streaming_started_at, app.streaming_assistant_idx)
+                {
+                    let elapsed = std::time::Instant::now().duration_since(start);
+                    let label = spinner::format_finished(elapsed);
+                    if let Some(msg) = app.messages.get_mut(idx) {
+                        msg.elapsed = Some(label);
+                    }
+                }
+                app.streaming_started_at = None;
+                app.streaming_last_token_at = None;
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
 
@@ -840,6 +901,8 @@ async fn run(
             }
             AppEvent::StreamError(e) => {
                 app.is_streaming = false;
+                app.streaming_started_at = None;
+                app.streaming_last_token_at = None;
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
                 app.streaming_assistant_idx = None;
@@ -853,22 +916,68 @@ async fn run(
                 cache_read_tokens,
                 cache_write_tokens,
             } => {
+                // Anthropic sends *cumulative* token counts in every
+                // `message_delta` event (sse.rs:212-218 — see also
+                // anthropic-messaging spec). Naively calling `add_delta`
+                // on each event triple-counts: a 10-delta turn ending at
+                // 2000 output tokens would push 1+5+10+25+...+2000 into
+                // the per-model bucket, producing 5-15× inflated totals
+                // (the user's "84,284 in" with `ctx 28k / 200k` is this
+                // bug). Compute the genuine delta against the per-turn
+                // baseline before adding.
                 app.last_usage_input = input_tokens;
                 app.last_usage_output = output_tokens;
                 app.tool_ctx.approx_tokens = input_tokens as usize + output_tokens as usize;
                 let model_key = app.model.as_str().to_owned();
-                app.usage_by_model.entry(model_key).or_default().add_delta(
+                let cum = (
                     input_tokens,
                     output_tokens,
                     cache_read_tokens,
                     cache_write_tokens,
                 );
+                app.usage_apply_baseline = app
+                    .usage_by_model
+                    .entry(model_key)
+                    .or_default()
+                    .apply_cumulative(cum, app.usage_apply_baseline);
             }
             AppEvent::McpUpdated { servers } => {
                 app.mcp_servers = servers;
             }
             AppEvent::LspUpdated { servers } => {
                 app.lsp_servers = servers;
+            }
+            AppEvent::DiagnosticsUpdated { entries } => {
+                // Toast on transitions: empty → non-empty fires a warning
+                // (or error if any entry is severity Error). Non-empty →
+                // empty fires a success ("All diagnostics cleared"). The
+                // user notices state changes without having to read the
+                // dim row above the spinner.
+                let was_empty = app.diagnostics.is_empty();
+                let is_empty = entries.is_empty();
+                let had_errors = entries
+                    .iter()
+                    .any(|e| matches!(e.severity, crate::diagnostics::Severity::Error));
+                app.diagnostics = entries;
+                if was_empty && !is_empty {
+                    let kind = if had_errors {
+                        toast::ToastKind::Error
+                    } else {
+                        toast::ToastKind::Warning
+                    };
+                    let summary = crate::diagnostics::format_summary(
+                        app.diagnostics.len(),
+                        crate::diagnostics::count_files(&app.diagnostics),
+                    );
+                    if let Some(s) = summary {
+                        toast::push_with_cap(&mut app.toasts, toast::Toast::new(kind, s));
+                    }
+                } else if !was_empty && is_empty {
+                    toast::push_with_cap(
+                        &mut app.toasts,
+                        toast::Toast::new(toast::ToastKind::Success, "All diagnostics cleared"),
+                    );
+                }
             }
             AppEvent::ToolResult { tool_id, result } => {
                 tracing::info!(
@@ -905,8 +1014,34 @@ async fn run(
                         break;
                     }
                 }
+                // Persist on every ToolResult so reload reflects tool outputs.
+                // Without this, sessions saved at submit time carry empty
+                // assistant placeholders + Pending tools — replaying them
+                // shows a user prompt with nothing under it. v126 cli.js
+                // saves on every state mutation; jfc previously only saved
+                // at submit + StreamDone, missing the post-tool state.
+                if let Some(ref session_id) = app.current_session_id {
+                    session::save_session(session_id, &app.messages);
+                }
             }
             AppEvent::AllToolsComplete => {
+                // Terminal bell when a tool batch completes — matches
+                // v126's `iterm2_with_bell` / `terminal_bell` behavior
+                // (cli.js:46704). Many users have iTerm2 / WezTerm /
+                // Ghostty configured to badge or notify on bell, so this
+                // gives a "your input is needed / a long task finished"
+                // hint without us having to hand-roll desktop notifications.
+                // Suppress when the user opted out via env (matches
+                // v126's `notifications_disabled` setting).
+                if !matches!(
+                    std::env::var("JFC_DISABLE_BELL").as_deref(),
+                    Ok("1") | Ok("true")
+                ) {
+                    use std::io::Write;
+                    // Best-effort write — ignore failures; bell is cosmetic.
+                    let _ = std::io::stderr().write_all(b"\x07");
+                    let _ = std::io::stderr().flush();
+                }
                 let manual = std::mem::take(&mut app.force_compact_pending);
                 if manual || compact::should_compact(&app.messages, app.max_context_tokens) {
                     let _ = tx.send(AppEvent::CompactionStarted);
@@ -980,17 +1115,67 @@ async fn run(
                 pre_tokens,
                 post_tokens,
             } => {
-                let _compacted_tokens = pre_tokens.saturating_sub(post_tokens);
+                let saved = pre_tokens.saturating_sub(post_tokens);
                 app.messages = messages;
                 app.tool_ctx = tool_ctx;
                 app.tool_ctx.approx_tokens = post_tokens;
+                // Surface the compaction outcome to the user via a toast
+                // — they don't have to scroll to see the boundary marker.
+                let saved_k = saved / 1000;
+                toast::push_with_cap(
+                    &mut app.toasts,
+                    toast::Toast::new(
+                        toast::ToastKind::Success,
+                        format!("Compacted — saved ~{saved_k}k tokens"),
+                    ),
+                );
             }
-            AppEvent::CompactionFailed(_reason) => {}
+            AppEvent::CompactionFailed(reason) => {
+                toast::push_with_cap(
+                    &mut app.toasts,
+                    toast::Toast::new(
+                        toast::ToastKind::Error,
+                        format!("Compaction failed: {reason}"),
+                    ),
+                );
+            }
             AppEvent::Submit(text) => {
                 // Re-fire after pre-submit compaction. Reuses the same
                 // dispatch path as a typed prompt so message persistence,
                 // streaming setup, and session save all run identically.
                 input::handle_submit_text(&mut app, text, &tx).await?;
+            }
+            AppEvent::Toast { kind, text } => {
+                // Push onto the auto-expiring strip with the kind's
+                // default TTL. Capped at `MAX_TOASTS` to bound memory
+                // when a long-running compaction or classifier spams.
+                toast::push_with_cap(&mut app.toasts, toast::Toast::new(kind, text));
+            }
+            AppEvent::AgentChunk { task_id, text } => {
+                // Subagent emitted a streaming text chunk — append to its
+                // task's message log so the task view shows live output
+                // rather than the "No messages yet" empty state. v126
+                // pipes nested-stream chunks the same way so the user
+                // can drill into a running agent and see what it's doing.
+                if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                    // Coalesce with the previous chunk when both came in
+                    // rapid succession AND the previous entry doesn't end
+                    // with a newline — so a single conceptual paragraph
+                    // streamed across many chunks renders as one paragraph
+                    // instead of one entry per delta.
+                    let coalesce = bt
+                        .messages
+                        .last()
+                        .map(|s| !s.ends_with('\n') && !s.starts_with('['))
+                        .unwrap_or(false);
+                    if coalesce {
+                        if let Some(last) = bt.messages.last_mut() {
+                            last.push_str(&text);
+                        }
+                    } else {
+                        bt.messages.push(text);
+                    }
+                }
             }
             AppEvent::ModelsLoaded { provider, models } => {
                 app.model_picker_query_cache.clear();
@@ -1052,6 +1237,17 @@ async fn run(
                 elapsed_ms,
             } => {
                 if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                    if let Some(ref tool) = last_tool {
+                        // Append a one-line activity entry to the task's
+                        // message log so `messages_task_view` shows what
+                        // the agent has done. Without this the task view
+                        // renders "No messages yet" for the entire run.
+                        // Full subagent StreamChunk routing is a bigger
+                        // refactor; this is the minimum that makes the
+                        // task view useful right now.
+                        let elapsed_s = elapsed_ms / 1000;
+                        bt.messages.push(format!("[{elapsed_s}s] {tool}"));
+                    }
                     bt.last_tool = last_tool;
                 }
                 for msg in &mut app.messages {
@@ -1073,6 +1269,9 @@ async fn run(
                 if let Some(bt) = app.background_tasks.get_mut(&task_id) {
                     bt.status = TaskLifecycle::Completed;
                     bt.summary = Some(summary.clone());
+                    let elapsed_s = elapsed_ms / 1000;
+                    bt.messages
+                        .push(format!("[{elapsed_s}s] ✓ done — {summary}"));
                 }
                 for msg in &mut app.messages {
                     for part in &mut msg.parts {

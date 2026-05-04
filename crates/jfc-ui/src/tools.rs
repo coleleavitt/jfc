@@ -909,6 +909,8 @@ pub async fn execute_task(
     task_input: &crate::types::TaskInput,
     provider: &dyn crate::provider::Provider,
     model_id: crate::provider::ModelId,
+    tx: Option<&tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
+    task_id: Option<&str>,
 ) -> ExecutionResult {
     use crate::provider::{
         ProviderContent, ProviderMessage, ProviderRole, StreamEvent, StreamOptions,
@@ -940,7 +942,20 @@ pub async fn execute_task(
 
     while let Some(event) = stream.next().await {
         match event {
-            Ok(StreamEvent::TextDelta { delta, .. }) => text.push_str(&delta),
+            Ok(StreamEvent::TextDelta { delta, .. }) => {
+                // Pipe each chunk into the parent's event loop tagged
+                // with this subagent's task id. The main handler
+                // appends it to `BackgroundTask.messages` so the task
+                // view shows the agent's prose live as it streams.
+                // Mirrors v126's per-agent stream forwarding.
+                if let (Some(tx), Some(id)) = (tx, task_id) {
+                    let _ = tx.send(crate::app::AppEvent::AgentChunk {
+                        task_id: id.to_owned(),
+                        text: delta.clone(),
+                    });
+                }
+                text.push_str(&delta);
+            }
             Ok(StreamEvent::TextDone { text: t, .. }) => {
                 if text.is_empty() {
                     text = t;

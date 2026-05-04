@@ -1,0 +1,186 @@
+//! Diagnostic line widget — `Found N new diagnostic issue(s) in M file(s)
+//! (ctrl+o to expand)`. Mirrors v126 cli.js:338030-338040.
+//!
+//! Pure formatters live here so they're testable without standing up the
+//! full LSP pipeline. The renderer reads `app.diagnostics` (when wired)
+//! and calls these to build the visible line.
+//!
+//! v126's expanded form (cli.js:338043-338053) groups by URI:
+//!   <relative_path bold> (file://):
+//!     ▲ [Line 12:5] <message> [code] (source)
+//! For now we only port the *summary* line — that's the visible artifact
+//! in the screenshots; expansion can come later when LSP push events
+//! actually carry per-diagnostic detail through to `App`.
+
+/// One LSP diagnostic, in the shape v126 uses for the inline summary.
+/// Severity isn't needed for the count line — it shows up in the
+/// expanded view (cli.js:338053 `getSeveritySymbol`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiagnosticEntry {
+    pub file: String,
+    pub line: u32,
+    pub col: u32,
+    pub message: String,
+    pub code: Option<String>,
+    pub source: Option<String>,
+    pub severity: Severity,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Severity {
+    Error,
+    Warning,
+    Info,
+    Hint,
+}
+
+impl Severity {
+    /// Mirrors v126 `bR.getSeveritySymbol` (cli.js:338053). Used in the
+    /// expanded per-diagnostic line.
+    pub fn symbol(self) -> &'static str {
+        match self {
+            Severity::Error => "✘",
+            Severity::Warning => "⚠",
+            Severity::Info => "ℹ",
+            Severity::Hint => "★",
+        }
+    }
+}
+
+/// `Found N new diagnostic issue(s) in M file(s) (ctrl+o to expand)`.
+/// Singular/plural logic matches cli.js:338032-338033 (`z === 1 ? "issue"
+/// : "issues"`, same for "file"). Returns `None` when nothing's reported
+/// so the renderer can omit the entire row.
+pub fn format_summary(issues: usize, files: usize) -> Option<String> {
+    if issues == 0 || files == 0 {
+        return None;
+    }
+    let issue_word = if issues == 1 { "issue" } else { "issues" };
+    let file_word = if files == 1 { "file" } else { "files" };
+    Some(format!(
+        "Found {issues} new diagnostic {issue_word} in {files} {file_word} (ctrl+o to expand)"
+    ))
+}
+
+/// Count how many distinct files contain at least one diagnostic. v126's
+/// `Y` value (cli.js:338033) is the *file* count, not the diagnostic
+/// count. Stable across re-orderings — uses a HashSet internally.
+pub fn count_files(entries: &[DiagnosticEntry]) -> usize {
+    use std::collections::HashSet;
+    let unique: HashSet<&str> = entries.iter().map(|e| e.file.as_str()).collect();
+    unique.len()
+}
+
+/// Format one expanded line per diagnostic, matching cli.js:338053:
+/// `  <symbol> [Line A:B] <message> [code] (source)`. The two-space
+/// indent groups them under a bolded file header rendered separately.
+pub fn format_entry(entry: &DiagnosticEntry) -> String {
+    let mut out = format!(
+        "  {} [Line {}:{}] {}",
+        entry.severity.symbol(),
+        entry.line,
+        entry.col,
+        entry.message
+    );
+    if let Some(code) = &entry.code {
+        out.push_str(&format!(" [{code}]"));
+    }
+    if let Some(src) = &entry.source {
+        out.push_str(&format!(" ({src})"));
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn d(file: &str, line: u32, col: u32, msg: &str, sev: Severity) -> DiagnosticEntry {
+        DiagnosticEntry {
+            file: file.into(),
+            line,
+            col,
+            message: msg.into(),
+            code: None,
+            source: None,
+            severity: sev,
+        }
+    }
+
+    #[test]
+    fn summary_zero_is_none_normal() {
+        assert!(format_summary(0, 0).is_none());
+        assert!(format_summary(0, 5).is_none());
+        assert!(format_summary(5, 0).is_none());
+    }
+
+    #[test]
+    fn summary_singular_normal() {
+        let s = format_summary(1, 1).unwrap();
+        // v126 cli.js:338032 — singular issue, singular file.
+        assert!(s.contains("1 new diagnostic issue in 1 file"), "got: {s}");
+    }
+
+    #[test]
+    fn summary_plural_files_singular_issue_normal() {
+        let s = format_summary(1, 3).unwrap();
+        // Edge case: single multi-file issue. v126's plural rule is
+        // independent per word, so we get "issue in 3 files".
+        assert!(s.contains("1 new diagnostic issue in 3 files"), "got: {s}");
+    }
+
+    #[test]
+    fn summary_plural_issues_singular_file_normal() {
+        let s = format_summary(7, 1).unwrap();
+        assert!(s.contains("7 new diagnostic issues in 1 file"), "got: {s}");
+    }
+
+    #[test]
+    fn summary_includes_expand_hint_robust() {
+        // v126 keeps the `(ctrl+o to expand)` hint on this line even
+        // though we stripped it from collapsed-thinking previews. The
+        // diagnostic line is exactly where v126 reserves the hint.
+        let s = format_summary(2, 2).unwrap();
+        assert!(s.ends_with("(ctrl+o to expand)"), "got: {s}");
+    }
+
+    #[test]
+    fn count_files_dedupes_normal() {
+        let entries = vec![
+            d("a.rs", 1, 1, "msg", Severity::Error),
+            d("a.rs", 5, 2, "msg2", Severity::Warning),
+            d("b.rs", 3, 3, "msg3", Severity::Error),
+        ];
+        assert_eq!(count_files(&entries), 2);
+    }
+
+    #[test]
+    fn count_files_empty_normal() {
+        assert_eq!(count_files(&[]), 0);
+    }
+
+    #[test]
+    fn entry_format_basic_normal() {
+        let e = d("a.rs", 12, 5, "missing semicolon", Severity::Error);
+        assert_eq!(format_entry(&e), "  ✘ [Line 12:5] missing semicolon");
+    }
+
+    #[test]
+    fn entry_format_with_code_and_source_normal() {
+        let mut e = d("a.rs", 1, 1, "unused import", Severity::Warning);
+        e.code = Some("E0432".into());
+        e.source = Some("rustc".into());
+        assert_eq!(
+            format_entry(&e),
+            "  ⚠ [Line 1:1] unused import [E0432] (rustc)"
+        );
+    }
+
+    #[test]
+    fn severity_symbols_match_v126_robust() {
+        assert_eq!(Severity::Error.symbol(), "✘");
+        assert_eq!(Severity::Warning.symbol(), "⚠");
+        assert_eq!(Severity::Info.symbol(), "ℹ");
+        assert_eq!(Severity::Hint.symbol(), "★");
+    }
+}

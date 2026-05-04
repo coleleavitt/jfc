@@ -50,6 +50,23 @@ pub enum AppEvent {
     /// internally by the pre-submit compaction gate to re-fire the user's
     /// original prompt once compaction has shrunk the context.
     Submit(String),
+    /// Push a non-blocking toast onto the auto-expiring strip. The pruner
+    /// in the `Tick` handler clears it once `ttl` elapses. Mirrors v126's
+    /// terminal `notification()` (cli.js around 26647).
+    Toast {
+        kind: crate::toast::ToastKind,
+        text: String,
+    },
+    /// One streaming text chunk from a subagent. Routed into the matching
+    /// `BackgroundTask.messages` so the task view shows the agent's
+    /// output live as it streams (instead of "No messages yet" until
+    /// the agent reports a tool via `TaskProgress`). Mirrors v126's
+    /// per-agent stream handler that pipes nested-stream chunks into
+    /// the parent's task buffer.
+    AgentChunk {
+        task_id: String,
+        text: String,
+    },
     /// Background `Provider::fetch_models()` finished. `provider` is the `Provider::name()`
     /// the result belongs to. `models` is empty on a remote failure so the picker can
     /// fall back to the static `available_models()` set without showing a hung row.
@@ -96,6 +113,14 @@ pub enum AppEvent {
     },
     LspUpdated {
         servers: Vec<crate::types::LspServerInfo>,
+    },
+    /// LSP push: full set of currently-active diagnostics. Replaces
+    /// `app.diagnostics` wholesale (the LSP client should send a fresh
+    /// snapshot, not deltas, so the consumer doesn't have to dedup).
+    /// Mirrors v126 cli.js:338038 — the `Found N issues in M files` row
+    /// is rendered from this state.
+    DiagnosticsUpdated {
+        entries: Vec<crate::diagnostics::DiagnosticEntry>,
     },
     Term(Event),
     Tick,
@@ -157,6 +182,16 @@ pub struct App {
     pub streaming_reasoning: String,
     pub streaming_assistant_idx: Option<usize>,
     pub is_streaming: bool,
+    /// Wall-clock instant the current turn's stream began. Set when
+    /// `is_streaming` flips true; cleared when it flips false. Drives the
+    /// `(5m 10s · …)` elapsed counter in the v126-style spinner — without
+    /// it, the spinner can't show how long we've been waiting.
+    pub streaming_started_at: Option<Instant>,
+    /// Wall-clock instant of the most recent text/reasoning delta. Used by
+    /// the spinner to detect stalls (`>=15s` → "warming up", up to `>=60s`
+    /// → "almost done thinking"). Mirrors v126 `timeSinceLastToken` (cli.js
+    /// line 323162).
+    pub streaming_last_token_at: Option<Instant>,
     pub scroll_offset: usize,
     pub total_lines: usize,
     pub textarea: TextArea<'static>,
@@ -260,6 +295,40 @@ pub struct App {
     pub task_activities: HashMap<TaskId, String>,
     pub last_usage_input: u32,
     pub last_usage_output: u32,
+    /// Auto-expiring toast queue. Pruned every `Tick`. Pushed via
+    /// `AppEvent::Toast` from anywhere in the app (compaction milestones,
+    /// session save success, classifier blocks). Mirrors v126's terminal
+    /// `notification()` for non-blocking status surfacing.
+    pub toasts: Vec<crate::toast::Toast>,
+    /// `@filename` autocomplete state. `active=false` when not popping;
+    /// while active, the input handler routes typed chars into
+    /// `query` and `mentions::filter_candidates` re-ranks `candidates`.
+    /// Mirrors v126 cli.js:161602 (`autocomplete:accept` /
+    /// `autocomplete:dismiss`).
+    pub mention: crate::mentions::MentionState,
+    /// Cached file list scanned at the start of each mention session
+    /// so we don't re-walk the cwd on every keystroke. Refreshed when
+    /// `@` is freshly typed.
+    pub mention_all_files: Vec<String>,
+    /// Active LSP diagnostics, keyed by file path. Rendered as a one-line
+    /// `Found N new diagnostic issue(s) in M file(s) (ctrl+o to expand)`
+    /// row above the spinner when non-empty. Updated by
+    /// `AppEvent::DiagnosticsUpdated`. Mirrors v126 cli.js:338030-338040.
+    pub diagnostics: Vec<crate::diagnostics::DiagnosticEntry>,
+    /// Whether the Ctrl+O diagnostic-expansion panel is open. v126 cli.js
+    /// :338038 advertises `(ctrl+o to expand)` on the summary row; this
+    /// is the destination of that key. The panel groups diagnostics by
+    /// file and lists each as `<symbol> [Line A:B] <message>` matching
+    /// cli.js:338053. Esc closes.
+    pub show_diagnostic_panel: bool,
+    /// The (input, output, cache_read, cache_write) reading the last time
+    /// `add_delta` was applied to `usage_by_model`. Anthropic sends
+    /// **cumulative** counts in every `message_delta`, so we have to
+    /// subtract this baseline before adding to per-model totals — otherwise
+    /// every delta would be triple-counted (Claude sends 5-15 deltas per
+    /// turn) and `Usage by model` shows numbers an order of magnitude too
+    /// high. Reset to (0,0,0,0) when a new turn starts.
+    pub usage_apply_baseline: (u32, u32, u32, u32),
     pub background_tasks: HashMap<String, BackgroundTask>,
     pub show_info_sidebar: bool,
     pub mcp_servers: Vec<crate::types::McpServerInfo>,
@@ -288,6 +357,8 @@ impl App {
             streaming_text: String::new(),
             streaming_reasoning: String::new(),
             streaming_assistant_idx: None,
+            streaming_started_at: None,
+            streaming_last_token_at: None,
             is_streaming: false,
             scroll_offset: 0,
             total_lines: 0,
@@ -344,6 +415,12 @@ impl App {
             task_activities: HashMap::new(),
             last_usage_input: 0,
             last_usage_output: 0,
+            toasts: Vec::new(),
+            mention: crate::mentions::MentionState::default(),
+            mention_all_files: Vec::new(),
+            diagnostics: Vec::new(),
+            show_diagnostic_panel: false,
+            usage_apply_baseline: (0, 0, 0, 0),
             background_tasks: HashMap::new(),
             show_info_sidebar: true,
             mcp_servers: Vec::new(),

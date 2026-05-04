@@ -177,19 +177,120 @@ pub fn has_unclosed_fence(text: &str) -> bool {
     inside
 }
 
+/// Strip raw `<tool_call>…</tool_call>` and `<tool_result>…</tool_result>`
+/// blocks before markdown rendering. OpenWebUI's Bedrock proxy occasionally
+/// fails to translate Anthropic-style tool calls into OpenAI function-call
+/// SSE events and instead inlines them as XML inside the text stream — a
+/// 300+ line wall of `<tool_call>{"name":"bash",...}</tool_call><tool_result>…`
+/// that buries the actual prose. The fix at the provider layer is bigger
+/// (parse the XML and re-emit StreamEvent::ToolDone); this sanitizer is the
+/// belt-and-suspenders for whatever leaks through.
+///
+/// Behavior: any matched block is replaced with a single ⟪tool⟫ marker so
+/// the user can see *something* happened without the wall of JSON. We don't
+/// attempt to balance nested tags — the model never emits them.
+pub fn strip_inline_tool_xml(text: &str) -> String {
+    fn drop_block(input: &str, open: &str, close: &str, marker: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+        let mut rest = input;
+        while let Some(start) = rest.find(open) {
+            out.push_str(&rest[..start]);
+            let after_open = &rest[start + open.len()..];
+            match after_open.find(close) {
+                Some(end) => {
+                    out.push_str(marker);
+                    rest = &after_open[end + close.len()..];
+                }
+                None => {
+                    // Unterminated block — drop everything from <open> to EOF.
+                    // Better than rendering half a JSON blob.
+                    out.push_str(marker);
+                    return out;
+                }
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+    let s = drop_block(text, "<tool_call>", "</tool_call>", "⟪tool_call⟫");
+    drop_block(&s, "<tool_result>", "</tool_result>", "⟪tool_result⟫")
+}
+
 pub fn to_lines(text: &str, theme: &Theme, width: usize) -> Vec<Line<'static>> {
+    let cleaned = strip_inline_tool_xml(text);
     // v126 disables strikethrough because the GFM `~~text~~` syntax collides
     // with `~~~` fenced code blocks: a stray paragraph containing `~~~` would
     // open a code block on the next round-trip. We follow the same call.
     let mut opts = ParseOptions::empty();
     opts.insert(ParseOptions::ENABLE_TASKLISTS);
     opts.insert(ParseOptions::ENABLE_TABLES);
-    let parser = Parser::new_ext(text, opts);
+    let parser = Parser::new_ext(&cleaned, opts);
 
     let mut w = MdWriter::new(parser, theme);
     w.code_wrap_width = width;
     w.run();
     w.text.lines
+}
+
+#[cfg(test)]
+mod tool_xml_strip_tests {
+    use super::strip_inline_tool_xml;
+
+    #[test]
+    fn drops_single_tool_call_normal() {
+        let s = strip_inline_tool_xml("Before <tool_call>{\"name\":\"bash\"}</tool_call> after");
+        assert_eq!(s, "Before ⟪tool_call⟫ after");
+    }
+
+    #[test]
+    fn drops_chained_call_then_result_normal() {
+        let s = strip_inline_tool_xml(concat!(
+            "Hi <tool_call>{\"name\":\"bash\",\"arguments\":{\"command\":\"ls\"}}</tool_call>",
+            "<tool_result>file1\nfile2</tool_result> done"
+        ));
+        assert_eq!(s, "Hi ⟪tool_call⟫⟪tool_result⟫ done");
+    }
+
+    #[test]
+    fn drops_many_pairs_normal() {
+        let s = strip_inline_tool_xml(concat!(
+            "<tool_call>a</tool_call><tool_result>b</tool_result>",
+            "<tool_call>c</tool_call><tool_result>d</tool_result>",
+        ));
+        assert_eq!(s, "⟪tool_call⟫⟪tool_result⟫⟪tool_call⟫⟪tool_result⟫");
+    }
+
+    #[test]
+    fn handles_unterminated_block_robust() {
+        // OWUI sometimes truncates mid-stream — better to drop everything
+        // from the unterminated open than render half-JSON.
+        let s = strip_inline_tool_xml("Hi <tool_call>{\"name\":");
+        assert_eq!(s, "Hi ⟪tool_call⟫");
+    }
+
+    #[test]
+    fn passes_clean_text_through_robust() {
+        let s = strip_inline_tool_xml("Just a normal sentence with `code` and *emphasis*.");
+        assert_eq!(s, "Just a normal sentence with `code` and *emphasis*.");
+    }
+
+    #[test]
+    fn does_not_strip_lookalike_text_robust() {
+        // Substring "<tool_" inside a code block or prose shouldn't trigger
+        // unless the full opening tag is present.
+        let s = strip_inline_tool_xml("Use the <tool_calls> block in the API");
+        assert_eq!(s, "Use the <tool_calls> block in the API");
+    }
+
+    #[test]
+    fn handles_huge_inline_block_robust() {
+        // A 5000-byte tool_call block (representative of the screenshot
+        // wall) should reduce to the marker without quadratic explosion.
+        let big = "x".repeat(5000);
+        let input = format!("Before<tool_call>{big}</tool_call>After");
+        let s = strip_inline_tool_xml(&input);
+        assert_eq!(s, "Before⟪tool_call⟫After");
+    }
 }
 
 struct TableState {

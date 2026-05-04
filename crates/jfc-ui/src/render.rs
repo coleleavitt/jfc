@@ -9,7 +9,7 @@ use ratatui::{
 #[allow(unused_imports)]
 use ratatui::style::Stylize as _;
 
-use crate::app::{App, ApprovalChoice, SPINNER};
+use crate::app::{App, ApprovalChoice};
 use crate::input::{filtered_models, palette_items};
 use crate::markdown;
 use crate::theme::Theme;
@@ -23,12 +23,35 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     let input_lines = input_visual_line_count(app, f.area().width.saturating_sub(4) as usize);
     let input_height = (input_lines + 2).min(8) as u16;
     let subagent_footer_height: u16 = if app.viewing_task_id.is_some() { 1 } else { 0 };
+    // v126 puts the "Fermenting…" spinner as a dedicated row above the input
+    // (not as the input's border title) — so the input bar stays visually
+    // stable during streaming and the spinner reads as part of the
+    // conversation timeline. We allocate a 1-row slot only while streaming
+    // (2 rows when there's an open task → render `Next: <subject>` underneath
+    // matching cli.js:323851 `Next: ${m.subject}`). When idle the slot
+    // collapses to 0 and the input snaps to the bottom.
+    let spinner_row_height: u16 = if app.is_streaming {
+        if next_open_task_subject(app).is_some() {
+            2
+        } else {
+            1
+        }
+    } else {
+        0
+    };
+    // Diagnostic summary row (`Found N issues in M files`) — shown
+    // whenever LSP has reported entries, regardless of streaming. Lives
+    // between the message scroll and the spinner so it's always visible
+    // without scrolling. Mirrors v126 cli.js:338030-338040.
+    let diag_row_height: u16 = if app.diagnostics.is_empty() { 0 } else { 1 };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(3),
             Constraint::Length(subagent_footer_height),
+            Constraint::Length(diag_row_height),
+            Constraint::Length(spinner_row_height),
             Constraint::Length(input_height),
             Constraint::Length(2),
         ])
@@ -75,8 +98,14 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     if app.viewing_task_id.is_some() {
         subagent_footer(f, app, chunks[1]);
     }
-    input(f, app, chunks[2]);
-    status(f, app, chunks[3]);
+    if !app.diagnostics.is_empty() {
+        diagnostic_row(f, app, chunks[2]);
+    }
+    if app.is_streaming {
+        spinner_row(f, app, chunks[3]);
+    }
+    input(f, app, chunks[4]);
+    status(f, app, chunks[5]);
 
     if app.show_palette {
         palette(f, app);
@@ -88,6 +117,18 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 
     if app.show_task_panel {
         task_panel(f, app);
+    }
+
+    if !app.toasts.is_empty() {
+        toast_overlay(f, app);
+    }
+
+    if app.mention.active && !app.mention.candidates.is_empty() {
+        mention_popup(f, app, chunks[4]);
+    }
+
+    if app.show_diagnostic_panel && !app.diagnostics.is_empty() {
+        diagnostic_panel(f, app);
     }
 
     if app.pending_approval.is_some() {
@@ -913,18 +954,262 @@ fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(line).style(Style::default().bg(t.bg)), area);
 }
 
+/// Pick the next open task to surface under the spinner — first
+/// in-progress task wins, falling back to the first pending task.
+/// Mirrors v126 cli.js:323851 (`m` = next task) which indents
+/// `Next: ${m.subject}` underneath the spinner verb. Returns `None`
+/// when the task list is empty so the renderer can shrink to a 1-row
+/// spinner instead of leaving a blank second line.
+fn next_open_task_subject(app: &App) -> Option<String> {
+    use crate::tasks::DeletedFilter;
+    let tasks = app.task_store.list(DeletedFilter::Exclude);
+    pick_next_open_task(&tasks).map(|t| t.subject.clone())
+}
+
+/// Pure priority picker for the "Next: …" sub-status. In-progress wins
+/// over pending so users see *what's running right now* rather than
+/// *what's queued*. Falls back to the first pending when nothing is
+/// active. Returns `None` when nothing is open. Extracted from
+/// `next_open_task_subject` so unit tests can exercise the priority
+/// rules without building an `App` fixture.
+fn pick_next_open_task(tasks: &[crate::tasks::Task]) -> Option<&crate::tasks::Task> {
+    use crate::tasks::TaskStatus;
+    tasks
+        .iter()
+        .find(|t| matches!(t.status, TaskStatus::InProgress))
+        .or_else(|| {
+            tasks
+                .iter()
+                .find(|t| matches!(t.status, TaskStatus::Pending))
+        })
+}
+
+#[cfg(test)]
+mod next_task_tests {
+    use super::*;
+    use crate::tasks::{DeletedFilter, TaskStore};
+
+    #[test]
+    fn empty_store_returns_none_normal() {
+        let store = TaskStore::in_memory();
+        let tasks = store.list(DeletedFilter::Exclude);
+        assert!(pick_next_open_task(&tasks).is_none());
+    }
+
+    #[test]
+    fn single_pending_task_picked_normal() {
+        let store = TaskStore::in_memory();
+        store
+            .create(
+                "Wire spinner".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        let tasks = store.list(DeletedFilter::Exclude);
+        let picked = pick_next_open_task(&tasks).expect("should pick the pending task");
+        assert_eq!(picked.subject, "Wire spinner");
+    }
+
+    #[test]
+    fn in_progress_wins_over_pending_normal() {
+        // v126's `Next: ${m.subject}` shows the *active* task, not the
+        // queued one — what's running matters more than what's queued.
+        let store = TaskStore::in_memory();
+        let pending = store
+            .create(
+                "First (pending)".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        let active = store
+            .create(
+                "Second (will be in-progress)".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        store
+            .update(
+                active.id.as_str(),
+                crate::tasks::TaskPatch {
+                    status: Some(crate::tasks::TaskStatus::InProgress),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let tasks = store.list(DeletedFilter::Exclude);
+        let picked = pick_next_open_task(&tasks).expect("in-progress should win");
+        assert_eq!(picked.subject, "Second (will be in-progress)");
+        // Sanity: the pending task IS in the list, just not picked.
+        assert!(
+            tasks.iter().any(|t| t.id.as_str() == pending.id.as_str()),
+            "pending task should still be in the list"
+        );
+    }
+
+    #[test]
+    fn only_completed_returns_none_robust() {
+        let store = TaskStore::in_memory();
+        let t = store
+            .create(
+                "Done thing".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        store
+            .update(
+                t.id.as_str(),
+                crate::tasks::TaskPatch {
+                    status: Some(crate::tasks::TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let tasks = store.list(DeletedFilter::Exclude);
+        assert!(
+            pick_next_open_task(&tasks).is_none(),
+            "completed-only store should yield no open task"
+        );
+    }
+
+    #[test]
+    fn skips_completed_when_pending_exists_robust() {
+        let store = TaskStore::in_memory();
+        let done = store
+            .create(
+                "Already done".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        store
+            .update(
+                done.id.as_str(),
+                crate::tasks::TaskPatch {
+                    status: Some(crate::tasks::TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        store
+            .create(
+                "Still queued".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        let tasks = store.list(DeletedFilter::Exclude);
+        let picked = pick_next_open_task(&tasks).expect("pending should be picked");
+        assert_eq!(picked.subject, "Still queued");
+    }
+}
+
+/// Single- or double-row spinner widget rendered between the message
+/// scroll and the input bar (v126 layout, cli.js:323180-323235 + 323851).
+/// Row 0 = verb + elapsed + live-token-count + stall-status, composed in
+/// `crate::spinner`. Row 1 (when present) = `□ Next: <task subject>`,
+/// matching cli.js's `Next: ${m.subject}` line.
+fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
+    if area.height == 0 {
+        return;
+    }
+    let t = app.theme;
+    let now = std::time::Instant::now();
+    let elapsed = app
+        .streaming_started_at
+        .map(|t| now.duration_since(t))
+        .unwrap_or_default();
+    let stall = app
+        .streaming_last_token_at
+        .map(|t| now.duration_since(t))
+        .unwrap_or_default();
+    // Anthropic SSE pushes cumulative `output_tokens` in every
+    // `message_delta` event (sse.rs:212-218 → AppEvent::StreamUsage →
+    // app.last_usage_output) — wire-truth, no estimation needed. OWUI /
+    // OpenAI providers only emit usage at `message_stop`; for those the
+    // wire value stays 0 mid-stream, so we fall back to chars/4 of the
+    // streamed text + reasoning. The first non-zero wire value beats the
+    // estimate; once the wire stops moving we keep the last known count.
+    let estimate = (app.streaming_text.len() + app.streaming_reasoning.len()) as u64 / 4;
+    let live_tokens = crate::spinner::live_token_count(app.last_usage_output as u64, estimate);
+    let body = crate::spinner::format_status(app.spinner_frame, elapsed, live_tokens, stall);
+    // Multi-agent fanout: when one or more background subagents are
+    // running concurrently, append `· N agents…` to the spinner so the
+    // user knows there's parallel work happening. Mirrors v126's
+    // `3 agents…` indicator from cli.js (line 161622, task:background).
+    let active_agents = app
+        .background_tasks
+        .values()
+        .filter(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running))
+        .count();
+    let mut spans: Vec<Span<'static>> =
+        vec![Span::styled(body, Style::default().fg(t.text_secondary))];
+    if active_agents > 0 {
+        let plural = if active_agents == 1 {
+            "agent"
+        } else {
+            "agents"
+        };
+        spans.push(Span::styled(
+            format!("  ⏵ {active_agents} {plural}…"),
+            Style::default().fg(t.accent),
+        ));
+    }
+    let line = Line::from(spans);
+    let row0 = Rect { height: 1, ..area };
+    f.render_widget(Paragraph::new(line).style(Style::default().bg(t.bg)), row0);
+
+    // Row 1: "Next: <task subject>" if we have layout for it. Indent two
+    // cells so it aligns under the spinner frame's first character — same
+    // visual hierarchy as v126's nested status. Use dim/muted color so
+    // the verb on row 0 stays the dominant element.
+    if area.height >= 2 {
+        if let Some(subj) = next_open_task_subject(app) {
+            let row1 = Rect {
+                x: area.x,
+                y: area.y + 1,
+                width: area.width,
+                height: 1,
+            };
+            // Truncate the subject to fit the row width minus the indent
+            // and prefix so we don't overflow into the input border.
+            let prefix = "  □ Next: ";
+            let max_subj = (area.width as usize).saturating_sub(prefix.chars().count() + 1);
+            let trimmed: String = if subj.chars().count() > max_subj && max_subj > 1 {
+                let mut out: String = subj.chars().take(max_subj.saturating_sub(1)).collect();
+                out.push('…');
+                out
+            } else {
+                subj
+            };
+            let next_line = Line::from(vec![
+                Span::styled(prefix.to_string(), Style::default().fg(t.text_muted)),
+                Span::styled(trimmed, Style::default().fg(t.text_muted)),
+            ]);
+            f.render_widget(
+                Paragraph::new(next_line).style(Style::default().bg(t.bg)),
+                row1,
+            );
+        }
+    }
+}
+
 fn input(f: &mut Frame, app: &mut App, area: Rect) {
     let t = app.theme;
-    let border_style = if app.is_streaming {
-        Style::default().fg(t.warning)
-    } else {
-        Style::default().fg(t.border)
-    };
-    let title = if app.is_streaming {
-        format!(" {} streaming… ", SPINNER[app.spinner_frame])
-    } else {
-        " message ".to_string()
-    };
+    // Border + title stay constant whether or not we're streaming. v126
+    // never repaints the input bar mid-turn — the typing surface is the
+    // user's surface, the spinner is a separate row above it.
+    let border_style = Style::default().fg(t.border);
+    let title = " message ".to_string();
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -1109,6 +1394,266 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
 
 fn context_gauge_label(used: usize, max: usize, pct: u32) -> String {
     format!(" ctx {}k / {}k · {}% ", used / 1000, max / 1000, pct)
+}
+
+/// Top-right toast strip. Renders one row per active toast, color-coded
+/// by `ToastKind`. Mirrors v126's terminal `notification()` pattern —
+/// non-blocking, auto-expires (handled in the `Tick` arm). Width is
+/// capped at 60 cells so a wide message text never gets pushed offscreen
+/// by a long compaction status.
+fn toast_overlay(f: &mut Frame, app: &App) {
+    use crate::toast::ToastKind;
+    let t = app.theme;
+    let frame_area = f.area();
+    if frame_area.width < 30 || frame_area.height < 4 {
+        return;
+    }
+    const MAX_W: u16 = 60;
+    let w = MAX_W.min(frame_area.width.saturating_sub(2));
+    let count = app.toasts.len() as u16;
+    let h = count.min(5); // MAX_TOASTS, but bound to layout
+    if h == 0 {
+        return;
+    }
+    let area = Rect {
+        x: frame_area.x + frame_area.width.saturating_sub(w + 1),
+        y: frame_area.y + 1,
+        width: w,
+        height: h,
+    };
+    f.render_widget(Clear, area);
+    let mut lines: Vec<Line> = Vec::new();
+    for toast in app.toasts.iter().rev().take(h as usize).collect::<Vec<_>>() {
+        let (icon, color) = match toast.kind {
+            ToastKind::Info => ("ℹ", t.text_secondary),
+            ToastKind::Success => ("✓", t.success),
+            ToastKind::Warning => ("⚠", t.warning),
+            ToastKind::Error => ("✘", t.error),
+        };
+        let max_text = (w as usize).saturating_sub(4);
+        let text: String = if toast.text.chars().count() > max_text {
+            let mut out: String = toast
+                .text
+                .chars()
+                .take(max_text.saturating_sub(1))
+                .collect();
+            out.push('…');
+            out
+        } else {
+            toast.text.clone()
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {icon} "), Style::default().fg(color)),
+            Span::styled(text, Style::default().fg(t.text_primary)),
+        ]));
+    }
+    f.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(t.surface)),
+        area,
+    );
+}
+
+/// One-line diagnostic summary row. v126 cli.js:338035-338038 renders this
+/// as `Found <bold>N</bold> new diagnostic <issue/issues> in M <file/files>
+/// (ctrl+o to expand)` in dim color. Shown above the spinner row when
+/// `app.diagnostics` has any entries; the formatter and dedup-by-file
+/// logic live in `diagnostics.rs`.
+fn diagnostic_row(f: &mut Frame, app: &App, area: Rect) {
+    if area.height == 0 {
+        return;
+    }
+    let t = app.theme;
+    let issues = app.diagnostics.len();
+    let files = crate::diagnostics::count_files(&app.diagnostics);
+    let Some(text) = crate::diagnostics::format_summary(issues, files) else {
+        return;
+    };
+    let has_errors = app
+        .diagnostics
+        .iter()
+        .any(|e| matches!(e.severity, crate::diagnostics::Severity::Error));
+    // Color the leading icon by worst severity present so the user can
+    // see at a glance whether it's all warnings or actual errors.
+    let icon_color = if has_errors { t.error } else { t.warning };
+    let line = Line::from(vec![
+        Span::styled("● ", Style::default().fg(icon_color)),
+        Span::styled(text, Style::default().fg(t.text_muted)),
+    ]);
+    f.render_widget(Paragraph::new(line).style(Style::default().bg(t.bg)), area);
+}
+
+/// Modal diagnostic-expansion panel (`Ctrl+O` from the summary row,
+/// `Esc` to close). Mirrors v126 cli.js:338043-338053:
+///
+/// ```text
+///   <relative path bold>  (file://)
+///     ✘ [Line 12:5] unresolved import [E0432] (cargo)
+///     ⚠ [Line 1:1]  unused variable
+///   ...
+/// ```
+///
+/// Diagnostics are grouped by file (first occurrence preserves cargo's
+/// emission order) and listed underneath. We don't render the URI scheme
+/// suffix v126 does (`(file://)`) — paths are already cwd-relative so
+/// it's noise.
+fn diagnostic_panel(f: &mut Frame, app: &App) {
+    let t = app.theme;
+    let area = f.area();
+    let w = area.width.saturating_mul(3) / 4;
+    let h = area.height.saturating_mul(3) / 4;
+    let x = (area.width.saturating_sub(w)) / 2;
+    let y = (area.height.saturating_sub(h)) / 2;
+    let rect = Rect {
+        x: area.x + x,
+        y: area.y + y,
+        width: w,
+        height: h,
+    };
+    f.render_widget(Clear, rect);
+    let issues = app.diagnostics.len();
+    let files = crate::diagnostics::count_files(&app.diagnostics);
+    let title = format!(
+        " Diagnostics — {issues} {} in {files} {} (Esc to close) ",
+        if issues == 1 { "issue" } else { "issues" },
+        if files == 1 { "file" } else { "files" },
+    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(t.error))
+        .title(Span::styled(
+            title,
+            Style::default().fg(t.error).add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().bg(t.surface));
+    let inner = block.inner(rect);
+    f.render_widget(block, rect);
+
+    // Group entries by file in first-seen order. Avoid HashMap iteration
+    // for ordering stability — use a Vec of (file, Vec<&entry>).
+    let mut groups: Vec<(String, Vec<&crate::diagnostics::DiagnosticEntry>)> = Vec::new();
+    for entry in &app.diagnostics {
+        if let Some(g) = groups.iter_mut().find(|(f, _)| f == &entry.file) {
+            g.1.push(entry);
+        } else {
+            groups.push((entry.file.clone(), vec![entry]));
+        }
+    }
+
+    let mut lines: Vec<Line> = Vec::new();
+    for (file, items) in &groups {
+        lines.push(Line::from(Span::styled(
+            file.clone(),
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for entry in items {
+            let body = crate::diagnostics::format_entry(entry);
+            // Two-cell extra indent so file headers visually anchor.
+            let color = match entry.severity {
+                crate::diagnostics::Severity::Error => t.error,
+                crate::diagnostics::Severity::Warning => t.warning,
+                crate::diagnostics::Severity::Info => t.text_secondary,
+                crate::diagnostics::Severity::Hint => t.text_muted,
+            };
+            lines.push(Line::from(Span::styled(body, Style::default().fg(color))));
+        }
+        lines.push(Line::from(""));
+    }
+    f.render_widget(
+        Paragraph::new(lines)
+            .style(Style::default().bg(t.surface))
+            .wrap(ratatui::widgets::Wrap { trim: false }),
+        inner,
+    );
+}
+
+/// Floating completion list anchored just above the input bar.
+/// Renders up to 8 candidates from `app.mention.candidates`, with the
+/// current `selected` index highlighted. Mirrors v126 cli.js:161602
+/// (`autocomplete:accept` / `autocomplete:dismiss`) — non-modal,
+/// non-blocking, dismissed by Esc or by typing past the `@token`.
+fn mention_popup(f: &mut Frame, app: &App, input_area: Rect) {
+    let t = app.theme;
+    let frame_area = f.area();
+    let candidates = &app.mention.candidates;
+    if candidates.is_empty() || frame_area.height < 6 {
+        return;
+    }
+    const MAX_ROWS: u16 = 8;
+    let visible: u16 = candidates.len().min(MAX_ROWS as usize) as u16;
+    let h = visible + 2; // borders
+    let w = 60u16.min(frame_area.width.saturating_sub(2));
+    // Prefer placing the popup directly above the input. Fall back to
+    // below when there isn't enough room above (small terminals).
+    let above_top = input_area.y.saturating_sub(h);
+    let area = if above_top >= frame_area.y && input_area.y >= h {
+        Rect {
+            x: input_area.x.min(frame_area.width.saturating_sub(w)),
+            y: above_top,
+            width: w,
+            height: h,
+        }
+    } else {
+        Rect {
+            x: input_area.x.min(frame_area.width.saturating_sub(w)),
+            y: input_area.y + input_area.height,
+            width: w,
+            height: h.min(
+                frame_area
+                    .height
+                    .saturating_sub(input_area.y + input_area.height),
+            ),
+        }
+    };
+    f.render_widget(Clear, area);
+    let title = format!(
+        " @ {} ({} match{}) ",
+        if app.mention.query.is_empty() {
+            "<type to filter>".into()
+        } else {
+            app.mention.query.clone()
+        },
+        candidates.len(),
+        if candidates.len() == 1 { "" } else { "es" }
+    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(t.accent))
+        .title(Span::styled(title, Style::default().fg(t.accent)))
+        .style(Style::default().bg(t.surface));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let items: Vec<ListItem> = candidates
+        .iter()
+        .take(MAX_ROWS as usize)
+        .enumerate()
+        .map(|(i, path)| {
+            let is_sel = i == app.mention.selected;
+            let style = if is_sel {
+                Style::default().fg(t.text_primary).bg(t.accent)
+            } else {
+                Style::default().fg(t.text_secondary)
+            };
+            let prefix = if is_sel { "▸ " } else { "  " };
+            let max_w = inner.width.saturating_sub(prefix.len() as u16) as usize;
+            let truncated: String = if path.chars().count() > max_w && max_w > 1 {
+                let mut s: String = path.chars().take(max_w.saturating_sub(1)).collect();
+                s.push('…');
+                s
+            } else {
+                path.clone()
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(prefix.to_string(), style),
+                Span::styled(truncated, style),
+            ]))
+        })
+        .collect();
+    f.render_widget(List::new(items), inner);
 }
 
 fn palette(f: &mut Frame, app: &App) {
