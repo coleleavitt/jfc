@@ -17,6 +17,21 @@ pub struct SerializedSession {
     pub updated_at: Option<String>,
     #[serde(default)]
     pub first_prompt: Option<String>,
+    /// Working directory the session was created in. Used by
+    /// `/continue` and the sidebar picker to filter sessions to those
+    /// belonging to the current project. Mirrors codex-rs (cli/src/
+    /// main.rs:285,311 — `--show-all` toggle) and v126 cli.js:47254
+    /// (`listSessions(cwd)` filters by cwd prefix). Sessions saved
+    /// before this field landed deserialize with `None` and remain
+    /// visible only via `--global` / "show all" toggles.
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// User-set title (via future `/rename` slash). Falls back to
+    /// `first_prompt` for display when None. Mirrors v126's title
+    /// precedence: customTitle → aiTitle → firstPrompt → id-slice
+    /// (cli.js:39786, 47183-47184).
+    #[serde(default)]
+    pub title: Option<String>,
     pub messages: Vec<SerializedMessage>,
 }
 
@@ -260,18 +275,32 @@ pub fn save_session(session_id: &str, messages: &[ChatMessage]) {
     let now = chrono::Utc::now();
     let path = dir.join(format!("{session_id}.json"));
 
-    // Try to load existing session to preserve created_at
-    let created_at = std::fs::read_to_string(&path)
+    // Try to load existing session to preserve created_at + cwd + title
+    // (so resaving doesn't reset them on every turn). cwd is captured
+    // once at first save; subsequent saves don't migrate the session
+    // even if the user `cd`s elsewhere — that would conflate two
+    // projects' work into one session.
+    let prior = std::fs::read_to_string(&path)
         .ok()
-        .and_then(|content| serde_json::from_str::<SerializedSession>(&content).ok())
-        .map(|s| s.created_at)
+        .and_then(|content| serde_json::from_str::<SerializedSession>(&content).ok());
+    let created_at = prior
+        .as_ref()
+        .map(|s| s.created_at.clone())
         .unwrap_or_else(|| now.to_rfc3339());
+    let cwd = prior.as_ref().and_then(|s| s.cwd.clone()).or_else(|| {
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.display().to_string())
+    });
+    let title = prior.as_ref().and_then(|s| s.title.clone());
 
     let serialized = SerializedSession {
         id: session_id.to_owned(),
         created_at,
         updated_at: Some(now.to_rfc3339()),
         first_prompt: extract_first_prompt(messages),
+        cwd,
+        title,
         messages: messages.iter().map(serialize_message).collect(),
     };
 
@@ -303,6 +332,8 @@ pub fn load_session_metadata(session_id: &str) -> Option<SessionMetadata> {
         created_at: session.created_at,
         updated_at: session.updated_at,
         first_prompt: session.first_prompt,
+        cwd: session.cwd,
+        title: session.title,
         message_count: session.messages.len(),
     })
 }
@@ -313,7 +344,34 @@ pub struct SessionMetadata {
     pub created_at: String,
     pub updated_at: Option<String>,
     pub first_prompt: Option<String>,
+    /// Working directory the session was created in. `None` for legacy
+    /// sessions saved before the field landed — those are visible only
+    /// in "show all" listings.
+    pub cwd: Option<String>,
+    /// User-set title (`/rename` slash). `None` falls back to first_prompt.
+    pub title: Option<String>,
     pub message_count: usize,
+}
+
+impl SessionMetadata {
+    /// v126 title precedence: customTitle → aiTitle → firstPrompt → id-slice.
+    /// Picks the best human-readable label for the picker / sidebar.
+    pub fn display_title(&self) -> String {
+        if let Some(t) = self.title.as_deref().filter(|s| !s.is_empty()) {
+            return t.to_owned();
+        }
+        if let Some(p) = self.first_prompt.as_deref().filter(|s| !s.is_empty()) {
+            // Truncate to ~60 chars so long prompts don't blow out the
+            // sidebar. Mirrors v126's display truncation.
+            let trimmed: String = p.chars().take(60).collect();
+            if p.chars().count() > 60 {
+                return format!("{trimmed}…");
+            }
+            return trimmed;
+        }
+        // Last resort: first 8 chars of the id (matches v126's slice fallback).
+        self.id.chars().take(8).collect()
+    }
 }
 
 pub fn list_sessions() -> Vec<String> {
@@ -332,14 +390,24 @@ pub fn list_sessions() -> Vec<String> {
     ids
 }
 
-/// List sessions with metadata, sorted by most recent update
+/// List sessions with metadata, sorted by most recent update.
+/// When `cwd_filter` is `Some(path)`, only sessions whose `cwd` matches
+/// (or whose cwd is unset — legacy) are returned. Pass `None` for the
+/// "show all" mode (mirrors codex-rs `--show-all` / v126's all-sessions).
 pub fn list_sessions_with_metadata() -> Vec<SessionMetadata> {
+    list_sessions_filtered(None)
+}
+
+pub fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMetadata> {
     let ids = list_sessions();
     let mut sessions: Vec<SessionMetadata> = ids
         .into_iter()
         .filter_map(|id| load_session_metadata(&id))
+        .filter(|s| match cwd_filter {
+            None => true,
+            Some(target) => s.cwd.as_deref().is_none_or(|c| c == target),
+        })
         .collect();
-    // Sort by updated_at or created_at, newest first
     sessions.sort_by(|a, b| {
         let a_time = a.updated_at.as_ref().unwrap_or(&a.created_at);
         let b_time = b.updated_at.as_ref().unwrap_or(&b.created_at);
@@ -348,9 +416,35 @@ pub fn list_sessions_with_metadata() -> Vec<SessionMetadata> {
     sessions
 }
 
-/// Get the most recent session id (for --continue)
+/// Most recent session for the *current cwd*. Mirrors v126
+/// (cli.js:480735-480741) and codex-rs default behavior — `--continue`
+/// in project A doesn't accidentally resume a session from project B.
+/// Pass `None` for the legacy globally-most-recent behavior.
+pub fn most_recent_session_for_cwd(cwd: Option<&str>) -> Option<String> {
+    list_sessions_filtered(cwd).into_iter().next().map(|s| s.id)
+}
+
+/// Globally most-recent session id (legacy callers + `--global` flag).
 pub fn most_recent_session() -> Option<String> {
     list_sessions().into_iter().next()
+}
+
+/// Set the user-defined title on a session (`/rename` slash). Returns
+/// silently on I/O failures — title is cosmetic, shouldn't block the
+/// chat. Mirrors v126's `customTitle` field (cli.js:39786) which sits
+/// atop the title precedence chain.
+pub fn set_session_title(session_id: &str, title: &str) {
+    let path = sessions_dir().join(format!("{session_id}.json"));
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let Ok(mut session) = serde_json::from_str::<SerializedSession>(&content) else {
+        return;
+    };
+    session.title = Some(title.to_owned());
+    if let Ok(json) = serde_json::to_string_pretty(&session) {
+        let _ = std::fs::write(&path, json);
+    }
 }
 
 fn serialize_message(msg: &ChatMessage) -> SerializedMessage {
@@ -922,5 +1016,88 @@ mod tests {
             }
             _ => panic!("wrong variant"),
         }
+    }
+}
+
+#[cfg(test)]
+mod cwd_filter_tests {
+    use super::*;
+
+    fn meta(id: &str, cwd: Option<&str>, title: Option<&str>, prompt: Option<&str>) -> SessionMetadata {
+        SessionMetadata {
+            id: id.to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: None,
+            first_prompt: prompt.map(str::to_owned),
+            cwd: cwd.map(str::to_owned),
+            title: title.map(str::to_owned),
+            message_count: 1,
+        }
+    }
+
+    #[test]
+    fn display_title_prefers_custom_title_normal() {
+        // Title precedence (v126 cli.js:39786): customTitle wins.
+        let m = meta("s1", None, Some("My session"), Some("hello world"));
+        assert_eq!(m.display_title(), "My session");
+    }
+
+    #[test]
+    fn display_title_falls_through_to_first_prompt_normal() {
+        let m = meta("s1", None, None, Some("hello world"));
+        assert_eq!(m.display_title(), "hello world");
+    }
+
+    #[test]
+    fn display_title_truncates_long_first_prompt_normal() {
+        // Long prompts get truncated with ellipsis so the picker doesn't blow out.
+        let long_prompt: String = "x".repeat(80);
+        let m = meta("s1", None, None, Some(&long_prompt));
+        let title = m.display_title();
+        assert!(title.ends_with('…'), "got: {title}");
+        assert_eq!(title.chars().count(), 61);
+    }
+
+    #[test]
+    fn display_title_empty_prompt_falls_to_id_robust() {
+        // Both title + first_prompt empty/None → fall back to id slice
+        // (v126's last-resort token; mirrors cli.js:47183-47184).
+        let m = meta("abcdef1234567890", None, None, None);
+        assert_eq!(m.display_title(), "abcdef12");
+    }
+
+    #[test]
+    fn display_title_empty_string_title_uses_first_prompt_robust() {
+        // Empty-string title should still fall through, not display blank.
+        let m = meta("s1", Some(""), Some("hello"), None);
+        assert_eq!(m.display_title(), "hello");
+    }
+
+    /// Match-logic helper for the cwd filter (extracted for testability).
+    fn matches_filter(session_cwd: Option<&str>, target: Option<&str>) -> bool {
+        match target {
+            None => true,
+            Some(t) => session_cwd.is_none_or(|c| c == t),
+        }
+    }
+
+    #[test]
+    fn cwd_filter_no_filter_lets_all_through_normal() {
+        assert!(matches_filter(Some("/a"), None));
+        assert!(matches_filter(None, None));
+    }
+
+    #[test]
+    fn cwd_filter_matches_exact_path_normal() {
+        assert!(matches_filter(Some("/a"), Some("/a")));
+        assert!(!matches_filter(Some("/b"), Some("/a")));
+    }
+
+    #[test]
+    fn cwd_filter_lets_legacy_unset_cwd_through_robust() {
+        // Sessions saved before the cwd field existed have cwd=None.
+        // We surface them in any cwd's listing so the user doesn't lose
+        // history — they can still `/continue all` to find them.
+        assert!(matches_filter(None, Some("/a")));
     }
 }

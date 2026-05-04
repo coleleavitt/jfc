@@ -461,12 +461,21 @@ async fn run(
     match startup_session {
         StartupSession::Fresh => {}
         StartupSession::Continue => {
-            if let Some(session_id) = session::most_recent_session() {
+            // `--continue` is cwd-scoped (codex-rs / v126 parity). The
+            // user can pass `--continue --global` later if we add the
+            // flag; for now the cwd default is what they actually want.
+            let cwd_str = std::env::current_dir()
+                .ok()
+                .map(|p| p.display().to_string());
+            let id = session::most_recent_session_for_cwd(cwd_str.as_deref())
+                .or_else(session::most_recent_session); // legacy fallback
+            if let Some(session_id) = id {
                 if let Some(messages) = session::load_session(&session_id) {
                     tracing::info!(
                         target: "jfc::session",
                         session_id = %session_id,
                         message_count = messages.len(),
+                        cwd = ?cwd_str,
                         "continuing most recent session"
                     );
                     app.messages = messages;

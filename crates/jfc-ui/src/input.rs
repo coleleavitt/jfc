@@ -1210,6 +1210,32 @@ pub fn run_slash_command(app: &mut App, text: &str) {
 fn handle_slash_command(app: &mut App, text: &str) {
     let parts: Vec<&str> = text.splitn(2, ' ').collect();
     match parts[0] {
+        "/rename" => {
+            // Set a custom title on the current session. v126 cli.js:39786
+            // calls this `customTitle` and it sits at the top of the title
+            // precedence chain (custom → ai → firstPrompt → id-slice).
+            // Persisted to the session JSON so it survives restarts.
+            let new_title = parts.get(1).copied().unwrap_or("").trim().to_owned();
+            app.messages.push(ChatMessage::user(format!("/rename {new_title}")));
+            match (&app.current_session_id, new_title.is_empty()) {
+                (None, _) => {
+                    app.messages.push(ChatMessage::assistant(
+                        "No active session to rename. Send a message first.".into(),
+                    ));
+                }
+                (_, true) => {
+                    app.messages.push(ChatMessage::assistant(
+                        "Usage: `/rename <title>`. Pass any text to set the session title; the picker / sidebar will show it.".into(),
+                    ));
+                }
+                (Some(id), false) => {
+                    crate::session::set_session_title(id, &new_title);
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Session `{id}` renamed to **{new_title}**.",
+                    )));
+                }
+            }
+        }
         "/clear" => {
             app.messages.clear();
             app.streaming_text.clear();
@@ -1287,8 +1313,22 @@ fn handle_slash_command(app: &mut App, text: &str) {
             }
         }
         "/continue" | "/c" => {
-            // Resume the most recent session
-            if let Some(session_id) = crate::session::most_recent_session() {
+            // v126 / codex-rs parity: `/continue` is cwd-scoped by default.
+            // `/continue all` (or `/c all`) shows the globally most recent
+            // — useful when the user moved a project or wants any session.
+            // The original behavior (global most-recent) caused the
+            // "continue from project A accidentally resumed project B"
+            // confusion the user reported.
+            let want_global = parts.get(1).copied().map(str::trim) == Some("all");
+            let session_id = if want_global {
+                crate::session::most_recent_session()
+            } else {
+                let cwd_str = std::env::current_dir()
+                    .ok()
+                    .map(|p| p.display().to_string());
+                crate::session::most_recent_session_for_cwd(cwd_str.as_deref())
+            };
+            if let Some(session_id) = session_id {
                 if let Some(messages) = crate::session::load_session(&session_id) {
                     app.messages = messages;
                     app.switch_session(Some(session_id.clone()));
@@ -1296,8 +1336,9 @@ fn handle_slash_command(app: &mut App, text: &str) {
                     app.streaming_reasoning.clear();
                     app.streaming_assistant_idx = None;
                     app.scroll_to_bottom();
+                    let scope = if want_global { "any cwd" } else { "this cwd" };
                     app.messages.push(ChatMessage::assistant(format!(
-                        "**Resumed session `{session_id}`** — {} message(s) loaded.",
+                        "**Resumed session `{session_id}`** ({scope}) — {} message(s) loaded.",
                         app.messages.len() - 1
                     )));
                 } else {
@@ -1306,9 +1347,12 @@ fn handle_slash_command(app: &mut App, text: &str) {
                     )));
                 }
             } else {
-                app.messages.push(ChatMessage::assistant(
-                    "No previous sessions found to continue.".into(),
-                ));
+                let hint = if want_global {
+                    "No previous sessions found anywhere."
+                } else {
+                    "No previous sessions found in this cwd. Try `/continue all` for any session."
+                };
+                app.messages.push(ChatMessage::assistant(hint.into()));
             }
         }
         "/resume" => {
