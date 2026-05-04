@@ -211,6 +211,17 @@ pub struct App {
     /// → "almost done thinking"). Mirrors v126 `timeSinceLastToken` (cli.js
     /// line 323162).
     pub streaming_last_token_at: Option<Instant>,
+    /// Instant the model started producing reasoning output (extended
+    /// thinking). Set on the first reasoning chunk per turn; cleared when
+    /// the turn ends. Mirrors v126's `streamMode = "thinking"` transition
+    /// (cli.js HcH:413611).
+    pub thinking_started_at: Option<Instant>,
+    /// Instant the model stopped producing reasoning and switched to
+    /// regular text output (or the stream ended without text). Once set,
+    /// the spinner stops showing "thinking" and starts showing
+    /// `thought for Ns`. Mirrors v126's `streamingEndedAt` field on the
+    /// thinking-status reducer (cli.js HcH:413585).
+    pub thinking_ended_at: Option<Instant>,
     pub scroll_offset: usize,
     pub total_lines: usize,
     pub textarea: TextArea<'static>,
@@ -421,6 +432,8 @@ impl App {
             streaming_assistant_idx: None,
             streaming_started_at: None,
             streaming_last_token_at: None,
+            thinking_started_at: None,
+            thinking_ended_at: None,
             turn_started_at: None,
             history_cursor: None,
             is_streaming: false,
@@ -520,6 +533,18 @@ impl App {
         self.task_panel_state = ratatui::widgets::TableState::default().with_selected(Some(0));
         self.viewing_task_id = None;
         self.viewing_task_expanded.clear();
+        self.recompute_token_estimate();
+    }
+
+    /// Recompute `tool_ctx.approx_tokens` from the current `messages`. Call
+    /// after a session resume so the Context gauge and the pre-submit
+    /// compact gate reflect the loaded conversation — without this, both
+    /// read 0 until the next stream's `StreamUsage` event lands, and the
+    /// pre-submit compact silently mis-estimates a huge resumed history
+    /// as "fits". Mirrors v126's token-recount on `loadConversation`
+    /// (cli.js:537970+).
+    pub fn recompute_token_estimate(&mut self) {
+        self.tool_ctx.approx_tokens = crate::compact::estimate_tokens(&self.messages);
     }
 
     pub fn scroll_to_bottom(&mut self) {
