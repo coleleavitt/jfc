@@ -520,11 +520,13 @@ pub async fn handle_key(
                         Some(i) => (i + 1).min(task_count - 1),
                     };
                     app.viewing_task_id = task_ids.into_iter().nth(next);
+                    app.viewing_task_expanded.clear();
                     app.scroll_to_bottom();
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 app.viewing_task_id = None;
+                app.viewing_task_expanded.clear();
                 app.scroll_to_bottom();
             }
             KeyCode::Left | KeyCode::Char('h') => {
@@ -532,6 +534,7 @@ pub async fn handle_key(
                     let pos = task_ids.iter().position(|t| t == id).unwrap_or(0);
                     if pos > 0 {
                         app.viewing_task_id = task_ids.into_iter().nth(pos - 1);
+                        app.viewing_task_expanded.clear();
                     }
                 }
             }
@@ -540,6 +543,7 @@ pub async fn handle_key(
                     let pos = task_ids.iter().position(|t| t == id).unwrap_or(0);
                     if pos + 1 < task_count {
                         app.viewing_task_id = task_ids.into_iter().nth(pos + 1);
+                        app.viewing_task_expanded.clear();
                     }
                 }
             }
@@ -824,6 +828,36 @@ pub async fn handle_key(
             return Ok(false);
         }
         (KeyModifiers::NONE, KeyCode::Char('o')) if !input_has_text(app) => {
+            // In the subagent task view (`viewing_task_id.is_some()`),
+            // `o` toggles expansion of the most recent long entry in
+            // `BackgroundTask.messages`. In the main chat it falls
+            // through to the most recent `LargeText` tool block. The
+            // two paths can't share state until Phase B unifies the
+            // subagent renderer with `MessageView`.
+            if let Some(ref task_id) = app.viewing_task_id.clone() {
+                if let Some(bt) = app.background_tasks.get(task_id) {
+                    let threshold_lines =
+                        crate::render::TASK_VIEW_COLLAPSE_LINES;
+                    let threshold_bytes =
+                        crate::render::TASK_VIEW_COLLAPSE_BYTES;
+                    let last_collapsible = bt
+                        .messages
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find(|(_, m)| {
+                            m.lines().count() > threshold_lines
+                                || m.len() > threshold_bytes
+                        })
+                        .map(|(i, _)| i);
+                    if let Some(idx) = last_collapsible {
+                        if !app.viewing_task_expanded.insert(idx) {
+                            app.viewing_task_expanded.remove(&idx);
+                        }
+                    }
+                }
+                return Ok(false);
+            }
             'toggle: {
                 let messages = &mut app.messages;
                 for msg in messages.iter_mut().rev() {
@@ -842,6 +876,7 @@ pub async fn handle_key(
         (KeyModifiers::NONE, KeyCode::Esc) => {
             if app.viewing_task_id.is_some() {
                 app.viewing_task_id = None;
+                app.viewing_task_expanded.clear();
                 return Ok(false);
             }
             reset_input(app);
