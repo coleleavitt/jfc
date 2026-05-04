@@ -610,7 +610,7 @@ async fn run(
             .current_session_id
             .clone()
             .unwrap_or_else(session::generate_session_id);
-        session::save_session(&session_id, &app.messages);
+        session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()));
         app.current_session_id = Some(session_id);
 
         let provider = app.provider.clone();
@@ -921,7 +921,7 @@ async fn run(
 
                 // Auto-save session after each assistant turn completes
                 if let Some(ref session_id) = app.current_session_id {
-                    session::save_session(session_id, &app.messages);
+                    session::save_session(session_id, &app.messages, Some(app.cwd.as_str()));
                 }
                 // v126 queued-prompt drain on plain end_turn: model finished
                 // without tools to call → if anything's queued, fire it now.
@@ -1115,7 +1115,7 @@ async fn run(
                 // saves on every state mutation; jfc previously only saved
                 // at submit + StreamDone, missing the post-tool state.
                 if let Some(ref session_id) = app.current_session_id {
-                    session::save_session(session_id, &app.messages);
+                    session::save_session(session_id, &app.messages, Some(app.cwd.as_str()));
                 }
             }
             AppEvent::AllToolsComplete => {

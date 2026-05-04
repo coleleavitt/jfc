@@ -281,9 +281,11 @@ pub struct App {
     /// Whether the sessions sidebar is visible. Default off so the chat takes
     /// the full width — toggle with Ctrl+B.
     pub show_sidebar: bool,
-    /// Cached list of session ids (newest first), refreshed when the sidebar
-    /// opens. Storing here keeps render() pure of disk I/O.
-    pub session_ids: Vec<String>,
+    /// Cached list of session metadata (newest first), refreshed when the
+    /// sidebar opens. Storing here keeps render() pure of disk I/O. Replaced
+    /// the raw-id `session_ids` cache so the sidebar can show titles, cwd
+    /// badges, and relative timestamps instead of `ses_2026...` ids.
+    pub session_meta: Vec<crate::session::SessionMetadata>,
     /// Currently-selected sidebar row.
     pub session_selected: usize,
     /// State for the sidebar `List` widget — drives auto-scroll when the
@@ -452,7 +454,7 @@ impl App {
             subscription_type: None,
             account_email: None,
             show_sidebar: false,
-            session_ids: Vec::new(),
+            session_meta: Vec::new(),
             session_selected: 0,
             session_list_state: ratatui::widgets::ListState::default(),
             current_session_id: Some(crate::session::generate_session_id()),
