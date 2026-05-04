@@ -45,6 +45,7 @@ pub fn is_concurrency_safe(kind: &ToolKind) -> bool {
             | ToolKind::TaskUpdate
             | ToolKind::TaskList
             | ToolKind::TaskDone
+            | ToolKind::Skill
     )
 }
 
