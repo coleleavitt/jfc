@@ -59,6 +59,10 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         model_picker(f, app);
     }
 
+    if app.show_task_panel {
+        task_panel(f, app);
+    }
+
     if app.pending_approval.is_some() {
         approval(f, app);
     }
@@ -278,35 +282,78 @@ fn render_task_footer(lines: &mut Vec<Line<'static>>, app: &App) {
     }
     let t = app.theme;
     let counts = app.task_store.counts();
+
+    // Collect completed task IDs so we can filter blocked_by to only open blockers.
+    let completed_ids: std::collections::HashSet<&str> = tasks
+        .iter()
+        .filter(|tk| tk.status == crate::tasks::TaskStatus::Completed)
+        .map(|tk| tk.id.as_str())
+        .collect();
+
+    // Recently-completed tasks still within the 30 s fade-out window.
+    let fade_dur = std::time::Duration::from_secs(30);
+    let now = std::time::Instant::now();
+    let recently_completed: Vec<&crate::tasks::Task> = tasks
+        .iter()
+        .filter(|tk| {
+            tk.status == crate::tasks::TaskStatus::Completed
+                && app
+                    .task_completion_times
+                    .get(&tk.id)
+                    .map_or(false, |&t| now.duration_since(t) < fade_dur)
+        })
+        .collect();
+
+    // Open (pending / in-progress) tasks first, then recently-completed.
+    let open_tasks: Vec<&crate::tasks::Task> = tasks
+        .iter()
+        .filter(|task| {
+            matches!(
+                task.status,
+                crate::tasks::TaskStatus::Pending | crate::tasks::TaskStatus::InProgress
+            )
+        })
+        .collect();
+
     let mut visible = 0usize;
     let max_visible = 5usize;
-    for tk in tasks.iter().filter(|task| {
-        matches!(
-            task.status,
-            crate::tasks::TaskStatus::Pending | crate::tasks::TaskStatus::InProgress
-        )
-    }) {
+
+    for tk in open_tasks.iter().chain(recently_completed.iter()) {
         if visible >= max_visible {
             break;
         }
         visible += 1;
+
+        let is_recently_completed = tk.status == crate::tasks::TaskStatus::Completed;
+
         let (icon, icon_style) = match tk.status {
             crate::tasks::TaskStatus::Pending => ("□ ", Style::default().fg(t.text_muted)),
             crate::tasks::TaskStatus::InProgress => ("▣ ", Style::default().fg(t.accent)),
-            _ => ("✓ ", Style::default().fg(t.success)),
+            crate::tasks::TaskStatus::Completed => (
+                "✓ ",
+                Style::default().fg(t.success).add_modifier(Modifier::DIM),
+            ),
+            _ => ("✗ ", Style::default().fg(t.error)),
         };
-        let subj_style = if tk.status == crate::tasks::TaskStatus::InProgress {
+
+        let subj_style = if is_recently_completed {
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::CROSSED_OUT | Modifier::DIM)
+        } else if tk.status == crate::tasks::TaskStatus::InProgress {
             Style::default()
                 .fg(t.text_primary)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(t.text_secondary)
         };
+
         let mut spans = vec![
             Span::styled("    ", Style::default()),
             Span::styled(icon, icon_style),
             Span::styled(tk.subject.clone(), subj_style),
         ];
+
         if let Some(owner) = &tk.owner {
             spans.push(Span::styled(
                 format!(" (@{owner})"),
@@ -315,8 +362,26 @@ fn render_task_footer(lines: &mut Vec<Line<'static>>, app: &App) {
                     .add_modifier(Modifier::ITALIC),
             ));
         }
+
+        // Blocked-by indicator: only show blockers that are still open.
+        if !tk.blocked_by.is_empty() {
+            let open_blockers: Vec<&str> = tk
+                .blocked_by
+                .iter()
+                .filter(|id| !completed_ids.contains(id.as_str()))
+                .map(String::as_str)
+                .collect();
+            if !open_blockers.is_empty() {
+                spans.push(Span::styled(
+                    format!(" ▸ blocked by {}", open_blockers.join(", ")),
+                    Style::default().fg(t.text_muted),
+                ));
+            }
+        }
+
         lines.push(Line::from(spans));
     }
+
     let total_open = counts.pending + counts.in_progress;
     if total_open > visible || counts.completed > 0 {
         let overflow_open = total_open.saturating_sub(visible);
@@ -468,7 +533,7 @@ fn message_lines(
                             }
                         } else {
                             let preview: String = text.chars().take(60).collect();
-                            let ellipsis = if text.len() > 60 { "…" } else { "" };
+                            let ellipsis = if text.chars().count() > 60 { "…" } else { "" };
                             lines.push(Line::from(vec![
                                 Span::styled(
                                     "∴ Thinking",
@@ -641,11 +706,10 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
 
     let cwd_display = {
         let home = std::env::var("HOME").unwrap_or_default();
-        if app.cwd.starts_with(&home) {
-            format!("~{}", &app.cwd[home.len()..])
-        } else {
-            app.cwd.clone()
-        }
+        app.cwd
+            .strip_prefix(&home)
+            .map(|rest| format!("~{rest}"))
+            .unwrap_or_else(|| app.cwd.clone())
     };
 
     let msg_count = app.messages.iter().filter(|m| m.role == Role::User).count();
@@ -683,13 +747,17 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
 
     let total_width = area.width as usize;
     let right_start = total_width.saturating_sub(right.len());
-    let left_truncated = if left.len() > right_start.saturating_sub(1) {
-        format!("{}…", &left[..right_start.saturating_sub(2)])
+    // Use char count, not byte length — `left` contains multi-byte chars
+    // (⚡, ⏳) that would panic on byte-indexed slicing.
+    let left_chars: usize = left.chars().count();
+    let left_truncated = if left_chars > right_start.saturating_sub(1) {
+        let truncated: String = left.chars().take(right_start.saturating_sub(2)).collect();
+        format!("{truncated}…")
     } else {
         left
     };
 
-    let padding = " ".repeat(right_start.saturating_sub(left_truncated.len()));
+    let padding = " ".repeat(right_start.saturating_sub(left_truncated.chars().count()));
 
     let line = Line::from(vec![
         Span::styled(left_truncated, Style::default().fg(t.text_secondary)),
@@ -953,6 +1021,156 @@ fn model_picker(f: &mut Frame, app: &mut App) {
         .style(Style::default().bg(t.surface));
 
     f.render_stateful_widget(table, chunks[1], &mut app.model_picker_state);
+}
+
+fn task_panel(f: &mut Frame, app: &mut App) {
+    let t = app.theme;
+    let area = f.area();
+
+    let w = (area.width as f32 * 0.80).round() as u16;
+    let h = (area.height as f32 * 0.70).round() as u16;
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let popup = Rect::new(x, y, w, h);
+
+    f.render_widget(Clear, popup);
+
+    let all_tasks = app.task_store.list(false);
+    let counts = app.task_store.counts();
+
+    let completed_ids: std::collections::HashSet<&str> = all_tasks
+        .iter()
+        .filter(|tk| tk.status == crate::tasks::TaskStatus::Completed)
+        .map(|tk| tk.id.as_str())
+        .collect();
+
+    let title = format!(
+        " Tasks · {} total ({} done, {} in progress, {} pending) ",
+        counts.pending + counts.in_progress + counts.completed,
+        counts.completed,
+        counts.in_progress,
+        counts.pending,
+    );
+
+    let header = Row::new(vec![
+        Cell::from("ID").style(
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Status").style(
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Subject").style(
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Owner").style(
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Blocked By").style(
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+
+    let rows: Vec<Row> = all_tasks
+        .iter()
+        .map(|tk| {
+            let (icon, status_style) = match tk.status {
+                crate::tasks::TaskStatus::Pending => {
+                    ("□ pending", Style::default().fg(t.text_muted))
+                }
+                crate::tasks::TaskStatus::InProgress => (
+                    "▣ in_progress",
+                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+                ),
+                crate::tasks::TaskStatus::Completed => (
+                    "✓ completed",
+                    Style::default()
+                        .fg(t.success)
+                        .add_modifier(Modifier::CROSSED_OUT),
+                ),
+                _ => ("✗ deleted", Style::default().fg(t.error)),
+            };
+
+            let subj_style = if tk.status == crate::tasks::TaskStatus::Completed {
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::CROSSED_OUT)
+            } else {
+                Style::default().fg(t.text_primary)
+            };
+
+            let open_blockers: Vec<&str> = tk
+                .blocked_by
+                .iter()
+                .filter(|id| !completed_ids.contains(id.as_str()))
+                .map(String::as_str)
+                .collect();
+
+            Row::new(vec![
+                Cell::from(tk.id.clone()).style(Style::default().fg(t.text_muted)),
+                Cell::from(icon).style(status_style),
+                Cell::from(tk.subject.clone()).style(subj_style),
+                Cell::from(tk.owner.clone().unwrap_or_default())
+                    .style(Style::default().fg(t.text_secondary)),
+                Cell::from(open_blockers.join(", ")).style(Style::default().fg(t.text_muted)),
+            ])
+        })
+        .collect();
+
+    // Clamp selection to valid range.
+    if !all_tasks.is_empty() {
+        let max = all_tasks.len().saturating_sub(1);
+        if app.task_panel_selected > max {
+            app.task_panel_selected = max;
+        }
+        app.task_panel_state.select(Some(app.task_panel_selected));
+    }
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(10),
+            Constraint::Length(15),
+            Constraint::Min(20),
+            Constraint::Length(14),
+            Constraint::Length(18),
+        ],
+    )
+    .header(header)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(t.border))
+            .title(Span::styled(
+                title,
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+            ))
+            .title_bottom(Span::styled(
+                " ↑↓ navigate · Esc close ",
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::ITALIC),
+            ))
+            .style(Style::default().bg(t.surface)),
+    )
+    .row_highlight_style(
+        Style::default()
+            .bg(t.surface_raised)
+            .add_modifier(Modifier::BOLD),
+    )
+    .highlight_symbol("▶ ")
+    .style(Style::default().bg(t.surface));
+
+    f.render_stateful_widget(table, popup, &mut app.task_panel_state);
 }
 
 fn approval(f: &mut Frame, app: &App) {

@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 
 use crate::context::ReadDedupCache;
 use crate::provider::ToolDef;
+use crate::tasks::{TaskPatch, TaskStatus, TaskStore};
 use crate::types::{ToolInput, ToolKind};
 
 /// REQ-TOOLS-001: Tool definitions sent to Anthropic API.
@@ -145,6 +146,97 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                 "required": ["pattern"]
             }),
         },
+        ToolDef {
+            name: "TaskCreate".into(),
+            description: "Create a new task to track work. Returns the created task with its id.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "subject": {
+                        "type": "string",
+                        "description": "Short title for the task"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Detailed description of what needs to be done"
+                    },
+                    "active_form": {
+                        "type": "string",
+                        "description": "Present-tense text shown while task is in progress (e.g. 'Fixing auth bug')"
+                    },
+                    "blocked_by": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Task ids that must complete before this task can start"
+                    }
+                },
+                "required": ["subject", "description"]
+            }),
+        },
+        ToolDef {
+            name: "TaskUpdate".into(),
+            description: "Update an existing task's status, subject, description, or owner.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The task id to update (e.g. 't1')"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["pending", "in_progress", "completed", "deleted"],
+                        "description": "New status for the task"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "New subject/title"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "New description"
+                    },
+                    "owner": {
+                        "type": "string",
+                        "description": "Assign task to a teammate name"
+                    }
+                },
+                "required": ["task_id"]
+            }),
+        },
+        ToolDef {
+            name: "TaskList".into(),
+            description: "List all tasks, optionally filtered by status or owner.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "status_filter": {
+                        "type": "string",
+                        "enum": ["pending", "in_progress", "completed"],
+                        "description": "Only return tasks with this status"
+                    },
+                    "owner_filter": {
+                        "type": "string",
+                        "description": "Only return tasks assigned to this owner"
+                    }
+                },
+                "required": []
+            }),
+        },
+        ToolDef {
+            name: "TaskDone".into(),
+            description: "Mark a task as completed.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The task id to mark done (e.g. 't1')"
+                    }
+                },
+                "required": ["task_id"]
+            }),
+        },
     ]
 }
 
@@ -153,12 +245,13 @@ pub struct ExecutionResult {
     pub is_error: bool,
 }
 
-/// REQ-TOOLS-002: Tool executors — bash/read/write/edit/glob/grep via tokio + fs.
+/// REQ-TOOLS-002: Tool executors — bash/read/write/edit/glob/grep/task via tokio + fs.
 pub async fn execute_tool(
     kind: ToolKind,
     input: ToolInput,
     cwd: std::path::PathBuf,
     dedup: Option<Arc<Mutex<ReadDedupCache>>>,
+    task_store: Option<Arc<TaskStore>>,
 ) -> ExecutionResult {
     match (kind, input) {
         (
@@ -221,6 +314,39 @@ pub async fn execute_tool(
                 &cwd,
             )
             .await
+        }
+        (
+            ToolKind::TaskCreate,
+            ToolInput::TaskCreate {
+                subject,
+                description,
+                active_form,
+                blocked_by,
+            },
+        ) => execute_task_create(task_store, subject, description, active_form, blocked_by),
+        (
+            ToolKind::TaskUpdate,
+            ToolInput::TaskUpdate {
+                task_id,
+                status,
+                subject,
+                description,
+                owner,
+            },
+        ) => execute_task_update(task_store, &task_id, status, subject, description, owner),
+        (
+            ToolKind::TaskList,
+            ToolInput::TaskList {
+                status_filter,
+                owner_filter,
+            },
+        ) => execute_task_list(
+            task_store,
+            status_filter.as_deref(),
+            owner_filter.as_deref(),
+        ),
+        (ToolKind::TaskDone, ToolInput::TaskDone { task_id }) => {
+            execute_task_done(task_store, &task_id)
         }
         (kind, _) => ExecutionResult {
             output: format!("Tool {:?} not yet implemented", kind),
@@ -526,6 +652,125 @@ async fn execute_grep(
         }
         Err(e) => ExecutionResult {
             output: format!("rg not found or failed: {e}"),
+            is_error: true,
+        },
+    }
+}
+
+fn execute_task_create(
+    store: Option<Arc<TaskStore>>,
+    subject: String,
+    description: String,
+    active_form: Option<String>,
+    blocked_by: Vec<String>,
+) -> ExecutionResult {
+    let Some(store) = store else {
+        return ExecutionResult {
+            output: "Task store not available".into(),
+            is_error: true,
+        };
+    };
+    match store.create(subject, description, active_form, blocked_by) {
+        Ok(task) => ExecutionResult {
+            output: serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
+            is_error: false,
+        },
+        Err(e) => ExecutionResult {
+            output: e,
+            is_error: true,
+        },
+    }
+}
+
+fn execute_task_update(
+    store: Option<Arc<TaskStore>>,
+    task_id: &str,
+    status: Option<String>,
+    subject: Option<String>,
+    description: Option<String>,
+    owner: Option<String>,
+) -> ExecutionResult {
+    let Some(store) = store else {
+        return ExecutionResult {
+            output: "Task store not available".into(),
+            is_error: true,
+        };
+    };
+    let parsed_status = status.as_deref().and_then(|s| match s {
+        "pending" => Some(TaskStatus::Pending),
+        "in_progress" => Some(TaskStatus::InProgress),
+        "completed" => Some(TaskStatus::Completed),
+        "deleted" => Some(TaskStatus::Deleted),
+        _ => None,
+    });
+    let patch = TaskPatch {
+        subject,
+        description,
+        status: parsed_status,
+        owner,
+        ..Default::default()
+    };
+    match store.update(task_id, patch) {
+        Ok(task) => ExecutionResult {
+            output: serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
+            is_error: false,
+        },
+        Err(e) => ExecutionResult {
+            output: e,
+            is_error: true,
+        },
+    }
+}
+
+fn execute_task_list(
+    store: Option<Arc<TaskStore>>,
+    status_filter: Option<&str>,
+    owner_filter: Option<&str>,
+) -> ExecutionResult {
+    let Some(store) = store else {
+        return ExecutionResult {
+            output: "Task store not available".into(),
+            is_error: true,
+        };
+    };
+    let mut tasks = store.list(false);
+    if let Some(sf) = status_filter {
+        tasks.retain(|t| {
+            let s = serde_json::to_value(&t.status)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned));
+            s.as_deref() == Some(sf)
+        });
+    }
+    if let Some(of) = owner_filter {
+        tasks.retain(|t| t.owner.as_deref() == Some(of));
+    }
+    let output =
+        serde_json::to_string_pretty(&tasks).unwrap_or_else(|_| format!("{} tasks", tasks.len()));
+    ExecutionResult {
+        output,
+        is_error: false,
+    }
+}
+
+fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) -> ExecutionResult {
+    let Some(store) = store else {
+        return ExecutionResult {
+            output: "Task store not available".into(),
+            is_error: true,
+        };
+    };
+    let patch = TaskPatch {
+        status: Some(TaskStatus::Completed),
+        ..Default::default()
+    };
+    match store.update(task_id, patch) {
+        Ok(task) => ExecutionResult {
+            output: serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
+            is_error: false,
+        },
+        Err(e) => ExecutionResult {
+            output: e,
             is_error: true,
         },
     }

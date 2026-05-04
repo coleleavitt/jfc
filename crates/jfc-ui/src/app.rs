@@ -1,8 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use crossterm::event::Event;
 use ratatui::style::Style;
-use ratatui::widgets::TableState;
+use ratatui::widgets::{ListState, TableState};
 use tokio::sync::Mutex;
 
 use tui_textarea::TextArea;
@@ -23,6 +23,10 @@ pub enum AppEvent {
     StreamTool(ToolCall),
     StreamDone(StopReason),
     StreamError(String),
+    StreamUsage {
+        input_tokens: u32,
+        output_tokens: u32,
+    },
     ToolResult {
         tool_id: String,
         result: ExecutionResult,
@@ -189,6 +193,21 @@ pub struct App {
     /// so todos survive session resume and compaction. Reused across the
     /// agent's turns; the slash commands `/task-*` poke it directly.
     pub task_store: std::sync::Arc<crate::tasks::TaskStore>,
+    /// Records when each task transitioned to `Completed` so the footer can
+    /// keep showing them for 30 seconds with dimmed/strikethrough styling.
+    pub task_completion_times: HashMap<String, Instant>,
+    /// Whether the full-screen task panel overlay is visible (Ctrl+T).
+    pub show_task_panel: bool,
+    /// Currently-selected row in the task panel.
+    pub task_panel_selected: usize,
+    /// Drives selection + scroll for the task panel's `Table`.
+    pub task_panel_state: TableState,
+    /// Transient per-session map of task_id → current activity description.
+    /// Updated by the tool execution loop to show what an in_progress task is
+    /// doing (e.g. "Running bash: cargo test", "Reading src/main.rs").
+    pub task_activities: HashMap<String, String>,
+    pub last_usage_input: u32,
+    pub last_usage_output: u32,
 }
 
 impl App {
@@ -249,6 +268,13 @@ impl App {
             current_session_id: None,
             auto_mode: crate::auto_mode::load_config(),
             task_store: crate::tasks::TaskStore::open("default"),
+            task_completion_times: HashMap::new(),
+            show_task_panel: false,
+            task_panel_selected: 0,
+            task_panel_state: TableState::default().with_selected(Some(0)),
+            task_activities: HashMap::new(),
+            last_usage_input: 0,
+            last_usage_output: 0,
         }
     }
 
@@ -309,5 +335,26 @@ impl App {
             tool.kind,
             ToolKind::Bash | ToolKind::Write | ToolKind::Edit | ToolKind::ApplyPatch
         )
+    }
+
+    /// Scan the task store for newly-completed tasks and record their
+    /// completion instant so the footer can fade them out after 30 s.
+    pub fn sync_task_completions(&mut self) {
+        use crate::tasks::TaskStatus;
+        for task in self.task_store.list(false) {
+            if task.status == TaskStatus::Completed
+                && !self.task_completion_times.contains_key(&task.id)
+            {
+                self.task_completion_times
+                    .insert(task.id.clone(), Instant::now());
+            }
+        }
+        // Prune entries for tasks that are no longer completed (e.g. re-opened).
+        let store = &self.task_store;
+        self.task_completion_times.retain(|id, _| {
+            store
+                .get(id)
+                .map_or(false, |t| t.status == TaskStatus::Completed)
+        });
     }
 }

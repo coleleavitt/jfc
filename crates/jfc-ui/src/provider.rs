@@ -34,6 +34,10 @@ pub enum StreamEvent {
     Done {
         stop_reason: StopReason,
     },
+    Usage {
+        input_tokens: u32,
+        output_tokens: u32,
+    },
     Error {
         message: String,
     },

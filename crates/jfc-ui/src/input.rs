@@ -24,7 +24,12 @@ fn dispatch_approved_tool(app: &App, tool: ToolCall, tx: &mpsc::UnboundedSender<
         queue_remaining = app.approval_queue.len(),
         "approved → dispatch"
     );
-    stream::dispatch_tools_batched(vec![tool], tx, Arc::clone(&app.dedup_cache));
+    stream::dispatch_tools_batched(
+        vec![tool],
+        tx,
+        Arc::clone(&app.dedup_cache),
+        Some(Arc::clone(&app.task_store)),
+    );
 }
 
 /// Promote the next queued tool into `pending_approval` so the modal cycles
@@ -64,7 +69,12 @@ fn advance_approval_queue(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent>) {
         break;
     }
     if !auto_approved.is_empty() {
-        stream::dispatch_tools_batched(auto_approved, tx, Arc::clone(&app.dedup_cache));
+        stream::dispatch_tools_batched(
+            auto_approved,
+            tx,
+            Arc::clone(&app.dedup_cache),
+            Some(Arc::clone(&app.task_store)),
+        );
     }
 }
 
@@ -158,6 +168,28 @@ pub async fn handle_key(
                 // have to dismiss them one-by-one.
                 app.pending_approval = None;
                 app.approval_queue.clear();
+            }
+            _ => {}
+        }
+        return Ok(false);
+    }
+
+    if app.show_task_panel {
+        let total = app.task_store.list(false).len();
+        match key.code {
+            KeyCode::Esc => {
+                app.show_task_panel = false;
+            }
+            KeyCode::Up if app.task_panel_selected > 0 => {
+                app.task_panel_selected -= 1;
+                app.task_panel_state.select(Some(app.task_panel_selected));
+            }
+            KeyCode::Down => {
+                let max = total.saturating_sub(1);
+                if app.task_panel_selected < max {
+                    app.task_panel_selected += 1;
+                    app.task_panel_state.select(Some(app.task_panel_selected));
+                }
             }
             _ => {}
         }

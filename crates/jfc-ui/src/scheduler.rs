@@ -14,6 +14,7 @@ use tokio::sync::{Mutex, mpsc};
 
 use crate::app::AppEvent;
 use crate::context::ReadDedupCache;
+use crate::tasks::TaskStore;
 use crate::tools::{self, ExecutionResult};
 use crate::types::{ToolCall, ToolKind};
 
@@ -36,7 +37,14 @@ pub enum ToolBatch {
 pub fn is_concurrency_safe(kind: &ToolKind) -> bool {
     matches!(
         kind,
-        ToolKind::Read | ToolKind::Glob | ToolKind::Grep | ToolKind::Search
+        ToolKind::Read
+            | ToolKind::Glob
+            | ToolKind::Grep
+            | ToolKind::Search
+            | ToolKind::TaskCreate
+            | ToolKind::TaskUpdate
+            | ToolKind::TaskList
+            | ToolKind::TaskDone
     )
 }
 
@@ -91,6 +99,7 @@ pub async fn execute_batches(
     tx: &mpsc::UnboundedSender<AppEvent>,
     cwd: PathBuf,
     dedup: Arc<Mutex<ReadDedupCache>>,
+    task_store: Option<Arc<TaskStore>>,
 ) -> Vec<ToolExecution> {
     let mut all_results = Vec::new();
 
@@ -104,8 +113,9 @@ pub async fn execute_batches(
                     let input = call.input.clone();
                     let cwd = cwd.clone();
                     let dedup = Arc::clone(&dedup);
+                    let ts = task_store.clone();
                     handles.push(tokio::spawn(async move {
-                        let result = tools::execute_tool(kind, input, cwd, Some(dedup)).await;
+                        let result = tools::execute_tool(kind, input, cwd, Some(dedup), ts).await;
                         ToolExecution {
                             tool_id: id,
                             result,
@@ -129,8 +139,14 @@ pub async fn execute_batches(
                 let id = call.id.clone();
                 let kind = call.kind.clone();
                 let input = call.input.clone();
-                let result =
-                    tools::execute_tool(kind, input, cwd.clone(), Some(Arc::clone(&dedup))).await;
+                let result = tools::execute_tool(
+                    kind,
+                    input,
+                    cwd.clone(),
+                    Some(Arc::clone(&dedup)),
+                    task_store.clone(),
+                )
+                .await;
                 let _ = tx.send(AppEvent::ToolResult {
                     tool_id: id.clone(),
                     result: ExecutionResult {
