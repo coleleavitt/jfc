@@ -615,6 +615,11 @@ fn deserialize_part(part: SerializedPart) -> MessagePart {
             input: deserialize_tool_input(input),
             output: deserialize_tool_output(output),
             is_collapsed,
+            // Loaded sessions always come back in preview mode — the user
+            // can re-expand whatever they need with Ctrl+O. Storing the
+            // expanded flag in the on-disk format would persist UI
+            // chrome state we don't want to roundtrip.
+            expanded: false,
         }),
         SerializedPart::TaskStatus {
             task_id,

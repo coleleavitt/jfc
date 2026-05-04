@@ -691,9 +691,45 @@ async fn execute_write(file_path: &str, content: &str) -> ExecutionResult {
             return ExecutionResult::failure(format!("Cannot create directories: {e}"));
         }
     }
+    // Capture the prior contents so we can emit a real diff when this
+    // is an *overwrite* (Edit-shaped change) instead of a new file.
+    // v126 always renders a diff for Write so the user sees what
+    // actually changed; a bare "Written 97 bytes" tells them nothing.
+    let prior = tokio::fs::read_to_string(&path).await.ok();
     match tokio::fs::write(&path, content).await {
         Ok(_) => {
-            ExecutionResult::success(format!("Written {} bytes to {file_path}", content.len()))
+            let line_count = content.lines().count();
+            let bytes = content.len();
+            let header = match &prior {
+                Some(_) => format!("Updated {file_path} ({bytes} bytes, {line_count} lines)"),
+                None => format!("Wrote {file_path} ({bytes} bytes, {line_count} lines)"),
+            };
+            // Output clean, unprefixed code — the renderer's syntax
+            // highlighter (`render_highlighted_with_line_numbers` →
+            // syntect) needs valid source to colorize. Earlier the
+            // body had each line prefixed with `+ ` for diff-style
+            // visual cues, but that turned every line into invalid
+            // syntax (`+ const std = ...` parses as a stray binary-
+            // add expression in every language) so highlighting
+            // silently fell back to plain text. The diff/sigil
+            // semantics belong on `ToolOutput::Diff`, not on a
+            // Write's plain text output. The header stays on its own
+            // line at the top — it's not part of the highlighted body.
+            const PREVIEW_LINES: usize = 30;
+            let preview: String = content
+                .lines()
+                .take(PREVIEW_LINES)
+                .collect::<Vec<_>>()
+                .join("\n");
+            let footer = if line_count > PREVIEW_LINES {
+                format!(
+                    "\n\n… ({} more lines, full content on disk)",
+                    line_count - PREVIEW_LINES
+                )
+            } else {
+                String::new()
+            };
+            ExecutionResult::success(format!("{header}\n\n{preview}{footer}"))
         }
         Err(e) => ExecutionResult::failure(format!("Cannot write file: {e}")),
     }

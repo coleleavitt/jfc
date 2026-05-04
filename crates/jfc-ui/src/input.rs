@@ -91,6 +91,65 @@ fn input_has_text(app: &App) -> bool {
     app.textarea.lines().iter().any(|line| !line.is_empty())
 }
 
+/// Collect every user-message prompt text in chronological order.
+/// Used by the up-arrow history recall to walk backwards through what
+/// the user has typed this session. Excludes empty messages and tool
+/// outputs — only the actual prompts the user submitted.
+fn user_prompts(app: &App) -> Vec<String> {
+    app.messages
+        .iter()
+        .filter(|m| m.role == Role::User)
+        .filter_map(|m| {
+            let text: String = m
+                .parts
+                .iter()
+                .filter_map(|p| match p {
+                    MessagePart::Text(s) if !s.is_empty() => Some(s.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        })
+        .collect()
+}
+
+/// Bump `history_cursor` to the next-older prompt and return its text.
+/// Returns `None` when there's no history left to recall (the cursor
+/// has reached the oldest prompt or there are no user messages).
+pub fn recall_previous_prompt(app: &mut App) -> Option<String> {
+    let prompts = user_prompts(app);
+    if prompts.is_empty() {
+        return None;
+    }
+    let next = match app.history_cursor {
+        None => prompts.len() - 1,
+        Some(0) => return None, // already at the oldest
+        Some(n) => n - 1,
+    };
+    app.history_cursor = Some(next);
+    prompts.get(next).cloned()
+}
+
+/// Bump `history_cursor` toward the most-recent prompt and return its
+/// text. Returns `None` when the cursor would advance past the most
+/// recent — caller is expected to clear the input in that case.
+pub fn recall_next_prompt(app: &mut App) -> Option<String> {
+    let prompts = user_prompts(app);
+    let cur = app.history_cursor?;
+    if cur + 1 >= prompts.len() {
+        app.history_cursor = None;
+        return None;
+    }
+    let next = cur + 1;
+    app.history_cursor = Some(next);
+    prompts.get(next).cloned()
+}
+
 fn dispatch_approved_tool(app: &App, tool: ToolCall, tx: &mpsc::UnboundedSender<AppEvent>) {
     tracing::info!(
         target: "jfc::ui::approval",
@@ -586,10 +645,48 @@ pub async fn handle_key(
 
     match (key.modifiers, key.code) {
         (KeyModifiers::NONE, KeyCode::Up) => {
+            // Up at empty input → recall previous user prompt. Multiple
+            // presses cycle backwards through history. Mirrors v126's
+            // `useArrowKeyHistory` (cli.js) — quality-of-life win for
+            // resending or editing recent submissions.
+            if !input_has_text(app) {
+                if let Some(prompt) = recall_previous_prompt(app) {
+                    app.textarea = TextArea::from(
+                        prompt.lines().map(str::to_string).collect::<Vec<_>>(),
+                    );
+                    app.textarea.set_cursor_line_style(Style::default());
+                    app.textarea.set_placeholder_text(
+                        "Type a message… (Enter to send, Shift+Enter for newline)",
+                    );
+                    app.textarea.move_cursor(CursorMove::End);
+                    return Ok(false);
+                }
+            }
             move_input_cursor_visual_up(app);
             return Ok(false);
         }
         (KeyModifiers::NONE, KeyCode::Down) => {
+            // Symmetric to Up — cycle forward through history when the
+            // user has recalled a past prompt. When `history_cursor` is
+            // None or at the live edit, falls through to cursor move.
+            if app.history_cursor.is_some() {
+                if let Some(prompt) = recall_next_prompt(app) {
+                    app.textarea = TextArea::from(
+                        prompt.lines().map(str::to_string).collect::<Vec<_>>(),
+                    );
+                    app.textarea.set_cursor_line_style(Style::default());
+                    app.textarea.set_placeholder_text(
+                        "Type a message… (Enter to send, Shift+Enter for newline)",
+                    );
+                    app.textarea.move_cursor(CursorMove::End);
+                    return Ok(false);
+                } else {
+                    // Cycled past the most recent — return to empty input.
+                    app.history_cursor = None;
+                    reset_input(app);
+                    return Ok(false);
+                }
+            }
             move_input_cursor_visual_down(app);
             return Ok(false);
         }

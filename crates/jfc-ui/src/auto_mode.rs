@@ -398,6 +398,7 @@ mod tests {
             },
             output: ToolOutput::Empty,
             is_collapsed: true,
+            expanded: false,
         }
     }
 

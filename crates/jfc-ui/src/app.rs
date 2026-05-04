@@ -198,6 +198,13 @@ pub struct App {
     /// tokens)` after a multi-turn turn was: the timer reset every
     /// loop iteration. v126's spinner uses the same turn-level clock.
     pub turn_started_at: Option<Instant>,
+    /// Index into `messages` of the user-prompt the up-arrow recall is
+    /// currently displaying, counting backwards from the end. `None`
+    /// means the user is editing a fresh prompt (not recalled). Each
+    /// up-arrow at empty input increments toward older prompts; each
+    /// down-arrow decrements. Mirrors v126's `useArrowKeyHistory`
+    /// behavior — a quality-of-life win for resend/edit workflows.
+    pub history_cursor: Option<usize>,
     /// Wall-clock instant of the most recent text/reasoning delta. Used by
     /// the spinner to detect stalls (`>=15s` → "warming up", up to `>=60s`
     /// → "almost done thinking"). Mirrors v126 `timeSinceLastToken` (cli.js
@@ -378,6 +385,7 @@ impl App {
             streaming_started_at: None,
             streaming_last_token_at: None,
             turn_started_at: None,
+            history_cursor: None,
             is_streaming: false,
             scroll_offset: 0,
             total_lines: 0,
