@@ -650,9 +650,14 @@ fn truncate_str(s: &str, max: usize) -> String {
     }
 }
 
-/// Sessions sidebar — toggled with Ctrl+B. Renders the saved-session ids from
-/// `~/.config/jfc/sessions/` (cached on `App::session_ids` so render() does no
-/// disk I/O). Selecting a row with Enter loads its messages into `App::messages`.
+/// Sessions sidebar — toggled with Ctrl+B. Renders the saved-session metadata
+/// from `~/.config/jfc/sessions/` (cached on `App::session_meta` so render()
+/// does no disk I/O). Sessions whose `cwd` matches `app.cwd` are shown first
+/// under a `── This project ──` separator; everything else (including
+/// legacy `cwd: None` entries) lands below `── Other projects ──`.
+/// Each row is two lines: title (from `display_title()`) on top, a muted
+/// `cwd · time · msgs` badge on bottom. Selecting a row with Enter loads
+/// its messages into `App::messages`.
 fn sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     let t = app.theme;
     let block = Block::default()
@@ -671,7 +676,7 @@ fn sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .style(Style::default().bg(t.surface));
 
-    let items: Vec<ListItem> = if app.session_ids.is_empty() {
+    let items: Vec<ListItem> = if app.session_meta.is_empty() {
         vec![ListItem::new(Line::from(Span::styled(
             "  (no saved sessions)",
             Style::default()
@@ -679,23 +684,38 @@ fn sidebar(f: &mut Frame, app: &mut App, area: Rect) {
                 .add_modifier(Modifier::ITALIC),
         )))]
     } else {
-        app.session_ids
-            .iter()
-            .map(|id| {
-                let is_active = app.current_session_id.as_deref() == Some(id.as_str());
-                let prefix = if is_active { "● " } else { "  " };
-                let row = format!("{prefix}{}", session_display(id));
-                ListItem::new(Line::from(Span::styled(
-                    row,
-                    if is_active {
-                        Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(t.text_primary)
-                    },
-                )))
-            })
-            .collect()
+        let now = chrono::Utc::now();
+        let cwd = app.cwd.clone();
+        let (this_project, other) =
+            crate::session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
+
+        let mut items: Vec<ListItem> = Vec::new();
+        if !this_project.is_empty() {
+            items.push(separator_row("── This project ──", t));
+            for s in &this_project {
+                items.push(session_row(s, app, &now, t));
+            }
+        }
+        if !other.is_empty() {
+            items.push(separator_row("── Other projects ──", t));
+            for s in &other {
+                items.push(session_row(s, app, &now, t));
+            }
+        }
+        // Headers aren't selectable; `visible_selected_row` walks the same
+        // grouping to translate `app.session_selected` (session-only index)
+        // into a row index that includes the header rows.
+        items
     };
+
+    // The sidebar's selection state targets sessions, not header rows.
+    // Build a parallel "session-only" mapping by computing the visible index
+    // for the currently-selected session. We do this by re-grouping (cheap)
+    // and counting headers above the target row.
+    let highlight_row = visible_selected_row(app);
+
+    let mut state = ratatui::widgets::ListState::default();
+    state.select(highlight_row);
 
     let list = List::new(items)
         .block(block)
@@ -705,28 +725,95 @@ fn sidebar(f: &mut Frame, app: &mut App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
-    f.render_stateful_widget(list, area, &mut app.session_list_state);
+    f.render_stateful_widget(list, area, &mut state);
+    // Keep `app.session_list_state` aligned for any code that introspects it
+    // (mostly historical; the renderer owns the live state above).
+    app.session_list_state.select(highlight_row);
 }
 
-/// Convert a session id like `ses_20260503_212945` into a friendly
-/// `2026-05-03 21:29` for the sidebar list.
-fn session_display(id: &str) -> String {
-    let cleaned = id.strip_prefix("ses_").unwrap_or(id);
-    let mut parts = cleaned.splitn(2, '_');
-    let date = parts.next().unwrap_or("");
-    let time = parts.next().unwrap_or("");
-    if date.len() == 8 && time.len() >= 4 {
-        format!(
-            "{}-{}-{} {}:{}",
-            &date[..4],
-            &date[4..6],
-            &date[6..8],
-            &time[..2],
-            &time[2..4]
-        )
-    } else {
-        id.to_owned()
+/// Return the user-visible session id list, in the order rendered by the
+/// sidebar (this-project first, then others). Used by Up/Down/Enter so
+/// keyboard navigation matches what the user sees.
+pub fn ordered_sidebar_sessions(app: &App) -> Vec<String> {
+    let cwd = app.cwd.clone();
+    let (this_project, other) =
+        crate::session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
+    this_project
+        .into_iter()
+        .chain(other.into_iter())
+        .map(|s| s.id)
+        .collect()
+}
+
+/// Map the `session_selected` index (which counts sessions, not headers)
+/// to the `List`'s row index (which includes separator rows). Returns
+/// `None` when there are no sessions yet.
+fn visible_selected_row(app: &App) -> Option<usize> {
+    if app.session_meta.is_empty() {
+        return None;
     }
+    let cwd = app.cwd.clone();
+    let (this_project, other) =
+        crate::session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
+    let sel = app.session_selected;
+    // Rows: [hdr1, this_project..., hdr2, other...]
+    if !this_project.is_empty() && sel < this_project.len() {
+        // 1 header above the this-project block.
+        return Some(1 + sel);
+    }
+    let sel_in_other = sel - this_project.len();
+    let mut row = 0usize;
+    if !this_project.is_empty() {
+        row += 1 + this_project.len();
+    }
+    if !other.is_empty() {
+        row += 1; // header row
+    }
+    Some(row + sel_in_other)
+}
+
+fn separator_row(label: &str, t: Theme) -> ListItem<'static> {
+    ListItem::new(Line::from(Span::styled(
+        format!("  {label}"),
+        Style::default()
+            .fg(t.text_muted)
+            .add_modifier(Modifier::DIM),
+    )))
+}
+
+fn session_row(
+    s: &crate::session::SessionMetadata,
+    app: &App,
+    now: &chrono::DateTime<chrono::Utc>,
+    t: Theme,
+) -> ListItem<'static> {
+    let is_active = app.current_session_id.as_deref() == Some(s.id.as_str());
+    let bullet = if is_active { "▣ " } else { "  " };
+    let title = s.display_title();
+    let cwd_label = crate::session::shorten_cwd(s.cwd.as_deref());
+    let when = crate::session::relative_time(s.last_activity(), *now);
+    let msgs = format!(
+        "{} msg{}",
+        s.message_count,
+        if s.message_count == 1 { "" } else { "s" }
+    );
+    let secondary = format!("    {cwd_label} · {when} · {msgs}");
+
+    let title_style = if is_active {
+        Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(t.text_primary)
+    };
+
+    let line1 = Line::from(vec![
+        Span::styled(bullet.to_owned(), title_style),
+        Span::styled(title, title_style),
+    ]);
+    let line2 = Line::from(Span::styled(
+        secondary,
+        Style::default().fg(t.text_muted),
+    ));
+    ListItem::new(vec![line1, line2])
 }
 
 fn messages(f: &mut Frame, app: &mut App, area: Rect) {
