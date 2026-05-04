@@ -947,6 +947,7 @@ pub async fn execute_task(
     model_id: crate::provider::ModelId,
     tx: Option<&tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
     task_id: Option<&str>,
+    agent_def: Option<&crate::agents::AgentDef>,
 ) -> ExecutionResult {
     use crate::provider::{
         ProviderContent, ProviderMessage, ProviderRole, StreamEvent, StreamOptions,
@@ -964,7 +965,21 @@ pub async fn execute_task(
         model_id
     };
 
+    // If a matching `AgentDef` was passed, build its effective system
+    // prompt by concatenating each referenced skill body. Skipped skills
+    // (missing names) are logged as warnings inside
+    // `build_agent_system_prompt`. When no agent matched, the spawned
+    // task runs without a system prompt, preserving prior behavior.
     let options = StreamOptions::new(model);
+    let options = match agent_def {
+        Some(agent) => {
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let skills = crate::agents::load_skills(&cwd);
+            let system_prompt = crate::agents::build_agent_system_prompt(agent, &skills);
+            options.system(system_prompt)
+        }
+        None => options,
+    };
 
     let stream = match provider.stream(messages, &options).await {
         Ok(s) => s,

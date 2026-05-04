@@ -311,6 +311,10 @@ pub fn dispatch_tools_batched(
         }
     };
 
+    // Pre-load agent defs once per dispatch so each spawned task can
+    // resolve its `subagent_type` without redoing the directory walk.
+    let agents = crate::agents::load_agents(&cwd);
+
     for tc in task_calls {
         let task_input = match tc.input.clone() {
             ToolInput::Task(ti) => ti,
@@ -322,6 +326,15 @@ pub fn dispatch_tools_batched(
         let task_id = tc.id.clone();
         let description = task_input.description.clone();
         let done = send_all_complete.clone();
+
+        // Resolve `subagent_type` to a concrete `AgentDef`. When unset
+        // or unknown, falls back to `None` and `execute_task` runs with
+        // no system prompt (mirrors the prior, agent-less behavior).
+        let agent_def = task_input
+            .subagent_type
+            .as_deref()
+            .and_then(|t| agents.iter().find(|a| a.name == t))
+            .cloned();
 
         tokio::spawn(async move {
             let _ = tx_task.send(AppEvent::TaskStarted {
@@ -341,6 +354,7 @@ pub fn dispatch_tools_batched(
                 model_task,
                 Some(&tx_task),
                 Some(&task_id),
+                agent_def.as_ref(),
             )
             .await;
             let elapsed_ms = started.elapsed().as_millis() as u64;
