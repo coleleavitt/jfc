@@ -1258,6 +1258,34 @@ fn handle_slash_command(app: &mut App, text: &str) {
             )));
             app.force_compact_pending = true;
         }
+        "/config" => {
+            // `/config` (no args) → dump the parsed config as TOML in a code block.
+            // `/config path` → print the canonical file path so the user knows
+            // where to put their overrides. We re-parse on every invocation
+            // (instead of caching at startup) so edits to ~/.config/jfc/config.toml
+            // surface without restart — this command is the user's read-only
+            // window into "what does jfc currently see?". Wiring the resolved
+            // model into the actual stream call site is a separate task; for now
+            // this command exists so users can verify their file parses and
+            // know where to edit.
+            let arg = parts.get(1).copied().unwrap_or("").trim();
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            if arg == "path" {
+                let p = crate::config::config_path();
+                app.messages.push(ChatMessage::assistant(format!(
+                    "**Config path:** `{}`",
+                    p.display()
+                )));
+            } else {
+                let cfg = crate::config::load();
+                let body = match toml::to_string_pretty(&cfg) {
+                    Ok(s) if s.trim().is_empty() => "(empty config — no overrides)".to_owned(),
+                    Ok(s) => format!("```toml\n{s}```"),
+                    Err(e) => format!("**Error serializing config:** {e}"),
+                };
+                app.messages.push(ChatMessage::assistant(body));
+            }
+        }
         "/continue" | "/c" => {
             // Resume the most recent session
             if let Some(session_id) = crate::session::most_recent_session() {
@@ -1369,6 +1397,7 @@ fn handle_slash_command(app: &mut App, text: &str) {
                  - `/clear` — Clear conversation and start fresh\n\
                  - `/compact` — Manually compact the conversation\n\
                  - `/check` — Re-run cargo-check diagnostics\n\
+                 - `/config` — Show parsed `~/.config/jfc/config.toml` (use `/config path` for the file location)\n\
                  - `/continue` (or `/c`) — Resume most recent session\n\
                  - `/resume <id>` — Resume a specific session by id\n\
                  - `/sessions` — List all saved sessions\n\
