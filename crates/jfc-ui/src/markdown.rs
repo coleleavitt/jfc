@@ -19,7 +19,148 @@ use crate::theme::Theme;
 
 static SYNTAX_SET: std::sync::LazyLock<SyntaxSet> =
     std::sync::LazyLock::new(SyntaxSet::load_defaults_newlines);
+
+static EXTRA_SYNTAX_SET: std::sync::LazyLock<Option<SyntaxSet>> = std::sync::LazyLock::new(|| {
+    let path = option_env!("EXTRA_SYNTAXES_PACK")?;
+    let bytes = std::fs::read(path).ok()?;
+    syntect::dumps::from_reader::<SyntaxSet, _>(&mut std::io::Cursor::new(bytes)).ok()
+});
+
 static THEME_SET: std::sync::LazyLock<ThemeSet> = std::sync::LazyLock::new(ThemeSet::load_defaults);
+
+fn find_syntax_in_sets<'a>(
+    lang: &str,
+    lower: &str,
+    primary: &'a SyntaxSet,
+    extra: Option<&'a SyntaxSet>,
+) -> (&'a syntect::parsing::SyntaxReference, &'a SyntaxSet) {
+    let lookup = |ss: &'a SyntaxSet| -> Option<&'a syntect::parsing::SyntaxReference> {
+        ss.find_syntax_by_token(lang)
+            .or_else(|| ss.find_syntax_by_extension(lang))
+            .or_else(|| ss.find_syntax_by_name(lang))
+            .or_else(|| {
+                ss.syntaxes()
+                    .iter()
+                    .find(|s| s.name.to_lowercase() == lower)
+            })
+    };
+
+    if let Some(s) = lookup(primary) {
+        return (s, primary);
+    }
+    if let Some(extra_set) = extra {
+        if let Some(s) = lookup(extra_set) {
+            return (s, extra_set);
+        }
+    }
+    (primary.find_syntax_plain_text(), primary)
+}
+
+pub fn highlight_code(
+    lang: &str,
+    code: &str,
+    inner_width: usize,
+    theme: &crate::theme::Theme,
+) -> Vec<Line<'static>> {
+    highlight_code_inner(lang, code, inner_width, theme, true)
+}
+
+pub fn highlight_code_raw(
+    lang: &str,
+    code: &str,
+    inner_width: usize,
+    theme: &crate::theme::Theme,
+) -> Vec<Line<'static>> {
+    highlight_code_inner(lang, code, inner_width, theme, false)
+}
+
+fn highlight_code_inner(
+    lang: &str,
+    code: &str,
+    inner_width: usize,
+    theme: &crate::theme::Theme,
+    with_gutter: bool,
+) -> Vec<Line<'static>> {
+    use syntect::easy::HighlightLines;
+
+    let gutter_style = Style::default().fg(theme.border);
+    let fallback_style = Style::default().fg(theme.text_secondary);
+    let wrap_w = inner_width.max(20);
+
+    let lower = lang.to_lowercase();
+    let (syntax, active_set) =
+        find_syntax_in_sets(lang, &lower, &SYNTAX_SET, EXTRA_SYNTAX_SET.as_ref());
+
+    let theme_name = "base16-ocean.dark";
+    let hl_theme = THEME_SET
+        .themes
+        .get(theme_name)
+        .or_else(|| THEME_SET.themes.values().next())
+        .unwrap();
+
+    let mut highlighter = HighlightLines::new(syntax, hl_theme);
+    let mut out: Vec<Line<'static>> = Vec::new();
+
+    for raw_line in LinesWithEndings::from(code) {
+        let sanitized: String = raw_line
+            .chars()
+            .map(|c| {
+                if c == '\n' {
+                    '\n'
+                } else if c == '\t' {
+                    ' '
+                } else if c.is_control() {
+                    ' '
+                } else {
+                    c
+                }
+            })
+            .collect();
+        let ansi_line = match highlighter.highlight_line(&sanitized, active_set) {
+            Ok(ranges) => as_24_bit_terminal_escaped(&ranges, false),
+            Err(_) => {
+                let clean = sanitized.trim_end_matches('\n');
+                for chunk in hard_wrap_str(clean, wrap_w) {
+                    let mut spans = Vec::new();
+                    if with_gutter {
+                        spans.push(Span::styled("│ ".to_owned(), gutter_style));
+                    }
+                    spans.push(Span::styled(chunk, fallback_style));
+                    out.push(Line::from(spans));
+                }
+                continue;
+            }
+        };
+
+        match ansi_line.into_text() {
+            Ok(text) => {
+                for line in text.lines {
+                    for chunk in hard_wrap_line(line, wrap_w) {
+                        let mut spans = Vec::new();
+                        if with_gutter {
+                            spans.push(Span::styled("│ ".to_owned(), gutter_style));
+                        }
+                        spans.extend(chunk.spans);
+                        out.push(Line::from(spans));
+                    }
+                }
+            }
+            Err(_) => {
+                let mut spans = Vec::new();
+                if with_gutter {
+                    spans.push(Span::styled("│ ".to_owned(), gutter_style));
+                }
+                spans.push(Span::styled(
+                    sanitized.trim_end_matches('\n').to_string(),
+                    fallback_style,
+                ));
+                out.push(Line::from(spans));
+            }
+        }
+    }
+
+    out
+}
 
 /// Returns true if `text` has an unclosed code fence at the end.
 ///
@@ -551,10 +692,20 @@ where
     }
 
     fn set_code_highlighter(&mut self, lang: &str) {
-        if let Some(syntax) = SYNTAX_SET.find_syntax_by_token(lang) {
-            let ts = &THEME_SET.themes["base16-ocean.dark"];
-            self.code_highlighter = Some(HighlightLines::new(syntax, ts));
-        }
+        let lower = lang.to_lowercase();
+        let syntax = SYNTAX_SET
+            .find_syntax_by_token(lang)
+            .or_else(|| SYNTAX_SET.find_syntax_by_extension(lang))
+            .or_else(|| SYNTAX_SET.find_syntax_by_name(lang))
+            .or_else(|| {
+                SYNTAX_SET
+                    .syntaxes()
+                    .iter()
+                    .find(|s| s.name.to_lowercase() == lower)
+            })
+            .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
+        let ts = &THEME_SET.themes["base16-ocean.dark"];
+        self.code_highlighter = Some(HighlightLines::new(syntax, ts));
     }
 
     fn push_inline_style(&mut self, style: Style) {
@@ -651,7 +802,7 @@ fn to_roman(n: u64) -> String {
 /// Hard-wrap a single styled `Line` to `width` columns. When `width == 0` the
 /// line passes through unchanged (the renderer didn't supply a budget). Splits
 /// at character boundaries — terminal columns are approximated by `chars()`.
-fn hard_wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
+pub(crate) fn hard_wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     if width == 0 {
         return vec![line];
     }

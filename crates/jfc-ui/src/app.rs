@@ -46,6 +46,10 @@ pub enum AppEvent {
         post_tokens: usize,
     },
     CompactionFailed(String),
+    /// Submit a user prompt as if the user typed it and pressed Enter. Used
+    /// internally by the pre-submit compaction gate to re-fire the user's
+    /// original prompt once compaction has shrunk the context.
+    Submit(String),
     /// Background `Provider::fetch_models()` finished. `provider` is the `Provider::name()`
     /// the result belongs to. `models` is empty on a remote failure so the picker can
     /// fall back to the static `available_models()` set without showing a hung row.
@@ -188,6 +192,11 @@ pub struct App {
     pub follow_bottom: bool,
     pub pending_tool_calls: Vec<ToolCall>,
     pub max_context_tokens: usize,
+    /// Set by `/compact` slash command. Picked up by the main loop next time
+    /// it would otherwise check `compact::should_compact` — forces compaction
+    /// regardless of token level. Cleared after the compact runs (success or
+    /// not) so a single `/compact` invocation triggers exactly one attempt.
+    pub force_compact_pending: bool,
     /// Set each frame by the renderer. Used for page-scroll math.
     pub viewport_height: usize,
     pub input_wrap_width: usize,
@@ -301,6 +310,7 @@ impl App {
             tool_ctx: ToolContext::new(),
             dedup_cache: Arc::new(Mutex::new(ReadDedupCache::new())),
             pending_tool_calls: Vec::new(),
+            force_compact_pending: false,
             max_context_tokens: DEFAULT_CONTEXT_WINDOW_TOKENS,
             viewport_height: 0,
             input_wrap_width: 1,
@@ -318,9 +328,15 @@ impl App {
             session_ids: Vec::new(),
             session_selected: 0,
             session_list_state: ratatui::widgets::ListState::default(),
-            current_session_id: None,
+            current_session_id: Some(crate::session::generate_session_id()),
             auto_mode: crate::auto_mode::load_config(),
-            task_store: crate::tasks::TaskStore::open("default"),
+            // Tasks are scoped per-session (mirrors v126 cli.js:271505 keying
+            // todos by `agentId ?? sessionId`). Opening with a freshly-minted
+            // session id means a new run sees an empty task list, even if
+            // prior runs left `~/.config/jfc/tasks/<old>.json` on disk. The
+            // store is re-opened in `switch_session` whenever the session id
+            // changes (load from sidebar, /continue, /clear).
+            task_store: crate::tasks::TaskStore::in_memory(),
             task_completion_times: HashMap::new(),
             show_task_panel: false,
             task_panel_selected: 0,
@@ -339,6 +355,24 @@ impl App {
         };
         app.sync_selected_context_window();
         app
+    }
+
+    /// Switch to a different session id and reset all per-session state
+    /// (tasks, completion-fade timers, task panel selection). Mirrors v126's
+    /// new-session reset: each session has its own task bucket so tasks
+    /// don't bleed across `/clear` or `/continue`.
+    ///
+    /// Pass `None` to mint a fresh session id; pass `Some(id)` to adopt an
+    /// existing one (the session-load path through the sidebar / `/continue`).
+    pub fn switch_session(&mut self, id: Option<String>) {
+        let new_id = id.unwrap_or_else(crate::session::generate_session_id);
+        self.current_session_id = Some(new_id);
+        self.task_store = crate::tasks::TaskStore::in_memory();
+        self.task_completion_times.clear();
+        self.task_activities.clear();
+        self.task_panel_selected = 0;
+        self.task_panel_state = ratatui::widgets::TableState::default().with_selected(Some(0));
+        self.viewing_task_id = None;
     }
 
     pub fn scroll_to_bottom(&mut self) {
