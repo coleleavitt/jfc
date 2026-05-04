@@ -18,6 +18,13 @@ use crate::types::*;
 pub fn frame(f: &mut Frame, app: &mut App) {
     let t = app.theme;
 
+    // Hit-test regions are populated per-frame as each tool block renders.
+    // Clear here so a frame with no visible tools doesn't carry over stale
+    // rects from the previous frame — that would let the user click on a
+    // region of the screen now occupied by something else and toggle a
+    // tool they can't see.
+    app.tool_hit_regions.borrow_mut().clear();
+
     f.render_widget(Block::default().style(Style::default().bg(t.bg)), f.area());
 
     let input_lines = input_visual_line_count(app, f.area().width.saturating_sub(4) as usize);

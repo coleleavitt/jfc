@@ -1,6 +1,7 @@
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{cell::RefCell, collections::HashMap, sync::Arc, time::Instant};
 
 use crossterm::event::Event;
+use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::widgets::TableState;
 use tokio::sync::Mutex;
@@ -365,6 +366,20 @@ pub struct App {
     /// Drained at submit time; future Ctrl+V handlers push here. Anthropic
     /// content-block conversion happens at provider-message-build time.
     pub pending_attachments: Vec<crate::attachments::Attachment>,
+    /// Per-frame map of `(tool_id, screen_rect)` populated by the message
+    /// renderer as each `ToolBlock` paints. The mouse handler reads this to
+    /// translate a left-click into the tool whose body should expand —
+    /// v126's cli.js (cmd-click on iTerm2) toggles the same per-tool
+    /// expand/collapse affordance via mouse. We use plain left-click here
+    /// because non-iTerm terminals don't surface the cmd modifier the same
+    /// way; the spirit (mouse → toggle that tool) is preserved.
+    ///
+    /// Cleared at the top of every `render::frame()` and re-populated as
+    /// each visible `ToolBlock` renders. Tools scrolled off-screen are not
+    /// pushed, so they're automatically un-clickable. `RefCell` because
+    /// `MessageView` borrows `&App` immutably during `Widget::render`, and
+    /// we need a `&mut` push from inside that path.
+    pub tool_hit_regions: RefCell<Vec<(String, Rect)>>,
 }
 
 impl App {
@@ -461,6 +476,7 @@ impl App {
             leader_key_timeout: None,
             viewing_task_id: None,
             pending_attachments: Vec::new(),
+            tool_hit_regions: RefCell::new(Vec::new()),
         };
         app.sync_selected_context_window();
         app
