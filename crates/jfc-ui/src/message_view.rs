@@ -856,9 +856,36 @@ fn render_command_output_skip(
         .render(area, buf);
 }
 
+/// Best-effort language detection for a diff view. Returns a token suitable
+/// for `markdown::highlight_code_raw` (typically the file extension, falling
+/// back to the filename for ext-less files like `Makefile`/`Dockerfile`).
+/// Returns `None` for empty paths or paths with no recognizable token.
+///
+/// The returned string is *not* guaranteed to map to a real syntect syntax —
+/// `highlight_code_raw` will fall back to plain text for unknowns. Keeping
+/// this lossy on purpose: matching the syntect set up front would couple this
+/// helper to syntect's loaded syntaxes, but the highlighter already does that
+/// resolution downstream and degrades gracefully.
+pub fn diff_lang(diff: &DiffView) -> Option<String> {
+    let p = std::path::Path::new(&diff.file_path);
+    if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+        if !ext.is_empty() {
+            return Some(ext.to_string());
+        }
+    }
+    // No extension — fall back to the filename (lowercased) so things like
+    // `Makefile` / `Dockerfile` / `Rakefile` get a chance to resolve via
+    // syntect's by-name / by-token lookup.
+    p.file_name()
+        .and_then(|f| f.to_str())
+        .map(|f| f.to_lowercase())
+        .filter(|s| !s.is_empty())
+}
+
 fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, skip: usize) {
     let bottom = area.y + area.height;
     let mut virtual_row: usize = 0;
+    let lang = diff_lang(diff);
 
     // Sub-status row: `□ Added N lines, removed M` matching v126's
     // `□ Added 3 lines` summary line under the Update title (cli.js
@@ -927,7 +954,31 @@ fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, ski
         virtual_row += 1;
 
         let max_dl = hunk.lines.len().min(50);
-        for dl in hunk.lines.iter().take(max_dl) {
+
+        // Per-hunk syntax highlighting. Build a single string containing all
+        // line bodies (sigils stripped) joined by `\n`, then run syntect over
+        // it once so multi-line constructs (block comments, raw strings,
+        // here-docs) tokenize correctly across +/-/context boundaries. We
+        // pass `wrap_w = 0` to disable hard-wrapping, guaranteeing a 1:1 map
+        // from input lines to output lines that we can index into by row.
+        // Mirrors codex's diff_render approach (codex-rs/tui/src/diff_render
+        // .rs around the `hunk_syntax_lines` block).
+        let highlighted: Option<Vec<Line<'static>>> = lang.as_deref().and_then(|l| {
+            let visible = &hunk.lines[..max_dl];
+            let hunk_text: String = visible
+                .iter()
+                .map(|dl| sanitize_terminal_text(&dl.content))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let lines = markdown::highlight_code_raw(l, &hunk_text, 0, &t);
+            // Defensive: if line counts don't agree (shouldn't happen with
+            // wrap_w=0, but syntect can occasionally produce extra rows on
+            // pathological inputs), bail and let the unhighlighted branch
+            // render. Better plain than misaligned.
+            (lines.len() == visible.len()).then_some(lines)
+        });
+
+        for (idx, dl) in hunk.lines.iter().take(max_dl).enumerate() {
             if virtual_row >= skip {
                 let screen_y = area.y + (virtual_row - skip) as u16;
                 if screen_y < bottom {
@@ -961,19 +1012,50 @@ fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, ski
                         None => "      ".into(),
                     };
                     buf.set_style(row, Style::default().bg(bg_color));
-                    Paragraph::new(Line::from(vec![
+
+                    // Build the row spans: gutter (line number) + sigil with
+                    // diff-tinted bg, followed by the content. When we have
+                    // syntect output, overlay the syntax-colored spans on
+                    // top of the diff bg tint; otherwise fall back to a
+                    // single solid-fg span over the bg.
+                    let mut spans: Vec<Span<'static>> = vec![
                         Span::styled(lineno_str, Style::default().fg(t.text_muted).bg(bg_color)),
                         Span::styled(
                             format!("{sigil} "),
                             Style::default().fg(fg_color).bg(bg_color),
                         ),
-                        Span::styled(
-                            sanitize_terminal_text(&dl.content),
-                            Style::default().fg(fg_color).bg(bg_color),
-                        ),
-                    ]))
-                    .style(Style::default().bg(bg_color))
-                    .render(row, buf);
+                    ];
+
+                    match highlighted.as_ref().and_then(|h| h.get(idx)) {
+                        Some(hl) => {
+                            // Span composition: keep syntect's foreground
+                            // color, force the diff bg tint over it, and
+                            // for Removed lines layer a DIM modifier so
+                            // deletions read as fading out (additions stay
+                            // bright). Context lines get neither tint nor
+                            // dim — pure syntax colors over `t.bg`.
+                            let extra_mod = matches!(dl.kind, DiffLineKind::Removed)
+                                .then_some(Modifier::DIM);
+                            for sp in &hl.spans {
+                                let mut style = sp.style;
+                                style.bg = Some(bg_color);
+                                if let Some(m) = extra_mod {
+                                    style = style.add_modifier(m);
+                                }
+                                spans.push(Span::styled(sp.content.clone().into_owned(), style));
+                            }
+                        }
+                        None => {
+                            spans.push(Span::styled(
+                                sanitize_terminal_text(&dl.content),
+                                Style::default().fg(fg_color).bg(bg_color),
+                            ));
+                        }
+                    }
+
+                    Paragraph::new(Line::from(spans))
+                        .style(Style::default().bg(bg_color))
+                        .render(row, buf);
                 }
             }
             virtual_row += 1;
@@ -1466,4 +1548,54 @@ fn sanitize_terminal_text(input: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod diff_lang_tests {
+    use super::*;
+
+    fn diff_with_path(path: &str) -> DiffView {
+        DiffView {
+            file_path: path.to_string(),
+            hunks: Vec::new(),
+            additions: 0,
+            deletions: 0,
+        }
+    }
+
+    #[test]
+    fn diff_lang_detects_rust_normal() {
+        // Common case: a Rust source file. The returned token must be the
+        // extension so `markdown::highlight_code_raw` can resolve syntect's
+        // Rust syntax via `find_syntax_by_token` / `_by_extension`.
+        let lang = diff_lang(&diff_with_path("src/main.rs"));
+        assert_eq!(lang.as_deref(), Some("rs"));
+    }
+
+    #[test]
+    fn diff_lang_detects_python_normal() {
+        let lang = diff_lang(&diff_with_path("main.py"));
+        assert_eq!(lang.as_deref(), Some("py"));
+    }
+
+    #[test]
+    fn diff_lang_unknown_returns_none_robust() {
+        // An empty `file_path` has no extension and no filename — should be
+        // None rather than `Some("")`. (A binary `.dat` extension still
+        // resolves to a token; syntect simply falls back to plain text
+        // downstream — that's not this function's concern.)
+        let lang = diff_lang(&diff_with_path(""));
+        assert_eq!(lang, None);
+    }
+
+    #[test]
+    fn diff_lang_handles_no_extension_robust() {
+        // Files without an extension (Makefile, Dockerfile, Rakefile) fall
+        // back to the lowercased filename so syntect's `find_syntax_by_name`
+        // / `by_token` lookups have a chance. The returned token is the
+        // *filename*, not None — even if syntect can't resolve it, the
+        // highlighter degrades to plain text.
+        let lang = diff_lang(&diff_with_path("Makefile"));
+        assert_eq!(lang.as_deref(), Some("makefile"));
+    }
 }
