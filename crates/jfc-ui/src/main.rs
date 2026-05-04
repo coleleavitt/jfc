@@ -24,6 +24,7 @@ mod theme;
 mod toast;
 mod tools;
 mod types;
+mod worktrees;
 
 use std::{io, sync::Arc, time::Duration};
 
