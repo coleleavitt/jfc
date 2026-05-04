@@ -480,6 +480,7 @@ async fn run(
                     );
                     app.messages = messages;
                     app.current_session_id = Some(session_id);
+                    app.recompute_token_estimate();
                 }
             }
         }
@@ -512,6 +513,7 @@ async fn run(
                 }
                 app.messages = messages;
                 app.current_session_id = Some(session_id);
+                app.recompute_token_estimate();
             } else {
                 tracing::warn!(
                     target: "jfc::session",
@@ -725,8 +727,21 @@ async fn run(
                 // Reset the stall clock on every chunk so the spinner's
                 // sub-status (`warming up` / `thinking` / `almost done`)
                 // reflects time-since-last-byte, not time-since-stream-start.
-                app.streaming_last_token_at = Some(std::time::Instant::now());
+                let now = std::time::Instant::now();
+                app.streaming_last_token_at = Some(now);
                 if let Some(chunk) = text {
+                    // First text byte after a thinking phase ⇒ thinking
+                    // ended. Mirrors v126's HcH transition from
+                    // `streamMode = "thinking"` to `"responding"` —
+                    // cli.js:413612 captures the duration here so the
+                    // spinner can switch from `thinking…` to
+                    // `thought for Ns`. Only set on the first transition;
+                    // a turn that toggles back into thinking later (rare
+                    // — the API doesn't really do this) keeps the first
+                    // duration so the timer doesn't reset visibly.
+                    if app.thinking_started_at.is_some() && app.thinking_ended_at.is_none() {
+                        app.thinking_ended_at = Some(now);
+                    }
                     app.streaming_text.push_str(&chunk);
                     if let Some(idx) = app.streaming_assistant_idx {
                         if let Some(msg) = app.messages.get_mut(idx) {
@@ -742,6 +757,15 @@ async fn run(
                     }
                 }
                 if let Some(chunk) = reasoning {
+                    // First reasoning byte ⇒ thinking started. Mirrors
+                    // v126's HcH content_block_start type=thinking
+                    // transition (cli.js:413610). Subsequent chunks just
+                    // extend the streaming buffer; the spinner reads
+                    // `thinking_started_at` to know we're in
+                    // thinking-mode.
+                    if app.thinking_started_at.is_none() {
+                        app.thinking_started_at = Some(now);
+                    }
                     app.streaming_reasoning.push_str(&chunk);
                     if let Some(idx) = app.streaming_assistant_idx {
                         if let Some(msg) = app.messages.get_mut(idx) {
@@ -924,6 +948,14 @@ async fn run(
                 }
                 app.streaming_started_at = None;
                 app.streaming_last_token_at = None;
+                // If thinking started but never transitioned to text
+                // (e.g. the assistant only produced thinking + tool calls
+                // and no visible text), stamp the end now so the spinner
+                // shows `thought for Ns` next iteration instead of a
+                // stuck `thinking…` from the last reasoning chunk.
+                if app.thinking_started_at.is_some() && app.thinking_ended_at.is_none() {
+                    app.thinking_ended_at = Some(std::time::Instant::now());
+                }
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
                 // Clear the user-turn clock only when the loop has
@@ -1016,6 +1048,8 @@ async fn run(
                 app.is_streaming = false;
                 app.streaming_started_at = None;
                 app.streaming_last_token_at = None;
+                app.thinking_started_at = None;
+                app.thinking_ended_at = None;
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
                 app.streaming_assistant_idx = None;

@@ -205,22 +205,57 @@ pub fn live_token_count(wire_output: u64, char_estimate: u64) -> u64 {
     wire_output.max(char_estimate)
 }
 
+/// Live-vs-finished thinking signal for `format_status`. Mirrors v126's
+/// `thinkingStatus` prop on the spinner component (cli.js:323189): the
+/// model is either *currently* producing reasoning, *has finished*
+/// reasoning (and we know the duration), or hasn't reasoned this turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThinkingStatus {
+    /// Reasoning chunks are arriving — show `thinking…`.
+    Live,
+    /// Reasoning ended; first text byte has arrived. Display
+    /// `thought for Ns` instead of the live verb.
+    Done(Duration),
+}
+
 /// Compose the full status line shown above the input bar:
 /// `"* Fermenting… (5m 10s · ↓ 14.6k tokens · almost done thinking)"`.
 ///
 /// Returns just the *content* — the renderer wraps it in styled spans.
+///
+/// `thinking` overrides `time_since_last_token`'s stall messages while
+/// the model is actively thinking, and shows a `thought for Ns` chip
+/// once thinking has ended.
 pub fn format_status(
     tick: usize,
     elapsed: Duration,
     output_tokens: u64,
     time_since_last_token: Duration,
+    thinking: Option<ThinkingStatus>,
 ) -> String {
     let mut parts: Vec<String> = vec![fmt_elapsed(elapsed)];
     if output_tokens > 0 {
         parts.push(format!("↓ {} tokens", fmt_tokens(output_tokens)));
     }
-    if let Some(s) = stall_status(time_since_last_token) {
-        parts.push(s.to_string());
+    // Thinking signal beats stall_status while live (mid-reasoning the
+    // wire is silent for tens of seconds and the user would otherwise
+    // see "almost done thinking" the whole time). Once thinking ended,
+    // show the duration chip; *also* layer stall_status on top of that
+    // when the post-thinking text stream goes quiet for >=15s.
+    match thinking {
+        Some(ThinkingStatus::Live) => parts.push("thinking".to_string()),
+        Some(ThinkingStatus::Done(d)) => {
+            let secs = d.as_secs().max(1);
+            parts.push(format!("thought for {secs}s"));
+            if let Some(s) = stall_status(time_since_last_token) {
+                parts.push(s.to_string());
+            }
+        }
+        None => {
+            if let Some(s) = stall_status(time_since_last_token) {
+                parts.push(s.to_string());
+            }
+        }
     }
     format!(
         "{} {}… ({})",
@@ -322,7 +357,13 @@ mod tests {
 
     #[test]
     fn format_status_includes_all_pieces_normal() {
-        let s = format_status(2, Duration::from_secs(310), 14_600, Duration::from_secs(70));
+        let s = format_status(
+            2,
+            Duration::from_secs(310),
+            14_600,
+            Duration::from_secs(70),
+            None,
+        );
         assert!(s.contains("…"), "verb ellipsis missing: {s}");
         assert!(s.contains("5m 10s"), "elapsed missing: {s}");
         assert!(s.contains("14k tokens"), "token line missing: {s}");
@@ -334,7 +375,13 @@ mod tests {
 
     #[test]
     fn format_status_omits_tokens_when_zero_robust() {
-        let s = format_status(0, Duration::from_secs(3), 0, Duration::from_secs(0));
+        let s = format_status(
+            0,
+            Duration::from_secs(3),
+            0,
+            Duration::from_secs(0),
+            None,
+        );
         assert!(
             !s.contains("tokens"),
             "should hide token suffix when 0: {s}"
@@ -344,11 +391,64 @@ mod tests {
 
     #[test]
     fn format_status_omits_stall_when_fresh_robust() {
-        let s = format_status(0, Duration::from_secs(5), 100, Duration::from_secs(2));
+        let s = format_status(
+            0,
+            Duration::from_secs(5),
+            100,
+            Duration::from_secs(2),
+            None,
+        );
         assert!(
             !s.contains("thinking"),
             "fresh stream shouldn't say 'thinking': {s}"
         );
+    }
+
+    // Live thinking: spinner shows `thinking` instead of stall messages.
+    #[test]
+    fn format_status_live_thinking_shows_thinking_normal() {
+        let s = format_status(
+            0,
+            Duration::from_secs(20),
+            500,
+            Duration::from_secs(20),
+            Some(ThinkingStatus::Live),
+        );
+        assert!(s.contains("thinking"), "expected live thinking: {s}");
+        // While live, we suppress stall messages so a 20s gap doesn't
+        // double-display "warming up · thinking".
+        assert!(
+            !s.contains("warming up"),
+            "live thinking should hide stall: {s}"
+        );
+    }
+
+    // Done thinking: spinner shows `thought for Ns`. Mirrors v126's
+    // `thought for ${Math.max(1, Math.round(G / 1e3))}s` formatter.
+    #[test]
+    fn format_status_done_thinking_shows_duration_normal() {
+        let s = format_status(
+            0,
+            Duration::from_secs(60),
+            5_000,
+            Duration::from_secs(0),
+            Some(ThinkingStatus::Done(Duration::from_secs(12))),
+        );
+        assert!(s.contains("thought for 12s"), "expected duration: {s}");
+    }
+
+    // Sub-second thinking still renders as `thought for 1s` (v126 floors
+    // to 1).
+    #[test]
+    fn format_status_done_thinking_floors_to_one_second_robust() {
+        let s = format_status(
+            0,
+            Duration::from_secs(5),
+            100,
+            Duration::from_secs(0),
+            Some(ThinkingStatus::Done(Duration::from_millis(400))),
+        );
+        assert!(s.contains("thought for 1s"), "expected 1s floor: {s}");
     }
 
     #[test]

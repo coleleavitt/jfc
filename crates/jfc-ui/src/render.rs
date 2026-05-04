@@ -1337,8 +1337,18 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // estimate; once the wire stops moving we keep the last known count.
         let estimate = (app.streaming_text.len() + app.streaming_reasoning.len()) as u64 / 4;
         let live_tokens = crate::spinner::live_token_count(app.last_usage_output as u64, estimate);
+        // Thinking signal — Some(Live) while reasoning is streaming,
+        // Some(Done(d)) once we got the first text byte after thinking,
+        // None when the model isn't using extended thinking this turn.
+        let thinking = match (app.thinking_started_at, app.thinking_ended_at) {
+            (Some(_), None) => Some(crate::spinner::ThinkingStatus::Live),
+            (Some(start), Some(end)) => {
+                Some(crate::spinner::ThinkingStatus::Done(end.duration_since(start)))
+            }
+            _ => None,
+        };
         row1_elapsed = elapsed;
-        crate::spinner::format_status(app.spinner_frame, elapsed, live_tokens, stall)
+        crate::spinner::format_status(app.spinner_frame, elapsed, live_tokens, stall, thinking)
     };
     // Multi-agent fanout: when one or more background subagents are
     // running concurrently, append `· N agents…` to the spinner so the

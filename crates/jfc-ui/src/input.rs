@@ -1220,6 +1220,10 @@ async fn handle_submit(
     app.streaming_started_at = Some(now);
     app.streaming_last_token_at = Some(now);
     app.turn_started_at = Some(now);
+    // Reset thinking-state for the new turn so the spinner doesn't carry
+    // a stale `thought for Ns` from the previous turn.
+    app.thinking_started_at = None;
+    app.thinking_ended_at = None;
     app.last_usage_output = 0;
     app.usage_apply_baseline = (0, 0, 0, 0);
     app.scroll_to_bottom();
@@ -1879,6 +1883,8 @@ fn handle_slash_command(
                 app.streaming_started_at = Some(now);
                 app.streaming_last_token_at = Some(now);
                 app.turn_started_at = Some(now);
+                app.thinking_started_at = None;
+                app.thinking_ended_at = None;
                 app.last_usage_output = 0;
                 app.usage_apply_baseline = (0, 0, 0, 0);
                 app.scroll_to_bottom();
