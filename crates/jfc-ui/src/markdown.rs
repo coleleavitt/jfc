@@ -17,16 +17,36 @@ use syntect::{
 
 use crate::theme::Theme;
 
+/// Primary syntax set — `two_face::syntax::extra_newlines()` on top of
+/// syntect's defaults. ~250 grammars covering Zig, Nix, Fish, Hare, Roc,
+/// and the rest of the long tail. Mirrors codex CLI's primitive (research
+/// at `research/openai-codex/codex-rs/tui/src/render/highlight.rs:33-44`).
 static SYNTAX_SET: std::sync::LazyLock<SyntaxSet> =
-    std::sync::LazyLock::new(SyntaxSet::load_defaults_newlines);
+    std::sync::LazyLock::new(two_face::syntax::extra_newlines);
 
+/// Build-time side-loaded syntaxes from `crates/jfc-ui/syntaxes/` —
+/// kept as the third lookup tier behind the two-face bundle so a project
+/// can drop in a custom `.sublime-syntax` for an obscure DSL without
+/// touching the upstream grammars.
 static EXTRA_SYNTAX_SET: std::sync::LazyLock<Option<SyntaxSet>> = std::sync::LazyLock::new(|| {
     let path = option_env!("EXTRA_SYNTAXES_PACK")?;
     let bytes = std::fs::read(path).ok()?;
     syntect::dumps::from_reader::<SyntaxSet, _>(&mut std::io::Cursor::new(bytes)).ok()
 });
 
-static THEME_SET: std::sync::LazyLock<ThemeSet> = std::sync::LazyLock::new(ThemeSet::load_defaults);
+/// Theme set — two-face bundles 32 themes (Catppuccin variants, Dracula,
+/// Nord, Solarized, Tokyo Night, etc.) on top of syntect's defaults.
+/// Each theme is registered under its `as_name()` so callers can do
+/// `THEME_SET.themes.get("Catppuccin Mocha")` like with stock syntect.
+static THEME_SET: std::sync::LazyLock<ThemeSet> = std::sync::LazyLock::new(|| {
+    let extra = two_face::theme::extra();
+    let mut ts = ThemeSet::load_defaults();
+    for name in two_face::theme::EmbeddedLazyThemeSet::theme_names() {
+        ts.themes
+            .insert(name.as_name().to_owned(), extra.get(*name).clone());
+    }
+    ts
+});
 
 fn find_syntax_in_sets<'a>(
     lang: &str,

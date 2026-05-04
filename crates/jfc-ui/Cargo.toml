@@ -36,6 +36,12 @@ sha2 = "0.10"
 hex = "0.4"
 pulldown-cmark = "0.12"
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig", "yaml-load"] }
+# two-face bundles ~250 language grammars + 32 themes on top of syntect's
+# defaults. Codex CLI's renderer (research/openai-codex/codex-rs/tui/src/
+# render/highlight.rs:33-44) uses the same primitive — gives us Zig, Nix,
+# Fish, Hare, Roc, etc. without hand-rolling .sublime-syntax files. Themes
+# include Catppuccin variants used as adaptive defaults.
+two-face = "0.5"
 ansi-to-tui = "7"
 itertools = "0.14"
 clap = { version = "4", features = ["derive"] }
