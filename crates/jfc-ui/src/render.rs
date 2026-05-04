@@ -30,20 +30,20 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // (2 rows when there's an open task → render `Next: <subject>` underneath
     // matching cli.js:323851 `Next: ${m.subject}`). When idle the slot
     // collapses to 0 and the input snaps to the bottom.
-    let spinner_row_height: u16 = if app.is_streaming {
-        if next_open_task_subject(app).is_some() {
-            2
-        } else {
-            1
-        }
-    } else {
-        0
-    };
-    // Diagnostic summary row (`Found N issues in M files`) — shown
-    // whenever LSP has reported entries, regardless of streaming. Lives
-    // between the message scroll and the spinner so it's always visible
-    // without scrolling. Mirrors v126 cli.js:338030-338040.
-    let diag_row_height: u16 = if app.diagnostics.is_empty() { 0 } else { 1 };
+    // Spinner: 1 row for the verb status alone, 2 rows when there's
+    // either a `Next: <task>` subject OR a `Tip:` fallback to surface.
+    // Always reserve 2 rows when streaming so the tip cycles visibly.
+    let spinner_row_height: u16 = if app.is_streaming { 2 } else { 0 };
+    // Diagnostic summary row — only shown when there are *new*
+    // (unacknowledged) entries. v126 cli.js:231025-231036 keeps a
+    // per-URI "delivered" set; entries already shown to the user don't
+    // re-pop the row on every LSP refresh. The expansion panel
+    // (Ctrl+O) shows the *full* current state regardless. This makes
+    // the row a notification (transient), not a status display
+    // (persistent) — what was wrong before this change.
+    let unack_count =
+        crate::diagnostics::unacknowledged(&app.diagnostics, &app.delivered_diagnostics).len();
+    let diag_row_height: u16 = if unack_count == 0 { 0 } else { 1 };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -98,7 +98,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     if app.viewing_task_id.is_some() {
         subagent_footer(f, app, chunks[1]);
     }
-    if !app.diagnostics.is_empty() {
+    if unack_count > 0 {
         diagnostic_row(f, app, chunks[2]);
     }
     if app.is_streaming {
@@ -1124,8 +1124,13 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
     }
     let t = app.theme;
     let now = std::time::Instant::now();
+    // Prefer the user-turn clock so a multi-step agentic loop reads
+    // cumulative time, not just the current sub-stream's age. Fall back
+    // to `streaming_started_at` for the brief first frame after submit
+    // before the agentic gate updates the turn clock.
     let elapsed = app
-        .streaming_started_at
+        .turn_started_at
+        .or(app.streaming_started_at)
         .map(|t| now.duration_since(t))
         .unwrap_or_default();
     let stall = app
@@ -1173,33 +1178,39 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
     // visual hierarchy as v126's nested status. Use dim/muted color so
     // the verb on row 0 stays the dominant element.
     if area.height >= 2 {
-        if let Some(subj) = next_open_task_subject(app) {
-            let row1 = Rect {
-                x: area.x,
-                y: area.y + 1,
-                width: area.width,
-                height: 1,
-            };
-            // Truncate the subject to fit the row width minus the indent
-            // and prefix so we don't overflow into the input border.
-            let prefix = "  □ Next: ";
-            let max_subj = (area.width as usize).saturating_sub(prefix.chars().count() + 1);
-            let trimmed: String = if subj.chars().count() > max_subj && max_subj > 1 {
-                let mut out: String = subj.chars().take(max_subj.saturating_sub(1)).collect();
-                out.push('…');
-                out
-            } else {
-                subj
-            };
-            let next_line = Line::from(vec![
-                Span::styled(prefix.to_string(), Style::default().fg(t.text_muted)),
-                Span::styled(trimmed, Style::default().fg(t.text_muted)),
-            ]);
-            f.render_widget(
-                Paragraph::new(next_line).style(Style::default().bg(t.bg)),
-                row1,
-            );
-        }
+        let row1 = Rect {
+            x: area.x,
+            y: area.y + 1,
+            width: area.width,
+            height: 1,
+        };
+        // v126 cli.js:323851 picks `Next: m.subject ?? Tip: WH` —
+        // task wins if there is one, else show a rotating tip so the
+        // user has something useful to read while the model thinks.
+        let (prefix, body) = if let Some(subj) = next_open_task_subject(app) {
+            ("  □ Next: ".to_string(), subj)
+        } else {
+            (
+                "  □ Tip: ".to_string(),
+                crate::spinner::tip_for(elapsed).to_string(),
+            )
+        };
+        let max_body = (area.width as usize).saturating_sub(prefix.chars().count() + 1);
+        let trimmed: String = if body.chars().count() > max_body && max_body > 1 {
+            let mut out: String = body.chars().take(max_body.saturating_sub(1)).collect();
+            out.push('…');
+            out
+        } else {
+            body
+        };
+        let row1_line = Line::from(vec![
+            Span::styled(prefix, Style::default().fg(t.text_muted)),
+            Span::styled(trimmed, Style::default().fg(t.text_muted)),
+        ]);
+        f.render_widget(
+            Paragraph::new(row1_line).style(Style::default().bg(t.bg)),
+            row1,
+        );
     }
 }
 
@@ -1463,17 +1474,26 @@ fn diagnostic_row(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
     let t = app.theme;
-    let issues = app.diagnostics.len();
-    let files = crate::diagnostics::count_files(&app.diagnostics);
+    // Count only the *new* diagnostics — entries the user has already
+    // acknowledged via Ctrl+O don't show up in the row count. v126
+    // cli.js:231036 surfaces the same delta-only count: `Found N new
+    // diagnostic issue(s)` — the word "new" is load-bearing.
+    let new_entries: Vec<&crate::diagnostics::DiagnosticEntry> =
+        crate::diagnostics::unacknowledged(&app.diagnostics, &app.delivered_diagnostics);
+    let issues = new_entries.len();
+    let files = {
+        let mut s: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for e in &new_entries {
+            s.insert(e.file.as_str());
+        }
+        s.len()
+    };
     let Some(text) = crate::diagnostics::format_summary(issues, files) else {
         return;
     };
-    let has_errors = app
-        .diagnostics
+    let has_errors = new_entries
         .iter()
         .any(|e| matches!(e.severity, crate::diagnostics::Severity::Error));
-    // Color the leading icon by worst severity present so the user can
-    // see at a glance whether it's all warnings or actual errors.
     let icon_color = if has_errors { t.error } else { t.warning };
     let line = Line::from(vec![
         Span::styled("● ", Style::default().fg(icon_color)),

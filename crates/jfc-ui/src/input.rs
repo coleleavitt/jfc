@@ -640,6 +640,58 @@ pub async fn handle_key(
             app.show_info_sidebar = !app.show_info_sidebar;
             return Ok(false);
         }
+        (KeyModifiers::CONTROL, KeyCode::Char('y')) => {
+            // Yank the most recent assistant message's text to the clipboard.
+            // v126 has the same shortcut (cli.js advertises `Ctrl+Y` for
+            // assistant copy). Walks backwards through `messages` looking
+            // for the first Assistant message with a non-empty Text part;
+            // joins all Text parts with newlines so multi-paragraph
+            // replies copy intact. Pushes a Success toast on success,
+            // Error on clipboard failure.
+            let text = app
+                .messages
+                .iter()
+                .rev()
+                .find(|m| m.role == Role::Assistant)
+                .map(|m| {
+                    m.parts
+                        .iter()
+                        .filter_map(|p| match p {
+                            MessagePart::Text(s) if !s.is_empty() => Some(s.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n\n")
+                });
+            match text {
+                Some(t) if !t.is_empty() => {
+                    use arboard::Clipboard;
+                    match Clipboard::new().and_then(|mut c| c.set_text(t.clone())) {
+                        Ok(()) => {
+                            let preview: String = t.chars().take(40).collect();
+                            let suffix = if t.chars().count() > 40 { "…" } else { "" };
+                            let _ = tx.send(crate::app::AppEvent::Toast {
+                                kind: crate::toast::ToastKind::Success,
+                                text: format!("Copied: {preview}{suffix}"),
+                            });
+                        }
+                        Err(e) => {
+                            let _ = tx.send(crate::app::AppEvent::Toast {
+                                kind: crate::toast::ToastKind::Error,
+                                text: format!("Clipboard error: {e}"),
+                            });
+                        }
+                    }
+                }
+                _ => {
+                    let _ = tx.send(crate::app::AppEvent::Toast {
+                        kind: crate::toast::ToastKind::Warning,
+                        text: "No assistant message to yank".into(),
+                    });
+                }
+            }
+            return Ok(false);
+        }
         (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
             // Ctrl+O is v126's universal "expand" key (cli.js:338038
             // advertises `(ctrl+o to expand)` on the diagnostic row).
@@ -651,6 +703,15 @@ pub async fn handle_key(
                 app.show_diagnostic_panel = false;
             } else if !app.diagnostics.is_empty() {
                 app.show_diagnostic_panel = true;
+                // Opening the panel = acknowledgment. Mark every current
+                // entry as "delivered" so the summary row stops surfacing
+                // them. v126 cli.js:231025-231036 does the same — once a
+                // diagnostic has been shown to the user, subsequent
+                // refreshes don't re-pop the row for the same entry.
+                for entry in &app.diagnostics {
+                    app.delivered_diagnostics
+                        .insert(crate::diagnostics::entry_key(entry));
+                }
             } else if let Some(idx) = app.streaming_assistant_idx {
                 let entry = app.reasoning_expanded.entry(idx).or_insert(false);
                 *entry = !*entry;
@@ -1015,6 +1076,7 @@ async fn handle_submit(
     let now = std::time::Instant::now();
     app.streaming_started_at = Some(now);
     app.streaming_last_token_at = Some(now);
+    app.turn_started_at = Some(now);
     app.last_usage_output = 0;
     app.usage_apply_baseline = (0, 0, 0, 0);
     app.scroll_to_bottom();
@@ -1208,6 +1270,8 @@ fn handle_slash_command(app: &mut App, text: &str) {
             app.messages.push(ChatMessage::assistant(
                 "**Available commands:**\n\
                  - `/clear` — Clear conversation and start fresh\n\
+                 - `/compact` — Manually compact the conversation\n\
+                 - `/check` — Re-run cargo-check diagnostics\n\
                  - `/continue` (or `/c`) — Resume most recent session\n\
                  - `/resume <id>` — Resume a specific session by id\n\
                  - `/sessions` — List all saved sessions\n\
@@ -1227,9 +1291,20 @@ fn handle_slash_command(app: &mut App, text: &str) {
                  - Ctrl+B — Toggle sessions sidebar\n\
                  - Ctrl+M — Model picker\n\
                  - Ctrl+P — Command palette\n\
-                 - Ctrl+O — Toggle reasoning expand\n\
+                 - Ctrl+O — Expand reasoning / open diagnostic panel\n\
+                 - Ctrl+T — Open task panel\n\
                  - Ctrl+Y — Yank last assistant message to clipboard\n\
-                 - Up — Recall most recent queued prompt (when textarea empty)"
+                 - Ctrl+S — Toggle info sidebar\n\
+                 - `@` — Autocomplete file paths from cwd\n\
+                 - Up — Recall most recent queued prompt / cycle history (when input empty)\n\
+                 - Esc — Dismiss popup / close diagnostic panel\n\
+                 \n\
+                 **Env knobs:**\n\
+                 - `JFC_DISABLE_BELL=1` — silence terminal bell on tool completion\n\
+                 - `JFC_DISABLE_AUTO_COMPACT=1` — disable auto-compaction\n\
+                 - `JFC_DISABLE_CARGO_CHECK=1` — skip startup `cargo check`\n\
+                 - `JFC_AUTOCOMPACT_PCT_OVERRIDE=N` — force compact threshold\n\
+                 - `JFC_TOOL_TITLE_WIDTH=N` — cap tool title length (default 100)"
                     .into(),
             ));
         }

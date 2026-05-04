@@ -245,11 +245,21 @@ fn tool_content_height(output: &ToolOutput, content_w: usize) -> usize {
             }
         }
 
-        ToolOutput::Diff(diff) => diff
-            .hunks
-            .iter()
-            .map(|h| 1 + h.lines.len().min(50) + if h.lines.len() > 50 { 1 } else { 0 })
-            .sum(),
+        ToolOutput::Diff(diff) => {
+            // 1 row for the `□ Added N lines` summary + sum of hunk
+            // heights (header + clamped lines + optional `… N more`).
+            let summary_row = if diff.additions > 0 || diff.deletions > 0 {
+                1
+            } else {
+                0
+            };
+            summary_row
+                + diff
+                    .hunks
+                    .iter()
+                    .map(|h| 1 + h.lines.len().min(50) + if h.lines.len() > 50 { 1 } else { 0 })
+                    .sum::<usize>()
+        }
 
         ToolOutput::FileContent { content, .. } => wrapped_line_count(content, content_w).min(80),
 
@@ -285,7 +295,16 @@ fn render_tool_block(tool: &ToolCall, area: Rect, t: Theme, buf: &mut Buffer, sk
         return;
     }
 
-    let (status_icon, status_style) = tool_status_icon(tool, &t);
+    // Animate the icon for Running tools by deriving the frame from
+    // wall-clock time (every TICK_MS ticks → next frame). This sidesteps
+    // having to thread `app.spinner_frame` through `MessageView` while
+    // still pulsing in lockstep with the top-of-input spinner. v126
+    // cli.js:323158 does the same — frame cycles indexed by elapsed ms.
+    let frame_idx = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| (d.as_millis() / 80) as usize)
+        .unwrap_or(0);
+    let (status_icon, status_style) = tool_status_icon_animated(tool, &t, frame_idx);
     let title_spans = build_title_spans(
         tool,
         &t,
@@ -379,31 +398,48 @@ fn build_header_inner_spans<'a>(tool: &'a ToolCall, t: &Theme, max_w: usize) -> 
 
     match &tool.input {
         ToolInput::Bash { command, .. } => {
-            let cmd = truncate_str(command, max_w.saturating_sub(5));
+            // `Bash(<command>)` — function-call shape matches v126 and
+            // reads consistently next to `Update(...)` / `Read(...)`.
+            // First-line-of-command since multi-line bash bodies are
+            // common and we cap at title width anyway.
+            let first_line = command.lines().next().unwrap_or(command);
+            let cmd = truncate_str(first_line, max_w.saturating_sub(8));
             vec![
-                Span::styled("bash ", Style::default().fg(t.text_muted)),
-                Span::styled(cmd, Style::default().fg(t.accent)),
+                Span::styled("Bash", Style::default().fg(t.accent)),
+                Span::styled("(", Style::default().fg(t.text_muted)),
+                Span::styled(cmd, Style::default().fg(t.text_primary)),
+                Span::styled(")", Style::default().fg(t.text_muted)),
             ]
         }
         ToolInput::Edit { file_path, .. } => {
-            let path = truncate_str(file_path, max_w.saturating_sub(5));
+            // v126 style (cli.js diff renderer): `Update(<path>)` rather
+            // than `edit <path>` — the title reads as a function call,
+            // matching `Bash(<command>)` and `Read(<path>)` shapes so the
+            // tool list scans uniformly.
+            let path = truncate_str(file_path, max_w.saturating_sub(8));
             vec![
-                Span::styled("edit ", Style::default().fg(t.text_muted)),
+                Span::styled("Update", Style::default().fg(t.accent)),
+                Span::styled("(", Style::default().fg(t.text_muted)),
                 Span::styled(path, Style::default().fg(t.text_primary)),
+                Span::styled(")", Style::default().fg(t.text_muted)),
             ]
         }
         ToolInput::Write { file_path, .. } => {
-            let path = truncate_str(file_path, max_w.saturating_sub(6));
+            let path = truncate_str(file_path, max_w.saturating_sub(8));
             vec![
-                Span::styled("write ", Style::default().fg(t.text_muted)),
+                Span::styled("Write", Style::default().fg(t.accent)),
+                Span::styled("(", Style::default().fg(t.text_muted)),
                 Span::styled(path, Style::default().fg(t.text_primary)),
+                Span::styled(")", Style::default().fg(t.text_muted)),
             ]
         }
         ToolInput::Read { file_path, .. } => {
-            let path = truncate_str(file_path, max_w.saturating_sub(5));
+            let path = truncate_str(file_path, max_w.saturating_sub(7));
             vec![
-                Span::styled("read ", Style::default().fg(t.text_muted)),
+                Span::styled("Read", Style::default().fg(t.accent)),
+                Span::styled("(", Style::default().fg(t.text_muted)),
                 Span::styled(path, Style::default().fg(t.text_secondary)),
+                Span::styled(")", Style::default().fg(t.text_muted)),
             ]
         }
         _ => {
@@ -416,12 +452,43 @@ fn build_header_inner_spans<'a>(tool: &'a ToolCall, t: &Theme, max_w: usize) -> 
     }
 }
 
+/// Icon + style for a tool's status. Static for the resolved states
+/// (Complete/Failed) and the queued state (Pending). The Running state
+/// returns a frame-aware icon so the caller — typically the main
+/// renderer with `app.spinner_frame` in hand — can animate it. v126
+/// cli.js:323158 pulses tool-use mode at 1Hz via `Math.sin`. We do the
+/// equivalent with the same 6-frame spinner cycle the top-of-input
+/// spinner uses, so a Running bash tool reads as alive instead of
+/// frozen.
 fn tool_status_icon(tool: &ToolCall, t: &Theme) -> (&'static str, Style) {
     match tool.status {
         ToolStatus::Pending => ("○", Style::default().fg(t.warning)),
         ToolStatus::Running => ("◌", Style::default().fg(t.accent)),
         ToolStatus::Complete => ("●", Style::default().fg(t.success)),
         ToolStatus::Failed => ("✗", Style::default().fg(t.error)),
+    }
+}
+
+/// Frame-aware variant for live rendering. Running tools cycle through
+/// the spinner frames; everything else delegates to the static version.
+pub fn tool_status_icon_animated(
+    tool: &ToolCall,
+    t: &Theme,
+    frame: usize,
+) -> (&'static str, Style) {
+    match tool.status {
+        ToolStatus::Running => {
+            let icon = crate::spinner::frame_for(frame);
+            // Alternate the modifier per frame too — accent solid → dim
+            // → solid creates the pulsing v126 has at line 323158.
+            let modifier = if frame % 2 == 0 {
+                ratatui::style::Modifier::BOLD
+            } else {
+                ratatui::style::Modifier::DIM
+            };
+            (icon, Style::default().fg(t.accent).add_modifier(modifier))
+        }
+        _ => tool_status_icon(tool, t),
     }
 }
 
@@ -709,6 +776,47 @@ fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, ski
     let bottom = area.y + area.height;
     let mut virtual_row: usize = 0;
 
+    // Sub-status row: `□ Added N lines, removed M` matching v126's
+    // `□ Added 3 lines` summary line under the Update title (cli.js
+    // diff renderer). Skipped when both counts are zero (e.g. a
+    // metadata-only edit).
+    if diff.additions > 0 || diff.deletions > 0 {
+        let mut parts: Vec<String> = Vec::new();
+        if diff.additions > 0 {
+            parts.push(format!(
+                "Added {} {}",
+                diff.additions,
+                if diff.additions == 1 { "line" } else { "lines" }
+            ));
+        }
+        if diff.deletions > 0 {
+            parts.push(format!(
+                "removed {} {}",
+                diff.deletions,
+                if diff.deletions == 1 { "line" } else { "lines" }
+            ));
+        }
+        let summary = format!("□ {}", parts.join(", "));
+        if virtual_row >= skip {
+            let screen_y = area.y + (virtual_row - skip) as u16;
+            if screen_y < bottom {
+                let row = Rect {
+                    x: area.x,
+                    y: screen_y,
+                    width: area.width,
+                    height: 1,
+                };
+                Paragraph::new(Line::from(Span::styled(
+                    summary,
+                    Style::default().fg(t.text_muted),
+                )))
+                .style(Style::default().bg(t.bg))
+                .render(row, buf);
+            }
+        }
+        virtual_row += 1;
+    }
+
     for hunk in &diff.hunks {
         if area.y + (virtual_row.saturating_sub(skip)) as u16 >= bottom {
             break;
@@ -754,11 +862,32 @@ fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, ski
                         }
                         DiffLineKind::Context => (t.bg, t.text_secondary, " "),
                     };
+                    // Line-number column matches v126's diff style — show
+                    // the `new_line` for added/context (the post-edit
+                    // location) and `old_line` for removed (the source
+                    // location). Pad to 5 cells so the gutter aligns
+                    // across hunks. Dim color so content remains the
+                    // visual center.
+                    let lineno = match dl.kind {
+                        DiffLineKind::Removed => dl.old_line,
+                        _ => dl.new_line,
+                    };
+                    let lineno_str = match lineno {
+                        Some(n) => format!("{n:>5} "),
+                        None => "      ".into(),
+                    };
                     buf.set_style(row, Style::default().bg(bg_color));
-                    Paragraph::new(Line::from(Span::styled(
-                        format!("{} {}", sigil, sanitize_terminal_text(&dl.content)),
-                        Style::default().fg(fg_color),
-                    )))
+                    Paragraph::new(Line::from(vec![
+                        Span::styled(lineno_str, Style::default().fg(t.text_muted).bg(bg_color)),
+                        Span::styled(
+                            format!("{sigil} "),
+                            Style::default().fg(fg_color).bg(bg_color),
+                        ),
+                        Span::styled(
+                            sanitize_terminal_text(&dl.content),
+                            Style::default().fg(fg_color).bg(bg_color),
+                        ),
+                    ]))
                     .style(Style::default().bg(bg_color))
                     .render(row, buf);
                 }

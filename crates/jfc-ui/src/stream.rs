@@ -401,6 +401,14 @@ pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::UnboundedSender<App
     app.streaming_reasoning.clear();
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
+    // The sub-stream clock restarts (Anthropic restarts `output_tokens`
+    // per request) but the *user-turn* clock keeps running — set in
+    // `handle_submit_text` and only cleared when the loop concludes.
+    let now = std::time::Instant::now();
+    app.streaming_started_at = Some(now);
+    app.streaming_last_token_at = Some(now);
+    app.last_usage_output = 0;
+    app.usage_apply_baseline = (0, 0, 0, 0);
 
     let provider = app.provider.clone();
     let messages = build_provider_messages_with_tool_results(&app.messages[..assistant_idx]);

@@ -325,6 +325,9 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent
     let now = std::time::Instant::now();
     app.streaming_started_at = Some(now);
     app.streaming_last_token_at = Some(now);
+    // Set the user-level turn clock too — survives across agentic-loop
+    // iterations so a 5-step turn doesn't keep snapping back to `0s`.
+    app.turn_started_at = Some(now);
     // Wire-truth output_tokens are cumulative *per request* — Anthropic
     // restarts the counter at zero for each `messages` call. Reset our
     // mirror so the spinner doesn't carry the prior turn's leftover until
@@ -571,6 +574,7 @@ async fn run(
         let now = std::time::Instant::now();
         app.streaming_started_at = Some(now);
         app.streaming_last_token_at = Some(now);
+        app.turn_started_at = Some(now);
         app.last_usage_output = 0;
         app.usage_apply_baseline = (0, 0, 0, 0);
 
@@ -679,6 +683,16 @@ async fn run(
                             }
                         }
                     }
+                }
+                // Follow content as it streams *only when the user is
+                // already pinned to the bottom*. `app.follow_bottom` is
+                // set true on submit and on any explicit scroll-to-bottom;
+                // it goes false the moment the user scrolls up. Without
+                // this gate, scrolling up to read prior context during a
+                // long stream would yank you back to the bottom on every
+                // chunk. v126 has the same "stick when at bottom" rule.
+                if app.follow_bottom {
+                    app.scroll_to_bottom();
                 }
             }
             AppEvent::StreamTool(tool) => {
@@ -811,19 +825,46 @@ async fn run(
                 // renderer reads `msg.elapsed` and prints it under the
                 // assistant's content. Mirrors cli.js:341376
                 // (`${A} for ${w}` where A = past-tense verb, w = duration).
-                if let (Some(start), Some(idx)) =
-                    (app.streaming_started_at, app.streaming_assistant_idx)
-                {
-                    let elapsed = std::time::Instant::now().duration_since(start);
-                    let label = spinner::format_finished(elapsed);
-                    if let Some(msg) = app.messages.get_mut(idx) {
-                        msg.elapsed = Some(label);
+                // Stamp `Cooked for Nm Ns` only on the *final* message of
+                // the user turn — i.e. when `stop_reason == EndTurn` with
+                // nothing pending. Otherwise every sub-stream of a 5-step
+                // agentic loop got its own footer (`Brewed for 2s`,
+                // `Brewed for 3s`, ...). v126 stamps once per turn so the
+                // user sees the cumulative `Brewed for 5m 10s` on the
+                // turn's last message. The duration is read off
+                // `turn_started_at` (still set at this point — we only
+                // clear it in the next block once the EndTurn condition
+                // is verified) so it covers tools + thinking + final text.
+                let turn_done = stop_reason == provider::StopReason::EndTurn
+                    && app.pending_approval.is_none()
+                    && app.approval_queue.is_empty()
+                    && app.pending_tool_calls.is_empty();
+                if turn_done {
+                    if let (Some(start), Some(idx)) =
+                        (app.turn_started_at, app.streaming_assistant_idx)
+                    {
+                        let elapsed = std::time::Instant::now().duration_since(start);
+                        let label = spinner::format_finished(elapsed);
+                        if let Some(msg) = app.messages.get_mut(idx) {
+                            msg.elapsed = Some(label);
+                        }
                     }
                 }
                 app.streaming_started_at = None;
                 app.streaming_last_token_at = None;
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
+                // Clear the user-turn clock only when the loop has
+                // genuinely concluded — EndTurn stop reason AND no
+                // tools pending. ToolUse means an agentic continuation
+                // is about to fire and the turn timer must keep running.
+                if stop_reason == provider::StopReason::EndTurn
+                    && app.pending_approval.is_none()
+                    && app.approval_queue.is_empty()
+                    && app.pending_tool_calls.is_empty()
+                {
+                    app.turn_started_at = None;
+                }
 
                 // Auto-save session after each assistant turn completes
                 if let Some(ref session_id) = app.current_session_id {

@@ -71,6 +71,36 @@ pub fn count_files(entries: &[DiagnosticEntry]) -> usize {
     unique.len()
 }
 
+/// Stable identity for an entry — used to track which diagnostics have
+/// already been surfaced to the user. Mirrors v126 cli.js:231028
+/// (`WlK(D)`), which hashes a `(uri, line, character, code, message)`
+/// tuple so re-emitting the same diagnostic across LSP refreshes
+/// doesn't re-pop the summary row.
+pub fn entry_key(entry: &DiagnosticEntry) -> String {
+    format!(
+        "{}::{}:{}::{}::{}",
+        entry.file,
+        entry.line,
+        entry.col,
+        entry.code.as_deref().unwrap_or(""),
+        entry.message
+    )
+}
+
+/// Filter the list down to entries the user hasn't been notified about
+/// yet. Mirrors v126 cli.js:231036 — only newly-arrived diagnostics
+/// surface in the summary row; previously-delivered ones live in the
+/// expansion panel but don't pull focus on every refresh.
+pub fn unacknowledged<'a>(
+    entries: &'a [DiagnosticEntry],
+    delivered: &std::collections::HashSet<String>,
+) -> Vec<&'a DiagnosticEntry> {
+    entries
+        .iter()
+        .filter(|e| !delivered.contains(&entry_key(e)))
+        .collect()
+}
+
 /// Format one expanded line per diagnostic, matching cli.js:338053:
 /// `  <symbol> [Line A:B] <message> [code] (source)`. The two-space
 /// indent groups them under a bolded file header rendered separately.
@@ -182,5 +212,58 @@ mod tests {
         assert_eq!(Severity::Warning.symbol(), "⚠");
         assert_eq!(Severity::Info.symbol(), "ℹ");
         assert_eq!(Severity::Hint.symbol(), "★");
+    }
+
+    #[test]
+    fn entry_key_is_stable_for_same_diagnostic_normal() {
+        // Re-publishing the same diagnostic across LSP refreshes must
+        // produce the same key so the "delivered" set dedupes correctly.
+        let a = d("a.rs", 12, 5, "missing semi", Severity::Error);
+        let mut b = a.clone();
+        // Source is *not* part of the identity — clippy and rustc can
+        // both report the same span+message and we treat them as one
+        // (matches v126 cli.js:231028 which hashes only span+code+msg).
+        b.source = Some("clippy".into());
+        assert_eq!(entry_key(&a), entry_key(&b));
+    }
+
+    #[test]
+    fn entry_key_distinguishes_different_lines_normal() {
+        let a = d("a.rs", 1, 1, "msg", Severity::Error);
+        let b = d("a.rs", 2, 1, "msg", Severity::Error);
+        assert_ne!(entry_key(&a), entry_key(&b));
+    }
+
+    #[test]
+    fn unacknowledged_filters_out_delivered_normal() {
+        let entries = vec![
+            d("a.rs", 1, 1, "old", Severity::Error),
+            d("a.rs", 2, 1, "new", Severity::Warning),
+        ];
+        let mut delivered = std::collections::HashSet::new();
+        delivered.insert(entry_key(&entries[0]));
+        let unack = unacknowledged(&entries, &delivered);
+        assert_eq!(unack.len(), 1);
+        assert_eq!(unack[0].message, "new");
+    }
+
+    #[test]
+    fn unacknowledged_empty_when_all_delivered_normal() {
+        // Re-publish of identical diagnostics → row should NOT pop.
+        let entries = vec![d("a.rs", 1, 1, "msg", Severity::Error)];
+        let mut delivered = std::collections::HashSet::new();
+        delivered.insert(entry_key(&entries[0]));
+        assert!(unacknowledged(&entries, &delivered).is_empty());
+    }
+
+    #[test]
+    fn unacknowledged_empty_set_returns_all_robust() {
+        // Fresh session → nothing delivered yet → every entry is new.
+        let entries = vec![
+            d("a.rs", 1, 1, "x", Severity::Error),
+            d("b.rs", 5, 2, "y", Severity::Warning),
+        ];
+        let unack = unacknowledged(&entries, &std::collections::HashSet::new());
+        assert_eq!(unack.len(), 2);
     }
 }

@@ -73,9 +73,11 @@ pub fn frame_for(tick: usize) -> &'static str {
 }
 
 /// Picks a verb based on the elapsed time so the verb stays stable for
-/// ~2-second windows (less jittery than per-frame randomization).
+/// ~5-second windows (less jittery than per-frame randomization, and
+/// long enough that a glance at the spinner finds the same word it
+/// did a moment ago — 2s was too jumpy in practice).
 pub fn verb_for(elapsed: Duration) -> &'static str {
-    let bucket = (elapsed.as_secs() / 2) as usize;
+    let bucket = (elapsed.as_secs() / 5) as usize;
     VERBS[bucket % VERBS.len()]
 }
 
@@ -142,6 +144,29 @@ pub const COOKED_VERBS: &[&str] = &[
     "Worked",
 ];
 
+/// Tips rotated under the spinner when no task is open. Mirrors v126
+/// cli.js:323851 (`Tip: ${WH}` fallback when `m` task is None) — gives
+/// the user something to read while waiting and surfaces less-obvious
+/// keybindings. Picked deterministically by elapsed-bucket so the tip
+/// is stable for ~10s windows.
+pub const TIPS: &[&str] = &[
+    "Press Esc to dismiss popups",
+    "Ctrl+B opens the sessions sidebar",
+    "Ctrl+P opens the command palette",
+    "Ctrl+M switches model",
+    "Ctrl+T opens the task panel",
+    "Ctrl+Y yanks the last assistant message",
+    "Type @ to autocomplete file paths",
+    "/compact summarizes long conversations",
+    "/check re-runs cargo diagnostics",
+    "/auto-mode on enables the LLM tool classifier",
+];
+
+pub fn tip_for(elapsed: Duration) -> &'static str {
+    let bucket = (elapsed.as_secs() / 10) as usize;
+    TIPS[bucket % TIPS.len()]
+}
+
 /// Pick a past-tense verb for the post-turn duration footer. Mirrors v126
 /// cli.js:341376 (`${A} for ${w}` where `A = Av_() = zJ(hpH) ?? "Worked"`).
 /// Bucketed by 2-second windows of the elapsed duration so different
@@ -157,17 +182,27 @@ pub fn format_finished(elapsed: Duration) -> String {
     format!("{} for {}", cooked_verb_for(elapsed), fmt_elapsed(elapsed))
 }
 
-/// Choose between the wire-truth `output_tokens` (cumulative count from
-/// Anthropic `message_delta`, OWUI/OpenAI `message_stop`) and the
-/// chars-divided-by-4 fallback estimate. Wire wins whenever it's non-zero;
-/// the estimate covers the brief window before the first delta lands and
-/// the providers that don't emit cumulative usage mid-stream at all.
+/// Live token count for the spinner: the **maximum** of the wire-truth
+/// cumulative `output_tokens` and the chars-divided-by-4 estimate.
+///
+/// ## Why max, not "prefer wire"
+///
+/// Anthropic's `message_delta` events arrive in *batches* — typically one
+/// every few hundred ms with the count of all output tokens since the
+/// stream began. The chars/4 estimate, by contrast, updates on every
+/// SSE byte. If the spinner just preferred wire whenever non-zero, the
+/// counter would freeze at the last delta value (e.g. 7) for hundreds
+/// of ms and then jump (e.g. to 200) when the next delta arrived —
+/// what the user reported.
+///
+/// By taking the max, the counter advances fluidly with every chunk
+/// (estimate side) AND corrects upward when wire-truth catches up.
+/// Importantly: max is **monotonic** — the counter never moves
+/// backward, which would read as a bug to the user. (chars/4 tends to
+/// over-count whitespace + code fences slightly so it usually leads
+/// wire; the max picks whichever is larger at any instant.)
 pub fn live_token_count(wire_output: u64, char_estimate: u64) -> u64 {
-    if wire_output > 0 {
-        wire_output
-    } else {
-        char_estimate
-    }
+    wire_output.max(char_estimate)
 }
 
 /// Compose the full status line shown above the input bar:
@@ -260,15 +295,16 @@ mod tests {
     }
 
     #[test]
-    fn verb_changes_every_two_seconds_robust() {
+    fn verb_changes_every_five_seconds_robust() {
+        // Bucket widened from 2s → 5s after the 2s cadence felt jumpy
+        // in practice (the user's complaint: spinner verb out of sync
+        // with the per-second elapsed clock). 5s windows let a glance
+        // back at the spinner find the same word it did a moment ago.
         let v0 = verb_for(Duration::from_secs(0));
-        let v1 = verb_for(Duration::from_secs(1));
-        let v2 = verb_for(Duration::from_secs(2));
-        assert_eq!(v0, v1, "verb stable within a 2s window");
-        assert_ne!(
-            v0, v2,
-            "verb advances at the 2s boundary (otherwise display is stuck)"
-        );
+        let v4 = verb_for(Duration::from_secs(4));
+        let v5 = verb_for(Duration::from_secs(5));
+        assert_eq!(v0, v4, "verb stable within a 5s window");
+        assert_ne!(v0, v5, "verb advances at the 5s boundary");
     }
 
     #[test]
@@ -303,29 +339,44 @@ mod tests {
     }
 
     #[test]
-    fn wire_truth_beats_estimate_when_present_normal() {
-        // Anthropic SSE message_delta arrived → wire is truth.
-        assert_eq!(live_token_count(150, 200), 150);
+    fn live_token_count_takes_max_normal() {
+        // Behavior changed from "prefer wire" → "take max". Reason:
+        // wire-truth arrives in batches (one `message_delta` every few
+        // hundred ms); the estimate updates per-byte. With prefer-wire,
+        // the counter froze between deltas and jumped on each one (the
+        // user-reported "jumps from 7 to 200"). Max keeps the counter
+        // fluid AND monotonic.
+        assert_eq!(
+            live_token_count(150, 200),
+            200,
+            "estimate higher → estimate wins"
+        );
+        assert_eq!(live_token_count(200, 150), 200, "wire higher → wire wins");
+        assert_eq!(live_token_count(0, 200), 200, "no wire yet → estimate");
+        assert_eq!(live_token_count(200, 0), 200, "no estimate → wire");
     }
 
     #[test]
-    fn estimate_used_when_wire_zero_normal() {
-        // OWUI / OpenAI haven't emitted usage mid-stream → fall back.
-        assert_eq!(live_token_count(0, 200), 200);
-    }
-
-    #[test]
-    fn both_zero_yields_zero_robust() {
-        // Pre-stream / first-frame state — nothing to show, but no panic.
+    fn live_token_count_zero_when_both_zero_robust() {
+        // Pre-stream / first-frame state — nothing to show, no panic.
         assert_eq!(live_token_count(0, 0), 0);
     }
 
     #[test]
-    fn wire_smaller_than_estimate_still_wins_robust() {
-        // Anthropic's count tends to be smaller than chars/4 (the estimate
-        // double-counts whitespace and code fences). When wire is present,
-        // we trust it even when it makes the displayed count drop briefly.
-        assert_eq!(live_token_count(50, 9999), 50);
+    fn live_token_count_monotonic_across_arrivals_robust() {
+        // Simulate a typical stream: chunks come in, then a delayed
+        // wire delta arrives at a *lower* value than the current
+        // estimate (the over-counting pattern). Counter must never
+        // visibly drop.
+        let mut last = 0u64;
+        for (wire, est) in [(0, 5), (0, 50), (0, 100), (40, 100), (40, 150), (200, 150)] {
+            let n = live_token_count(wire, est);
+            assert!(
+                n >= last,
+                "count went backward: prev={last} now={n} (wire={wire} est={est})"
+            );
+            last = n;
+        }
     }
 
     #[test]

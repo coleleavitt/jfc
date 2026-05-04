@@ -187,6 +187,17 @@ pub struct App {
     /// `(5m 10s · …)` elapsed counter in the v126-style spinner — without
     /// it, the spinner can't show how long we've been waiting.
     pub streaming_started_at: Option<Instant>,
+    /// Wall-clock instant the *user-level turn* started. Survives across
+    /// agentic-loop iterations (each tool batch → new sub-stream
+    /// resets `streaming_started_at`, but `turn_started_at` keeps
+    /// running). Reset only when the user submits a fresh prompt OR
+    /// when the agentic loop fully concludes (no more tools to run, no
+    /// pending approvals, EndTurn). The spinner clock reads this so a
+    /// 5-step agentic loop shows `5m 10s` cumulative, not `0s` after
+    /// every sub-stream restart — that's what `Fermenting… (0s · ↓ 69
+    /// tokens)` after a multi-turn turn was: the timer reset every
+    /// loop iteration. v126's spinner uses the same turn-level clock.
+    pub turn_started_at: Option<Instant>,
     /// Wall-clock instant of the most recent text/reasoning delta. Used by
     /// the spinner to detect stalls (`>=15s` → "warming up", up to `>=60s`
     /// → "almost done thinking"). Mirrors v126 `timeSinceLastToken` (cli.js
@@ -321,6 +332,13 @@ pub struct App {
     /// file and lists each as `<symbol> [Line A:B] <message>` matching
     /// cli.js:338053. Esc closes.
     pub show_diagnostic_panel: bool,
+    /// Stable keys for diagnostics already shown to the user, so the
+    /// summary row doesn't keep popping for the same set on every
+    /// re-publish. Mirrors v126 cli.js:231025-231036's per-URI
+    /// "delivered" set. Cleared on `/check` rerun and when the user
+    /// opens the expansion panel (Ctrl+O), since opening implies
+    /// acknowledgment.
+    pub delivered_diagnostics: std::collections::HashSet<String>,
     /// The (input, output, cache_read, cache_write) reading the last time
     /// `add_delta` was applied to `usage_by_model`. Anthropic sends
     /// **cumulative** counts in every `message_delta`, so we have to
@@ -359,6 +377,7 @@ impl App {
             streaming_assistant_idx: None,
             streaming_started_at: None,
             streaming_last_token_at: None,
+            turn_started_at: None,
             is_streaming: false,
             scroll_offset: 0,
             total_lines: 0,
@@ -420,6 +439,7 @@ impl App {
             mention_all_files: Vec::new(),
             diagnostics: Vec::new(),
             show_diagnostic_panel: false,
+            delivered_diagnostics: std::collections::HashSet::new(),
             usage_apply_baseline: (0, 0, 0, 0),
             background_tasks: HashMap::new(),
             show_info_sidebar: true,
