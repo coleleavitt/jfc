@@ -422,7 +422,8 @@ pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::UnboundedSender<App
 }
 
 pub fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
-    msgs.iter()
+    let out: Vec<ProviderMessage> = msgs
+        .iter()
         .filter_map(|m| {
             let role = match m.role {
                 Role::User => ProviderRole::User,
@@ -445,7 +446,55 @@ pub fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
                 content: vec![ProviderContent::Text(text)],
             })
         })
-        .collect()
+        .collect();
+    strip_trailing_empty_assistant(out)
+}
+
+/// Drop a trailing assistant message that contains no real content before
+/// sending to the provider.
+///
+/// `continue_agentic_loop` (this file, ~line 400) pushes a placeholder
+/// `ChatMessage::assistant(String::new())` onto `app.messages` before the
+/// stream task starts, to reserve the slot for the streamed response. That
+/// empty assistant is sliced off (`&app.messages[..assistant_idx]`) before
+/// being passed to `build_provider_messages_with_tool_results`, but other
+/// callers — and any future code path that forgets the slice — can leak an
+/// empty assistant tail into the provider request.
+///
+/// Bedrock-via-LiteLLM (OWUI deployment) hard-rejects this with:
+///     `BedrockException — "This model does not support assistant message
+///     prefill. The conversation must end with a user message."`
+/// The native Anthropic API silently treats a trailing assistant turn as
+/// prefill, which is also wrong for the agentic continuation use case (we
+/// want a fresh assistant turn, not a continuation of an empty one). Thus
+/// the strip is provider-agnostic: a trailing empty assistant is wrong
+/// everywhere and has no legitimate semantic meaning here.
+///
+/// Empty means: every `content` block is `Text(s)` with `s.trim().is_empty()`,
+/// or the `content` vec is empty. Any non-blank text or any `ToolUse` /
+/// `ToolResult` block keeps the message — those are real partial turns we
+/// must not lose. The strip is intentionally non-recursive: two empty
+/// assistants in a row only loses the very last one, because a deeper
+/// build-up of empties points to a separate bug we want to surface.
+fn strip_trailing_empty_assistant(mut msgs: Vec<ProviderMessage>) -> Vec<ProviderMessage> {
+    let last_is_empty_assistant = msgs
+        .last()
+        .map(|m| {
+            m.role == ProviderRole::Assistant
+                && m.content.iter().all(|c| match c {
+                    ProviderContent::Text(s) => s.trim().is_empty(),
+                    _ => false,
+                })
+        })
+        .unwrap_or(false);
+    if last_is_empty_assistant {
+        tracing::info!(
+            target: "jfc::stream",
+            "stripped trailing empty assistant before send"
+        );
+        msgs.pop();
+    }
+    msgs
 }
 
 fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
@@ -561,5 +610,108 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
             });
         }
     }
-    out
+    strip_trailing_empty_assistant(out)
+}
+
+#[cfg(test)]
+mod strip_trailing_empty_assistant_tests {
+    use super::*;
+
+    fn user_text(s: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::User,
+            content: vec![ProviderContent::Text(s.to_owned())],
+        }
+    }
+
+    fn assistant_text(s: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::Assistant,
+            content: vec![ProviderContent::Text(s.to_owned())],
+        }
+    }
+
+    // Normal: the exact bug from the screenshot — `continue_agentic_loop`
+    // pushes an empty assistant placeholder, the builder echoes it, Bedrock
+    // explodes. After the strip, the conversation ends on the user turn.
+    #[test]
+    fn strip_drops_trailing_empty_assistant_normal() {
+        let input = vec![user_text("hi"), assistant_text("")];
+        let out = strip_trailing_empty_assistant(input);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].role, ProviderRole::User);
+    }
+
+    // Normal: whitespace-only text counts as empty — a streamed turn that
+    // only emitted a newline before being interrupted is still no content.
+    #[test]
+    fn strip_drops_trailing_whitespace_only_assistant_normal() {
+        let input = vec![user_text("hi"), assistant_text("   \n")];
+        let out = strip_trailing_empty_assistant(input);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].role, ProviderRole::User);
+    }
+
+    // Robust: real assistant text must not be dropped — that would silently
+    // discard model output and create a worse bug than the one we're fixing.
+    #[test]
+    fn strip_keeps_assistant_with_real_content_robust() {
+        let input = vec![user_text("hi"), assistant_text("hello")];
+        let out = strip_trailing_empty_assistant(input.clone());
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[1].role, ProviderRole::Assistant);
+    }
+
+    // Robust: an assistant turn whose only content is a tool_use is a real
+    // mid-flight turn (model called a tool, we're about to send the result
+    // back). Dropping it would orphan the tool_use_id on the next request.
+    #[test]
+    fn strip_keeps_assistant_with_only_toolcall_robust() {
+        let assistant_with_tool = ProviderMessage {
+            role: ProviderRole::Assistant,
+            content: vec![ProviderContent::ToolUse {
+                id: "toolu_1".to_owned(),
+                name: "Bash".to_owned(),
+                input: serde_json::json!({"command": "ls"}),
+            }],
+        };
+        let input = vec![user_text("hi"), assistant_with_tool];
+        let out = strip_trailing_empty_assistant(input);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[1].role, ProviderRole::Assistant);
+    }
+
+    // Normal: if the conversation already ends with a user message (the
+    // common tool_result-injection case), the strip is a no-op.
+    #[test]
+    fn strip_no_op_on_user_last_normal() {
+        let input = vec![assistant_text("hi"), user_text("ok")];
+        let out = strip_trailing_empty_assistant(input);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[1].role, ProviderRole::User);
+    }
+
+    // Robust: empty input must round-trip — no panic on `.last()` of an
+    // empty vec, no spurious `pop()`.
+    #[test]
+    fn strip_no_op_on_empty_input_robust() {
+        let out = strip_trailing_empty_assistant(Vec::<ProviderMessage>::new());
+        assert!(out.is_empty());
+    }
+
+    // Robust: non-recursive by design. Two empty assistants in a row means
+    // something else is wrong upstream; we drop only the last one so the
+    // remaining empty assistant surfaces the bug instead of hiding it.
+    #[test]
+    fn strip_only_drops_one_trailing_robust() {
+        let input = vec![
+            user_text("hi"),
+            assistant_text(""),
+            assistant_text(""),
+        ];
+        let out = strip_trailing_empty_assistant(input);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].role, ProviderRole::User);
+        assert_eq!(out[1].role, ProviderRole::Assistant);
+    }
 }
