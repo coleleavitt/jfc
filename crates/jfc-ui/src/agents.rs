@@ -134,6 +134,15 @@ pub fn load_skills(project_root: &Path) -> Vec<Skill> {
     out
 }
 
+/// Case-insensitive lookup of a skill by `name`. Pure function — no
+/// filesystem access — so callers (slash dispatcher, future Skill tool) can
+/// share one search routine. Returns the first match (skills are loaded with
+/// project-overrides-user precedence already, so duplicates by name shouldn't
+/// occur in well-formed inputs).
+pub(crate) fn find_skill_by_name<'a>(skills: &'a [Skill], name: &str) -> Option<&'a Skill> {
+    skills.iter().find(|s| s.name.eq_ignore_ascii_case(name))
+}
+
 /// Same precedence rules as `load_skills`, but for agent definitions.
 pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
     let mut out: Vec<AgentDef> = Vec::new();
@@ -325,6 +334,45 @@ mod tests {
         let (front, body) = split_frontmatter(raw);
         assert_eq!(front, Some("key: value"));
         assert_eq!(body, "body");
+    }
+
+    fn make_skill(name: &str) -> Skill {
+        Skill {
+            name: name.to_owned(),
+            source: PathBuf::from(format!("/x/skills/{name}.md")),
+            description: None,
+            body: String::new(),
+        }
+    }
+
+    // Normal: an exact lowercase match returns the matching skill.
+    #[test]
+    fn find_skill_by_name_exact_normal() {
+        let skills = vec![make_skill("explain"), make_skill("review")];
+        let hit = find_skill_by_name(&skills, "explain").expect("found");
+        assert_eq!(hit.name, "explain");
+    }
+
+    // Robust: lookup is case-insensitive — "EXPLAIN" still finds "explain".
+    #[test]
+    fn find_skill_by_name_case_insensitive_robust() {
+        let skills = vec![make_skill("explain")];
+        let hit = find_skill_by_name(&skills, "EXPLAIN").expect("found");
+        assert_eq!(hit.name, "explain");
+    }
+
+    // Robust: a name that doesn't match any loaded skill returns None rather
+    // than a misleading partial hit.
+    #[test]
+    fn find_skill_by_name_unknown_returns_none_robust() {
+        let skills = vec![make_skill("explain")];
+        assert!(find_skill_by_name(&skills, "unknown-skill").is_none());
+    }
+
+    // Robust: an empty skills list returns None (no panic, no out-of-bounds).
+    #[test]
+    fn find_skill_by_name_empty_list_returns_none_robust() {
+        assert!(find_skill_by_name(&[], "anything").is_none());
     }
 
     // Normal: PermissionMode round-trips through serde for all variants.

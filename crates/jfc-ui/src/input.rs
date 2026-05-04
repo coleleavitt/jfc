@@ -1090,7 +1090,7 @@ async fn handle_submit(
                 crate::diagnostics_producer::run_once(cwd, tx_diag).await;
             });
         }
-        handle_slash_command(app, &text);
+        handle_slash_command(app, &text, Some(tx));
         return Ok(());
     }
 
@@ -1202,12 +1202,18 @@ async fn handle_submit(
 
 /// Public entry point used by `main::drain_queued_prompts` when an isMeta
 /// queued prompt fires. Same body as the private slash dispatcher used in
-/// `handle_submit`.
+/// `handle_submit`. No `tx` is wired through this path because queued-prompt
+/// dispatch runs synchronously between turns; commands that need to spawn a
+/// stream (e.g. skill invocation) silently no-op the streaming step here.
 pub fn run_slash_command(app: &mut App, text: &str) {
-    handle_slash_command(app, text)
+    handle_slash_command(app, text, None)
 }
 
-fn handle_slash_command(app: &mut App, text: &str) {
+fn handle_slash_command(
+    app: &mut App,
+    text: &str,
+    tx: Option<&mpsc::UnboundedSender<AppEvent>>,
+) {
     let parts: Vec<&str> = text.splitn(2, ' ').collect();
     match parts[0] {
         "/clear" => {
@@ -1651,6 +1657,97 @@ fn handle_slash_command(app: &mut App, text: &str) {
             handle_worktree_command(app, parts.get(1).copied().unwrap_or("").trim());
         }
         _ => {
+            // Skill-name fallthrough: `/<skill>` invokes the matching skill
+            // body as if the user had pasted it. Mirrors v126 cli.js:226634
+            // where slash-name-not-otherwise-bound resolves to a skill or
+            // markdown command and either inline-expands or forks a subagent.
+            //
+            // TODO Phase B: if `frontmatter.context == "fork"` (or the v126
+            // equivalent flag), spawn a Task subagent here instead of inline
+            // expansion. Schema: cli.js:178962.
+            let name = parts[0].trim_start_matches('/');
+            let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+            let skills = crate::agents::load_skills(&cwd);
+            if let Some(skill) = crate::agents::find_skill_by_name(&skills, name) {
+                // Echo the user's invocation so the chat shows what they
+                // typed (with optional args) — same pattern as the other
+                // slash arms. The injected user message that follows carries
+                // the skill body, which is what the model actually sees.
+                let echo = if let Some(rest) = parts.get(1) {
+                    let trimmed = rest.trim();
+                    if trimmed.is_empty() {
+                        format!("/{name}")
+                    } else {
+                        format!("/{name} {trimmed}")
+                    }
+                } else {
+                    format!("/{name}")
+                };
+                app.messages.push(ChatMessage::user(echo));
+
+                // Phase A: inline-expand the body. If the user passed args
+                // after the skill name, append them under an `# Args` heading
+                // so the skill prompt can reference them without us having to
+                // template-substitute.
+                let mut body = skill.body.clone();
+                if let Some(rest) = parts.get(1) {
+                    let trimmed = rest.trim();
+                    if !trimmed.is_empty() {
+                        body.push_str("\n\n# Args\n");
+                        body.push_str(trimmed);
+                    }
+                }
+
+                let Some(tx) = tx else {
+                    // No tx in this dispatch path (e.g. queued-prompt drain).
+                    // Fall back to a hint rather than silently swallowing the
+                    // invocation.
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Skill `/{name}` cannot be invoked from this context (no stream channel). \
+                         Submit `/{name}` directly from the input bar instead."
+                    )));
+                    app.scroll_to_bottom();
+                    return;
+                };
+
+                // Drive the same streaming setup as `handle_submit` for a
+                // fresh user turn: push the synthetic user message, push the
+                // empty assistant placeholder, prime streaming flags, persist
+                // the session, then spawn the provider stream.
+                let assistant_idx = app.messages.len() + 1;
+                app.messages.push(ChatMessage::user(body));
+                app.tool_ctx.total_user_turns += 1;
+                app.messages.push(ChatMessage::assistant(String::new()));
+                app.streaming_text.clear();
+                app.streaming_reasoning.clear();
+                app.streaming_assistant_idx = Some(assistant_idx);
+                app.is_streaming = true;
+                let now = std::time::Instant::now();
+                app.streaming_started_at = Some(now);
+                app.streaming_last_token_at = Some(now);
+                app.turn_started_at = Some(now);
+                app.last_usage_output = 0;
+                app.usage_apply_baseline = (0, 0, 0, 0);
+                app.scroll_to_bottom();
+
+                let session_id = app
+                    .current_session_id
+                    .clone()
+                    .unwrap_or_else(crate::session::generate_session_id);
+                crate::session::save_session(&session_id, &app.messages);
+                app.current_session_id = Some(session_id);
+
+                let provider = app.provider.clone();
+                let messages =
+                    crate::stream::build_provider_messages(&app.messages[..assistant_idx]);
+                let model = app.model.clone();
+                let tx_stream = tx.clone();
+                tokio::spawn(async move {
+                    crate::stream::stream_response(provider, messages, model, tx_stream).await;
+                });
+                return;
+            }
+
             app.messages.push(ChatMessage::assistant(format!(
                 "Unknown command: `{}`. Type `/help` for available commands.",
                 parts[0]
