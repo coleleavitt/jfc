@@ -222,6 +222,44 @@ pub(crate) fn render_skills_section(skills: &[Skill]) -> String {
     out
 }
 
+/// Look up a skill by `name` in a slice. Returns the first match or `None`.
+/// Used by the agent dispatcher to resolve `agent.skills` entries before
+/// concatenating their bodies into the agent's system prompt, and by the
+/// `Skill` tool / slash dispatcher to resolve a user-typed name.
+pub fn find_skill_by_name<'a>(all_skills: &'a [Skill], name: &str) -> Option<&'a Skill> {
+    // Case-insensitive — `/Explain` should hit the same skill as `/explain`.
+    all_skills.iter().find(|s| s.name.eq_ignore_ascii_case(name))
+}
+
+/// Build the effective system prompt for an agent: its own `system_prompt`
+/// followed by each resolved skill body, separated by `## Skill: <name>`
+/// headers. Unknown skill names are skipped (with a `tracing::warn!`).
+pub(crate) fn build_agent_system_prompt(agent: &AgentDef, all_skills: &[Skill]) -> String {
+    if agent.skills.is_empty() {
+        return agent.system_prompt.clone();
+    }
+    let mut out = agent.system_prompt.clone();
+    for name in &agent.skills {
+        match find_skill_by_name(all_skills, name) {
+            Some(skill) => {
+                out.push_str("\n\n## Skill: ");
+                out.push_str(&skill.name);
+                out.push_str("\n\n");
+                out.push_str(&skill.body);
+            }
+            None => {
+                tracing::warn!(
+                    target: "jfc::agents",
+                    agent = %agent.name,
+                    skill = %name,
+                    "agent references unknown skill; skipping",
+                );
+            }
+        }
+    }
+    out
+}
+
 /// Same precedence rules as `load_skills`, but for agent definitions.
 pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
     let mut out: Vec<AgentDef> = Vec::new();
@@ -508,6 +546,99 @@ mod tests {
             !out.contains("- `naked` —"),
             "naked skill should not have a dash: {out:?}"
         );
+    }
+
+    fn make_agent(name: &str, system_prompt: &str, skills: Vec<String>) -> AgentDef {
+        AgentDef {
+            name: name.to_owned(),
+            source: PathBuf::from(format!("/x/agents/{name}.md")),
+            model: None,
+            isolation: None,
+            skills,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
+            permission_mode: None,
+            forks_parent_context: None,
+            background: None,
+            color: None,
+            system_prompt: system_prompt.to_owned(),
+            effort: None,
+            max_turns: None,
+            memory: None,
+            mcp_servers: Vec::new(),
+            hooks: std::collections::HashMap::new(),
+        }
+    }
+
+    fn make_skill(name: &str, body: &str) -> Skill {
+        Skill {
+            name: name.to_owned(),
+            source: PathBuf::from(format!("/x/skills/{name}.md")),
+            description: None,
+            body: body.to_owned(),
+        }
+    }
+
+    // Normal: an agent with no skills returns its base `system_prompt`
+    // verbatim — no header, no trailing whitespace.
+    #[test]
+    fn build_agent_system_prompt_no_skills_returns_base_normal() {
+        let agent = make_agent("a", "You are an agent.", Vec::new());
+        let out = build_agent_system_prompt(&agent, &[]);
+        assert_eq!(out, "You are an agent.");
+    }
+
+    // Normal: when an agent lists two skills that both resolve, both bodies
+    // appear in the output, each preceded by a `## Skill: <name>` header.
+    #[test]
+    fn build_agent_system_prompt_appends_resolved_skills_normal() {
+        let agent = make_agent(
+            "impl",
+            "Base prompt.",
+            vec!["one".to_owned(), "two".to_owned()],
+        );
+        let skills = vec![
+            make_skill("one", "Body of skill one."),
+            make_skill("two", "Body of skill two."),
+        ];
+        let out = build_agent_system_prompt(&agent, &skills);
+        assert!(out.starts_with("Base prompt."));
+        assert!(out.contains("## Skill: one"));
+        assert!(out.contains("## Skill: two"));
+        assert!(out.contains("Body of skill one."));
+        assert!(out.contains("Body of skill two."));
+    }
+
+    // Robust: a skill name that doesn't resolve in `all_skills` is silently
+    // skipped — no crash, no placeholder. Other resolved skills still appear.
+    #[test]
+    fn build_agent_system_prompt_skips_unknown_skill_robust() {
+        let agent = make_agent(
+            "x",
+            "Base.",
+            vec!["missing-skill".to_owned(), "real".to_owned()],
+        );
+        let skills = vec![make_skill("real", "Real body.")];
+        let out = build_agent_system_prompt(&agent, &skills);
+        assert!(!out.contains("missing-skill"));
+        assert!(out.contains("## Skill: real"));
+        assert!(out.contains("Real body."));
+    }
+
+    // Robust: skill bodies appear in the order listed in `agent.skills`,
+    // not the order of `all_skills`. Order matters for prompt composition.
+    #[test]
+    fn build_agent_system_prompt_preserves_order_robust() {
+        let agent = make_agent("x", "Base.", vec!["a".to_owned(), "b".to_owned()]);
+        // Pass `all_skills` in reverse to ensure the agent's order wins.
+        let skills = vec![
+            make_skill("b", "BBBB body."),
+            make_skill("a", "AAAA body."),
+        ];
+        let out = build_agent_system_prompt(&agent, &skills);
+        let pos_a = out.find("AAAA body.").expect("a present");
+        let pos_b = out.find("BBBB body.").expect("b present");
+        assert!(pos_a < pos_b, "skill 'a' must appear before skill 'b'");
     }
 
     // Normal: PermissionMode round-trips through serde for all variants.
