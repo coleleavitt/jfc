@@ -15,15 +15,100 @@ use crate::types::*;
 
 const MAX_TOOL_RESULT_CHARS: usize = 30_000;
 
+/// Truncate `s` to at most `MAX_TOOL_RESULT_CHARS` bytes by keeping the first
+/// half and the last half, with an ellipsis marker in the middle. Slice
+/// boundaries are snapped to the nearest UTF-8 char boundary so the function
+/// can never panic on multi-byte content (emoji, accented chars, or binary
+/// blobs that happen to land in the slice — exactly the panic in the
+/// screenshot's stack trace at stream.rs:334:14, fired from inside
+/// build_provider_messages_with_tool_results' FilterMap closure).
 fn truncate_tool_result(s: &str) -> String {
     if s.len() <= MAX_TOOL_RESULT_CHARS {
         return s.to_owned();
     }
     let half = MAX_TOOL_RESULT_CHARS / 2;
-    let head = &s[..half];
-    let tail = &s[s.len() - half..];
-    let omitted = s.len() - MAX_TOOL_RESULT_CHARS;
-    format!("{head}\n\n... [{omitted} characters omitted] ...\n\n{tail}")
+    let head_end = floor_char_boundary(s, half);
+    let tail_start = ceil_char_boundary(s, s.len().saturating_sub(half));
+    let head = &s[..head_end];
+    let tail = &s[tail_start..];
+    let omitted = s.len() - head_end - (s.len() - tail_start);
+    format!("{head}\n\n... [{omitted} bytes omitted] ...\n\n{tail}")
+}
+
+/// Round `i` down to the nearest UTF-8 char boundary in `s`. `str::is_char_boundary`
+/// is true at byte 0 and `s.len()`, plus every codepoint boundary in between —
+/// so the loop terminates in O(4) steps for any valid UTF-8.
+fn floor_char_boundary(s: &str, mut i: usize) -> usize {
+    if i >= s.len() {
+        return s.len();
+    }
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// Round `i` up to the nearest UTF-8 char boundary in `s`.
+fn ceil_char_boundary(s: &str, mut i: usize) -> usize {
+    if i >= s.len() {
+        return s.len();
+    }
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
+#[cfg(test)]
+mod truncate_tests {
+    use super::*;
+
+    // Normal: short input passes through unchanged.
+    #[test]
+    fn truncate_short_passes_through_normal() {
+        assert_eq!(truncate_tool_result("hello"), "hello");
+    }
+
+    // Robust: the original panic. A multi-byte char (4-byte emoji) sitting
+    // exactly at the byte-`half` boundary used to crash with "byte index N
+    // is not a char boundary". Fix snaps to the nearest valid boundary.
+    #[test]
+    fn truncate_does_not_panic_on_multibyte_char_at_split_boundary_robust() {
+        // Build a string where MAX/2 lands inside a 🦀 (4 bytes).
+        let prefix_bytes = MAX_TOOL_RESULT_CHARS / 2 - 2;
+        let mut s = String::with_capacity(MAX_TOOL_RESULT_CHARS * 2);
+        for _ in 0..prefix_bytes {
+            s.push('a');
+        }
+        s.push('🦀'); // straddles byte-`half` (2 bytes before, 2 after)
+        for _ in 0..(MAX_TOOL_RESULT_CHARS) {
+            s.push('b');
+        }
+        // Must not panic.
+        let _ = truncate_tool_result(&s);
+    }
+
+    // Robust: input with mixed ASCII + multibyte content still produces a
+    // valid UTF-8 result (no half-codepoints in the output).
+    #[test]
+    fn truncate_output_is_valid_utf8_robust() {
+        let s: String = std::iter::repeat("héllo 🌟 ").take(5000).collect();
+        let out = truncate_tool_result(&s);
+        // The .chars() iterator panics on invalid UTF-8 — driving it to
+        // completion proves the output is well-formed.
+        let _ = out.chars().count();
+    }
+
+    // Normal: head and tail are preserved across truncation.
+    #[test]
+    fn truncate_keeps_head_and_tail_normal() {
+        let mid: String = "x".repeat(MAX_TOOL_RESULT_CHARS * 2);
+        let s = format!("HEAD{mid}TAIL");
+        let out = truncate_tool_result(&s);
+        assert!(out.starts_with("HEAD"));
+        assert!(out.ends_with("TAIL"));
+        assert!(out.contains("bytes omitted"));
+    }
 }
 
 #[tracing::instrument(
@@ -155,9 +240,27 @@ pub async fn stream_response(
                 let _ = tx.send(AppEvent::StreamTool(tool));
             }
             StreamEvent::Done { stop_reason: r } => {
-                stop_reason = r;
+                // Never downgrade from ToolUse → EndTurn.  The OpenAI SSE
+                // protocol sends `[DONE]` after the finish_reason chunk.
+                // `push_chunk_events_stateful` already emitted Done{ToolUse}
+                // from the finish_reason chunk; the subsequent [DONE] line
+                // emits Done{EndTurn}.  If we blindly overwrite we lose the
+                // ToolUse signal and pending_tool_calls are silently cleared
+                // instead of dispatched.
+                if stop_reason != StopReason::ToolUse {
+                    stop_reason = r;
+                }
             }
             StreamEvent::TextDone { .. } | StreamEvent::ThinkingDone { .. } => {}
+            StreamEvent::Usage {
+                input_tokens,
+                output_tokens,
+            } => {
+                let _ = tx.send(AppEvent::StreamUsage {
+                    input_tokens,
+                    output_tokens,
+                });
+            }
             StreamEvent::Error { message } => {
                 let _ = tx.send(AppEvent::StreamError(message));
                 return;
@@ -168,17 +271,18 @@ pub async fn stream_response(
     let _ = tx.send(AppEvent::StreamDone(stop_reason));
 }
 
-#[tracing::instrument(target = "jfc::stream", skip(tx, dedup), fields(n = tool_calls.len()))]
+#[tracing::instrument(target = "jfc::stream", skip(tx, dedup, task_store), fields(n = tool_calls.len()))]
 pub fn dispatch_tools_batched(
     tool_calls: Vec<ToolCall>,
     tx: &mpsc::UnboundedSender<AppEvent>,
     dedup: Arc<Mutex<ReadDedupCache>>,
+    task_store: Option<Arc<crate::tasks::TaskStore>>,
 ) {
     let cwd = std::env::current_dir().unwrap_or_default();
     let batches = scheduler::schedule_tools(tool_calls);
     let tx_clone = tx.clone();
     tokio::spawn(async move {
-        scheduler::execute_batches(batches, &tx_clone, cwd, dedup).await;
+        scheduler::execute_batches(batches, &tx_clone, cwd, dedup, task_store).await;
         let _ = tx_clone.send(AppEvent::AllToolsComplete);
     });
 }

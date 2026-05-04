@@ -352,8 +352,6 @@ mod tests {
         );
     }
 
-    // ── push_chunk_events: OpenAI tool_call delta parsing ─────────────────
-
     fn fn_call(
         idx: usize,
         id: Option<&str>,
@@ -376,117 +374,8 @@ mod tests {
                 delta,
                 finish_reason: finish.map(str::to_owned),
             }],
+            usage: None,
         }
-    }
-
-    fn evs(input: ChatChunk) -> Vec<StreamEvent> {
-        let mut out: Vec<anyhow::Result<StreamEvent>> = Vec::new();
-        push_chunk_events(input, &mut out);
-        out.into_iter().filter_map(|r| r.ok()).collect()
-    }
-
-    // Normal: a chunk carrying `delta.content: "hello"` emits a single
-    // `TextDelta { delta: "hello" }`.
-    #[test]
-    fn chunk_text_delta_is_emitted_normal() {
-        let c = chunk(
-            ChunkDelta {
-                content: Some("hello".into()),
-                ..Default::default()
-            },
-            None,
-        );
-        let events = evs(c);
-        assert_eq!(events.len(), 1);
-        assert!(matches!(
-            events[0],
-            StreamEvent::TextDelta { ref delta, .. } if delta == "hello"
-        ));
-    }
-
-    // Normal: a chunk carrying a `tool_calls[].function.arguments` fragment
-    // emits a `ToolDelta` with that fragment as the payload.
-    #[test]
-    fn chunk_tool_call_arguments_emit_tooldelta_normal() {
-        let c = chunk(
-            ChunkDelta {
-                tool_calls: Some(vec![fn_call(
-                    0,
-                    Some("call_1"),
-                    Some("Bash"),
-                    Some("{\"comm"),
-                )]),
-                ..Default::default()
-            },
-            None,
-        );
-        let events = evs(c);
-        let delta = events
-            .iter()
-            .find_map(|e| match e {
-                StreamEvent::ToolDelta { delta, index } => Some((*index, delta.clone())),
-                _ => None,
-            })
-            .expect("ToolDelta");
-        assert_eq!(delta.0, 0);
-        assert_eq!(delta.1, "{\"comm");
-    }
-
-    // Normal: `finish_reason: "tool_calls"` emits a ToolDone for each tool
-    // plus a Done with `StopReason::ToolUse`. This is the trigger that lets
-    // jfc dispatch the actual tool execution.
-    #[test]
-    fn chunk_finish_tool_calls_emits_tool_done_and_stop_normal() {
-        let c = chunk(
-            ChunkDelta {
-                tool_calls: Some(vec![fn_call(
-                    0,
-                    Some("call_1"),
-                    Some("Bash"),
-                    Some("and\":\"echo hi\"}"),
-                )]),
-                ..Default::default()
-            },
-            Some("tool_calls"),
-        );
-        let events = evs(c);
-        assert!(events.iter().any(|e| matches!(
-            e,
-            StreamEvent::ToolDone { tool_name, tool_use_id, .. }
-                if tool_name == "Bash" && tool_use_id == "call_1"
-        )));
-        assert!(events.iter().any(|e| matches!(
-            e,
-            StreamEvent::Done { stop_reason } if *stop_reason == StopReason::ToolUse
-        )));
-    }
-
-    // Robust: an empty arguments fragment is not emitted (avoids spamming
-    // ToolDelta { delta: "" } that would no-op in the accumulator).
-    #[test]
-    fn chunk_empty_tool_arguments_not_emitted_robust() {
-        let c = chunk(
-            ChunkDelta {
-                tool_calls: Some(vec![fn_call(0, Some("c"), Some("Bash"), Some(""))]),
-                ..Default::default()
-            },
-            None,
-        );
-        let events = evs(c);
-        assert!(
-            events
-                .iter()
-                .all(|e| !matches!(e, StreamEvent::ToolDelta { .. }))
-        );
-    }
-
-    // Robust: a chunk with no choices doesn't panic and emits no events.
-    #[test]
-    fn chunk_with_no_choices_is_noop_robust() {
-        let c = ChatChunk {
-            choices: Vec::new(),
-        };
-        assert!(evs(c).is_empty());
     }
 
     // ── Stateful accumulator (fix for LiteLLM-on-Bedrock empty-finish bug) ─
@@ -918,7 +807,17 @@ mod tests {
 // once and the `function.arguments` JSON streamed in chunks (incremental).
 #[derive(Debug, Deserialize)]
 struct ChatChunk {
+    #[serde(default)]
     choices: Vec<ChunkChoice>,
+    #[serde(default)]
+    usage: Option<ChunkUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChunkUsage {
+    prompt_tokens: u32,
+    completion_tokens: u32,
+    total_tokens: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -931,6 +830,8 @@ struct ChunkChoice {
 struct ChunkDelta {
     #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
+    refusal: Option<String>,
     #[serde(default)]
     reasoning_content: Option<String>,
     #[serde(default)]
@@ -1362,6 +1263,19 @@ impl Provider for OpenWebUIProvider {
                                             );
                                         }
                                     }
+                                    if let Some(ref u) = chunk.usage {
+                                        tracing::info!(
+                                            target: "jfc::provider::openwebui",
+                                            prompt_tokens = u.prompt_tokens,
+                                            completion_tokens = u.completion_tokens,
+                                            total_tokens = u.total_tokens,
+                                            "usage"
+                                        );
+                                        emitted.push(Ok(StreamEvent::Usage {
+                                            input_tokens: u.prompt_tokens,
+                                            output_tokens: u.completion_tokens,
+                                        }));
+                                    }
                                     push_chunk_events_stateful(chunk, state, &mut emitted);
                                 }
                                 Err(e) => {
@@ -1422,6 +1336,14 @@ fn push_chunk_events_stateful(
             }));
         }
     }
+    if let Some(refusal) = choice.delta.refusal.clone() {
+        if !refusal.is_empty() {
+            out.push(Ok(StreamEvent::TextDelta {
+                index: 0,
+                delta: refusal,
+            }));
+        }
+    }
 
     let tool_calls = choice.delta.tool_calls.clone().unwrap_or_default();
     for tc in &tool_calls {
@@ -1450,7 +1372,7 @@ fn push_chunk_events_stateful(
 
     if let Some(reason) = choice.finish_reason {
         let mapped = match reason.as_str() {
-            "tool_calls" => StopReason::ToolUse,
+            "tool_calls" | "function_call" => StopReason::ToolUse,
             "stop" => StopReason::EndTurn,
             "length" => StopReason::MaxTokens,
             other => StopReason::Other(other.to_owned()),
@@ -1477,86 +1399,6 @@ fn push_chunk_events_stateful(
                 tool_name: name,
                 tool_use_id: id,
                 input_json: accum.args,
-            }));
-        }
-        out.push(Ok(StreamEvent::Done {
-            stop_reason: mapped,
-        }));
-    }
-}
-
-/// Convert one OpenAI-compatible chat chunk into zero or more jfc StreamEvents.
-/// Pulled out into a free function so it's testable without an SSE pipeline.
-///
-/// Note: this implementation no longer accumulates tool_call JSON across chunks
-/// at the provider layer — instead it forwards each delta as `ToolDelta` and
-/// emits a single `ToolDone` carrying whatever `function.arguments` was on the
-/// chunk that fired `finish_reason: "tool_calls"`. The upstream stream handler
-/// in `stream.rs` already accumulates `ToolDelta`s by index, so duplicating
-/// the buffer here would risk drift.
-fn push_chunk_events(chunk: ChatChunk, out: &mut Vec<anyhow::Result<StreamEvent>>) {
-    let Some(choice) = chunk.choices.into_iter().next() else {
-        return;
-    };
-
-    if let Some(thinking) = choice.delta.reasoning_content.clone() {
-        if !thinking.is_empty() {
-            out.push(Ok(StreamEvent::ThinkingDelta {
-                index: 0,
-                delta: thinking,
-            }));
-        }
-    }
-    if let Some(text) = choice.delta.content.clone() {
-        if !text.is_empty() {
-            out.push(Ok(StreamEvent::TextDelta {
-                index: 0,
-                delta: text,
-            }));
-        }
-    }
-
-    // Tool-call deltas. `index` keys the accumulator in stream.rs; `id` and
-    // `name` come on the first chunk and need to be carried forward to the
-    // ToolDone event.
-    let tool_calls = choice.delta.tool_calls.clone().unwrap_or_default();
-    for tc in &tool_calls {
-        let idx = tc.index.unwrap_or(0);
-        if let Some(args) = tc.function.as_ref().and_then(|f| f.arguments.clone()) {
-            if !args.is_empty() {
-                out.push(Ok(StreamEvent::ToolDelta {
-                    index: idx,
-                    delta: args,
-                }));
-            }
-        }
-    }
-
-    // finish_reason terminates the turn. "tool_calls" → emit a synthetic
-    // ToolDone for each tool we saw on this stream so the upstream handler
-    // can dispatch them. Plain "stop" → EndTurn.
-    if let Some(reason) = choice.finish_reason {
-        let mapped = match reason.as_str() {
-            "tool_calls" => StopReason::ToolUse,
-            "stop" => StopReason::EndTurn,
-            "length" => StopReason::MaxTokens,
-            other => StopReason::Other(other.to_owned()),
-        };
-        for tc in &tool_calls {
-            let idx = tc.index.unwrap_or(0);
-            let id = tc.id.clone().unwrap_or_default();
-            let name = tc
-                .function
-                .as_ref()
-                .and_then(|f| f.name.clone())
-                .unwrap_or_default();
-            // input_json is left empty here — the accumulator in stream.rs
-            // has the deltas it received and reconstructs the full payload.
-            out.push(Ok(StreamEvent::ToolDone {
-                index: idx,
-                tool_name: name,
-                tool_use_id: id,
-                input_json: String::new(),
             }));
         }
         out.push(Ok(StreamEvent::Done {

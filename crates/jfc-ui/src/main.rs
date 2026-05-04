@@ -397,6 +397,7 @@ async fn run(
         });
     }
 
+    app.sync_task_completions();
     terminal.draw(|f| render::frame(f, &mut app))?;
 
     loop {
@@ -479,10 +480,29 @@ async fn run(
                 }
             }
             AppEvent::StreamTool(tool) => {
+                // Trace every StreamTool entry so next-run diagnostics show
+                // exactly which routing path each tool took. Without this,
+                // tools that take the auto-mode or no-approval branches are
+                // invisible in logs (only the approval path was traced),
+                // making bugs like "tool stuck Pending" undiagnosable.
+                tracing::info!(
+                    target: "jfc::ui::tool",
+                    tool_kind = tool.kind.label(),
+                    tool_id = %tool.id,
+                    auto_mode = app.auto_mode.enabled,
+                    needs_approval = app.tool_needs_approval(&tool),
+                    streaming_idx = ?app.streaming_assistant_idx,
+                    "StreamTool received"
+                );
                 // v126 auto-mode: when enabled, every tool call is sent to a
                 // classifier LLM that returns block/allow with a reason. The
                 // user is never prompted. Disabled (default) → original flow.
                 if app.auto_mode.enabled {
+                    tracing::info!(
+                        target: "jfc::ui::tool",
+                        tool_id = %tool.id,
+                        "route=auto_mode_classifier"
+                    );
                     let provider = Arc::clone(&app.provider);
                     let model = app.model.clone();
                     let cfg = app.auto_mode.clone();
@@ -542,6 +562,13 @@ async fn run(
                         app.approval_queue.push_back(tool);
                     }
                 } else {
+                    tracing::info!(
+                        target: "jfc::ui::tool",
+                        tool_kind = tool.kind.label(),
+                        tool_id = %tool.id,
+                        pending_total = app.pending_tool_calls.len() + 1,
+                        "route=auto_dispatch (no approval needed)"
+                    );
                     if let Some(idx) = app.streaming_assistant_idx {
                         if let Some(msg) = app.messages.get_mut(idx) {
                             msg.parts.push(MessagePart::Tool(tool.clone()));
@@ -597,16 +624,46 @@ async fn run(
                             kinds = ?calls.iter().map(|t| t.kind.label()).collect::<Vec<_>>(),
                             "stream_done dispatching auto-routed batch"
                         );
+                        update_task_activities(&mut app, &calls);
                         stream::dispatch_tools_batched(
                             calls,
                             &tx,
                             std::sync::Arc::clone(&app.dedup_cache),
+                            Some(std::sync::Arc::clone(&app.task_store)),
                         );
                     } else if app.pending_approval.is_some() || !app.approval_queue.is_empty() {
+                        tracing::info!(
+                            target: "jfc::stream",
+                            pending_modal = app.pending_approval.is_some(),
+                            queue_depth = app.approval_queue.len(),
+                            "stream_done waiting on approval pipeline"
+                        );
                         // Tool awaiting user approval — keep streaming_assistant_idx
                         // alive so the approved/denied tool can be inserted into the
                         // correct message. AllToolsComplete fires after approval.
                     } else {
+                        // Upstream returned finish_reason="tool_calls" but sent
+                        // zero tool_call delta chunks (transient LiteLLM/Bedrock
+                        // failure). The assistant message that was pre-pushed to
+                        // history is empty and un-replyable; strip it so the
+                        // next user turn doesn't send a broken conversation turn.
+                        tracing::warn!(
+                            target: "jfc::stream",
+                            streaming_idx = ?app.streaming_assistant_idx,
+                            "stream_done ToolUse with no tools — stripping dangling assistant turn"
+                        );
+                        if let Some(idx) = app.streaming_assistant_idx {
+                            if idx < app.messages.len() {
+                                let msg = &app.messages[idx];
+                                let is_empty = msg.parts.is_empty()
+                                    || msg.parts.iter().all(|p| {
+                                        matches!(p, MessagePart::Text(t) if t.trim().is_empty())
+                                    });
+                                if is_empty {
+                                    app.messages.remove(idx);
+                                }
+                            }
+                        }
                         app.streaming_assistant_idx = None;
                         app.scroll_to_bottom();
                     }
@@ -624,6 +681,14 @@ async fn run(
                 app.messages
                     .push(ChatMessage::assistant(format!("**Error:** {e}")));
                 app.scroll_to_bottom();
+            }
+            AppEvent::StreamUsage {
+                input_tokens,
+                output_tokens,
+            } => {
+                app.last_usage_input = input_tokens;
+                app.last_usage_output = output_tokens;
+                app.tool_ctx.approx_tokens = input_tokens as usize + output_tokens as usize;
             }
             AppEvent::ToolResult { tool_id, result } => {
                 tracing::info!(
@@ -752,8 +817,30 @@ async fn run(
             }
         }
 
+        app.sync_task_completions();
         terminal.draw(|f| render::frame(f, &mut app))?;
     }
 
     Ok(())
+}
+
+fn update_task_activities(app: &mut app::App, calls: &[types::ToolCall]) {
+    let in_progress: Vec<String> = app
+        .task_store
+        .list(false)
+        .iter()
+        .filter(|t| matches!(t.status, tasks::TaskStatus::InProgress))
+        .map(|t| t.id.clone())
+        .collect();
+    if in_progress.is_empty() {
+        return;
+    }
+    let description = calls
+        .iter()
+        .map(|c| format!("{}: {}", c.kind.label(), c.input.summary()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    for tid in in_progress {
+        app.task_activities.insert(tid, description.clone());
+    }
 }

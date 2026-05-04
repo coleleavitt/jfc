@@ -72,6 +72,10 @@ pub enum ToolKind {
     Grep,
     Search,
     ApplyPatch,
+    TaskCreate,
+    TaskUpdate,
+    TaskList,
+    TaskDone,
     Generic(String),
 }
 
@@ -121,6 +125,26 @@ pub enum ToolInput {
     },
     ApplyPatch {
         patch: String,
+    },
+    TaskCreate {
+        subject: String,
+        description: String,
+        active_form: Option<String>,
+        blocked_by: Vec<String>,
+    },
+    TaskUpdate {
+        task_id: String,
+        status: Option<String>,
+        subject: Option<String>,
+        description: Option<String>,
+        owner: Option<String>,
+    },
+    TaskList {
+        status_filter: Option<String>,
+        owner_filter: Option<String>,
+    },
+    TaskDone {
+        task_id: String,
     },
     Generic {
         summary: String,
@@ -324,6 +348,10 @@ impl ToolKind {
             "Grep" | "grep" => Self::Grep,
             "codebase_search" | "search" => Self::Search,
             "apply_patch" => Self::ApplyPatch,
+            "TaskCreate" | "task_create" => Self::TaskCreate,
+            "TaskUpdate" | "task_update" => Self::TaskUpdate,
+            "TaskList" | "task_list" => Self::TaskList,
+            "TaskDone" | "task_done" => Self::TaskDone,
             other => Self::Generic(other.to_owned()),
         }
     }
@@ -338,6 +366,10 @@ impl ToolKind {
             Self::Grep => "Grep",
             Self::Search => "Search",
             Self::ApplyPatch => "Patch",
+            Self::TaskCreate => "TaskCreate",
+            Self::TaskUpdate => "TaskUpdate",
+            Self::TaskList => "TaskList",
+            Self::TaskDone => "TaskDone",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -352,6 +384,10 @@ impl ToolKind {
             Self::Grep => "Grep",
             Self::Search => "codebase_search",
             Self::ApplyPatch => "apply_patch",
+            Self::TaskCreate => "TaskCreate",
+            Self::TaskUpdate => "TaskUpdate",
+            Self::TaskList => "TaskList",
+            Self::TaskDone => "TaskDone",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -393,6 +429,13 @@ impl ToolInput {
                 None => query.clone(),
             },
             Self::ApplyPatch { patch } => format!("apply patch ({} bytes)", patch.len()),
+            Self::TaskCreate { subject, .. } => format!("create: {subject}"),
+            Self::TaskUpdate { task_id, .. } => format!("update: {task_id}"),
+            Self::TaskList { status_filter, .. } => match status_filter {
+                Some(f) => format!("list tasks ({f})"),
+                None => "list tasks".into(),
+            },
+            Self::TaskDone { task_id } => format!("done: {task_id}"),
             Self::Generic { summary } => summary.clone(),
         }
     }
@@ -457,6 +500,37 @@ impl ToolInput {
             },
             ToolKind::ApplyPatch => Self::ApplyPatch {
                 patch: str_field("patch"),
+            },
+            ToolKind::TaskCreate => {
+                let blocked_by = obj
+                    .and_then(|m| m.get("blocked_by"))
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(str::to_owned))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Self::TaskCreate {
+                    subject: str_field("subject"),
+                    description: str_field("description"),
+                    active_form: opt_str_field("active_form"),
+                    blocked_by,
+                }
+            }
+            ToolKind::TaskUpdate => Self::TaskUpdate {
+                task_id: str_field("task_id"),
+                status: opt_str_field("status"),
+                subject: opt_str_field("subject"),
+                description: opt_str_field("description"),
+                owner: opt_str_field("owner"),
+            },
+            ToolKind::TaskList => Self::TaskList {
+                status_filter: opt_str_field("status_filter"),
+                owner_filter: opt_str_field("owner_filter"),
+            },
+            ToolKind::TaskDone => Self::TaskDone {
+                task_id: str_field("task_id"),
             },
             ToolKind::Generic(_) => Self::Generic {
                 summary: v.to_string(),
@@ -543,6 +617,57 @@ impl ToolInput {
                 v
             }
             Self::ApplyPatch { patch } => json!({ "patch": patch }),
+            Self::TaskCreate {
+                subject,
+                description,
+                active_form,
+                blocked_by,
+            } => {
+                let mut v = json!({ "subject": subject, "description": description });
+                if let Some(af) = active_form {
+                    v["active_form"] = json!(af);
+                }
+                if !blocked_by.is_empty() {
+                    v["blocked_by"] = json!(blocked_by);
+                }
+                v
+            }
+            Self::TaskUpdate {
+                task_id,
+                status,
+                subject,
+                description,
+                owner,
+            } => {
+                let mut v = json!({ "task_id": task_id });
+                if let Some(s) = status {
+                    v["status"] = json!(s);
+                }
+                if let Some(s) = subject {
+                    v["subject"] = json!(s);
+                }
+                if let Some(d) = description {
+                    v["description"] = json!(d);
+                }
+                if let Some(o) = owner {
+                    v["owner"] = json!(o);
+                }
+                v
+            }
+            Self::TaskList {
+                status_filter,
+                owner_filter,
+            } => {
+                let mut v = json!({});
+                if let Some(f) = status_filter {
+                    v["status_filter"] = json!(f);
+                }
+                if let Some(f) = owner_filter {
+                    v["owner_filter"] = json!(f);
+                }
+                v
+            }
+            Self::TaskDone { task_id } => json!({ "task_id": task_id }),
             Self::Generic { summary } => {
                 serde_json::from_str(summary).unwrap_or(json!({ "input": summary }))
             }
