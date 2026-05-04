@@ -632,13 +632,39 @@ async fn run(
                     // hit detection would require tracking each message's
                     // y-range during render, which is the next iteration.)
                     MouseEventKind::Down(MouseButton::Left) => {
-                        let in_input = mouse.row as usize
-                            >= app
-                                .viewport_height
-                                .saturating_add(app.scroll_offset)
-                                .saturating_sub(2);
-                        if !in_input {
-                            yank_last_assistant(&app);
+                        // First, see if the click landed on a tool block —
+                        // each visible tool is registered in
+                        // `app.tool_hit_regions` by the renderer. Toggling
+                        // `expanded` flips the body between preview and
+                        // full content. Mirrors v126's per-tool expand
+                        // affordance (cmd-click on iTerm2; we use a plain
+                        // click since non-iTerm terminals don't surface
+                        // the cmd modifier the same way).
+                        let hit = message_view::find_tool_at(
+                            &app.tool_hit_regions.borrow(),
+                            mouse.column,
+                            mouse.row,
+                        )
+                        .map(str::to_owned);
+                        if let Some(tool_id) = hit {
+                            for msg in &mut app.messages {
+                                for part in &mut msg.parts {
+                                    if let MessagePart::Tool(tc) = part {
+                                        if tc.id == tool_id {
+                                            tc.expanded = !tc.expanded;
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            let in_input = mouse.row as usize
+                                >= app
+                                    .viewport_height
+                                    .saturating_add(app.scroll_offset)
+                                    .saturating_sub(2);
+                            if !in_input {
+                                yank_last_assistant(&app);
+                            }
                         }
                     }
                     _ => {}

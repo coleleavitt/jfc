@@ -59,6 +59,17 @@ impl Widget for MessageView<'_> {
                 width,
                 height: render_h,
             };
+            // Record screen rect for any tool block we're about to paint so
+            // the mouse handler can hit-test left clicks against the
+            // currently-visible tools. Tools partially clipped by scroll
+            // still get a hit region for the visible portion — clicking
+            // any visible row of a tool toggles its `expanded` state.
+            if let RenderItem::ToolBlock(tool) = item {
+                self.app
+                    .tool_hit_regions
+                    .borrow_mut()
+                    .push((tool.id.clone(), item_area));
+            }
             item.render_with_skip(item_area, buf, t, item_scroll_skip);
             y += render_h;
             lines_skipped += h;
@@ -1550,6 +1561,21 @@ fn sanitize_terminal_text(input: &str) -> String {
     out
 }
 
+/// Hit-test a list of `(tool_id, screen_rect)` regions against a terminal
+/// cell coordinate. Returns the first tool id whose rect contains the
+/// click, or `None` if the click landed outside every region.
+///
+/// "First match wins" is intentional: tool blocks shouldn't overlap in
+/// practice, but the tie-break is well-defined and stable.
+/// Half-open semantics (`>= x && < x+w`) match ratatui's `Rect::contains`.
+pub fn find_tool_at(regions: &[(String, Rect)], col: u16, row: u16) -> Option<&str> {
+    let pos = ratatui::layout::Position { x: col, y: row };
+    regions
+        .iter()
+        .find(|(_, rect)| rect.contains(pos))
+        .map(|(id, _)| id.as_str())
+}
+
 #[cfg(test)]
 mod diff_lang_tests {
     use super::*;
@@ -1565,9 +1591,6 @@ mod diff_lang_tests {
 
     #[test]
     fn diff_lang_detects_rust_normal() {
-        // Common case: a Rust source file. The returned token must be the
-        // extension so `markdown::highlight_code_raw` can resolve syntect's
-        // Rust syntax via `find_syntax_by_token` / `_by_extension`.
         let lang = diff_lang(&diff_with_path("src/main.rs"));
         assert_eq!(lang.as_deref(), Some("rs"));
     }
@@ -1580,22 +1603,63 @@ mod diff_lang_tests {
 
     #[test]
     fn diff_lang_unknown_returns_none_robust() {
-        // An empty `file_path` has no extension and no filename — should be
-        // None rather than `Some("")`. (A binary `.dat` extension still
-        // resolves to a token; syntect simply falls back to plain text
-        // downstream — that's not this function's concern.)
         let lang = diff_lang(&diff_with_path(""));
         assert_eq!(lang, None);
     }
 
     #[test]
     fn diff_lang_handles_no_extension_robust() {
-        // Files without an extension (Makefile, Dockerfile, Rakefile) fall
-        // back to the lowercased filename so syntect's `find_syntax_by_name`
-        // / `by_token` lookups have a chance. The returned token is the
-        // *filename*, not None — even if syntect can't resolve it, the
-        // highlighter degrades to plain text.
         let lang = diff_lang(&diff_with_path("Makefile"));
         assert_eq!(lang.as_deref(), Some("makefile"));
+    }
+}
+
+#[cfg(test)]
+mod hit_test_tests {
+    use super::*;
+
+    fn r(x: u16, y: u16, w: u16, h: u16) -> Rect {
+        Rect { x, y, width: w, height: h }
+    }
+
+    #[test]
+    fn find_tool_at_inside_rect_normal() {
+        let regions = vec![("tool-1".to_string(), r(0, 0, 10, 3))];
+        assert_eq!(find_tool_at(&regions, 5, 1), Some("tool-1"));
+    }
+
+    #[test]
+    fn find_tool_at_outside_all_rects_normal() {
+        let regions = vec![
+            ("tool-1".to_string(), r(0, 0, 10, 3)),
+            ("tool-2".to_string(), r(0, 5, 10, 3)),
+        ];
+        assert_eq!(find_tool_at(&regions, 5, 4), None);
+        assert_eq!(find_tool_at(&regions, 20, 1), None);
+    }
+
+    #[test]
+    fn find_tool_at_picks_first_match_robust() {
+        let regions = vec![
+            ("first".to_string(), r(0, 0, 10, 5)),
+            ("second".to_string(), r(2, 1, 5, 2)),
+        ];
+        assert_eq!(find_tool_at(&regions, 3, 2), Some("first"));
+    }
+
+    #[test]
+    fn find_tool_at_empty_regions_robust() {
+        let regions: Vec<(String, Rect)> = Vec::new();
+        assert_eq!(find_tool_at(&regions, 0, 0), None);
+        assert_eq!(find_tool_at(&regions, 99, 99), None);
+    }
+
+    #[test]
+    fn find_tool_at_boundary_inclusive_normal() {
+        let regions = vec![("tool".to_string(), r(2, 3, 4, 2))];
+        assert_eq!(find_tool_at(&regions, 2, 3), Some("tool"));
+        assert_eq!(find_tool_at(&regions, 5, 4), Some("tool"));
+        assert_eq!(find_tool_at(&regions, 6, 3), None);
+        assert_eq!(find_tool_at(&regions, 2, 5), None);
     }
 }
