@@ -1,0 +1,292 @@
+//! Git worktree management for jfc.
+//!
+//! This is jfc-side worktree control — a thin wrapper around `git worktree`
+//! plumbing surfaced as `/worktree create|list|remove|switch` slash commands.
+//! It is intentionally separate from the v126 `Agent({isolation:'worktree'})`
+//! pathway (which spawns subagents in their own checkouts via cli.js
+//! teammate-spawn flow). The use case here is the user/model wanting an
+//! isolated branch for a risky multi-file change without trampling the main
+//! checkout.
+//!
+//! Layout: created worktrees live at `<repo_root>/.jfc-worktrees/<name>` and
+//! check out a fresh branch `jfc/<name>`. Removing a worktree only deletes
+//! the working tree directory; the branch itself is left intact so the work
+//! is recoverable via `git switch jfc/<name>` from any other checkout.
+//!
+//! The shell-out functions (`list_worktrees`, `create_worktree`,
+//! `remove_worktree`) intentionally have no unit tests — they invoke real
+//! `git` and depend on an actual repository on disk. Coverage for them lives
+//! in manual / integration testing. The pure helpers (`validate_name`,
+//! `parse_porcelain_output`) are exercised below.
+
+use std::path::Path;
+use std::process::Command;
+
+/// One row from `git worktree list --porcelain`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorktreeInfo {
+    pub path: String,
+    pub branch: String,
+    pub is_current: bool,
+}
+
+/// Validate a worktree name before it reaches `git`. Names become both a
+/// directory under `.jfc-worktrees/` and the leaf of a `jfc/<name>` branch,
+/// so we restrict to `[A-Za-z0-9_-]` to keep both shells and refs happy.
+/// Empty input and inputs over 64 chars are rejected.
+pub fn validate_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("worktree name must not be empty".to_owned());
+    }
+    if name.len() > 64 {
+        return Err(format!(
+            "worktree name must be <= 64 chars (got {})",
+            name.len()
+        ));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(format!(
+            "worktree name `{name}` must match [A-Za-z0-9_-] only \
+             (no slashes, dots, or whitespace)"
+        ));
+    }
+    Ok(())
+}
+
+/// Parse the porcelain output of `git worktree list --porcelain`.
+///
+/// Format (per git-worktree(1)): each entry is a sequence of label/value
+/// lines, terminated by a blank line. The labels we care about:
+///   `worktree <abs-path>`
+///   `HEAD <sha>`
+///   `branch refs/heads/<branch>` — present when checked out on a branch
+///   `detached`                   — present when HEAD is detached
+///   `bare`                       — present for the bare repo entry
+///
+/// We surface `branch` as `(detached)` for detached entries and `(bare)` for
+/// the bare entry so the UI list never has an empty branch column.
+///
+/// `is_current` is left `false` here — porcelain output doesn't mark which
+/// worktree is "current". Callers that need it should compare paths against
+/// their own cwd.
+pub fn parse_porcelain_output(s: &str) -> Vec<WorktreeInfo> {
+    let mut out = Vec::new();
+    let mut path: Option<String> = None;
+    let mut branch: Option<String> = None;
+    let mut detached = false;
+    let mut bare = false;
+
+    let flush =
+        |out: &mut Vec<WorktreeInfo>,
+         path: &mut Option<String>,
+         branch: &mut Option<String>,
+         detached: &mut bool,
+         bare: &mut bool| {
+            if let Some(p) = path.take() {
+                let b = if *bare {
+                    "(bare)".to_owned()
+                } else if *detached {
+                    "(detached)".to_owned()
+                } else {
+                    branch.take().unwrap_or_default()
+                };
+                out.push(WorktreeInfo {
+                    path: p,
+                    branch: b,
+                    is_current: false,
+                });
+            }
+            *branch = None;
+            *detached = false;
+            *bare = false;
+        };
+
+    for line in s.lines() {
+        if line.is_empty() {
+            flush(&mut out, &mut path, &mut branch, &mut detached, &mut bare);
+            continue;
+        }
+        if let Some(p) = line.strip_prefix("worktree ") {
+            path = Some(p.to_owned());
+        } else if let Some(b) = line.strip_prefix("branch refs/heads/") {
+            branch = Some(b.to_owned());
+        } else if let Some(b) = line.strip_prefix("branch ") {
+            // Non-heads ref (e.g. refs/remotes/...). Keep the raw value.
+            branch = Some(b.to_owned());
+        } else if line == "detached" {
+            detached = true;
+        } else if line == "bare" {
+            bare = true;
+        }
+        // `HEAD <sha>` and unknown labels are intentionally skipped.
+    }
+    // Final entry may not be followed by a trailing blank line.
+    flush(&mut out, &mut path, &mut branch, &mut detached, &mut bare);
+    out
+}
+
+/// List all worktrees registered with the repo at `repo_root`. Shells out to
+/// `git worktree list --porcelain` — not unit-tested; see module docs.
+pub fn list_worktrees(repo_root: &Path) -> Result<Vec<WorktreeInfo>, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .arg("worktree")
+        .arg("list")
+        .arg("--porcelain")
+        .output()
+        .map_err(|e| format!("failed to spawn `git worktree list`: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "`git worktree list` failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_porcelain_output(&stdout))
+}
+
+/// Create `<repo_root>/.jfc-worktrees/<name>` checking out a fresh branch
+/// `jfc/<name>`. Validates the name first; surfaces git's stderr on failure.
+/// Shells out — not unit-tested; see module docs.
+pub fn create_worktree(repo_root: &Path, name: &str) -> Result<WorktreeInfo, String> {
+    validate_name(name)?;
+    let rel_path = format!(".jfc-worktrees/{name}");
+    let branch = format!("jfc/{name}");
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .arg("worktree")
+        .arg("add")
+        .arg(&rel_path)
+        .arg("-b")
+        .arg(&branch)
+        .output()
+        .map_err(|e| format!("failed to spawn `git worktree add`: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "`git worktree add` failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let abs_path = repo_root.join(&rel_path).display().to_string();
+    Ok(WorktreeInfo {
+        path: abs_path,
+        branch,
+        is_current: false,
+    })
+}
+
+/// Remove `<repo_root>/.jfc-worktrees/<name>`. The `jfc/<name>` branch is NOT
+/// deleted — the user can still recover the work by checking the branch out
+/// elsewhere. Shells out — not unit-tested; see module docs.
+pub fn remove_worktree(repo_root: &Path, name: &str) -> Result<(), String> {
+    validate_name(name)?;
+    let rel_path = format!(".jfc-worktrees/{name}");
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .arg("worktree")
+        .arg("remove")
+        .arg(&rel_path)
+        .output()
+        .map_err(|e| format!("failed to spawn `git worktree remove`: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "`git worktree remove` failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_name_accepts_normal() {
+        for name in ["feature-x", "x_y", "abc123", "A", "a-_-b"] {
+            assert!(
+                validate_name(name).is_ok(),
+                "expected `{name}` to validate, got {:?}",
+                validate_name(name)
+            );
+        }
+    }
+
+    #[test]
+    fn validate_name_rejects_empty_robust() {
+        let err = validate_name("").expect_err("empty name must be rejected");
+        assert!(
+            err.contains("empty"),
+            "error message should mention empty, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_name_rejects_path_traversal_robust() {
+        for bad in ["../foo", "foo/bar", "foo bar", "..", ".", "a/b/c", "x\ty"] {
+            assert!(
+                validate_name(bad).is_err(),
+                "expected `{bad}` to be rejected as invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_name_rejects_long_robust() {
+        let too_long: String = "a".repeat(65);
+        let err = validate_name(&too_long).expect_err("65-char name must be rejected");
+        assert!(
+            err.contains("64"),
+            "error should reference the 64-char cap, got: {err}"
+        );
+        // Boundary: exactly 64 chars must still be accepted.
+        let ok: String = "a".repeat(64);
+        assert!(
+            validate_name(&ok).is_ok(),
+            "exactly 64 chars should be accepted"
+        );
+    }
+
+    #[test]
+    fn parse_worktree_porcelain_basic_normal() {
+        let blob = "worktree /a\nHEAD abc\nbranch refs/heads/main\n\
+                    \n\
+                    worktree /b\nHEAD def\nbranch refs/heads/feat\n";
+        let got = parse_porcelain_output(blob);
+        assert_eq!(got.len(), 2, "expected 2 entries, got {got:?}");
+        assert_eq!(got[0].path, "/a");
+        assert_eq!(got[0].branch, "main");
+        assert_eq!(got[1].path, "/b");
+        assert_eq!(got[1].branch, "feat");
+    }
+
+    #[test]
+    fn parse_worktree_porcelain_handles_detached_robust() {
+        let blob = "worktree /a\nHEAD abc\ndetached\n";
+        let got = parse_porcelain_output(blob);
+        assert_eq!(got.len(), 1, "detached entry should still produce a row");
+        assert_eq!(got[0].path, "/a");
+        assert_eq!(
+            got[0].branch, "(detached)",
+            "detached HEAD should surface as `(detached)`"
+        );
+    }
+
+    #[test]
+    fn parse_worktree_porcelain_empty_input_robust() {
+        assert!(
+            parse_porcelain_output("").is_empty(),
+            "empty input must produce empty vec"
+        );
+        assert!(
+            parse_porcelain_output("\n\n\n").is_empty(),
+            "whitespace-only input must produce empty vec"
+        );
+    }
+}
