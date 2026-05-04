@@ -641,6 +641,36 @@ mod tests {
         assert!(pos_a < pos_b, "skill 'a' must appear before skill 'b'");
     }
 
+    // Normal: an exact lowercase match returns the matching skill.
+    #[test]
+    fn find_skill_by_name_exact_normal() {
+        let skills = vec![make_skill("explain", ""), make_skill("review", "")];
+        let hit = find_skill_by_name(&skills, "explain").expect("found");
+        assert_eq!(hit.name, "explain");
+    }
+
+    // Robust: lookup is case-insensitive — "EXPLAIN" still finds "explain".
+    #[test]
+    fn find_skill_by_name_case_insensitive_robust() {
+        let skills = vec![make_skill("explain", "")];
+        let hit = find_skill_by_name(&skills, "EXPLAIN").expect("found");
+        assert_eq!(hit.name, "explain");
+    }
+
+    // Robust: a name that doesn't match any loaded skill returns None rather
+    // than a misleading partial hit.
+    #[test]
+    fn find_skill_by_name_unknown_returns_none_robust() {
+        let skills = vec![make_skill("explain", "")];
+        assert!(find_skill_by_name(&skills, "unknown-skill").is_none());
+    }
+
+    // Robust: an empty skills list returns None (no panic, no out-of-bounds).
+    #[test]
+    fn find_skill_by_name_empty_list_returns_none_robust() {
+        assert!(find_skill_by_name(&[], "anything").is_none());
+    }
+
     // Normal: PermissionMode round-trips through serde for all variants.
     #[test]
     fn permission_mode_serde_roundtrip_normal() {
