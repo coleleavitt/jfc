@@ -134,6 +134,54 @@ pub fn load_skills(project_root: &Path) -> Vec<Skill> {
     out
 }
 
+/// Render the loaded skills as a Markdown listing for injection into the
+/// system prompt. The model needs to know skills exist before it can ask to
+/// invoke them — this is the discovery surface.
+///
+/// Format (matches v126's cli.js:48850 listing, lighter cap):
+///
+/// ```text
+/// ## Available skills
+///
+/// - `skill-name` — short description
+/// - `another-skill` — …
+/// ```
+///
+/// Description is capped at 200 chars (with `…` ellipsis on overflow) to
+/// keep per-turn token cost low — we re-inject on every stream call so
+/// every char compounds. v126 uses 1536 because their listing is cached;
+/// jfc's isn't yet.
+///
+/// Returns `""` when `skills` is empty so callers can unconditionally
+/// `push_str` the result.
+pub(crate) fn render_skills_section(skills: &[Skill]) -> String {
+    if skills.is_empty() {
+        return String::new();
+    }
+    const MAX_DESC_CHARS: usize = 200;
+    let mut out = String::from("\n\n## Available skills\n\n");
+    for skill in skills {
+        match &skill.description {
+            Some(desc) if !desc.is_empty() => {
+                // Char-aware truncation — UTF-8 boundaries matter, and
+                // .len() would count bytes not characters.
+                let trimmed: String = if desc.chars().count() > MAX_DESC_CHARS {
+                    let mut s: String = desc.chars().take(MAX_DESC_CHARS).collect();
+                    s.push('…');
+                    s
+                } else {
+                    desc.clone()
+                };
+                out.push_str(&format!("- `{}` — {}\n", skill.name, trimmed));
+            }
+            _ => {
+                out.push_str(&format!("- `{}`\n", skill.name));
+            }
+        }
+    }
+    out
+}
+
 /// Same precedence rules as `load_skills`, but for agent definitions.
 pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
     let mut out: Vec<AgentDef> = Vec::new();
@@ -325,6 +373,86 @@ mod tests {
         let (front, body) = split_frontmatter(raw);
         assert_eq!(front, Some("key: value"));
         assert_eq!(body, "body");
+    }
+
+    // Helper: build a Skill with a fixed name/description, no body, dummy
+    // source path. Keeps test bodies tight.
+    fn skill(name: &str, description: Option<&str>) -> Skill {
+        Skill {
+            name: name.to_owned(),
+            source: PathBuf::from("/x/skills/x.md"),
+            description: description.map(str::to_owned),
+            body: String::new(),
+        }
+    }
+
+    // Normal: an empty slice yields the empty string so callers can
+    // unconditionally `push_str` the result without polluting the prompt
+    // with a header that has no items beneath it.
+    #[test]
+    fn render_skills_section_empty_returns_empty_normal() {
+        assert_eq!(render_skills_section(&[]), "");
+    }
+
+    // Normal: each skill renders as a single bullet line containing the
+    // backticked name, an em-dash separator, and the description.
+    #[test]
+    fn render_skills_section_renders_each_skill_normal() {
+        let skills = vec![
+            skill("first", Some("does the first thing")),
+            skill("second", Some("does the second thing")),
+        ];
+        let out = render_skills_section(&skills);
+        assert!(out.contains("- `first` — does the first thing\n"));
+        assert!(out.contains("- `second` — does the second thing\n"));
+        // Two lines for the two skills, plus header lines.
+        assert_eq!(out.matches("\n- `").count(), 2);
+    }
+
+    // Normal: the rendered block leads with the `## Available skills`
+    // header so the model can find it by section name.
+    #[test]
+    fn render_skills_section_starts_with_header_normal() {
+        let out = render_skills_section(&[skill("only", Some("only one"))]);
+        let first_lines: Vec<&str> = out.lines().take(4).collect();
+        assert!(
+            first_lines.iter().any(|l| l.contains("## Available skills")),
+            "header missing from first 4 lines: {first_lines:?}"
+        );
+    }
+
+    // Robust: a 500-char description is truncated to 200 chars + a single
+    // ellipsis. The cap is char-based, not byte-based.
+    #[test]
+    fn render_skills_section_truncates_long_description_robust() {
+        let long: String = "a".repeat(500);
+        let out = render_skills_section(&[skill("big", Some(&long))]);
+        // Find the line for our skill.
+        let line = out
+            .lines()
+            .find(|l| l.starts_with("- `big`"))
+            .expect("line for `big` skill");
+        // Strip the leading `- \`big\` — ` prefix to isolate the description.
+        let desc = line.strip_prefix("- `big` — ").expect("desc prefix");
+        assert!(
+            desc.ends_with('…'),
+            "expected ellipsis suffix, got {desc:?}"
+        );
+        // 200 a's plus the ellipsis = 201 chars.
+        assert_eq!(desc.chars().count(), 201);
+    }
+
+    // Robust: a skill with `description: None` renders as a bare bullet —
+    // no em-dash, no trailing whitespace, no panic.
+    #[test]
+    fn render_skills_section_handles_no_description_robust() {
+        let out = render_skills_section(&[skill("naked", None)]);
+        assert!(out.contains("- `naked`\n"));
+        // Must NOT contain the em-dash separator for this entry.
+        assert!(
+            !out.contains("- `naked` —"),
+            "naked skill should not have a dash: {out:?}"
+        );
     }
 
     // Normal: PermissionMode round-trips through serde for all variants.

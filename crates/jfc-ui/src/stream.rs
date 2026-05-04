@@ -157,6 +157,16 @@ pub async fn stream_response(
             system_prompt.push_str("\n\n");
             system_prompt.push_str(&layered);
         }
+
+        // v126 skills listing — discovery surface for the model. Loaded on
+        // every stream call so newly-added skills (or edited descriptions)
+        // take effect on the next turn, matching cli.js:151-160's per-stream
+        // re-read pattern.
+        let skills = crate::agents::load_skills(&cwd_path);
+        let block = crate::agents::render_skills_section(&skills);
+        if !block.is_empty() {
+            system_prompt.push_str(&block);
+        }
     }
     let opts = StreamOptions::new(model)
         .system(system_prompt)
