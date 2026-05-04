@@ -363,6 +363,17 @@ pub struct App {
     pub leader_key_active: bool,
     pub leader_key_timeout: Option<std::time::Instant>,
     pub viewing_task_id: Option<String>,
+    /// Set of `BackgroundTask.messages` indices the user expanded with `o`
+    /// while drilled into the subagent task view. Long entries (>80 lines or
+    /// >5 KB) collapse to a 5-line preview by default; presence in this set
+    /// flips them to fully expanded. Cleared whenever `viewing_task_id`
+    /// changes so expansion state is per-drill-in, not sticky across tasks.
+    ///
+    /// TODO Phase B: once `BackgroundTask.messages` migrates to
+    /// `Vec<ChatMessage>` and the subagent view renders through the same
+    /// `MessageView` pipeline as the main chat, this field collapses into
+    /// per-`ToolCall.is_collapsed` state and can be removed.
+    pub viewing_task_expanded: std::collections::HashSet<usize>,
     /// Drained at submit time; future Ctrl+V handlers push here. Anthropic
     /// content-block conversion happens at provider-message-build time.
     pub pending_attachments: Vec<crate::attachments::Attachment>,
@@ -475,6 +486,7 @@ impl App {
             leader_key_active: false,
             leader_key_timeout: None,
             viewing_task_id: None,
+            viewing_task_expanded: std::collections::HashSet::new(),
             pending_attachments: Vec::new(),
             tool_hit_regions: RefCell::new(Vec::new()),
         };
@@ -498,6 +510,7 @@ impl App {
         self.task_panel_selected = 0;
         self.task_panel_state = ratatui::widgets::TableState::default().with_selected(Some(0));
         self.viewing_task_id = None;
+        self.viewing_task_expanded.clear();
     }
 
     pub fn scroll_to_bottom(&mut self) {

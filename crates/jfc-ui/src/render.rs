@@ -859,8 +859,80 @@ fn message_view_total_lines(app: &App, inner_width: usize) -> usize {
     total
 }
 
+/// Per-entry collapse threshold for the subagent task view. A single
+/// `BackgroundTask.messages[i]` longer than this (line count) renders as a
+/// 5-line preview + a muted "press o to expand" footer until the user toggles
+/// it via `viewing_task_expanded`. Smaller than `LargeText::COLLAPSE_LINES`
+/// because subagent entries are *individual* turn outputs, not whole tool
+/// results — 80 lines is already a wall in a narrow drilled-in pane.
+pub(crate) const TASK_VIEW_COLLAPSE_LINES: usize = 80;
+/// Per-entry byte threshold for the subagent task view. Mirrors the line
+/// threshold's reasoning at 5 KB — typical 200-line file dumps blow past this
+/// long before they hit `LargeText`'s 30 KB ceiling.
+pub(crate) const TASK_VIEW_COLLAPSE_BYTES: usize = 5 * 1024;
+/// Number of leading lines preserved when an entry collapses. Mirrors v126's
+/// `Read` tool preview length so the user gets enough context to decide
+/// whether to expand.
+const TASK_VIEW_COLLAPSE_PREVIEW_LINES: usize = 5;
+
+/// Render `BackgroundTask.messages` to ratatui `Line`s the same way the main
+/// chat handles assistant text: each raw string flows through
+/// `markdown::to_lines`, which calls `strip_inline_tool_xml` internally so
+/// `<tool_call>…</tool_call>` and `<tool_result>…</tool_result>` markers
+/// don't bleed into the screen as literal angle brackets, and code fences
+/// pick up syntect highlighting.
+///
+/// Long entries (>80 lines or >5 KB raw) collapse to a 5-line preview + a
+/// muted `… N more lines · press o to expand` row unless their index is in
+/// `expanded`. Pure function so tests can assert behavior without standing
+/// up a `Frame`/`Buffer`.
+///
+/// TODO Phase B: when `BackgroundTask.messages` migrates to
+/// `Vec<ChatMessage>`, this helper collapses into the same `MessageView`
+/// pipeline the main chat uses, picking up tool blocks, reasoning collapse,
+/// and diff rendering for free.
+pub(crate) fn task_view_body_lines(
+    messages: &[String],
+    expanded: &std::collections::HashSet<usize>,
+    theme: &Theme,
+    inner_width: usize,
+) -> Vec<Line<'static>> {
+    let mut out: Vec<Line<'static>> = Vec::new();
+    for (idx, raw) in messages.iter().enumerate() {
+        let line_count = raw.lines().count();
+        let collapsible = line_count > TASK_VIEW_COLLAPSE_LINES
+            || raw.len() > TASK_VIEW_COLLAPSE_BYTES;
+        let is_expanded = expanded.contains(&idx);
+
+        if collapsible && !is_expanded {
+            // Truncate the raw string to the first N lines *before* feeding
+            // it to the markdown renderer — letting `to_lines` produce 80
+            // wrapped lines and then slicing produces visually-broken
+            // output (e.g. half a code fence). Slicing the source keeps
+            // markdown structure intact.
+            let preview: String = raw
+                .lines()
+                .take(TASK_VIEW_COLLAPSE_PREVIEW_LINES)
+                .collect::<Vec<_>>()
+                .join("\n");
+            let mut preview_lines = markdown::to_lines(&preview, theme, inner_width);
+            out.append(&mut preview_lines);
+            let hidden = line_count.saturating_sub(TASK_VIEW_COLLAPSE_PREVIEW_LINES);
+            out.push(Line::from(Span::styled(
+                format!("… {hidden} more lines · press o to expand"),
+                Style::default().fg(theme.text_muted),
+            )));
+        } else {
+            let mut lines = markdown::to_lines(raw, theme, inner_width);
+            out.append(&mut lines);
+        }
+    }
+    out
+}
+
 fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
     let t = app.theme;
+    let inner_width = area.width.saturating_sub(2) as usize;
 
     let (title_str, body_lines) = match app.background_tasks.get(task_id) {
         None => (format!("task {task_id} (not found)"), Vec::new()),
@@ -870,16 +942,12 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
                 &bt.task_id[..bt.task_id.len().min(12)],
                 bt.description
             );
-            let lines: Vec<Line<'static>> = bt
-                .messages
-                .iter()
-                .map(|m| {
-                    Line::from(Span::styled(
-                        m.clone(),
-                        Style::default().fg(t.text_secondary),
-                    ))
-                })
-                .collect();
+            let lines = task_view_body_lines(
+                &bt.messages,
+                &app.viewing_task_expanded,
+                &t,
+                inner_width,
+            );
             (title, lines)
         }
     };
@@ -2313,6 +2381,142 @@ fn render_choice_list(
         })
         .collect();
     f.render_widget(List::new(items).style(Style::default().bg(t.surface)), area);
+}
+
+#[cfg(test)]
+mod task_view_tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// Flatten a `Line` to plain string for substring assertions —
+    /// markdown::to_lines produces multi-span lines (syntect highlighting),
+    /// so we can't assert on a single span's `.content`.
+    fn line_text(l: &Line<'_>) -> String {
+        l.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn markdown_renders_xml_stripped_in_task_view_normal() {
+        // The bug: subagent view was rendering `<tool_call>{...}</tool_call>`
+        // as literal angle brackets. Routing through `markdown::to_lines`
+        // (which calls `strip_inline_tool_xml`) replaces them with the
+        // `⟪tool_call⟫` marker so users see structure, not raw XML.
+        let theme = Theme::dark();
+        let messages = vec![
+            "Before <tool_call>{\"name\":\"foo\"}</tool_call> after".to_string(),
+        ];
+        let expanded = HashSet::new();
+        let lines = task_view_body_lines(&messages, &expanded, &theme, 80);
+        let joined: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(
+            !joined.contains("<tool_call>"),
+            "literal <tool_call> should be stripped, got: {joined}"
+        );
+        assert!(
+            !joined.contains("</tool_call>"),
+            "literal </tool_call> should be stripped, got: {joined}"
+        );
+        assert!(
+            joined.contains("⟪tool_call⟫"),
+            "expected the strip marker in output, got: {joined}"
+        );
+    }
+
+    #[test]
+    fn long_message_collapses_normal() {
+        // 100-line entry → preview (5 lines) + 1 muted footer row when
+        // collapsed; full content when the index is in `expanded`.
+        let theme = Theme::dark();
+        let body: String = (1..=100)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let messages = vec![body];
+
+        let collapsed_lines = task_view_body_lines(
+            &messages,
+            &HashSet::new(),
+            &theme,
+            80,
+        );
+        let collapsed_text: String = collapsed_lines
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            collapsed_text.contains("press o to expand"),
+            "collapsed view should show expansion hint, got: {collapsed_text}"
+        );
+        assert!(
+            collapsed_text.contains("line 1"),
+            "collapsed view should include first preview line"
+        );
+        assert!(
+            collapsed_text.contains("line 5"),
+            "collapsed view should include 5th preview line"
+        );
+        assert!(
+            !collapsed_text.contains("line 50"),
+            "collapsed view should hide line 50, got: {collapsed_text}"
+        );
+        assert!(
+            !collapsed_text.contains("line 100"),
+            "collapsed view should hide tail content"
+        );
+
+        let mut expanded = HashSet::new();
+        expanded.insert(0);
+        let expanded_lines = task_view_body_lines(&messages, &expanded, &theme, 80);
+        let expanded_text: String = expanded_lines
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            expanded_text.contains("line 1"),
+            "expanded view should include first line"
+        );
+        assert!(
+            expanded_text.contains("line 50"),
+            "expanded view should include middle line"
+        );
+        assert!(
+            expanded_text.contains("line 100"),
+            "expanded view should include last line"
+        );
+        assert!(
+            !expanded_text.contains("press o to expand"),
+            "expanded view should not show the collapse hint"
+        );
+    }
+
+    #[test]
+    fn short_message_passes_through_untouched_robust() {
+        // Below the line/byte threshold → no preview truncation, no
+        // expansion footer, just whatever markdown::to_lines produced.
+        let theme = Theme::dark();
+        let messages = vec!["just one short line".to_string()];
+        let lines = task_view_body_lines(&messages, &HashSet::new(), &theme, 80);
+        let joined: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(joined.contains("just one short line"));
+        assert!(!joined.contains("press o to expand"));
+    }
+
+    #[test]
+    fn large_byte_payload_collapses_even_without_many_lines_robust() {
+        // A single >5 KB line still trips the byte threshold even though
+        // the line count is 1 — guards against unwrapped JSON dumps.
+        let theme = Theme::dark();
+        let big = "x".repeat(TASK_VIEW_COLLAPSE_BYTES + 100);
+        let messages = vec![big];
+        let lines = task_view_body_lines(&messages, &HashSet::new(), &theme, 80);
+        let joined: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(
+            joined.contains("press o to expand"),
+            "byte-threshold trip should show expansion hint"
+        );
+    }
 }
 
 #[cfg(test)]
