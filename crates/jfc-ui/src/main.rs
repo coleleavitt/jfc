@@ -1162,12 +1162,18 @@ async fn run(
                     let provider = Arc::clone(&app.provider);
                     let model = app.model.clone();
                     let mut tool_ctx = app.tool_ctx.clone();
+                    let window = app.max_context_tokens;
                     let tx_compact = tx.clone();
                     tokio::spawn(async move {
                         let options = provider::StreamOptions::new(model);
-                        let result =
-                            compact::compact(&messages, provider.as_ref(), &options, &mut tool_ctx)
-                                .await;
+                        let result = compact::compact(
+                            &messages,
+                            provider.as_ref(),
+                            &options,
+                            &mut tool_ctx,
+                            window,
+                        )
+                        .await;
                         match result {
                             compact::CompactResult::Success {
                                 messages,
@@ -1221,7 +1227,12 @@ async fn run(
                     drain_queued_prompts(&mut app, &tx).await;
                 }
             }
-            AppEvent::CompactionStarted => {}
+            AppEvent::CompactionStarted => {
+                // Drives the `Compacting…` spinner — without this, the UI
+                // freezes on a long pre-submit compact and the user
+                // assumes their keystroke was eaten.
+                app.compacting_started_at = Some(std::time::Instant::now());
+            }
             AppEvent::CompactionDone {
                 messages,
                 tool_ctx,
@@ -1232,6 +1243,7 @@ async fn run(
                 app.messages = messages;
                 app.tool_ctx = tool_ctx;
                 app.tool_ctx.approx_tokens = post_tokens;
+                app.compacting_started_at = None;
                 // Surface the compaction outcome to the user via a toast
                 // — they don't have to scroll to see the boundary marker.
                 let saved_k = saved / 1000;
@@ -1244,6 +1256,7 @@ async fn run(
                 );
             }
             AppEvent::CompactionFailed(reason) => {
+                app.compacting_started_at = None;
                 toast::push_with_cap(
                     &mut app.toasts,
                     toast::Toast::new(

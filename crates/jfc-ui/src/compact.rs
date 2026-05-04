@@ -193,6 +193,7 @@ pub async fn compact(
     provider: &dyn Provider,
     options: &StreamOptions,
     tool_ctx: &mut ToolContext,
+    window: usize,
 ) -> CompactResult {
     if tool_ctx.rapid_refill_count >= CIRCUIT_BREAKER_LIMIT {
         return CompactResult::CircuitBreakerTripped;
@@ -250,6 +251,27 @@ pub async fn compact(
                 compacted.extend(to_preserve);
 
                 let post_tokens = estimate_tokens(&compacted);
+
+                // If the preserved groups still push us past the blocked
+                // threshold, the summary itself didn't help — the recent
+                // group's tool outputs are too big to keep verbatim. Drop
+                // a preserved group and retry. Without this, a session
+                // with a huge final assistant message (e.g. resumed from
+                // a long agentic batch with multi-tens-of-KB Read outputs)
+                // gets stuck in a compact-resubmit loop because each
+                // pass produces a Success that's still over Blocked.
+                let blocked = blocked_override()
+                    .unwrap_or_else(|| window.saturating_sub(BLOCKED_HEADROOM));
+                if post_tokens >= blocked && preserve_count > 0 {
+                    tracing::info!(
+                        target: "jfc::compact",
+                        post_tokens, blocked, preserve_count,
+                        "post-compact still blocked — dropping a preserved group and retrying"
+                    );
+                    preserve_count -= 1;
+                    strip_media = true;
+                    continue;
+                }
 
                 let user_turns_since = count_user_turns_since_last_compact(&compacted);
                 if user_turns_since <= THRASH_TURN_WINDOW {

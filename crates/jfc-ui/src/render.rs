@@ -40,7 +40,11 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // Spinner: 1 row for the verb status alone, 2 rows when there's
     // either a `Next: <task>` subject OR a `Tip:` fallback to surface.
     // Always reserve 2 rows when streaming so the tip cycles visibly.
-    let spinner_row_height: u16 = if app.is_streaming { 2 } else { 0 };
+    // Spinner is also shown during pre-submit / `/compact` compaction so a
+    // long compact request doesn't read as a frozen UI. v126 cli.js does
+    // the same — the spinner verb just changes to "Compacting".
+    let show_spinner = app.is_streaming || app.compacting_started_at.is_some();
+    let spinner_row_height: u16 = if show_spinner { 2 } else { 0 };
     // Diagnostic summary row — only shown when there are *new*
     // (unacknowledged) entries. v126 cli.js:231025-231036 keeps a
     // per-URI "delivered" set; entries already shown to the user don't
@@ -108,7 +112,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     if unack_count > 0 {
         diagnostic_row(f, app, chunks[2]);
     }
-    if app.is_streaming {
+    if show_spinner {
         spinner_row(f, app, chunks[3]);
     }
     input(f, app, chunks[4]);
@@ -1301,29 +1305,41 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
     }
     let t = app.theme;
     let now = std::time::Instant::now();
-    // Prefer the user-turn clock so a multi-step agentic loop reads
-    // cumulative time, not just the current sub-stream's age. Fall back
-    // to `streaming_started_at` for the brief first frame after submit
-    // before the agentic gate updates the turn clock.
-    let elapsed = app
-        .turn_started_at
-        .or(app.streaming_started_at)
-        .map(|t| now.duration_since(t))
-        .unwrap_or_default();
-    let stall = app
-        .streaming_last_token_at
-        .map(|t| now.duration_since(t))
-        .unwrap_or_default();
-    // Anthropic SSE pushes cumulative `output_tokens` in every
-    // `message_delta` event (sse.rs:212-218 → AppEvent::StreamUsage →
-    // app.last_usage_output) — wire-truth, no estimation needed. OWUI /
-    // OpenAI providers only emit usage at `message_stop`; for those the
-    // wire value stays 0 mid-stream, so we fall back to chars/4 of the
-    // streamed text + reasoning. The first non-zero wire value beats the
-    // estimate; once the wire stops moving we keep the last known count.
-    let estimate = (app.streaming_text.len() + app.streaming_reasoning.len()) as u64 / 4;
-    let live_tokens = crate::spinner::live_token_count(app.last_usage_output as u64, estimate);
-    let body = crate::spinner::format_status(app.spinner_frame, elapsed, live_tokens, stall);
+    // Compaction takes precedence — a compact request runs to completion
+    // before the user's submit ever fires the actual stream, so during
+    // that window the spinner should read `Compacting…`, not a stale
+    // `Fermenting…` from the previous turn.
+    let row1_elapsed: std::time::Duration;
+    let body = if let Some(started) = app.compacting_started_at {
+        let elapsed = now.duration_since(started);
+        row1_elapsed = elapsed;
+        crate::spinner::format_compact_status(app.spinner_frame, elapsed)
+    } else {
+        // Prefer the user-turn clock so a multi-step agentic loop reads
+        // cumulative time, not just the current sub-stream's age. Fall back
+        // to `streaming_started_at` for the brief first frame after submit
+        // before the agentic gate updates the turn clock.
+        let elapsed = app
+            .turn_started_at
+            .or(app.streaming_started_at)
+            .map(|t| now.duration_since(t))
+            .unwrap_or_default();
+        let stall = app
+            .streaming_last_token_at
+            .map(|t| now.duration_since(t))
+            .unwrap_or_default();
+        // Anthropic SSE pushes cumulative `output_tokens` in every
+        // `message_delta` event (sse.rs:212-218 → AppEvent::StreamUsage →
+        // app.last_usage_output) — wire-truth, no estimation needed. OWUI /
+        // OpenAI providers only emit usage at `message_stop`; for those the
+        // wire value stays 0 mid-stream, so we fall back to chars/4 of the
+        // streamed text + reasoning. The first non-zero wire value beats the
+        // estimate; once the wire stops moving we keep the last known count.
+        let estimate = (app.streaming_text.len() + app.streaming_reasoning.len()) as u64 / 4;
+        let live_tokens = crate::spinner::live_token_count(app.last_usage_output as u64, estimate);
+        row1_elapsed = elapsed;
+        crate::spinner::format_status(app.spinner_frame, elapsed, live_tokens, stall)
+    };
     // Multi-agent fanout: when one or more background subagents are
     // running concurrently, append `· N agents…` to the spinner so the
     // user knows there's parallel work happening. Mirrors v126's
@@ -1369,7 +1385,7 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         } else {
             (
                 "  □ Tip: ".to_string(),
-                crate::spinner::tip_for(elapsed).to_string(),
+                crate::spinner::tip_for(row1_elapsed).to_string(),
             )
         };
         let max_body = (area.width as usize).saturating_sub(prefix.chars().count() + 1);

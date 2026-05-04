@@ -251,6 +251,12 @@ pub struct App {
     /// regardless of token level. Cleared after the compact runs (success or
     /// not) so a single `/compact` invocation triggers exactly one attempt.
     pub force_compact_pending: bool,
+    /// Wall-clock instant the current compaction started. `Some` while a
+    /// compact request is in flight (set on `CompactionStarted`, cleared on
+    /// `CompactionDone`/`CompactionFailed`). The renderer shows a
+    /// `Compacting…` spinner whenever this is `Some`, so a long pre-submit
+    /// compaction doesn't look like a frozen UI.
+    pub compacting_started_at: Option<Instant>,
     /// Set each frame by the renderer. Used for page-scroll math.
     pub viewport_height: usize,
     pub input_wrap_width: usize,
@@ -440,6 +446,7 @@ impl App {
             dedup_cache: Arc::new(Mutex::new(ReadDedupCache::new())),
             pending_tool_calls: Vec::new(),
             force_compact_pending: false,
+            compacting_started_at: None,
             max_context_tokens: DEFAULT_CONTEXT_WINDOW_TOKENS,
             viewport_height: 0,
             input_wrap_width: 1,

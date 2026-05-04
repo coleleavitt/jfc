@@ -230,6 +230,19 @@ pub fn format_status(
     )
 }
 
+/// Compact-mode spinner body. v126 cli.js renders a single fixed verb
+/// (`Compacting`) with the elapsed timer — no token counter, since the
+/// summarization request only emits a final assistant message and there's
+/// no incremental output to surface. Mirrors v126's
+/// `setStreamMode("compacting")` UI in cli.js.
+pub fn format_compact_status(tick: usize, elapsed: Duration) -> String {
+    format!(
+        "{} Compacting… ({})",
+        frame_for(tick),
+        fmt_elapsed(elapsed),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

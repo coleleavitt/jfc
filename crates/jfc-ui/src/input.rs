@@ -1158,14 +1158,20 @@ async fn handle_submit(
         let provider = Arc::clone(&app.provider);
         let model = app.model.clone();
         let mut tool_ctx = app.tool_ctx.clone();
+        let window = app.max_context_tokens;
         let tx_pre = tx.clone();
         let user_text = text.clone();
         let _ = tx_pre.send(crate::app::AppEvent::CompactionStarted);
         tokio::spawn(async move {
             let options = crate::provider::StreamOptions::new(model);
-            let result =
-                crate::compact::compact(&messages, provider.as_ref(), &options, &mut tool_ctx)
-                    .await;
+            let result = crate::compact::compact(
+                &messages,
+                provider.as_ref(),
+                &options,
+                &mut tool_ctx,
+                window,
+            )
+            .await;
             match result {
                 crate::compact::CompactResult::Success {
                     messages,
