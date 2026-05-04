@@ -287,6 +287,12 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
             }
         }
 
+        let total = crate::cost::total_cost(&app.usage_by_model);
+        lines.push(Line::from(vec![Span::styled(
+            format!("Total cost: {}", crate::cost::fmt_cost(total)),
+            Style::default().fg(t.text_muted),
+        )]));
+
         lines.push(Line::from(""));
     }
 
