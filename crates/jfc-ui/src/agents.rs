@@ -69,7 +69,47 @@ pub struct AgentDef {
     pub background: Option<bool>,
     #[serde(default)]
     pub color: Option<String>,
+    /// OpenAI reasoning_effort knob (cli.js:225236-225238). Untyped at the
+    /// agent layer — providers translate.
+    #[serde(default)]
+    pub effort: Option<Effort>,
+    /// Upper bound on agentic-loop iterations (cli.js:225244). Used by the
+    /// dispatcher to fail-safe a runaway agent.
+    #[serde(default, rename = "maxTurns")]
+    pub max_turns: Option<u32>,
+    /// Memory scope for stored snippets (cli.js:225233). `user` = global,
+    /// `project` = .claude/memory/, `local` = ephemeral.
+    #[serde(default)]
+    pub memory: Option<MemoryScope>,
+    /// MCP servers this agent has permission to talk to (cli.js:225242).
+    /// Just a name list — enforcement lives in the MCP dispatcher.
+    #[serde(default, rename = "mcpServers")]
+    pub mcp_servers: Vec<String>,
+    /// Pre/post hooks keyed by event name (cli.js:225242). Values are
+    /// shell commands. `pre-edit`, `post-test`, `pre-bash`, etc.
+    #[serde(default)]
+    pub hooks: std::collections::HashMap<String, Vec<String>>,
     pub system_prompt: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Effort {
+    Minimal,
+    Low,
+    Medium,
+    High,
+    /// `xhigh` (rather than `x_high`) matches v126's serialized form.
+    #[serde(rename = "xhigh")]
+    XHigh,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryScope {
+    User,
+    Project,
+    Local,
 }
 
 /// v126 permission modes — controls how tool calls are gated. `Auto` = LLM
@@ -210,6 +250,11 @@ fn parse_agent(path: &Path, raw: &str) -> Option<AgentDef> {
         forks_parent_context: parsed.forks_parent_context,
         background: parsed.background,
         color: parsed.color,
+        effort: parsed.effort,
+        max_turns: parsed.max_turns,
+        memory: parsed.memory,
+        mcp_servers: parsed.mcp_servers.unwrap_or_default(),
+        hooks: parsed.hooks.unwrap_or_default(),
         system_prompt: body.trim().to_owned(),
     })
 }
@@ -258,6 +303,16 @@ struct AgentFront {
     background: Option<bool>,
     #[serde(default)]
     color: Option<String>,
+    #[serde(default)]
+    effort: Option<Effort>,
+    #[serde(default, rename = "maxTurns")]
+    max_turns: Option<u32>,
+    #[serde(default)]
+    memory: Option<MemoryScope>,
+    #[serde(default, rename = "mcpServers")]
+    mcp_servers: Option<Vec<String>>,
+    #[serde(default)]
+    hooks: Option<std::collections::HashMap<String, Vec<String>>>,
 }
 
 #[cfg(test)]
@@ -343,5 +398,93 @@ mod tests {
             let parsed: PermissionMode = serde_yaml::from_str(&format!("---\n{expected}")).unwrap();
             assert_eq!(parsed, mode);
         }
+    }
+
+    #[test]
+    fn parse_agent_full_v126_frontmatter_normal() {
+        // Every new field at once — confirms `effort`/`maxTurns`/`memory`/
+        // `mcpServers`/`hooks` all land via the existing parse path. v126
+        // schema reference: cli.js:225207-225281.
+        let raw = "---\n\
+            name: deep-thinker\n\
+            model: claude-opus-4-7\n\
+            effort: high\n\
+            maxTurns: 25\n\
+            memory: project\n\
+            mcpServers:\n  - github\n  - search\n\
+            hooks:\n  pre-edit:\n    - ./scripts/lint.sh\n  post-test:\n    - echo done\n\
+            ---\nYou are a deep thinker.";
+        let agent = parse_agent(Path::new("/x/agents/dt.md"), raw).expect("parsed");
+        assert_eq!(agent.effort, Some(Effort::High));
+        assert_eq!(agent.max_turns, Some(25));
+        assert_eq!(agent.memory, Some(MemoryScope::Project));
+        assert_eq!(agent.mcp_servers, vec!["github", "search"]);
+        assert_eq!(
+            agent.hooks.get("pre-edit").map(|v| v.as_slice()),
+            Some(&["./scripts/lint.sh".to_string()][..])
+        );
+        assert!(agent.system_prompt.contains("deep thinker"));
+    }
+
+    #[test]
+    fn effort_xhigh_renames_normal() {
+        // v126 emits `xhigh` as one token, not `x_high` like serde's
+        // default kebab-from-PascalCase rename would produce. Pin the
+        // explicit `#[serde(rename = "xhigh")]` so a future cleanup
+        // doesn't regress to the snake-cased form.
+        let parsed: Effort = serde_yaml::from_str("xhigh").unwrap();
+        assert_eq!(parsed, Effort::XHigh);
+        let serialized = serde_yaml::to_string(&Effort::XHigh).unwrap();
+        assert!(serialized.contains("xhigh"), "got: {serialized}");
+    }
+
+    #[test]
+    fn effort_all_levels_round_trip_normal() {
+        for (level, expected) in [
+            (Effort::Minimal, "minimal"),
+            (Effort::Low, "low"),
+            (Effort::Medium, "medium"),
+            (Effort::High, "high"),
+            (Effort::XHigh, "xhigh"),
+        ] {
+            let s = serde_yaml::to_string(&level).unwrap();
+            assert!(s.trim().contains(expected), "{level:?} → {s:?}");
+        }
+    }
+
+    #[test]
+    fn memory_scopes_all_three_parse_normal() {
+        for (s, expected) in [
+            ("user", MemoryScope::User),
+            ("project", MemoryScope::Project),
+            ("local", MemoryScope::Local),
+        ] {
+            let parsed: MemoryScope = serde_yaml::from_str(s).unwrap();
+            assert_eq!(parsed, expected);
+        }
+    }
+
+    #[test]
+    fn parse_agent_minimal_defaults_new_fields_robust() {
+        // Only `name` set — every new field defaults to None / empty.
+        let raw = "---\nname: bare\n---\nbody";
+        let agent = parse_agent(Path::new("/x/bare.md"), raw).expect("parsed");
+        assert_eq!(agent.effort, None);
+        assert_eq!(agent.max_turns, None);
+        assert_eq!(agent.memory, None);
+        assert!(agent.mcp_servers.is_empty());
+        assert!(agent.hooks.is_empty());
+    }
+
+    #[test]
+    fn unknown_effort_value_returns_none_robust() {
+        // A typo'd effort like `ultra` (not in the enum) shouldn't
+        // crash the loader — `parse_agent` returns None for the
+        // whole file when its frontmatter fails to parse, so the
+        // bad agent is silently skipped rather than poisoning the
+        // registry.
+        let raw = "---\nname: bad\neffort: ultra\n---\nbody";
+        let result = parse_agent(Path::new("/x/bad.md"), raw);
+        assert!(result.is_none());
     }
 }
