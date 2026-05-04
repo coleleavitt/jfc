@@ -271,7 +271,7 @@ fn extract_first_prompt(messages: &[ChatMessage]) -> Option<String> {
 }
 
 #[tracing::instrument(target = "jfc::session", skip(messages), fields(n = messages.len()))]
-pub fn save_session(session_id: &str, messages: &[ChatMessage]) {
+pub fn save_session(session_id: &str, messages: &[ChatMessage], cwd: Option<&str>) {
     let dir = sessions_dir();
     if std::fs::create_dir_all(&dir).is_err() {
         return;
@@ -292,11 +292,17 @@ pub fn save_session(session_id: &str, messages: &[ChatMessage]) {
         .as_ref()
         .map(|s| s.created_at.clone())
         .unwrap_or_else(|| now.to_rfc3339());
-    let cwd = prior.as_ref().and_then(|s| s.cwd.clone()).or_else(|| {
-        std::env::current_dir()
-            .ok()
-            .map(|p| p.display().to_string())
-    });
+    // Precedence: prior session's cwd (immutable for session lifetime) →
+    // explicit `cwd` arg from caller → current_dir() fallback.
+    let stored_cwd = prior
+        .as_ref()
+        .and_then(|s| s.cwd.clone())
+        .or_else(|| cwd.map(str::to_owned))
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|p| p.display().to_string())
+        });
     let title = prior.as_ref().and_then(|s| s.title.clone());
 
     let serialized = SerializedSession {
@@ -304,7 +310,7 @@ pub fn save_session(session_id: &str, messages: &[ChatMessage]) {
         created_at,
         updated_at: Some(now.to_rfc3339()),
         first_prompt: extract_first_prompt(messages),
-        cwd,
+        cwd: stored_cwd,
         title,
         messages: messages.iter().map(serialize_message).collect(),
     };
@@ -359,24 +365,150 @@ pub struct SessionMetadata {
 }
 
 impl SessionMetadata {
-    /// v126 title precedence: customTitle → aiTitle → firstPrompt → id-slice.
+    /// v126 title precedence: customTitle → firstPrompt → formatted-id-timestamp.
     /// Picks the best human-readable label for the picker / sidebar.
     pub fn display_title(&self) -> String {
-        if let Some(t) = self.title.as_deref().filter(|s| !s.is_empty()) {
-            return t.to_owned();
+        if let Some(t) = self.title.as_deref().filter(|s| !s.trim().is_empty()) {
+            return t.trim().to_owned();
         }
-        if let Some(p) = self.first_prompt.as_deref().filter(|s| !s.is_empty()) {
-            // Truncate to ~60 chars so long prompts don't blow out the
-            // sidebar. Mirrors v126's display truncation.
-            let trimmed: String = p.chars().take(60).collect();
-            if p.chars().count() > 60 {
-                return format!("{trimmed}…");
+        if let Some(prompt) = self.first_prompt.as_deref() {
+            let trimmed = prompt.trim();
+            if !trimmed.is_empty() {
+                // First line only — multi-line prompts blow up the row.
+                let first_line = trimmed.lines().next().unwrap_or(trimmed);
+                const MAX: usize = 60;
+                if first_line.chars().count() > MAX {
+                    let truncated: String = first_line.chars().take(MAX).collect();
+                    return format!("{truncated}…");
+                }
+                return first_line.to_owned();
             }
-            return trimmed;
         }
-        // Last resort: first 8 chars of the id (matches v126's slice fallback).
-        self.id.chars().take(8).collect()
+        // Fallback: pretty-print the timestamp from the id.
+        format_session_id_timestamp(&self.id)
     }
+
+    /// Best timestamp to compare/display: prefers `updated_at`, falls back
+    /// to `created_at`. Always returns *some* string so callers don't have
+    /// to thread through `Option`.
+    pub fn last_activity(&self) -> &str {
+        self.updated_at.as_deref().unwrap_or(&self.created_at)
+    }
+}
+
+/// Convert a session id like `ses_20260503_212945` into a friendly
+/// `2026-05-03 21:29` for fallback display.
+pub fn format_session_id_timestamp(id: &str) -> String {
+    let cleaned = id.strip_prefix("ses_").unwrap_or(id);
+    let mut parts = cleaned.splitn(2, '_');
+    let date = parts.next().unwrap_or("");
+    let time = parts.next().unwrap_or("");
+    if date.len() == 8 && time.len() >= 4 {
+        format!(
+            "{}-{}-{} {}:{}",
+            &date[..4],
+            &date[4..6],
+            &date[6..8],
+            &time[..2],
+            &time[2..4]
+        )
+    } else {
+        id.to_owned()
+    }
+}
+
+/// Split sessions into `(this_project, other_projects)` based on whether
+/// each session's `cwd` matches `current_cwd`. Sessions with `cwd: None`
+/// always land in `other_projects`. Order within each group is preserved
+/// (callers are expected to have already sorted by recency).
+///
+/// Pure helper — kept free of `App` so it can be unit-tested with synthetic
+/// `SessionMetadata`.
+pub fn group_by_cwd(
+    sessions: Vec<SessionMetadata>,
+    current_cwd: Option<&str>,
+) -> (Vec<SessionMetadata>, Vec<SessionMetadata>) {
+    let mut this_project = Vec::new();
+    let mut other = Vec::new();
+    for s in sessions {
+        match (current_cwd, s.cwd.as_deref()) {
+            (Some(cur), Some(sc)) if sc == cur => this_project.push(s),
+            _ => other.push(s),
+        }
+    }
+    (this_project, other)
+}
+
+/// Render the cwd in shortened form for the sidebar's secondary line:
+/// home directory becomes `~`, paths under home become `~/rest`, and
+/// other absolute paths are shown as their basename. Returns `"—"` when
+/// the cwd is missing (legacy session) so the row still has *something*
+/// to show in the muted slot.
+pub fn shorten_cwd(cwd: Option<&str>) -> String {
+    let Some(cwd) = cwd else {
+        return "—".to_owned();
+    };
+    let home = dirs::home_dir().and_then(|p| p.to_str().map(str::to_owned));
+    if let Some(home) = home {
+        if cwd == home {
+            return "~".to_owned();
+        }
+        if let Some(rest) = cwd.strip_prefix(&format!("{home}/")) {
+            return format!("~/{rest}");
+        }
+    }
+    // Not under home: show the basename so we don't blow up narrow sidebars
+    // with a long absolute path. Strip trailing slash first; bare `/` stays
+    // as `/` (root) rather than collapsing to an empty string.
+    let trimmed = cwd.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return "/".to_owned();
+    }
+    trimmed
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(trimmed)
+        .to_owned()
+}
+
+/// Format a delta between an RFC3339 timestamp and `now` as a short
+/// human label like `"14m ago"`, `"3h ago"`, `"2d ago"`. Falls back to
+/// `"—"` when the input doesn't parse. Compact form is used because
+/// the sidebar's secondary line is shared with the cwd badge and msg
+/// count and panics on width.
+pub fn relative_time(timestamp: &str, now: chrono::DateTime<chrono::Utc>) -> String {
+    let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(timestamp) else {
+        return "—".to_owned();
+    };
+    let parsed_utc = parsed.with_timezone(&chrono::Utc);
+    let delta = now.signed_duration_since(parsed_utc);
+    let secs = delta.num_seconds();
+    if secs < 0 {
+        // Future timestamp (clock skew) — just say "now".
+        return "now".to_owned();
+    }
+    if secs < 60 {
+        return "just now".to_owned();
+    }
+    let mins = delta.num_minutes();
+    if mins < 60 {
+        return format!("{mins}m ago");
+    }
+    let hours = delta.num_hours();
+    if hours < 24 {
+        return format!("{hours}h ago");
+    }
+    let days = delta.num_days();
+    if days < 30 {
+        return format!("{days}d ago");
+    }
+    let months = days / 30;
+    if months < 12 {
+        return format!("{months}mo ago");
+    }
+    let years = days / 365;
+    format!("{years}y ago")
 }
 
 pub fn list_sessions() -> Vec<String> {
@@ -1026,6 +1158,140 @@ mod tests {
             }
             _ => panic!("wrong variant"),
         }
+    }
+
+    fn make_session(id: &str, cwd: Option<&str>, prompt: Option<&str>) -> SessionMetadata {
+        SessionMetadata {
+            id: id.to_owned(),
+            created_at: "2026-05-04T19:46:49Z".to_owned(),
+            updated_at: Some("2026-05-04T19:46:49Z".to_owned()),
+            first_prompt: prompt.map(str::to_owned),
+            cwd: cwd.map(str::to_owned),
+            message_count: 1,
+        }
+    }
+
+    #[test]
+    fn group_splits_current_cwd_first_normal() {
+        let sessions = vec![
+            make_session("ses_1", Some("/home/c/jfc"), None),
+            make_session("ses_2", Some("/home/c/other"), None),
+            make_session("ses_3", Some("/home/c/jfc"), None),
+            make_session("ses_4", Some("/home/c/other"), None),
+        ];
+        let (this_proj, other) = group_by_cwd(sessions, Some("/home/c/jfc"));
+        assert_eq!(this_proj.len(), 2);
+        assert_eq!(other.len(), 2);
+        assert_eq!(this_proj[0].id, "ses_1");
+        assert_eq!(this_proj[1].id, "ses_3");
+        assert_eq!(other[0].id, "ses_2");
+        assert_eq!(other[1].id, "ses_4");
+    }
+
+    #[test]
+    fn group_legacy_none_cwd_goes_to_other_robust() {
+        let sessions = vec![
+            make_session("ses_1", None, None),
+            make_session("ses_2", Some("/home/c/jfc"), None),
+        ];
+        let (this_proj, other) = group_by_cwd(sessions, Some("/home/c/jfc"));
+        assert_eq!(this_proj.len(), 1);
+        assert_eq!(this_proj[0].id, "ses_2");
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].id, "ses_1");
+    }
+
+    #[test]
+    fn group_no_current_cwd_all_other_robust() {
+        let sessions = vec![
+            make_session("ses_1", Some("/home/c/jfc"), None),
+            make_session("ses_2", None, None),
+            make_session("ses_3", Some("/home/c/other"), None),
+        ];
+        let (this_proj, other) = group_by_cwd(sessions, None);
+        assert!(this_proj.is_empty());
+        assert_eq!(other.len(), 3);
+    }
+
+    #[test]
+    fn group_empty_input_normal() {
+        let (this_proj, other) = group_by_cwd(Vec::new(), Some("/home/c/jfc"));
+        assert!(this_proj.is_empty());
+        assert!(other.is_empty());
+    }
+
+    #[test]
+    fn group_preserves_order_within_group_normal() {
+        let sessions = vec![
+            make_session("ses_a", Some("/p1"), None),
+            make_session("ses_b", Some("/p2"), None),
+            make_session("ses_c", Some("/p1"), None),
+            make_session("ses_d", Some("/p2"), None),
+            make_session("ses_e", Some("/p1"), None),
+        ];
+        let (this_proj, other) = group_by_cwd(sessions, Some("/p1"));
+        let this_ids: Vec<&str> = this_proj.iter().map(|s| s.id.as_str()).collect();
+        let other_ids: Vec<&str> = other.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(this_ids, vec!["ses_a", "ses_c", "ses_e"]);
+        assert_eq!(other_ids, vec!["ses_b", "ses_d"]);
+    }
+
+    #[test]
+    fn picker_row_text_uses_display_title_normal() {
+        // Pin: title comes from `first_prompt` when present...
+        let with_prompt = make_session("ses_1", None, Some("Refactor compaction"));
+        assert_eq!(with_prompt.display_title(), "Refactor compaction");
+
+        // ...and falls back to a formatted timestamp from the id when missing.
+        let without_prompt = make_session("ses_20260504_194649", None, None);
+        assert_eq!(without_prompt.display_title(), "2026-05-04 19:46");
+
+        // Empty / whitespace prompt → fallback (not an empty title).
+        let blank = make_session("ses_20260504_194649", None, Some("   \n  "));
+        assert_eq!(blank.display_title(), "2026-05-04 19:46");
+
+        // Long single-line prompts get truncated with an ellipsis so the
+        // sidebar row never wraps unpredictably.
+        let long = "a".repeat(200);
+        let long_session = make_session("ses_1", None, Some(&long));
+        let title = long_session.display_title();
+        assert!(title.ends_with('…'));
+        assert!(title.chars().count() <= 61); // 60 + '…'
+
+        // Multi-line prompts only show the first line.
+        let multi = make_session("ses_1", None, Some("first line\nsecond line"));
+        assert_eq!(multi.display_title(), "first line");
+    }
+
+    #[test]
+    fn shorten_cwd_handles_home_basename_and_none() {
+        // None → placeholder, never panics.
+        assert_eq!(shorten_cwd(None), "—");
+
+        // Non-home absolute → basename (so narrow sidebars stay readable).
+        assert_eq!(shorten_cwd(Some("/var/log/something")), "something");
+        assert_eq!(shorten_cwd(Some("/var/log/something/")), "something");
+        assert_eq!(shorten_cwd(Some("/")), "/");
+    }
+
+    #[test]
+    fn relative_time_buckets() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-05-04T20:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+
+        // Future / clock skew.
+        assert_eq!(relative_time("2026-05-04T20:00:30Z", now), "now");
+        // Sub-minute.
+        assert_eq!(relative_time("2026-05-04T19:59:30Z", now), "just now");
+        // Minutes.
+        assert_eq!(relative_time("2026-05-04T19:46:00Z", now), "14m ago");
+        // Hours.
+        assert_eq!(relative_time("2026-05-04T17:00:00Z", now), "3h ago");
+        // Days.
+        assert_eq!(relative_time("2026-05-02T20:00:00Z", now), "2d ago");
+        // Garbage input → placeholder.
+        assert_eq!(relative_time("not a timestamp", now), "—");
     }
 }
 

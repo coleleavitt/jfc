@@ -345,7 +345,12 @@ pub async fn handle_key(
                 | (KeyModifiers::NONE, KeyCode::Enter)
         )
     {
-        let total = app.session_ids.len();
+        // The sidebar reorders sessions visually (this-project first, others
+        // below) but `session_meta` itself stays in recency order. Build a
+        // resolved order each navigation tick so Up/Down/Enter walk the
+        // user-visible list, not the underlying vec.
+        let ordered = crate::render::ordered_sidebar_sessions(app);
+        let total = ordered.len();
         match key.code {
             KeyCode::Up if app.session_selected > 0 => {
                 app.session_selected -= 1;
@@ -359,7 +364,7 @@ pub async fn handle_key(
                 }
             }
             KeyCode::Enter => {
-                if let Some(id) = app.session_ids.get(app.session_selected).cloned() {
+                if let Some(id) = ordered.get(app.session_selected).cloned() {
                     if let Some(messages) = crate::session::load_session(&id) {
                         app.messages = messages;
                         app.switch_session(Some(id));
@@ -722,7 +727,7 @@ pub async fn handle_key(
         (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
             app.show_sidebar = !app.show_sidebar;
             if app.show_sidebar {
-                app.session_ids = crate::session::list_sessions();
+                app.session_meta = crate::session::list_sessions_with_metadata();
                 app.session_selected = 0;
                 app.session_list_state.select(Some(0));
             }
@@ -1220,7 +1225,7 @@ async fn handle_submit(
         .current_session_id
         .clone()
         .unwrap_or_else(crate::session::generate_session_id);
-    crate::session::save_session(&session_id, &app.messages);
+    crate::session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()));
     app.current_session_id = Some(session_id);
 
     let provider = app.provider.clone();
@@ -1842,7 +1847,7 @@ fn handle_slash_command(
                     .current_session_id
                     .clone()
                     .unwrap_or_else(crate::session::generate_session_id);
-                crate::session::save_session(&session_id, &app.messages);
+                crate::session::save_session(&session_id, &app.messages, None);
                 app.current_session_id = Some(session_id);
 
                 let provider = app.provider.clone();
@@ -2028,7 +2033,7 @@ fn execute_palette_action(app: &mut App, label: &str) {
         "Toggle Sessions Sidebar (Ctrl+B)" => {
             app.show_sidebar = !app.show_sidebar;
             if app.show_sidebar {
-                app.session_ids = crate::session::list_sessions();
+                app.session_meta = crate::session::list_sessions_with_metadata();
             }
         }
         "Toggle Info Sidebar (Ctrl+S)" => {
