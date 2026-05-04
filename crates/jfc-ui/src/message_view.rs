@@ -204,13 +204,12 @@ fn tool_block_height(tool: &ToolCall, inner_w: usize) -> usize {
     if tool.is_collapsed {
         return 1;
     }
-    // v126-style flat layout: 1 title row + content rows. The previous
-    // rounded-box version added 2 rows of border padding (top + bottom)
-    // and reserved 2 cols of side border (`│ … │`), which made every tool
-    // call visually loud and ate horizontal space. Flat: title sits at the
-    // left margin, content indents 2 chars under it. Mirrors v126 cli.js's
-    // `* TaskCreate create: Foo` followed by indented JSON body.
-    1 + tool_content_height(&tool.output, inner_w.saturating_sub(2))
+    // v126-style flat layout: 1 title row + (optional) bash-continuation
+    // rows + content rows. Continuation rows show lines 2+ of a multi-
+    // line bash command — the title only fits the first line — so the
+    // user sees the heredoc body, not just `cat > file <<'EOF'`.
+    let cont = bash_continuation_lines(tool).len();
+    1 + cont + tool_content_height(&tool.output, inner_w.saturating_sub(2))
 }
 
 pub fn tool_block_height_pub(tool: &ToolCall, inner_w: usize) -> usize {
@@ -469,8 +468,20 @@ fn tool_status_icon(tool: &ToolCall, t: &Theme) -> (&'static str, Style) {
     }
 }
 
-/// Frame-aware variant for live rendering. Running tools cycle through
-/// the spinner frames; everything else delegates to the static version.
+/// Solid-blink variant for Running tools — single fixed icon (`●`,
+/// same shape as Complete) toggling between accent and muted color at
+/// ~500ms cadence so the bullet visibly *throbs* without rotating
+/// glyphs that are easy to miss. Mirrors v126's `Math.sin` opacity
+/// pulse (cli.js:323158): we can't fade alpha in a TUI, but
+/// alternating between two intensities at a steady beat reads as the
+/// same heartbeat.
+///
+/// Why a solid blink, not a Braille spin: rotating glyphs (`⠋ ⠙ ⠹`)
+/// jitter the eye and are hard to glance at when scanning a list of
+/// tools — the user can't tell at a glance which is running. A
+/// fixed-icon-with-pulsing-color reads as "still running" instantly
+/// while the *shape* matches the resolved Complete state, so the
+/// transition Running→Complete is just the color settling.
 pub fn tool_status_icon_animated(
     tool: &ToolCall,
     t: &Theme,
@@ -478,15 +489,19 @@ pub fn tool_status_icon_animated(
 ) -> (&'static str, Style) {
     match tool.status {
         ToolStatus::Running => {
-            let icon = crate::spinner::frame_for(frame);
-            // Alternate the modifier per frame too — accent solid → dim
-            // → solid creates the pulsing v126 has at line 323158.
-            let modifier = if frame % 2 == 0 {
-                ratatui::style::Modifier::BOLD
+            // 6 ticks at 80ms each = ~480ms per half-cycle, ≈1Hz blink.
+            // Even = bright accent (BOLD); odd = muted (no modifier).
+            // Intentionally a sharp transition — matches the user's
+            // mental model of "blink" rather than a smooth fade.
+            let bright = (frame / 6) % 2 == 0;
+            let style = if bright {
+                Style::default()
+                    .fg(t.accent)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
             } else {
-                ratatui::style::Modifier::DIM
+                Style::default().fg(t.text_muted)
             };
-            (icon, Style::default().fg(t.accent).add_modifier(modifier))
+            ("●", style)
         }
         _ => tool_status_icon(tool, t),
     }
@@ -505,6 +520,22 @@ fn render_tool_content_clipped(tool: &ToolCall, area: Rect, t: Theme, buf: &mut 
     render_tool_content_with_skip(tool, area, t, buf, 0);
 }
 
+/// Lines 2+ of a multi-line Bash command (the heredoc body, the `&&`
+/// chain wrapped, etc.) — the title only shows line 1 due to the
+/// title-width cap. Without rendering the rest, a `cat > file << 'EOF'\n
+/// <... source ...>\nEOF` invocation would only ever show the `cat >`
+/// line, hiding what was actually written. Mirrors v126's behavior of
+/// showing the full command body as part of the tool block.
+fn bash_continuation_lines(tool: &ToolCall) -> Vec<String> {
+    if let ToolInput::Bash { command, .. } = &tool.input {
+        let lines: Vec<&str> = command.lines().collect();
+        if lines.len() > 1 {
+            return lines.iter().skip(1).map(|s| (*s).to_owned()).collect();
+        }
+    }
+    Vec::new()
+}
+
 fn render_tool_content_with_skip(
     tool: &ToolCall,
     area: Rect,
@@ -515,6 +546,59 @@ fn render_tool_content_with_skip(
     if area.height == 0 {
         return;
     }
+    // For multi-line Bash commands, show the rest of the command body
+    // before the output. Each continuation line is prefixed with `┆ ` in
+    // muted color so it visually nests under the title and reads as
+    // continuation of the same invocation.
+    let bash_cont = bash_continuation_lines(tool);
+    let mut local_skip = skip;
+    let mut content_y = area.y;
+    let mut remaining_h = area.height;
+    if !bash_cont.is_empty() {
+        for line in &bash_cont {
+            if remaining_h == 0 {
+                break;
+            }
+            if local_skip > 0 {
+                local_skip -= 1;
+                continue;
+            }
+            let row = Rect {
+                x: area.x,
+                y: content_y,
+                width: area.width,
+                height: 1,
+            };
+            // Truncate to row width so a 200-col heredoc line doesn't
+            // spill into the input border below.
+            let max_w = (area.width as usize).saturating_sub(2);
+            let truncated: String = if line.chars().count() > max_w && max_w > 1 {
+                let mut s: String = line.chars().take(max_w.saturating_sub(1)).collect();
+                s.push('…');
+                s
+            } else {
+                line.clone()
+            };
+            Paragraph::new(Line::from(vec![
+                Span::styled("┆ ", Style::default().fg(t.text_muted)),
+                Span::styled(truncated, Style::default().fg(t.text_secondary)),
+            ]))
+            .style(Style::default().bg(t.bg))
+            .render(row, buf);
+            content_y += 1;
+            remaining_h -= 1;
+        }
+    }
+    if remaining_h == 0 {
+        return;
+    }
+    let area = Rect {
+        x: area.x,
+        y: content_y,
+        width: area.width,
+        height: remaining_h,
+    };
+    let skip = local_skip;
     match &tool.output {
         ToolOutput::Empty => {}
         ToolOutput::Text(s) => {

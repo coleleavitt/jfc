@@ -235,7 +235,17 @@ pub struct ToolCall {
     pub status: ToolStatus,
     pub input: ToolInput,
     pub output: ToolOutput,
+    /// True when the tool block renders as a single-line collapsed
+    /// header (set on huge outputs that would otherwise dominate the
+    /// chat). Distinct from `expanded`: this is the *minimal* state.
     pub is_collapsed: bool,
+    /// True when the user has explicitly expanded the tool to full
+    /// content via `Ctrl+O` (or click). False = preview-cap state
+    /// (first `TOOL_PREVIEW_LINES` rows + a `… N more` truncation
+    /// row). Mirrors v126's per-tool expand/collapse affordance —
+    /// long stdout, multi-hunk diffs, and big file reads all start
+    /// preview-only so they don't drown out the rest of the chat.
+    pub expanded: bool,
 }
 
 /// The lifecycle state of a spawned sub-agent task.
@@ -1035,6 +1045,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             },
             output: ToolOutput::Diff(diff),
             is_collapsed: false,
+            expanded: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "bash-1".into(),
@@ -1052,6 +1063,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                 exit_code: Some(0),
             },
             is_collapsed: false,
+            expanded: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "read-1".into(),
@@ -1069,6 +1081,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                     .into(),
             },
             is_collapsed: true,
+            expanded: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "write-1".into(),
@@ -1080,6 +1093,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             },
             output: ToolOutput::Text("Waiting for approval".into()),
             is_collapsed: true,
+            expanded: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "search-1".into(),
@@ -1095,6 +1109,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                 "packages/opencode/src/tool/edit.ts".into(),
             ]),
             is_collapsed: true,
+            expanded: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "patch-1".into(),
@@ -1111,6 +1126,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
 "#,
             )),
             is_collapsed: true,
+            expanded: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "generic-1".into(),
@@ -1121,6 +1137,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             },
             output: ToolOutput::Empty,
             is_collapsed: true,
+            expanded: false,
         }),
     ])
 }

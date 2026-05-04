@@ -236,6 +236,7 @@ pub async fn stream_response(
                     input: ToolInput::from_value(&tool_name, input_val),
                     output: ToolOutput::Empty,
                     is_collapsed: false,
+                    expanded: false,
                 };
                 tool_accum.remove(&index);
                 let _ = tx.send(AppEvent::StreamTool(tool));

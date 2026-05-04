@@ -174,6 +174,7 @@ mod tests {
             },
             output: ToolOutput::Empty,
             is_collapsed: false,
+            expanded: false,
         }
     }
 
