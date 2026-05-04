@@ -18,7 +18,9 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
-arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+arboard = { version = "3", default-features = false, features = ["wayland-data-control", "image-data"] }
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }
 serde_yaml = "0.9"
 dirs = "5"
 serde_json = { workspace = true }

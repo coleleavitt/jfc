@@ -1,0 +1,273 @@
+//! Image attachment data layer.
+//!
+//! Owns the in-memory representation of pasted/loaded image attachments and
+//! the conversion to Anthropic Messages-API content blocks. The clipboard
+//! reader is here too so future Ctrl+V handlers have a single entry point.
+//!
+//! Scope is intentionally narrow: this module does not touch the renderer,
+//! the provider message builders, or the input keymap. It only provides:
+//!   * `AttachmentKind` / `Attachment` data types
+//!   * `detect_kind` magic-byte sniffing (pure, easily testable)
+//!   * `read_clipboard_image` – wraps `arboard::Clipboard::get_image()`
+//!     and re-encodes the raw RGBA pixels as PNG so the bytes are ready
+//!     to drop straight into a base64 content block
+//!   * `to_anthropic_content_block` – `{"type":"image","source":{...}}`
+//!
+//! Wiring this into provider requests is a follow-up task.
+//!
+//! # Why re-encode to PNG instead of trusting the clipboard?
+//!
+//! `arboard::Clipboard::get_image()` returns a decoded `ImageData` of
+//! raw RGBA8 pixels regardless of the source format (X11 ICCCM, Wayland
+//! data-control, NSPasteboard `NSImage`, Win32 CF_DIB). Anthropic's
+//! Messages API needs a self-describing media type + base64 payload, so
+//! we encode to PNG once at clipboard-read time and stash the bytes
+//! verbatim. PNG is lossless and the smallest universally-supported
+//! format the API accepts.
+
+use base64::Engine as _;
+
+/// Image media type. Matches the four Anthropic Messages API supports
+/// (`image/png`, `image/jpeg`, `image/gif`, `image/webp`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttachmentKind {
+    ImagePng,
+    ImageJpeg,
+    ImageGif,
+    ImageWebp,
+}
+
+impl AttachmentKind {
+    /// MIME string used for the Anthropic `source.media_type` field and
+    /// any HTTP-style debugging/logging.
+    pub fn mime_type(self) -> &'static str {
+        match self {
+            Self::ImagePng => "image/png",
+            Self::ImageJpeg => "image/jpeg",
+            Self::ImageGif => "image/gif",
+            Self::ImageWebp => "image/webp",
+        }
+    }
+}
+
+/// A staged image attachment. Owns its raw encoded bytes (PNG/JPEG/etc.)
+/// so the data layer is GC-safe across a frame and can be cheaply cloned
+/// when the request builder finally consumes it.
+#[derive(Debug, Clone)]
+pub struct Attachment {
+    pub kind: AttachmentKind,
+    pub bytes: Vec<u8>,
+}
+
+/// Sniff the image format from the leading magic bytes.
+///
+/// Returns `None` for unknown formats *and* for buffers too short to make
+/// a positive identification — the rule is "we either know, or we don't."
+/// This keeps callers from accidentally classifying a 2-byte buffer as
+/// JPEG just because the first two bytes happen to be `0xFF 0xD8`.
+pub fn detect_kind(bytes: &[u8]) -> Option<AttachmentKind> {
+    // PNG: 89 50 4E 47 (then 0D 0A 1A 0A, but the leading 4 are unique enough)
+    if bytes.len() >= 4 && bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return Some(AttachmentKind::ImagePng);
+    }
+    // JPEG: FF D8 FF (the fourth byte varies: E0 JFIF, E1 EXIF, DB raw, …)
+    if bytes.len() >= 3 && bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some(AttachmentKind::ImageJpeg);
+    }
+    // GIF: ASCII "GIF87a" or "GIF89a"
+    if bytes.len() >= 6 && (bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")) {
+        return Some(AttachmentKind::ImageGif);
+    }
+    // WebP: "RIFF" <4-byte size> "WEBP"
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some(AttachmentKind::ImageWebp);
+    }
+    None
+}
+
+/// Read an image from the system clipboard and return it as a PNG-encoded
+/// `Attachment`. Returns `Ok(None)` if the clipboard contains no image
+/// (text, files, empty, …); returns `Err(_)` for clipboard-access or
+/// PNG-encoding failures.
+///
+/// Not unit-tested: the clipboard is a hardware/OS dependency and arboard
+/// has no in-process fake. Exercise this via manual Ctrl+V testing once
+/// the keybinding lands.
+pub fn read_clipboard_image() -> Result<Option<Attachment>, String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("Clipboard: {e}"))?;
+    let img = match clipboard.get_image() {
+        Ok(img) => img,
+        // arboard returns `ContentNotAvailable` when the clipboard is
+        // empty or doesn't carry an image — that's a normal "no image to
+        // paste" case, not an error worth surfacing to the user.
+        Err(arboard::Error::ContentNotAvailable) => return Ok(None),
+        Err(e) => return Err(format!("Clipboard: {e}")),
+    };
+
+    // arboard hands back raw RGBA8. Re-encode to PNG so the result is a
+    // self-describing blob ready for Anthropic's content block.
+    let mut png_bytes = Vec::new();
+    {
+        use image::ImageEncoder as _;
+        let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+        encoder
+            .write_image(
+                &img.bytes,
+                img.width as u32,
+                img.height as u32,
+                image::ExtendedColorType::Rgba8,
+            )
+            .map_err(|e| format!("PNG encode: {e}"))?;
+    }
+
+    Ok(Some(Attachment {
+        kind: AttachmentKind::ImagePng,
+        bytes: png_bytes,
+    }))
+}
+
+/// Build the Anthropic Messages-API content block for an image attachment.
+///
+/// Shape:
+/// ```json
+/// {
+///   "type": "image",
+///   "source": {
+///     "type": "base64",
+///     "media_type": "image/png",
+///     "data": "<base64-encoded bytes>"
+///   }
+/// }
+/// ```
+pub fn to_anthropic_content_block(att: &Attachment) -> serde_json::Value {
+    let data = base64::engine::general_purpose::STANDARD.encode(&att.bytes);
+    serde_json::json!({
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": att.kind.mime_type(),
+            "data": data,
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine as _;
+
+    // ---------- detect_kind: positive cases ----------
+
+    #[test]
+    fn detect_kind_png_normal() {
+        // Full PNG signature plus a stub IHDR length so the buffer is
+        // realistically-sized; only the first 4 bytes drive detection.
+        let bytes = [
+            0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+        ];
+        assert_eq!(detect_kind(&bytes), Some(AttachmentKind::ImagePng));
+    }
+
+    #[test]
+    fn detect_kind_jpeg_normal() {
+        // JFIF marker (FFE0) is common, but EXIF (FFE1) and SOI-only
+        // streams also appear; all three start with FF D8 FF.
+        let jfif = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+        let exif = [0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x10];
+        assert_eq!(detect_kind(&jfif), Some(AttachmentKind::ImageJpeg));
+        assert_eq!(detect_kind(&exif), Some(AttachmentKind::ImageJpeg));
+    }
+
+    #[test]
+    fn detect_kind_gif_normal() {
+        let gif87 = b"GIF87a\x01\x00\x01\x00";
+        let gif89 = b"GIF89a\x01\x00\x01\x00";
+        assert_eq!(detect_kind(gif87), Some(AttachmentKind::ImageGif));
+        assert_eq!(detect_kind(gif89), Some(AttachmentKind::ImageGif));
+    }
+
+    #[test]
+    fn detect_kind_webp_normal() {
+        // RIFF <size:4> WEBP <fourcc:4>
+        let mut bytes = Vec::from(b"RIFF" as &[u8]);
+        bytes.extend_from_slice(&[0x24, 0x00, 0x00, 0x00]); // dummy size
+        bytes.extend_from_slice(b"WEBP");
+        bytes.extend_from_slice(b"VP8 "); // codec fourcc
+        assert_eq!(detect_kind(&bytes), Some(AttachmentKind::ImageWebp));
+    }
+
+    // ---------- detect_kind: negative cases ----------
+
+    #[test]
+    fn detect_kind_unknown_returns_none_robust() {
+        // Random bytes: not any known signature.
+        assert_eq!(detect_kind(&[0x00, 0x01, 0x02, 0x03, 0x04, 0x05]), None);
+        // Plain ASCII text.
+        assert_eq!(detect_kind(b"hello world, this is not an image"), None);
+        // RIFF without WEBP fourcc (e.g. WAV) must not match.
+        let mut riff_wav = Vec::from(b"RIFF" as &[u8]);
+        riff_wav.extend_from_slice(&[0x24, 0x00, 0x00, 0x00]);
+        riff_wav.extend_from_slice(b"WAVE");
+        riff_wav.extend_from_slice(b"fmt ");
+        assert_eq!(detect_kind(&riff_wav), None);
+    }
+
+    #[test]
+    fn detect_kind_too_short_returns_none_robust() {
+        // Empty buffer.
+        assert_eq!(detect_kind(&[]), None);
+        // Single-byte PNG-ish prefix.
+        assert_eq!(detect_kind(&[0x89]), None);
+        // 2 bytes — one short of JPEG's 3-byte signature.
+        assert_eq!(detect_kind(&[0xFF, 0xD8]), None);
+        // 5 bytes of "GIF" — short of full 6-byte signature.
+        assert_eq!(detect_kind(b"GIF89"), None);
+        // RIFF with no WEBP fourcc room.
+        assert_eq!(detect_kind(b"RIFF\x00\x00\x00\x00WEB"), None);
+    }
+
+    // ---------- mime_type ----------
+
+    #[test]
+    fn mime_type_matches_kind_normal() {
+        assert_eq!(AttachmentKind::ImagePng.mime_type(), "image/png");
+        assert_eq!(AttachmentKind::ImageJpeg.mime_type(), "image/jpeg");
+        assert_eq!(AttachmentKind::ImageGif.mime_type(), "image/gif");
+        assert_eq!(AttachmentKind::ImageWebp.mime_type(), "image/webp");
+    }
+
+    // ---------- to_anthropic_content_block ----------
+
+    #[test]
+    fn to_anthropic_content_block_shape_normal() {
+        let original_bytes = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0xDE, 0xAD];
+        let att = Attachment {
+            kind: AttachmentKind::ImagePng,
+            bytes: original_bytes.clone(),
+        };
+        let block = to_anthropic_content_block(&att);
+
+        assert_eq!(block["type"], "image");
+        assert_eq!(block["source"]["type"], "base64");
+        assert_eq!(block["source"]["media_type"], "image/png");
+
+        // Round-trip the data field: base64-decode and check we recover
+        // the exact bytes we supplied.
+        let data = block["source"]["data"]
+            .as_str()
+            .expect("data should be a string");
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .expect("round-trip decode");
+        assert_eq!(decoded, original_bytes);
+
+        // Sanity: try the same with a JPEG to confirm media_type tracks
+        // the kind, not a hard-coded constant.
+        let att_jpeg = Attachment {
+            kind: AttachmentKind::ImageJpeg,
+            bytes: vec![0xFF, 0xD8, 0xFF, 0xE0],
+        };
+        let block_jpeg = to_anthropic_content_block(&att_jpeg);
+        assert_eq!(block_jpeg["source"]["media_type"], "image/jpeg");
+    }
+}

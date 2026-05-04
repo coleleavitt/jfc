@@ -1,5 +1,6 @@
 mod agents;
 mod app;
+mod attachments;
 mod auto_mode;
 mod compact;
 mod context;
