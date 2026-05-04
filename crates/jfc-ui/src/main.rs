@@ -3,6 +3,7 @@ mod app;
 mod auto_mode;
 mod compact;
 mod context;
+mod cost;
 mod diagnostics;
 mod diagnostics_producer;
 mod inline_tools;
