@@ -62,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
     let kbd_enhanced = enable_keyboard_enhancement(&mut stdout);
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    terminal.clear()?;
 
     let result = run(&mut terminal, providers, provider, model, oauth_handle).await;
 

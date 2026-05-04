@@ -2,7 +2,7 @@ use crossterm::event::{self, KeyCode, KeyModifiers};
 use ratatui::style::Style;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tui_textarea::TextArea;
+use tui_textarea::{CursorMove, TextArea};
 
 use crate::app::{App, AppEvent, ApprovalChoice};
 use crate::stream;
@@ -14,6 +14,17 @@ use crate::types::*;
 /// status update happens via `ToolResult` when the dispatched tool finishes.
 fn insert_tool_into_message(_app: &mut App, _tool: &ToolCall) {
     // intentionally empty — the tool is already in `messages` from StreamTool.
+}
+
+fn reset_input(app: &mut App) {
+    app.textarea = TextArea::default();
+    app.textarea.set_cursor_line_style(Style::default());
+    app.textarea
+        .set_placeholder_text("Type a message… (Enter to send, Shift+Enter for newline)");
+}
+
+fn input_has_text(app: &App) -> bool {
+    app.textarea.lines().iter().any(|line| !line.is_empty())
 }
 
 fn dispatch_approved_tool(app: &App, tool: ToolCall, tx: &mpsc::UnboundedSender<AppEvent>) {
@@ -480,20 +491,26 @@ pub async fn handle_key(
             }
             return Ok(false);
         }
+        (KeyModifiers::NONE, KeyCode::Esc) => {
+            reset_input(app);
+            return Ok(false);
+        }
         (KeyModifiers::NONE, KeyCode::PageUp) => {
-            app.scroll_page_up();
+            if input_has_text(app) {
+                app.textarea.move_cursor(CursorMove::Top);
+                app.textarea.move_cursor(CursorMove::Head);
+            } else {
+                app.scroll_page_up();
+            }
             return Ok(false);
         }
         (KeyModifiers::NONE, KeyCode::PageDown) => {
-            app.scroll_page_down();
-            return Ok(false);
-        }
-        (KeyModifiers::NONE, KeyCode::Home) => {
-            app.scroll_to_top();
-            return Ok(false);
-        }
-        (KeyModifiers::NONE, KeyCode::End) => {
-            app.scroll_to_bottom();
+            if input_has_text(app) {
+                app.textarea.move_cursor(CursorMove::Bottom);
+                app.textarea.move_cursor(CursorMove::End);
+            } else {
+                app.scroll_page_down();
+            }
             return Ok(false);
         }
         (KeyModifiers::CONTROL, KeyCode::Home) => {
@@ -502,6 +519,14 @@ pub async fn handle_key(
         }
         (KeyModifiers::CONTROL, KeyCode::End) => {
             app.scroll_to_bottom();
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::Home) => {
+            app.textarea.move_cursor(CursorMove::Head);
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::End) => {
+            app.textarea.move_cursor(CursorMove::End);
             return Ok(false);
         }
         (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
@@ -525,10 +550,7 @@ pub async fn handle_key(
         let text = app.textarea.lines().join("\n");
         let text = text.trim().to_string();
         if !text.is_empty() {
-            app.textarea = TextArea::default();
-            app.textarea.set_cursor_line_style(Style::default());
-            app.textarea
-                .set_placeholder_text("Type a message… (Enter to send, Shift+Enter for newline)");
+            reset_input(app);
             // v126 input queueing: when the model is mid-stream OR the
             // approval pipeline is non-empty, queue the prompt instead of
             // blocking on it. The approval gate matters: from the v126 log

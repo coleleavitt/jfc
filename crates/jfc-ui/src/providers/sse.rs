@@ -26,6 +26,8 @@ pub enum SseEvent {
     },
     MessageDelta {
         delta: MessageDeltaData,
+        #[serde(default)]
+        usage: Option<MessageUsage>,
     },
     MessageStop,
     Ping,
@@ -38,6 +40,32 @@ pub enum SseEvent {
 pub struct MessageStart {
     #[allow(dead_code)]
     pub id: String,
+    #[serde(default)]
+    pub usage: Option<MessageUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessageUsage {
+    #[serde(default)]
+    pub input_tokens: Option<u32>,
+    #[serde(default)]
+    pub output_tokens: Option<u32>,
+    #[serde(default)]
+    pub cache_creation_input_tokens: Option<u32>,
+    #[serde(default)]
+    pub cache_read_input_tokens: Option<u32>,
+}
+
+impl MessageUsage {
+    fn input_total(&self) -> u32 {
+        self.input_tokens.unwrap_or_default()
+            + self.cache_creation_input_tokens.unwrap_or_default()
+            + self.cache_read_input_tokens.unwrap_or_default()
+    }
+
+    fn output_total(&self) -> u32 {
+        self.output_tokens.unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -179,9 +207,12 @@ pub fn translate(
                 None => None,
             }
         }
-        SseEvent::MessageDelta { delta } => {
+        SseEvent::MessageDelta { delta, usage } => {
             *stop_reason = Some(parse_stop_reason(delta.stop_reason.as_deref()));
-            None
+            usage.map(|usage| StreamEvent::Usage {
+                input_tokens: usage.input_total(),
+                output_tokens: usage.output_total(),
+            })
         }
         SseEvent::MessageStop => Some(StreamEvent::Done {
             stop_reason: stop_reason.take().unwrap_or(StopReason::EndTurn),
@@ -189,7 +220,11 @@ pub fn translate(
         SseEvent::Error { error } => Some(StreamEvent::Error {
             message: error.message,
         }),
-        SseEvent::MessageStart { .. } | SseEvent::Ping => None,
+        SseEvent::MessageStart { message } => message.usage.map(|usage| StreamEvent::Usage {
+            input_tokens: usage.input_total(),
+            output_tokens: usage.output_total(),
+        }),
+        SseEvent::Ping => None,
     }
 }
 
@@ -361,10 +396,12 @@ fn log_parsed_event(event: &SseEvent) {
                 "content_block_stop"
             );
         }
-        SseEvent::MessageDelta { delta } => {
+        SseEvent::MessageDelta { delta, usage } => {
             tracing::info!(
                 target: "jfc::provider::anthropic_sse",
                 stop_reason = ?delta.stop_reason,
+                input_tokens = usage.as_ref().map(MessageUsage::input_total),
+                output_tokens = usage.as_ref().map(MessageUsage::output_total),
                 "message_delta"
             );
         }
@@ -386,8 +423,7 @@ fn log_parsed_event(event: &SseEvent) {
 mod tests {
     use super::*;
     use crate::provider::{
-        ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, StreamOptions,
-        ToolDef,
+        ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, ToolDef,
     };
 
     fn make_user_msg(text: &str) -> ProviderMessage {
@@ -543,6 +579,7 @@ mod tests {
                 delta: MessageDeltaData {
                     stop_reason: Some("end_turn".into()),
                 },
+                usage: None,
             },
             &mut blocks,
             &mut sr,
@@ -590,7 +627,10 @@ mod tests {
         assert!(
             translate(
                 SseEvent::MessageStart {
-                    message: MessageStart { id: "msg_1".into() }
+                    message: MessageStart {
+                        id: "msg_1".into(),
+                        usage: None,
+                    },
                 },
                 &mut blocks,
                 &mut sr,
@@ -698,6 +738,37 @@ mod tests {
             accumulated: String::new(),
         }));
         assert!(translate(event, &mut blocks, &mut sr).is_none());
+    }
+
+    #[test]
+    fn message_delta_usage_emits_usage_event() {
+        let json = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":42}}"#;
+        let event: SseEvent = serde_json::from_str(json).expect("message_delta usage must parse");
+        let (mut blocks, mut sr) = empty_state();
+
+        assert!(matches!(
+            translate(event, &mut blocks, &mut sr),
+            Some(StreamEvent::Usage {
+                input_tokens: 0,
+                output_tokens: 42,
+            })
+        ));
+        assert_eq!(sr, Some(StopReason::EndTurn));
+    }
+
+    #[test]
+    fn message_start_usage_includes_cache_tokens() {
+        let json = r#"{"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":10,"cache_creation_input_tokens":3,"cache_read_input_tokens":7}}}"#;
+        let event: SseEvent = serde_json::from_str(json).expect("message_start usage must parse");
+        let (mut blocks, mut sr) = empty_state();
+
+        assert!(matches!(
+            translate(event, &mut blocks, &mut sr),
+            Some(StreamEvent::Usage {
+                input_tokens: 20,
+                output_tokens: 0,
+            })
+        ));
     }
 
     #[test]

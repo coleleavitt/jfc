@@ -686,7 +686,7 @@ fn hard_wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
 
 /// Hard-wrap a plain string to `width` columns, returning owned chunks. Used
 /// for non-highlighted code blocks where we don't have styled spans yet.
-fn hard_wrap_str(s: &str, width: usize) -> Vec<String> {
+pub(crate) fn hard_wrap_str(s: &str, width: usize) -> Vec<String> {
     if width == 0 || s.chars().count() <= width {
         return vec![s.to_owned()];
     }

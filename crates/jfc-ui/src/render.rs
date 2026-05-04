@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style, Stylize},
+    layout::{Constraint, Direction, Layout, Position, Rect},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{
         Block, Borders, Cell, Clear, LineGauge, List, ListItem, Paragraph, Row, Table, Wrap,
@@ -23,7 +23,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 
     f.render_widget(Block::default().style(Style::default().bg(t.bg)), f.area());
 
-    let input_lines = app.textarea.lines().len().max(1);
+    let input_lines = input_visual_line_count(app, f.area().width.saturating_sub(4) as usize);
     let input_height = (input_lines + 2).min(8) as u16;
 
     let chunks = Layout::default()
@@ -449,7 +449,8 @@ fn render_assistant_text(
                 let total = body.lines().count();
                 let mut emitted = 0usize;
                 for ln in body.lines().take(preview_line_count) {
-                    let truncated = truncate_inline(ln, width.saturating_sub(4).max(20));
+                    let clean = sanitize_terminal_text(ln);
+                    let truncated = truncate_inline(&clean, width.saturating_sub(4).max(20));
                     lines.push(Line::from(vec![
                         Span::styled(String::from("│ "), Style::default().fg(t.border)),
                         Span::styled(truncated, Style::default().fg(t.text_secondary)),
@@ -549,7 +550,7 @@ fn message_lines(
                         }
                     }
                     MessagePart::Tool(tool) => {
-                        lines.extend(tool_lines(tool, t));
+                        lines.extend(tool_lines(tool, t, width));
                     }
                     MessagePart::CompactBoundary { pre_tokens } => {
                         lines.push(Line::from(vec![
@@ -567,7 +568,103 @@ fn message_lines(
     }
 }
 
-fn tool_lines(tool: &ToolCall, t: &Theme) -> Vec<Line<'static>> {
+fn sanitize_terminal_text(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            match chars.peek().copied() {
+                Some('[') => {
+                    chars.next();
+                    for next in chars.by_ref() {
+                        if ('@'..='~').contains(&next) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    chars.next();
+                    let mut saw_esc = false;
+                    for next in chars.by_ref() {
+                        if saw_esc && next == '\\' {
+                            break;
+                        }
+                        if next == '\u{7}' {
+                            break;
+                        }
+                        saw_esc = next == '\u{1b}';
+                    }
+                }
+                Some(_) => {
+                    chars.next();
+                }
+                None => {}
+            }
+            continue;
+        }
+
+        match ch {
+            '\n' => out.push('\n'),
+            '\t' => out.push_str("    "),
+            ch if ch.is_control() => {}
+            ch => out.push(ch),
+        }
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_terminal_text;
+
+    #[test]
+    fn sanitize_terminal_text_removes_ansi_and_control_sequences() {
+        let input = "ok\u{1b}[31mred\u{1b}[0m\rbad\u{1b}]0;title\u{7}\tend";
+        assert_eq!(sanitize_terminal_text(input), "okredbad    end");
+    }
+}
+
+fn push_prefixed_wrapped(
+    out: &mut Vec<Line<'static>>,
+    text: &str,
+    max_lines: usize,
+    width: usize,
+    style: Style,
+    border: Color,
+) {
+    let content_width = width.saturating_sub(2).max(1);
+    for raw_line in text.lines().take(max_lines) {
+        let clean = sanitize_terminal_text(raw_line);
+        for chunk in markdown::hard_wrap_str(&clean, content_width) {
+            out.push(Line::from(vec![
+                Span::styled("│ ", Style::default().fg(border)),
+                Span::styled(chunk, style),
+            ]));
+        }
+    }
+}
+
+fn push_diff_wrapped(
+    out: &mut Vec<Line<'static>>,
+    prefix: &str,
+    text: &str,
+    width: usize,
+    style: Style,
+    border: Color,
+) {
+    let clean = sanitize_terminal_text(text);
+    let content_width = width.saturating_sub(4).max(1);
+    for chunk in markdown::hard_wrap_str(&clean, content_width) {
+        out.push(Line::from(vec![
+            Span::styled("│ ", Style::default().fg(border)),
+            Span::styled(format!("{prefix} {chunk}"), style),
+        ]));
+    }
+}
+
+fn tool_lines(tool: &ToolCall, t: &Theme, width: usize) -> Vec<Line<'static>> {
     let status_style = match tool.status {
         ToolStatus::Pending => Style::default().fg(t.warning),
         ToolStatus::Running => Style::default().fg(t.accent),
@@ -585,12 +682,14 @@ fn tool_lines(tool: &ToolCall, t: &Theme) -> Vec<Line<'static>> {
     if !tool.is_collapsed {
         match &tool.output {
             ToolOutput::Text(s) => {
-                for line in s.lines().take(20) {
-                    out.push(Line::from(vec![
-                        Span::styled("│ ", Style::default().fg(t.border)),
-                        Span::styled(line.to_string(), Style::default().fg(t.text_secondary)),
-                    ]));
-                }
+                push_prefixed_wrapped(
+                    &mut out,
+                    s,
+                    20,
+                    width,
+                    Style::default().fg(t.text_secondary),
+                    t.border,
+                );
             }
             ToolOutput::Command {
                 stdout,
@@ -609,51 +708,54 @@ fn tool_lines(tool: &ToolCall, t: &Theme) -> Vec<Line<'static>> {
                     Span::styled("│ ", Style::default().fg(t.border)),
                     Span::styled(code_str, code_style),
                 ]));
-                for line in stdout.lines().take(15) {
-                    out.push(Line::from(vec![
-                        Span::styled("│ ", Style::default().fg(t.border)),
-                        Span::styled(line.to_string(), Style::default().fg(t.text_secondary)),
-                    ]));
-                }
-                for line in stderr.lines().take(5) {
-                    out.push(Line::from(vec![
-                        Span::styled("│ ", Style::default().fg(t.border)),
-                        Span::styled(line.to_string(), Style::default().fg(t.error)),
-                    ]));
-                }
+                push_prefixed_wrapped(
+                    &mut out,
+                    stdout,
+                    15,
+                    width,
+                    Style::default().fg(t.text_secondary),
+                    t.border,
+                );
+                push_prefixed_wrapped(
+                    &mut out,
+                    stderr,
+                    5,
+                    width,
+                    Style::default().fg(t.error),
+                    t.border,
+                );
             }
             ToolOutput::Diff(diff) => {
                 for hunk in &diff.hunks {
-                    out.push(Line::from(vec![
-                        Span::styled("│ ", Style::default().fg(t.border)),
-                        Span::styled(hunk.header.clone(), Style::default().fg(t.text_muted)),
-                    ]));
+                    push_prefixed_wrapped(
+                        &mut out,
+                        &hunk.header,
+                        1,
+                        width,
+                        Style::default().fg(t.text_muted),
+                        t.border,
+                    );
                     for dl in hunk.lines.iter().take(30) {
                         let (prefix, style) = match dl.kind {
                             DiffLineKind::Added => ("+", Style::default().fg(t.success)),
                             DiffLineKind::Removed => ("-", Style::default().fg(t.error)),
                             DiffLineKind::Context => (" ", Style::default().fg(t.text_secondary)),
                         };
-                        out.push(Line::from(vec![
-                            Span::styled("│ ", Style::default().fg(t.border)),
-                            Span::styled(format!("{prefix} {}", dl.content), style),
-                        ]));
+                        push_diff_wrapped(&mut out, prefix, &dl.content, width, style, t.border);
                     }
                 }
             }
             ToolOutput::FileContent { content, .. } => {
-                for line in content.lines().take(20) {
-                    out.push(Line::from(vec![
-                        Span::styled("│ ", Style::default().fg(t.border)),
-                        Span::styled(line.to_string(), t.code_block()),
-                    ]));
-                }
+                push_prefixed_wrapped(&mut out, content, 20, width, t.code_block(), t.border);
             }
             ToolOutput::FileList(files) => {
                 for f in files.iter().take(15) {
                     out.push(Line::from(vec![
                         Span::styled("│ ", Style::default().fg(t.border)),
-                        Span::styled(f.clone(), Style::default().fg(t.text_secondary)),
+                        Span::styled(
+                            sanitize_terminal_text(f),
+                            Style::default().fg(t.text_secondary),
+                        ),
                     ]));
                 }
             }
@@ -681,17 +783,76 @@ fn input(f: &mut Frame, app: &mut App, area: Rect) {
         " message ".to_string()
     };
 
-    app.textarea.set_block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(border_style)
-            .title(Span::styled(title, Style::default().fg(t.text_muted)))
-            .style(Style::default().bg(t.surface)),
-    );
-    app.textarea
-        .set_style(Style::default().fg(t.text_primary).bg(t.surface));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(border_style)
+        .title(Span::styled(title, Style::default().fg(t.text_muted)))
+        .style(Style::default().bg(t.surface));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
-    f.render_widget(&app.textarea, area);
+    let content_width = inner.width.max(1) as usize;
+    let (lines, cursor_row, cursor_col) = input_soft_wrapped_lines(app, content_width);
+    let visible_rows = inner.height.max(1) as usize;
+    let start = cursor_row.saturating_add(1).saturating_sub(visible_rows);
+    let visible = lines
+        .iter()
+        .skip(start)
+        .take(visible_rows)
+        .map(|line| {
+            Line::from(Span::styled(
+                line.clone(),
+                Style::default().fg(t.text_primary),
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    f.render_widget(
+        Paragraph::new(visible).style(Style::default().bg(t.surface)),
+        inner,
+    );
+
+    if area.height > 2 && area.width > 2 {
+        f.set_cursor_position(Position::new(
+            inner
+                .x
+                .saturating_add(cursor_col as u16)
+                .min(inner.right().saturating_sub(1)),
+            inner
+                .y
+                .saturating_add(cursor_row.saturating_sub(start) as u16)
+                .min(inner.bottom().saturating_sub(1)),
+        ));
+    }
+}
+
+fn input_visual_line_count(app: &App, content_width: usize) -> usize {
+    input_soft_wrapped_lines(app, content_width).0.len().max(1)
+}
+
+fn input_soft_wrapped_lines(app: &App, content_width: usize) -> (Vec<String>, usize, usize) {
+    let width = content_width.max(1);
+    let logical_lines = app.textarea.lines();
+    let (cursor_line, cursor_col) = app.textarea.cursor();
+    let mut out = Vec::new();
+    let mut visual_cursor_row = 0usize;
+    let mut visual_cursor_col = 0usize;
+
+    if logical_lines.iter().all(|line| line.is_empty()) {
+        out.push("Type a message… (Enter to send, Shift+Enter for newline)".to_string());
+        return (out, 0, 0);
+    }
+
+    for (line_idx, line) in logical_lines.iter().enumerate() {
+        let wrapped = markdown::hard_wrap_str(line, width);
+        if line_idx == cursor_line {
+            visual_cursor_row = out.len() + cursor_col / width;
+            visual_cursor_col = cursor_col % width;
+        }
+        out.extend(wrapped);
+    }
+
+    (out, visual_cursor_row, visual_cursor_col)
 }
 
 fn status(f: &mut Frame, app: &App, area: Rect) {

@@ -357,15 +357,33 @@ pub async fn execute_tool(
 
 async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> ExecutionResult {
     let timeout = timeout_ms.unwrap_or(120_000);
-    let result = tokio::time::timeout(
-        std::time::Duration::from_millis(timeout),
-        Command::new("bash")
-            .arg("-c")
-            .arg(command)
-            .current_dir(cwd)
-            .output(),
-    )
-    .await;
+    let mut cmd = Command::new("bash");
+    cmd.arg("-c")
+        .arg(command)
+        .current_dir(cwd)
+        .env("CI", "true")
+        .env("TERM", "dumb")
+        .env("NO_COLOR", "1")
+        .env("CLICOLOR", "0")
+        .env("DEBIAN_FRONTEND", "noninteractive")
+        .env("GCM_INTERACTIVE", "never")
+        .env("GIT_EDITOR", ":")
+        .env("GIT_MERGE_AUTOEDIT", "no")
+        .env("GIT_PAGER", "cat")
+        .env("GIT_SEQUENCE_EDITOR", ":")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("HOMEBREW_NO_AUTO_UPDATE", "1")
+        .env("PAGER", "cat")
+        .env("PIP_NO_INPUT", "1")
+        .env("VISUAL", "")
+        .env_remove("CLICOLOR_FORCE")
+        .env_remove("COLORTERM")
+        .env_remove("EDITOR")
+        .env_remove("FORCE_COLOR")
+        .env_remove("GREP_COLORS")
+        .env_remove("LS_COLORS");
+    let result =
+        tokio::time::timeout(std::time::Duration::from_millis(timeout), cmd.output()).await;
 
     match result {
         Ok(Ok(out)) => {
