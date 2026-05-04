@@ -33,6 +33,10 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 pulldown-cmark = "0.12"
-syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig", "yaml-load"] }
 ansi-to-tui = "7"
 itertools = "0.14"
+clap = { version = "4", features = ["derive"] }
+
+[build-dependencies]
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-onig", "yaml-load", "dump-create", "dump-load"] }

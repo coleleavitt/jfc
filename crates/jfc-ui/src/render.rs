@@ -307,6 +307,162 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
+    lines.push(Line::from(""));
+
+    // Tasks section - show pending/in-progress todos
+    let tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
+    let pending: Vec<_> = tasks
+        .iter()
+        .filter(|t| t.status == crate::tasks::TaskStatus::Pending)
+        .collect();
+    let in_progress: Vec<_> = tasks
+        .iter()
+        .filter(|t| t.status == crate::tasks::TaskStatus::InProgress)
+        .collect();
+    let completed: Vec<_> = tasks
+        .iter()
+        .filter(|t| t.status == crate::tasks::TaskStatus::Completed)
+        .collect();
+
+    let task_total = pending.len() + in_progress.len() + completed.len();
+    if task_total > 0 {
+        lines.push(Line::from(vec![Span::styled(
+            format!("Tasks ({}/{} done)", completed.len(), task_total),
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        )]));
+
+        // Show in-progress tasks with activity
+        for task in in_progress.iter().take(3) {
+            let activity = app
+                .task_activities
+                .get(&task.id)
+                .map(|s| truncate_str(s, inner.width.saturating_sub(6) as usize))
+                .unwrap_or_default();
+            lines.push(Line::from(vec![
+                Span::styled("◆ ", Style::default().fg(t.accent)),
+                Span::styled(
+                    truncate_str(&task.subject, inner.width.saturating_sub(4) as usize),
+                    Style::default()
+                        .fg(t.text_primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+            if !activity.is_empty() {
+                lines.push(Line::from(vec![Span::styled(
+                    format!("  {}", activity),
+                    Style::default().fg(t.text_muted),
+                )]));
+            }
+        }
+
+        // Show pending tasks (cap visible rows at 3 minus what in_progress
+        // already used). usize annotation avoids the integer-literal `3` being
+        // ambiguous when calling `saturating_sub`.
+        let pending_slots: usize = 3usize.saturating_sub(in_progress.len());
+        for task in pending.iter().take(pending_slots) {
+            let blocked = !task.blocked_by.is_empty();
+            let icon = if blocked { "○" } else { "◇" };
+            let color = if blocked {
+                t.text_muted
+            } else {
+                t.text_secondary
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!("{} ", icon), Style::default().fg(color)),
+                Span::styled(
+                    truncate_str(&task.subject, inner.width.saturating_sub(4) as usize),
+                    Style::default().fg(color),
+                ),
+            ]));
+        }
+
+        // Recently completed tasks (fade out after 30s)
+        let now = std::time::Instant::now();
+        let recent_completed: Vec<_> = completed
+            .iter()
+            .filter(|task| {
+                app.task_completion_times
+                    .get(&task.id)
+                    .map_or(false, |t| now.duration_since(*t).as_secs() < 30)
+            })
+            .take(2)
+            .collect();
+
+        for task in recent_completed {
+            lines.push(Line::from(vec![
+                Span::styled("✓ ", Style::default().fg(t.success)),
+                Span::styled(
+                    truncate_str(&task.subject, inner.width.saturating_sub(4) as usize),
+                    Style::default()
+                        .fg(t.text_muted)
+                        .add_modifier(Modifier::CROSSED_OUT),
+                ),
+            ]));
+        }
+
+        // Show "+N more" if truncated
+        let shown =
+            in_progress.len().min(3) + pending.len().min(3usize.saturating_sub(in_progress.len()));
+        let hidden = task_total.saturating_sub(shown);
+        if hidden > 0 {
+            lines.push(Line::from(vec![Span::styled(
+                format!("  … +{} more (Ctrl+T)", hidden),
+                Style::default().fg(t.text_muted),
+            )]));
+        }
+
+        lines.push(Line::from(""));
+    }
+
+    // Diffs section - count files with edit/write tool outputs
+    let diff_stats = collect_diff_stats(app);
+    if diff_stats.total_files > 0 {
+        lines.push(Line::from(vec![Span::styled(
+            "Changes",
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        )]));
+
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{} file(s)", diff_stats.total_files),
+                Style::default().fg(t.text_secondary),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                format!("+{}", diff_stats.additions),
+                Style::default().fg(t.success),
+            ),
+            Span::styled(" ", Style::default()),
+            Span::styled(
+                format!("-{}", diff_stats.deletions),
+                Style::default().fg(t.error),
+            ),
+        ]));
+
+        // Show up to 3 most recently modified files
+        for file in diff_stats.files.iter().take(3) {
+            lines.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(
+                    truncate_str(file, inner.width.saturating_sub(4) as usize),
+                    Style::default().fg(t.accent),
+                ),
+            ]));
+        }
+        if diff_stats.files.len() > 3 {
+            lines.push(Line::from(vec![Span::styled(
+                format!("  … +{} more", diff_stats.files.len() - 3),
+                Style::default().fg(t.text_muted),
+            )]));
+        }
+
+        lines.push(Line::from(""));
+    }
+
     let used = lines.len() as u16;
     let available = inner.height.saturating_sub(3);
     if used < available {
@@ -378,6 +534,50 @@ fn fmt_number(n: u64) -> String {
         out.chars().rev().collect()
     } else {
         n.to_string()
+    }
+}
+
+/// Aggregate edit/write diff stats across the whole conversation for the
+/// sidebar "Changes" section. Walks every Tool message part, picks up
+/// `ToolOutput::Diff(_)` payloads (Edit/Write tools convert their result
+/// into a unified diff at parse time — see `types.rs::ToolOutput::Diff`),
+/// and de-duplicates files by their last-seen entry so the most recent
+/// edit wins. Files appear in *most-recent-first* order to match how the
+/// chat scrolls.
+struct DiffStats {
+    total_files: usize,
+    additions: usize,
+    deletions: usize,
+    files: Vec<String>,
+}
+
+fn collect_diff_stats(app: &App) -> DiffStats {
+    let mut by_file: std::collections::HashMap<String, (usize, usize)> =
+        std::collections::HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for msg in &app.messages {
+        for part in &msg.parts {
+            if let MessagePart::Tool(call) = part {
+                if let ToolOutput::Diff(view) = &call.output {
+                    let entry = by_file.entry(view.file_path.clone()).or_insert((0, 0));
+                    *entry = (view.additions, view.deletions);
+                    if !order.contains(&view.file_path) {
+                        order.push(view.file_path.clone());
+                    }
+                }
+            }
+        }
+    }
+    // Reverse so most-recently-touched files appear first.
+    order.reverse();
+    let (additions, deletions) = by_file
+        .values()
+        .fold((0usize, 0usize), |(a, d), (na, nd)| (a + na, d + nd));
+    DiffStats {
+        total_files: by_file.len(),
+        additions,
+        deletions,
+        files: order,
     }
 }
 
@@ -855,12 +1055,14 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
         " {}{}{}{}{}  {}  {} msgs ",
         app.model, profile_badge, auto_badge, queue_badge, leader_badge, cwd_display, msg_count
     );
-    let right = " Ctrl+C: clear/quit  Ctrl+B: sessions  Ctrl+S: info  Ctrl+P: palette  Ctrl+M: models  Ctrl+O: thinking ";
+    // Single right-hand hint: the palette key. All other shortcuts are
+    // discoverable inside the palette itself (Ctrl+P) — keeping just one
+    // pointer here de-clutters the status row and matches v126's layout
+    // where the bottom rail only points to the command index.
+    let right = " Ctrl+P: palette ";
 
     let total_width = area.width as usize;
     let right_start = total_width.saturating_sub(right.len());
-    // Use char count, not byte length — `left` contains multi-byte chars
-    // (⚡, ⏳) that would panic on byte-indexed slicing.
     let left_chars: usize = left.chars().count();
     let left_truncated = if left_chars > right_start.saturating_sub(1) {
         let truncated: String = left.chars().take(right_start.saturating_sub(2)).collect();

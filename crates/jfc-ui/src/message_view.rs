@@ -464,7 +464,14 @@ fn render_tool_content_with_skip(
     }
     match &tool.output {
         ToolOutput::Empty => {}
-        ToolOutput::Text(s) => render_text_block_skip(s, area, t.text_secondary, t, buf, skip),
+        ToolOutput::Text(s) => {
+            let lang = infer_lang_from_tool(tool);
+            if let Some(lang) = lang.as_deref() {
+                render_highlighted_with_line_numbers(lang, s, area, t, buf, skip);
+            } else {
+                render_text_block_skip(s, area, t.text_secondary, t, buf, skip);
+            }
+        }
         ToolOutput::LargeText(lt) => {
             if lt.line_count > LargeText::COLLAPSE_LINES
                 || lt.content.len() > LargeText::COLLAPSE_BYTES
@@ -487,14 +494,16 @@ fn render_tool_content_with_skip(
             exit_code,
         } => render_command_output_skip(stdout, stderr, *exit_code, area, t, buf, skip),
         ToolOutput::Diff(diff) => render_diff_skip(diff, area, t, buf, skip),
-        ToolOutput::FileContent { content, .. } => render_text_block_skip(
-            content,
-            area,
-            t.code_block().fg.unwrap_or(t.text_secondary),
-            t,
-            buf,
-            skip,
-        ),
+        ToolOutput::FileContent {
+            content, language, ..
+        } => {
+            let hl_lang = if language.is_empty() {
+                "rs"
+            } else {
+                language.as_str()
+            };
+            render_highlighted_block_skip(hl_lang, content, area, t, buf, skip);
+        }
         ToolOutput::FileList(files) => render_file_list_skip(files, area, t, buf, skip),
     }
 }
@@ -530,6 +539,120 @@ fn render_text_block_skip(
         }
     }
 
+    Paragraph::new(lines)
+        .style(Style::default().bg(t.bg))
+        .scroll((skip as u16, 0))
+        .render(area, buf);
+}
+
+fn render_highlighted_with_line_numbers(
+    lang: &str,
+    text: &str,
+    area: Rect,
+    t: Theme,
+    buf: &mut Buffer,
+    skip: usize,
+) {
+    let (line_numbers, code) = split_line_numbers(text);
+    let code_ref = code.as_deref().unwrap_or(text);
+
+    let gutter_width = line_numbers
+        .as_ref()
+        .map(|nums| nums.iter().map(|n| n.len()).max().unwrap_or(0))
+        .unwrap_or(0);
+
+    let gutter_cols = if gutter_width > 0 {
+        gutter_width + 3
+    } else {
+        2
+    };
+    let code_w = (area.width as usize).saturating_sub(gutter_cols).max(10);
+
+    let highlighted = markdown::highlight_code_raw(lang, code_ref, code_w, &t);
+
+    let gutter_style = Style::default().fg(t.text_muted);
+    let separator_style = Style::default().fg(t.border);
+
+    let lines: Vec<Line<'static>> = highlighted
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut hl_line)| {
+            let mut spans = if let Some(nums) = &line_numbers {
+                let num = nums.get(i).map(|s| s.as_str()).unwrap_or("");
+                vec![
+                    Span::styled(
+                        format!("{:>width$}", num, width = gutter_width),
+                        gutter_style,
+                    ),
+                    Span::styled(" │ ", separator_style),
+                ]
+            } else {
+                vec![Span::styled("│ ", separator_style)]
+            };
+            spans.extend(hl_line.spans.drain(..));
+            Line::from(spans)
+        })
+        .collect();
+
+    Paragraph::new(lines)
+        .style(Style::default().bg(t.bg))
+        .scroll((skip as u16, 0))
+        .render(area, buf);
+}
+
+fn split_line_numbers(text: &str) -> (Option<Vec<String>>, Option<String>) {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() {
+        return (None, None);
+    }
+    let mut numbers = Vec::with_capacity(lines.len());
+    let mut code_lines = Vec::with_capacity(lines.len());
+
+    for line in &lines {
+        if line.is_empty() {
+            numbers.push(String::new());
+            code_lines.push("");
+            continue;
+        }
+        match line.find(": ") {
+            Some(pos) if line[..pos].bytes().all(|b| b.is_ascii_digit()) => {
+                numbers.push(line[..pos].to_string());
+                code_lines.push(&line[pos + 2..]);
+            }
+            _ => return (None, None),
+        }
+    }
+    (Some(numbers), Some(code_lines.join("\n")))
+}
+
+fn infer_lang_from_tool(tool: &ToolCall) -> Option<String> {
+    let path = match &tool.input {
+        ToolInput::Read { file_path, .. } => file_path.as_str(),
+        ToolInput::Edit { file_path, .. } => file_path.as_str(),
+        ToolInput::Write { file_path, .. } => file_path.as_str(),
+        _ => return None,
+    };
+    let p = std::path::Path::new(path);
+    p.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_string())
+        .or_else(|| {
+            p.file_name()
+                .and_then(|f| f.to_str())
+                .map(|f| f.to_string())
+        })
+}
+
+fn render_highlighted_block_skip(
+    lang: &str,
+    code: &str,
+    area: Rect,
+    t: Theme,
+    buf: &mut Buffer,
+    skip: usize,
+) {
+    let inner_w = area.width.saturating_sub(2) as usize;
+    let lines = markdown::highlight_code(lang, code, inner_w, &t);
     Paragraph::new(lines)
         .style(Style::default().bg(t.bg))
         .scroll((skip as u16, 0))

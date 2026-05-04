@@ -303,7 +303,7 @@ pub async fn handle_key(
                 if let Some(id) = app.session_ids.get(app.session_selected).cloned() {
                     if let Some(messages) = crate::session::load_session(&id) {
                         app.messages = messages;
-                        app.current_session_id = Some(id);
+                        app.switch_session(Some(id));
                         app.streaming_text.clear();
                         app.streaming_reasoning.clear();
                         app.streaming_assistant_idx = None;
@@ -676,21 +676,11 @@ pub async fn handle_key(
             return Ok(false);
         }
         (KeyModifiers::NONE, KeyCode::PageUp) => {
-            if input_has_text(app) {
-                app.textarea.move_cursor(CursorMove::Top);
-                app.textarea.move_cursor(CursorMove::Head);
-            } else {
-                app.scroll_page_up();
-            }
+            app.scroll_page_up();
             return Ok(false);
         }
         (KeyModifiers::NONE, KeyCode::PageDown) => {
-            if input_has_text(app) {
-                app.textarea.move_cursor(CursorMove::Bottom);
-                app.textarea.move_cursor(CursorMove::End);
-            } else {
-                app.scroll_page_down();
-            }
+            app.scroll_page_down();
             return Ok(false);
         }
         (KeyModifiers::CONTROL, KeyCode::Home) => {
@@ -804,6 +794,16 @@ pub async fn handle_key(
     Ok(false)
 }
 
+/// Public re-entry used by `AppEvent::Submit`. Same body as the private
+/// `handle_submit` used from the typing path.
+pub async fn handle_submit_text(
+    app: &mut App,
+    text: String,
+    tx: &mpsc::UnboundedSender<crate::app::AppEvent>,
+) -> anyhow::Result<()> {
+    handle_submit(app, text, tx).await
+}
+
 async fn handle_submit(
     app: &mut App,
     text: String,
@@ -811,6 +811,74 @@ async fn handle_submit(
 ) -> anyhow::Result<()> {
     if text.starts_with('/') {
         handle_slash_command(app, &text);
+        return Ok(());
+    }
+
+    // Pre-submit compaction gate (mirrors v126 `Du7` running before the API
+    // call rather than only after tool batches). Without this, a long
+    // text-only assistant reply pushes the context past 200K — by the time
+    // the next user message arrives, the conversation already exceeds the
+    // hard limit and the provider returns 400 prompt_too_long. v126 cli.js
+    // line 382476 shows the same pre-submit check returning a "blocking_limit"
+    // result before queryDirect ever fires.
+    let est = crate::compact::estimate_tokens(&app.messages);
+    let level = crate::compact::compact_level(est, app.max_context_tokens);
+    if matches!(
+        level,
+        crate::compact::CompactLevel::Compact | crate::compact::CompactLevel::Blocked
+    ) || app.force_compact_pending
+    {
+        let manual = std::mem::take(&mut app.force_compact_pending);
+        tracing::info!(
+            target: "jfc::compact",
+            est, level = ?level, manual,
+            "pre-submit compact triggered"
+        );
+        let messages = app.messages.clone();
+        let provider = Arc::clone(&app.provider);
+        let model = app.model.clone();
+        let mut tool_ctx = app.tool_ctx.clone();
+        let tx_pre = tx.clone();
+        let user_text = text.clone();
+        let _ = tx_pre.send(crate::app::AppEvent::CompactionStarted);
+        tokio::spawn(async move {
+            let options = crate::provider::StreamOptions::new(model);
+            let result =
+                crate::compact::compact(&messages, provider.as_ref(), &options, &mut tool_ctx)
+                    .await;
+            match result {
+                crate::compact::CompactResult::Success {
+                    messages,
+                    pre_tokens,
+                    post_tokens,
+                } => {
+                    let _ = tx_pre.send(crate::app::AppEvent::CompactionDone {
+                        messages,
+                        tool_ctx,
+                        pre_tokens,
+                        post_tokens,
+                    });
+                    // Re-queue the user's message — it didn't make it into
+                    // the conversation before compaction ran.
+                    let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text));
+                }
+                crate::compact::CompactResult::CircuitBreakerTripped => {
+                    let _ = tx_pre.send(crate::app::AppEvent::CompactionFailed(
+                        "Circuit breaker tripped — submit again with `/compact` if needed".into(),
+                    ));
+                }
+                crate::compact::CompactResult::Exhausted { attempts } => {
+                    let _ = tx_pre.send(crate::app::AppEvent::CompactionFailed(format!(
+                        "Exhausted {attempts} compaction attempts — request is too large"
+                    )));
+                }
+                _ => {
+                    // Unsupported / TooFewGroups: provider can't compact, just
+                    // submit anyway and let the API return its own error.
+                    let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text));
+                }
+            }
+        });
         return Ok(());
     }
 
@@ -861,12 +929,140 @@ fn handle_slash_command(app: &mut App, text: &str) {
             app.streaming_text.clear();
             app.streaming_reasoning.clear();
             app.streaming_assistant_idx = None;
+            // Mint a fresh session id and wipe per-session state (tasks,
+            // completion timers). v126 cli.js:271511 keys todos by sessionId
+            // so a new session inherently has an empty list — match that.
+            app.switch_session(None);
+        }
+        "/compact" => {
+            let est = crate::compact::estimate_tokens(&app.messages);
+            let level = crate::compact::compact_level(est, app.max_context_tokens);
+            let pct = if app.max_context_tokens > 0 {
+                (est * 100 / app.max_context_tokens).min(999)
+            } else {
+                0
+            };
+            app.messages.push(ChatMessage::user("/compact".into()));
+            app.messages.push(ChatMessage::assistant(format!(
+                "Manual compaction queued — current estimate **{est} / {} tokens ({pct}%)**, level: **{level:?}**.\n\n\
+                 The next assistant turn will summarize the conversation up to here, replacing the prior turns with a 9-section summary.\n\n\
+                 *(Tip: set `JFC_AUTOCOMPACT_PCT_OVERRIDE=N` (1-100) to test thresholds, or `JFC_DISABLE_AUTO_COMPACT=1` to disable auto-compact entirely.)*",
+                app.max_context_tokens
+            )));
+            app.force_compact_pending = true;
+        }
+        "/continue" | "/c" => {
+            // Resume the most recent session
+            if let Some(session_id) = crate::session::most_recent_session() {
+                if let Some(messages) = crate::session::load_session(&session_id) {
+                    app.messages = messages;
+                    app.switch_session(Some(session_id.clone()));
+                    app.streaming_text.clear();
+                    app.streaming_reasoning.clear();
+                    app.streaming_assistant_idx = None;
+                    app.scroll_to_bottom();
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "**Resumed session `{session_id}`** — {} message(s) loaded.",
+                        app.messages.len() - 1
+                    )));
+                } else {
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "**Error:** Failed to load session `{session_id}`."
+                    )));
+                }
+            } else {
+                app.messages.push(ChatMessage::assistant(
+                    "No previous sessions found to continue.".into(),
+                ));
+            }
+        }
+        "/resume" => {
+            // Resume a specific session by id
+            let session_id = parts.get(1).copied().unwrap_or("").trim();
+            if session_id.is_empty() {
+                // List available sessions
+                let sessions = crate::session::list_sessions();
+                if sessions.is_empty() {
+                    app.messages.push(ChatMessage::assistant(
+                        "No sessions found. Usage: `/resume <session_id>`".into(),
+                    ));
+                } else {
+                    let list = sessions
+                        .iter()
+                        .take(10)
+                        .map(|s| format!("  - `{s}`"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let more = if sessions.len() > 10 {
+                        format!("\n  ... and {} more", sessions.len() - 10)
+                    } else {
+                        String::new()
+                    };
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "**Usage:** `/resume <session_id>`\n\n**Available sessions:**\n{list}{more}"
+                    )));
+                }
+            } else if let Some(messages) = crate::session::load_session(session_id) {
+                let msg_count = messages.len();
+                app.messages = messages;
+                app.switch_session(Some(session_id.to_owned()));
+                app.streaming_text.clear();
+                app.streaming_reasoning.clear();
+                app.streaming_assistant_idx = None;
+                app.scroll_to_bottom();
+                app.messages.push(ChatMessage::assistant(format!(
+                    "**Resumed session `{session_id}`** — {msg_count} message(s) loaded."
+                )));
+            } else {
+                app.messages.push(ChatMessage::assistant(format!(
+                    "**Error:** Session `{session_id}` not found."
+                )));
+            }
+        }
+        "/sessions" => {
+            // List all sessions with metadata
+            let sessions = crate::session::list_sessions_with_metadata();
+            if sessions.is_empty() {
+                app.messages
+                    .push(ChatMessage::assistant("No sessions found.".into()));
+            } else {
+                let mut body = format!("**{} session(s):**\n\n", sessions.len());
+                for (i, s) in sessions.iter().take(20).enumerate() {
+                    let prompt = s.first_prompt.as_deref().unwrap_or("(no prompt)");
+                    let prompt_display = if prompt.len() > 50 {
+                        format!("{}…", &prompt[..50])
+                    } else {
+                        prompt.to_string()
+                    };
+                    let current = app.current_session_id.as_deref() == Some(&s.id);
+                    let marker = if current { " ← current" } else { "" };
+                    body.push_str(&format!(
+                        "{}. `{}`{} — {} msg(s)\n   {}\n",
+                        i + 1,
+                        s.id,
+                        marker,
+                        s.message_count,
+                        prompt_display
+                    ));
+                }
+                if sessions.len() > 20 {
+                    body.push_str(&format!(
+                        "\n... and {} more (use Ctrl+B sidebar)",
+                        sessions.len() - 20
+                    ));
+                }
+                app.messages.push(ChatMessage::user("/sessions".into()));
+                app.messages.push(ChatMessage::assistant(body));
+            }
         }
         "/help" => {
             app.messages.push(ChatMessage::user("/help".into()));
             app.messages.push(ChatMessage::assistant(
                 "**Available commands:**\n\
-                 - `/clear` — Clear conversation\n\
+                 - `/clear` — Clear conversation and start fresh\n\
+                 - `/continue` (or `/c`) — Resume most recent session\n\
+                 - `/resume <id>` — Resume a specific session by id\n\
+                 - `/sessions` — List all saved sessions\n\
                  - `/auto-mode on` — Enable v126-style LLM tool classifier (no user prompts)\n\
                  - `/auto-mode off` — Disable auto-mode, restore manual approval\n\
                  - `/auto-mode status` — Show current state + rule sources\n\
@@ -1141,24 +1337,88 @@ fn handle_slash_command(app: &mut App, text: &str) {
 }
 
 fn execute_palette_action(app: &mut App, label: &str) {
+    // Each palette entry is paired with the keybinding it replaces — the
+    // status row used to advertise these explicitly, but they're now lifted
+    // into the palette to free vertical space for the context gauge. The
+    // bindings still work (handled at their original sites in `handle_key`);
+    // the palette is just a discoverable index.
     match label {
-        "Clear Messages" => {
+        "Clear Messages (/clear)" => {
             app.messages.clear();
             app.streaming_text.clear();
             app.streaming_reasoning.clear();
             app.streaming_assistant_idx = None;
+            app.switch_session(None);
+        }
+        "Compact Conversation (/compact)" => {
+            app.force_compact_pending = true;
+            app.messages.push(ChatMessage::user("/compact".into()));
+            app.messages.push(ChatMessage::assistant(
+                "Compaction queued — runs on the next turn.".into(),
+            ));
+        }
+        "Toggle Sessions Sidebar (Ctrl+B)" => {
+            app.show_sidebar = !app.show_sidebar;
+            if app.show_sidebar {
+                app.session_ids = crate::session::list_sessions();
+            }
+        }
+        "Toggle Info Sidebar (Ctrl+S)" => {
+            app.show_info_sidebar = !app.show_info_sidebar;
+        }
+        "Open Model Picker (Ctrl+M)" => {
+            app.show_model_picker = true;
+            app.model_picker_filter.clear();
+            app.model_picker_selected = 0;
+            app.model_picker_models = collect_all_models(app);
+        }
+        "Open Task Panel (Ctrl+T)" => {
+            app.show_task_panel = true;
+            app.task_panel_selected = 0;
+        }
+        "Toggle Thinking (Ctrl+O)" => {
+            // Thinking toggle is a per-message expand/collapse — flip the
+            // most recent reasoning row if there is one, otherwise no-op.
+            if let Some(idx) = app.messages.len().checked_sub(1) {
+                let entry = app.reasoning_expanded.entry(idx).or_insert(false);
+                *entry = !*entry;
+            }
+        }
+        "Continue Most Recent Session (/continue)" => {
+            run_slash_command(app, "/continue");
+        }
+        "Show Tasks (/tasks)" => {
+            run_slash_command(app, "/tasks");
+        }
+        "Show Help (/help)" => {
+            run_slash_command(app, "/help");
         }
         _ => {}
     }
 }
 
 pub fn palette_items(app: &App) -> Vec<&'static str> {
-    let all: &[&str] = &["Clear Messages"];
+    // Discoverability index for keybindings + slash commands. Order matches
+    // expected frequency: clear/compact at the top because they're used on
+    // every long session; less-frequent toggles further down.
+    let all: &[&str] = &[
+        "Clear Messages (/clear)",
+        "Compact Conversation (/compact)",
+        "Continue Most Recent Session (/continue)",
+        "Toggle Sessions Sidebar (Ctrl+B)",
+        "Toggle Info Sidebar (Ctrl+S)",
+        "Open Model Picker (Ctrl+M)",
+        "Open Task Panel (Ctrl+T)",
+        "Toggle Thinking (Ctrl+O)",
+        "Show Tasks (/tasks)",
+        "Show Help (/help)",
+    ];
     if app.palette_input.is_empty() {
         all.to_vec()
     } else {
+        let needle = app.palette_input.to_lowercase();
         all.iter()
-            .filter(|s| s.to_lowercase().contains(&app.palette_input.to_lowercase()))
+            .filter(|s| s.to_lowercase().contains(&needle))
             .copied()
             .collect()
     }

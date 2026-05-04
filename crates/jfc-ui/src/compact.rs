@@ -21,11 +21,33 @@ use crate::provider::{Provider, ProviderContent, ProviderMessage, ProviderRole, 
 use crate::types::ChatMessage;
 
 const CHARS_PER_TOKEN: usize = 4;
-const COMPACT_THRESHOLD: f64 = 0.85;
 const MAX_ATTEMPTS: u32 = 8;
 const CIRCUIT_BREAKER_LIMIT: u32 = 3;
 /// If context refills within this many user turns after a compact, it counts as thrash.
 const THRASH_TURN_WINDOW: u32 = 2;
+
+// v126 threshold algorithm — `gG6` / `ZB7` in cli.js (lines 397177-397203).
+// The model's nominal window minus three headrooms gives three trigger levels.
+// Using fixed token offsets (not percentages) keeps behavior consistent across
+// 200K and 1M-context models — the buffer needed for the next user turn + the
+// outgoing compaction summary doesn't scale with window size.
+//
+//   tokens >= window - BLOCKED_HEADROOM → can't even submit; force compact
+//   tokens >= window - COMPACT_HEADROOM → auto-compact triggers (this turn)
+//   tokens >= window - WARN_HEADROOM    → UI warning, no action
+const COMPACT_HEADROOM: usize = 13_000;
+const BLOCKED_HEADROOM: usize = 3_000;
+// warn = compact_threshold - 20_000 (matches v126's `_ - 2e4` in ZB7);
+// computed inline rather than as a const since it depends on the runtime
+// compact threshold (which itself shifts with the pct override).
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactLevel {
+    Ok,
+    Warn,
+    Compact,
+    Blocked,
+}
 
 pub fn estimate_tokens(messages: &[ChatMessage]) -> usize {
     messages
@@ -41,9 +63,67 @@ fn estimate_group_tokens(group: &ConversationGroup) -> usize {
     estimate_tokens(&group.messages)
 }
 
+/// Read `JFC_AUTOCOMPACT_PCT_OVERRIDE` (1-100) once per call. v126 has the
+/// same env knob (`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`) used by integration tests
+/// to force compaction at non-default thresholds without rebuilding.
+fn pct_override() -> Option<f64> {
+    std::env::var("JFC_AUTOCOMPACT_PCT_OVERRIDE")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .filter(|p| (0.0..=100.0).contains(p) && *p > 0.0)
+}
+
+fn blocked_override() -> Option<usize> {
+    std::env::var("JFC_BLOCKING_LIMIT_OVERRIDE")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|n| *n > 0)
+}
+
+pub fn auto_compact_disabled() -> bool {
+    matches!(
+        std::env::var("JFC_DISABLE_COMPACT").as_deref(),
+        Ok("1") | Ok("true")
+    ) || matches!(
+        std::env::var("JFC_DISABLE_AUTO_COMPACT").as_deref(),
+        Ok("1") | Ok("true")
+    )
+}
+
+/// Compute the absolute token offset at which auto-compaction triggers.
+/// Mirrors v126 `gG6` (cli.js:397177-397182).
+pub fn compact_threshold(window: usize) -> usize {
+    let base = window.saturating_sub(COMPACT_HEADROOM);
+    if let Some(pct) = pct_override() {
+        let from_pct = ((window as f64) * pct / 100.0).floor() as usize;
+        return from_pct.min(base);
+    }
+    base
+}
+
+/// Mirrors v126 `ZB7` (cli.js:397183-397203).
+pub fn compact_level(tokens: usize, window: usize) -> CompactLevel {
+    let compact = compact_threshold(window);
+    let warn = compact.saturating_sub(20_000);
+    let blocked = blocked_override().unwrap_or_else(|| window.saturating_sub(BLOCKED_HEADROOM));
+
+    if tokens >= blocked {
+        CompactLevel::Blocked
+    } else if !auto_compact_disabled() && tokens >= compact {
+        CompactLevel::Compact
+    } else if tokens >= warn {
+        CompactLevel::Warn
+    } else {
+        CompactLevel::Ok
+    }
+}
+
 pub fn should_compact(messages: &[ChatMessage], max_context_tokens: usize) -> bool {
     let est = estimate_tokens(messages);
-    est as f64 > max_context_tokens as f64 * COMPACT_THRESHOLD
+    matches!(
+        compact_level(est, max_context_tokens),
+        CompactLevel::Compact | CompactLevel::Blocked
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -258,9 +338,146 @@ fn build_summary_text(messages: &[ChatMessage], strip_media: bool) -> String {
     text
 }
 
+// Modeled after v126's `getCompactPrompt` (claude-code prompt.ts:61-143),
+// flattened to a single string. The 9-section structure is what claude-code
+// uses to keep summaries actionable rather than narrative — the assistant
+// resuming after compaction can re-orient from the headers alone.
 const COMPACTION_SYSTEM_PROMPT: &str = "\
-You are a conversation summarizer. Your job is to create a concise summary \
-of the conversation that preserves all information needed to continue the work. \
-Include: file paths modified, key decisions made, code patterns established, \
-error messages encountered, and current state of the task. \
-Do NOT include pleasantries or meta-commentary. Be factual and dense.";
+You are summarizing a conversation so it can be continued in a new session. \
+CRITICAL: respond with TEXT ONLY — do not call any tools.
+
+Produce a structured summary using these nine sections (omit any that don't \
+apply, but keep the order). Be factual and dense; no pleasantries, no \
+meta-commentary, no apologies.
+
+1. Primary Request and Intent — what the user asked for, in their words.
+2. Key Technical Concepts — frameworks, languages, patterns invoked.
+3. Files and Code Sections — every file path touched or read, with the \
+   relevant snippets or signatures (not the whole file).
+4. Errors and Fixes — every error message + the resolution that worked.
+5. Problem Solving — non-obvious decisions and the reasoning behind them.
+6. All User Messages — chronological list of what the user has said.
+7. Pending Tasks — anything still open or blocked.
+8. Current Work — exactly where we are right now (last file, last function, \
+   last failure).
+9. Optional Next Step — the single most likely next action.";
+
+#[cfg(test)]
+mod level_tests {
+    use super::*;
+
+    const W: usize = 200_000;
+
+    /// Serializes env-var access across the tests in this module — `cargo
+    /// test` runs them in parallel by default, and `compact_level` reads
+    /// process-global env state. Without this, `JFC_DISABLE_AUTO_COMPACT=1`
+    /// set by one test races into another and flips its expected level.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock() -> std::sync::MutexGuard<'static, ()> {
+        // Poisoning is fine here — a panic in one test shouldn't cascade
+        // into "all subsequent tests fail because the mutex is poisoned."
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn clear_env() {
+        for k in [
+            "JFC_AUTOCOMPACT_PCT_OVERRIDE",
+            "JFC_BLOCKING_LIMIT_OVERRIDE",
+            "JFC_DISABLE_COMPACT",
+            "JFC_DISABLE_AUTO_COMPACT",
+        ] {
+            // Safety: env mutation must be serialized; tests in this module
+            // run sequentially because they all share these variables.
+            unsafe {
+                std::env::remove_var(k);
+            }
+        }
+    }
+
+    #[test]
+    fn threshold_default_is_window_minus_13k_normal() {
+        let _g = lock();
+        clear_env();
+        assert_eq!(compact_threshold(W), 187_000);
+        assert_eq!(compact_threshold(1_000_000), 987_000);
+    }
+
+    #[test]
+    fn levels_match_v126_at_each_boundary_normal() {
+        let _g = lock();
+        clear_env();
+        // ok zone
+        assert_eq!(compact_level(0, W), CompactLevel::Ok);
+        assert_eq!(compact_level(166_999, W), CompactLevel::Ok);
+        // warn at compact - 20K = 167K
+        assert_eq!(compact_level(167_000, W), CompactLevel::Warn);
+        assert_eq!(compact_level(186_999, W), CompactLevel::Warn);
+        // compact at window - 13K = 187K
+        assert_eq!(compact_level(187_000, W), CompactLevel::Compact);
+        assert_eq!(compact_level(196_999, W), CompactLevel::Compact);
+        // blocked at window - 3K = 197K
+        assert_eq!(compact_level(197_000, W), CompactLevel::Blocked);
+        assert_eq!(compact_level(W + 999, W), CompactLevel::Blocked);
+    }
+
+    #[test]
+    fn pct_override_caps_threshold_below_default_normal() {
+        let _g = lock();
+        clear_env();
+        // Safety: serial test, env reset above.
+        unsafe {
+            std::env::set_var("JFC_AUTOCOMPACT_PCT_OVERRIDE", "50");
+        }
+        // pct=50 → compact at 100K (min of 50% and the default base of 187K).
+        // warn = compact - 20K = 80K; blocked = window - 3K = 197K. Verify each
+        // band including the boundary just below compact (which falls in warn,
+        // not ok, since lowering compact pulls warn down with it).
+        assert_eq!(compact_threshold(W), 100_000);
+        assert_eq!(compact_level(79_999, W), CompactLevel::Ok);
+        assert_eq!(compact_level(80_000, W), CompactLevel::Warn);
+        assert_eq!(compact_level(99_999, W), CompactLevel::Warn);
+        assert_eq!(compact_level(100_000, W), CompactLevel::Compact);
+        assert_eq!(compact_level(197_000, W), CompactLevel::Blocked);
+        clear_env();
+    }
+
+    #[test]
+    fn pct_override_clamped_to_default_when_higher_robust() {
+        let _g = lock();
+        clear_env();
+        unsafe {
+            std::env::set_var("JFC_AUTOCOMPACT_PCT_OVERRIDE", "99");
+        }
+        // 99% of 200K = 198K, but compact base = 187K → min wins.
+        assert_eq!(compact_threshold(W), 187_000);
+        clear_env();
+    }
+
+    #[test]
+    fn disable_flag_skips_compact_level_robust() {
+        let _g = lock();
+        clear_env();
+        unsafe {
+            std::env::set_var("JFC_DISABLE_AUTO_COMPACT", "1");
+        }
+        // Even at 195K (would be compact), level should fall back to warn —
+        // user disabled auto-compact, but blocked still applies (it's a hard
+        // API constraint, not a preference).
+        assert_eq!(compact_level(195_000, W), CompactLevel::Warn);
+        // Blocked still applies though.
+        assert_eq!(compact_level(198_000, W), CompactLevel::Blocked);
+        clear_env();
+    }
+
+    #[test]
+    fn small_window_saturates_without_underflow_robust() {
+        let _g = lock();
+        clear_env();
+        // A 5K window can't even hold 13K headroom — saturating arithmetic
+        // means the compact threshold collapses to 0 (everything is "compact"
+        // territory). Importantly: no panic, no underflow.
+        assert_eq!(compact_threshold(5_000), 0);
+        assert_eq!(compact_level(1, 5_000), CompactLevel::Compact);
+    }
+}

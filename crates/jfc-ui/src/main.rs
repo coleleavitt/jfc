@@ -21,10 +21,12 @@ mod types;
 
 use std::{io, sync::Arc, time::Duration};
 
+use clap::Parser;
 use crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind,
-        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, KeyEventKind, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+        PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -38,8 +40,53 @@ use provider::{ModelId, Provider, ProviderId};
 use providers::{AnthropicOAuthProvider, AnthropicProvider, OpenWebUIProvider};
 use types::*;
 
+/// JFC - A TUI assistant for code exploration and development
+#[derive(Parser, Debug)]
+#[command(name = "jfc", version, about)]
+struct Cli {
+    /// Resume the most recent session
+    #[arg(long = "continue", short = 'c')]
+    continue_session: bool,
+
+    /// Resume a specific session by ID
+    #[arg(long, short = 'r', value_name = "SESSION_ID")]
+    resume: Option<String>,
+
+    /// Initial prompt to send (non-interactive if specified)
+    #[arg(long, short = 'p', value_name = "PROMPT")]
+    prompt: Option<String>,
+
+    /// Model to use (overrides ANTHROPIC_MODEL env var)
+    #[arg(long, short = 'm', value_name = "MODEL")]
+    model: Option<String>,
+}
+
+/// Session to load at startup based on CLI args
+enum StartupSession {
+    /// No session to load — start fresh
+    Fresh,
+    /// Continue most recent session
+    Continue,
+    /// Resume specific session by ID
+    Resume(String),
+}
+
+impl Cli {
+    fn startup_session(&self) -> StartupSession {
+        if let Some(ref id) = self.resume {
+            StartupSession::Resume(id.clone())
+        } else if self.continue_session {
+            StartupSession::Continue
+        } else {
+            StartupSession::Fresh
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
     // Tracing → file under `~/.config/jfc/logs/`. Stderr writes corrupted the
     // TUI alt-screen, so we route to a rolling daily file via
     // `tracing-appender::non_blocking`. The `WorkerGuard` is held for the
@@ -54,20 +101,39 @@ async fn main() -> anyhow::Result<()> {
     let init = build_providers();
     let providers = init.providers;
     let active_idx = init.active_idx;
-    let model = init.model;
+    // Determine startup session from CLI flags (before consuming cli fields)
+    let startup_session = cli.startup_session();
+    let initial_prompt = cli.prompt;
+
+    // CLI --model overrides env var
+    let model = cli.model.map(ModelId::from).unwrap_or(init.model);
     let oauth_handle = init.oauth;
     let provider = providers[active_idx].clone();
 
     install_terminal_panic_hook();
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste
+    )?;
     let kbd_enhanced = enable_keyboard_enhancement(&mut stdout);
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let result = run(&mut terminal, providers, provider, model, oauth_handle).await;
+    let result = run(
+        &mut terminal,
+        providers,
+        provider,
+        model,
+        oauth_handle,
+        startup_session,
+        initial_prompt,
+    )
+    .await;
 
     if kbd_enhanced {
         let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
@@ -76,7 +142,8 @@ async fn main() -> anyhow::Result<()> {
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        DisableBracketedPaste
     )?;
     terminal.show_cursor()?;
 
@@ -87,7 +154,12 @@ fn install_terminal_panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+        let _ = execute!(
+            io::stdout(),
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            DisableBracketedPaste
+        );
         previous(info);
     }));
 }
@@ -354,10 +426,52 @@ async fn run(
     provider: Arc<dyn Provider>,
     model: ModelId,
     oauth_handle: Option<Arc<AnthropicOAuthProvider>>,
+    startup_session: StartupSession,
+    initial_prompt: Option<String>,
 ) -> anyhow::Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
     let mut app = App::new(provider, model);
     app.providers = providers.clone();
+
+    // Handle --continue / --resume flags
+    match startup_session {
+        StartupSession::Fresh => {}
+        StartupSession::Continue => {
+            if let Some(session_id) = session::most_recent_session() {
+                if let Some(messages) = session::load_session(&session_id) {
+                    tracing::info!(
+                        target: "jfc::session",
+                        session_id = %session_id,
+                        message_count = messages.len(),
+                        "continuing most recent session"
+                    );
+                    app.messages = messages;
+                    app.current_session_id = Some(session_id);
+                }
+            }
+        }
+        StartupSession::Resume(session_id) => {
+            if let Some(messages) = session::load_session(&session_id) {
+                tracing::info!(
+                    target: "jfc::session",
+                    session_id = %session_id,
+                    message_count = messages.len(),
+                    "resuming specific session"
+                );
+                app.messages = messages;
+                app.current_session_id = Some(session_id);
+            } else {
+                tracing::warn!(
+                    target: "jfc::session",
+                    session_id = %session_id,
+                    "session not found, starting fresh"
+                );
+            }
+        }
+    }
+
+    // Handle --prompt flag: queue an initial prompt to submit after startup
+    let queued_initial_prompt = initial_prompt;
 
     // Kick off background model-list fetches so the picker reflects what each provider
     // actually serves (e.g., the user's OpenWebUI instance) instead of stale hardcoded
@@ -414,6 +528,33 @@ async fn run(
     app.sync_task_completions();
     terminal.draw(|f| render::frame(f, &mut app))?;
 
+    // Submit initial prompt if provided via --prompt flag
+    if let Some(prompt) = queued_initial_prompt {
+        // Use the same logic as handle_submit but without waiting for user input
+        let assistant_idx = app.messages.len() + 1;
+        app.messages.push(ChatMessage::user(prompt.clone()));
+        app.tool_ctx.total_user_turns += 1;
+        app.messages.push(ChatMessage::assistant(String::new()));
+        app.streaming_assistant_idx = Some(assistant_idx);
+        app.is_streaming = true;
+
+        // Create session if not resuming one
+        let session_id = app
+            .current_session_id
+            .clone()
+            .unwrap_or_else(session::generate_session_id);
+        session::save_session(&session_id, &app.messages);
+        app.current_session_id = Some(session_id);
+
+        let provider = app.provider.clone();
+        let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
+        let model = app.model.clone();
+        let tx_clone = tx.clone();
+        tokio::spawn(async move {
+            stream::stream_response(provider, messages, model, tx_clone).await;
+        });
+    }
+
     loop {
         let ev = match rx.recv().await {
             Some(e) => e,
@@ -431,6 +572,9 @@ async fn run(
                 if input::handle_key(&mut app, k, &tx).await? {
                     break;
                 }
+            }
+            AppEvent::Term(Event::Paste(text)) => {
+                app.textarea.insert_str(&text);
             }
             AppEvent::Term(Event::Mouse(mouse)) => {
                 use crossterm::event::{MouseButton, MouseEventKind};
@@ -619,6 +763,11 @@ async fn run(
                 app.is_streaming = false;
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
+
+                // Auto-save session after each assistant turn completes
+                if let Some(ref session_id) = app.current_session_id {
+                    session::save_session(session_id, &app.messages);
+                }
                 // v126 queued-prompt drain on plain end_turn: model finished
                 // without tools to call → if anything's queued, fire it now.
                 if stop_reason == provider::StopReason::EndTurn
@@ -758,7 +907,8 @@ async fn run(
                 }
             }
             AppEvent::AllToolsComplete => {
-                if compact::should_compact(&app.messages, app.max_context_tokens) {
+                let manual = std::mem::take(&mut app.force_compact_pending);
+                if manual || compact::should_compact(&app.messages, app.max_context_tokens) {
                     let _ = tx.send(AppEvent::CompactionStarted);
                     let messages = app.messages.clone();
                     let provider = Arc::clone(&app.provider);
@@ -836,6 +986,12 @@ async fn run(
                 app.tool_ctx.approx_tokens = post_tokens;
             }
             AppEvent::CompactionFailed(_reason) => {}
+            AppEvent::Submit(text) => {
+                // Re-fire after pre-submit compaction. Reuses the same
+                // dispatch path as a typed prompt so message persistence,
+                // streaming setup, and session save all run identically.
+                input::handle_submit_text(&mut app, text, &tx).await?;
+            }
             AppEvent::ModelsLoaded { provider, models } => {
                 app.model_picker_query_cache.clear();
                 app.provider_models.insert(provider, models);
