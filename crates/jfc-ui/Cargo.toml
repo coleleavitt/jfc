@@ -22,6 +22,7 @@ arboard = { version = "3", default-features = false, features = ["wayland-data-c
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png"] }
 serde_yaml = "0.9"
+toml = "0.8"
 dirs = "5"
 serde_json = { workspace = true }
 unicode-segmentation = { workspace = true }

@@ -3,6 +3,7 @@ mod app;
 mod attachments;
 mod auto_mode;
 mod compact;
+mod config;
 mod context;
 mod cost;
 mod diagnostics;
