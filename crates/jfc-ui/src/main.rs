@@ -10,6 +10,7 @@ mod diagnostics;
 mod diagnostics_producer;
 mod inline_tools;
 mod input;
+mod lsp_client;
 mod lsp_rpc;
 mod markdown;
 mod mentions;
@@ -561,6 +562,19 @@ async fn run(
         tokio::spawn(async move {
             diagnostics_producer::run_once(cwd, tx_diag).await;
         });
+    }
+
+    // Real LSP client: spawns rust-analyzer (Cargo.toml present) or zls
+    // (build.zig present) and routes `textDocument/publishDiagnostics`
+    // into `AppEvent::DiagnosticsUpdated`. Gated by `JFC_DISABLE_LSP=1`.
+    // `maybe_spawn_lsp_clients` is fire-and-forget — startup never
+    // blocks on the handshake. If the binary isn't on PATH, the spawn
+    // task silently returns and we fall back to the cargo-check
+    // producer above.
+    {
+        let tx_lsp = tx.clone();
+        let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+        lsp_client::maybe_spawn_lsp_clients(cwd, tx_lsp);
     }
 
     app.sync_task_completions();
