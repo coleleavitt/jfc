@@ -137,7 +137,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 }
 
 fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
-    use crate::types::{LspStatus, McpStatus};
+    use crate::types::LspStatus;
 
     let t = app.theme;
 
@@ -290,34 +290,6 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(Line::from(""));
     }
 
-    if !app.mcp_servers.is_empty() {
-        lines.push(Line::from(vec![Span::styled(
-            "▼ MCP",
-            Style::default()
-                .fg(t.text_primary)
-                .add_modifier(Modifier::BOLD),
-        )]));
-
-        for srv in &app.mcp_servers {
-            let (dot_color, status_color) = match srv.status {
-                McpStatus::Connected => (t.success, t.text_muted),
-                McpStatus::Disabled => (t.text_muted, t.text_muted),
-                McpStatus::Error => (t.error, t.error),
-            };
-            lines.push(Line::from(vec![
-                Span::styled("• ", Style::default().fg(dot_color)),
-                Span::styled(
-                    truncate_str(&srv.name, inner.width.saturating_sub(14) as usize),
-                    Style::default().fg(t.accent),
-                ),
-                Span::raw(" "),
-                Span::styled(srv.status.label(), Style::default().fg(status_color)),
-            ]));
-        }
-
-        lines.push(Line::from(""));
-    }
-
     lines.push(Line::from(vec![Span::styled(
         "LSP",
         Style::default()
@@ -344,6 +316,35 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
                 ),
                 Span::raw(" "),
                 Span::styled(label, Style::default().fg(dot_color)),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+
+    // MCP section — v126 cli.js renders MCP server status alongside LSP.
+    // Layout mirrors the LSP block above: bold header, one row per server
+    // formatted as `<dot> <name>`, blank separator below.
+    lines.push(Line::from(vec![Span::styled(
+        "MCP",
+        Style::default()
+            .fg(t.text_primary)
+            .add_modifier(Modifier::BOLD),
+    )]));
+
+    if app.mcp_servers.is_empty() {
+        lines.push(Line::from(vec![Span::styled(
+            "No MCP servers configured",
+            Style::default().fg(t.text_muted),
+        )]));
+    } else {
+        for srv in &app.mcp_servers {
+            lines.push(Line::from(vec![
+                Span::styled("● ", Style::default().fg(mcp_status_color(srv.status, t))),
+                Span::styled(
+                    truncate_str(&srv.name, inner.width.saturating_sub(2) as usize),
+                    Style::default().fg(t.text_secondary),
+                ),
             ]));
         }
     }
@@ -619,6 +620,14 @@ fn collect_diff_stats(app: &App) -> DiffStats {
         additions,
         deletions,
         files: order,
+    }
+}
+
+fn mcp_status_color(status: McpStatus, theme: Theme) -> Color {
+    match status {
+        McpStatus::Connected => theme.success,
+        McpStatus::Disabled => theme.text_muted,
+        McpStatus::Error => theme.error,
     }
 }
 
@@ -2291,4 +2300,27 @@ fn render_choice_list(
         })
         .collect();
     f.render_widget(List::new(items).style(Style::default().bg(t.surface)), area);
+}
+
+#[cfg(test)]
+mod mcp_tests {
+    use super::*;
+
+    #[test]
+    fn mcp_status_color_connected_is_success_normal() {
+        let t = Theme::dark();
+        assert_eq!(mcp_status_color(McpStatus::Connected, t), t.success);
+    }
+
+    #[test]
+    fn mcp_status_color_disabled_is_muted_normal() {
+        let t = Theme::dark();
+        assert_eq!(mcp_status_color(McpStatus::Disabled, t), t.text_muted);
+    }
+
+    #[test]
+    fn mcp_status_color_error_is_error_normal() {
+        let t = Theme::dark();
+        assert_eq!(mcp_status_color(McpStatus::Error, t), t.error);
+    }
 }
