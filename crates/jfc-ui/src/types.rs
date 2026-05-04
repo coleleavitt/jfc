@@ -354,6 +354,7 @@ pub enum ToolKind {
     TaskList,
     TaskDone,
     Task,
+    Skill,
     Generic(String),
 }
 
@@ -424,6 +425,10 @@ pub enum ToolInput {
     },
     TaskDone {
         task_id: String,
+    },
+    Skill {
+        name: String,
+        args: Option<String>,
     },
     Generic {
         summary: String,
@@ -669,6 +674,7 @@ impl ToolKind {
             "TaskList" | "task_list" => Self::TaskList,
             "TaskDone" | "task_done" => Self::TaskDone,
             "Task" | "task" => Self::Task,
+            "Skill" | "skill" => Self::Skill,
             other => Self::Generic(other.to_owned()),
         }
     }
@@ -688,6 +694,7 @@ impl ToolKind {
             Self::TaskList => "TaskList",
             Self::TaskDone => "TaskDone",
             Self::Task => "Task",
+            Self::Skill => "Skill",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -707,6 +714,7 @@ impl ToolKind {
             Self::TaskList => "TaskList",
             Self::TaskDone => "TaskDone",
             Self::Task => "Task",
+            Self::Skill => "Skill",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -756,6 +764,10 @@ impl ToolInput {
             },
             Self::TaskDone { task_id } => format!("done: {task_id}"),
             Self::Task(ti) => ti.summary(),
+            Self::Skill { name, args } => match args.as_deref().filter(|s| !s.is_empty()) {
+                Some(a) => format!("{name}: {a}"),
+                None => name.clone(),
+            },
             Self::Generic { summary } => summary.clone(),
         }
     }
@@ -860,6 +872,10 @@ impl ToolInput {
                 run_in_background: bool_field("run_in_background"),
                 model: opt_str_field("model"),
             }),
+            ToolKind::Skill => Self::Skill {
+                name: str_field("name"),
+                args: opt_str_field("args"),
+            },
             ToolKind::Generic(_) => Self::Generic {
                 summary: v.to_string(),
             },
@@ -1010,6 +1026,13 @@ impl ToolInput {
                 }
                 if let Some(m) = &ti.model {
                     v["model"] = json!(m);
+                }
+                v
+            }
+            Self::Skill { name, args } => {
+                let mut v = json!({ "name": name });
+                if let Some(a) = args {
+                    v["args"] = json!(a);
                 }
                 v
             }
