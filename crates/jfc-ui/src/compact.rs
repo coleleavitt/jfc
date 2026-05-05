@@ -246,7 +246,7 @@ pub async fn compact(
 
         let compact_options = StreamOptions::new(options.model.clone())
             .system(COMPACTION_SYSTEM_PROMPT.to_owned())
-            .max_tokens(4096);
+            .max_tokens(20_000);
 
         match provider.complete(compact_messages, &compact_options).await {
             Ok(response) => {
@@ -262,7 +262,8 @@ pub async fn compact(
                         (preserve_count + step).min(total_groups - 1);
                     continue;
                 }
-                let summary_msg = ChatMessage::compact_boundary(&response.content, pre_tokens);
+                let formatted = format_compact_summary(&response.content);
+                let summary_msg = ChatMessage::compact_boundary(&formatted, pre_tokens);
                 let mut compacted = vec![summary_msg];
                 compacted.extend(to_preserve);
 
@@ -430,18 +431,16 @@ fn count_user_turns_since_last_compact(messages: &[ChatMessage]) -> u32 {
 
 fn build_summary_text(messages: &[ChatMessage], strip_media: bool) -> String {
     let mut text = String::from(
-        "Summarize the following conversation. Preserve all key decisions, \
-         file paths, code changes, error messages, and context needed to \
-         continue the work. Be concise but complete.\n\n",
+        "Here is the conversation to summarize:\n\n",
     );
 
     for msg in messages {
         let role = if msg.role_is_user() {
-            "User"
+            "H" // Human
         } else {
-            "Assistant"
+            "A" // Assistant
         };
-        text.push_str(&format!("--- {} ---\n", role));
+        text.push_str(&format!("[{}]\n", role));
         for part in &msg.parts {
             if strip_media {
                 text.push_str(&part.text_only());
@@ -450,34 +449,85 @@ fn build_summary_text(messages: &[ChatMessage], strip_media: bool) -> String {
             }
             text.push('\n');
         }
+        text.push('\n');
     }
 
     text
 }
 
-// Modeled after v126's `getCompactPrompt` (claude-code prompt.ts:61-143),
-// flattened to a single string. The 9-section structure is what claude-code
-// uses to keep summaries actionable rather than narrative — the assistant
-// resuming after compaction can re-orient from the headers alone.
+// Modeled after v126's `getCompactPrompt` (claude-code prompt.ts:61-143).
+// The 9-section structure + analysis scratchpad is what claude-code uses to
+// keep summaries actionable. The <analysis> block improves quality but gets
+// stripped from the final summary (it's a drafting scratchpad).
 const COMPACTION_SYSTEM_PROMPT: &str = "\
-You are summarizing a conversation so it can be continued in a new session. \
-CRITICAL: respond with TEXT ONLY — do not call any tools.
+CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
 
-Produce a structured summary using these nine sections (omit any that don't \
-apply, but keep the order). Be factual and dense; no pleasantries, no \
-meta-commentary, no apologies.
+- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.
+- You already have all the context you need in the conversation above.
+- Tool calls will be REJECTED and will waste your only turn — you will fail the task.
+- Your entire response must be plain text: an <analysis> block followed by a <summary> block.
 
-1. Primary Request and Intent — what the user asked for, in their words.
-2. Key Technical Concepts — frameworks, languages, patterns invoked.
-3. Files and Code Sections — every file path touched or read, with the \
-   relevant snippets or signatures (not the whole file).
-4. Errors and Fixes — every error message + the resolution that worked.
-5. Problem Solving — non-obvious decisions and the reasoning behind them.
-6. All User Messages — chronological list of what the user has said.
-7. Pending Tasks — anything still open or blocked.
-8. Current Work — exactly where we are right now (last file, last function, \
-   last failure).
-9. Optional Next Step — the single most likely next action.";
+Your task is to create a detailed summary of the conversation so far, paying close \
+attention to the user's explicit requests and your previous actions. This summary \
+should be thorough in capturing technical details, code patterns, and architectural \
+decisions that would be essential for continuing development work without losing context.
+
+Before providing your final summary, wrap your analysis in <analysis> tags to organize \
+your thoughts and ensure you've covered all necessary points. In your analysis process:
+
+1. Chronologically analyze each message and section of the conversation. For each section thoroughly identify:
+   - The user's explicit requests and intents
+   - Your approach to addressing the user's requests
+   - Key decisions, technical concepts and code patterns
+   - Specific details like file names, full code snippets, function signatures, file edits
+   - Errors that you ran into and how you fixed them
+   - Pay special attention to specific user feedback, especially if the user told you to do something differently.
+2. Double-check for technical accuracy and completeness.
+
+Your summary should include the following sections:
+
+1. Primary Request and Intent: Capture all of the user's explicit requests and intents in detail
+2. Key Technical Concepts: List all important technical concepts, technologies, and frameworks discussed.
+3. Files and Code Sections: Enumerate specific files and code sections examined, modified, or created. Include full code snippets where applicable.
+4. Errors and Fixes: List all errors encountered and how they were fixed. Include user feedback.
+5. Problem Solving: Document problems solved and any ongoing troubleshooting efforts.
+6. All User Messages: List ALL user messages that are not tool results (critical for understanding changing intent).
+7. Pending Tasks: Outline any pending tasks explicitly asked for.
+8. Current Work: Describe precisely what was being worked on immediately before this summary request.
+9. Optional Next Step: The single most likely next action, with direct quotes from the most recent conversation.
+
+REMINDER: Do NOT call any tools. Respond with plain text only — \
+an <analysis> block followed by a <summary> block.";
+
+/// Strip `<analysis>...</analysis>` and extract content from `<summary>...</summary>`.
+/// Mirrors v126's `formatCompactSummary()` in prompt.ts:293-313.
+fn format_compact_summary(raw: &str) -> String {
+    let mut result = raw.to_string();
+
+    // Strip analysis section — it's a drafting scratchpad
+    if let Some(start) = result.find("<analysis>") {
+        if let Some(end) = result.find("</analysis>") {
+            let end_tag_end = end + "</analysis>".len();
+            result = format!("{}{}", &result[..start], &result[end_tag_end..]);
+        }
+    }
+
+    // Extract summary content
+    if let Some(start) = result.find("<summary>") {
+        if let Some(end) = result.find("</summary>") {
+            let content_start = start + "<summary>".len();
+            let content = result[content_start..end].trim();
+            result = format!("Summary:\n{content}");
+        }
+    }
+
+    // Clean up extra whitespace
+    while result.contains("\n\n\n") {
+        result = result.replace("\n\n\n", "\n\n");
+    }
+
+    result.trim().to_string()
+}
 
 #[cfg(test)]
 mod level_tests {
