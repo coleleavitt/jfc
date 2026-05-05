@@ -659,10 +659,17 @@ impl ChatMessage {
 
     pub fn compact_boundary(summary: &str, pre_tokens: usize) -> Self {
         Self {
-            role: Role::Assistant,
+            role: Role::User,
             parts: vec![
                 MessagePart::CompactBoundary { pre_tokens },
-                MessagePart::Text(format!("Summary of earlier conversation:\n\n{}", summary)),
+                MessagePart::Text(format!(
+                    "This session is being continued from a previous conversation that ran out of context. \
+                     The summary below covers the earlier portion of the conversation.\n\n\
+                     {summary}\n\n\
+                     Continue the conversation from where it left off without asking further questions. \
+                     Resume directly — do not acknowledge the summary, do not recap what was happening, \
+                     do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+                )),
             ],
             agent_name: Some("system".into()),
             model_name: None,
