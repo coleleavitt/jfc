@@ -1335,7 +1335,7 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // wire value stays 0 mid-stream, so we fall back to chars/4 of the
         // streamed text + reasoning. The first non-zero wire value beats the
         // estimate; once the wire stops moving we keep the last known count.
-        let estimate = (app.streaming_text.len() + app.streaming_reasoning.len()) as u64 / 4;
+        let estimate = app.streaming_response_bytes as u64 / 4;
         let live_tokens = crate::spinner::live_token_count(app.last_usage_output as u64, estimate);
         // Thinking signal — Some(Live) while reasoning is streaming,
         // Some(Done(d)) once we got the first text byte after thinking,

@@ -25,6 +25,10 @@ pub enum AppEvent {
         text: Option<String>,
         reasoning: Option<String>,
     },
+    /// Tool input JSON delta — streamed while the model builds tool_use arguments.
+    /// Carries the byte length so the spinner's token estimate stays live during
+    /// tool input streaming (matching v126's responseLengthRef accumulation).
+    ToolInputDelta(usize),
     StreamTool(ToolCall),
     StreamDone(StopReason),
     StreamError(String),
@@ -295,6 +299,11 @@ pub struct App {
     pub messages: Vec<ChatMessage>,
     pub streaming_text: String,
     pub streaming_reasoning: String,
+    /// v126-style cumulative byte counter for ALL streamed response content:
+    /// text deltas + thinking deltas + tool input JSON deltas. Divided by 4
+    /// for the spinner's token estimate (matches v126's `responseLengthRef.current / 4`).
+    /// Reset at the start of each streaming turn.
+    pub streaming_response_bytes: usize,
     pub streaming_assistant_idx: Option<usize>,
     pub is_streaming: bool,
     /// Wall-clock instant the current turn's stream began. Set when
@@ -545,6 +554,7 @@ impl App {
             messages: Vec::new(),
             streaming_text: String::new(),
             streaming_reasoning: String::new(),
+            streaming_response_bytes: 0,
             streaming_assistant_idx: None,
             streaming_started_at: None,
             streaming_last_token_at: None,

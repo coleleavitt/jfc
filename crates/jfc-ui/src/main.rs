@@ -325,6 +325,7 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent
     app.messages.push(ChatMessage::assistant(String::new()));
     app.streaming_text.clear();
     app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
     let now = std::time::Instant::now();
@@ -729,6 +730,14 @@ async fn run(
                 // reflects time-since-last-byte, not time-since-stream-start.
                 let now = std::time::Instant::now();
                 app.streaming_last_token_at = Some(now);
+                // v126 responseLengthRef: accumulate ALL content bytes for the
+                // spinner's chars/4 token estimate.
+                if let Some(ref t) = text {
+                    app.streaming_response_bytes += t.len();
+                }
+                if let Some(ref r) = reasoning {
+                    app.streaming_response_bytes += r.len();
+                }
                 if let Some(chunk) = text {
                     // First text byte after a thinking phase ⇒ thinking
                     // ended. Mirrors v126's HcH transition from
@@ -790,6 +799,13 @@ async fn run(
                 if app.follow_bottom {
                     app.scroll_to_bottom();
                 }
+            }
+            AppEvent::ToolInputDelta(byte_len) => {
+                // Tool input JSON streaming — accumulate bytes for the spinner's
+                // token estimate and reset the stall timer. Matches v126's
+                // accumulation of input_json_delta into responseLengthRef.
+                app.streaming_response_bytes += byte_len;
+                app.streaming_last_token_at = Some(std::time::Instant::now());
             }
             AppEvent::StreamTool(tool) => {
                 // Trace every StreamTool entry so next-run diagnostics show
@@ -958,6 +974,7 @@ async fn run(
                 }
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
                 // Clear the user-turn clock only when the loop has
                 // genuinely concluded — EndTurn stop reason AND no
                 // tools pending. ToolUse means an agentic continuation
@@ -1052,6 +1069,7 @@ async fn run(
                 app.thinking_ended_at = None;
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
                 app.streaming_assistant_idx = None;
                 app.messages
                     .push(ChatMessage::assistant(format!("**Error:** {e}")));

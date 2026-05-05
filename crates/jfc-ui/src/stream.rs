@@ -218,7 +218,13 @@ pub async fn stream_response(
                 });
             }
             StreamEvent::ToolDelta { index, delta } => {
+                let byte_len = delta.len();
                 tool_accum.entry(index).or_default().2.push_str(&delta);
+                // Notify the main loop so:
+                // 1. streaming_response_bytes increments (spinner token estimate stays live)
+                // 2. streaming_last_token_at resets (stall timer doesn't fire)
+                // Matches v126's responseLengthRef accumulation from input_json_delta events.
+                let _ = tx.send(AppEvent::ToolInputDelta(byte_len));
             }
             StreamEvent::ToolDone {
                 index,
@@ -435,6 +441,7 @@ pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::UnboundedSender<App
     app.messages.push(ChatMessage::assistant(String::new()));
     app.streaming_text.clear();
     app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
     // The sub-stream clock restarts (Anthropic restarts `output_tokens`

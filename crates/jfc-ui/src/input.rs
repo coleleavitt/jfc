@@ -370,6 +370,7 @@ pub async fn handle_key(
                         app.switch_session(Some(id));
                         app.streaming_text.clear();
                         app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
                         app.streaming_assistant_idx = None;
                         app.scroll_to_bottom();
                     }
@@ -1226,6 +1227,7 @@ async fn handle_submit(
     app.messages.push(ChatMessage::assistant(String::new()));
     app.streaming_text.clear();
     app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
     let now = std::time::Instant::now();
@@ -1308,6 +1310,7 @@ fn handle_slash_command(
             app.messages.clear();
             app.streaming_text.clear();
             app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
             app.streaming_assistant_idx = None;
             // Mint a fresh session id and wipe per-session state (tasks,
             // completion timers). v126 cli.js:271511 keys todos by sessionId
@@ -1402,6 +1405,7 @@ fn handle_slash_command(
                     app.switch_session(Some(session_id.clone()));
                     app.streaming_text.clear();
                     app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
                     app.streaming_assistant_idx = None;
                     app.scroll_to_bottom();
                     let scope = if want_global { "any cwd" } else { "this cwd" };
@@ -1489,6 +1493,7 @@ fn handle_slash_command(
                 app.switch_session(Some(session_id.to_owned()));
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
                 app.streaming_assistant_idx = None;
                 app.scroll_to_bottom();
                 app.messages.push(ChatMessage::assistant(format!(
@@ -1924,6 +1929,7 @@ fn handle_slash_command(
                 app.messages.push(ChatMessage::assistant(String::new()));
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
                 app.streaming_assistant_idx = Some(assistant_idx);
                 app.is_streaming = true;
                 let now = std::time::Instant::now();
@@ -2113,6 +2119,7 @@ fn execute_palette_action(app: &mut App, label: &str) {
             app.messages.clear();
             app.streaming_text.clear();
             app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
             app.streaming_assistant_idx = None;
             app.switch_session(None);
         }
