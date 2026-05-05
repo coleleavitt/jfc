@@ -641,23 +641,50 @@ fn is_usable_summary(text: &str) -> bool {
         debug!(target: "jfc::compact", "is_usable_summary: rejected — empty/whitespace");
         return false;
     }
-    let lower = trimmed.to_lowercase();
-    const ERROR_MARKERS: &[&str] = &[
-        "prompt is too long",
-        "input is too long",
-        "context window",
-        "exceeds context",
-        "rate_limit",
-        "rate limit exceeded",
-        "overloaded_error",
-        "request_too_large",
+
+    // Positive evidence a real summary is present — short-circuit accept.
+    // A turn that summarized a conversation about errors (e.g. the user
+    // debugging context-window bugs) will mention "prompt is too long"
+    // *as content*. Without this short-circuit a legitimate 16k-char
+    // summary got rejected because the body discussed those error
+    // strings — the bug shown in the user's compaction log.
+    let has_summary_tag = trimmed.contains("<summary>") || trimmed.contains("<analysis>");
+    if has_summary_tag {
+        trace!(
+            target: "jfc::compact",
+            text_len = trimmed.len(),
+            "is_usable_summary: accepted (summary/analysis tag present)"
+        );
+        return true;
+    }
+
+    // Fallback rejection: response *itself* is just an API error string
+    // the proxy echoed back. v126's `Od()` (cli.js:179986) does a strict
+    // `startsWith` against the known error-prefix constants — not a
+    // substring scan. We mirror that, plus a length cap so a runaway
+    // prefix-match on a legitimate long response can't fire.
+    const ERROR_PREFIX_PATTERNS: &[&str] = &[
+        "litellm.",                 // LiteLLM exception prefix (BedrockException, ContextWindowExceededError, etc.)
+        "{\"error\":",              // OWUI/OpenAI proxy JSON-error blob
+        "{\"message\":",            // alt JSON envelope
+        "Error:",                   // generic prefix
+        "BadRequestError:",         // litellm BadRequestError
+        "BedrockException:",
+        "AnthropicException:",
+        "context_window_fallback",  // litellm fallback message
     ];
-    let has_error_marker = ERROR_MARKERS.iter().any(|m| lower.contains(m));
-    if has_error_marker {
+    let starts_with_error = ERROR_PREFIX_PATTERNS
+        .iter()
+        .any(|p| trimmed.starts_with(p));
+    let is_short_enough_to_be_only_error = trimmed.len() < 2_000;
+    let rejected = starts_with_error && is_short_enough_to_be_only_error;
+
+    if rejected {
         debug!(
             target: "jfc::compact",
             text_preview = %&trimmed[..trimmed.len().min(150)],
-            "is_usable_summary: rejected — contains error marker"
+            text_len = trimmed.len(),
+            "is_usable_summary: rejected — response begins with API-error prefix"
         );
     } else {
         trace!(
@@ -666,7 +693,7 @@ fn is_usable_summary(text: &str) -> bool {
             "is_usable_summary: accepted"
         );
     }
-    !has_error_marker
+    !rejected
 }
 
 /// Extract `actualTokens - limitTokens` from an Anthropic error body.
@@ -1025,15 +1052,17 @@ mod level_tests {
         assert!(!is_usable_summary("   \n\t  "));
     }
 
+    // Echoed API errors that the proxy returned as the entire response
+    // body. These start with a recognizable error prefix and are short.
     #[test]
     fn is_usable_summary_rejects_echoed_api_errors() {
         assert!(!is_usable_summary(
-            "prompt is too long: 410234 tokens > 200000 maximum"
+            "litellm.ContextWindowExceededError: prompt is too long: 410234 tokens > 200000 maximum"
         ));
         assert!(!is_usable_summary(
-            "Sorry, this exceeds context window."
+            r#"{"error":{"message":"BedrockException: Context Window Error"}}"#
         ));
-        assert!(!is_usable_summary("Rate limit exceeded for tier 4"));
+        assert!(!is_usable_summary("BedrockException: Context Window Error"));
     }
 
     #[test]
@@ -1041,5 +1070,50 @@ mod level_tests {
         let real = "Session summary:\n- User asked about compaction.\n- \
                     Implemented post-compact validation.";
         assert!(is_usable_summary(real));
+    }
+
+    // Regression: a legitimate v126-format summary whose CONTENT
+    // discusses context-window or prompt-too-long errors used to be
+    // false-positive rejected by the old substring matcher. The user's
+    // log showed a 16k-char `<analysis>...` body rejected because the
+    // assistant was summarizing a debug session about that very error.
+    // The presence of `<summary>` or `<analysis>` is positive evidence
+    // and short-circuits acceptance regardless of error-string content.
+    #[test]
+    fn is_usable_summary_accepts_summary_about_errors_robust() {
+        let body = "<analysis>\nThe user reported `prompt is too long: \
+                    1267440 tokens > 1000000 maximum` while debugging\n\
+                    </analysis>\n<summary>\nFixed compaction context \
+                    window handling.\n</summary>";
+        assert!(
+            is_usable_summary(body),
+            "summary that discusses error strings as content should pass"
+        );
+    }
+
+    // Regression: a long summary with rich content that happens to
+    // mention "rate limit" anywhere should still be accepted. v126's
+    // `Od()` is a startsWith check, not a substring scan.
+    #[test]
+    fn is_usable_summary_accepts_long_response_mentioning_errors_robust() {
+        // 2.5k chars of legit content that includes an error phrase.
+        let body = format!(
+            "Session covered many topics including rate_limit handling \
+             and context window debugging. {}",
+            "x".repeat(2_500)
+        );
+        assert!(
+            is_usable_summary(&body),
+            "long response should be accepted regardless of substring mentions"
+        );
+    }
+
+    // Robust: a JSON error blob that's clearly the proxy echoing the
+    // upstream error verbatim — no `<summary>`, starts with `{"error":`,
+    // short — is correctly rejected.
+    #[test]
+    fn is_usable_summary_rejects_short_json_error_blob_robust() {
+        let body = r#"{"error":{"message":"litellm.BadRequestError: too long","code":"400"}}"#;
+        assert!(!is_usable_summary(body));
     }
 }
