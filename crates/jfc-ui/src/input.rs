@@ -887,6 +887,18 @@ pub async fn handle_key(
             reset_input(app);
             return Ok(false);
         }
+        (KeyModifiers::SHIFT, KeyCode::BackTab) | (KeyModifiers::NONE, KeyCode::BackTab) => {
+            // Shift+Tab cycles permission modes
+            app.permission_mode = app.permission_mode.next();
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Info,
+                    format!("{} Mode: {}", app.permission_mode.symbol(), app.permission_mode.label()),
+                ),
+            );
+            return Ok(false);
+        }
         (KeyModifiers::NONE, KeyCode::PageUp) => {
             app.scroll_page_up();
             return Ok(false);
@@ -1769,6 +1781,41 @@ fn handle_slash_command(
             };
             app.messages.push(ChatMessage::user("/claude-md".into()));
             app.messages.push(ChatMessage::assistant(body));
+        }
+        "/mode" => {
+            let arg = parts.get(1).copied().unwrap_or("").trim().to_lowercase();
+            let new_mode = match arg.as_str() {
+                "default" | "d" => Some(crate::app::PermissionMode::Default),
+                "plan" | "p" => Some(crate::app::PermissionMode::Plan),
+                "accept" | "acceptedits" | "a" => Some(crate::app::PermissionMode::AcceptEdits),
+                "bypass" | "b" | "yolo" => Some(crate::app::PermissionMode::BypassPermissions),
+                "auto" => Some(crate::app::PermissionMode::Auto),
+                "" => {
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "**Current mode:** {} {}\n\n\
+                         Available: `default`, `plan`, `accept`, `auto`, `bypass`\n\
+                         Switch: `/mode <name>` or **Shift+Tab** to cycle.",
+                        app.permission_mode.symbol(),
+                        app.permission_mode.label(),
+                    )));
+                    None
+                }
+                _ => {
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Unknown mode `{arg}`. Available: `default`, `plan`, `accept`, `auto`, `bypass`"
+                    )));
+                    None
+                }
+            };
+            if let Some(mode) = new_mode {
+                app.permission_mode = mode;
+                // Sync auto_mode.enabled with permission mode for backward compat
+                app.auto_mode.enabled = mode == crate::app::PermissionMode::Auto;
+                app.messages.push(ChatMessage::assistant(format!(
+                    "**Mode → {} {}**",
+                    mode.symbol(), mode.label()
+                )));
+            }
         }
         "/auto-mode" => {
             let arg = parts.get(1).copied().unwrap_or("status").trim();

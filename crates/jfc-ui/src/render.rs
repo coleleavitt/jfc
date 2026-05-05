@@ -1527,10 +1527,9 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
         (None, None) => String::new(),
     };
 
-    let auto_badge = if app.auto_mode.enabled {
-        "  ⚡ auto".to_string()
-    } else {
-        String::new()
+    let mode_badge = match app.permission_mode {
+        crate::app::PermissionMode::Default => String::new(),
+        mode => format!("  {} {}", mode.symbol(), mode.label()),
     };
 
     // v126 input queueing: show how many prompts the user has queued behind
@@ -1552,7 +1551,7 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
 
     let left = format!(
         " {}{}{}{}{}  {}  {} msgs ",
-        app.model, profile_badge, auto_badge, queue_badge, leader_badge, cwd_display, msg_count
+        app.model, profile_badge, mode_badge, queue_badge, leader_badge, cwd_display, msg_count
     );
     // Single right-hand hint: the palette key. All other shortcuts are
     // discoverable inside the palette itself (Ctrl+P) — keeping just one

@@ -127,6 +127,120 @@ pub enum AppEvent {
     Tick,
 }
 
+/// Permission modes matching v126 claude-code. Controls how tool execution
+/// is gated — from fully interactive (Default) to fully autonomous (Bypass).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionMode {
+    /// Standard — prompts for dangerous operations (Bash, Write, Edit)
+    Default,
+    /// Analysis only — blocks all write/exec tools, allows reads
+    Plan,
+    /// Auto-accept file edits (Write, Edit, ApplyPatch) but still prompt for Bash
+    AcceptEdits,
+    /// Bypass all permission checks — auto-approve everything
+    BypassPermissions,
+    /// Use a classifier model to approve/deny each tool call
+    Auto,
+}
+
+impl PermissionMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "Default",
+            Self::Plan => "Plan",
+            Self::AcceptEdits => "Accept Edits",
+            Self::BypassPermissions => "Bypass",
+            Self::Auto => "Auto",
+        }
+    }
+
+    pub fn symbol(self) -> &'static str {
+        match self {
+            Self::Default => "",
+            Self::Plan => "📋",
+            Self::AcceptEdits => "⏵",
+            Self::BypassPermissions => "⏵⏵",
+            Self::Auto => "⚡",
+        }
+    }
+
+    /// Cycle to the next mode (for Shift+Tab)
+    pub fn next(self) -> Self {
+        match self {
+            Self::Default => Self::AcceptEdits,
+            Self::AcceptEdits => Self::Auto,
+            Self::Auto => Self::Plan,
+            Self::Plan => Self::BypassPermissions,
+            Self::BypassPermissions => Self::Default,
+        }
+    }
+
+    /// Whether this mode allows a given tool to execute without prompting.
+    pub fn auto_approves(self, tool: &ToolCall) -> PermissionDecision {
+        match self {
+            Self::Default => PermissionDecision::NeedsPrompt,
+            Self::Plan => {
+                match tool.kind {
+                    ToolKind::Read | ToolKind::Glob | ToolKind::Grep
+                    | ToolKind::TaskCreate | ToolKind::TaskUpdate
+                    | ToolKind::TaskList | ToolKind::TaskDone => {
+                        PermissionDecision::Approved
+                    }
+                    ToolKind::Bash => {
+                        let cmd = tool.input.summary().to_lowercase();
+                        if is_readonly_bash(&cmd) {
+                            PermissionDecision::Approved
+                        } else {
+                            PermissionDecision::Denied("Plan mode: write operations blocked")
+                        }
+                    }
+                    _ => PermissionDecision::Denied("Plan mode: write operations blocked"),
+                }
+            }
+            Self::AcceptEdits => {
+                match tool.kind {
+                    ToolKind::Write | ToolKind::Edit | ToolKind::ApplyPatch
+                    | ToolKind::Read | ToolKind::Glob | ToolKind::Grep
+                    | ToolKind::TaskCreate | ToolKind::TaskUpdate
+                    | ToolKind::TaskList | ToolKind::TaskDone => {
+                        PermissionDecision::Approved
+                    }
+                    _ => PermissionDecision::NeedsPrompt,
+                }
+            }
+            Self::BypassPermissions => PermissionDecision::Approved,
+            Self::Auto => PermissionDecision::NeedsClassifier,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionDecision {
+    Approved,
+    Denied(&'static str),
+    NeedsPrompt,
+    NeedsClassifier,
+}
+
+/// Heuristic for read-only bash commands (used by Plan mode).
+fn is_readonly_bash(cmd: &str) -> bool {
+    let first_word = cmd.split_whitespace().next().unwrap_or("");
+    matches!(
+        first_word,
+        "ls" | "cat" | "head" | "tail" | "find" | "grep" | "rg" | "fd"
+            | "wc" | "file" | "stat" | "which" | "whoami" | "pwd" | "echo"
+            | "date" | "env" | "printenv" | "uname" | "hostname" | "id"
+            | "tree" | "du" | "df" | "free" | "ps"
+    ) || cmd.starts_with("git log")
+        || cmd.starts_with("git show")
+        || cmd.starts_with("git diff")
+        || cmd.starts_with("git status")
+        || cmd.starts_with("git branch")
+        || cmd.starts_with("cargo check")
+        || cmd.starts_with("cargo test")
+        || cmd.starts_with("cargo clippy")
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum ApprovalChoice {
     Yes,
@@ -314,6 +428,8 @@ pub struct App {
     /// call through the LLM classifier instead of prompting the user.
     /// Loaded from `~/.config/jfc/settings.json` at startup.
     pub auto_mode: AutoModeConfig,
+    /// v126 permission mode — controls how tool execution is gated.
+    pub permission_mode: PermissionMode,
     /// v126 task/todo store. Persists to `~/.config/jfc/tasks/<session>.json`
     /// so todos survive session resume and compaction. Reused across the
     /// agent's turns; the slash commands `/task-*` poke it directly.
@@ -479,6 +595,7 @@ impl App {
             session_list_state: ratatui::widgets::ListState::default(),
             current_session_id: Some(crate::session::generate_session_id()),
             auto_mode: crate::auto_mode::load_config(),
+            permission_mode: PermissionMode::Default,
             // Tasks are scoped per-session (mirrors v126 cli.js:271505 keying
             // todos by `agentId ?? sessionId`). Opening with a freshly-minted
             // session id means a new run sees an empty task list, even if
@@ -647,6 +764,14 @@ impl App {
     }
 
     pub fn tool_needs_approval(&self, tool: &ToolCall) -> bool {
+        // Permission mode takes priority
+        match self.permission_mode.auto_approves(tool) {
+            PermissionDecision::Approved => return false,
+            PermissionDecision::Denied(_) => return false, // caller checks tool_denied_by_mode
+            PermissionDecision::NeedsClassifier => return false, // auto-mode classifier handles
+            PermissionDecision::NeedsPrompt => {}
+        }
+
         let name = tool.kind.label();
         if self.always_approved.iter().any(|n| n == name) {
             return false;
@@ -658,6 +783,14 @@ impl App {
             tool.kind,
             ToolKind::Bash | ToolKind::Write | ToolKind::Edit | ToolKind::ApplyPatch
         )
+    }
+
+    /// Check if a tool should be auto-denied by the current permission mode.
+    pub fn tool_denied_by_mode(&self, tool: &ToolCall) -> Option<&'static str> {
+        match self.permission_mode.auto_approves(tool) {
+            PermissionDecision::Denied(reason) => Some(reason),
+            _ => None,
+        }
     }
 
     /// Scan the task store for newly-completed tasks and record their
