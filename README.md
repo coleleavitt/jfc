@@ -51,31 +51,6 @@ jfc --prompt "explain this codebase"
 jfc --model claude-opus-4-6-20250620
 ```
 
-## Providers
-
-### Anthropic OAuth (default)
-
-Reads accounts from `~/.config/opencode/anthropic-accounts.json` or `~/.config/jfc/anthropic-accounts.json`. Supports multi-account rotation with health scoring.
-
-```bash
-# Override accounts file location
-export JFC_ANTHROPIC_ACCOUNTS_PATH=/path/to/accounts.json
-```
-
-### Anthropic API Key
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
-### OpenWebUI / LiteLLM Proxy
-
-```bash
-export OPENWEBUI_URL=https://your-instance.example.com
-export OPENWEBUI_API_KEY=sk-...
-export OPENWEBUI_MODEL=bedrock-claude-4-6-opus
-```
-
 ## Keybindings
 
 | Key | Action |
@@ -117,32 +92,6 @@ default = "claude-sonnet-4-6-20250514"
 [compact]
 # Override auto-compact threshold (percentage of context window)
 # auto_pct = 90
-```
-
-## Architecture
-
-```
-crates/jfc-ui/src/
-├── main.rs          — Event loop, startup, session management
-├── app.rs           — Application state (App struct)
-├── render.rs        — TUI rendering (ratatui widgets)
-├── input.rs         — Keyboard/mouse event handling
-├── stream.rs        — Streaming API calls, agentic loop
-├── message_view.rs  — Chat message rendering with scroll
-├── markdown.rs      — Markdown → ratatui spans (pulldown-cmark + syntect)
-├── render_cache.rs  — Content-addressed LRU cache for rendered lines
-├── compact.rs       — Context compaction (summarization)
-├── tools.rs         — Tool execution (bash, read, write, edit, glob, grep)
-├── providers/
-│   ├── anthropic.rs       — Direct API key provider
-│   ├── anthropic_oauth.rs — OAuth provider with token refresh
-│   ├── openwebui.rs       — OpenWebUI/LiteLLM proxy
-│   └── file_lock.rs       — Advisory file locking for multi-process safety
-├── session.rs       — Session persistence (JSON)
-├── tasks.rs         — Task/todo store
-├── context.rs       — CLAUDE.md hierarchy, tool context
-├── scheduler.rs     — Parallel/sequential tool dispatch
-└── agents.rs        — Subagent/skill loading
 ```
 
 ## Performance
