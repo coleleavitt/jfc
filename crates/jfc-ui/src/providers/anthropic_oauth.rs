@@ -71,6 +71,11 @@ async fn fetch_cli_version(client: &reqwest::Client) -> String {
     let mut guard = version_cache_mutex().lock().await;
     if let Some(ref cache) = *guard {
         if cache.fetched_at.elapsed().unwrap_or(Duration::MAX) < VERSION_CACHE_TTL {
+            tracing::debug!(
+                target: "jfc::provider::anthropic_oauth",
+                version = %cache.version,
+                "using cached CLI version"
+            );
             return cache.version.clone();
         }
     }
@@ -95,6 +100,11 @@ async fn fetch_cli_version(client: &reqwest::Client) -> String {
         })
         .and_then(|v| v["version"].as_str().map(str::to_owned))
         .unwrap_or_else(|| VERSION_FALLBACK.to_owned());
+    tracing::debug!(
+        target: "jfc::provider::anthropic_oauth",
+        version = %version,
+        "fetched CLI version from registry"
+    );
     *guard = Some(VersionCache {
         version: version.clone(),
         fetched_at: std::time::SystemTime::now(),
@@ -176,6 +186,11 @@ async fn refresh_access_token(
     client: &reqwest::Client,
     refresh_token: &str,
 ) -> anyhow::Result<(String, String, u64)> {
+    tracing::info!(
+        target: "jfc::provider::anthropic_oauth",
+        "attempting token refresh"
+    );
+
     let body = RefreshRequest {
         grant_type: "refresh_token",
         refresh_token,
@@ -193,6 +208,12 @@ async fn refresh_access_token(
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
+        tracing::warn!(
+            target: "jfc::provider::anthropic_oauth",
+            status = %status,
+            body_preview = %&text[..text.len().min(200)],
+            "token refresh failed"
+        );
         anyhow::bail!("token refresh failed {status}: {text}");
     }
 
@@ -209,6 +230,12 @@ async fn refresh_access_token(
         .unwrap_or_else(|| refresh_token.to_owned());
     let expires_in = json.expires_in.unwrap_or(3600);
     let expires_at = now_ms() + expires_in * 1000 - 30_000;
+
+    tracing::info!(
+        target: "jfc::provider::anthropic_oauth",
+        expires_in_secs = expires_in,
+        "token refresh succeeded"
+    );
 
     Ok((json.access_token, new_refresh, expires_at))
 }
@@ -321,9 +348,15 @@ pub struct AnthropicOAuthProvider {
 
 impl AnthropicOAuthProvider {
     pub fn new() -> Self {
+        let store_path = default_store_path();
+        tracing::debug!(
+            target: "jfc::provider::anthropic_oauth",
+            store_path = %store_path.display(),
+            "AnthropicOAuthProvider::new"
+        );
         Self {
             client: reqwest::Client::new(),
-            store_path: default_store_path(),
+            store_path,
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
         }
@@ -338,6 +371,10 @@ impl AnthropicOAuthProvider {
         if let Some(p) = self.profile.read().await.as_ref() {
             return Ok(p.clone());
         }
+        tracing::info!(
+            target: "jfc::provider::anthropic_oauth",
+            "fetching OAuth profile"
+        );
         let token = self.get_access_token().await?;
         let resp = self
             .client
@@ -349,6 +386,13 @@ impl AnthropicOAuthProvider {
             .await?
             .error_for_status()?;
         let profile: OAuthProfile = resp.json().await?;
+        tracing::debug!(
+            target: "jfc::provider::anthropic_oauth",
+            display_name = ?profile.display_name,
+            seat_tier = ?profile.seat_tier,
+            subscription_type = ?profile.subscription_type,
+            "OAuth profile fetched successfully"
+        );
         *self.profile.write().await = Some(profile.clone());
         Ok(profile)
     }
@@ -375,6 +419,11 @@ impl AnthropicOAuthProvider {
             let guard = self.token.read().await;
             if let Some(t) = guard.as_ref() {
                 if now_ms() < t.expires_at {
+                    tracing::debug!(
+                        target: "jfc::provider::anthropic_oauth",
+                        account = %t.account_name,
+                        "using cached access token (still fresh)"
+                    );
                     return Ok(t.access_token.clone());
                 }
             }
@@ -384,9 +433,19 @@ impl AnthropicOAuthProvider {
 
         if let Some(t) = guard.as_ref() {
             if now_ms() < t.expires_at {
+                tracing::debug!(
+                    target: "jfc::provider::anthropic_oauth",
+                    account = %t.account_name,
+                    "using cached access token (race resolved)"
+                );
                 return Ok(t.access_token.clone());
             }
         }
+
+        tracing::info!(
+            target: "jfc::provider::anthropic_oauth",
+            "access token expired or absent, refreshing"
+        );
 
         let store = load_store(&self.store_path).map_err(|e| {
             anyhow::anyhow!(
@@ -483,14 +542,31 @@ impl Provider for AnthropicOAuthProvider {
     }
 
     async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
+        tracing::info!(
+            target: "jfc::provider::anthropic_oauth",
+            "fetching models via models.dev"
+        );
         // Same upstream as the API-key Anthropic provider, just with OAuth bearer auth,
         // so the model catalog is identical. Live-fetch from models.dev with a fallback
         // to the embedded canonical list for offline operation.
         match super::models_dev::fetch_provider_models(&self.client, "anthropic", "anthropic-oauth")
             .await
         {
-            Ok(m) if !m.is_empty() => Ok(m),
-            _ => Ok(self.available_models()),
+            Ok(m) if !m.is_empty() => {
+                tracing::debug!(
+                    target: "jfc::provider::anthropic_oauth",
+                    model_count = m.len(),
+                    "fetch_models succeeded"
+                );
+                Ok(m)
+            }
+            _ => {
+                tracing::debug!(
+                    target: "jfc::provider::anthropic_oauth",
+                    "fetch_models: falling back to static catalog"
+                );
+                Ok(self.available_models())
+            }
         }
     }
 
@@ -550,9 +626,21 @@ impl Provider for AnthropicOAuthProvider {
             .send()
             .await?;
 
-        if !resp.status().is_success() {
-            let status = resp.status();
+        let status = resp.status();
+        tracing::info!(
+            target: "jfc::provider::anthropic_oauth",
+            status = %status,
+            "stream: received HTTP response"
+        );
+
+        if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
+            tracing::warn!(
+                target: "jfc::provider::anthropic_oauth",
+                status = %status,
+                body_preview = %&text[..text.len().min(200)],
+                "stream: API request failed"
+            );
             // v126 cli.js (line 434161) detects this exact shape:
             //   { "error": { "type": "not_found_error", "message": "model: <id>" } }
             // and rephrases it as a model-access hint. Parsing here keeps the
@@ -642,9 +730,28 @@ impl Provider for AnthropicOAuthProvider {
             .send()
             .await?;
 
-        if !resp.status().is_success() {
-            let status = resp.status();
+        let status = resp.status();
+        let content_length = resp
+            .headers()
+            .get("content-length")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("unknown")
+            .to_owned();
+        tracing::info!(
+            target: "jfc::provider::anthropic_oauth",
+            status = %status,
+            content_length = %content_length,
+            "complete: received HTTP response"
+        );
+
+        if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
+            tracing::warn!(
+                target: "jfc::provider::anthropic_oauth",
+                status = %status,
+                body_preview = %&text[..text.len().min(200)],
+                "complete: API request failed"
+            );
             if let Some(model) = parse_model_not_found(&text) {
                 anyhow::bail!(
                     "{model} is not enabled on your Anthropic account. \

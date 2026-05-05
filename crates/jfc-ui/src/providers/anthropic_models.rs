@@ -69,6 +69,12 @@ pub fn anthropic_first_party_models(provider_tag: &str) -> Vec<ModelInfo> {
         }
     }
 
+    tracing::debug!(
+        target: "jfc::provider::anthropic_models",
+        model_count = out.len(),
+        provider_tag,
+        "anthropic_first_party_models"
+    );
     out
 }
 
@@ -84,11 +90,26 @@ pub fn anthropic_first_party_models(provider_tag: &str) -> Vec<ModelInfo> {
 /// The filter only operates on Anthropic models (any tag starting with `anthropic`)
 /// — third-party providers (OpenWebUI) are pass-through.
 pub fn apply_seat_tier_filter(models: Vec<ModelInfo>, seat_tier: Option<&str>) -> Vec<ModelInfo> {
+    let input_count = models.len();
     let Some(tier) = seat_tier.map(str::trim).filter(|s| !s.is_empty()) else {
+        tracing::debug!(
+            target: "jfc::provider::anthropic_models",
+            input_count,
+            tier = "none",
+            output_count = input_count,
+            "apply_seat_tier_filter: no tier, pass-through"
+        );
         return models;
     };
     // No restriction tiers — Anthropic granted broad Opus access.
     if matches!(tier, "opus" | "opus[1m]" | "opusplan") {
+        tracing::debug!(
+            target: "jfc::provider::anthropic_models",
+            input_count,
+            tier,
+            output_count = input_count,
+            "apply_seat_tier_filter: unrestricted tier"
+        );
         return models;
     }
     // Specific-id tier: e.g. "claude-opus-4-6" or "claude-opus-4-6[1m]". Anything
@@ -96,9 +117,16 @@ pub fn apply_seat_tier_filter(models: Vec<ModelInfo>, seat_tier: Option<&str>) -
     // let the API's 404 path surface the truth at request time.
     let pinned = tier.strip_suffix("[1m]").unwrap_or(tier);
     if !pinned.starts_with("claude-opus-") {
+        tracing::debug!(
+            target: "jfc::provider::anthropic_models",
+            input_count,
+            tier,
+            output_count = input_count,
+            "apply_seat_tier_filter: unrecognized tier, pass-through"
+        );
         return models;
     }
-    models
+    let result: Vec<ModelInfo> = models
         .into_iter()
         .filter(|m| {
             // Pass through non-Anthropic providers and non-opus rows unchanged.
@@ -111,7 +139,15 @@ pub fn apply_seat_tier_filter(models: Vec<ModelInfo>, seat_tier: Option<&str>) -
             // Keep the alias if it points at the pinned id, plus the pinned id itself.
             m.id == pinned || (m.id == ALIAS_OPUS && ALIAS_OPUS == pinned)
         })
-        .collect()
+        .collect();
+    tracing::debug!(
+        target: "jfc::provider::anthropic_models",
+        input_count,
+        tier,
+        output_count = result.len(),
+        "apply_seat_tier_filter: pinned opus filter applied"
+    );
+    result
 }
 
 #[cfg(test)]

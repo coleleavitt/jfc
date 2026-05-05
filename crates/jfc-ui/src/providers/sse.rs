@@ -123,14 +123,21 @@ pub enum BlockState {
 }
 
 pub fn parse_stop_reason(s: Option<&str>) -> StopReason {
-    match s {
+    let result = match s {
         Some("end_turn") => StopReason::EndTurn,
         Some("tool_use") => StopReason::ToolUse,
         Some("max_tokens") => StopReason::MaxTokens,
         Some("stop_sequence") => StopReason::StopSequence,
         Some(other) => StopReason::Other(other.to_owned()),
         None => StopReason::EndTurn,
-    }
+    };
+    tracing::trace!(
+        target: "jfc::provider::sse",
+        input = ?s,
+        result = ?result,
+        "parse_stop_reason"
+    );
+    result
 }
 
 pub fn translate(
@@ -235,6 +242,23 @@ pub fn translate(
 }
 
 pub fn build_messages(messages: &[ProviderMessage]) -> Value {
+    let tool_use_count = messages
+        .iter()
+        .flat_map(|m| m.content.iter())
+        .filter(|c| matches!(c, ProviderContent::ToolUse { .. }))
+        .count();
+    let tool_result_count = messages
+        .iter()
+        .flat_map(|m| m.content.iter())
+        .filter(|c| matches!(c, ProviderContent::ToolResult { .. }))
+        .count();
+    tracing::debug!(
+        target: "jfc::provider::sse",
+        message_count = messages.len(),
+        tool_use_count,
+        tool_result_count,
+        "build_messages"
+    );
     messages
         .iter()
         .map(|m| {
@@ -272,6 +296,11 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
 }
 
 pub fn build_tools(tools: &[ToolDef]) -> Value {
+    tracing::trace!(
+        target: "jfc::provider::sse",
+        tool_count = tools.len(),
+        "build_tools"
+    );
     tools
         .iter()
         .map(|t| {

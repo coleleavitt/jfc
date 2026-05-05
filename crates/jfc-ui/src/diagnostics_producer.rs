@@ -47,6 +47,11 @@ use tokio::sync::mpsc::UnboundedSender;
 /// (cargo missing, non-cargo project) silently no-op — better to leave
 /// the row blank than spam the user.
 pub async fn run_once(cwd: PathBuf, tx: UnboundedSender<AppEvent>) {
+    tracing::info!(
+        target: "jfc::diagnostics",
+        ?cwd,
+        "cargo check starting"
+    );
     let mut child = match Command::new("cargo")
         .args(["check", "--message-format=json", "--quiet"])
         .current_dir(&cwd)
@@ -55,7 +60,14 @@ pub async fn run_once(cwd: PathBuf, tx: UnboundedSender<AppEvent>) {
         .spawn()
     {
         Ok(c) => c,
-        Err(_) => return,
+        Err(e) => {
+            tracing::warn!(
+                target: "jfc::diagnostics",
+                error = %e,
+                "failed to spawn cargo check"
+            );
+            return;
+        }
     };
     let Some(stdout) = child.stdout.take() else {
         return;
@@ -68,6 +80,11 @@ pub async fn run_once(cwd: PathBuf, tx: UnboundedSender<AppEvent>) {
         }
     }
     let _ = child.wait().await;
+    tracing::info!(
+        target: "jfc::diagnostics",
+        count = entries.len(),
+        "cargo check complete"
+    );
     let _ = tx.send(AppEvent::DiagnosticsUpdated { entries });
 }
 
@@ -122,7 +139,7 @@ pub fn parse_cargo_message(line: &str) -> Option<DiagnosticEntry> {
     // without a primary usually mean a multi-file diagnostic where the
     // root cause was in a different file we already reported — skip.
     let primary = msg.spans.iter().find(|s| s.is_primary)?;
-    Some(DiagnosticEntry {
+    let entry = DiagnosticEntry {
         file: primary.file_name.clone(),
         line: primary.line_start,
         col: primary.column_start,
@@ -130,7 +147,15 @@ pub fn parse_cargo_message(line: &str) -> Option<DiagnosticEntry> {
         code: msg.code.map(|c| c.code),
         source: Some("cargo".into()),
         severity,
-    })
+    };
+    tracing::trace!(
+        target: "jfc::diagnostics",
+        file = %entry.file,
+        line = entry.line,
+        severity = ?entry.severity,
+        "parsed diagnostic"
+    );
+    Some(entry)
 }
 
 #[cfg(test)]

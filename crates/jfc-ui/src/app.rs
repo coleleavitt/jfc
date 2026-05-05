@@ -50,7 +50,7 @@ pub enum AppEvent {
         pre_tokens: usize,
         post_tokens: usize,
     },
-    CompactionFailed(String),
+    CompactionFailed(String, Option<usize>),
     /// Submit a user prompt as if the user typed it and pressed Enter. Used
     /// internally by the pre-submit compaction gate to re-fire the user's
     /// original prompt once compaction has shrunk the context.
@@ -640,6 +640,12 @@ impl App {
             tool_hit_regions: RefCell::new(Vec::new()),
         };
         app.sync_selected_context_window();
+        tracing::info!(
+            target: "jfc::app",
+            model = %app.model,
+            provider = app.provider.name(),
+            "App::new"
+        );
         app
     }
 
@@ -651,7 +657,14 @@ impl App {
     /// Pass `None` to mint a fresh session id; pass `Some(id)` to adopt an
     /// existing one (the session-load path through the sidebar / `/continue`).
     pub fn switch_session(&mut self, id: Option<String>) {
+        let old_id = self.current_session_id.clone();
         let new_id = id.unwrap_or_else(crate::session::generate_session_id);
+        tracing::info!(
+            target: "jfc::app",
+            old_session_id = ?old_id,
+            new_session_id = %new_id,
+            "switch_session"
+        );
         self.current_session_id = Some(new_id);
         self.task_store = crate::tasks::TaskStore::in_memory();
         self.task_completion_times.clear();
@@ -679,6 +692,7 @@ impl App {
     /// `compact::estimate_tokens` over message content — same heuristic
     /// the live token counter uses.
     pub fn recompute_token_estimate(&mut self) {
+        let old_estimate = self.tool_ctx.approx_tokens;
         let last_usage = self
             .messages
             .iter()
@@ -687,17 +701,18 @@ impl App {
         if let Some(u) = last_usage {
             self.last_usage_input = u.input_tokens as u32;
             self.last_usage_output = u.output_tokens as u32;
-            // Anthropic counts input + cache_creation + cache_read +
-            // output as the "context tokens used" — same as v126's W_$
-            // (cli.js:197281). The Context gauge reads
-            // `tool_ctx.approx_tokens` so writing the totalled value
-            // there gives the user-visible bar the right fill.
             self.tool_ctx.approx_tokens = u.total_context_tokens() as usize;
         } else {
             self.last_usage_input = 0;
             self.last_usage_output = 0;
             self.tool_ctx.approx_tokens = crate::compact::estimate_tokens(&self.messages);
         }
+        tracing::debug!(
+            target: "jfc::app",
+            old_estimate,
+            new_estimate = self.tool_ctx.approx_tokens,
+            "recompute_token_estimate"
+        );
     }
 
     pub fn scroll_to_bottom(&mut self) {
@@ -756,13 +771,32 @@ impl App {
     }
 
     pub fn selected_context_window_tokens(&self) -> usize {
-        self.selected_model_info()
+        let result = self.selected_model_info()
             .and_then(|model| model.context_window_tokens)
-            .unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS)
+            .unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
+        tracing::trace!(
+            target: "jfc::app",
+            model = %self.model,
+            result,
+            "selected_context_window_tokens"
+        );
+        result
     }
 
     pub fn sync_selected_context_window(&mut self) {
+        let old = self.max_context_tokens;
         self.max_context_tokens = self.selected_context_window_tokens();
+        // When the model/provider changes, stale usage from the previous model's
+        // tokenizer is unreliable. Force a fresh heuristic estimate.
+        self.tool_ctx.approx_tokens = crate::compact::estimate_tokens(&self.messages);
+        tracing::info!(
+            target: "jfc::app",
+            old_max_context_tokens = old,
+            new_max_context_tokens = self.max_context_tokens,
+            approx_tokens = self.tool_ctx.approx_tokens,
+            model = %self.model,
+            "sync_selected_context_window (token estimate refreshed)"
+        );
     }
 
     fn max_scroll(&self) -> usize {
@@ -784,23 +818,52 @@ impl App {
 
         let name = tool.kind.label();
         if self.always_approved.iter().any(|n| n == name) {
+            tracing::debug!(
+                target: "jfc::app",
+                tool_kind = name,
+                result = false,
+                reason = "always_approved",
+                "tool_needs_approval"
+            );
             return false;
         }
         if self.session_approved.iter().any(|n| n == name) {
+            tracing::debug!(
+                target: "jfc::app",
+                tool_kind = name,
+                result = false,
+                reason = "session_approved",
+                "tool_needs_approval"
+            );
             return false;
         }
-        matches!(
+        let result = matches!(
             tool.kind,
             ToolKind::Bash | ToolKind::Write | ToolKind::Edit | ToolKind::ApplyPatch
-        )
+        );
+        tracing::debug!(
+            target: "jfc::app",
+            tool_kind = name,
+            result,
+            "tool_needs_approval"
+        );
+        result
     }
 
     /// Check if a tool should be auto-denied by the current permission mode.
     pub fn tool_denied_by_mode(&self, tool: &ToolCall) -> Option<&'static str> {
-        match self.permission_mode.auto_approves(tool) {
+        let result = match self.permission_mode.auto_approves(tool) {
             PermissionDecision::Denied(reason) => Some(reason),
             _ => None,
-        }
+        };
+        tracing::debug!(
+            target: "jfc::app",
+            tool_kind = tool.kind.label(),
+            mode = ?self.permission_mode,
+            denied = result.is_some(),
+            "tool_denied_by_mode"
+        );
+        result
     }
 
     /// Scan the task store for newly-completed tasks and record their

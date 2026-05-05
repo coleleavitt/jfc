@@ -55,7 +55,7 @@ const HAIKU: ModelPricing = ModelPricing {
 /// $0 rather than guess.
 pub fn pricing_for(model_id: &str) -> Option<ModelPricing> {
     let id = model_id.to_ascii_lowercase();
-    if id.contains("opus") {
+    let result = if id.contains("opus") {
         Some(OPUS)
     } else if id.contains("sonnet") {
         Some(SONNET)
@@ -63,7 +63,14 @@ pub fn pricing_for(model_id: &str) -> Option<ModelPricing> {
         Some(HAIKU)
     } else {
         None
-    }
+    };
+    tracing::trace!(
+        target: "jfc::cost",
+        model_id,
+        found = result.is_some(),
+        "pricing_for"
+    );
+    result
 }
 
 /// Dollar cost for a single model's accumulated usage.
@@ -71,21 +78,44 @@ pub fn pricing_for(model_id: &str) -> Option<ModelPricing> {
 /// Returns `0.0` for unknown models — see module docs.
 pub fn cost_for(model_id: &str, usage: &ModelUsage) -> f64 {
     let Some(p) = pricing_for(model_id) else {
+        tracing::debug!(
+            target: "jfc::cost",
+            model_id,
+            "cost_for: unknown model, returning $0"
+        );
         return 0.0;
     };
     let m = 1_000_000.0;
-    (usage.input_tokens as f64 / m) * p.input_per_mtok
+    let cost = (usage.input_tokens as f64 / m) * p.input_per_mtok
         + (usage.output_tokens as f64 / m) * p.output_per_mtok
         + (usage.cache_read_tokens as f64 / m) * p.cache_read_per_mtok
-        + (usage.cache_write_tokens as f64 / m) * p.cache_write_per_mtok
+        + (usage.cache_write_tokens as f64 / m) * p.cache_write_per_mtok;
+    tracing::debug!(
+        target: "jfc::cost",
+        model_id,
+        input_tokens = usage.input_tokens,
+        output_tokens = usage.output_tokens,
+        cache_read_tokens = usage.cache_read_tokens,
+        cache_write_tokens = usage.cache_write_tokens,
+        cost,
+        "cost_for"
+    );
+    cost
 }
 
 /// Sum of `cost_for` across every model in the session usage map.
 pub fn total_cost(usage_by_model: &HashMap<String, ModelUsage>) -> f64 {
-    usage_by_model
+    let total: f64 = usage_by_model
         .iter()
         .map(|(model, usage)| cost_for(model, usage))
-        .sum()
+        .sum();
+    tracing::debug!(
+        target: "jfc::cost",
+        model_count = usage_by_model.len(),
+        total,
+        "total_cost"
+    );
+    total
 }
 
 /// Format a dollar amount for the sidebar.

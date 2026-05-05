@@ -94,14 +94,24 @@ pub fn detect_kind(bytes: &[u8]) -> Option<AttachmentKind> {
 /// has no in-process fake. Exercise this via manual Ctrl+V testing once
 /// the keybinding lands.
 pub fn read_clipboard_image() -> Result<Option<Attachment>, String> {
-    let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("Clipboard: {e}"))?;
+    tracing::info!(target: "jfc::attachments", "read_clipboard_image attempt");
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| {
+        tracing::warn!(target: "jfc::attachments", error = %e, "clipboard access failed");
+        format!("Clipboard: {e}")
+    })?;
     let img = match clipboard.get_image() {
         Ok(img) => img,
         // arboard returns `ContentNotAvailable` when the clipboard is
         // empty or doesn't carry an image — that's a normal "no image to
         // paste" case, not an error worth surfacing to the user.
-        Err(arboard::Error::ContentNotAvailable) => return Ok(None),
-        Err(e) => return Err(format!("Clipboard: {e}")),
+        Err(arboard::Error::ContentNotAvailable) => {
+            tracing::debug!(target: "jfc::attachments", "no image in clipboard");
+            return Ok(None);
+        }
+        Err(e) => {
+            tracing::warn!(target: "jfc::attachments", error = %e, "clipboard get_image failed");
+            return Err(format!("Clipboard: {e}"));
+        }
     };
 
     // arboard hands back raw RGBA8. Re-encode to PNG so the result is a
@@ -120,6 +130,12 @@ pub fn read_clipboard_image() -> Result<Option<Attachment>, String> {
             .map_err(|e| format!("PNG encode: {e}"))?;
     }
 
+    tracing::debug!(
+        target: "jfc::attachments",
+        size = png_bytes.len(),
+        kind = "image/png",
+        "read_clipboard_image success"
+    );
     Ok(Some(Attachment {
         kind: AttachmentKind::ImagePng,
         bytes: png_bytes,

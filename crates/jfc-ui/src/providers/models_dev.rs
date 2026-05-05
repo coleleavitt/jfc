@@ -70,6 +70,13 @@ pub async fn fetch_provider_models(
     models_dev_provider_id: &str,
     provider_tag: &str,
 ) -> anyhow::Result<Vec<ModelInfo>> {
+    tracing::info!(
+        target: "jfc::provider::models_dev",
+        provider_id = %models_dev_provider_id,
+        provider_tag = %provider_tag,
+        "fetching model catalog from models.dev"
+    );
+
     let resp = client
         .get(MODELS_DEV_URL)
         .timeout(MODELS_DEV_TIMEOUT)
@@ -79,12 +86,19 @@ pub async fn fetch_provider_models(
     let catalog: HashMap<String, ProviderEntry> = resp.json().await?;
     let entry = catalog
         .get(models_dev_provider_id)
-        .ok_or_else(|| anyhow::anyhow!("models.dev has no provider {models_dev_provider_id}"))?;
+        .ok_or_else(|| {
+            tracing::warn!(
+                target: "jfc::provider::models_dev",
+                provider_id = %models_dev_provider_id,
+                "provider not found in models.dev catalog"
+            );
+            anyhow::anyhow!("models.dev has no provider {models_dev_provider_id}")
+        })?;
 
     let mut models: Vec<&ModelEntry> = entry.models.values().collect();
     models.sort_by(|a, b| b.release_date.cmp(&a.release_date));
 
-    Ok(models
+    let result: Vec<ModelInfo> = models
         .into_iter()
         .map(|m| {
             let display = m.name.clone().unwrap_or_else(|| m.id.clone());
@@ -97,7 +111,16 @@ pub async fn fetch_provider_models(
                 .with_max_output_tokens(m.limit.output)
                 .with_costs(in_cost, out_cost)
         })
-        .collect())
+        .collect();
+
+    tracing::debug!(
+        target: "jfc::provider::models_dev",
+        provider_id = %models_dev_provider_id,
+        model_count = result.len(),
+        "models.dev catalog fetched successfully"
+    );
+
+    Ok(result)
 }
 
 #[cfg(test)]

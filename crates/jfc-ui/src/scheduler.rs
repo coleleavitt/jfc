@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, mpsc};
+use tracing::{debug, info, warn};
 
 use crate::app::AppEvent;
 use crate::context::ReadDedupCache;
@@ -59,6 +60,7 @@ pub fn is_concurrency_safe(kind: &ToolKind) -> bool {
 /// [Read, Glob, Edit, Read, Read] → [Parallel([Read, Glob]), Sequential(Edit), Parallel([Read, Read])]
 /// ```
 pub fn schedule_tools(calls: Vec<ToolCall>) -> Vec<ToolBatch> {
+    let total_calls = calls.len();
     let mut batches: Vec<ToolBatch> = Vec::new();
     let mut safe_buf: Vec<ToolCall> = Vec::new();
 
@@ -80,6 +82,21 @@ pub fn schedule_tools(calls: Vec<ToolCall>) -> Vec<ToolBatch> {
         }
     }
     flush_safe(&mut safe_buf, &mut batches);
+
+    let parallel_count = batches
+        .iter()
+        .filter(|b| matches!(b, ToolBatch::Parallel(_)))
+        .count();
+    let sequential_count = batches.len() - parallel_count;
+
+    debug!(
+        target: "jfc::scheduler",
+        total_calls,
+        batch_count = batches.len(),
+        parallel_count,
+        sequential_count,
+        "scheduled tool calls into batches",
+    );
 
     batches
 }
@@ -104,9 +121,21 @@ pub async fn execute_batches(
 ) -> Vec<ToolExecution> {
     let mut all_results = Vec::new();
 
+    info!(
+        target: "jfc::scheduler",
+        batch_count = batches.len(),
+        "executing tool batches",
+    );
+
     for batch in batches {
         match batch {
             ToolBatch::Parallel(calls) => {
+                debug!(
+                    target: "jfc::scheduler",
+                    batch_size = calls.len(),
+                    kinds = ?calls.iter().map(|c| &c.kind).collect::<Vec<_>>(),
+                    "executing parallel batch",
+                );
                 let mut handles = Vec::with_capacity(calls.len());
                 for call in calls {
                     let id = call.id.clone();
@@ -116,20 +145,37 @@ pub async fn execute_batches(
                     let dedup = Arc::clone(&dedup);
                     let ts = task_store.clone();
                     handles.push(tokio::spawn(async move {
-                        let result = tools::execute_tool(kind, input, cwd, Some(dedup), ts).await;
-                        ToolExecution {
+                        let result = tools::execute_tool(kind.clone(), input, cwd, Some(dedup), ts).await;
+                        (kind, ToolExecution {
                             tool_id: id,
                             result,
-                        }
+                        })
                     }));
                 }
                 for handle in handles {
-                    if let Ok(exec) = handle.await {
-                        let _ = tx.send(AppEvent::ToolResult {
-                            tool_id: exec.tool_id.clone(),
-                            result: exec.result.clone(),
-                        });
-                        all_results.push(exec);
+                    match handle.await {
+                        Ok((kind, exec)) => {
+                            info!(
+                                target: "jfc::scheduler",
+                                tool_id = %exec.tool_id,
+                                kind = ?kind,
+                                outcome = ?exec.result.outcome,
+                                output_len = exec.result.output.len(),
+                                "tool completed",
+                            );
+                            let _ = tx.send(AppEvent::ToolResult {
+                                tool_id: exec.tool_id.clone(),
+                                result: exec.result.clone(),
+                            });
+                            all_results.push(exec);
+                        }
+                        Err(err) => {
+                            warn!(
+                                target: "jfc::scheduler",
+                                error = %err,
+                                "parallel tool task panicked or was cancelled",
+                            );
+                        }
                     }
                 }
             }
@@ -137,14 +183,28 @@ pub async fn execute_batches(
                 let id = call.id.clone();
                 let kind = call.kind.clone();
                 let input = call.input.clone();
+                debug!(
+                    target: "jfc::scheduler",
+                    tool_id = %id,
+                    kind = ?kind,
+                    "executing sequential tool",
+                );
                 let result = tools::execute_tool(
-                    kind,
+                    kind.clone(),
                     input,
                     cwd.clone(),
                     Some(Arc::clone(&dedup)),
                     task_store.clone(),
                 )
                 .await;
+                info!(
+                    target: "jfc::scheduler",
+                    tool_id = %id,
+                    kind = ?kind,
+                    outcome = ?result.outcome,
+                    output_len = result.output.len(),
+                    "tool completed",
+                );
                 let _ = tx.send(AppEvent::ToolResult {
                     tool_id: id.clone(),
                     result: result.clone(),

@@ -71,19 +71,32 @@ pub struct OpenWebUIProvider {
 
 impl OpenWebUIProvider {
     pub fn new() -> Self {
+        let store_path = default_store_path();
+        tracing::debug!(
+            target: "jfc::provider::openwebui",
+            store_path = %store_path.display(),
+            "OpenWebUIProvider::new"
+        );
         Self {
             client: reqwest::Client::new(),
-            store_path: default_store_path(),
+            store_path,
         }
     }
 
     /// True when an enabled account exists in the resolved store, or when the legacy
     /// `OPENWEBUI_BASE_URL` env var is set (preserves prior auto-registration behavior).
     pub fn has_usable_config(&self) -> bool {
-        if std::env::var("OPENWEBUI_BASE_URL").is_ok() {
-            return true;
-        }
-        load_account(&self.store_path).is_ok()
+        let result = if std::env::var("OPENWEBUI_BASE_URL").is_ok() {
+            true
+        } else {
+            load_account(&self.store_path).is_ok()
+        };
+        tracing::trace!(
+            target: "jfc::provider::openwebui",
+            result,
+            "has_usable_config"
+        );
+        result
     }
 }
 
@@ -1312,6 +1325,11 @@ impl Provider for OpenWebUIProvider {
         })?;
 
         let base_url = account.base_url.trim_end_matches('/');
+        tracing::info!(
+            target: "jfc::provider::openwebui",
+            base_url,
+            "fetching models"
+        );
         let resp: ModelsResponse = self
             .client
             .get(format!("{base_url}/api/models"))
@@ -1324,7 +1342,7 @@ impl Provider for OpenWebUIProvider {
             .json()
             .await?;
 
-        Ok(resp
+        let models: Vec<ModelInfo> = resp
             .data
             .into_iter()
             .map(|m| {
@@ -1333,7 +1351,13 @@ impl Provider for OpenWebUIProvider {
                 ModelInfo::new(m.id, display, "openwebui")
                     .with_context_window_tokens(context_window_tokens)
             })
-            .collect())
+            .collect();
+        tracing::debug!(
+            target: "jfc::provider::openwebui",
+            model_count = models.len(),
+            "fetch_models succeeded"
+        );
+        Ok(models)
     }
 
     #[tracing::instrument(
@@ -1386,6 +1410,14 @@ impl Provider for OpenWebUIProvider {
             .json(&body)
             .send()
             .await?;
+
+        tracing::info!(
+            target: "jfc::provider::openwebui",
+            status = %resp.status(),
+            model = %options.model,
+            content_type = ?resp.headers().get("content-type"),
+            "HTTP response received"
+        );
 
         if !resp.status().is_success() {
             let status = resp.status();

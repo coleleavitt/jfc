@@ -223,6 +223,12 @@ impl TaskStore {
             .join("jfc")
             .join("tasks")
             .join(format!("{session_id}.json"));
+        tracing::info!(
+            target: "jfc::tasks",
+            session_id,
+            path = %path.display(),
+            "TaskStore::open"
+        );
         let inner = std::fs::read_to_string(&path)
             .ok()
             .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -235,6 +241,7 @@ impl TaskStore {
 
     /// In-memory store (no persistence) — used in tests.
     pub fn in_memory() -> Arc<Self> {
+        tracing::debug!(target: "jfc::tasks", "TaskStore::in_memory");
         Arc::new(Self::default())
     }
 
@@ -289,6 +296,13 @@ impl TaskStore {
                 }
             }
         }
+        let truncated_subject: &str = if subject.len() > 80 { &subject[..80] } else { &subject };
+        tracing::info!(
+            target: "jfc::tasks",
+            id = %id,
+            subject = truncated_subject,
+            "TaskStore::create"
+        );
         let task = Task {
             id: id.clone(),
             subject,
@@ -307,6 +321,7 @@ impl TaskStore {
     }
 
     pub fn get(&self, id: &str) -> Option<Task> {
+        tracing::trace!(target: "jfc::tasks", id, "TaskStore::get");
         self.inner.lock().unwrap().tasks.get(id).cloned()
     }
 
@@ -314,6 +329,14 @@ impl TaskStore {
     /// or the update would create an immediate self-cycle. Cascading
     /// `unblock` happens automatically when status flips to `Completed`.
     pub fn update(&self, id: &str, patch: TaskPatch) -> Result<Task, TaskError> {
+        tracing::debug!(
+            target: "jfc::tasks",
+            id,
+            has_status = patch.status.is_some(),
+            has_subject = patch.subject.is_some(),
+            has_owner = patch.owner.is_some(),
+            "TaskStore::update"
+        );
         let mut inner = self.inner.lock().unwrap();
         let task_id = TaskId::from(id);
         if !inner.tasks.contains_key(id) {
@@ -372,6 +395,7 @@ impl TaskStore {
 
     /// Remove a task permanently (sets status: deleted, removes from blockers).
     pub fn delete(&self, id: &str) -> Result<(), TaskError> {
+        tracing::debug!(target: "jfc::tasks", id, "TaskStore::delete");
         let mut inner = self.inner.lock().unwrap();
         if !inner.tasks.contains_key(id) {
             return Err(TaskError::UnknownTask {
@@ -410,11 +434,18 @@ impl TaskStore {
                 .and_then(|n| n.parse::<u64>().ok())
                 .unwrap_or(0)
         });
+        tracing::trace!(
+            target: "jfc::tasks",
+            filter = ?deleted_filter,
+            count = out.len(),
+            "TaskStore::list"
+        );
         out
     }
 
     /// Counts by status — used by the UI overflow summary.
     pub fn counts(&self) -> TaskCounts {
+        tracing::trace!(target: "jfc::tasks", "TaskStore::counts");
         let inner = self.inner.lock().unwrap();
         let mut c = TaskCounts::default();
         for t in inner.tasks.values() {

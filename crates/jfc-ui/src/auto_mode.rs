@@ -42,7 +42,14 @@ pub struct ClassifyResult {
 
 impl ClassifyResult {
     pub fn should_block(&self) -> bool {
-        matches!(self.decision, AutoDecision::Block)
+        let block = matches!(self.decision, AutoDecision::Block);
+        tracing::debug!(
+            target: "jfc::auto_mode",
+            should_block = block,
+            reason = %self.reason,
+            "should_block decision"
+        );
+        block
     }
 }
 
@@ -155,7 +162,18 @@ pub fn load_config() -> AutoModeConfig {
         Ok(v) => v,
         Err(_) => return AutoModeConfig::default(),
     };
-    serde_json::from_value(v.get("autoMode").cloned().unwrap_or(Value::Null)).unwrap_or_default()
+    let cfg: AutoModeConfig =
+        serde_json::from_value(v.get("autoMode").cloned().unwrap_or(Value::Null))
+            .unwrap_or_default();
+    tracing::debug!(
+        target: "jfc::auto_mode",
+        enabled = cfg.enabled,
+        allow_rules = cfg.allow.len(),
+        block_rules = cfg.soft_deny.len(),
+        env_rules = cfg.environment.len(),
+        "auto_mode config loaded"
+    );
+    cfg
 }
 
 fn settings_path() -> PathBuf {
@@ -243,6 +261,7 @@ pub fn build_system_prompt(cfg: &AutoModeConfig) -> String {
 
     s.push_str("# Output\n\nCall the `classify_result` tool with your decision. ");
     s.push_str("Set should_block=true to block. Provide a one-sentence reason the user can read.");
+    tracing::trace!(target: "jfc::auto_mode", output_len = s.len(), "built classifier system prompt");
     s
 }
 
@@ -276,6 +295,13 @@ pub fn build_transcript(messages: &[ChatMessage], pending: &ToolCall) -> String 
         pending.kind.label(),
         pending.input.summary()
     ));
+    tracing::trace!(
+        target: "jfc::auto_mode",
+        message_count = messages.len(),
+        pending_tool = pending.kind.label(),
+        output_len = out.len(),
+        "built classifier transcript"
+    );
     out
 }
 

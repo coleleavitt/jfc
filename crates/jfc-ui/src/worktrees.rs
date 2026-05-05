@@ -53,6 +53,7 @@ pub fn validate_name(name: &str) -> Result<(), String> {
              (no slashes, dots, or whitespace)"
         ));
     }
+    tracing::trace!(target: "jfc::worktrees", name, "validate_name ok");
     Ok(())
 }
 
@@ -131,6 +132,7 @@ pub fn parse_porcelain_output(s: &str) -> Vec<WorktreeInfo> {
 /// List all worktrees registered with the repo at `repo_root`. Shells out to
 /// `git worktree list --porcelain` — not unit-tested; see module docs.
 pub fn list_worktrees(repo_root: &Path) -> Result<Vec<WorktreeInfo>, String> {
+    tracing::debug!(target: "jfc::worktrees", ?repo_root, "list_worktrees");
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_root)
@@ -146,13 +148,16 @@ pub fn list_worktrees(repo_root: &Path) -> Result<Vec<WorktreeInfo>, String> {
         ));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(parse_porcelain_output(&stdout))
+    let entries = parse_porcelain_output(&stdout);
+    tracing::debug!(target: "jfc::worktrees", count = entries.len(), "list_worktrees done");
+    Ok(entries)
 }
 
 /// Create `<repo_root>/.jfc-worktrees/<name>` checking out a fresh branch
 /// `jfc/<name>`. Validates the name first; surfaces git's stderr on failure.
 /// Shells out — not unit-tested; see module docs.
 pub fn create_worktree(repo_root: &Path, name: &str) -> Result<WorktreeInfo, String> {
+    tracing::info!(target: "jfc::worktrees", ?repo_root, name, "create_worktree");
     validate_name(name)?;
     let rel_path = format!(".jfc-worktrees/{name}");
     let branch = format!("jfc/{name}");
@@ -167,12 +172,15 @@ pub fn create_worktree(repo_root: &Path, name: &str) -> Result<WorktreeInfo, Str
         .output()
         .map_err(|e| format!("failed to spawn `git worktree add`: {e}"))?;
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!(target: "jfc::worktrees", name, %stderr, "create_worktree failed");
         return Err(format!(
             "`git worktree add` failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            stderr.trim()
         ));
     }
     let abs_path = repo_root.join(&rel_path).display().to_string();
+    tracing::info!(target: "jfc::worktrees", name, path = %abs_path, "create_worktree ok");
     Ok(WorktreeInfo {
         path: abs_path,
         branch,
@@ -184,6 +192,7 @@ pub fn create_worktree(repo_root: &Path, name: &str) -> Result<WorktreeInfo, Str
 /// deleted — the user can still recover the work by checking the branch out
 /// elsewhere. Shells out — not unit-tested; see module docs.
 pub fn remove_worktree(repo_root: &Path, name: &str) -> Result<(), String> {
+    tracing::info!(target: "jfc::worktrees", ?repo_root, name, "remove_worktree");
     validate_name(name)?;
     let rel_path = format!(".jfc-worktrees/{name}");
     let output = Command::new("git")
@@ -195,11 +204,14 @@ pub fn remove_worktree(repo_root: &Path, name: &str) -> Result<(), String> {
         .output()
         .map_err(|e| format!("failed to spawn `git worktree remove`: {e}"))?;
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!(target: "jfc::worktrees", name, %stderr, "remove_worktree failed");
         return Err(format!(
             "`git worktree remove` failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            stderr.trim()
         ));
     }
+    tracing::info!(target: "jfc::worktrees", name, "remove_worktree ok");
     Ok(())
 }
 

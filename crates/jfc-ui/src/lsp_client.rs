@@ -262,6 +262,12 @@ impl LspClient {
     /// will push diagnostics for a file. `language_id` is e.g. "rust" or
     /// "zig"; the spec defines a fixed set per language.
     pub fn did_open(&self, uri: &str, language_id: &str, version: i32, text: &str) {
+        tracing::debug!(
+            target: "jfc::lsp",
+            uri,
+            language_id,
+            "didOpen"
+        );
         let msg = build_did_open(uri, language_id, version, text);
         let _ = self.stdin_tx.send(lsp_rpc::encode(&msg));
     }
@@ -270,6 +276,12 @@ impl LspClient {
     /// LSP also supports incremental changes; full-doc is simpler and
     /// the server reconciles either way.
     pub fn did_change(&self, uri: &str, version: i32, text: &str) {
+        tracing::trace!(
+            target: "jfc::lsp",
+            uri,
+            version,
+            "didChange"
+        );
         let msg = build_did_change(uri, version, text);
         let _ = self.stdin_tx.send(lsp_rpc::encode(&msg));
     }
@@ -283,6 +295,7 @@ impl LspClient {
     /// case where ordering is best-effort anyway. We rely on a fixed
     /// short delay: send shutdown, wait 200ms, send exit, wait 1s.
     pub async fn shutdown(&self) {
+        tracing::info!(target: "jfc::lsp", "shutting down lsp client");
         let id = self.next_id();
         let req = build_shutdown(id);
         let _ = self.stdin_tx.send(lsp_rpc::encode(&req));
@@ -387,13 +400,20 @@ pub fn build_exit() -> Value {
 /// directory by scanning for marker files. Returns `(cmd, args)` ready
 /// to pass to `Command::new`.
 pub fn detect_lsp_for_cwd(cwd: &std::path::Path) -> Option<(&'static str, Vec<&'static str>)> {
-    if cwd.join("Cargo.toml").is_file() {
-        return Some(("rust-analyzer", vec![]));
-    }
-    if cwd.join("build.zig").is_file() {
-        return Some(("zls", vec![]));
-    }
-    None
+    let result = if cwd.join("Cargo.toml").is_file() {
+        Some(("rust-analyzer", vec![]))
+    } else if cwd.join("build.zig").is_file() {
+        Some(("zls", vec![]))
+    } else {
+        None
+    };
+    tracing::debug!(
+        target: "jfc::lsp",
+        ?cwd,
+        server = result.as_ref().map(|(cmd, _)| *cmd),
+        "detect_lsp_for_cwd"
+    );
+    result
 }
 
 /// Best-effort startup orchestration: detect a language server for the
@@ -410,11 +430,18 @@ pub fn maybe_spawn_lsp_clients(cwd: std::path::PathBuf, app_tx: UnboundedSender<
         std::env::var("JFC_DISABLE_LSP").as_deref(),
         Ok("1") | Ok("true")
     ) {
+        tracing::debug!(target: "jfc::lsp", "LSP disabled via JFC_DISABLE_LSP");
         return;
     }
     let Some((cmd, args)) = detect_lsp_for_cwd(&cwd) else {
         return;
     };
+    tracing::info!(
+        target: "jfc::lsp",
+        ?cwd,
+        server = cmd,
+        "spawning lsp client"
+    );
     tokio::spawn(async move {
         let root_uri = format!("file://{}", cwd.display());
         let owned_args: Vec<&str> = args.to_vec();

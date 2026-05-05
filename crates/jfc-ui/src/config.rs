@@ -69,10 +69,12 @@ pub struct AgentConfig {
 /// (extremely rare — e.g. no `$HOME`), we fall back to a relative `./jfc/...`
 /// path so callers always have *something* to display.
 pub fn config_path() -> PathBuf {
-    dirs::config_dir()
+    let path = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("jfc")
-        .join("config.toml")
+        .join("config.toml");
+    tracing::trace!(target: "jfc::config", path = %path.display(), "resolved config path");
+    path
 }
 
 /// Load `~/.config/jfc/config.toml`, or return `Config::default()` on any
@@ -87,9 +89,11 @@ pub fn config_path() -> PathBuf {
 /// the eventual startup integration ticket.
 pub fn load() -> Config {
     let path = config_path();
+    tracing::info!(target: "jfc::config", path = %path.display(), "loading config");
     let raw = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            tracing::debug!(target: "jfc::config", "config file not found — using defaults");
             return Config::default();
         }
         Err(e) => {
@@ -103,7 +107,15 @@ pub fn load() -> Config {
         }
     };
     match toml::from_str::<Config>(&raw) {
-        Ok(cfg) => cfg,
+        Ok(cfg) => {
+            tracing::debug!(
+                target: "jfc::config",
+                default_model = ?cfg.default.model,
+                agent_count = cfg.agents.len(),
+                "config loaded successfully"
+            );
+            cfg
+        }
         Err(e) => {
             tracing::warn!(
                 target: "jfc::config",
@@ -129,17 +141,28 @@ pub fn load() -> Config {
 /// the path the primary chat agent takes since it has no per-agent override
 /// section.
 pub fn resolve_model(cfg: &Config, agent_name: Option<&str>) -> Option<String> {
-    if let Some(name) = agent_name {
+    let result = if let Some(name) = agent_name {
         if let Some(agent) = cfg.agents.get(name) {
             if let Some(m) = agent.model.as_ref().filter(|s| !s.is_empty()) {
-                return Some(m.clone());
+                Some(m.clone())
+            } else if let Some(m) = agent.fallback_models.first() {
+                Some(m.clone())
+            } else {
+                cfg.default.model.clone().filter(|s| !s.is_empty())
             }
-            if let Some(m) = agent.fallback_models.first() {
-                return Some(m.clone());
-            }
+        } else {
+            cfg.default.model.clone().filter(|s| !s.is_empty())
         }
-    }
-    cfg.default.model.clone().filter(|s| !s.is_empty())
+    } else {
+        cfg.default.model.clone().filter(|s| !s.is_empty())
+    };
+    tracing::debug!(
+        target: "jfc::config",
+        agent_name = ?agent_name,
+        resolved_model = ?result,
+        "resolve_model"
+    );
+    result
 }
 
 /// Tools the named agent should NOT have access to. Returns `&[]` when the

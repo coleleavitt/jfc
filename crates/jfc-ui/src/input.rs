@@ -434,6 +434,17 @@ pub async fn handle_key(
                 if let Some(model) = filtered.get(app.model_picker_selected) {
                     let chosen_id = model.id.clone();
                     let chosen_provider_name = model.provider.clone();
+                    let old_model = app.model.clone();
+                    let old_max_ctx = app.max_context_tokens;
+                    tracing::info!(
+                        target: "jfc::input",
+                        old_model = %old_model,
+                        new_model = %chosen_id,
+                        old_provider = %app.provider.name(),
+                        new_provider = %chosen_provider_name,
+                        old_max_context_tokens = old_max_ctx,
+                        "model switch initiated from picker"
+                    );
                     if let Some(p) = app
                         .providers
                         .iter()
@@ -1132,6 +1143,14 @@ async fn handle_submit(
     text: String,
     tx: &mpsc::UnboundedSender<crate::app::AppEvent>,
 ) -> anyhow::Result<()> {
+    tracing::info!(
+        target: "jfc::input",
+        text_len = text.len(),
+        text_preview = %&text[..text.len().min(80)],
+        model = %app.model,
+        message_count = app.messages.len(),
+        "handle_submit"
+    );
     if text.starts_with('/') {
         // `/check` re-runs the cargo-check producer. Handled here (not in
         // `handle_slash_command`) because it needs the tx channel to emit
@@ -1165,6 +1184,10 @@ async fn handle_submit(
         tracing::info!(
             target: "jfc::compact",
             est, level = ?level, manual,
+            model = %app.model,
+            max_context_tokens = app.max_context_tokens,
+            message_count = app.messages.len(),
+            rapid_refill_count = app.tool_ctx.rapid_refill_count,
             "pre-submit compact triggered"
         );
         let messages = app.messages.clone();
@@ -1174,9 +1197,16 @@ async fn handle_submit(
         let window = app.max_context_tokens;
         let tx_pre = tx.clone();
         let user_text = text.clone();
+        let is_blocked = matches!(level, crate::compact::CompactLevel::Blocked);
         let _ = tx_pre.send(crate::app::AppEvent::CompactionStarted);
         tokio::spawn(async move {
-            let options = crate::provider::StreamOptions::new(model);
+            let options = crate::provider::StreamOptions::new(model.clone());
+            tracing::debug!(
+                target: "jfc::compact",
+                model = %model,
+                window,
+                "spawned pre-submit compaction task"
+            );
             let result = crate::compact::compact(
                 &messages,
                 provider.as_ref(),
@@ -1191,6 +1221,12 @@ async fn handle_submit(
                     pre_tokens,
                     post_tokens,
                 } => {
+                    tracing::info!(
+                        target: "jfc::compact",
+                        pre_tokens, post_tokens,
+                        saved = pre_tokens.saturating_sub(post_tokens),
+                        "pre-submit compaction succeeded — re-queuing user message"
+                    );
                     let _ = tx_pre.send(crate::app::AppEvent::CompactionDone {
                         messages,
                         tool_ctx,
@@ -1202,19 +1238,49 @@ async fn handle_submit(
                     let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text));
                 }
                 crate::compact::CompactResult::CircuitBreakerTripped => {
+                    tracing::warn!(
+                        target: "jfc::compact",
+                        "pre-submit compaction: circuit breaker tripped"
+                    );
                     let _ = tx_pre.send(crate::app::AppEvent::CompactionFailed(
                         "Circuit breaker tripped — submit again with `/compact` if needed".into(),
+                        None,
                     ));
                 }
                 crate::compact::CompactResult::Exhausted { attempts } => {
+                    tracing::warn!(
+                        target: "jfc::compact",
+                        attempts,
+                        "pre-submit compaction exhausted all attempts"
+                    );
                     let _ = tx_pre.send(crate::app::AppEvent::CompactionFailed(format!(
                         "Exhausted {attempts} compaction attempts — request is too large"
-                    )));
+                    ), Some(tool_ctx.approx_tokens)));
                 }
                 _ => {
-                    // Unsupported / TooFewGroups: provider can't compact, just
-                    // submit anyway and let the API return its own error.
-                    let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text));
+                    // Unsupported / TooFewGroups: provider can't compact.
+                    // If we were merely at Compact level, submit anyway and
+                    // let the API handle it. But if Blocked, don't re-submit
+                    // (that would re-enter the compaction gate and loop forever).
+                    if is_blocked {
+                        tracing::warn!(
+                            target: "jfc::compact",
+                            "pre-submit compaction unsupported and context is Blocked — cannot proceed"
+                        );
+                        let _ = tx_pre.send(crate::app::AppEvent::CompactionFailed(
+                            "Context exceeds limit and provider cannot compact — \
+                             try switching to a model/provider that supports compaction, \
+                             or start a new session."
+                                .into(),
+                            Some(tool_ctx.approx_tokens),
+                        ));
+                    } else {
+                        tracing::debug!(
+                            target: "jfc::compact",
+                            "pre-submit compaction skipped (unsupported/too few groups) — submitting anyway"
+                        );
+                        let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text));
+                    }
                 }
             }
         });
@@ -1250,12 +1316,22 @@ async fn handle_submit(
         .clone()
         .unwrap_or_else(crate::session::generate_session_id);
     crate::session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()));
-    app.current_session_id = Some(session_id);
+    app.current_session_id = Some(session_id.clone());
 
     let provider = app.provider.clone();
     let messages = crate::stream::build_provider_messages(&app.messages[..assistant_idx]);
     let model = app.model.clone();
     let tx = tx.clone();
+
+    tracing::info!(
+        target: "jfc::input",
+        model = %model,
+        provider_message_count = messages.len(),
+        assistant_idx,
+        session_id = %session_id,
+        total_user_turns = app.tool_ctx.total_user_turns,
+        "spawning stream_response"
+    );
 
     tokio::spawn(async move {
         crate::stream::stream_response(provider, messages, model, tx).await;
@@ -1346,6 +1422,12 @@ fn handle_slash_command(
             } else {
                 0
             };
+            tracing::info!(
+                target: "jfc::compact",
+                est, max_context_tokens = app.max_context_tokens,
+                pct, ?level, model = %app.model,
+                "manual /compact command invoked"
+            );
             app.messages.push(ChatMessage::user("/compact".into()));
             app.messages.push(ChatMessage::assistant(format!(
                 "Manual compaction queued — current estimate **{est} / {} tokens ({pct}%)**, level: **{level:?}**.\n\n\
@@ -2124,6 +2206,12 @@ fn execute_palette_action(app: &mut App, label: &str) {
             app.switch_session(None);
         }
         "Compact Conversation (/compact)" => {
+            tracing::info!(
+                target: "jfc::compact",
+                model = %app.model,
+                message_count = app.messages.len(),
+                "palette: Compact Conversation triggered"
+            );
             app.force_compact_pending = true;
             app.messages.push(ChatMessage::user("/compact".into()));
             app.messages.push(ChatMessage::assistant(

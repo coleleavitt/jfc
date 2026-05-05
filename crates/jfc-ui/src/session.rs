@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use tracing::{debug, info, warn};
 
 use crate::types::{
     ChatMessage, DiffHunk, DiffLine, DiffLineKind, DiffView, LargeText, MessagePart,
@@ -257,7 +258,9 @@ pub fn sessions_dir() -> PathBuf {
 
 pub fn generate_session_id() -> String {
     let now = chrono::Utc::now();
-    format!("ses_{}", now.format("%Y%m%d_%H%M%S"))
+    let id = format!("ses_{}", now.format("%Y%m%d_%H%M%S"));
+    debug!(target: "jfc::session", %id, "generated session id");
+    id
 }
 
 /// Extract the first meaningful user prompt from messages for display in session list
@@ -285,6 +288,7 @@ fn extract_first_prompt(messages: &[ChatMessage]) -> Option<String> {
 pub fn save_session(session_id: &str, messages: &[ChatMessage], cwd: Option<&str>) {
     let dir = sessions_dir();
     if std::fs::create_dir_all(&dir).is_err() {
+        warn!(target: "jfc::session", "failed to create sessions directory");
         return;
     }
 
@@ -329,27 +333,46 @@ pub fn save_session(session_id: &str, messages: &[ChatMessage], cwd: Option<&str
 
     if let Ok(json) = serde_json::to_string_pretty(&serialized) {
         let _ = std::fs::write(&path, json);
+        info!(target: "jfc::session", session_id, message_count = messages.len(), path = %path.display(), "session saved");
+    } else {
+        warn!(target: "jfc::session", session_id, "failed to serialize session");
     }
 }
 
 pub fn load_session(session_id: &str) -> Option<Vec<ChatMessage>> {
+    debug!(target: "jfc::session", session_id, "loading session");
     let path = sessions_dir().join(format!("{session_id}.json"));
     let content = std::fs::read_to_string(&path).ok()?;
-    let session: SerializedSession = serde_json::from_str(&content).ok()?;
-    Some(
-        session
-            .messages
-            .into_iter()
-            .map(deserialize_message)
-            .collect(),
-    )
+    let session: SerializedSession = match serde_json::from_str(&content) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(target: "jfc::session", session_id, error = %e, "failed to parse session file");
+            return None;
+        }
+    };
+    let message_count = session.messages.len();
+    let messages: Vec<ChatMessage> = session
+        .messages
+        .into_iter()
+        .map(deserialize_message)
+        .collect();
+    debug!(target: "jfc::session", session_id, message_count, "session loaded");
+    Some(messages)
 }
 
 /// Load session metadata without full message deserialization
 pub fn load_session_metadata(session_id: &str) -> Option<SessionMetadata> {
     let path = sessions_dir().join(format!("{session_id}.json"));
     let content = std::fs::read_to_string(&path).ok()?;
-    let session: SerializedSession = serde_json::from_str(&content).ok()?;
+    let session: SerializedSession = match serde_json::from_str(&content) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(target: "jfc::session", session_id, error = %e, "failed to parse session metadata");
+            return None;
+        }
+    };
+    let message_count = session.messages.len();
+    debug!(target: "jfc::session", session_id, message_count, "loaded session metadata");
     Some(SessionMetadata {
         id: session.id,
         created_at: session.created_at,
@@ -357,7 +380,7 @@ pub fn load_session_metadata(session_id: &str) -> Option<SessionMetadata> {
         first_prompt: session.first_prompt,
         cwd: session.cwd,
         title: session.title,
-        message_count: session.messages.len(),
+        message_count,
     })
 }
 
@@ -546,7 +569,9 @@ pub fn cwd_mismatch_message(session_cwd: Option<&str>, current_cwd: &str) -> Opt
 
 pub fn list_sessions() -> Vec<String> {
     let dir = sessions_dir();
+    debug!(target: "jfc::session", dir = %dir.display(), "listing sessions");
     let Ok(entries) = std::fs::read_dir(&dir) else {
+        debug!(target: "jfc::session", dir = %dir.display(), "sessions directory not readable");
         return vec![];
     };
     let mut ids: Vec<String> = entries
@@ -557,6 +582,7 @@ pub fn list_sessions() -> Vec<String> {
         })
         .collect();
     ids.sort_by(|a, b| b.cmp(a)); // newest first
+    debug!(target: "jfc::session", count = ids.len(), "sessions listed");
     ids
 }
 
@@ -569,6 +595,7 @@ pub fn list_sessions_with_metadata() -> Vec<SessionMetadata> {
 }
 
 pub fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMetadata> {
+    debug!(target: "jfc::session", ?cwd_filter, "listing sessions with filter");
     let ids = list_sessions();
     let mut sessions: Vec<SessionMetadata> = ids
         .into_iter()
@@ -583,6 +610,7 @@ pub fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMetadata> 
         let b_time = b.updated_at.as_ref().unwrap_or(&b.created_at);
         b_time.cmp(a_time)
     });
+    info!(target: "jfc::session", count = sessions.len(), ?cwd_filter, "sessions filtered");
     sessions
 }
 
@@ -591,12 +619,16 @@ pub fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMetadata> 
 /// in project A doesn't accidentally resume a session from project B.
 /// Pass `None` for the legacy globally-most-recent behavior.
 pub fn most_recent_session_for_cwd(cwd: Option<&str>) -> Option<String> {
-    list_sessions_filtered(cwd).into_iter().next().map(|s| s.id)
+    let result = list_sessions_filtered(cwd).into_iter().next().map(|s| s.id);
+    debug!(target: "jfc::session", ?cwd, found = result.is_some(), "most recent session for cwd");
+    result
 }
 
 /// Globally most-recent session id (legacy callers + `--global` flag).
 pub fn most_recent_session() -> Option<String> {
-    list_sessions().into_iter().next()
+    let result = list_sessions().into_iter().next();
+    debug!(target: "jfc::session", found = result.is_some(), "most recent session (global)");
+    result
 }
 
 /// Set the user-defined title on a session (`/rename` slash). Returns
@@ -604,16 +636,20 @@ pub fn most_recent_session() -> Option<String> {
 /// chat. Mirrors v126's `customTitle` field (cli.js:39786) which sits
 /// atop the title precedence chain.
 pub fn set_session_title(session_id: &str, title: &str) {
+    debug!(target: "jfc::session", session_id, "setting session title");
     let path = sessions_dir().join(format!("{session_id}.json"));
     let Ok(content) = std::fs::read_to_string(&path) else {
+        warn!(target: "jfc::session", session_id, "cannot read session file for title update");
         return;
     };
     let Ok(mut session) = serde_json::from_str::<SerializedSession>(&content) else {
+        warn!(target: "jfc::session", session_id, "cannot parse session file for title update");
         return;
     };
     session.title = Some(title.to_owned());
     if let Ok(json) = serde_json::to_string_pretty(&session) {
         let _ = std::fs::write(&path, json);
+        info!(target: "jfc::session", session_id, "session title updated");
     }
 }
 

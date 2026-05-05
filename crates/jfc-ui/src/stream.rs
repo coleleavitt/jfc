@@ -173,6 +173,14 @@ pub async fn stream_response(
     // but the docs mark that as deprecated). Haiku 4.5 and unknown models don't
     // support thinking at all — sending any thinking param causes a 400.
     let has_thinking_support = model_supports_thinking(model.as_str());
+    tracing::info!(
+        target: "jfc::stream",
+        model = %model,
+        has_thinking_support,
+        system_prompt_len = system_prompt.len(),
+        tool_count = tools::all_tool_defs().len(),
+        "preparing stream request"
+    );
     let opts = {
         let base = StreamOptions::new(model)
             .system(system_prompt)
@@ -185,8 +193,12 @@ pub async fn stream_response(
     };
 
     let mut stream = match provider.stream(messages, &opts).await {
-        Ok(s) => s,
+        Ok(s) => {
+            tracing::debug!(target: "jfc::stream", "stream opened successfully");
+            s
+        }
         Err(e) => {
+            tracing::error!(target: "jfc::stream", error = %e, "stream open failed");
             let _ = tx.send(AppEvent::StreamError(e.to_string()));
             return;
         }
@@ -199,6 +211,7 @@ pub async fn stream_response(
         let event = match event {
             Ok(e) => e,
             Err(e) => {
+                tracing::error!(target: "jfc::stream", error = %e, "stream event error");
                 let _ = tx.send(AppEvent::StreamError(e.to_string()));
                 return;
             }
@@ -276,6 +289,11 @@ pub async fn stream_response(
                 // emits Done{EndTurn}.  If we blindly overwrite we lose the
                 // ToolUse signal and pending_tool_calls are silently cleared
                 // instead of dispatched.
+                tracing::debug!(
+                    target: "jfc::stream",
+                    incoming = ?r, current = ?stop_reason,
+                    "StreamEvent::Done"
+                );
                 if stop_reason != StopReason::ToolUse {
                     stop_reason = r;
                 }
@@ -287,6 +305,12 @@ pub async fn stream_response(
                 cache_read_tokens,
                 cache_write_tokens,
             } => {
+                tracing::info!(
+                    target: "jfc::stream",
+                    input_tokens, output_tokens,
+                    cache_read_tokens, cache_write_tokens,
+                    "stream usage report"
+                );
                 let _ = tx.send(AppEvent::StreamUsage {
                     input_tokens,
                     output_tokens,
@@ -295,12 +319,18 @@ pub async fn stream_response(
                 });
             }
             StreamEvent::Error { message } => {
+                tracing::error!(target: "jfc::stream", %message, "stream error event");
                 let _ = tx.send(AppEvent::StreamError(message));
                 return;
             }
         }
     }
 
+    tracing::info!(
+        target: "jfc::stream",
+        ?stop_reason,
+        "stream finished — sending StreamDone"
+    );
     let _ = tx.send(AppEvent::StreamDone(stop_reason));
 }
 
@@ -328,6 +358,12 @@ pub fn dispatch_tools_batched(
     }
 
     let task_count = task_calls.len();
+    let regular_count = regular_calls.len();
+    tracing::info!(
+        target: "jfc::stream",
+        task_count, regular_count,
+        "dispatch_tools_batched: splitting tool calls"
+    );
     let pending = Arc::new(AtomicUsize::new(
         task_count + usize::from(!regular_calls.is_empty()),
     ));
@@ -364,6 +400,14 @@ pub fn dispatch_tools_batched(
             .cloned();
 
         tokio::spawn(async move {
+            tracing::info!(
+                target: "jfc::stream",
+                task_id = %task_id,
+                subagent_type = ?task_input.subagent_type,
+                description = %description,
+                has_agent_def = agent_def.is_some(),
+                "task tool: spawning execute_task"
+            );
             let _ = tx_task.send(AppEvent::TaskStarted {
                 task_id: task_id.clone(),
                 description,
@@ -387,11 +431,25 @@ pub fn dispatch_tools_batched(
             let elapsed_ms = started.elapsed().as_millis() as u64;
 
             if result.is_error() {
+                tracing::warn!(
+                    target: "jfc::stream",
+                    task_id = %task_id,
+                    elapsed_ms,
+                    output_preview = %&result.output[..result.output.len().min(200)],
+                    "task tool: execute_task failed"
+                );
                 let _ = tx_task.send(AppEvent::TaskFailed {
                     task_id: task_id.clone(),
                     error: result.output.clone(),
                 });
             } else {
+                tracing::info!(
+                    target: "jfc::stream",
+                    task_id = %task_id,
+                    elapsed_ms,
+                    output_len = result.output.len(),
+                    "task tool: execute_task succeeded"
+                );
                 let _ = tx_task.send(AppEvent::TaskCompleted {
                     task_id: task_id.clone(),
                     summary: result.output.clone(),
@@ -410,6 +468,11 @@ pub fn dispatch_tools_batched(
 
     if !regular_calls.is_empty() {
         let batches = scheduler::schedule_tools(regular_calls);
+        tracing::debug!(
+            target: "jfc::stream",
+            batch_count = batches.len(),
+            "dispatch_tools_batched: scheduled regular tool batches"
+        );
         let tx_clone = tx.clone();
         let done = send_all_complete.clone();
         tokio::spawn(async move {
@@ -422,22 +485,40 @@ pub fn dispatch_tools_batched(
 pub fn should_continue_loop(messages: &[ChatMessage]) -> bool {
     let last = match messages.iter().rev().find(|m| m.role == Role::Assistant) {
         Some(m) => m,
-        None => return false,
+        None => {
+            tracing::trace!(target: "jfc::stream", "should_continue_loop: no assistant message found");
+            return false;
+        }
     };
     let has_tools = last.parts.iter().any(|p| matches!(p, MessagePart::Tool(_)));
     if !has_tools {
+        tracing::trace!(target: "jfc::stream", "should_continue_loop: last assistant has no tools");
         return false;
     }
-    last.parts.iter().all(|p| match p {
+    let all_done = last.parts.iter().all(|p| match p {
         MessagePart::Tool(tc) => {
             tc.status == ToolStatus::Complete || tc.status == ToolStatus::Failed
         }
         _ => true,
-    })
+    });
+    tracing::debug!(
+        target: "jfc::stream",
+        has_tools, all_done,
+        tool_count = last.parts.iter().filter(|p| matches!(p, MessagePart::Tool(_))).count(),
+        "should_continue_loop"
+    );
+    all_done
 }
 
 pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent>) {
     let assistant_idx = app.messages.len();
+    tracing::info!(
+        target: "jfc::stream",
+        assistant_idx,
+        model = %app.model,
+        total_messages = app.messages.len(),
+        "continue_agentic_loop: starting new sub-stream"
+    );
     app.messages.push(ChatMessage::assistant(String::new()));
     app.streaming_text.clear();
     app.streaming_reasoning.clear();
@@ -498,14 +579,15 @@ fn model_supports_adaptive_thinking(model: &str) -> bool {
 fn model_supports_thinking(model: &str) -> bool {
     let m = model.to_lowercase();
     // Known thinking-capable families
-    if m.contains("opus") || m.contains("sonnet-4-5") || m.contains("sonnet-4-6")
+    let supports = m.contains("opus") || m.contains("sonnet-4-5") || m.contains("sonnet-4-6")
         || m.contains("sonnet-4-7") || m.contains("sonnet-4-8") || m.contains("sonnet-4-9")
-        || m.contains("sonnet-5")
-    {
-        return true;
-    }
-    // Haiku and unknown models: no thinking
-    false
+        || m.contains("sonnet-5");
+    tracing::debug!(
+        target: "jfc::stream",
+        model, supports,
+        "model_supports_thinking"
+    );
+    supports
 }
 
 pub fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
@@ -534,6 +616,12 @@ pub fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
             })
         })
         .collect();
+    tracing::debug!(
+        target: "jfc::stream",
+        input_messages = msgs.len(),
+        output_messages = out.len(),
+        "build_provider_messages (text-only)"
+    );
     ensure_user_last(out)
 }
 
@@ -622,6 +710,9 @@ fn ensure_user_last(mut msgs: Vec<ProviderMessage>) -> Vec<ProviderMessage> {
 
 fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
     let mut out = Vec::new();
+    let mut tool_use_count = 0usize;
+    let mut tool_result_count = 0usize;
+    let mut abandoned_count = 0usize;
     for m in msgs {
         let role = match m.role {
             Role::User => ProviderRole::User,
@@ -641,27 +732,18 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
             .parts
             .iter()
             .filter_map(|p| match p {
-                MessagePart::Tool(tc) => Some(ProviderContent::ToolUse {
-                    id: tc.id.clone(),
-                    name: tc.kind.api_name().to_owned(),
-                    input: tc.input.to_value(),
-                }),
+                MessagePart::Tool(tc) => {
+                    tool_use_count += 1;
+                    Some(ProviderContent::ToolUse {
+                        id: tc.id.clone(),
+                        name: tc.kind.api_name().to_owned(),
+                        input: tc.input.to_value(),
+                    })
+                }
                 _ => None,
             })
             .collect();
 
-        // Anthropic's API enforces: every `tool_use` block in an assistant
-        // turn MUST be followed by a matching `tool_result` block in the
-        // next user message — including ones that were never approved or
-        // executed. The 400 error from the log:
-        //   "messages.4: tool_use ids were found without tool_result blocks
-        //    immediately after: toolu_012FTQ..., toolu_01DKKy..., …"
-        // happens when the user types a new prompt while tools are still
-        // pending approval, then we send a request with mismatched counts.
-        //
-        // Fix: emit a tool_result for EVERY tool_use in the assistant turn.
-        // Pending/Running tools (never finished) get a synthetic "abandoned"
-        // result with is_error=true so the model knows the tool didn't run.
         let tool_results: Vec<ProviderContent> = m
             .parts
             .iter()
@@ -669,6 +751,7 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
                 MessagePart::Tool(tc) => {
                     let (result_text, is_error) = match tc.status {
                         ToolStatus::Complete | ToolStatus::Failed => {
+                            tool_result_count += 1;
                             let text = match &tc.output {
                                 ToolOutput::Text(s) => s.clone(),
                                 ToolOutput::LargeText(lt) => lt.content.clone(),
@@ -691,12 +774,15 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
                             };
                             (text, tc.status == ToolStatus::Failed)
                         }
-                        ToolStatus::Pending | ToolStatus::Running => (
-                            "Tool was abandoned: the user moved on before \
-                             approving or executing it. No output was produced."
-                                .to_owned(),
-                            true,
-                        ),
+                        ToolStatus::Pending | ToolStatus::Running => {
+                            abandoned_count += 1;
+                            (
+                                "Tool was abandoned: the user moved on before \
+                                 approving or executing it. No output was produced."
+                                    .to_owned(),
+                                true,
+                            )
+                        }
                     };
                     Some(ProviderContent::ToolResult {
                         tool_use_id: tc.id.clone(),
@@ -733,6 +819,13 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
             });
         }
     }
+    tracing::debug!(
+        target: "jfc::stream",
+        input_messages = msgs.len(),
+        output_messages = out.len(),
+        tool_use_count, tool_result_count, abandoned_count,
+        "build_provider_messages_with_tool_results"
+    );
     ensure_user_last(out)
 }
 

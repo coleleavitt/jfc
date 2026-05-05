@@ -930,6 +930,14 @@ async fn run(
                 }
             }
             AppEvent::StreamDone(stop_reason) => {
+                tracing::info!(
+                    target: "jfc::stream",
+                    ?stop_reason,
+                    pending_tool_count = app.pending_tool_calls.len(),
+                    pending_approval = app.pending_approval.is_some(),
+                    approval_queue = app.approval_queue.len(),
+                    "AppEvent::StreamDone received"
+                );
                 app.is_streaming = false;
                 // v126's "Cooked for Nm Ns" post-turn footer: stamp the
                 // assistant message with a randomized past-tense verb +
@@ -1068,6 +1076,11 @@ async fn run(
                 }
             }
             AppEvent::StreamError(e) => {
+                tracing::error!(
+                    target: "jfc::stream",
+                    error = %e,
+                    "AppEvent::StreamError — resetting stream state"
+                );
                 app.is_streaming = false;
                 app.streaming_started_at = None;
                 app.streaming_last_token_at = None;
@@ -1214,6 +1227,12 @@ async fn run(
                 }
             }
             AppEvent::AllToolsComplete => {
+                tracing::info!(
+                    target: "jfc::stream",
+                    message_count = app.messages.len(),
+                    model = %app.model,
+                    "AppEvent::AllToolsComplete"
+                );
                 // Terminal bell when a tool batch completes — matches
                 // v126's `iterm2_with_bell` / `terminal_bell` behavior
                 // (cli.js:46704). Many users have iTerm2 / WezTerm /
@@ -1233,6 +1252,15 @@ async fn run(
                 }
                 let manual = std::mem::take(&mut app.force_compact_pending);
                 if manual || compact::should_compact(&app.messages, app.max_context_tokens) {
+                    tracing::info!(
+                        target: "jfc::compact",
+                        manual,
+                        model = %app.model,
+                        max_context_tokens = app.max_context_tokens,
+                        message_count = app.messages.len(),
+                        rapid_refill_count = app.tool_ctx.rapid_refill_count,
+                        "post-response compaction triggered"
+                    );
                     let _ = tx.send(AppEvent::CompactionStarted);
                     let messages = app.messages.clone();
                     let provider = Arc::clone(&app.provider);
@@ -1241,7 +1269,13 @@ async fn run(
                     let window = app.max_context_tokens;
                     let tx_compact = tx.clone();
                     tokio::spawn(async move {
-                        let options = provider::StreamOptions::new(model);
+                        let options = provider::StreamOptions::new(model.clone());
+                        tracing::debug!(
+                            target: "jfc::compact",
+                            model = %model,
+                            window,
+                            "spawned post-response compaction task"
+                        );
                         let result = compact::compact(
                             &messages,
                             provider.as_ref(),
@@ -1256,6 +1290,12 @@ async fn run(
                                 pre_tokens,
                                 post_tokens,
                             } => {
+                                tracing::info!(
+                                    target: "jfc::compact",
+                                    pre_tokens, post_tokens,
+                                    saved = pre_tokens.saturating_sub(post_tokens),
+                                    "post-response compaction succeeded — sending CompactionDone"
+                                );
                                 let _ = tx_compact.send(AppEvent::CompactionDone {
                                     messages,
                                     tool_ctx,
@@ -1264,16 +1304,31 @@ async fn run(
                                 });
                             }
                             compact::CompactResult::Unsupported
-                            | compact::CompactResult::TooFewGroups => {}
+                            | compact::CompactResult::TooFewGroups => {
+                                tracing::debug!(
+                                    target: "jfc::compact",
+                                    "post-response compaction skipped (unsupported/too few groups)"
+                                );
+                            }
                             compact::CompactResult::CircuitBreakerTripped => {
+                                tracing::warn!(
+                                    target: "jfc::compact",
+                                    "post-response compaction: circuit breaker tripped"
+                                );
                                 let _ = tx_compact.send(AppEvent::CompactionFailed(
                                     "Circuit breaker tripped — compaction keeps refilling".into(),
+                                    None,
                                 ));
                             }
                             compact::CompactResult::Exhausted { attempts } => {
+                                tracing::warn!(
+                                    target: "jfc::compact",
+                                    attempts,
+                                    "post-response compaction exhausted all attempts"
+                                );
                                 let _ = tx_compact.send(AppEvent::CompactionFailed(format!(
                                     "Exhausted {attempts} compaction attempts"
-                                )));
+                                ), None));
                             }
                         }
                     });
@@ -1291,12 +1346,20 @@ async fn run(
                     && app.approval_queue.is_empty()
                     && stream::should_continue_loop(&app.messages)
                 {
+                    tracing::info!(
+                        target: "jfc::stream",
+                        "agentic loop continuing — tools complete, no pending approvals"
+                    );
                     stream::continue_agentic_loop(&mut app, &tx).await;
                 } else if !app.is_streaming
                     && app.pending_approval.is_none()
                     && app.approval_queue.is_empty()
                     && app.pending_tool_calls.is_empty()
                 {
+                    tracing::debug!(
+                        target: "jfc::stream",
+                        "turn fully ended — draining queued prompts"
+                    );
                     // Turn fully ended (model stopped, no more agentic loop
                     // iterations, no pending tools). v126 input queue: drain
                     // any prompts the user typed during streaming.
@@ -1307,6 +1370,7 @@ async fn run(
                 // Drives the `Compacting…` spinner — without this, the UI
                 // freezes on a long pre-submit compact and the user
                 // assumes their keystroke was eaten.
+                tracing::debug!(target: "jfc::compact", "CompactionStarted event received — showing spinner");
                 app.compacting_started_at = Some(std::time::Instant::now());
             }
             AppEvent::CompactionDone {
@@ -1316,6 +1380,12 @@ async fn run(
                 post_tokens,
             } => {
                 let saved = pre_tokens.saturating_sub(post_tokens);
+                tracing::info!(
+                    target: "jfc::compact",
+                    pre_tokens, post_tokens, saved,
+                    new_message_count = messages.len(),
+                    "applying compaction result to app state"
+                );
                 app.messages = messages;
                 app.tool_ctx = tool_ctx;
                 app.tool_ctx.approx_tokens = post_tokens;
@@ -1331,7 +1401,16 @@ async fn run(
                     ),
                 );
             }
-            AppEvent::CompactionFailed(reason) => {
+            AppEvent::CompactionFailed(reason, calibrated_tokens) => {
+                tracing::warn!(
+                    target: "jfc::compact",
+                    %reason,
+                    ?calibrated_tokens,
+                    "compaction failed — surfacing toast to user"
+                );
+                if let Some(real_count) = calibrated_tokens {
+                    app.tool_ctx.approx_tokens = real_count;
+                }
                 app.compacting_started_at = None;
                 toast::push_with_cap(
                     &mut app.toasts,
@@ -1345,6 +1424,11 @@ async fn run(
                 // Re-fire after pre-submit compaction. Reuses the same
                 // dispatch path as a typed prompt so message persistence,
                 // streaming setup, and session save all run identically.
+                tracing::debug!(
+                    target: "jfc::input",
+                    text_len = text.len(),
+                    "AppEvent::Submit (re-queued after compaction)"
+                );
                 input::handle_submit_text(&mut app, text, &tx).await?;
             }
             AppEvent::Toast { kind, text } => {
@@ -1403,6 +1487,11 @@ async fn run(
                 task_id,
                 description,
             } => {
+                tracing::info!(
+                    target: "jfc::task",
+                    %task_id, %description,
+                    "TaskStarted"
+                );
                 use types::{TaskLifecycle, TaskStatusPart};
                 app.background_tasks.insert(
                     task_id.clone(),
@@ -1467,6 +1556,12 @@ async fn run(
                 summary,
                 elapsed_ms,
             } => {
+                tracing::info!(
+                    target: "jfc::task",
+                    %task_id, elapsed_ms,
+                    summary_len = summary.len(),
+                    "TaskCompleted"
+                );
                 use types::TaskLifecycle;
                 if let Some(bt) = app.background_tasks.get_mut(&task_id) {
                     bt.status = TaskLifecycle::Completed;
@@ -1488,6 +1583,12 @@ async fn run(
                 }
             }
             AppEvent::TaskFailed { task_id, error } => {
+                tracing::warn!(
+                    target: "jfc::task",
+                    %task_id,
+                    error_preview = %&error[..error.len().min(200)],
+                    "TaskFailed"
+                );
                 use types::TaskLifecycle;
                 if let Some(bt) = app.background_tasks.get_mut(&task_id) {
                     bt.status = TaskLifecycle::Failed;

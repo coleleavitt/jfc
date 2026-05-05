@@ -1313,7 +1313,13 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
     let body = if let Some(started) = app.compacting_started_at {
         let elapsed = now.duration_since(started);
         row1_elapsed = elapsed;
-        crate::spinner::format_compact_status(app.spinner_frame, elapsed)
+        // Pass the pre-compact token count so the spinner shows
+        // *what's being compacted*. `tool_ctx.approx_tokens` still
+        // reflects the pre-compact estimate during the compact (it's
+        // only updated to the post-compact value when CompactionDone
+        // fires), so it's the right source.
+        let pre = app.tool_ctx.approx_tokens as u64;
+        crate::spinner::format_compact_status(app.spinner_frame, elapsed, pre)
     } else {
         // Prefer the user-turn clock so a multi-step agentic loop reads
         // cumulative time, not just the current sub-stream's age. Fall back

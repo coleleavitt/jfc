@@ -141,6 +141,7 @@ impl Default for PermissionMode {
 /// Load every skill discoverable from project + user roots. Project skills
 /// override user skills with the same name.
 pub fn load_skills(project_root: &Path) -> Vec<Skill> {
+    tracing::info!(target: "jfc::agents", project_root = %project_root.display(), "loading skills");
     let mut out: Vec<Skill> = Vec::new();
     let user_dir = dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("/"))
@@ -171,6 +172,12 @@ pub fn load_skills(project_root: &Path) -> Vec<Skill> {
         }
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
+    tracing::debug!(
+        target: "jfc::agents",
+        count = out.len(),
+        names = ?out.iter().map(|s| &s.name).collect::<Vec<_>>(),
+        "skills loaded"
+    );
     out
 }
 
@@ -228,7 +235,14 @@ pub(crate) fn render_skills_section(skills: &[Skill]) -> String {
 /// `Skill` tool / slash dispatcher to resolve a user-typed name.
 pub fn find_skill_by_name<'a>(all_skills: &'a [Skill], name: &str) -> Option<&'a Skill> {
     // Case-insensitive — `/Explain` should hit the same skill as `/explain`.
-    all_skills.iter().find(|s| s.name.eq_ignore_ascii_case(name))
+    let result = all_skills.iter().find(|s| s.name.eq_ignore_ascii_case(name));
+    tracing::trace!(
+        target: "jfc::agents",
+        name,
+        found = result.is_some(),
+        "find_skill_by_name"
+    );
+    result
 }
 
 /// Build the effective system prompt for an agent: its own `system_prompt`
@@ -262,6 +276,7 @@ pub(crate) fn build_agent_system_prompt(agent: &AgentDef, all_skills: &[Skill]) 
 
 /// Same precedence rules as `load_skills`, but for agent definitions.
 pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
+    tracing::info!(target: "jfc::agents", project_root = %project_root.display(), "loading agents");
     let mut out: Vec<AgentDef> = Vec::new();
     let user_dir = dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("/"))
@@ -290,6 +305,12 @@ pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
         }
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
+    tracing::debug!(
+        target: "jfc::agents",
+        count = out.len(),
+        names = ?out.iter().map(|a| &a.name).collect::<Vec<_>>(),
+        "agents loaded"
+    );
     out
 }
 

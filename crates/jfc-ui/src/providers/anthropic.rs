@@ -26,6 +26,23 @@ impl AnthropicProvider {
 }
 
 fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_json::Value {
+    let thinking_mode = if opts.adaptive_thinking {
+        "adaptive"
+    } else if opts.thinking_budget.is_some() {
+        "enabled"
+    } else {
+        "none"
+    };
+    tracing::debug!(
+        target: "jfc::provider::anthropic",
+        model = %opts.model,
+        max_tokens = opts.max_tokens,
+        has_system = opts.system.is_some(),
+        tool_count = opts.tools.len(),
+        thinking_mode,
+        "building request body"
+    );
+
     let mut body = json!({
         "model": opts.model,
         "max_tokens": opts.max_tokens,
@@ -108,9 +125,28 @@ impl Provider for AnthropicProvider {
             .send()
             .await?;
 
-        if !resp.status().is_success() {
-            let status = resp.status();
+        let status = resp.status();
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("unknown")
+            .to_owned();
+        tracing::info!(
+            target: "jfc::provider::anthropic",
+            status = %status,
+            content_type = %content_type,
+            "received HTTP response"
+        );
+
+        if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
+            tracing::warn!(
+                target: "jfc::provider::anthropic",
+                status = %status,
+                body_preview = %&text[..text.len().min(200)],
+                "API request failed"
+            );
             if let Some(model) = super::anthropic_oauth::parse_model_not_found(&text) {
                 anyhow::bail!(
                     "{model} is not enabled on your Anthropic account. \

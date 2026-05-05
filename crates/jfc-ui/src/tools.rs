@@ -12,6 +12,8 @@ unsafe extern "C" {
     fn setsid() -> i32;
 }
 
+use tracing::{debug, info, trace, warn};
+
 use crate::context::ReadDedupCache;
 use crate::provider::ToolDef;
 use crate::tasks::{DeletedFilter, TaskPatch, TaskStatus, TaskStore};
@@ -462,6 +464,7 @@ pub enum ToolSource {
 }
 
 /// REQ-TOOLS-002: Tool executors — bash/read/write/edit/glob/grep/task via tokio + fs.
+#[tracing::instrument(target = "jfc::tools", skip(input, cwd, dedup, task_store), fields(kind = ?kind))]
 pub async fn execute_tool(
     kind: ToolKind,
     input: ToolInput,
@@ -577,6 +580,10 @@ pub async fn execute_tool(
 async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> ExecutionResult {
     let timeout = timeout_ms.unwrap_or(120_000);
     let command = non_interactive_shell_command(command);
+
+    let cmd_preview: String = command.chars().take(100).collect();
+    info!(target: "jfc::tools", cmd = %cmd_preview, timeout_ms = timeout, cwd = %cwd.display(), "bash: executing");
+
     let mut cmd = Command::new("bash");
     cmd.arg("-c")
         .arg(&command)
@@ -610,6 +617,8 @@ async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> Exe
         Ok(Ok(out)) => {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let stderr = String::from_utf8_lossy(&out.stderr);
+            let exit = out.status.code().unwrap_or(-1);
+            debug!(target: "jfc::tools", exit_code = exit, stdout_len = stdout.len(), stderr_len = stderr.len(), "bash: completed");
             // Bash semantics per Anthropic's reference tool: a non-zero exit
             // code is part of the *output*, not a tool failure. Many shell
             // utilities use exit 1 as a normal signal (`grep` with no matches,
@@ -636,8 +645,14 @@ async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> Exe
                 source: ToolSource::LocalExecutor,
             })
         }
-        Ok(Err(e)) => ExecutionResult::failure(format!("Failed to spawn bash: {e}")),
-        Err(_) => ExecutionResult::failure(format!("Command timed out after {timeout}ms")),
+        Ok(Err(e)) => {
+            warn!(target: "jfc::tools", error = %e, "bash: failed to spawn");
+            ExecutionResult::failure(format!("Failed to spawn bash: {e}"))
+        }
+        Err(_) => {
+            warn!(target: "jfc::tools", timeout_ms = timeout, "bash: command timed out");
+            ExecutionResult::failure(format!("Command timed out after {timeout}ms"))
+        }
     }
 }
 
@@ -647,6 +662,7 @@ async fn execute_read(
     limit: Option<u64>,
     dedup: Option<&Arc<Mutex<ReadDedupCache>>>,
 ) -> ExecutionResult {
+    debug!(target: "jfc::tools", file_path, offset, limit, "read: starting");
     let path = PathBuf::from(file_path);
 
     if path.is_dir() {
@@ -662,14 +678,19 @@ async fn execute_read(
                     }
                 }
                 names.sort();
+                debug!(target: "jfc::tools", entry_count = names.len(), "read: directory listed");
                 ExecutionResult::success(names.join("\n"))
             }
-            Err(e) => ExecutionResult::failure(format!("Cannot read directory: {e}")),
+            Err(e) => {
+                warn!(target: "jfc::tools", file_path, error = %e, "read: cannot read directory");
+                ExecutionResult::failure(format!("Cannot read directory: {e}"))
+            }
         }
     } else {
         if let Some(cache) = dedup {
             let guard = cache.lock().await;
             if guard.is_unchanged(&path) {
+                trace!(target: "jfc::tools", file_path, "read: dedup cache hit, file unchanged");
                 return ExecutionResult::success(
                     "File unchanged since last read. The content from the \
                              earlier Read tool_result in this conversation is still \
@@ -698,17 +719,23 @@ async fn execute_read(
                     cache.lock().await.record_read(path);
                 }
 
+                debug!(target: "jfc::tools", file_path, line_count = slice.len(), "read: success");
                 ExecutionResult::success(numbered)
             }
-            Err(e) => ExecutionResult::failure(format!("Cannot read file: {e}")),
+            Err(e) => {
+                warn!(target: "jfc::tools", file_path, error = %e, "read: cannot read file");
+                ExecutionResult::failure(format!("Cannot read file: {e}"))
+            }
         }
     }
 }
 
 async fn execute_write(file_path: &str, content: &str) -> ExecutionResult {
+    info!(target: "jfc::tools", file_path, content_len = content.len(), "write: starting");
     let path = PathBuf::from(file_path);
     if let Some(parent) = path.parent() {
         if let Err(e) = tokio::fs::create_dir_all(parent).await {
+            warn!(target: "jfc::tools", file_path, error = %e, "write: cannot create directories");
             return ExecutionResult::failure(format!("Cannot create directories: {e}"));
         }
     }
@@ -721,6 +748,7 @@ async fn execute_write(file_path: &str, content: &str) -> ExecutionResult {
         Ok(_) => {
             let line_count = content.lines().count();
             let bytes = content.len();
+            debug!(target: "jfc::tools", file_path, bytes, line_count, "write: success");
             let header = match &prior {
                 Some(_) => format!("Updated {file_path} ({bytes} bytes, {line_count} lines)"),
                 None => format!("Wrote {file_path} ({bytes} bytes, {line_count} lines)"),
@@ -752,7 +780,10 @@ async fn execute_write(file_path: &str, content: &str) -> ExecutionResult {
             };
             ExecutionResult::success(format!("{header}\n\n{preview}{footer}"))
         }
-        Err(e) => ExecutionResult::failure(format!("Cannot write file: {e}")),
+        Err(e) => {
+            warn!(target: "jfc::tools", file_path, error = %e, "write: cannot write file");
+            ExecutionResult::failure(format!("Cannot write file: {e}"))
+        }
     }
 }
 
@@ -762,6 +793,8 @@ async fn execute_edit(
     new_string: &str,
     replacement: ReplacementMode,
 ) -> ExecutionResult {
+    let replace_all = replacement.replace_all();
+    info!(target: "jfc::tools", file_path, old_len = old_string.len(), new_len = new_string.len(), replace_all, "edit: starting");
     match tokio::fs::read_to_string(file_path).await {
         Ok(content) => {
             if old_string.is_empty() && !content.is_empty() {
@@ -771,9 +804,11 @@ async fn execute_edit(
             }
             let count = content.matches(old_string).count();
             if count == 0 {
+                warn!(target: "jfc::tools", file_path, "edit: old_string not found");
                 return ExecutionResult::failure(format!("old_string not found in {file_path}"));
             }
             if count > 1 && !replacement.replace_all() {
+                warn!(target: "jfc::tools", file_path, count, "edit: multiple matches found");
                 return ExecutionResult::failure(format!(
                     "Found {count} matches for old_string in {file_path}. Use replace_all=true or provide more context."
                 ));
@@ -784,21 +819,37 @@ async fn execute_edit(
                 content.replacen(old_string, new_string, 1)
             };
             match tokio::fs::write(file_path, &new_content).await {
-                Ok(_) => ExecutionResult::success(format!(
-                    "Replaced {count} occurrence(s) in {file_path}"
-                )),
-                Err(e) => ExecutionResult::failure(format!("Cannot write file after edit: {e}")),
+                Ok(_) => {
+                    debug!(target: "jfc::tools", file_path, count, "edit: success");
+                    ExecutionResult::success(format!(
+                        "Replaced {count} occurrence(s) in {file_path}"
+                    ))
+                }
+                Err(e) => {
+                    warn!(target: "jfc::tools", file_path, error = %e, "edit: cannot write after edit");
+                    ExecutionResult::failure(format!("Cannot write file after edit: {e}"))
+                }
             }
         }
         Err(_) if old_string.is_empty() => match tokio::fs::write(file_path, new_string).await {
-            Ok(_) => ExecutionResult::success(format!("Created new file {file_path}")),
-            Err(e2) => ExecutionResult::failure(format!("Cannot create file: {e2}")),
+            Ok(_) => {
+                debug!(target: "jfc::tools", file_path, "edit: created new file");
+                ExecutionResult::success(format!("Created new file {file_path}"))
+            }
+            Err(e2) => {
+                warn!(target: "jfc::tools", file_path, error = %e2, "edit: cannot create file");
+                ExecutionResult::failure(format!("Cannot create file: {e2}"))
+            }
         },
-        Err(e) => ExecutionResult::failure(format!("Cannot read file: {e}")),
+        Err(e) => {
+            warn!(target: "jfc::tools", file_path, error = %e, "edit: cannot read file");
+            ExecutionResult::failure(format!("Cannot read file: {e}"))
+        }
     }
 }
 
 async fn execute_glob(pattern: &str, path: Option<&str>, cwd: &Path) -> ExecutionResult {
+    debug!(target: "jfc::tools", pattern, path, "glob: searching");
     let base = path.map(PathBuf::from).unwrap_or_else(|| cwd.to_path_buf());
     let mut cmd = Command::new("rg");
     cmd.arg("--files")
@@ -810,8 +861,11 @@ async fn execute_glob(pattern: &str, path: Option<&str>, cwd: &Path) -> Executio
         Ok(out) => {
             let stdout = terminal_safe_text(String::from_utf8_lossy(&out.stdout).trim());
             if stdout.is_empty() {
+                debug!(target: "jfc::tools", pattern, "glob: no files matched");
                 ExecutionResult::success("No files matched")
             } else {
+                let count = stdout.lines().count();
+                debug!(target: "jfc::tools", pattern, count, "glob: matches found");
                 ExecutionResult::success(stdout)
             }
         }
@@ -833,6 +887,7 @@ async fn execute_grep(
     output_mode: Option<&str>,
     cwd: &Path,
 ) -> ExecutionResult {
+    debug!(target: "jfc::tools", pattern, path, output_mode, "grep: searching");
     let search_path = path.unwrap_or(".");
     let mut cmd = Command::new("rg");
     cmd.arg("--no-heading").arg("-n");
@@ -859,14 +914,21 @@ async fn execute_grep(
             let stdout = terminal_safe_text(String::from_utf8_lossy(&out.stdout).trim());
             let stderr = terminal_safe_text(String::from_utf8_lossy(&out.stderr).trim());
             if stdout.is_empty() && out.status.code() == Some(1) {
+                debug!(target: "jfc::tools", pattern, "grep: no matches found");
                 ExecutionResult::success("No matches found")
             } else if !stderr.is_empty() && stdout.is_empty() {
+                warn!(target: "jfc::tools", pattern, error = %stderr, "grep: rg error");
                 ExecutionResult::failure(stderr)
             } else {
+                let result_lines = stdout.lines().count();
+                debug!(target: "jfc::tools", pattern, result_lines, "grep: matches found");
                 ExecutionResult::success(stdout)
             }
         }
-        Err(e) => ExecutionResult::failure(format!("rg not found or failed: {e}")),
+        Err(e) => {
+            warn!(target: "jfc::tools", error = %e, "grep: rg not found or failed");
+            ExecutionResult::failure(format!("rg not found or failed: {e}"))
+        }
     }
 }
 
@@ -877,14 +939,21 @@ fn execute_task_create(
     active_form: Option<String>,
     blocked_by: Vec<String>,
 ) -> ExecutionResult {
+    debug!(target: "jfc::tools", %subject, blocked_count = blocked_by.len(), "task_create: creating");
     let Some(store) = store else {
         return ExecutionResult::failure("Task store not available");
     };
     match store.create(subject, description, active_form, blocked_by) {
-        Ok(task) => ExecutionResult::success(
-            serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
-        ),
-        Err(e) => ExecutionResult::failure(e.to_string()),
+        Ok(task) => {
+            debug!(target: "jfc::tools", task_id = %task.id, "task_create: success");
+            ExecutionResult::success(
+                serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
+            )
+        }
+        Err(e) => {
+            warn!(target: "jfc::tools", error = %e, "task_create: failed");
+            ExecutionResult::failure(e.to_string())
+        }
     }
 }
 
@@ -896,6 +965,7 @@ fn execute_task_update(
     description: Option<String>,
     owner: Option<String>,
 ) -> ExecutionResult {
+    debug!(target: "jfc::tools", task_id, status = status.as_deref(), "task_update: updating");
     let Some(store) = store else {
         return ExecutionResult::failure("Task store not available");
     };
@@ -914,10 +984,16 @@ fn execute_task_update(
         ..Default::default()
     };
     match store.update(task_id, patch) {
-        Ok(task) => ExecutionResult::success(
-            serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
-        ),
-        Err(e) => ExecutionResult::failure(e.to_string()),
+        Ok(task) => {
+            debug!(target: "jfc::tools", task_id, "task_update: success");
+            ExecutionResult::success(
+                serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
+            )
+        }
+        Err(e) => {
+            warn!(target: "jfc::tools", task_id, error = %e, "task_update: failed");
+            ExecutionResult::failure(e.to_string())
+        }
     }
 }
 
@@ -926,6 +1002,7 @@ fn execute_task_list(
     status_filter: Option<&str>,
     owner_filter: Option<&str>,
 ) -> ExecutionResult {
+    debug!(target: "jfc::tools", status_filter, owner_filter, "task_list: listing");
     let Some(store) = store else {
         return ExecutionResult::failure("Task store not available");
     };
@@ -941,12 +1018,14 @@ fn execute_task_list(
     if let Some(of) = owner_filter {
         tasks.retain(|t| t.owner.as_deref() == Some(of));
     }
+    debug!(target: "jfc::tools", count = tasks.len(), "task_list: result");
     let output =
         serde_json::to_string_pretty(&tasks).unwrap_or_else(|_| format!("{} tasks", tasks.len()));
     ExecutionResult::success(output)
 }
 
 fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) -> ExecutionResult {
+    debug!(target: "jfc::tools", task_id, "task_done: marking complete");
     let Some(store) = store else {
         return ExecutionResult::failure("Task store not available");
     };
@@ -955,10 +1034,16 @@ fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) -> ExecutionR
         ..Default::default()
     };
     match store.update(task_id, patch) {
-        Ok(task) => ExecutionResult::success(
-            serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
-        ),
-        Err(e) => ExecutionResult::failure(e.to_string()),
+        Ok(task) => {
+            debug!(target: "jfc::tools", task_id, "task_done: success");
+            ExecutionResult::success(
+                serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
+            )
+        }
+        Err(e) => {
+            warn!(target: "jfc::tools", task_id, error = %e, "task_done: failed");
+            ExecutionResult::failure(e.to_string())
+        }
     }
 }
 
@@ -971,6 +1056,7 @@ fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) -> ExecutionR
 /// the model already has the right to read (it's already in the system
 /// prompt listing).
 pub async fn execute_skill(name: &str, args: Option<&str>) -> ExecutionResult {
+    info!(target: "jfc::tools", skill_name = name, has_args = args.is_some(), "skill: invoking");
     let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
     execute_skill_in(&cwd, name, args).await
 }

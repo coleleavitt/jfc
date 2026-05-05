@@ -45,6 +45,7 @@ impl ReadDedupCache {
     }
 
     pub fn record_read(&mut self, path: PathBuf) {
+        tracing::trace!(target: "jfc::context", path = %path.display(), "recording file read");
         if let Ok(meta) = std::fs::metadata(&path) {
             let mtime = meta
                 .modified()
@@ -63,10 +64,12 @@ impl ReadDedupCache {
     }
 
     pub fn invalidate(&mut self, path: &Path) {
+        tracing::debug!(target: "jfc::context", path = %path.display(), "invalidating cache entry");
         self.entries.remove(path);
     }
 
     pub fn clear(&mut self) {
+        tracing::debug!(target: "jfc::context", entries = self.entries.len(), "clearing read cache");
         self.entries.clear();
     }
 }
@@ -93,11 +96,18 @@ impl ToolContext {
 /// Walk from `start` upward to filesystem root looking for CLAUDE.md.
 /// Returns (path, content) of the first one found, or None.
 pub fn find_claude_md(start: &Path) -> Option<(PathBuf, String)> {
+    tracing::debug!(target: "jfc::context", start = %start.display(), "searching for CLAUDE.md");
     let mut dir = start.to_path_buf();
     loop {
         let candidate = dir.join("CLAUDE.md");
         if let Ok(content) = std::fs::read_to_string(&candidate) {
             if !content.trim().is_empty() {
+                tracing::info!(
+                    target: "jfc::context",
+                    path = %candidate.display(),
+                    size_bytes = content.len(),
+                    "found CLAUDE.md"
+                );
                 return Some((candidate, content));
             }
         }
@@ -106,6 +116,7 @@ pub fn find_claude_md(start: &Path) -> Option<(PathBuf, String)> {
             _ => break,
         }
     }
+    tracing::debug!(target: "jfc::context", start = %start.display(), "CLAUDE.md not found");
     None
 }
 
@@ -129,15 +140,26 @@ pub struct ClaudeMdHierarchy {
 impl ClaudeMdHierarchy {
     /// Load every CLAUDE.md layer that exists for the given project root.
     pub fn load(project_root: &Path) -> Self {
+        tracing::info!(target: "jfc::context", project_root = %project_root.display(), "loading CLAUDE.md hierarchy");
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
         let cfg = dirs::config_dir().unwrap_or_else(|| home.join(".config"));
-        Self {
+        let result = Self {
             managed: read_if_exists(&cfg.join("claude/CLAUDE.md")),
             user: read_if_exists(&home.join(".claude/CLAUDE.md")),
             project: read_if_exists(&project_root.join("CLAUDE.md")),
             project_dot: read_if_exists(&project_root.join(".claude/CLAUDE.md")),
             local: read_if_exists(&project_root.join("CLAUDE.local.md")),
-        }
+        };
+        tracing::debug!(
+            target: "jfc::context",
+            has_managed = result.managed.is_some(),
+            has_user = result.user.is_some(),
+            has_project = result.project.is_some(),
+            has_project_dot = result.project_dot.is_some(),
+            has_local = result.local.is_some(),
+            "CLAUDE.md hierarchy loaded"
+        );
+        result
     }
 
     /// Concatenate all layers into a single system-prompt-ready string with
@@ -164,7 +186,13 @@ impl ClaudeMdHierarchy {
         push("Project instructions", &self.project);
         push("Project (.claude)", &self.project_dot);
         push("Local overrides", &self.local);
-        if out.is_empty() { None } else { Some(out) }
+        let result = if out.is_empty() { None } else { Some(out) };
+        tracing::trace!(
+            target: "jfc::context",
+            output_len = result.as_ref().map(|s| s.len()).unwrap_or(0),
+            "rendered CLAUDE.md hierarchy"
+        );
+        result
     }
 
     /// True if any layer was loaded.
@@ -186,11 +214,20 @@ fn read_if_exists(path: &Path) -> Option<(PathBuf, String)> {
 }
 
 pub fn build_system_prompt(claude_md: Option<&str>) -> Option<String> {
+    let has_claude_md = claude_md.is_some();
     let base = claude_md?.trim();
     if base.is_empty() {
+        tracing::debug!(target: "jfc::context", has_claude_md, "build_system_prompt: empty content");
         return None;
     }
-    Some(base.to_owned())
+    let result = base.to_owned();
+    tracing::debug!(
+        target: "jfc::context",
+        has_claude_md,
+        output_len = result.len(),
+        "build_system_prompt"
+    );
+    Some(result)
 }
 
 #[cfg(test)]

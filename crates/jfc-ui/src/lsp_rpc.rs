@@ -36,6 +36,11 @@ pub fn encode(value: &Value) -> Vec<u8> {
     out.extend_from_slice(body.len().to_string().as_bytes());
     out.extend_from_slice(b"\r\n\r\n");
     out.extend_from_slice(&body);
+    tracing::trace!(
+        target: "jfc::lsp::rpc",
+        len = out.len(),
+        "encode"
+    );
     out
 }
 
@@ -59,7 +64,22 @@ pub fn try_parse(buf: &[u8]) -> Result<Option<(Value, usize)>, FrameError> {
         return Ok(None);
     }
     let body = &buf[body_start..body_end];
-    let value: Value = serde_json::from_slice(body).map_err(|e| FrameError::Json(e.to_string()))?;
+    let value: Value = serde_json::from_slice(body).map_err(|e| {
+        let msg = e.to_string();
+        tracing::debug!(
+            target: "jfc::lsp::rpc",
+            error = %msg,
+            "try_parse json error"
+        );
+        FrameError::Json(msg)
+    })?;
+    let method = value.get("method").and_then(|v| v.as_str()).unwrap_or("response");
+    tracing::trace!(
+        target: "jfc::lsp::rpc",
+        method,
+        consumed = body_end,
+        "try_parse ok"
+    );
     Ok(Some((value, body_end)))
 }
 

@@ -19,8 +19,16 @@
 use crate::context::ToolContext;
 use crate::provider::{Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions};
 use crate::types::ChatMessage;
+use futures::StreamExt;
+use tracing::{debug, info, instrument, trace, warn};
 
 const CHARS_PER_TOKEN: usize = 4;
+/// Multiplier applied to the char-based estimate to account for wire overhead
+/// (system prompt, tool definitions, JSON framing, role markers) that is not
+/// visible in message text. Empirical measurement: API reports ~1.4–1.5× more
+/// tokens than naive char_count/4 on tool-heavy conversations.
+const OVERHEAD_MULTIPLIER_NUM: usize = 3;
+const OVERHEAD_MULTIPLIER_DEN: usize = 2; // 3/2 = 1.5×
 const MAX_ATTEMPTS: u32 = 8;
 const CIRCUIT_BREAKER_LIMIT: u32 = 3;
 /// If context refills within this many user turns after a compact, it counts as thrash.
@@ -50,44 +58,61 @@ pub enum CompactLevel {
 }
 
 pub fn estimate_tokens(messages: &[ChatMessage]) -> usize {
-    messages
+    let base: usize = messages
         .iter()
         .map(|m| {
             let content_chars: usize = m.parts.iter().map(|p| p.approx_text_len()).sum();
             content_chars / CHARS_PER_TOKEN
         })
-        .sum()
+        .sum();
+    let est = base * OVERHEAD_MULTIPLIER_NUM / OVERHEAD_MULTIPLIER_DEN;
+    trace!(target: "jfc::compact", message_count = messages.len(), base, est, "estimate_tokens (with overhead)");
+    est
 }
 
 fn estimate_group_tokens(group: &ConversationGroup) -> usize {
-    estimate_tokens(&group.messages)
+    let tokens = estimate_tokens(&group.messages);
+    trace!(target: "jfc::compact", messages_in_group = group.messages.len(), tokens, "estimate_group_tokens");
+    tokens
 }
 
 /// Read `JFC_AUTOCOMPACT_PCT_OVERRIDE` (1-100) once per call. v126 has the
 /// same env knob (`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`) used by integration tests
 /// to force compaction at non-default thresholds without rebuilding.
 fn pct_override() -> Option<f64> {
-    std::env::var("JFC_AUTOCOMPACT_PCT_OVERRIDE")
+    let v = std::env::var("JFC_AUTOCOMPACT_PCT_OVERRIDE")
         .ok()
         .and_then(|s| s.parse::<f64>().ok())
-        .filter(|p| (0.0..=100.0).contains(p) && *p > 0.0)
+        .filter(|p| (0.0..=100.0).contains(p) && *p > 0.0);
+    if let Some(pct) = v {
+        trace!(target: "jfc::compact", pct, "JFC_AUTOCOMPACT_PCT_OVERRIDE active");
+    }
+    v
 }
 
 fn blocked_override() -> Option<usize> {
-    std::env::var("JFC_BLOCKING_LIMIT_OVERRIDE")
+    let v = std::env::var("JFC_BLOCKING_LIMIT_OVERRIDE")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .filter(|n| *n > 0)
+        .filter(|n| *n > 0);
+    if let Some(limit) = v {
+        trace!(target: "jfc::compact", limit, "JFC_BLOCKING_LIMIT_OVERRIDE active");
+    }
+    v
 }
 
 pub fn auto_compact_disabled() -> bool {
-    matches!(
+    let disabled = matches!(
         std::env::var("JFC_DISABLE_COMPACT").as_deref(),
         Ok("1") | Ok("true")
     ) || matches!(
         std::env::var("JFC_DISABLE_AUTO_COMPACT").as_deref(),
         Ok("1") | Ok("true")
-    )
+    );
+    if disabled {
+        trace!(target: "jfc::compact", "auto-compact disabled via env var");
+    }
+    disabled
 }
 
 /// Compute the absolute token offset at which auto-compaction triggers.
@@ -96,7 +121,9 @@ pub fn compact_threshold(window: usize) -> usize {
     let base = window.saturating_sub(COMPACT_HEADROOM);
     if let Some(pct) = pct_override() {
         let from_pct = ((window as f64) * pct / 100.0).floor() as usize;
-        return from_pct.min(base);
+        let threshold = from_pct.min(base);
+        debug!(target: "jfc::compact", window, pct, from_pct, base, threshold, "compact_threshold (pct override)");
+        return threshold;
     }
     base
 }
@@ -107,7 +134,7 @@ pub fn compact_level(tokens: usize, window: usize) -> CompactLevel {
     let warn = compact.saturating_sub(20_000);
     let blocked = blocked_override().unwrap_or_else(|| window.saturating_sub(BLOCKED_HEADROOM));
 
-    if tokens >= blocked {
+    let level = if tokens >= blocked {
         CompactLevel::Blocked
     } else if !auto_compact_disabled() && tokens >= compact {
         CompactLevel::Compact
@@ -115,15 +142,27 @@ pub fn compact_level(tokens: usize, window: usize) -> CompactLevel {
         CompactLevel::Warn
     } else {
         CompactLevel::Ok
-    }
+    };
+
+    debug!(
+        target: "jfc::compact",
+        tokens, window, compact_threshold = compact, warn_threshold = warn,
+        blocked_threshold = blocked, ?level,
+        "compact_level evaluated"
+    );
+    level
 }
 
 pub fn should_compact(messages: &[ChatMessage], max_context_tokens: usize) -> bool {
     let est = estimate_tokens(messages);
-    matches!(
-        compact_level(est, max_context_tokens),
-        CompactLevel::Compact | CompactLevel::Blocked
-    )
+    let level = compact_level(est, max_context_tokens);
+    let should = matches!(level, CompactLevel::Compact | CompactLevel::Blocked);
+    debug!(
+        target: "jfc::compact",
+        est, max_context_tokens, ?level, should,
+        "should_compact check"
+    );
+    should
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +185,12 @@ fn split_into_groups(messages: &[ChatMessage]) -> Vec<ConversationGroup> {
     if !current.is_empty() {
         groups.push(ConversationGroup { messages: current });
     }
+    debug!(
+        target: "jfc::compact",
+        total_messages = messages.len(),
+        group_count = groups.len(),
+        "split_into_groups"
+    );
     groups
 }
 
@@ -158,7 +203,13 @@ fn split_into_groups(messages: &[ChatMessage]) -> Vec<ConversationGroup> {
 /// Falls back to exponential doubling when `token_gap` is None.
 fn token_gap_step(token_gap: Option<usize>, group_tokens: &[usize], current_split: usize) -> usize {
     let Some(gap) = token_gap else {
-        return (current_split / 2).max(1);
+        let step = (current_split / 2).max(1);
+        debug!(
+            target: "jfc::compact",
+            current_split, step,
+            "token_gap_step: no gap info, falling back to halving"
+        );
+        return step;
     };
 
     let mut freed: usize = 0;
@@ -170,7 +221,13 @@ fn token_gap_step(token_gap: Option<usize>, group_tokens: &[usize], current_spli
         freed += group_tokens.get(i).copied().unwrap_or(0);
         step += 1;
     }
-    step.max(1)
+    let step = step.max(1);
+    debug!(
+        target: "jfc::compact",
+        gap, current_split, freed, step,
+        "token_gap_step: computed step from token gap"
+    );
+    step
 }
 
 #[derive(Debug)]
@@ -188,6 +245,68 @@ pub enum CompactResult {
     Unsupported,
 }
 
+/// Try `provider.complete()` first; if unsupported, fall back to streaming
+/// and collect the full response. This handles providers like OpenWebUI/LiteLLM
+/// that only support streaming endpoints.
+async fn complete_or_stream(
+    provider: &dyn Provider,
+    messages: Vec<ProviderMessage>,
+    options: &StreamOptions,
+) -> Result<crate::provider::CompletionResponse, anyhow::Error> {
+    match provider.complete(messages.clone(), options).await {
+        Ok(resp) => Ok(resp),
+        Err(e) => {
+            let err_msg = e.to_string().to_lowercase();
+            if err_msg.contains("not support") || err_msg.contains("unsupported") {
+                info!(
+                    target: "jfc::compact",
+                    "provider.complete() unsupported — falling back to streaming"
+                );
+                let mut stream = provider.stream(messages, options).await?;
+                let mut collected = String::new();
+                while let Some(event) = stream.next().await {
+                    match event {
+                        Ok(crate::provider::StreamEvent::TextDelta { delta, .. }) => {
+                            collected.push_str(&delta);
+                        }
+                        Ok(crate::provider::StreamEvent::Done { .. }) => break,
+                        Ok(crate::provider::StreamEvent::Error { message }) => {
+                            return Err(anyhow::anyhow!("{}", message));
+                        }
+                        Ok(_) => {} // skip usage, thinking, etc.
+                        Err(stream_err) => {
+                            return Err(anyhow::anyhow!("{}", stream_err));
+                        }
+                    }
+                }
+                debug!(
+                    target: "jfc::compact",
+                    collected_len = collected.len(),
+                    "streaming fallback collected response"
+                );
+                Ok(crate::provider::CompletionResponse {
+                    content: collected,
+                    usage: Default::default(),
+                })
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+#[instrument(
+    target = "jfc::compact",
+    skip(messages, provider, options, tool_ctx),
+    fields(
+        message_count = messages.len(),
+        window,
+        model = %options.model,
+        rapid_refill_count = tool_ctx.rapid_refill_count,
+        total_user_turns = tool_ctx.total_user_turns,
+        last_compact_turn = tool_ctx.last_compact_turn,
+    )
+)]
 pub async fn compact(
     messages: &[ChatMessage],
     provider: &dyn Provider,
@@ -196,11 +315,22 @@ pub async fn compact(
     window: usize,
 ) -> CompactResult {
     if tool_ctx.rapid_refill_count >= CIRCUIT_BREAKER_LIMIT {
+        warn!(
+            target: "jfc::compact",
+            rapid_refill_count = tool_ctx.rapid_refill_count,
+            limit = CIRCUIT_BREAKER_LIMIT,
+            "circuit breaker tripped — aborting compaction"
+        );
         return CompactResult::CircuitBreakerTripped;
     }
 
     let groups = split_into_groups(messages);
     if groups.len() < 2 {
+        info!(
+            target: "jfc::compact",
+            group_count = groups.len(),
+            "too few groups for compaction"
+        );
         return CompactResult::TooFewGroups;
     }
 
@@ -216,14 +346,32 @@ pub async fn compact(
     // step instead of falling back to halving.
     let mut last_token_gap: Option<usize> = None;
 
+    info!(
+        target: "jfc::compact",
+        pre_tokens, total_groups,
+        group_token_sizes = ?group_tokens,
+        model = %options.model,
+        "starting compaction loop"
+    );
+
     loop {
         attempt += 1;
         if attempt > MAX_ATTEMPTS {
+            warn!(
+                target: "jfc::compact",
+                attempts = attempt - 1,
+                "exhausted max attempts"
+            );
             return CompactResult::Exhausted {
                 attempts: attempt - 1,
             };
         }
         if preserve_count >= total_groups {
+            warn!(
+                target: "jfc::compact",
+                preserve_count, total_groups, attempt,
+                "preserve_count >= total_groups — nothing left to summarize"
+            );
             return CompactResult::Exhausted { attempts: attempt };
         }
 
@@ -237,7 +385,26 @@ pub async fn compact(
             .flat_map(|g| g.messages.clone())
             .collect();
 
+        let summarize_tokens: usize = group_tokens[..split_point].iter().sum();
+        let preserve_tokens: usize = group_tokens[split_point..].iter().sum();
+
+        info!(
+            target: "jfc::compact",
+            attempt, split_point, preserve_count, total_groups,
+            summarize_msg_count = to_summarize.len(),
+            preserve_msg_count = to_preserve.len(),
+            summarize_tokens, preserve_tokens,
+            strip_media, last_token_gap = ?last_token_gap,
+            "compaction attempt"
+        );
+
         let summary_text = build_summary_text(&to_summarize, strip_media);
+        debug!(
+            target: "jfc::compact",
+            summary_text_len = summary_text.len(),
+            summary_text_tokens = summary_text.len() / CHARS_PER_TOKEN,
+            "built summary request text"
+        );
 
         let compact_messages = vec![ProviderMessage {
             role: ProviderRole::User,
@@ -248,12 +415,27 @@ pub async fn compact(
             .system(COMPACTION_SYSTEM_PROMPT.to_owned())
             .max_tokens(20_000);
 
-        match provider.complete(compact_messages, &compact_options).await {
+        debug!(
+            target: "jfc::compact",
+            model = %compact_options.model,
+            max_tokens = 20_000,
+            "sending compaction request to provider"
+        );
+
+        match complete_or_stream(provider, compact_messages, &compact_options).await {
             Ok(response) => {
+                debug!(
+                    target: "jfc::compact",
+                    response_len = response.content.len(),
+                    response_preview = %&response.content[..response.content.len().min(200)],
+                    "received compaction response"
+                );
+
                 if !is_usable_summary(&response.content) {
-                    tracing::warn!(
+                    warn!(
                         target: "jfc::compact",
                         len = response.content.len(),
+                        response_preview = %&response.content[..response.content.len().min(300)],
                         "summary response empty or itself an error — retrying with larger preserve"
                     );
                     let step =
@@ -263,6 +445,11 @@ pub async fn compact(
                     continue;
                 }
                 let formatted = format_compact_summary(&response.content);
+                debug!(
+                    target: "jfc::compact",
+                    formatted_len = formatted.len(),
+                    "formatted compact summary"
+                );
                 let summary_msg = ChatMessage::compact_boundary(&formatted, pre_tokens);
                 let mut compacted = vec![summary_msg];
                 compacted.extend(to_preserve);
@@ -281,7 +468,7 @@ pub async fn compact(
                     .unwrap_or_else(|| window.saturating_sub(BLOCKED_HEADROOM));
                 if post_tokens >= blocked {
                     if preserve_count > 0 {
-                        tracing::info!(
+                        info!(
                             target: "jfc::compact",
                             post_tokens, blocked, preserve_count,
                             "post-compact still blocked — dropping a preserved group and retrying"
@@ -294,7 +481,7 @@ pub async fn compact(
                     // Returning Success while still over `blocked` would let
                     // the caller immediately resubmit and re-trigger compaction
                     // forever. Surface Exhausted instead.
-                    tracing::warn!(
+                    warn!(
                         target: "jfc::compact",
                         post_tokens, blocked, attempts = attempt,
                         "post-compact still blocked with no groups left — returning Exhausted"
@@ -305,13 +492,34 @@ pub async fn compact(
                 let user_turns_since = count_user_turns_since_last_compact(&compacted);
                 if user_turns_since <= THRASH_TURN_WINDOW {
                     tool_ctx.rapid_refill_count += 1;
+                    info!(
+                        target: "jfc::compact",
+                        user_turns_since, thrash_window = THRASH_TURN_WINDOW,
+                        rapid_refill_count = tool_ctx.rapid_refill_count,
+                        "rapid refill detected — incrementing circuit breaker"
+                    );
                 } else {
                     tool_ctx.rapid_refill_count = 0;
+                    debug!(
+                        target: "jfc::compact",
+                        user_turns_since, thrash_window = THRASH_TURN_WINDOW,
+                        "no rapid refill — resetting circuit breaker"
+                    );
                 }
 
                 tool_ctx.approx_tokens = post_tokens;
                 tool_ctx.last_compact_turn = tool_ctx.total_user_turns;
                 tool_ctx.read_cache.clear();
+
+                info!(
+                    target: "jfc::compact",
+                    pre_tokens, post_tokens,
+                    saved = pre_tokens.saturating_sub(post_tokens),
+                    compacted_message_count = compacted.len(),
+                    attempts = attempt,
+                    model = %options.model,
+                    "compaction succeeded"
+                );
 
                 return CompactResult::Success {
                     messages: compacted,
@@ -321,17 +529,22 @@ pub async fn compact(
             }
             Err(e) => {
                 let err_msg = e.to_string().to_lowercase();
+                warn!(
+                    target: "jfc::compact",
+                    attempt, error = %e,
+                    "compaction API call failed"
+                );
 
                 if err_msg.contains("too_large") || err_msg.contains("media") {
                     if !strip_media {
-                        tracing::info!(
+                        info!(
                             target: "jfc::compact",
                             "summary call rejected by media size — retrying with strip_media"
                         );
                         strip_media = true;
                         continue;
                     }
-                    tracing::warn!(
+                    warn!(
                         target: "jfc::compact",
                         attempts = attempt,
                         "media too large even after strip — returning Unsupported"
@@ -343,16 +556,43 @@ pub async fn compact(
                     || err_msg.contains("token")
                     || err_msg.contains("context")
                 {
-                    last_token_gap = parse_token_gap_from_error(&err_msg).or(last_token_gap);
+                    let parsed_actual = parse_actual_tokens_from_error(&err_msg);
+                    let parsed_gap = parse_token_gap_from_error(&err_msg);
+                    debug!(
+                        target: "jfc::compact",
+                        ?parsed_actual, ?parsed_gap, ?last_token_gap,
+                        error_snippet = %&err_msg[..err_msg.len().min(200)],
+                        "detected token/context limit error"
+                    );
+                    // Update approx_tokens with the real count from the API
+                    // so the status bar and compaction gate show accurate data.
+                    if let Some(actual) = parsed_actual {
+                        tool_ctx.approx_tokens = actual;
+                        info!(
+                            target: "jfc::compact",
+                            actual,
+                            "calibrated approx_tokens from API error"
+                        );
+                    }
+                    last_token_gap = parsed_gap.or(last_token_gap);
                     let step = token_gap_step(last_token_gap, &group_tokens, split_point);
                     preserve_count = (preserve_count + step).min(total_groups - 1);
                     continue;
                 }
 
                 if err_msg.contains("not support") {
+                    info!(
+                        target: "jfc::compact",
+                        error = %e,
+                        "provider does not support compaction"
+                    );
                     return CompactResult::Unsupported;
                 }
 
+                debug!(
+                    target: "jfc::compact",
+                    "unrecognized error — increasing preserve_count"
+                );
                 let step = token_gap_step(last_token_gap, &group_tokens, split_point);
                 preserve_count = (preserve_count + step).min(total_groups - 1);
             }
@@ -367,6 +607,7 @@ pub async fn compact(
 fn is_usable_summary(text: &str) -> bool {
     let trimmed = text.trim();
     if trimmed.is_empty() {
+        debug!(target: "jfc::compact", "is_usable_summary: rejected — empty/whitespace");
         return false;
     }
     let lower = trimmed.to_lowercase();
@@ -380,7 +621,21 @@ fn is_usable_summary(text: &str) -> bool {
         "overloaded_error",
         "request_too_large",
     ];
-    !ERROR_MARKERS.iter().any(|m| lower.contains(m))
+    let has_error_marker = ERROR_MARKERS.iter().any(|m| lower.contains(m));
+    if has_error_marker {
+        debug!(
+            target: "jfc::compact",
+            text_preview = %&trimmed[..trimmed.len().min(150)],
+            "is_usable_summary: rejected — contains error marker"
+        );
+    } else {
+        trace!(
+            target: "jfc::compact",
+            text_len = trimmed.len(),
+            "is_usable_summary: accepted"
+        );
+    }
+    !has_error_marker
 }
 
 /// Extract `actualTokens - limitTokens` from an Anthropic error body.
@@ -410,10 +665,42 @@ fn parse_token_gap_from_error(err_msg: &str) -> Option<usize> {
         let &actual = nums.first()?;
         let &limit = nums.last()?;
         if actual > limit {
-            return Some(actual - limit);
+            let gap = actual - limit;
+            debug!(
+                target: "jfc::compact",
+                actual, limit, gap,
+                "parsed token gap from error"
+            );
+            return Some(gap);
         }
     }
+    trace!(target: "jfc::compact", "could not parse token gap from error");
     None
+}
+
+/// Extract the actual token count from an API error like
+/// "prompt is too long: 1456365 tokens > 1000000 maximum"
+fn parse_actual_tokens_from_error(err_msg: &str) -> Option<usize> {
+    let msg = err_msg.to_lowercase();
+    let bytes = msg.as_bytes();
+    let mut i = 0;
+    let mut nums: Vec<usize> = Vec::new();
+    while i < bytes.len() {
+        if bytes[i].is_ascii_digit() {
+            let start = i;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            if let Ok(n) = msg[start..i].parse::<usize>() {
+                if n > 10_000 {
+                    nums.push(n);
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    nums.first().copied()
 }
 
 fn count_user_turns_since_last_compact(messages: &[ChatMessage]) -> u32 {
@@ -426,10 +713,20 @@ fn count_user_turns_since_last_compact(messages: &[ChatMessage]) -> u32 {
             count += 1;
         }
     }
+    trace!(
+        target: "jfc::compact",
+        count, total_messages = messages.len(),
+        "count_user_turns_since_last_compact"
+    );
     count
 }
 
 fn build_summary_text(messages: &[ChatMessage], strip_media: bool) -> String {
+    debug!(
+        target: "jfc::compact",
+        message_count = messages.len(), strip_media,
+        "building summary text"
+    );
     let mut text = String::from(
         "Here is the conversation to summarize:\n\n",
     );
@@ -452,6 +749,12 @@ fn build_summary_text(messages: &[ChatMessage], strip_media: bool) -> String {
         text.push('\n');
     }
 
+    trace!(
+        target: "jfc::compact",
+        text_len = text.len(),
+        text_tokens_approx = text.len() / CHARS_PER_TOKEN,
+        "summary text built"
+    );
     text
 }
 
@@ -508,6 +811,12 @@ fn format_compact_summary(raw: &str) -> String {
     if let Some(start) = result.find("<analysis>") {
         if let Some(end) = result.find("</analysis>") {
             let end_tag_end = end + "</analysis>".len();
+            let analysis_len = end_tag_end - start;
+            debug!(
+                target: "jfc::compact",
+                analysis_len,
+                "stripped <analysis> block from summary"
+            );
             result = format!("{}{}", &result[..start], &result[end_tag_end..]);
         }
     }
@@ -517,6 +826,11 @@ fn format_compact_summary(raw: &str) -> String {
         if let Some(end) = result.find("</summary>") {
             let content_start = start + "<summary>".len();
             let content = result[content_start..end].trim();
+            debug!(
+                target: "jfc::compact",
+                summary_content_len = content.len(),
+                "extracted <summary> block"
+            );
             result = format!("Summary:\n{content}");
         }
     }

@@ -265,16 +265,21 @@ pub fn format_status(
     )
 }
 
-/// Compact-mode spinner body. v126 cli.js renders a single fixed verb
-/// (`Compacting`) with the elapsed timer — no token counter, since the
-/// summarization request only emits a final assistant message and there's
-/// no incremental output to surface. Mirrors v126's
-/// `setStreamMode("compacting")` UI in cli.js.
-pub fn format_compact_status(tick: usize, elapsed: Duration) -> String {
+/// Compact-mode spinner body. Mirrors v126's `setStreamMode("compacting")`
+/// UI: braille spinner + verb + elapsed. We additionally surface
+/// `pre_tokens` so the user sees the *magnitude* of what's being
+/// compacted ("Compacting… (8s · 412k tokens)") — without it a long
+/// summarization request looks like a stalled UI even though the API
+/// is working hard.
+pub fn format_compact_status(tick: usize, elapsed: Duration, pre_tokens: u64) -> String {
+    let mut parts: Vec<String> = vec![fmt_elapsed(elapsed)];
+    if pre_tokens > 0 {
+        parts.push(format!("{} tokens", fmt_tokens(pre_tokens)));
+    }
     format!(
         "{} Compacting… ({})",
         frame_for(tick),
-        fmt_elapsed(elapsed),
+        parts.join(" · ")
     )
 }
 
@@ -449,6 +454,30 @@ mod tests {
             Some(ThinkingStatus::Done(Duration::from_millis(400))),
         );
         assert!(s.contains("thought for 1s"), "expected 1s floor: {s}");
+    }
+
+    // Compact spinner shows the verb, elapsed, AND pre-compact token
+    // magnitude — without this last piece a 60s compact looks frozen.
+    #[test]
+    fn format_compact_status_includes_pre_tokens_normal() {
+        let s = format_compact_status(0, Duration::from_secs(8), 412_000);
+        assert!(s.contains("Compacting"), "verb missing: {s}");
+        assert!(s.contains("8s"), "elapsed missing: {s}");
+        assert!(s.contains("412k tokens"), "pre-token chip missing: {s}");
+    }
+
+    // When pre_tokens is 0 (e.g. a brand-new session compacting trivial
+    // content, or the renderer hasn't recomputed yet) drop the chip
+    // rather than showing a useless `0 tokens`.
+    #[test]
+    fn format_compact_status_omits_chip_when_pre_zero_robust() {
+        let s = format_compact_status(0, Duration::from_secs(2), 0);
+        assert!(s.contains("Compacting"), "verb missing: {s}");
+        assert!(s.contains("2s"), "elapsed missing: {s}");
+        assert!(
+            !s.contains("0 tokens"),
+            "shouldn't show 0-token chip: {s}"
+        );
     }
 
     #[test]
