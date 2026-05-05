@@ -1272,7 +1272,15 @@ async fn run(
                         target: "jfc::compact",
                         "skipping post-response compact — one already in flight"
                     );
+                } else if app.compact_suppressed && !manual {
+                    tracing::debug!(
+                        target: "jfc::compact",
+                        "skipping post-response compact — suppressed after permanent failure"
+                    );
                 } else if manual || compact::should_compact(&app.messages, app.max_context_tokens) {
+                    if manual {
+                        app.compact_suppressed = false;
+                    }
                     tracing::info!(
                         target: "jfc::compact",
                         manual,
@@ -1454,6 +1462,7 @@ async fn run(
                 app.compacting_output_chars = 0;
                 app.compacting_attempt_baseline = 0;
                 app.compacting_last_progress = 0;
+                app.compact_suppressed = false;
                 // Surface the compaction outcome to the user via a toast
                 // — they don't have to scroll to see the boundary marker.
                 let saved_k = saved / 1000;
@@ -1479,6 +1488,10 @@ async fn run(
                 app.compacting_output_chars = 0;
                 app.compacting_attempt_baseline = 0;
                 app.compacting_last_progress = 0;
+                // Suppress future auto-compact attempts so we don't keep
+                // failing on every AllToolsComplete. The user can retry
+                // manually with /compact (which clears the flag).
+                app.compact_suppressed = true;
                 toast::push_with_cap(
                     &mut app.toasts,
                     toast::Toast::new(

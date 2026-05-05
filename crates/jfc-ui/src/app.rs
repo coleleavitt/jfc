@@ -394,6 +394,12 @@ pub struct App {
     /// regardless of token level. Cleared after the compact runs (success or
     /// not) so a single `/compact` invocation triggers exactly one attempt.
     pub force_compact_pending: bool,
+    /// Set after compaction permanently fails (CircuitBreakerTripped,
+    /// Unsupported, Exhausted). Prevents the post-response handler from
+    /// re-spawning compact on every AllToolsComplete — without this, the
+    /// circuit breaker fires every 4-5s for the rest of the session.
+    /// Cleared on: new session (/clear), manual /compact, model switch.
+    pub compact_suppressed: bool,
     /// Wall-clock instant the current compaction started. `Some` while a
     /// compact request is in flight (set on `CompactionStarted`, cleared on
     /// `CompactionDone`/`CompactionFailed`). The renderer shows a
@@ -617,6 +623,7 @@ impl App {
             dedup_cache: Arc::new(Mutex::new(ReadDedupCache::new())),
             pending_tool_calls: Vec::new(),
             force_compact_pending: false,
+            compact_suppressed: false,
             compacting_started_at: None,
             compacting_output_chars: 0,
             compacting_attempt_baseline: 0,
@@ -715,6 +722,7 @@ impl App {
         self.task_panel_state = ratatui::widgets::TableState::default().with_selected(Some(0));
         self.viewing_task_id = None;
         self.viewing_task_expanded.clear();
+        self.compact_suppressed = false;
         self.recompute_token_estimate();
     }
 

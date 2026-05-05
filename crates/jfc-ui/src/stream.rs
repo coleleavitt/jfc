@@ -203,15 +203,42 @@ pub async fn stream_response(
         }
     };
 
-    let mut stream = match provider.stream(messages, &opts).await {
+    let mut stream = match provider.stream(messages.clone(), &opts).await {
         Ok(s) => {
             tracing::debug!(target: "jfc::stream", "stream opened successfully");
             s
         }
         Err(e) => {
-            tracing::error!(target: "jfc::stream", error = %e, "stream open failed");
-            let _ = tx.send(AppEvent::StreamError(e.to_string()));
-            return;
+            let err_lower = e.to_string().to_lowercase();
+            // If the API rejects thinking (adaptive or budget_tokens), retry
+            // without it. Mirrors v126's fallback when a model unexpectedly
+            // doesn't support the thinking parameter.
+            if (err_lower.contains("thinking") && err_lower.contains("not supported"))
+                || err_lower.contains("adaptive thinking is not supported")
+            {
+                tracing::warn!(
+                    target: "jfc::stream",
+                    model = %model,
+                    error = %e,
+                    "stream rejected thinking parameter — retrying without thinking"
+                );
+                let fallback_opts = StreamOptions::new(opts.model.clone())
+                    .system(opts.system.clone().unwrap_or_default())
+                    .tools(opts.tools.clone())
+                    .max_tokens(opts.max_tokens);
+                match provider.stream(messages, &fallback_opts).await {
+                    Ok(s) => s,
+                    Err(e2) => {
+                        tracing::error!(target: "jfc::stream", error = %e2, "stream open failed (fallback without thinking)");
+                        let _ = tx.send(AppEvent::StreamError(e2.to_string()));
+                        return;
+                    }
+                }
+            } else {
+                tracing::error!(target: "jfc::stream", error = %e, "stream open failed");
+                let _ = tx.send(AppEvent::StreamError(e.to_string()));
+                return;
+            }
         }
     };
 
