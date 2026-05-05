@@ -168,15 +168,19 @@ pub async fn stream_response(
             system_prompt.push_str(&block);
         }
     }
-    // Thinking: use adaptive for all thinking-capable models. The API accepts
-    // adaptive on Opus 4.5+/Sonnet 4.5+ (v126 still uses budget_tokens for 4.5
-    // but the docs mark that as deprecated). Haiku 4.5 and unknown models don't
-    // support thinking at all — sending any thinking param causes a 400.
-    let has_thinking_support = model_supports_thinking(model.as_str());
+    // Thinking is a 3-way choice: adaptive (4.6+ Anthropic-native),
+    // legacy budget_tokens (older Anthropic-native + select deployments),
+    // or off. Proxy-routed model IDs (bedrock-*, vertex-*, etc.) default
+    // to off because those proxies typically reject the field. Mirrors
+    // v126's tiered gate (`modelSupportsAdaptiveThinking` →
+    // `modelSupportsThinking` → off, claude.ts:1602).
+    let supports_adaptive = model_supports_adaptive_thinking(model.as_str());
+    let has_thinking_support = supports_adaptive || model_supports_thinking(model.as_str());
     tracing::info!(
         target: "jfc::stream",
         model = %model,
         has_thinking_support,
+        supports_adaptive,
         system_prompt_len = system_prompt.len(),
         tool_count = tools::all_tool_defs().len(),
         "preparing stream request"
@@ -185,8 +189,13 @@ pub async fn stream_response(
         let base = StreamOptions::new(model)
             .system(system_prompt)
             .tools(tools::all_tool_defs());
-        if has_thinking_support {
+        if supports_adaptive {
             base.adaptive()
+        } else if has_thinking_support {
+            // Legacy budget_tokens path. Pre-4.6 Anthropic-native models
+            // accept the older `{"type": "enabled", "budget_tokens": N}`
+            // form. v126 uses 16384 as the default budget.
+            base.thinking(16_384)
         } else {
             base
         }
@@ -547,15 +556,36 @@ pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::UnboundedSender<App
     });
 }
 
+/// True only for proxy-routed model IDs (Bedrock through LiteLLM/OWUI,
+/// Vertex, etc.). The Anthropic-native `thinking` field is rejected by
+/// these proxies even when the underlying model is Claude — Bedrock
+/// uses its own `additionalModelRequestFields` schema for extended
+/// thinking, and the OWUI/LiteLLM passthrough doesn't translate it. Mirrors
+/// v126's provider-aware thinking gate (`shouldSendThinking` in cli.js).
+fn is_proxy_routed_model(model: &str) -> bool {
+    let m = model.to_lowercase();
+    m.starts_with("bedrock-")
+        || m.starts_with("aws-")
+        || m.starts_with("vertex-")
+        || m.starts_with("litellm-")
+        || m.starts_with("openrouter-")
+        || m.starts_with("openwebui-")
+}
+
 /// Returns true for models that require `{"type": "adaptive"}` thinking and
 /// reject the legacy `budget_tokens` parameter. Matches v126's
-/// `modelSupportsAdaptiveThinking` (claude.ts:1602).
+/// `modelSupportsAdaptiveThinking` (claude.ts:1602). Proxy-routed
+/// equivalents (bedrock-*, vertex-*) are excluded — adaptive thinking is
+/// an Anthropic-native parameter the proxies haven't adopted.
 fn model_supports_adaptive_thinking(model: &str) -> bool {
+    if is_proxy_routed_model(model) {
+        return false;
+    }
     let m = model.to_lowercase();
     // Opus 4.6, Opus 4.7, Sonnet 4.6 — all reject budget_tokens.
     // Future models (5.x) will also use adaptive, so default to adaptive
     // for any model whose version segment is >= 4.6.
-    if m.contains("opus-4-6")
+    m.contains("opus-4-6")
         || m.contains("opus-4-7")
         || m.contains("opus-4-8")
         || m.contains("opus-4-9")
@@ -565,22 +595,33 @@ fn model_supports_adaptive_thinking(model: &str) -> bool {
         || m.contains("sonnet-4-8")
         || m.contains("sonnet-4-9")
         || m.contains("sonnet-5")
-    {
-        return true;
-    }
-    false
 }
 
 /// Returns true if the model supports thinking at all. Haiku 4.5 does NOT
 /// support the thinking parameter — sending it causes a 400. Opus 4.x and
-/// Sonnet 4.5+ do support thinking. For unknown models (OWUI custom routes),
-/// we default to NOT sending thinking params (safe fallback — the model just
-/// won't think).
+/// Sonnet 4.5+ do support thinking. Proxy-routed model IDs (`bedrock-*`,
+/// `aws-*`, `vertex-*`, `litellm-*`, `openrouter-*`) default to NOT
+/// thinking even when the underlying model is Claude — proxies frequently
+/// reject the field with `400 invalid_request_error: adaptive thinking is
+/// not supported on this model`. The user must explicitly opt back in via
+/// config if a specific deployment supports it.
 fn model_supports_thinking(model: &str) -> bool {
+    if is_proxy_routed_model(model) {
+        tracing::debug!(
+            target: "jfc::stream",
+            model,
+            "model_supports_thinking: false (proxy-routed)"
+        );
+        return false;
+    }
     let m = model.to_lowercase();
-    // Known thinking-capable families
-    let supports = m.contains("opus") || m.contains("sonnet-4-5") || m.contains("sonnet-4-6")
-        || m.contains("sonnet-4-7") || m.contains("sonnet-4-8") || m.contains("sonnet-4-9")
+    // Known thinking-capable Anthropic-native families
+    let supports = m.contains("opus")
+        || m.contains("sonnet-4-5")
+        || m.contains("sonnet-4-6")
+        || m.contains("sonnet-4-7")
+        || m.contains("sonnet-4-8")
+        || m.contains("sonnet-4-9")
         || m.contains("sonnet-5");
     tracing::debug!(
         target: "jfc::stream",
@@ -941,5 +982,49 @@ mod ensure_user_last_tests {
         assert_eq!(out[0].content.len(), 2); // merged
         assert_eq!(out[1].role, ProviderRole::Assistant);
         assert_eq!(out[2].role, ProviderRole::User); // synthetic
+    }
+}
+
+#[cfg(test)]
+mod thinking_gate_tests {
+    use super::*;
+
+    // Bedrock-routed Claude rejects `thinking` even though the underlying
+    // model is Claude. Regression for the user's screenshot showing
+    // `Anthropic API error 400: adaptive thinking is not supported on
+    // this model` for `bedrock-claude-4-6-opus`.
+    #[test]
+    fn bedrock_routed_models_skip_thinking_robust() {
+        assert!(!model_supports_thinking("bedrock-claude-4-6-opus"));
+        assert!(!model_supports_thinking("bedrock-claude-3-5-sonnet"));
+        assert!(!model_supports_adaptive_thinking("bedrock-claude-4-6-opus"));
+    }
+
+    // Other proxy prefixes also default off — none of them reliably
+    // pass the thinking field through.
+    #[test]
+    fn other_proxy_prefixes_skip_thinking_robust() {
+        assert!(!model_supports_thinking("vertex-claude-4-6-opus"));
+        assert!(!model_supports_thinking("aws-claude-4-6-opus"));
+        assert!(!model_supports_thinking("litellm-claude-4-6-opus"));
+        assert!(!model_supports_thinking("openrouter-claude-4-6-opus"));
+    }
+
+    // Anthropic-native model IDs unchanged: they keep getting adaptive
+    // thinking when version >= 4.6, legacy budget_tokens otherwise.
+    #[test]
+    fn anthropic_native_models_keep_thinking_normal() {
+        assert!(model_supports_adaptive_thinking("claude-opus-4-6"));
+        assert!(model_supports_adaptive_thinking("claude-opus-4-7"));
+        assert!(model_supports_adaptive_thinking("claude-sonnet-4-6"));
+        assert!(model_supports_thinking("claude-opus-4-5"));
+        assert!(model_supports_thinking("claude-opus-4-6"));
+    }
+
+    // Haiku 4.5 doesn't support thinking at all on either path.
+    #[test]
+    fn haiku_excluded_robust() {
+        assert!(!model_supports_thinking("claude-haiku-4-5"));
+        assert!(!model_supports_adaptive_thinking("claude-haiku-4-5"));
     }
 }
