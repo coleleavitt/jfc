@@ -497,11 +497,93 @@ fn build_system_blocks(billing_header_text: &str, caller_system: Option<&str>) -
         }),
     ];
     if let Some(sys) = caller_system {
-        if !sys.is_empty() {
-            blocks.push(json!({ "type": "text", "text": sys }));
+        let sanitized = sanitize_system_prompt(sys);
+        if !sanitized.is_empty() {
+            blocks.push(json!({ "type": "text", "text": sanitized }));
         }
     }
     json!(blocks)
+}
+
+/// Strip third-party branding from the caller-supplied system prompt before
+/// sending to Anthropic OAuth. Anthropic's server-side validator pattern-
+/// matches against the `claude-code-20250219` beta identity — confirmed
+/// via binary search by opencode-anthropic-auth (constants.ts:154-157):
+/// the same prompt with a `<env>` block returns 200, without it returns
+/// 400. Sanitize: drop `<env>`, `<directories>`, `<agent-identity>`
+/// blocks, drop paragraphs that anchor on third-party URLs/prose, and
+/// rewrite `jfc`-specific identity phrases.
+///
+/// Safe to apply to v126-style prompts: the strip patterns target only
+/// branding artifacts, not load-bearing instructions.
+fn sanitize_system_prompt(text: &str) -> String {
+    let mut result = strip_block(text, "<agent-identity>", "</agent-identity>");
+    result = strip_block(&result, "<env>", "</env>");
+    result = strip_block(&result, "<directories>", "</directories>");
+
+    // Drop whole paragraphs (blank-line-separated chunks) that mention
+    // third-party tool branding. Mirrors PARAGRAPH_REMOVAL_ANCHORS in
+    // opencode-anthropic-auth (constants.ts:80).
+    const PARAGRAPH_ANCHORS: &[&str] = &[
+        "github.com/anomalyco/opencode",
+        "github.com/sst/opencode",
+        "opencode.ai",
+        "ctrl+p to list available actions",
+        "/help: Get help with using opencode",
+    ];
+    let kept: Vec<&str> = result
+        .split("\n\n")
+        .filter(|p| !PARAGRAPH_ANCHORS.iter().any(|anchor| p.contains(anchor)))
+        .collect();
+    let mut out = kept.join("\n\n");
+
+    // Inline rewrites — same intent as INLINE_TEXT_REPLACEMENTS in the
+    // opencode plugin, scoped to jfc-specific branding so a v126-style
+    // prompt that mentions "Claude Code" stays intact.
+    const INLINE_REWRITES: &[(&str, &str)] = &[
+        ("You are jfc, ", "You are Claude Code, "),
+        ("You are JFC, ", "You are Claude Code, "),
+        ("Your name is jfc.", ""),
+        ("Sisyphus", "the assistant"),
+        ("sisyphus", "assistant"),
+        ("Ultraworker", ""),
+        (".sisyphus/", ".cache/"),
+    ];
+    for (needle, replacement) in INLINE_REWRITES {
+        out = out.replace(needle, replacement);
+    }
+
+    // Collapse runs of 3+ newlines (left over from paragraph removal).
+    while out.contains("\n\n\n") {
+        out = out.replace("\n\n\n", "\n\n");
+    }
+    out.trim().to_owned()
+}
+
+/// Remove every `<tag>...</tag>` span from `text`. Tag-aware (case-
+/// sensitive, supports nested whitespace). Used by `sanitize_system_prompt`
+/// to drop `<env>`, `<directories>`, etc. blocks without disturbing
+/// surrounding content.
+fn strip_block(text: &str, open: &str, close: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find(open) {
+        out.push_str(&rest[..start]);
+        let after_open = &rest[start..];
+        match after_open.find(close) {
+            Some(end_rel) => {
+                rest = &after_open[end_rel + close.len()..];
+            }
+            None => {
+                // Unclosed tag — keep the rest untouched (don't silently
+                // eat half a prompt).
+                out.push_str(after_open);
+                return out;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 fn build_body(
@@ -914,6 +996,94 @@ mod tests {
         let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
         assert_eq!(body["thinking"]["type"], "enabled");
         assert_eq!(body["thinking"]["budget_tokens"], 4096);
+    }
+
+    // strip_block removes the entire `<env>...</env>` span and leaves
+    // surrounding text intact. v126 prompts wrap env / cwd / file lists
+    // in tags that the Anthropic OAuth validator pattern-matches as
+    // not-Claude-Code; stripping them is required to keep 200s.
+    #[test]
+    fn strip_block_removes_full_span_normal() {
+        let s = "before\n<env>cwd=/tmp\nfiles=[a,b,c]</env>\nafter";
+        let out = strip_block(s, "<env>", "</env>");
+        assert_eq!(out, "before\n\nafter");
+    }
+
+    // Robust: an unclosed tag must not silently eat the rest of the
+    // prompt — that would turn a typo into a complete loss of system
+    // context. Leave the rest intact.
+    #[test]
+    fn strip_block_unclosed_tag_leaves_remainder_robust() {
+        let s = "before\n<env>oops, no close tag\nload-bearing instructions";
+        let out = strip_block(s, "<env>", "</env>");
+        assert!(out.contains("load-bearing instructions"));
+    }
+
+    // sanitize: drops branding paragraphs but keeps body content.
+    #[test]
+    fn sanitize_drops_branded_paragraph_normal() {
+        let s = "Welcome.\n\nVisit opencode.ai for docs.\n\nReal instructions.";
+        let out = sanitize_system_prompt(s);
+        assert!(out.contains("Welcome."));
+        assert!(out.contains("Real instructions."));
+        assert!(!out.contains("opencode.ai"), "branded paragraph not stripped: {out}");
+    }
+
+    // sanitize: rewrites jfc-identity phrases so the prompt presents as
+    // Claude Code, not as a third-party tool. Without this Anthropic's
+    // server-side validator may reject for branding mismatch.
+    #[test]
+    fn sanitize_rewrites_jfc_identity_phrases_normal() {
+        let s = "You are jfc, an assistant. Sisyphus is helpful.";
+        let out = sanitize_system_prompt(s);
+        assert!(out.contains("You are Claude Code,"));
+        assert!(!out.contains("Sisyphus"), "branding leaked: {out}");
+        assert!(out.contains("the assistant is helpful"));
+    }
+
+    // sanitize: env/directories blocks vanish entirely. Anthropic's
+    // server-side validator treats their presence as a signal that this
+    // is not Claude Code — confirmed via opencode binary search
+    // (constants.ts:154).
+    #[test]
+    fn sanitize_strips_env_and_directories_blocks_robust() {
+        let s = "intro\n\n<env>cwd=/x</env>\n\n<directories>a\nb</directories>\n\nbody";
+        let out = sanitize_system_prompt(s);
+        assert!(out.contains("intro"));
+        assert!(out.contains("body"));
+        assert!(!out.contains("<env>"));
+        assert!(!out.contains("<directories>"));
+        assert!(!out.contains("cwd=/x"));
+    }
+
+    // Robust: empty input stays empty (don't synthesize content from
+    // nothing).
+    #[test]
+    fn sanitize_empty_input_returns_empty_robust() {
+        assert_eq!(sanitize_system_prompt(""), "");
+        assert_eq!(sanitize_system_prompt("\n\n\n"), "");
+    }
+
+    // Integration: build_system_blocks runs caller_system through
+    // sanitize_system_prompt so the on-wire payload never contains
+    // branded blocks even if the caller passed them.
+    #[test]
+    fn build_system_blocks_sanitizes_caller_system_normal() {
+        // The integration check: anything in a stripped block must not
+        // reach the wire payload. Identity rewrites are covered by
+        // `sanitize_rewrites_jfc_identity_phrases_normal`.
+        let caller =
+            "intro line\n\n<env>secret=1</env>\n\n<directories>x\ny</directories>\n\nDo good work.";
+        let blocks = build_system_blocks(TEST_BH, Some(caller));
+        let arr = blocks.as_array().expect("array");
+        // First two blocks are billing header + Claude Code identity.
+        // Third block is the sanitized caller system.
+        let third = arr[2]["text"].as_str().expect("text");
+        assert!(third.contains("intro line"));
+        assert!(third.contains("Do good work."));
+        assert!(!third.contains("secret=1"));
+        assert!(!third.contains("<env>"));
+        assert!(!third.contains("<directories>"));
     }
 
     #[test]

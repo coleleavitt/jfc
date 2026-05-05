@@ -185,10 +185,12 @@ pub async fn stream_response(
         tool_count = tools::all_tool_defs().len(),
         "preparing stream request"
     );
+    let max_out = max_output_tokens_for(model.as_str());
     let opts = {
-        let base = StreamOptions::new(model)
+        let base = StreamOptions::new(model.clone())
             .system(system_prompt)
-            .tools(tools::all_tool_defs());
+            .tools(tools::all_tool_defs())
+            .max_tokens(max_out);
         if supports_adaptive {
             base.adaptive()
         } else if has_thinking_support {
@@ -554,6 +556,38 @@ pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::UnboundedSender<App
     tokio::spawn(async move {
         stream_response(provider, messages, model, tx).await;
     });
+}
+
+/// Returns the max output tokens for `model`. Mirrors the
+/// `getMaxOutputTokens` helper in opencode-anthropic-auth's
+/// `plugin/constants.ts:195` and v126's MODEL_MAX_OUTPUT table.
+///
+/// Defaults are conservative; Opus/Sonnet 4.x family supports 128k
+/// extended output (with the `output-128k-2025-02-19` beta header
+/// already in our `ANTHROPIC_BETA` constant). Pre-4.x and Haiku get
+/// 16k. Opus 4.0 dated releases are capped at 8k when not streaming
+/// (we always stream so this is moot, but the constant stays as a
+/// reference).
+pub fn max_output_tokens_for(model: &str) -> u32 {
+    let m = model.to_lowercase();
+    // Opus/Sonnet 4.x family — extended-output 128k support.
+    let extended_4x = m.contains("opus-4")
+        || m.contains("sonnet-4")
+        || m.contains("opus-5")
+        || m.contains("sonnet-5");
+    if extended_4x {
+        return 128_000;
+    }
+    // Haiku 4.5 caps at 16k.
+    if m.contains("haiku-4-5") {
+        return 16_384;
+    }
+    // Older Opus/Sonnet (3.x, 3.5, 3.7).
+    if m.contains("opus") || m.contains("sonnet") {
+        return 8_192;
+    }
+    // Unknown / proxy-routed: keep the safe v126 default.
+    16_384
 }
 
 /// True only for proxy-routed model IDs (Bedrock through LiteLLM/OWUI,
