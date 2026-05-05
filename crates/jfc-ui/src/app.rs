@@ -364,6 +364,10 @@ pub struct App {
     pub provider: Arc<dyn Provider>,
     pub providers: Vec<Arc<dyn Provider>>,
     pub model: ModelId,
+    /// Recently selected models (most recent first, max 5). Shown at the
+    /// top of the model picker for quick switching. Persisted to
+    /// `~/.config/jfc/recent_models.json`.
+    pub recent_models: Vec<String>,
     pub cwd: String,
     pub reasoning_expanded: HashMap<usize, bool>,
     pub pending_approval: Option<PendingApproval>,
@@ -611,6 +615,7 @@ impl App {
             provider,
             providers,
             model: model.into(),
+            recent_models: load_recent_models(),
             cwd,
             reasoning_expanded: HashMap::new(),
             pending_approval: None,
@@ -959,4 +964,36 @@ impl App {
                 .map_or(false, |t| t.status == TaskStatus::Completed)
         });
     }
+}
+
+/// Load recently used models from `~/.config/jfc/recent_models.json`.
+fn load_recent_models() -> Vec<String> {
+    let path = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("jfc")
+        .join("recent_models.json");
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Save recently used models (max 5, most recent first).
+pub fn save_recent_models(models: &[String]) {
+    let path = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("jfc")
+        .join("recent_models.json");
+    let capped: Vec<&String> = models.iter().take(5).collect();
+    if let Ok(json) = serde_json::to_string(&capped) {
+        let _ = std::fs::write(&path, json);
+    }
+}
+
+/// Push a model to the front of the recent list (deduplicates).
+pub fn push_recent_model(recent: &mut Vec<String>, model: &str) {
+    recent.retain(|m| m != model);
+    recent.insert(0, model.to_owned());
+    recent.truncate(5);
+    save_recent_models(recent);
 }

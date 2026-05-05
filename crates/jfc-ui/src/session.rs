@@ -18,6 +18,10 @@ pub struct SerializedSession {
     pub updated_at: Option<String>,
     #[serde(default)]
     pub first_prompt: Option<String>,
+    /// The model ID that was active when this session was last saved.
+    /// Restored on `/continue` so the user stays on the same model.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Working directory the session was created in. Used by
     /// `/continue` and the sidebar picker to filter sessions to those
     /// belonging to the current project. Mirrors codex-rs (cli/src/
@@ -337,7 +341,7 @@ fn extract_first_prompt(messages: &[ChatMessage]) -> Option<String> {
 }
 
 #[tracing::instrument(target = "jfc::session", skip(messages), fields(n = messages.len()))]
-pub fn save_session(session_id: &str, messages: &[ChatMessage], cwd: Option<&str>) {
+pub fn save_session(session_id: &str, messages: &[ChatMessage], cwd: Option<&str>, model: Option<&str>) {
     let dir = sessions_dir();
     if std::fs::create_dir_all(&dir).is_err() {
         warn!(target: "jfc::session", "failed to create sessions directory");
@@ -372,12 +376,16 @@ pub fn save_session(session_id: &str, messages: &[ChatMessage], cwd: Option<&str
                 .map(|p| p.display().to_string())
         });
     let title = prior.as_ref().and_then(|s| s.title.clone());
+    let stored_model = model
+        .map(str::to_owned)
+        .or_else(|| prior.as_ref().and_then(|s| s.model.clone()));
 
     let serialized = SerializedSession {
         id: session_id.to_owned(),
         created_at,
         updated_at: Some(now.to_rfc3339()),
         first_prompt: extract_first_prompt(messages),
+        model: stored_model,
         cwd: stored_cwd,
         title,
         messages: messages.iter().map(serialize_message).collect(),
@@ -410,6 +418,21 @@ pub fn load_session(session_id: &str) -> Option<Vec<ChatMessage>> {
         .collect();
     debug!(target: "jfc::session", session_id, message_count, "session loaded");
     Some(messages)
+}
+
+/// Load session messages AND the model that was active. Used by `/continue`
+/// to restore the model selection.
+pub fn load_session_with_model(session_id: &str) -> Option<(Vec<ChatMessage>, Option<String>)> {
+    let path = sessions_dir().join(format!("{session_id}.json"));
+    let content = std::fs::read_to_string(&path).ok()?;
+    let session: SerializedSession = serde_json::from_str(&content).ok()?;
+    let model = session.model.clone();
+    let messages: Vec<ChatMessage> = session
+        .messages
+        .into_iter()
+        .map(deserialize_message)
+        .collect();
+    Some((messages, model))
 }
 
 /// Load session metadata without full message deserialization
