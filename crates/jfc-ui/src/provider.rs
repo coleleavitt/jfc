@@ -239,6 +239,11 @@ pub struct ModelInfo {
     pub display_name: String,
     pub provider: ProviderId,
     pub context_window_tokens: Option<usize>,
+    pub max_output_tokens: Option<usize>,
+    /// Cost per million input tokens (USD)
+    pub input_cost: Option<f64>,
+    /// Cost per million output tokens (USD)
+    pub output_cost: Option<f64>,
 }
 
 impl ModelInfo {
@@ -252,11 +257,25 @@ impl ModelInfo {
             display_name: display_name.into(),
             provider: provider.into(),
             context_window_tokens: None,
+            max_output_tokens: None,
+            input_cost: None,
+            output_cost: None,
         }
     }
 
     pub fn with_context_window_tokens(mut self, tokens: impl Into<Option<usize>>) -> Self {
         self.context_window_tokens = tokens.into();
+        self
+    }
+
+    pub fn with_max_output_tokens(mut self, tokens: impl Into<Option<usize>>) -> Self {
+        self.max_output_tokens = tokens.into();
+        self
+    }
+
+    pub fn with_costs(mut self, input: Option<f64>, output: Option<f64>) -> Self {
+        self.input_cost = input;
+        self.output_cost = output;
         self
     }
 }

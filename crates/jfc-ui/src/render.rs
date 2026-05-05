@@ -2051,7 +2051,9 @@ fn model_picker(f: &mut Frame, app: &mut App) {
     let header = Row::new(vec![
         Cell::from("  "),
         Cell::from("Model").style(header_style),
-        Cell::from("ID").style(header_style),
+        Cell::from("Ctx").style(header_style),
+        Cell::from("In $/M").style(header_style),
+        Cell::from("Out $/M").style(header_style),
         Cell::from("Source").style(header_style),
     ])
     .height(1)
@@ -2070,12 +2072,38 @@ fn model_picker(f: &mut Frame, app: &mut App) {
             let badge_style = Style::default()
                 .fg(provider_color(&m.provider))
                 .add_modifier(Modifier::BOLD);
+            let ctx_str = m
+                .context_window_tokens
+                .map(|n| {
+                    if n >= 1_000_000 {
+                        format!("{}M", n / 1_000_000)
+                    } else {
+                        format!("{}k", n / 1000)
+                    }
+                })
+                .unwrap_or_else(|| "—".into());
+            let in_cost = m
+                .input_cost
+                .map(|c| format!("${:.2}", c))
+                .unwrap_or_else(|| "—".into());
+            let out_cost = m
+                .output_cost
+                .map(|c| format!("${:.2}", c))
+                .unwrap_or_else(|| "—".into());
             Row::new(vec![
                 Cell::from(Span::styled(marker, Style::default().fg(t.accent))),
                 Cell::from(Span::styled(m.display_name.clone(), name_style)),
                 Cell::from(Span::styled(
-                    m.id.to_string(),
-                    Style::default().fg(t.text_muted),
+                    ctx_str,
+                    Style::default().fg(t.text_secondary),
+                )),
+                Cell::from(Span::styled(
+                    in_cost,
+                    Style::default().fg(t.text_secondary),
+                )),
+                Cell::from(Span::styled(
+                    out_cost,
+                    Style::default().fg(t.text_secondary),
                 )),
                 Cell::from(Span::styled(
                     provider_label(&m.provider).to_string(),
@@ -2085,12 +2113,13 @@ fn model_picker(f: &mut Frame, app: &mut App) {
         })
         .collect();
 
-    // Column constraints: marker fixed, name+id share most of the width,
-    // source badge fixed. ratatui's Table widget auto-truncates per cell.
+    // Column constraints: marker fixed, name takes most space, metadata cols fixed
     let widths = [
         Constraint::Length(3),
-        Constraint::Percentage(45),
-        Constraint::Percentage(45),
+        Constraint::Min(20),
+        Constraint::Length(6),
+        Constraint::Length(7),
+        Constraint::Length(8),
         Constraint::Length(10),
     ];
 

@@ -39,12 +39,24 @@ struct ModelEntry {
     release_date: Option<String>,
     #[serde(default)]
     limit: ModelLimit,
+    #[serde(default)]
+    cost: Option<ModelCost>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct ModelLimit {
     #[serde(default)]
     context: Option<usize>,
+    #[serde(default)]
+    output: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ModelCost {
+    #[serde(default)]
+    input: Option<f64>,
+    #[serde(default)]
+    output: Option<f64>,
 }
 
 /// Fetch the model list for a given models.dev provider id (e.g. `"anthropic"`,
@@ -76,8 +88,14 @@ pub async fn fetch_provider_models(
         .into_iter()
         .map(|m| {
             let display = m.name.clone().unwrap_or_else(|| m.id.clone());
+            let (in_cost, out_cost) = match &m.cost {
+                Some(c) => (c.input, c.output),
+                None => (None, None),
+            };
             ModelInfo::new(m.id.clone(), display, provider_tag)
                 .with_context_window_tokens(m.limit.context)
+                .with_max_output_tokens(m.limit.output)
+                .with_costs(in_cost, out_cost)
         })
         .collect())
 }
