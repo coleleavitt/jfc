@@ -891,65 +891,6 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     }
 }
 
-fn message_view_total_lines(app: &App, inner_width: usize) -> usize {
-    use crate::types::*;
-
-    let mut total = 0usize;
-
-    for (idx, msg) in app.messages.iter().enumerate() {
-        if app.streaming_assistant_idx == Some(idx) && app.is_streaming {
-            continue;
-        }
-
-        total += 1;
-
-        let reasoning_expanded = app.reasoning_expanded.get(&idx).copied().unwrap_or(false);
-
-        for part in &msg.parts {
-            match part {
-                MessagePart::Text(text) => {
-                    total += crate::markdown::to_lines(text, &app.theme, inner_width).len();
-                }
-                MessagePart::Reasoning(text) => {
-                    if reasoning_expanded {
-                        total += 1 + text.lines().count();
-                    } else {
-                        total += 1;
-                    }
-                }
-                MessagePart::Tool(tool) => {
-                    total += crate::message_view::tool_block_height_pub(tool, inner_width);
-                }
-                MessagePart::TaskStatus(ts) => {
-                    total += 1;
-                    if ts.error.is_some() {
-                        total += 1;
-                    }
-                }
-                MessagePart::CompactBoundary { .. } => {
-                    total += 1;
-                }
-            }
-        }
-
-        total += 1;
-    }
-
-    if app.is_streaming || !app.streaming_text.is_empty() || !app.streaming_reasoning.is_empty() {
-        total += 1;
-        if !app.streaming_reasoning.is_empty() {
-            total += 1;
-        }
-        total += crate::markdown::to_lines(&app.streaming_text, &app.theme, inner_width).len();
-        if app.is_streaming {
-            total += 1;
-        }
-        total += 1;
-    }
-
-    total
-}
-
 /// Per-entry collapse threshold for the subagent task view. A single
 /// `BackgroundTask.messages[i]` longer than this (line count) renders as a
 /// 5-line preview + a muted "press o to expand" footer until the user toggles

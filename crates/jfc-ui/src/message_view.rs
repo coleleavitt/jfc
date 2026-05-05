@@ -16,8 +16,84 @@ pub struct MessageView<'a> {
 }
 
 pub fn message_view_total_lines(app: &App, inner_w: usize) -> usize {
-    let items = build_render_items(app, inner_w);
-    items.iter().map(|i| i.height(inner_w)).sum()
+    // Fast path: compute total height using cached line counts without
+    // materializing the full RenderItem vec. This avoids .to_vec() cloning
+    // of cached Line vecs just to count them.
+    let mut total = 0usize;
+    let width = inner_w as u16;
+
+    for (idx, msg) in app.messages.iter().enumerate() {
+        let is_streaming_placeholder =
+            app.streaming_assistant_idx == Some(idx) && app.is_streaming;
+        if is_streaming_placeholder {
+            let has_content = msg.parts.iter().any(|p| match p {
+                MessagePart::Text(s) => !s.is_empty(),
+                MessagePart::Reasoning(s) => !s.is_empty(),
+                _ => true,
+            });
+            if !has_content {
+                continue;
+            }
+        }
+
+        // Role label
+        total += 1;
+
+        let reasoning_expanded = app.reasoning_expanded.get(&idx).copied().unwrap_or(false);
+
+        for part in &msg.parts {
+            match part {
+                MessagePart::Text(text) => {
+                    let mut cache = app.render_cache.borrow_mut();
+                    let t = app.theme;
+                    let lines = cache.get_or_insert_with(text, width, |t_text, w| {
+                        markdown::to_lines(t_text, &t, w as usize)
+                    });
+                    // Sum wrapped heights of each line
+                    for line in lines {
+                        let w = line.width();
+                        let h = if w == 0 || inner_w == 0 {
+                            1
+                        } else {
+                            w.div_ceil(inner_w).max(1)
+                        };
+                        total += h;
+                    }
+                }
+                MessagePart::Reasoning(text) => {
+                    if reasoning_expanded {
+                        total += 1 + text.lines().count();
+                    } else {
+                        total += 1;
+                    }
+                }
+                MessagePart::Tool(tool) => {
+                    total += tool_block_height(tool, inner_w);
+                }
+                MessagePart::TaskStatus(ts) => {
+                    total += 1;
+                    if ts.error.is_some() {
+                        total += 1;
+                    }
+                }
+                MessagePart::CompactBoundary { .. } => {
+                    total += 1;
+                }
+            }
+        }
+
+        // Elapsed footer
+        if msg.role == Role::Assistant && !is_streaming_placeholder {
+            if msg.elapsed.is_some() {
+                total += 1;
+            }
+        }
+
+        // Blank separator
+        total += 1;
+    }
+
+    total
 }
 
 impl Widget for MessageView<'_> {
@@ -153,7 +229,17 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
         for part in &msg.parts {
             match part {
                 MessagePart::Text(text) => {
-                    for line in markdown::to_lines(text, &t, inner_w) {
+                    let lines = {
+                        let mut cache = app.render_cache.borrow_mut();
+                        let width = inner_w as u16;
+                        let theme = t;
+                        cache
+                            .get_or_insert_with(text, width, |t_text, w| {
+                                markdown::to_lines(t_text, &theme, w as usize)
+                            })
+                            .to_vec()
+                    };
+                    for line in lines {
                         items.push(RenderItem::TextLine(line));
                     }
                 }

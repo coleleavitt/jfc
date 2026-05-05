@@ -197,7 +197,7 @@ pub enum SerializedToolInput {
 }
 
 /// Full tool output serialization - preserves content for proper resume
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SerializedToolOutput {
     Text {
@@ -229,6 +229,58 @@ pub enum SerializedToolOutput {
         files: Vec<String>,
     },
     Empty,
+}
+
+/// Custom deserializer that handles both:
+/// - The new internally-tagged enum format: `{"type": "text", "content": "..."}`
+/// - The old plain-string format from May 4 sessions: `"some output text"`
+/// - null values (treated as Empty)
+impl<'de> serde::Deserialize<'de> for SerializedToolOutput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de;
+        use serde_json::Value;
+
+        let value = Value::deserialize(deserializer)?;
+        match &value {
+            // Old format: plain string → Text
+            Value::String(s) => Ok(SerializedToolOutput::Text {
+                content: s.clone(),
+            }),
+            // null → Empty
+            Value::Null => Ok(SerializedToolOutput::Empty),
+            // New format: object with "type" tag
+            Value::Object(_) => {
+                // Re-deserialize using the tagged enum logic
+                #[derive(Deserialize)]
+                #[serde(tag = "type", rename_all = "snake_case")]
+                enum Inner {
+                    Text { content: String },
+                    LargeText { content: String, line_count: usize, byte_count: usize },
+                    Diff { file_path: String, additions: usize, deletions: usize, hunks: Vec<SerializedDiffHunk> },
+                    FileContent { path: String, content: String, language: String },
+                    Command { stdout: String, stderr: String, #[serde(default)] exit_code: Option<i32> },
+                    FileList { files: Vec<String> },
+                    Empty,
+                }
+                let inner: Inner = serde_json::from_value(value)
+                    .map_err(de::Error::custom)?;
+                Ok(match inner {
+                    Inner::Text { content } => SerializedToolOutput::Text { content },
+                    Inner::LargeText { content, line_count, byte_count } => SerializedToolOutput::LargeText { content, line_count, byte_count },
+                    Inner::Diff { file_path, additions, deletions, hunks } => SerializedToolOutput::Diff { file_path, additions, deletions, hunks },
+                    Inner::FileContent { path, content, language } => SerializedToolOutput::FileContent { path, content, language },
+                    Inner::Command { stdout, stderr, exit_code } => SerializedToolOutput::Command { stdout, stderr, exit_code },
+                    Inner::FileList { files } => SerializedToolOutput::FileList { files },
+                    Inner::Empty => SerializedToolOutput::Empty,
+                })
+            }
+            // Anything else → treat as Empty
+            _ => Ok(SerializedToolOutput::Empty),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]

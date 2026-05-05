@@ -11,6 +11,7 @@ use tui_textarea::TextArea;
 use crate::auto_mode::AutoModeConfig;
 
 use crate::context::{ReadDedupCache, ToolContext};
+use crate::render_cache::RenderCache;
 use crate::provider::{ModelId, ModelInfo, Provider, ProviderId, StopReason};
 use crate::query::QueryCache;
 use crate::tasks::TaskId;
@@ -561,6 +562,11 @@ pub struct App {
     /// `MessageView` borrows `&App` immutably during `Widget::render`, and
     /// we need a `&mut` push from inside that path.
     pub tool_hit_regions: RefCell<Vec<(String, Rect)>>,
+    /// Content-addressed cache for `markdown::to_lines()` output. Keyed on
+    /// `(hash(text), width)` so unchanged messages aren't re-parsed on every
+    /// frame. Uses `RefCell` because `MessageView` borrows `&App` immutably
+    /// during `Widget::render` but needs mutable cache access.
+    pub render_cache: RefCell<RenderCache>,
 }
 
 impl App {
@@ -667,6 +673,7 @@ impl App {
             viewing_task_expanded: std::collections::HashSet::new(),
             pending_attachments: Vec::new(),
             tool_hit_regions: RefCell::new(Vec::new()),
+            render_cache: RefCell::new(RenderCache::new()),
         };
         app.sync_selected_context_window();
         tracing::info!(
@@ -722,15 +729,25 @@ impl App {
     /// the live token counter uses.
     pub fn recompute_token_estimate(&mut self) {
         let old_estimate = self.tool_ctx.approx_tokens;
-        let last_usage = self
+        // v126's `tokenCountWithEstimation` (tokens.ts:226-261): find the last
+        // assistant message with API usage, use that as the authoritative base,
+        // then rough-estimate any messages added AFTER it (user prompts, tool
+        // results). This prevents the gap between API calls where the gauge
+        // reads 0 or stale for newly-added messages.
+        let last_usage_idx = self
             .messages
             .iter()
+            .enumerate()
             .rev()
-            .find_map(|m| m.usage.as_ref());
-        if let Some(u) = last_usage {
+            .find_map(|(i, m)| m.usage.as_ref().map(|u| (i, u.clone())));
+        if let Some((idx, u)) = last_usage_idx {
             self.last_usage_input = u.input_tokens as u32;
             self.last_usage_output = u.output_tokens as u32;
-            self.tool_ctx.approx_tokens = u.total_context_tokens() as usize;
+            let base = u.total_context_tokens() as usize;
+            // Estimate tokens for messages added after the usage-bearing message
+            let tail = &self.messages[idx + 1..];
+            let tail_estimate = crate::compact::estimate_tokens(tail);
+            self.tool_ctx.approx_tokens = base + tail_estimate;
         } else {
             self.last_usage_input = 0;
             self.last_usage_output = 0;

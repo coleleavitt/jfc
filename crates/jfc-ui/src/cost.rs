@@ -78,7 +78,7 @@ pub fn pricing_for(model_id: &str) -> Option<ModelPricing> {
 /// Returns `0.0` for unknown models — see module docs.
 pub fn cost_for(model_id: &str, usage: &ModelUsage) -> f64 {
     let Some(p) = pricing_for(model_id) else {
-        tracing::debug!(
+        tracing::trace!(
             target: "jfc::cost",
             model_id,
             "cost_for: unknown model, returning $0"
@@ -90,7 +90,7 @@ pub fn cost_for(model_id: &str, usage: &ModelUsage) -> f64 {
         + (usage.output_tokens as f64 / m) * p.output_per_mtok
         + (usage.cache_read_tokens as f64 / m) * p.cache_read_per_mtok
         + (usage.cache_write_tokens as f64 / m) * p.cache_write_per_mtok;
-    tracing::debug!(
+    tracing::trace!(
         target: "jfc::cost",
         model_id,
         input_tokens = usage.input_tokens,
@@ -109,7 +109,7 @@ pub fn total_cost(usage_by_model: &HashMap<String, ModelUsage>) -> f64 {
         .iter()
         .map(|(model, usage)| cost_for(model, usage))
         .sum();
-    tracing::debug!(
+    tracing::trace!(
         target: "jfc::cost",
         model_count = usage_by_model.len(),
         total,

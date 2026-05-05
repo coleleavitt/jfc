@@ -1,5 +1,6 @@
 mod agents;
 mod app;
+
 mod attachments;
 mod auto_mode;
 mod compact;
@@ -19,6 +20,7 @@ mod provider;
 mod providers;
 mod query;
 mod render;
+mod render_cache;
 mod scheduler;
 mod session;
 mod spinner;
@@ -1111,7 +1113,15 @@ async fn run(
                 // baseline before adding.
                 app.last_usage_input = input_tokens;
                 app.last_usage_output = output_tokens;
-                app.tool_ctx.approx_tokens = input_tokens as usize + output_tokens as usize;
+                // v126's tokenCountWithEstimation uses input + cache_creation +
+                // cache_read + output (all four count against the context window).
+                // Previously this only summed input + output, under-reporting by
+                // the cache contribution — which can be 50-80% of context on
+                // prompt-cache-heavy sessions.
+                app.tool_ctx.approx_tokens = input_tokens as usize
+                    + output_tokens as usize
+                    + cache_read_tokens as usize
+                    + cache_write_tokens as usize;
                 // Stamp the cumulative usage onto the streaming
                 // assistant message. v126 attaches usage to each
                 // assistant message (cli.js:416673) so on resume
@@ -1251,7 +1261,18 @@ async fn run(
                     let _ = std::io::stderr().flush();
                 }
                 let manual = std::mem::take(&mut app.force_compact_pending);
-                if manual || compact::should_compact(&app.messages, app.max_context_tokens) {
+                // Guard: don't spawn another compact if one is already in flight.
+                // Without this, every AllToolsComplete while context > threshold
+                // spawns a NEW compact task — if the provider doesn't support
+                // compaction (returns Unsupported), the tasks pile up at ~12/sec
+                // and spam 79K+ WARN lines per session. Only `manual` (/compact)
+                // bypasses the guard to let the user force a retry.
+                if app.compacting_started_at.is_some() && !manual {
+                    tracing::debug!(
+                        target: "jfc::compact",
+                        "skipping post-response compact — one already in flight"
+                    );
+                } else if manual || compact::should_compact(&app.messages, app.max_context_tokens) {
                     tracing::info!(
                         target: "jfc::compact",
                         manual,
@@ -1312,10 +1333,20 @@ async fn run(
                             }
                             compact::CompactResult::Unsupported
                             | compact::CompactResult::TooFewGroups => {
-                                tracing::debug!(
+                                tracing::info!(
                                     target: "jfc::compact",
                                     "post-response compaction skipped (unsupported/too few groups)"
                                 );
+                                // Send CompactionFailed so compacting_started_at
+                                // gets cleared and the spinner stops. Without this,
+                                // the UI shows "Compacting…" forever and the guard
+                                // above prevents re-entry even on manual /compact.
+                                let _ = tx_compact.send(AppEvent::CompactionFailed(
+                                    "Provider does not support compaction — \
+                                     try /clear or switch to a provider with non-streaming support."
+                                        .into(),
+                                    None,
+                                ));
                             }
                             compact::CompactResult::CircuitBreakerTripped => {
                                 tracing::warn!(
