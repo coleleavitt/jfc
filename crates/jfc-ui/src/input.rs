@@ -452,7 +452,8 @@ pub async fn handle_key(
                     {
                         app.provider = Arc::clone(p);
                     }
-                    app.model = chosen_id;
+                    app.model = chosen_id.clone();
+                    crate::app::push_recent_model(&mut app.recent_models, chosen_id.as_str());
                     app.sync_selected_context_window();
                     app.show_model_picker = false;
                     app.model_picker_filter.clear();
@@ -1325,7 +1326,7 @@ async fn handle_submit(
         .current_session_id
         .clone()
         .unwrap_or_else(crate::session::generate_session_id);
-    crate::session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()));
+    crate::session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str()));
     app.current_session_id = Some(session_id.clone());
 
     let provider = app.provider.clone();
@@ -2037,7 +2038,7 @@ fn handle_slash_command(
                     .current_session_id
                     .clone()
                     .unwrap_or_else(crate::session::generate_session_id);
-                crate::session::save_session(&session_id, &app.messages, None);
+                crate::session::save_session(&session_id, &app.messages, None, Some(app.model.as_str()));
                 app.current_session_id = Some(session_id);
 
                 let provider = app.provider.clone();
@@ -2326,7 +2327,7 @@ pub fn collect_all_models(app: &App) -> Vec<crate::provider::ModelInfo> {
         app.seat_tier.as_deref(),
     )));
 
-    app.model_picker_query_cache.get_or_insert_with(key, || {
+    let all = app.model_picker_query_cache.get_or_insert_with(key, || {
         let merged = fingerprint_input
             .iter()
             .flat_map(|(provider_name, _)| {
@@ -2343,7 +2344,28 @@ pub fn collect_all_models(app: &App) -> Vec<crate::provider::ModelInfo> {
             })
             .collect();
         crate::providers::anthropic_models::apply_seat_tier_filter(merged, app.seat_tier.as_deref())
-    })
+    });
+
+    // Move recently used models to the top of the list (preserving recency order).
+    if !app.recent_models.is_empty() {
+        let recent = &app.recent_models;
+        let mut sorted: Vec<crate::provider::ModelInfo> = Vec::with_capacity(all.len());
+        // Add recent models in recency order
+        for r in recent {
+            if let Some(m) = all.iter().find(|m| m.id.as_str() == r.as_str()) {
+                sorted.push(m.clone());
+            }
+        }
+        // Add remaining models
+        for m in &all {
+            if !recent.contains(&m.id.to_string()) {
+                sorted.push(m.clone());
+            }
+        }
+        sorted
+    } else {
+        all
+    }
 }
 
 #[cfg(test)]

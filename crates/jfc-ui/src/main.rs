@@ -473,32 +473,33 @@ async fn run(
             let id = session::most_recent_session_for_cwd(cwd_str.as_deref())
                 .or_else(session::most_recent_session); // legacy fallback
             if let Some(session_id) = id {
-                if let Some(messages) = session::load_session(&session_id) {
+                if let Some((messages, saved_model)) = session::load_session_with_model(&session_id) {
                     tracing::info!(
                         target: "jfc::session",
                         session_id = %session_id,
                         message_count = messages.len(),
+                        saved_model = ?saved_model,
                         cwd = ?cwd_str,
                         "continuing most recent session"
                     );
                     app.messages = messages;
                     app.current_session_id = Some(session_id);
+                    if let Some(model_id) = saved_model {
+                        app.model = model_id.into();
+                    }
                     app.recompute_token_estimate();
                 }
             }
         }
         StartupSession::Resume(session_id) => {
-            if let Some(messages) = session::load_session(&session_id) {
+            if let Some((messages, saved_model)) = session::load_session_with_model(&session_id) {
                 tracing::info!(
                     target: "jfc::session",
                     session_id = %session_id,
                     message_count = messages.len(),
+                    saved_model = ?saved_model,
                     "resuming specific session"
                 );
-                // CLI has no toast surface; emit a warn-level log so
-                // the user sees the cwd mismatch in stderr/journalctl
-                // and doesn't silently load a session from a different
-                // project. Mirrors codex-rs `session_resume.rs:99-111`.
                 let session_cwd = session::load_session_metadata(&session_id)
                     .and_then(|m| m.cwd);
                 let current_cwd = std::env::current_dir()
@@ -516,6 +517,9 @@ async fn run(
                 }
                 app.messages = messages;
                 app.current_session_id = Some(session_id);
+                if let Some(model_id) = saved_model {
+                    app.model = model_id.into();
+                }
                 app.recompute_token_estimate();
             } else {
                 tracing::warn!(
@@ -634,7 +638,7 @@ async fn run(
             .current_session_id
             .clone()
             .unwrap_or_else(session::generate_session_id);
-        session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()));
+        session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str()));
         app.current_session_id = Some(session_id);
 
         let provider = app.provider.clone();
@@ -1005,7 +1009,7 @@ async fn run(
 
                 // Auto-save session after each assistant turn completes
                 if let Some(ref session_id) = app.current_session_id {
-                    session::save_session(session_id, &app.messages, Some(app.cwd.as_str()));
+                    session::save_session(session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str()));
                 }
                 // v126 queued-prompt drain on plain end_turn: model finished
                 // without tools to call → if anything's queued, fire it now.
@@ -1233,7 +1237,7 @@ async fn run(
                 // saves on every state mutation; jfc previously only saved
                 // at submit + StreamDone, missing the post-tool state.
                 if let Some(ref session_id) = app.current_session_id {
-                    session::save_session(session_id, &app.messages, Some(app.cwd.as_str()));
+                    session::save_session(session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str()));
                 }
             }
             AppEvent::AllToolsComplete => {
