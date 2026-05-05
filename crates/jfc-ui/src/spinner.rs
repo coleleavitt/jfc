@@ -266,15 +266,31 @@ pub fn format_status(
 }
 
 /// Compact-mode spinner body. Mirrors v126's `setStreamMode("compacting")`
-/// UI: braille spinner + verb + elapsed. We additionally surface
-/// `pre_tokens` so the user sees the *magnitude* of what's being
-/// compacted ("Compacting… (8s · 412k tokens)") — without it a long
-/// summarization request looks like a stalled UI even though the API
-/// is working hard.
-pub fn format_compact_status(tick: usize, elapsed: Duration, pre_tokens: u64) -> String {
+/// UI: braille spinner + verb + elapsed + magnitude + live output.
+///
+/// - `pre_tokens` — pre-compact context size, shown as the input
+///   magnitude (`412k tokens`).
+/// - `output_chars` — cumulative summary text length collected so far
+///   from the streaming compact response. Divided by 4 to estimate
+///   tokens (same chars/4 heuristic as the regular streaming spinner).
+///   Mirrors v126's `addResponseLength` callback in PB7
+///   (cli.js:396989) — fires on every text_delta during summarization.
+///
+/// Without the live output piece, a 1m+ compact looks like a frozen
+/// UI even though the API is happily streaming summary text.
+pub fn format_compact_status(
+    tick: usize,
+    elapsed: Duration,
+    pre_tokens: u64,
+    output_chars: u64,
+) -> String {
     let mut parts: Vec<String> = vec![fmt_elapsed(elapsed)];
     if pre_tokens > 0 {
         parts.push(format!("{} tokens", fmt_tokens(pre_tokens)));
+    }
+    if output_chars > 0 {
+        let out_tokens = output_chars / 4;
+        parts.push(format!("↓ {} tokens", fmt_tokens(out_tokens)));
     }
     format!(
         "{} Compacting… ({})",
@@ -460,7 +476,7 @@ mod tests {
     // magnitude — without this last piece a 60s compact looks frozen.
     #[test]
     fn format_compact_status_includes_pre_tokens_normal() {
-        let s = format_compact_status(0, Duration::from_secs(8), 412_000);
+        let s = format_compact_status(0, Duration::from_secs(8), 412_000, 0);
         assert!(s.contains("Compacting"), "verb missing: {s}");
         assert!(s.contains("8s"), "elapsed missing: {s}");
         assert!(s.contains("412k tokens"), "pre-token chip missing: {s}");
@@ -471,13 +487,35 @@ mod tests {
     // rather than showing a useless `0 tokens`.
     #[test]
     fn format_compact_status_omits_chip_when_pre_zero_robust() {
-        let s = format_compact_status(0, Duration::from_secs(2), 0);
+        let s = format_compact_status(0, Duration::from_secs(2), 0, 0);
         assert!(s.contains("Compacting"), "verb missing: {s}");
         assert!(s.contains("2s"), "elapsed missing: {s}");
         assert!(
             !s.contains("0 tokens"),
             "shouldn't show 0-token chip: {s}"
         );
+    }
+
+    // Live output during compact streaming: `output_chars` divided by 4
+    // gives the token estimate (matches the regular streaming spinner's
+    // chars/4 fallback). Mirrors v126's PB7 addResponseLength feed.
+    #[test]
+    fn format_compact_status_shows_live_output_tokens_normal() {
+        // 4_800 chars ≈ 1.2k tokens (4_800 / 4 = 1200).
+        let s = format_compact_status(0, Duration::from_secs(15), 412_000, 4_800);
+        assert!(s.contains("Compacting"), "verb missing: {s}");
+        assert!(s.contains("412k tokens"), "pre-token chip missing: {s}");
+        assert!(s.contains("↓"), "down-arrow missing: {s}");
+        assert!(s.contains("1.2k tokens"), "output token chip missing: {s}");
+    }
+
+    // Robust: 0 output_chars (just started, no chunks yet) drops the
+    // ↓ chip — same shape as the regular spinner before any token
+    // arrives.
+    #[test]
+    fn format_compact_status_omits_output_chip_when_zero_robust() {
+        let s = format_compact_status(0, Duration::from_secs(3), 100_000, 0);
+        assert!(!s.contains("↓"), "shouldn't show empty output chip: {s}");
     }
 
     #[test]

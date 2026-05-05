@@ -1268,6 +1268,12 @@ async fn run(
                     let mut tool_ctx = app.tool_ctx.clone();
                     let window = app.max_context_tokens;
                     let tx_compact = tx.clone();
+                    let progress_tx = tx_compact.clone();
+                    let on_progress: crate::compact::CompactProgressCb =
+                        Box::new(move |chars| {
+                            let _ = progress_tx
+                                .send(AppEvent::CompactionProgress { output_chars: chars });
+                        });
                     tokio::spawn(async move {
                         let options = provider::StreamOptions::new(model.clone());
                         tracing::debug!(
@@ -1282,6 +1288,7 @@ async fn run(
                             &options,
                             &mut tool_ctx,
                             window,
+                            Some(on_progress),
                         )
                         .await;
                         match result {
@@ -1372,6 +1379,13 @@ async fn run(
                 // assumes their keystroke was eaten.
                 tracing::debug!(target: "jfc::compact", "CompactionStarted event received — showing spinner");
                 app.compacting_started_at = Some(std::time::Instant::now());
+                app.compacting_output_chars = 0;
+            }
+            AppEvent::CompactionProgress { output_chars } => {
+                // Live token feedback during compact streaming. Mirrors
+                // v126's PB7 addResponseLength → spinner refresh
+                // (cli.js:396989).
+                app.compacting_output_chars = output_chars;
             }
             AppEvent::CompactionDone {
                 messages,
@@ -1390,6 +1404,7 @@ async fn run(
                 app.tool_ctx = tool_ctx;
                 app.tool_ctx.approx_tokens = post_tokens;
                 app.compacting_started_at = None;
+                app.compacting_output_chars = 0;
                 // Surface the compaction outcome to the user via a toast
                 // — they don't have to scroll to see the boundary marker.
                 let saved_k = saved / 1000;
@@ -1412,6 +1427,7 @@ async fn run(
                     app.tool_ctx.approx_tokens = real_count;
                 }
                 app.compacting_started_at = None;
+                app.compacting_output_chars = 0;
                 toast::push_with_cap(
                     &mut app.toasts,
                     toast::Toast::new(

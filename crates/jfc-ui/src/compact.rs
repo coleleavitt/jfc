@@ -248,13 +248,30 @@ pub enum CompactResult {
 /// Try `provider.complete()` first; if unsupported, fall back to streaming
 /// and collect the full response. This handles providers like OpenWebUI/LiteLLM
 /// that only support streaming endpoints.
+/// Callback fired on every text_delta during a streaming compact. The
+/// argument is the *cumulative* summary length so far (in chars) — the
+/// renderer divides by 4 for a token estimate. Boxed because the
+/// compact path is async + `Send`. Using a callback rather than
+/// hard-coding `UnboundedSender<AppEvent>` keeps `compact.rs` free of
+/// `app::AppEvent` so the test build doesn't need the full app.
+pub type CompactProgressCb = Box<dyn Fn(u64) + Send + Sync>;
+
 async fn complete_or_stream(
     provider: &dyn Provider,
     messages: Vec<ProviderMessage>,
     options: &StreamOptions,
+    on_progress: Option<&CompactProgressCb>,
 ) -> Result<crate::provider::CompletionResponse, anyhow::Error> {
     match provider.complete(messages.clone(), options).await {
-        Ok(resp) => Ok(resp),
+        Ok(resp) => {
+            // Non-streaming complete returns everything at once — fire
+            // a single terminal progress so the spinner ends with the
+            // final length rather than 0.
+            if let Some(cb) = on_progress {
+                cb(resp.content.len() as u64);
+            }
+            Ok(resp)
+        }
         Err(e) => {
             let err_msg = e.to_string().to_lowercase();
             if err_msg.contains("not support") || err_msg.contains("unsupported") {
@@ -268,6 +285,12 @@ async fn complete_or_stream(
                     match event {
                         Ok(crate::provider::StreamEvent::TextDelta { delta, .. }) => {
                             collected.push_str(&delta);
+                            // Mirrors v126's PB7 addResponseLength callback
+                            // (cli.js:396989) — fires on every text_delta so
+                            // the spinner shows the summary growing live.
+                            if let Some(cb) = on_progress {
+                                cb(collected.len() as u64);
+                            }
                         }
                         Ok(crate::provider::StreamEvent::Done { .. }) => break,
                         Ok(crate::provider::StreamEvent::Error { message }) => {
@@ -297,7 +320,7 @@ async fn complete_or_stream(
 
 #[instrument(
     target = "jfc::compact",
-    skip(messages, provider, options, tool_ctx),
+    skip(messages, provider, options, tool_ctx, on_progress),
     fields(
         message_count = messages.len(),
         window,
@@ -313,6 +336,7 @@ pub async fn compact(
     options: &StreamOptions,
     tool_ctx: &mut ToolContext,
     window: usize,
+    on_progress: Option<CompactProgressCb>,
 ) -> CompactResult {
     if tool_ctx.rapid_refill_count >= CIRCUIT_BREAKER_LIMIT {
         warn!(
@@ -422,7 +446,14 @@ pub async fn compact(
             "sending compaction request to provider"
         );
 
-        match complete_or_stream(provider, compact_messages, &compact_options).await {
+        match complete_or_stream(
+            provider,
+            compact_messages,
+            &compact_options,
+            on_progress.as_ref(),
+        )
+        .await
+        {
             Ok(response) => {
                 debug!(
                     target: "jfc::compact",

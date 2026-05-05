@@ -44,6 +44,14 @@ pub enum AppEvent {
     },
     AllToolsComplete,
     CompactionStarted,
+    /// Streaming compact has emitted more text. `output_chars` is the
+    /// total length of the summary collected so far. Mirrors v126's
+    /// `addResponseLength` callback in PB7 (cli.js:396989) — fires on
+    /// every text_delta during compaction so the spinner can show
+    /// `↓ Nk tokens` building up live, not just the elapsed timer.
+    CompactionProgress {
+        output_chars: u64,
+    },
     CompactionDone {
         messages: Vec<ChatMessage>,
         tool_ctx: crate::context::ToolContext,
@@ -391,6 +399,13 @@ pub struct App {
     /// `Compacting…` spinner whenever this is `Some`, so a long pre-submit
     /// compaction doesn't look like a frozen UI.
     pub compacting_started_at: Option<Instant>,
+    /// Cumulative summary-text length collected during the in-flight
+    /// compact. Updated on every `CompactionProgress` event (driven by
+    /// the streaming compact's text_delta loop). The spinner divides by
+    /// 4 to get a chars-per-token estimate and renders `↓ Nk tokens` —
+    /// matches the regular streaming spinner's live counter so the user
+    /// sees the same kind of feedback during compaction.
+    pub compacting_output_chars: u64,
     /// Set each frame by the renderer. Used for page-scroll math.
     pub viewport_height: usize,
     pub input_wrap_width: usize,
@@ -586,6 +601,7 @@ impl App {
             pending_tool_calls: Vec::new(),
             force_compact_pending: false,
             compacting_started_at: None,
+            compacting_output_chars: 0,
             max_context_tokens: DEFAULT_CONTEXT_WINDOW_TOKENS,
             viewport_height: 0,
             input_wrap_width: 1,

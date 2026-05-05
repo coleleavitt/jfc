@@ -1199,6 +1199,15 @@ async fn handle_submit(
         let user_text = text.clone();
         let is_blocked = matches!(level, crate::compact::CompactLevel::Blocked);
         let _ = tx_pre.send(crate::app::AppEvent::CompactionStarted);
+        // Progress callback fires on every text_delta from the streaming
+        // compact, forwards the cumulative output length as a
+        // CompactionProgress event so the spinner shows live token
+        // count. Mirrors v126's `addResponseLength` callback in PB7.
+        let progress_tx = tx_pre.clone();
+        let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
+            let _ =
+                progress_tx.send(crate::app::AppEvent::CompactionProgress { output_chars: chars });
+        });
         tokio::spawn(async move {
             let options = crate::provider::StreamOptions::new(model.clone());
             tracing::debug!(
@@ -1213,6 +1222,7 @@ async fn handle_submit(
                 &options,
                 &mut tool_ctx,
                 window,
+                Some(on_progress),
             )
             .await;
             match result {
