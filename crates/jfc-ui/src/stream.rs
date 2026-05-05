@@ -441,7 +441,10 @@ pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::UnboundedSender<App
     app.messages.push(ChatMessage::assistant(String::new()));
     app.streaming_text.clear();
     app.streaming_reasoning.clear();
-    app.streaming_response_bytes = 0;
+    // NOTE: do NOT reset streaming_response_bytes here — it accumulates
+    // across the entire user turn (all agentic loop iterations). The spinner
+    // shows the cumulative token estimate for the full turn, matching v126's
+    // responseLengthRef which persists across sub-streams.
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
     // The sub-stream clock restarts (Anthropic restarts `output_tokens`

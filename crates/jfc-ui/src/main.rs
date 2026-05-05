@@ -974,7 +974,13 @@ async fn run(
                 }
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
-    app.streaming_response_bytes = 0;
+                // Only reset the cumulative token counter when the turn is
+                // truly done. During agentic loops (ToolUse stop_reason), the
+                // counter should keep accumulating so the spinner shows the
+                // full turn's token estimate.
+                if turn_done {
+                    app.streaming_response_bytes = 0;
+                }
                 // Clear the user-turn clock only when the loop has
                 // genuinely concluded — EndTurn stop reason AND no
                 // tools pending. ToolUse means an agentic continuation
@@ -1069,7 +1075,7 @@ async fn run(
                 app.thinking_ended_at = None;
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
-    app.streaming_response_bytes = 0;
+                app.streaming_response_bytes = 0;
                 app.streaming_assistant_idx = None;
                 app.messages
                     .push(ChatMessage::assistant(format!("**Error:** {e}")));
