@@ -821,9 +821,26 @@ async fn execute_edit(
             match tokio::fs::write(file_path, &new_content).await {
                 Ok(_) => {
                     debug!(target: "jfc::tools", file_path, count, "edit: success");
-                    ExecutionResult::success(format!(
-                        "Replaced {count} occurrence(s) in {file_path}"
-                    ))
+                    // Compute line-level diff stats (matches v126's "Added N lines, Removed M lines")
+                    let old_lines = old_string.lines().count();
+                    let new_lines = new_string.lines().count();
+                    let lines_added = new_lines.saturating_sub(old_lines);
+                    let lines_removed = old_lines.saturating_sub(new_lines);
+                    let line_summary = match (lines_added, lines_removed) {
+                        (0, 0) => format!("{} lines changed", old_lines.max(1)),
+                        (a, 0) => format!("+{a} lines"),
+                        (0, r) => format!("-{r} lines"),
+                        (a, r) => format!("+{a}/-{r} lines"),
+                    };
+                    if replacement.replace_all() && count > 1 {
+                        ExecutionResult::success(format!(
+                            "The file {file_path} has been updated ({line_summary}). All {count} occurrences replaced."
+                        ))
+                    } else {
+                        ExecutionResult::success(format!(
+                            "The file {file_path} has been updated successfully ({line_summary})."
+                        ))
+                    }
                 }
                 Err(e) => {
                     warn!(target: "jfc::tools", file_path, error = %e, "edit: cannot write after edit");

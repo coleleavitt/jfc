@@ -1662,7 +1662,6 @@ fn handle_slash_command(
                  - Ctrl+M — Model picker\n\
                  - Ctrl+P — Command palette\n\
                  - Ctrl+O — Expand reasoning / open diagnostic panel\n\
-                 - Ctrl+T — Open task panel\n\
                  - Ctrl+Y — Yank last assistant message to clipboard\n\
                  - Ctrl+S — Toggle info sidebar\n\
                  - `@` — Autocomplete file paths from cwd\n\
@@ -2243,10 +2242,6 @@ fn execute_palette_action(app: &mut App, label: &str) {
             app.model_picker_selected = 0;
             app.model_picker_models = collect_all_models(app);
         }
-        "Open Task Panel (Ctrl+T)" => {
-            app.show_task_panel = true;
-            app.task_panel_selected = 0;
-        }
         "Toggle Thinking (Ctrl+O)" => {
             // Thinking toggle is a per-message expand/collapse — flip the
             // most recent reasoning row if there is one, otherwise no-op.
@@ -2279,7 +2274,6 @@ pub fn palette_items(app: &App) -> Vec<&'static str> {
         "Toggle Sessions Sidebar (Ctrl+B)",
         "Toggle Info Sidebar (Ctrl+S)",
         "Open Model Picker (Ctrl+M)",
-        "Open Task Panel (Ctrl+T)",
         "Toggle Thinking (Ctrl+O)",
         "Show Tasks (/tasks)",
         "Show Help (/help)",
