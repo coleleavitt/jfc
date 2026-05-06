@@ -628,6 +628,25 @@ async fn run_single_turn(
             .system(system.clone())
             .tools(tools::all_tool_defs());
 
+        // Cap teammate history before each request — same protection
+        // applied to the Task-tool subagent loop. A teammate doing
+        // multi-turn research with `Read`/`Glob`/`Grep` accumulates
+        // unbounded tool output across turns; without this it can
+        // blow the model's context window mid-session.
+        let elided = crate::stream::cap_messages_for_budget(
+            history,
+            crate::stream::SUBAGENT_HISTORY_BUDGET_BYTES,
+        );
+        if elided {
+            tracing::info!(
+                target: "jfc::swarm::runner",
+                task_id,
+                turn,
+                agent_id = %identity.agent_id,
+                "teammate history elided to fit budget"
+            );
+        }
+
         let stream = match provider.stream(history.clone(), &opts).await {
             Ok(s) => s,
             Err(e) => return TurnResult::Error(format!("provider stream error: {e}")),
@@ -795,7 +814,7 @@ async fn run_single_turn(
 
             tool_results.push(ProviderContent::ToolResult {
                 tool_use_id: id.clone(),
-                content: result.output.clone(),
+                content: crate::stream::truncate_tool_result(&result.output),
                 is_error: result.is_error(),
             });
         }

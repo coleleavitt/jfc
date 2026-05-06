@@ -16,7 +16,7 @@ use crate::types::*;
 /// Reuse the same cap that `ToolOutput::approx_text_len` enforces — the wire
 /// truncation here and the local token estimate must agree to a byte, or
 /// `compact_level` will fire on phantom-large outputs that the API never sees.
-const MAX_TOOL_RESULT_CHARS: usize = ToolOutput::APPROX_LEN_CAP;
+pub(crate) const MAX_TOOL_RESULT_CHARS: usize = ToolOutput::APPROX_LEN_CAP;
 
 /// Truncate `s` to at most `MAX_TOOL_RESULT_CHARS` bytes by keeping the first
 /// half and the last half, with an ellipsis marker in the middle. Slice
@@ -25,7 +25,7 @@ const MAX_TOOL_RESULT_CHARS: usize = ToolOutput::APPROX_LEN_CAP;
 /// blobs that happen to land in the slice — exactly the panic in the
 /// screenshot's stack trace at stream.rs:334:14, fired from inside
 /// build_provider_messages_with_tool_results' FilterMap closure).
-fn truncate_tool_result(s: &str) -> String {
+pub(crate) fn truncate_tool_result(s: &str) -> String {
     if s.len() <= MAX_TOOL_RESULT_CHARS {
         return s.to_owned();
     }
@@ -60,6 +60,94 @@ fn ceil_char_boundary(s: &str, mut i: usize) -> usize {
         i += 1;
     }
     i
+}
+
+/// Soft cap on total request bytes for a subagent / teammate provider call.
+/// Estimated at ~4 chars/token, this is ≈125k tokens — well under the 1M
+/// Bedrock cap and leaves room for system prompt + tool catalogue. The
+/// teammate research scenario that triggered the 8.85M-token 400 was a
+/// single subagent loop accumulating many large `Read` results unbounded
+/// across 20 turns; this cap drops the oldest assistant/tool pairs once
+/// the running total trips it.
+pub(crate) const SUBAGENT_HISTORY_BUDGET_BYTES: usize = 500_000;
+
+/// Rough byte count of a provider message used for budget enforcement.
+/// Tool-use input is serialized to estimate JSON overhead. Tool results
+/// are counted by raw content length (the `truncate_tool_result` cap
+/// keeps each one ≤30KB so the figure stays tractable).
+pub(crate) fn estimate_provider_message_bytes(msg: &crate::provider::ProviderMessage) -> usize {
+    use crate::provider::ProviderContent;
+    msg.content
+        .iter()
+        .map(|c| match c {
+            ProviderContent::Text(t) => t.len(),
+            ProviderContent::ToolUse { name, input, .. } => {
+                name.len() + serde_json::to_string(input).map(|s| s.len()).unwrap_or(0)
+            }
+            ProviderContent::ToolResult { content, .. } => content.len(),
+        })
+        .sum::<usize>()
+        + 16
+}
+
+/// Drop oldest assistant/tool-result pairs (everything between the first
+/// user message and the most recent assistant turn) until the total byte
+/// estimate fits under `max_bytes`. The first user message — which holds
+/// the subagent's *task prompt* — is always preserved so the model never
+/// loses sight of what it was asked to do. Returns true when truncation
+/// occurred so callers can log / surface it. Mirrors opencode's
+/// `ForkContext.truncateForBudget` (packages/opencode/src/session/
+/// fork-context.ts:49-71) which uses the same oldest-first eviction
+/// strategy with a token-budget threshold.
+pub(crate) fn cap_messages_for_budget(
+    messages: &mut Vec<crate::provider::ProviderMessage>,
+    max_bytes: usize,
+) -> bool {
+    let total: usize = messages.iter().map(estimate_provider_message_bytes).sum();
+    if total <= max_bytes || messages.len() <= 1 {
+        return false;
+    }
+    // Walk from the second message forward, dropping pairs until we fit.
+    // Always keep messages[0] (the original task prompt) intact.
+    let mut running = total;
+    let mut drop_until: usize = 1;
+    while running > max_bytes && drop_until < messages.len() {
+        running -= estimate_provider_message_bytes(&messages[drop_until]);
+        drop_until += 1;
+    }
+    if drop_until > 1 {
+        // Drain[1..drop_until] but the very last assistant turn before
+        // the most recent user (tool_results) message must stay paired —
+        // Anthropic rejects a tool_result that doesn't immediately follow
+        // its tool_use. So if the eviction window ends mid-pair (last
+        // dropped is an assistant carrying tool_use), keep dropping
+        // forward through its matching user/tool_result message too.
+        if let Some(last_dropped) = messages.get(drop_until.saturating_sub(1))
+            && matches!(last_dropped.role, crate::provider::ProviderRole::Assistant)
+            && drop_until < messages.len()
+        {
+            drop_until += 1;
+        }
+        messages.drain(1..drop_until);
+        // Insert a marker so the model knows context was elided. Placed
+        // right after the prompt so it reads as "you asked X; some
+        // earlier work was dropped to fit the request budget; here are
+        // the recent results."
+        messages.insert(
+            1,
+            crate::provider::ProviderMessage {
+                role: crate::provider::ProviderRole::Assistant,
+                content: vec![crate::provider::ProviderContent::Text(
+                    "[earlier subagent turns elided to fit the request budget — \
+                     continuing from the most recent results]"
+                        .to_owned(),
+                )],
+            },
+        );
+        true
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -111,6 +199,153 @@ mod truncate_tests {
         assert!(out.starts_with("HEAD"));
         assert!(out.ends_with("TAIL"));
         assert!(out.contains("bytes omitted"));
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+    use crate::provider::{ProviderContent, ProviderMessage, ProviderRole};
+
+    fn user_text(s: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::User,
+            content: vec![ProviderContent::Text(s.to_owned())],
+        }
+    }
+    fn assistant_text(s: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::Assistant,
+            content: vec![ProviderContent::Text(s.to_owned())],
+        }
+    }
+    fn assistant_tool_use(id: &str, name: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::Assistant,
+            content: vec![ProviderContent::ToolUse {
+                id: id.to_owned(),
+                name: name.to_owned(),
+                input: serde_json::json!({"path": "x"}),
+            }],
+        }
+    }
+    fn user_tool_result(id: &str, content: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::User,
+            content: vec![ProviderContent::ToolResult {
+                tool_use_id: id.to_owned(),
+                content: content.to_owned(),
+                is_error: false,
+            }],
+        }
+    }
+
+    // Normal: under-budget messages pass through unchanged.
+    #[test]
+    fn cap_messages_under_budget_passes_through_normal() {
+        let mut msgs = vec![user_text("hi"), assistant_text("hello"), user_text("ok")];
+        let elided = cap_messages_for_budget(&mut msgs, 1_000_000);
+        assert!(!elided);
+        assert_eq!(msgs.len(), 3);
+    }
+
+    // Robust: empty / single-message lists never truncate.
+    #[test]
+    fn cap_messages_single_message_no_op_robust() {
+        let mut msgs = vec![user_text("just one")];
+        let elided = cap_messages_for_budget(&mut msgs, 0);
+        assert!(!elided);
+        assert_eq!(msgs.len(), 1);
+    }
+
+    // Normal: oversized middle is dropped, prompt + tail are preserved.
+    #[test]
+    fn cap_messages_drops_oldest_pairs_keeps_prompt_and_tail_normal() {
+        let big = "x".repeat(20_000);
+        let mut msgs = vec![
+            user_text("PROMPT"),
+            assistant_tool_use("t1", "Read"),
+            user_tool_result("t1", &big),
+            assistant_tool_use("t2", "Read"),
+            user_tool_result("t2", &big),
+            assistant_tool_use("t3", "Read"),
+            user_tool_result("t3", &big),
+            assistant_text("recent assistant turn"),
+        ];
+        let elided = cap_messages_for_budget(&mut msgs, 25_000);
+        assert!(elided, "should have truncated");
+        // First message is the original prompt, intact.
+        match &msgs[0].content[0] {
+            ProviderContent::Text(t) => assert_eq!(t, "PROMPT"),
+            _ => panic!("expected prompt preserved"),
+        }
+        // Last message stays intact (most recent assistant turn).
+        match msgs.last().unwrap().content[0] {
+            ProviderContent::Text(ref t) => assert_eq!(t, "recent assistant turn"),
+            _ => panic!("expected tail preserved"),
+        }
+    }
+
+    // Normal: a marker message is inserted right after the prompt so the
+    // model sees that some context was elided.
+    #[test]
+    fn cap_messages_inserts_truncation_marker_normal() {
+        let big = "x".repeat(20_000);
+        let mut msgs = vec![
+            user_text("PROMPT"),
+            assistant_tool_use("t1", "Read"),
+            user_tool_result("t1", &big),
+            assistant_text("recent"),
+        ];
+        cap_messages_for_budget(&mut msgs, 5_000);
+        // Marker lands at index 1.
+        match &msgs[1].content[0] {
+            ProviderContent::Text(t) => assert!(t.contains("elided")),
+            _ => panic!("expected marker text"),
+        }
+        assert!(matches!(msgs[1].role, ProviderRole::Assistant));
+    }
+
+    // Robust: when truncation evicts an assistant tool_use, its matching
+    // tool_result must also drop. Otherwise Anthropic's API rejects the
+    // turn ("tool_result without tool_use").
+    #[test]
+    fn cap_messages_drops_orphaned_tool_result_robust() {
+        let big = "x".repeat(50_000);
+        let mut msgs = vec![
+            user_text("PROMPT"),
+            assistant_tool_use("t1", "Read"),
+            user_tool_result("t1", &big),
+            assistant_text("recent"),
+        ];
+        cap_messages_for_budget(&mut msgs, 1_000);
+        // No bare ToolResult should survive — every retained ToolResult
+        // must be preceded by its tool_use, but here both tool messages
+        // were evicted as a pair.
+        let has_orphan_tool_result = msgs.iter().any(|m| {
+            m.content
+                .iter()
+                .any(|c| matches!(c, ProviderContent::ToolResult { .. }))
+        });
+        assert!(!has_orphan_tool_result, "tool_result left without its tool_use");
+    }
+
+    // Normal: estimate function counts text bytes, tool_use name+JSON
+    // length, and tool_result content length.
+    #[test]
+    fn estimate_provider_message_bytes_counts_each_variant_normal() {
+        let t = estimate_provider_message_bytes(&user_text("abcde"));
+        assert!(t >= 5 + 16, "got {t}"); // 5 chars + 16 byte overhead floor
+        let tu = estimate_provider_message_bytes(&assistant_tool_use("id", "Read"));
+        assert!(tu >= 4); // at least name length
+        let tr = estimate_provider_message_bytes(&user_tool_result("id", "x".repeat(100).as_str()));
+        assert!(tr >= 100);
+    }
+
+    // Normal: budget constant is the documented 500KB.
+    #[test]
+    fn subagent_history_budget_constant_normal() {
+        assert_eq!(SUBAGENT_HISTORY_BUDGET_BYTES, 500_000);
     }
 }
 

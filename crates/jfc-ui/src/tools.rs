@@ -1600,6 +1600,25 @@ pub async fn execute_task(
             options = options.system(sp.clone());
         }
 
+        // Cap the running history before each request. Without this, a
+        // research subagent that calls `Read` on dozens of files across
+        // many turns can balloon past the model's context window —
+        // exactly the 8.85M-token Bedrock 400 surfaced as
+        // `litellm.ContextWindowExceededError`. The cap drops oldest
+        // assistant/tool-result pairs and keeps the original prompt.
+        let elided = crate::stream::cap_messages_for_budget(
+            &mut conversation,
+            crate::stream::SUBAGENT_HISTORY_BUDGET_BYTES,
+        );
+        if elided {
+            tracing::info!(
+                target: "jfc::tools",
+                task_id = ?task_id,
+                turn,
+                "subagent history elided to fit budget"
+            );
+        }
+
         let stream = match provider.stream(conversation.clone(), &options).await {
             Ok(s) => s,
             Err(e) => return ExecutionResult::failure(format!("Subagent stream error: {e}")),
@@ -1721,9 +1740,13 @@ pub async fn execute_task(
             let input = ToolInput::from_value(&name, parsed);
             let result = execute_tool(kind, input, cwd.clone(), None, None, None).await;
             let is_error = result.is_error();
+            // Cap each tool result so a single Read on a multi-MB file
+            // can't push the running conversation past Bedrock's 1M
+            // limit on its own. Mirrors the parent stream loop in
+            // `stream::stream_response`.
             tool_results.push(ProviderContent::ToolResult {
                 tool_use_id: id.clone(),
-                content: result.output,
+                content: crate::stream::truncate_tool_result(&result.output),
                 is_error,
             });
         }
