@@ -24,6 +24,110 @@
 
 use std::time::Duration;
 
+/// Pre-computed status row split into the four logical pieces the
+/// renderer needs to color independently. The shimmer animation only
+/// applies to the verb segment, so we hand it back separately rather
+/// than baking the full string and asking the renderer to re-parse it.
+///
+/// Mirrors v126's `<GlimmerMessage>` decomposition (cli.js around
+/// 322930 — Spinner/GlimmerMessage.tsx) where the message text is
+/// re-rendered per-grapheme so a sweep can light up ±1 cells.
+pub struct StatusSegments {
+    /// Spinner glyph (e.g. `*`) — accent color, no shimmer.
+    pub glyph: &'static str,
+    /// Verb root (e.g. `Fermenting`) — accent base, shimmer overlay.
+    pub verb: &'static str,
+    /// Trailing parenthesised body (e.g. `(5m 10s · ↓ 14.6k tokens)`).
+    /// Rendered in muted color, no shimmer — it's metadata, not the
+    /// active label, so animating it would compete with the verb for
+    /// the user's eye.
+    pub body: String,
+}
+
+/// Whether all UI animations should flatten to static colors. Honored by
+/// every shimmer/pulse/sweep helper in this module so a single
+/// `JFC_REDUCED_MOTION=1` flips the whole UI to a still image. Mirrors
+/// v126's `reducedMotion` prop threaded through every animated
+/// component (cli.js around `useReducedMotion`). The env var is read
+/// once per call rather than cached so toggling it mid-session via a
+/// terminal restart works without a binary rebuild.
+pub fn reduced_motion() -> bool {
+    matches!(
+        std::env::var("JFC_REDUCED_MOTION").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
+}
+
+/// Linear-interpolate between two RGB triples with `t ∈ [0, 1]`.
+/// Mirrors v126's `interpolateColor` (Spinner/utils.ts:14). Used by
+/// the shimmer pass to blend the verb base color toward the accent
+/// at the cells covered by the glimmer index, so the sweep reads as
+/// a smooth highlight rather than a hard color flip.
+pub fn interpolate_rgb(c1: (u8, u8, u8), c2: (u8, u8, u8), t: f32) -> (u8, u8, u8) {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |a: u8, b: u8| -> u8 {
+        let af = a as f32;
+        let bf = b as f32;
+        (af + (bf - af) * t).round().clamp(0.0, 255.0) as u8
+    };
+    (lerp(c1.0, c2.0), lerp(c1.1, c2.1), lerp(c1.2, c2.2))
+}
+
+/// HSL hue (0..360) → RGB. Mirrors v126's `hueToRgb` in
+/// Spinner/utils.ts:32. Used for rainbow gradient text where each
+/// char gets `hueToRgb((phase + i * step) % 360)` so the colors sweep
+/// along the text on each animation frame. Saturation 0.7 / lightness
+/// 0.6 match v126's voice-mode waveform parameters — bright enough
+/// to read as colorful, muted enough not to clash with surrounding
+/// muted prose.
+pub fn hue_to_rgb(hue: f32) -> (u8, u8, u8) {
+    let h = ((hue % 360.0) + 360.0) % 360.0;
+    let s = 0.7_f32;
+    let l = 0.6_f32;
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let x = c * (1.0 - (((h / 60.0) % 2.0) - 1.0).abs());
+    let m = l - c / 2.0;
+    let (r, g, b) = if h < 60.0 {
+        (c, x, 0.0)
+    } else if h < 120.0 {
+        (x, c, 0.0)
+    } else if h < 180.0 {
+        (0.0, c, x)
+    } else if h < 240.0 {
+        (0.0, x, c)
+    } else if h < 300.0 {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+    (
+        ((r + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+        ((g + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+        ((b + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+    )
+}
+
+/// Compute the current glimmer-sweep index for a verb of `verb_width`
+/// cells. The index sweeps from `-10` to `verb_width + 10` over time
+/// — chars within ±1 of the index get the shimmer color, everything
+/// else stays at the base. The 10-cell pre/post overshoot is what
+/// makes the highlight slide *into* and *out of* the verb cleanly
+/// instead of teleporting at the edges.
+///
+/// `tick_ms` controls cycle speed. v126 uses 50ms during `requesting`
+/// (faster, more attention-grabbing) and 200ms during `tool-use`
+/// (calmer pulse). We mirror that — the renderer picks 50ms while
+/// streaming, 200ms while idle.
+pub fn glimmer_index(elapsed: Duration, verb_width: usize, tick_ms: u64) -> i32 {
+    if verb_width == 0 || tick_ms == 0 {
+        return -100;
+    }
+    let cycle_position = (elapsed.as_millis() / tick_ms as u128) as i64;
+    let cycle_length = verb_width as i64 + 20;
+    let pos = (cycle_position % cycle_length) - 10;
+    pos as i32
+}
+
 /// 6-frame spinner cycle. Matches v126's `nAH()` default (cli.js:170248).
 pub const FRAMES: &[&str] = &["·", "✢", "*", "✶", "✻", "✽"];
 
@@ -162,9 +266,23 @@ pub const TIPS: &[&str] = &[
     "/auto-mode on enables the LLM tool classifier",
 ];
 
-pub fn tip_for(elapsed: Duration) -> &'static str {
+/// Same as `tip_for_with_state(elapsed, false)` but skips popup-related tips when no popup is
+/// open. The "Press Esc to dismiss popups" tip used to surface even
+/// when nothing was dismissable, which read as a fake instruction —
+/// the user would scan the screen for a popup that didn't exist.
+pub fn tip_for_with_state(elapsed: Duration, any_popup_open: bool) -> &'static str {
+    // Build the visible tip set on demand. Tips containing "Esc"
+    // (popup-dismissal hints) are filtered out when no popup is open.
+    let visible: Vec<&'static str> = TIPS
+        .iter()
+        .copied()
+        .filter(|t| any_popup_open || !t.contains("Esc"))
+        .collect();
+    if visible.is_empty() {
+        return TIPS[0];
+    }
     let bucket = (elapsed.as_secs() / 10) as usize;
-    TIPS[bucket % TIPS.len()]
+    visible[bucket % visible.len()]
 }
 
 /// Pick a past-tense verb for the post-turn duration footer. Mirrors v126
@@ -226,6 +344,62 @@ pub enum ThinkingStatus {
 /// `thinking` overrides `time_since_last_token`'s stall messages while
 /// the model is actively thinking, and shows a `thought for Ns` chip
 /// once thinking has ended.
+/// Decomposed form of `format_status` — same inputs, but returns the
+/// glyph / verb / parens-body separately so the renderer can shimmer
+/// just the verb without re-parsing a packed string.
+pub fn status_segments(
+    tick: usize,
+    elapsed: Duration,
+    output_tokens: u64,
+    time_since_last_token: Duration,
+    thinking: Option<ThinkingStatus>,
+) -> StatusSegments {
+    let mut parts: Vec<String> = vec![fmt_elapsed(elapsed)];
+    if output_tokens > 0 {
+        parts.push(format!("↓ {} tokens", fmt_tokens(output_tokens)));
+        let elapsed_secs = elapsed.as_secs_f64();
+        if elapsed_secs >= 2.0 {
+            let rate = output_tokens as f64 / elapsed_secs;
+            if rate > 0.5 {
+                parts.push(format!("{:.0} tok/s", rate));
+            }
+        }
+    }
+    match thinking {
+        Some(ThinkingStatus::Live) => {
+            // Reuse the main spinner's star cycle (`· ✢ * ✶ ✻ ✽`) for
+            // the live-thinking glyph too instead of the braille
+            // dots. The user said the star pulse is what reads as
+            // "Claude" to them; mixing in braille split the visual
+            // language. Single source of truth, single glyph family.
+            let glyph = frame_for(tick + 3);
+            let phase = match elapsed.as_secs() {
+                0..=11 => "planning",
+                12..=29 => "considering",
+                _ => "drafting",
+            };
+            parts.push(format!("thinking {glyph} {phase}"));
+        }
+        Some(ThinkingStatus::Done(d)) => {
+            let secs = d.as_secs().max(1);
+            parts.push(format!("thought for {secs}s"));
+            if let Some(s) = stall_status(time_since_last_token) {
+                parts.push(s.to_string());
+            }
+        }
+        None => {
+            if let Some(s) = stall_status(time_since_last_token) {
+                parts.push(s.to_string());
+            }
+        }
+    }
+    StatusSegments {
+        glyph: frame_for(tick),
+        verb: verb_for(elapsed),
+        body: format!("({})", parts.join(" · ")),
+    }
+}
+
 pub fn format_status(
     tick: usize,
     elapsed: Duration,
@@ -256,14 +430,11 @@ pub fn format_status(
     // when the post-thinking text stream goes quiet for >=15s.
     match thinking {
         Some(ThinkingStatus::Live) => {
-            // Animated braille glyph rotates with the wall-clock
-            // tick so the live thinking row reads as alive rather
-            // than frozen. Phase verb shifts with elapsed: planning
-            // → considering → drafting. v126 cli.js:323158 uses the
-            // same braille set; we feed it the spinner_frame index.
-            const FRAMES: &[&str] =
-                &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-            let glyph = FRAMES[tick % FRAMES.len()];
+            // Reuse the star cycle (`· ✢ * ✶ ✻ ✽`) here too — keeps
+            // the live-thinking row in the same visual language as
+            // the main spinner glyph instead of mixing in braille
+            // dots that read as a separate animation system.
+            let glyph = frame_for(tick + 3);
             let phase = match elapsed.as_secs() {
                 0..=11 => "planning",
                 12..=29 => "considering",

@@ -1428,7 +1428,24 @@ pub async fn execute_skill(name: &str, args: Option<&str>) -> ExecutionResult {
 /// Cwd-parameterized form used by tests so skill discovery is hermetic.
 async fn execute_skill_in(cwd: &Path, name: &str, args: Option<&str>) -> ExecutionResult {
     let skills = crate::agents::load_skills(cwd);
-    match crate::agents::find_skill_by_name(&skills, name) {
+    // Be permissive with what the model passes in. v126 lets the model
+    // call a skill by its name (`do-178b`), but in practice the model
+    // sometimes passes the inner-file path it sees in the listing
+    // (`do-178b/SKILL`) or the full `.md` filename. Strip the suffix
+    // and any "/SKILL" tail before lookup so a small naming wobble
+    // doesn't return Unknown.
+    let normalized = name
+        .trim()
+        .trim_end_matches(".md")
+        .trim_end_matches("/SKILL")
+        .trim_end_matches("/Skill")
+        .trim_end_matches("/skill")
+        .trim_end_matches('/');
+    let candidates: [&str; 2] = [normalized, name];
+    let found = candidates
+        .iter()
+        .find_map(|c| crate::agents::find_skill_by_name(&skills, c));
+    match found {
         Some(skill) => {
             let body = match args.filter(|s| !s.is_empty()) {
                 Some(a) => format!("{}\n\n# Args\n{}", skill.body, a),
@@ -1436,7 +1453,19 @@ async fn execute_skill_in(cwd: &Path, name: &str, args: Option<&str>) -> Executi
             };
             ExecutionResult::success(body)
         }
-        None => ExecutionResult::failure(format!("Unknown skill: {name}")),
+        None => {
+            // Surface the available skills in the error so the model
+            // can self-correct without having to ask the user. The
+            // previous bare "Unknown skill: do-178b" gave it nothing
+            // to recover with.
+            let available: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+            let suffix = if available.is_empty() {
+                String::from(" (no skills installed)")
+            } else {
+                format!(". Available: {}", available.join(", "))
+            };
+            ExecutionResult::failure(format!("Unknown skill: {name}{suffix}"))
+        }
     }
 }
 

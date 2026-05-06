@@ -283,6 +283,12 @@ pub struct ToolCall {
 pub enum TaskLifecycle {
     Pending,
     Running,
+    /// Teammate finished its turn but is still alive — waiting for the next
+    /// inbound message before it picks up again. Distinct from Running so
+    /// the task panel can stop its "Receiving output…" spinner without
+    /// having to mark the task terminal (the agent could resume on the
+    /// next SendMessage).
+    Idle,
     Completed,
     Failed,
     Cancelled,
@@ -293,6 +299,7 @@ impl TaskLifecycle {
         match self {
             Self::Pending => "pending",
             Self::Running => "running",
+            Self::Idle => "idle",
             Self::Completed => "completed",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
@@ -301,6 +308,13 @@ impl TaskLifecycle {
 
     pub fn is_terminal(self) -> bool {
         matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+    }
+
+    /// Counts as "alive" for fan-out / agent-count purposes. Running and
+    /// Idle teammates both still belong on the agent fan even though
+    /// only Running ones are actively producing output.
+    pub fn is_alive(self) -> bool {
+        matches!(self, Self::Pending | Self::Running | Self::Idle)
     }
 }
 

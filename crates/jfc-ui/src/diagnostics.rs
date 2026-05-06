@@ -101,6 +101,82 @@ pub fn unacknowledged<'a>(
         .collect()
 }
 
+/// Global snapshot of the most-recent diagnostics set. Updated by the
+/// `DiagnosticsUpdated` handler in main.rs; read by `stream_response`
+/// to inject the current diagnostic state into the system prompt so
+/// the model can act on errors/warnings without the user having to
+/// paste them in. Locking is cheap because writes happen at most once
+/// per cargo-check refresh cycle (seconds, not milliseconds).
+static GLOBAL_DIAGNOSTICS: std::sync::RwLock<Vec<DiagnosticEntry>> =
+    std::sync::RwLock::new(Vec::new());
+
+pub fn set_global_snapshot(entries: Vec<DiagnosticEntry>) {
+    if let Ok(mut guard) = GLOBAL_DIAGNOSTICS.write() {
+        *guard = entries;
+    }
+}
+
+pub fn global_snapshot() -> Vec<DiagnosticEntry> {
+    GLOBAL_DIAGNOSTICS
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default()
+}
+
+/// Render the current diagnostics set as a system-prompt block the
+/// model can read. Returns `None` when there's nothing to report so
+/// the caller can skip appending an empty section. Cap the per-file
+/// list at 50 entries and the total bytes at ~6KB so a runaway cargo
+/// check (hundreds of warnings) doesn't blow out the prompt cache.
+pub fn render_for_prompt(entries: &[DiagnosticEntry]) -> Option<String> {
+    if entries.is_empty() {
+        return None;
+    }
+    const MAX_PER_FILE: usize = 20;
+    const MAX_BYTES: usize = 6_000;
+
+    // Group by file in first-seen order for stable output.
+    let mut groups: Vec<(String, Vec<&DiagnosticEntry>)> = Vec::new();
+    for entry in entries {
+        if let Some(g) = groups.iter_mut().find(|(f, _)| f == &entry.file) {
+            g.1.push(entry);
+        } else {
+            groups.push((entry.file.clone(), vec![entry]));
+        }
+    }
+
+    let total = entries.len();
+    let file_count = groups.len();
+    let errors = entries.iter().filter(|e| matches!(e.severity, Severity::Error)).count();
+    let warnings = entries.iter().filter(|e| matches!(e.severity, Severity::Warning)).count();
+
+    let mut out = String::new();
+    out.push_str("\n\n## Current diagnostics\n\n");
+    out.push_str(&format!(
+        "The build reports {total} diagnostic(s) across {file_count} file(s) ({errors} error(s), {warnings} warning(s)). \
+         The user can see these in the editor and may ask you to fix them.\n\n"
+    ));
+    'groups: for (file, items) in &groups {
+        out.push_str(&format!("- {file}\n"));
+        for entry in items.iter().take(MAX_PER_FILE) {
+            out.push_str("  ");
+            out.push_str(&format_entry(entry));
+            out.push('\n');
+            if out.len() >= MAX_BYTES {
+                out.push_str("  … (truncated)\n");
+                break 'groups;
+            }
+        }
+        if items.len() > MAX_PER_FILE {
+            out.push_str(&format!(
+                "  … and {} more in this file\n",
+                items.len() - MAX_PER_FILE
+            ));
+        }
+    }
+    Some(out)
+}
+
 /// Format one expanded line per diagnostic, matching cli.js:338053:
 /// `  <symbol> [Line A:B] <message> [code] (source)`. The two-space
 /// indent groups them under a bolded file header rendered separately.

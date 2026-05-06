@@ -80,8 +80,17 @@ pub enum SerializedPart {
         status: String,
         #[serde(default)]
         is_collapsed: bool,
-        input: SerializedToolInput,
-        output: SerializedToolOutput,
+        /// Optional + serde(default): old session files (pre-tool-input
+        /// schema landed) wrote tool entries without an `input` field.
+        /// The deserializer used to fail the entire session if any
+        /// single Tool entry was missing this — surfacing as
+        /// "missing field `input`" warnings in the log and the picker
+        /// silently dropping that session. Now we tolerate the gap and
+        /// reconstruct an unknown-input stub at message-rebuild time.
+        #[serde(default)]
+        input: Option<SerializedToolInput>,
+        #[serde(default)]
+        output: Option<SerializedToolOutput>,
     },
     TaskStatus {
         task_id: String,
@@ -444,28 +453,57 @@ pub fn load_session_with_model(session_id: &str) -> Option<(Vec<ChatMessage>, Op
     Some((messages, model))
 }
 
-/// Load session metadata without full message deserialization
+/// Load session metadata without full message deserialization. The
+/// picker only needs the session header fields plus a message count —
+/// it never inspects tool inputs or message parts. Previously this
+/// went through the full `SerializedSession` deserializer, so a single
+/// schema drift in any message (e.g. an old `Tool { input: ... }`
+/// entry written before a field was added) failed the whole session
+/// and the picker dropped it from the sidebar. Now we deserialize a
+/// lightweight `SessionMetaShallow` that treats `messages` as opaque
+/// JSON values; the Tool-input shape never gates picker visibility.
 pub fn load_session_metadata(session_id: &str) -> Option<SessionMetadata> {
     let path = sessions_dir().join(format!("{session_id}.json"));
     let content = std::fs::read_to_string(&path).ok()?;
-    let session: SerializedSession = match serde_json::from_str(&content) {
+    let shallow: SessionMetaShallow = match serde_json::from_str(&content) {
         Ok(s) => s,
         Err(e) => {
             warn!(target: "jfc::session", session_id, error = %e, "failed to parse session metadata");
             return None;
         }
     };
-    let message_count = session.messages.len();
+    let message_count = shallow.messages.len();
     debug!(target: "jfc::session", session_id, message_count, "loaded session metadata");
     Some(SessionMetadata {
-        id: session.id,
-        created_at: session.created_at,
-        updated_at: session.updated_at,
-        first_prompt: session.first_prompt,
-        cwd: session.cwd,
-        title: session.title,
+        id: shallow.id,
+        created_at: shallow.created_at,
+        updated_at: shallow.updated_at,
+        first_prompt: shallow.first_prompt,
+        cwd: shallow.cwd,
+        title: shallow.title,
         message_count,
     })
+}
+
+/// Shallow view used only for the picker. `messages` is parsed as
+/// opaque JSON values so a malformed message body never invalidates
+/// the whole header. Full-fidelity deserialization is reserved for
+/// the resume path (`load_session`) where missing fields would
+/// actually matter.
+#[derive(Deserialize)]
+struct SessionMetaShallow {
+    id: String,
+    created_at: String,
+    #[serde(default)]
+    updated_at: Option<String>,
+    #[serde(default)]
+    first_prompt: Option<String>,
+    #[serde(default)]
+    cwd: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    messages: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -761,8 +799,8 @@ fn serialize_part(part: &MessagePart) -> SerializedPart {
             kind: tc.kind.label().to_owned(),
             status: serialize_tool_status(tc.status),
             is_collapsed: tc.is_collapsed,
-            input: serialize_tool_input(&tc.input),
-            output: serialize_tool_output(&tc.output),
+            input: Some(serialize_tool_input(&tc.input)),
+            output: Some(serialize_tool_output(&tc.output)),
         },
         MessagePart::TaskStatus(ts) => SerializedPart::TaskStatus {
             task_id: ts.task_id.clone(),
@@ -791,6 +829,7 @@ fn serialize_task_lifecycle(status: TaskLifecycle) -> String {
     match status {
         TaskLifecycle::Pending => "pending".into(),
         TaskLifecycle::Running => "running".into(),
+        TaskLifecycle::Idle => "idle".into(),
         TaskLifecycle::Completed => "completed".into(),
         TaskLifecycle::Failed => "failed".into(),
         TaskLifecycle::Cancelled => "cancelled".into(),
@@ -915,7 +954,14 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             path: path.clone(),
         },
         ToolInput::TeamCreate { team_name, description } => SerializedToolInput::Generic {
-            summary: format!("TeamCreate: {team_name}"),
+            // Preserve the description in the summary so a resumed
+            // session shows what the team was created for, not just
+            // its name. Previously `description` was destructured but
+            // never used — silent data loss on resume.
+            summary: match description.as_deref().filter(|s| !s.is_empty()) {
+                Some(d) => format!("TeamCreate: {team_name} — {d}"),
+                None => format!("TeamCreate: {team_name}"),
+            },
         },
         ToolInput::TeamDelete => SerializedToolInput::Generic {
             summary: "TeamDelete".to_owned(),
@@ -1028,8 +1074,23 @@ fn deserialize_part(part: SerializedPart) -> MessagePart {
             id,
             kind: ToolKind::from_name(&kind),
             status: deserialize_tool_status(&status),
-            input: deserialize_tool_input(input),
-            output: deserialize_tool_output(output),
+            // Tolerate missing input/output on legacy session files.
+            // The unknown-input fallback (a no-op Bash entry) lets the
+            // resumed transcript render the tool row with whatever
+            // chrome we have (id, kind, status) without panicking on a
+            // missing field that older writers never produced.
+            input: match input {
+                Some(i) => deserialize_tool_input(i),
+                None => ToolInput::Bash {
+                    command: String::new(),
+                    timeout: None,
+                    workdir: None,
+                },
+            },
+            output: match output {
+                Some(o) => deserialize_tool_output(o),
+                None => ToolOutput::Empty,
+            },
             is_collapsed,
             // Loaded sessions always come back in preview mode — the user
             // can re-expand whatever they need with Ctrl+O. Storing the

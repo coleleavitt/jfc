@@ -156,15 +156,65 @@ pub fn load_skills(project_root: &Path) -> Vec<Skill> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("md") {
+            // Claude Code's skill convention has two shapes:
+            //   1. Flat: `~/.claude/skills/<name>.md`
+            //   2. Directory: `~/.claude/skills/<name>/SKILL.md` —
+            //      lets a skill ship its own assets alongside the body.
+            // The loader used to only handle (1) and silently skipped (2),
+            // so a freshly-installed `do-178b/SKILL.md` would not register
+            // and `Skill { name: "do-178b" }` returned `Unknown skill`.
+            // Now we resolve directory entries by reading their inner
+            // `SKILL.md` (or `Skill.md` / `skill.md`) and treat the
+            // *directory* name as the skill name regardless of what the
+            // SKILL file's stem is, so the user's invocation matches.
+            let resolved: Option<(PathBuf, String)> = if path.is_dir() {
+                let dir_name = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default()
+                    .to_owned();
+                if dir_name.is_empty() {
+                    None
+                } else {
+                    ["SKILL.md", "Skill.md", "skill.md"]
+                        .iter()
+                        .map(|n| path.join(n))
+                        .find(|p| p.is_file())
+                        .map(|p| (p, dir_name))
+                }
+            } else if path.extension().and_then(|s| s.to_str()) == Some("md") {
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unnamed")
+                    .to_owned();
+                Some((path.clone(), stem))
+            } else {
+                None
+            };
+            let Some((md_path, fallback_name)) = resolved else {
                 continue;
+            };
+            let Ok(raw) = std::fs::read_to_string(&md_path) else {
+                continue;
+            };
+            let Some(mut skill) = parse_skill(&md_path, &raw) else {
+                continue;
+            };
+            // For directory-based skills, the inner file is named
+            // `SKILL.md` so `parse_skill`'s `file_stem()` would return
+            // "SKILL" — useless as a skill name. Override with the
+            // directory name unless the SKILL frontmatter explicitly
+            // set a `name:` (in which case parse_skill already used it
+            // and we don't second-guess).
+            let frontmatter_set_name = !skill.name.is_empty()
+                && skill.name != "unnamed"
+                && skill.name != "SKILL"
+                && skill.name != "Skill"
+                && skill.name != "skill";
+            if !frontmatter_set_name {
+                skill.name = fallback_name;
             }
-            let Ok(raw) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let Some(skill) = parse_skill(&path, &raw) else {
-                continue;
-            };
             // Project entries arrive after user, so retain wins overrides
             // by removing the prior entry with the same name first.
             out.retain(|s| s.name != skill.name);
@@ -548,6 +598,42 @@ mod tests {
         assert_eq!(s.name, "snake");
         assert_eq!(s.description, None);
         assert_eq!(s.body, "Just a body");
+    }
+
+    // Robust: directory-based skills resolve via `<dir>/SKILL.md` and use
+    // the directory name as the skill name. Regression for the
+    // user-visible "Unknown skill: do-178b" failure when the loader only
+    // walked flat `.md` files.
+    #[test]
+    fn load_skills_finds_directory_based_skill_robust() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_skill_dir_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let skills_dir = tmp.join(".claude/skills");
+        let do178b_dir = skills_dir.join("do-178b");
+        std::fs::create_dir_all(&do178b_dir).unwrap();
+        std::fs::write(
+            do178b_dir.join("SKILL.md"),
+            "---\ndescription: avionics certification reference\n---\n# DO-178B\n\nbody",
+        )
+        .unwrap();
+        let skills = load_skills(&tmp);
+        let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"do-178b"),
+            "expected `do-178b` in loaded skills, got {names:?}"
+        );
+        let s = skills.iter().find(|s| s.name == "do-178b").unwrap();
+        assert_eq!(
+            s.description.as_deref(),
+            Some("avionics certification reference")
+        );
+        assert!(s.body.contains("body"));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     // Normal: a well-formed agent file parses into an AgentDef.
