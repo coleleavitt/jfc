@@ -4043,3 +4043,1102 @@ mod path_color_tests {
         assert_eq!(path_color("CONFIG.TOML", theme), theme.text_secondary);
     }
 }
+
+// =====================================================================
+
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+
+    fn dummy_tool(input: ToolInput, output: ToolOutput, kind: ToolKind) -> ToolCall {
+        ToolCall {
+            id: "t-1".to_string(),
+            kind,
+            status: ToolStatus::Complete,
+            input,
+            output,
+            is_collapsed: false,
+            expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
+        }
+    }
+
+    // --- infer_lang_from_tool ----------------------------------------
+
+    #[test]
+    fn infer_lang_from_read_uses_path_extension_normal() {
+        let t = dummy_tool(
+            ToolInput::Read {
+                file_path: "src/main.rs".into(),
+                offset: None,
+                limit: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Read,
+        );
+        assert_eq!(infer_lang_from_tool(&t).as_deref(), Some("rs"));
+    }
+
+    #[test]
+    fn infer_lang_from_edit_uses_path_extension_normal() {
+        let t = dummy_tool(
+            ToolInput::Edit {
+                file_path: "src/lib.py".into(),
+                old_string: "".into(),
+                new_string: "".into(),
+                replacement: ReplacementMode::FirstOnly,
+            },
+            ToolOutput::Empty,
+            ToolKind::Edit,
+        );
+        assert_eq!(infer_lang_from_tool(&t).as_deref(), Some("py"));
+    }
+
+    #[test]
+    fn infer_lang_from_write_uses_path_extension_normal() {
+        let t = dummy_tool(
+            ToolInput::Write {
+                file_path: "config.toml".into(),
+                content: "".into(),
+            },
+            ToolOutput::Empty,
+            ToolKind::Write,
+        );
+        assert_eq!(infer_lang_from_tool(&t).as_deref(), Some("toml"));
+    }
+
+    #[test]
+    fn infer_lang_from_bash_input_delegates_robust() {
+        // Bash-tool path delegates to infer_lang_from_bash, which sniffs
+        // `cat path/file.ext`.
+        let t = dummy_tool(
+            ToolInput::Bash {
+                command: "cat README.md".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        assert_eq!(infer_lang_from_tool(&t).as_deref(), Some("md"));
+    }
+
+    #[test]
+    fn infer_lang_from_unknown_kind_returns_none_robust() {
+        let t = dummy_tool(
+            ToolInput::TeamDelete,
+            ToolOutput::Empty,
+            ToolKind::TeamDelete,
+        );
+        assert_eq!(infer_lang_from_tool(&t), None);
+    }
+
+    // --- lang_from_path ----------------------------------------------
+
+    #[test]
+    fn lang_from_path_extension_wins_normal() {
+        assert_eq!(lang_from_path("src/main.rs").as_deref(), Some("rs"));
+        assert_eq!(lang_from_path("foo.JS").as_deref(), Some("JS"));
+    }
+
+    #[test]
+    fn lang_from_path_no_extension_falls_back_to_filename_robust() {
+        // No extension → use the filename (e.g. `Makefile` → `makefile`
+        // when downstream lowercases it, but lang_from_path returns the
+        // raw filename).
+        assert_eq!(
+            lang_from_path("Makefile").as_deref(),
+            Some("Makefile")
+        );
+    }
+
+    #[test]
+    fn lang_from_path_empty_returns_none_robust() {
+        assert_eq!(lang_from_path(""), None);
+    }
+
+    // --- infer_lang_from_bash ----------------------------------------
+
+    #[test]
+    fn infer_lang_from_bash_cat_normal() {
+        assert_eq!(
+            infer_lang_from_bash("cat src/main.rs").as_deref(),
+            Some("rs")
+        );
+    }
+
+    #[test]
+    fn infer_lang_from_bash_head_with_flags_normal() {
+        // Skips `-50` (numeric arg) and picks `file.py`.
+        assert_eq!(
+            infer_lang_from_bash("head -50 file.py").as_deref(),
+            Some("py")
+        );
+    }
+
+    #[test]
+    fn infer_lang_from_bash_pipeline_takes_first_robust() {
+        // `cat foo.rs | less` → primary segment is `cat foo.rs`.
+        assert_eq!(
+            infer_lang_from_bash("cat foo.rs | less").as_deref(),
+            Some("rs")
+        );
+    }
+
+    #[test]
+    fn infer_lang_from_bash_command_substitution_rejected_robust() {
+        // `$(...)` patterns disqualify — not safe to sniff.
+        assert_eq!(infer_lang_from_bash("cat $(echo foo.rs)"), None);
+    }
+
+    #[test]
+    fn infer_lang_from_bash_non_cat_verb_rejected_robust() {
+        // Only `cat`/`head`/`tail`/`bat`/`less`/`more` qualify.
+        assert_eq!(infer_lang_from_bash("echo hello.rs"), None);
+    }
+
+    // --- path_color --------------------------------------------------
+
+    #[test]
+    fn path_color_code_extension_uses_accent_normal() {
+        let t = Theme::dark();
+        assert_eq!(path_color("src/main.rs", t), t.accent);
+        assert_eq!(path_color("app.py", t), t.accent);
+        assert_eq!(path_color("foo.go", t), t.accent);
+    }
+
+    #[test]
+    fn path_color_config_uses_text_secondary_normal() {
+        let t = Theme::dark();
+        assert_eq!(path_color("Cargo.toml", t), t.text_secondary);
+        assert_eq!(path_color("settings.json", t), t.text_secondary);
+    }
+
+    #[test]
+    fn path_color_docs_use_text_primary_normal() {
+        let t = Theme::dark();
+        assert_eq!(path_color("README.md", t), t.text_primary);
+    }
+
+    #[test]
+    fn path_color_shell_uses_warning_robust() {
+        let t = Theme::dark();
+        assert_eq!(path_color("install.sh", t), t.warning);
+    }
+
+    #[test]
+    fn path_color_unknown_falls_back_to_muted_robust() {
+        let t = Theme::dark();
+        assert_eq!(path_color("data.bin", t), t.text_muted);
+        // No extension at all also goes to muted.
+        assert_eq!(path_color("Makefile", t), t.text_muted);
+    }
+
+    #[test]
+    fn path_color_uppercase_extension_normalized_robust() {
+        // ASCII-lowercased, so .RS / .Rs all hit the code branch.
+        let t = Theme::dark();
+        assert_eq!(path_color("FOO.RS", t), t.accent);
+    }
+
+    // --- looks_like_markdown -----------------------------------------
+
+    #[test]
+    fn looks_like_markdown_combines_signals_normal() {
+        // Headers + table + bold marker → score >= 4.
+        let s = "# Title\n\nSome **bold** text\n\n## Section\n";
+        // 2 headers (each +2) + bold (+1) = 5 → markdown.
+        assert!(looks_like_markdown(s));
+    }
+
+    #[test]
+    fn looks_like_markdown_pure_code_not_md_robust() {
+        // Python code with `#` comments doesn't trigger header signals.
+        let s = "# this is a comment\nprint('x')\nx = 1\ny = 2\n";
+        assert!(!looks_like_markdown(s));
+    }
+
+    #[test]
+    fn looks_like_markdown_first_2kb_only_robust() {
+        // Strong markdown signal in the prefix → triggers; rest can be huge.
+        let prefix = "# h1\n## h2\n### h3\n```rust\nlet x = 1;\n```\n";
+        let mut s = String::from(prefix);
+        s.push_str(&"x".repeat(10_000));
+        assert!(looks_like_markdown(&s));
+    }
+
+    #[test]
+    fn looks_like_markdown_empty_returns_false_robust() {
+        assert!(!looks_like_markdown(""));
+    }
+
+    // --- wrapped_line_count ------------------------------------------
+
+    #[test]
+    fn wrapped_line_count_short_one_line_normal() {
+        assert_eq!(wrapped_line_count("hello", 80), 1);
+    }
+
+    #[test]
+    fn wrapped_line_count_multi_line_normal() {
+        assert_eq!(wrapped_line_count("a\nb\nc", 80), 3);
+    }
+
+    #[test]
+    fn wrapped_line_count_wraps_normal() {
+        // 12 chars at width 5 = ceil(12/5) = 3.
+        assert_eq!(wrapped_line_count("abcdefghijkl", 5), 3);
+    }
+
+    #[test]
+    fn wrapped_line_count_zero_width_robust() {
+        // Zero width → fall back to text.lines().count().max(1).
+        assert_eq!(wrapped_line_count("a\nb", 0), 2);
+        assert_eq!(wrapped_line_count("", 0), 1);
+    }
+
+    #[test]
+    fn wrapped_line_count_empty_text_returns_zero_robust() {
+        // Empty text contributes 0 (the fold's `.max(...)` only kicks
+        // in if text is non-empty).
+        assert_eq!(wrapped_line_count("", 80), 0);
+    }
+
+    #[test]
+    fn wrapped_line_count_blank_line_counts_as_one_robust() {
+        // A truly blank logical line still rendered as one row.
+        assert_eq!(wrapped_line_count("\n", 80), 1);
+    }
+
+    // --- tool_content_height_with ------------------------------------
+
+    #[test]
+    fn tool_content_height_empty_zero_normal() {
+        assert_eq!(tool_content_height_with(&ToolOutput::Empty, 80, false), 0);
+    }
+
+    #[test]
+    fn tool_content_height_text_simple_normal() {
+        // A 3-line text: height = 3.
+        let out = ToolOutput::Text("a\nb\nc".to_string());
+        assert_eq!(tool_content_height_with(&out, 80, false), 3);
+    }
+
+    #[test]
+    fn tool_content_height_text_truncates_with_footer_robust() {
+        // > 80 lines → cap at 80 + 1 footer row.
+        let body: String = (0..150).map(|n| format!("line{n}\n")).collect();
+        let out = ToolOutput::Text(body);
+        let h = tool_content_height_with(&out, 80, false);
+        assert_eq!(h, 81, "expect 80 cap + 1 footer");
+    }
+
+    #[test]
+    fn tool_content_height_text_expanded_lifts_cap_robust() {
+        // expanded=true → cap rises to 500.
+        let body: String = (0..150).map(|n| format!("line{n}\n")).collect();
+        let out = ToolOutput::Text(body);
+        let h = tool_content_height_with(&out, 80, true);
+        assert_eq!(h, 150, "no truncation under expanded cap");
+    }
+
+    #[test]
+    fn tool_content_height_command_includes_exit_row_normal() {
+        let out = ToolOutput::Command {
+            stdout: "ok\n".to_string(),
+            stderr: String::new(),
+            exit_code: Some(0),
+        };
+        // 1 (exit) + 1 (stdout) = 2.
+        assert_eq!(tool_content_height_with(&out, 80, false), 2);
+    }
+
+    #[test]
+    fn tool_content_height_command_with_stderr_divider_robust() {
+        // Both streams present → +1 divider row between them.
+        let out = ToolOutput::Command {
+            stdout: "out".to_string(),
+            stderr: "err".to_string(),
+            exit_code: Some(1),
+        };
+        // exit (1) + stdout (1) + divider (1) + stderr (1) = 4.
+        assert_eq!(tool_content_height_with(&out, 80, false), 4);
+    }
+
+    #[test]
+    fn tool_content_height_filelist_caps_normal() {
+        let files: Vec<String> = (0..5).map(|n| format!("f{n}")).collect();
+        let out = ToolOutput::FileList(files);
+        assert_eq!(tool_content_height_with(&out, 80, false), 5);
+    }
+
+    #[test]
+    fn tool_content_height_filelist_truncates_with_footer_robust() {
+        // 25 files, cap=20 → 20 rows + 1 footer.
+        let files: Vec<String> = (0..25).map(|n| format!("f{n}")).collect();
+        let out = ToolOutput::FileList(files);
+        assert_eq!(tool_content_height_with(&out, 80, false), 21);
+    }
+
+    #[test]
+    fn tool_content_height_largetext_huge_collapses_to_one_robust() {
+        // Force `huge` by making line_count exceed COLLAPSE_LINES.
+        let lt = LargeText {
+            content: "x".to_string(),
+            line_count: LargeText::COLLAPSE_LINES + 10,
+            byte_count: 1,
+        };
+        let out = ToolOutput::LargeText(lt);
+        assert_eq!(tool_content_height_with(&out, 80, false), 1);
+    }
+
+    // --- tool_block_height -------------------------------------------
+
+    #[test]
+    fn tool_block_height_collapsed_is_one_normal() {
+        let mut t = dummy_tool(
+            ToolInput::Bash {
+                command: "ls".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Text("foo\nbar\nbaz".into()),
+            ToolKind::Bash,
+        );
+        t.is_collapsed = true;
+        assert_eq!(tool_block_height(&t, 80), 1);
+        // Public wrapper should match.
+        assert_eq!(tool_block_height_pub(&t, 80), 1);
+    }
+
+    #[test]
+    fn tool_block_height_includes_title_normal() {
+        // Empty output + 1-line bash → 1 (title) + 0 (cont) + 0 (body) = 1.
+        let t = dummy_tool(
+            ToolInput::Bash {
+                command: "ls".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        assert_eq!(tool_block_height(&t, 80), 1);
+    }
+
+    #[test]
+    fn tool_block_height_counts_continuation_lines_robust() {
+        // Multi-line bash → 1 (title) + N continuation rows.
+        let t = dummy_tool(
+            ToolInput::Bash {
+                command: "cat <<EOF\nfoo\nbar\nEOF".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        // 1 title + 3 cont rows + 0 body = 4.
+        assert_eq!(tool_block_height(&t, 80), 4);
+    }
+
+    // --- bash_continuation_lines -------------------------------------
+
+    #[test]
+    fn bash_continuation_lines_empty_for_single_line_normal() {
+        let t = dummy_tool(
+            ToolInput::Bash {
+                command: "echo hi".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        assert!(bash_continuation_lines(&t).is_empty());
+    }
+
+    #[test]
+    fn bash_continuation_lines_drops_first_line_normal() {
+        let t = dummy_tool(
+            ToolInput::Bash {
+                command: "first\nsecond\nthird".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        assert_eq!(
+            bash_continuation_lines(&t),
+            vec!["second".to_string(), "third".to_string()]
+        );
+    }
+
+    #[test]
+    fn bash_continuation_lines_non_bash_returns_empty_robust() {
+        let t = dummy_tool(
+            ToolInput::Read {
+                file_path: "foo.rs".into(),
+                offset: None,
+                limit: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Read,
+        );
+        assert!(bash_continuation_lines(&t).is_empty());
+    }
+
+    // --- wrap_styled_line --------------------------------------------
+
+    #[test]
+    fn wrap_styled_line_short_returns_unchanged_normal() {
+        let line = Line::from(vec![Span::raw("hello")]);
+        let wrapped = wrap_styled_line(&line, 80);
+        assert_eq!(wrapped.len(), 1);
+    }
+
+    #[test]
+    fn wrap_styled_line_breaks_long_normal() {
+        // 12 chars at width 5 → 3 lines.
+        let line = Line::from(vec![Span::raw("abcdefghijkl")]);
+        let wrapped = wrap_styled_line(&line, 5);
+        assert_eq!(wrapped.len(), 3);
+        let combined: String = wrapped
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert_eq!(combined, "abcdefghijkl");
+    }
+
+    #[test]
+    fn wrap_styled_line_zero_width_returns_unchanged_robust() {
+        // 0 width → return clone unchanged, don't infinite-loop.
+        let line = Line::from(vec![Span::raw("anything")]);
+        let wrapped = wrap_styled_line(&line, 0);
+        assert_eq!(wrapped.len(), 1);
+    }
+
+    #[test]
+    fn wrap_styled_line_preserves_styles_across_wraps_robust() {
+        // Two styled spans across a wrap boundary keep their styles.
+        let red = Style::default().fg(Color::Red);
+        let blue = Style::default().fg(Color::Blue);
+        let line = Line::from(vec![
+            Span::styled("redred", red),
+            Span::styled("blueblue", blue),
+        ]);
+        let wrapped = wrap_styled_line(&line, 4);
+        // 14 chars at width 4 = 4 lines.
+        assert_eq!(wrapped.len(), 4);
+    }
+
+    // --- sanitize_terminal_text --------------------------------------
+
+    #[test]
+    fn sanitize_keeps_visible_text_normal() {
+        assert_eq!(sanitize_terminal_text("hello world"), "hello world");
+    }
+
+    #[test]
+    fn sanitize_strips_csi_escape_normal() {
+        // \x1b[31m red CSI sequence — should be removed entirely.
+        let input = "\u{1b}[31mred\u{1b}[0m text";
+        assert_eq!(sanitize_terminal_text(input), "red text");
+    }
+
+    #[test]
+    fn sanitize_expands_tab_to_four_spaces_normal() {
+        assert_eq!(sanitize_terminal_text("a\tb"), "a    b");
+    }
+
+    #[test]
+    fn sanitize_keeps_newline_robust() {
+        assert_eq!(sanitize_terminal_text("a\nb"), "a\nb");
+    }
+
+    #[test]
+    fn sanitize_strips_osc_terminated_by_bel_robust() {
+        // OSC `\x1b]...\x07` sequence should be stripped.
+        let input = "\u{1b}]0;title\u{7}body";
+        assert_eq!(sanitize_terminal_text(input), "body");
+    }
+
+    #[test]
+    fn sanitize_drops_control_chars_robust() {
+        // Backspace (0x08) and other control chars vanish.
+        assert_eq!(sanitize_terminal_text("a\u{8}b"), "ab");
+    }
+
+    // --- tool_kind_color ---------------------------------------------
+
+    #[test]
+    fn tool_kind_color_distinct_per_family_normal() {
+        let t = Theme::dark();
+        // Read = blue, Write = amber, Edit = mint — all distinct.
+        let read_c = tool_kind_color(&ToolKind::Read, &t);
+        let write_c = tool_kind_color(&ToolKind::Write, &t);
+        let edit_c = tool_kind_color(&ToolKind::Edit, &t);
+        assert_ne!(read_c, write_c);
+        assert_ne!(write_c, edit_c);
+        assert_ne!(read_c, edit_c);
+    }
+
+    #[test]
+    fn tool_kind_color_grep_glob_search_share_lavender_normal() {
+        // Grep family shares the search/lavender color.
+        let t = Theme::dark();
+        assert_eq!(
+            tool_kind_color(&ToolKind::Grep, &t),
+            tool_kind_color(&ToolKind::Glob, &t)
+        );
+        assert_eq!(
+            tool_kind_color(&ToolKind::Grep, &t),
+            tool_kind_color(&ToolKind::Search, &t)
+        );
+    }
+
+    #[test]
+    fn tool_kind_color_generic_uses_secondary_robust() {
+        // Generic kinds fall back to text_secondary.
+        let t = Theme::dark();
+        assert_eq!(
+            tool_kind_color(&ToolKind::Generic("custom".into()), &t),
+            t.text_secondary
+        );
+    }
+
+    // --- is_groupable ------------------------------------------------
+
+    #[test]
+    fn is_groupable_search_kinds_normal() {
+        assert!(is_groupable(&ToolKind::Read));
+        assert!(is_groupable(&ToolKind::Glob));
+        assert!(is_groupable(&ToolKind::Grep));
+        assert!(is_groupable(&ToolKind::Search));
+    }
+
+    #[test]
+    fn is_groupable_destructive_kinds_robust() {
+        // Edit/Write/Bash never group — each call's behavior matters.
+        assert!(!is_groupable(&ToolKind::Edit));
+        assert!(!is_groupable(&ToolKind::Write));
+        assert!(!is_groupable(&ToolKind::Bash));
+        assert!(!is_groupable(&ToolKind::Generic("foo".into())));
+    }
+
+    // --- tool_status_icon_animated -----------------------------------
+
+    #[test]
+    fn tool_status_icon_animated_running_rotates_glyph_normal() {
+        // Running + frame=0 → first frame; frame=4 → second; frame=8 → third.
+        let t = Theme::dark();
+        let tool = dummy_tool(
+            ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        let mut tool = tool;
+        tool.status = ToolStatus::Running;
+        let (g0, _) = tool_status_icon_animated(&tool, &t, 0);
+        let (g4, _) = tool_status_icon_animated(&tool, &t, 4);
+        let (g8, _) = tool_status_icon_animated(&tool, &t, 8);
+        let (g12, _) = tool_status_icon_animated(&tool, &t, 12);
+        assert_eq!(g0, "✶");
+        assert_eq!(g4, "✷");
+        assert_eq!(g8, "✸");
+        assert_eq!(g12, "✹");
+    }
+
+    #[test]
+    fn tool_status_icon_animated_pending_alternates_normal() {
+        let t = Theme::dark();
+        let tool = ToolCall {
+            id: "p".into(),
+            kind: ToolKind::Bash,
+            status: ToolStatus::Pending,
+            input: ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            output: ToolOutput::Empty,
+            is_collapsed: false,
+            expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
+        };
+        let (g0, _) = tool_status_icon_animated(&tool, &t, 0);
+        let (g6, _) = tool_status_icon_animated(&tool, &t, 6);
+        // PENDING_FRAMES is &["○", "◌"] at frame/6 cadence.
+        assert_eq!(g0, "○");
+        assert_eq!(g6, "◌");
+    }
+
+    #[test]
+    fn tool_status_icon_animated_complete_static_robust() {
+        // Complete state always returns the static icon regardless of frame.
+        let t = Theme::dark();
+        let tool = ToolCall {
+            id: "c".into(),
+            kind: ToolKind::Bash,
+            status: ToolStatus::Complete,
+            input: ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            output: ToolOutput::Empty,
+            is_collapsed: false,
+            expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
+        };
+        let (g0, _) = tool_status_icon_animated(&tool, &t, 0);
+        let (g100, _) = tool_status_icon_animated(&tool, &t, 100);
+        assert_eq!(g0, "●");
+        assert_eq!(g100, "●");
+    }
+
+    #[test]
+    fn tool_status_icon_animated_failed_static_robust() {
+        let t = Theme::dark();
+        let tool = ToolCall {
+            id: "f".into(),
+            kind: ToolKind::Bash,
+            status: ToolStatus::Failed,
+            input: ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            output: ToolOutput::Empty,
+            is_collapsed: false,
+            expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
+        };
+        let (g, _) = tool_status_icon_animated(&tool, &t, 42);
+        assert_eq!(g, "✗");
+    }
+
+    // --- format_elapsed_badge ----------------------------------------
+
+    #[test]
+    fn format_elapsed_badge_below_threshold_returns_none_normal() {
+        // Sub-100ms results don't get a badge (too noisy).
+        let mut t = dummy_tool(
+            ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        t.elapsed_ms = Some(50);
+        assert_eq!(format_elapsed_badge(&t), None);
+    }
+
+    #[test]
+    fn format_elapsed_badge_seconds_decimal_normal() {
+        let mut t = dummy_tool(
+            ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        t.elapsed_ms = Some(2300);
+        assert_eq!(format_elapsed_badge(&t).as_deref(), Some("[2.3s]"));
+    }
+
+    #[test]
+    fn format_elapsed_badge_tens_of_seconds_no_decimal_normal() {
+        let mut t = dummy_tool(
+            ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        t.elapsed_ms = Some(15_000);
+        assert_eq!(format_elapsed_badge(&t).as_deref(), Some("[15s]"));
+    }
+
+    #[test]
+    fn format_elapsed_badge_minutes_format_robust() {
+        let mut t = dummy_tool(
+            ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        t.elapsed_ms = Some(125_000);
+        assert_eq!(format_elapsed_badge(&t).as_deref(), Some("[2m 5s]"));
+    }
+
+    #[test]
+    fn format_elapsed_badge_running_returns_none_robust() {
+        let mut t = dummy_tool(
+            ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        t.status = ToolStatus::Running;
+        t.elapsed_ms = Some(2300);
+        assert_eq!(format_elapsed_badge(&t), None);
+    }
+
+    #[test]
+    fn format_elapsed_badge_no_elapsed_returns_none_robust() {
+        let t = dummy_tool(
+            ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        // Even Complete: if elapsed_ms is None, no badge.
+        assert_eq!(format_elapsed_badge(&t), None);
+    }
+
+    // --- tool_title_width_cap ----------------------------------------
+
+    #[test]
+    fn tool_title_width_cap_default_is_100_normal() {
+        // Without any env override, default is 100.
+        unsafe { std::env::remove_var("JFC_TOOL_TITLE_WIDTH"); }
+        assert_eq!(tool_title_width_cap(), 100);
+    }
+
+    #[test]
+    fn tool_title_width_cap_rejects_too_small_robust() {
+        // Values < 20 are rejected by `.filter(|n| *n >= 20)` → fallback to 100.
+        unsafe { std::env::set_var("JFC_TOOL_TITLE_WIDTH", "5"); }
+        assert_eq!(tool_title_width_cap(), 100);
+        unsafe { std::env::remove_var("JFC_TOOL_TITLE_WIDTH"); }
+    }
+
+    // --- build_collapsed_header / build_title_spans / build_header_inner_spans
+
+    #[test]
+    fn build_header_inner_spans_bash_format_normal() {
+        let t = Theme::dark();
+        let tool = dummy_tool(
+            ToolInput::Bash {
+                command: "echo hi".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        let spans = build_header_inner_spans(&tool, &t, 80);
+        // 4 spans: "Bash" + "(" + cmd + ")".
+        assert_eq!(spans.len(), 4);
+        assert_eq!(spans[0].content, "Bash");
+        assert_eq!(spans[1].content, "(");
+        assert_eq!(spans[3].content, ")");
+    }
+
+    #[test]
+    fn build_header_inner_spans_read_format_normal() {
+        let t = Theme::dark();
+        let tool = dummy_tool(
+            ToolInput::Read {
+                file_path: "src/main.rs".into(),
+                offset: None,
+                limit: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Read,
+        );
+        let spans = build_header_inner_spans(&tool, &t, 80);
+        assert_eq!(spans.len(), 4);
+        assert_eq!(spans[0].content, "Read");
+        assert!(spans[2].content.contains("src/main.rs"));
+    }
+
+    #[test]
+    fn build_header_inner_spans_write_format_normal() {
+        let t = Theme::dark();
+        let tool = dummy_tool(
+            ToolInput::Write {
+                file_path: "out.txt".into(),
+                content: "".into(),
+            },
+            ToolOutput::Empty,
+            ToolKind::Write,
+        );
+        let spans = build_header_inner_spans(&tool, &t, 80);
+        assert_eq!(spans[0].content, "Write");
+    }
+
+    #[test]
+    fn build_header_inner_spans_edit_format_normal() {
+        let t = Theme::dark();
+        let tool = dummy_tool(
+            ToolInput::Edit {
+                file_path: "src/lib.rs".into(),
+                old_string: "".into(),
+                new_string: "".into(),
+                replacement: ReplacementMode::FirstOnly,
+            },
+            ToolOutput::Empty,
+            ToolKind::Edit,
+        );
+        let spans = build_header_inner_spans(&tool, &t, 80);
+        assert_eq!(spans[0].content, "Update");
+    }
+
+    #[test]
+    fn build_header_inner_spans_long_path_truncates_robust() {
+        // A very long path gets truncated with ellipsis.
+        let t = Theme::dark();
+        let long_path = "a/".repeat(100) + "main.rs";
+        let tool = dummy_tool(
+            ToolInput::Read {
+                file_path: long_path,
+                offset: None,
+                limit: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Read,
+        );
+        let spans = build_header_inner_spans(&tool, &t, 30);
+        let path_span = &spans[2].content;
+        assert!(
+            path_span.chars().count() <= 30,
+            "got len {}: {path_span:?}",
+            path_span.chars().count()
+        );
+    }
+
+    #[test]
+    fn build_collapsed_header_includes_status_icon_normal() {
+        let t = Theme::dark();
+        let tool = dummy_tool(
+            ToolInput::Bash {
+                command: "echo".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        let line = build_collapsed_header(&tool, &t, 80);
+        // First span is the status icon, second is " ".
+        assert_eq!(line.spans[1].content, " ");
+        assert!(!line.spans.is_empty());
+    }
+
+    #[test]
+    fn build_title_spans_includes_pin_glyph_when_pinned_robust() {
+        let t = Theme::dark();
+        let mut tool = dummy_tool(
+            ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        tool.pinned = true;
+        let spans = build_title_spans(&tool, &t, "●", Style::default(), 80);
+        let combined: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(combined.contains("📌"), "expected pin glyph: {combined:?}");
+    }
+
+    #[test]
+    fn build_title_spans_appends_elapsed_badge_robust() {
+        let t = Theme::dark();
+        let mut tool = dummy_tool(
+            ToolInput::Bash {
+                command: "x".into(),
+                timeout: None,
+                workdir: None,
+            },
+            ToolOutput::Empty,
+            ToolKind::Bash,
+        );
+        tool.elapsed_ms = Some(2500);
+        let spans = build_title_spans(&tool, &t, "●", Style::default(), 80);
+        let combined: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            combined.contains("[2.5s]"),
+            "expected elapsed badge: {combined:?}"
+        );
+    }
+
+    // --- border_color_for_status -------------------------------------
+
+    #[test]
+    fn border_color_for_status_each_state_normal() {
+        let t = Theme::dark();
+        for (status, expected) in [
+            (ToolStatus::Pending, t.warning),
+            (ToolStatus::Running, t.accent),
+            (ToolStatus::Complete, t.border),
+            (ToolStatus::Failed, t.error),
+        ] {
+            let mut tool = dummy_tool(
+                ToolInput::Bash {
+                    command: "x".into(),
+                    timeout: None,
+                    workdir: None,
+                },
+                ToolOutput::Empty,
+                ToolKind::Bash,
+            );
+            tool.status = status;
+            assert_eq!(border_color_for_status(&tool, &t), expected);
+        }
+    }
+
+    // --- severity_rank -----------------------------------------------
+
+    #[test]
+    fn severity_rank_orders_correctly_normal() {
+        use crate::diagnostics::Severity;
+        assert!(severity_rank(Severity::Error) > severity_rank(Severity::Warning));
+        assert!(severity_rank(Severity::Warning) > severity_rank(Severity::Info));
+        assert!(severity_rank(Severity::Info) > severity_rank(Severity::Hint));
+    }
+
+    #[test]
+    fn severity_rank_distinct_values_robust() {
+        use crate::diagnostics::Severity;
+        let mut v = vec![
+            severity_rank(Severity::Error),
+            severity_rank(Severity::Warning),
+            severity_rank(Severity::Info),
+            severity_rank(Severity::Hint),
+        ];
+        v.sort();
+        v.dedup();
+        assert_eq!(v.len(), 4, "all 4 ranks must be distinct");
+    }
+
+    // --- truncate_str (private inside message_view) ------------------
+
+    #[test]
+    fn truncate_str_short_passes_through_normal() {
+        assert_eq!(truncate_str("hi", 10), "hi");
+    }
+
+    #[test]
+    fn truncate_str_long_truncates_with_ellipsis_normal() {
+        let s = truncate_str("hello world", 5);
+        assert!(s.ends_with('…'));
+        assert_eq!(s.chars().count(), 5);
+    }
+
+    #[test]
+    fn truncate_str_zero_returns_empty_robust() {
+        assert_eq!(truncate_str("hi", 0), "");
+    }
+
+    // --- parse_grep_with_sep / parse_grep_no_path direct ------------
+
+    #[test]
+    fn parse_grep_with_sep_match_form_normal() {
+        let r = parse_grep_with_sep("src/foo.rs:5:body", ':', false);
+        match r {
+            Some(GrepLine::Match { path, lineno, body, is_context, .. }) => {
+                assert_eq!(path, "src/foo.rs");
+                assert_eq!(lineno, Some("5"));
+                assert_eq!(body, "body");
+                assert!(!is_context);
+            }
+            _ => panic!("expected match"),
+        }
+    }
+
+    #[test]
+    fn parse_grep_with_sep_no_match_returns_none_robust() {
+        // No `<sep><digits><sep>` anchor → None.
+        assert!(parse_grep_with_sep("just plain text", ':', false).is_none());
+    }
+
+    #[test]
+    fn parse_grep_no_path_match_form_normal() {
+        let r = parse_grep_no_path("42:body line", ':', false);
+        match r {
+            Some(GrepLine::Match { path, lineno, body, is_context, .. }) => {
+                assert_eq!(path, "");
+                assert_eq!(lineno, Some("42"));
+                assert_eq!(body, "body line");
+                assert!(!is_context);
+            }
+            _ => panic!("expected match"),
+        }
+    }
+
+    #[test]
+    fn parse_grep_no_path_non_digit_start_robust() {
+        assert!(parse_grep_no_path("foo:body", ':', false).is_none());
+    }
+
+    #[test]
+    fn parse_grep_no_path_empty_robust() {
+        assert!(parse_grep_no_path("", ':', false).is_none());
+    }
+
+    // --- message_view_total_lines ------------------------------------
+
+    #[test]
+    fn message_view_total_lines_empty_app_normal() {
+        // Build a fake App via the test helpers — empty messages → 0 lines.
+        use std::sync::Arc;
+        use crate::provider::{
+            EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions,
+        };
+
+        struct Stub;
+        #[async_trait::async_trait]
+        impl Provider for Stub {
+            fn name(&self) -> &str {
+                "test"
+            }
+            fn available_models(&self) -> Vec<ModelInfo> {
+                Vec::new()
+            }
+            async fn stream(
+                &self,
+                _: Vec<ProviderMessage>,
+                _: &StreamOptions,
+            ) -> anyhow::Result<EventStream> {
+                Ok(Box::pin(futures::stream::empty()))
+            }
+        }
+
+        let app = App::new(Arc::new(Stub), "test-model");
+        // No messages → 0 lines.
+        assert_eq!(message_view_total_lines(&app, 80), 0);
+    }
+}
+
