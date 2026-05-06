@@ -189,9 +189,16 @@ impl MarketOrchestrator {
         self.bounties
             .transition(bounty_id, MarketState::Bidding)
             .map_err(OrchestratorError::Bounty)?;
+        tracing::debug!(target: "jfc::economy::cycle", bounty_id = %bounty_id, "phase: Bidding");
         self.bounties
             .transition(bounty_id, MarketState::Executing)
             .map_err(OrchestratorError::Bounty)?;
+        tracing::debug!(
+            target: "jfc::economy::cycle",
+            bounty_id = %bounty_id,
+            actual_solvers = actual_solvers,
+            "phase: Executing"
+        );
         for prompt in prompts {
             let agent_id = prompt.agent_id.clone();
             let worktree = prompt.worktree.clone();
@@ -233,6 +240,13 @@ impl MarketOrchestrator {
             .map_err(OrchestratorError::Bounty)?;
         let solutions: Vec<crate::types::Solution> =
             self.solvers.completed_solutions().into_iter().cloned().collect();
+        tracing::debug!(
+            target: "jfc::economy::cycle",
+            bounty_id = %bounty_id,
+            surviving_solutions = solutions.len(),
+            validators_per_solution = actual_validators,
+            "phase: Validating"
+        );
         for solution in solutions {
             for _ in 0..actual_validators {
                 let validator_id = AgentId::new("validator");

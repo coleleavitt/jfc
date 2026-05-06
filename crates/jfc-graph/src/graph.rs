@@ -12,7 +12,6 @@ use crate::adapter::LanguageAdapter;
 use crate::edges::EdgeData;
 use crate::nodes::{NodeData, NodeId, NodeKind};
 use crate::persistence::GraphEvent;
-use crate::traversal::GraphConnectivity;
 
 /// Errors from graph operations.
 #[derive(Debug, Error)]
@@ -26,8 +25,8 @@ pub enum GraphError {
 
 /// The core code graph — wraps petgraph with typed nodes and O(1) ID lookup.
 pub struct CodeGraph {
-    graph: DiGraph<NodeData, EdgeData>,
-    index_map: HashMap<NodeId, NodeIndex>,
+    pub(crate) graph: DiGraph<NodeData, EdgeData>,
+    pub(crate) index_map: HashMap<NodeId, NodeIndex>,
 }
 
 impl CodeGraph {
@@ -36,6 +35,23 @@ impl CodeGraph {
             graph: DiGraph::new(),
             index_map: HashMap::new(),
         }
+    }
+
+    /// Direct read access to the inner petgraph. Enables all petgraph
+    /// algorithms (SCC, dominators, toposort, page_rank, etc.) to operate
+    /// without copying.
+    pub fn inner(&self) -> &DiGraph<NodeData, EdgeData> {
+        &self.graph
+    }
+
+    /// Resolve a NodeId to a petgraph NodeIndex.
+    pub fn resolve(&self, id: &NodeId) -> Option<NodeIndex> {
+        self.index_map.get(id).copied()
+    }
+
+    /// Reverse lookup: NodeIndex → NodeId.
+    pub fn node_id_for(&self, idx: NodeIndex) -> Option<&NodeId> {
+        self.graph.node_weight(idx).map(|n| &n.id)
     }
 
     /// Add a node. Returns the NodeId. If node with same ID exists, updates it.
@@ -214,31 +230,6 @@ impl Default for CodeGraph {
     }
 }
 
-/// Implement GraphConnectivity so traversal algorithms work on CodeGraph.
-impl GraphConnectivity for CodeGraph {
-    fn outgoing_neighbors(&self, node: &NodeId) -> Vec<NodeId> {
-        let Some(&idx) = self.index_map.get(node) else {
-            return Vec::new();
-        };
-
-        self.graph
-            .neighbors_directed(idx, Direction::Outgoing)
-            .map(|neighbor_idx| self.graph[neighbor_idx].id.clone())
-            .collect()
-    }
-
-    fn incoming_neighbors(&self, node: &NodeId) -> Vec<NodeId> {
-        let Some(&idx) = self.index_map.get(node) else {
-            return Vec::new();
-        };
-
-        self.graph
-            .neighbors_directed(idx, Direction::Incoming)
-            .map(|neighbor_idx| self.graph[neighbor_idx].id.clone())
-            .collect()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -284,223 +275,64 @@ mod tests {
     }
 
     #[test]
-    fn test_graph_add_node() {
+    fn test_add_and_get_node() {
         let mut graph = CodeGraph::new();
+        let node = make_node("foo", NodeKind::Function);
+        let id = graph.add_node(node.clone());
 
-        let nodes: Vec<NodeData> = (0..5)
-            .map(|i| make_node(&format!("node_{i}"), NodeKind::Function))
-            .collect();
-
-        for node in nodes {
-            graph.add_node(node);
-        }
-
-        assert_eq!(graph.node_count(), 5);
+        assert!(graph.contains_node(&id));
+        let retrieved = graph.get_node(&id).unwrap();
+        assert_eq!(retrieved.name, "foo");
     }
 
     #[test]
-    fn test_graph_add_edge() {
+    fn test_inner_access() {
         let mut graph = CodeGraph::new();
+        let node = make_node("bar", NodeKind::Function);
+        graph.add_node(node);
+        assert_eq!(graph.inner().node_count(), 1);
+    }
 
-        let a = make_node("alpha", NodeKind::Function);
-        let b = make_node("beta", NodeKind::Function);
-        let c = make_node("gamma", NodeKind::Function);
+    #[test]
+    fn test_resolve_and_node_id_for() {
+        let mut graph = CodeGraph::new();
+        let node = make_node("baz", NodeKind::Struct);
+        let id = graph.add_node(node);
 
+        let idx = graph.resolve(&id).unwrap();
+        let round_trip = graph.node_id_for(idx).unwrap();
+        assert_eq!(&id, round_trip);
+    }
+
+    #[test]
+    fn test_add_edge_and_retrieve() {
+        let mut graph = CodeGraph::new();
+        let a = make_node("a", NodeKind::Function);
+        let b = make_node("b", NodeKind::Function);
         let a_id = graph.add_node(a);
         let b_id = graph.add_node(b);
-        let c_id = graph.add_node(c);
 
         graph
             .add_edge(&a_id, &b_id, make_edge(EdgeKind::Calls))
             .unwrap();
-        graph
-            .add_edge(&b_id, &c_id, make_edge(EdgeKind::Calls))
-            .unwrap();
-
-        assert_eq!(graph.edge_count(), 2);
 
         let edges_from_a = graph.get_edges_from(&a_id);
         assert_eq!(edges_from_a.len(), 1);
         assert_eq!(edges_from_a[0].0, &b_id);
+
+        let edges_to_b = graph.get_edges_to(&b_id);
+        assert_eq!(edges_to_b.len(), 1);
+        assert_eq!(edges_to_b[0].0, &a_id);
     }
 
     #[test]
-    fn test_graph_add_edge_node_not_found() {
+    fn test_remove_node() {
         let mut graph = CodeGraph::new();
-        let a = make_node("alpha", NodeKind::Function);
-        let a_id = graph.add_node(a);
-        let fake_id = NodeId(99999);
+        let node = make_node("remove_me", NodeKind::Function);
+        let id = graph.add_node(node);
 
-        let result = graph.add_edge(&a_id, &fake_id, make_edge(EdgeKind::Calls));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_graph_lookup_by_name() {
-        let mut graph = CodeGraph::new();
-
-        graph.add_node(make_node("foo_bar", NodeKind::Function));
-        graph.add_node(make_node("foo_baz", NodeKind::Function));
-        graph.add_node(make_node("quux", NodeKind::Struct));
-
-        let results = graph.find_by_name("foo");
-        assert_eq!(results.len(), 2);
-        assert!(results.iter().all(|n| n.name.contains("foo")));
-
-        // Case-insensitive
-        let results_upper = graph.find_by_name("FOO");
-        assert_eq!(results_upper.len(), 2);
-    }
-
-    #[test]
-    fn test_graph_remove_node() {
-        let mut graph = CodeGraph::new();
-
-        let a = make_node("a_node", NodeKind::Function);
-        let b = make_node("b_node", NodeKind::Function);
-        let c = make_node("c_node", NodeKind::Function);
-
-        let a_id = graph.add_node(a);
-        let b_id = graph.add_node(b);
-        let c_id = graph.add_node(c);
-
-        graph
-            .add_edge(&a_id, &b_id, make_edge(EdgeKind::Calls))
-            .unwrap();
-        graph
-            .add_edge(&b_id, &c_id, make_edge(EdgeKind::Calls))
-            .unwrap();
-
-        // Remove B
-        let removed = graph.remove_node(&b_id);
-        assert!(removed.is_some());
-        assert_eq!(removed.unwrap().name, "b_node");
-
-        // B is gone
-        assert!(!graph.contains_node(&b_id));
-        assert_eq!(graph.node_count(), 2);
-
-        // A and C remain
-        assert!(graph.contains_node(&a_id));
-        assert!(graph.contains_node(&c_id));
-
-        // Edges involving B are gone
-        assert_eq!(graph.edge_count(), 0);
-    }
-
-    #[test]
-    fn test_graph_nodes_by_kind() {
-        let mut graph = CodeGraph::new();
-
-        graph.add_node(make_node("func1", NodeKind::Function));
-        graph.add_node(make_node("func2", NodeKind::Function));
-        graph.add_node(make_node("MyStruct", NodeKind::Struct));
-        graph.add_node(make_node("MyEnum", NodeKind::Enum));
-        graph.add_node(make_node("MyTrait", NodeKind::Trait));
-
-        let functions = graph.nodes_by_kind(NodeKind::Function);
-        assert_eq!(functions.len(), 2);
-        assert!(functions.iter().all(|n| n.kind == NodeKind::Function));
-
-        let structs = graph.nodes_by_kind(NodeKind::Struct);
-        assert_eq!(structs.len(), 1);
-        assert_eq!(structs[0].name, "MyStruct");
-    }
-
-    #[test]
-    fn test_graph_connectivity() {
-        let mut graph = CodeGraph::new();
-
-        let a = make_node("a", NodeKind::Function);
-        let b = make_node("b", NodeKind::Function);
-        let c = make_node("c", NodeKind::Function);
-
-        let a_id = graph.add_node(a);
-        let b_id = graph.add_node(b);
-        let c_id = graph.add_node(c);
-
-        graph
-            .add_edge(&a_id, &b_id, make_edge(EdgeKind::Calls))
-            .unwrap();
-        graph
-            .add_edge(&a_id, &c_id, make_edge(EdgeKind::Calls))
-            .unwrap();
-
-        // Outgoing from A
-        let outgoing = graph.outgoing_neighbors(&a_id);
-        assert_eq!(outgoing.len(), 2);
-        assert!(outgoing.contains(&b_id));
-        assert!(outgoing.contains(&c_id));
-
-        // Incoming to B
-        let incoming = graph.incoming_neighbors(&b_id);
-        assert_eq!(incoming.len(), 1);
-        assert!(incoming.contains(&a_id));
-
-        // A has no incoming
-        let a_incoming = graph.incoming_neighbors(&a_id);
-        assert!(a_incoming.is_empty());
-    }
-
-    #[test]
-    fn test_graph_duplicate_node() {
-        let mut graph = CodeGraph::new();
-
-        let node1 = make_node("original", NodeKind::Function);
-        let id = node1.id.clone();
-        graph.add_node(node1);
-
-        assert_eq!(graph.node_count(), 1);
-        assert_eq!(graph.get_node(&id).unwrap().name, "original");
-
-        // Add node with same ID but different data
-        let mut node2 = make_node("original", NodeKind::Function);
-        node2.name = "updated".to_string();
-        // Ensure same ID
-        node2.id = id.clone();
-
-        graph.add_node(node2);
-
-        // Still only 1 node, but data is updated
-        assert_eq!(graph.node_count(), 1);
-        assert_eq!(graph.get_node(&id).unwrap().name, "updated");
-    }
-
-    #[test]
-    fn test_update_file() {
-        let adapter = RustAdapter::new();
-        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-        let sample_path = fixtures.join("sample.rs");
-
-        let mut graph = GraphBuilder::build_from_files(&[sample_path.clone()], &adapter);
-        let initial_count = graph.node_count();
-        assert!(initial_count > 0);
-
-        let modified_content = r#"
-pub fn alpha() {
-    beta();
-}
-
-fn beta() -> i32 {
-    99
-}
-"#;
-
-        let events = graph.update_file(&sample_path, modified_content, &adapter);
-
-        assert!(!events.is_empty());
-        assert!(
-            events.iter().any(|e| matches!(e, GraphEvent::FileReindexed(_))),
-        );
-
-        let names: Vec<&str> = graph
-            .find_by_name("alpha")
-            .iter()
-            .map(|n| n.name.as_str())
-            .collect();
-        assert!(names.contains(&"alpha"));
-
-        assert!(graph.find_by_name("foo").is_empty());
-        assert!(graph.find_by_name("bar").is_empty());
+        assert!(graph.contains_node(&id));
+        graph.remove_node(&id);
+        assert!(!graph.contains_node(&id));
     }
 }

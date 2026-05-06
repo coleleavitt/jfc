@@ -1,4 +1,5 @@
 pub mod adapter;
+pub mod analysis;
 pub mod builder;
 pub mod capabilities;
 pub mod cascade;

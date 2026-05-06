@@ -19,7 +19,7 @@ use std::collections::{HashSet, VecDeque};
 use crate::edges::EdgeKind;
 use crate::graph::CodeGraph;
 use crate::nodes::{NodeId, NodeKind};
-use crate::traversal::{self, Direction, TraversalConfig};
+use crate::traversal::{self, TraversalDirection, TraversalConfig};
 
 /// Token types produced by the lexer.
 #[derive(Debug, Clone, PartialEq)]
@@ -552,12 +552,12 @@ impl<'a> QueryEngine<'a> {
                     let mut expanded = HashSet::new();
                     for node_id in &working_set {
                         let result = traversal::traverse(
-                            node_id,
                             self.graph,
+                            node_id,
                             &TraversalConfig {
                                 max_depth: *n,
                                 max_nodes: config.max_nodes,
-                                direction: Direction::Outgoing,
+                                direction: TraversalDirection::Outgoing,
                             },
                         );
                         for id in result.nodes {
