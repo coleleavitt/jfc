@@ -1737,3 +1737,379 @@ mod cwd_filter_tests {
         assert!(round.usage.is_none());
     }
 }
+
+// ───────────────────────────────────────────────────────────────────────
+// Disk-I/O coverage. Tests in this module mutate `XDG_CONFIG_HOME` so
+// `sessions_dir()` points at a per-test tempdir. Serialized through
+// ENV_LOCK because cargo test runs them in parallel by default and
+// process-global env var state can't be split across threads.
+// ───────────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod disk_io_tests {
+    use super::*;
+    use crate::types::{ChatMessage, ToolCall, ToolInput, ToolKind, ToolOutput, ToolStatus};
+    use std::sync::Mutex;
+    use tempfile::TempDir;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// RAII guard that points `XDG_CONFIG_HOME` at a tempdir for the
+    /// lifetime of one test. Restores the previous value on drop so a
+    /// later test in the same process doesn't see a dangling override.
+    struct TempConfigHome {
+        _dir: TempDir,
+        prior: Option<String>,
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl TempConfigHome {
+        fn new() -> Self {
+            // Poison-tolerant lock: a panic in one test shouldn't take
+            // out every subsequent disk-I/O test.
+            let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let dir = TempDir::new().expect("tempdir");
+            let prior = std::env::var("XDG_CONFIG_HOME").ok();
+            // Safety: env mutation is serialized through ENV_LOCK.
+            unsafe {
+                std::env::set_var("XDG_CONFIG_HOME", dir.path());
+            }
+            Self {
+                _dir: dir,
+                prior,
+                _guard: guard,
+            }
+        }
+    }
+
+    impl Drop for TempConfigHome {
+        fn drop(&mut self) {
+            // Safety: env mutation is serialized through the held guard.
+            unsafe {
+                match self.prior.take() {
+                    Some(prev) => std::env::set_var("XDG_CONFIG_HOME", prev),
+                    None => std::env::remove_var("XDG_CONFIG_HOME"),
+                }
+            }
+        }
+    }
+
+    // Normal: round-trip a session through save/load with a few common
+    // message variants. Verifies the file lands under sessions_dir() and
+    // load_session reconstructs the messages with the same shape.
+    #[test]
+    fn save_load_roundtrip_normal() {
+        let _g = TempConfigHome::new();
+        let messages = vec![
+            ChatMessage::user("first user prompt".into()),
+            ChatMessage::assistant("first reply".into()),
+        ];
+        let id = "ses_20260506_120000";
+        save_session(id, &messages, Some("/tmp/test"), Some("test-model"));
+        // The file should exist on disk now.
+        let path = sessions_dir().join(format!("{id}.json"));
+        assert!(path.exists(), "session file written");
+
+        let loaded = load_session(id).expect("loadable");
+        assert_eq!(loaded.len(), 2);
+        assert!(loaded[0].role_is_user());
+    }
+
+    // Normal: load_session_with_model returns the persisted model id.
+    #[test]
+    fn load_session_with_model_normal() {
+        let _g = TempConfigHome::new();
+        let messages = vec![ChatMessage::user("hi".into())];
+        let id = "ses_20260506_120100";
+        save_session(id, &messages, Some("/tmp/proj"), Some("opus-4-7"));
+        let (loaded, model) = load_session_with_model(id).expect("loadable");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(model.as_deref(), Some("opus-4-7"));
+    }
+
+    // Robust: load_session for a non-existent id returns None instead of
+    // panicking.
+    #[test]
+    fn load_session_missing_returns_none_robust() {
+        let _g = TempConfigHome::new();
+        assert!(load_session("ses_does_not_exist").is_none());
+        assert!(load_session_with_model("ses_does_not_exist").is_none());
+        assert!(load_session_metadata("ses_does_not_exist").is_none());
+    }
+
+    // Normal: load_session_metadata reports the same first_prompt and
+    // message_count we saved.
+    #[test]
+    fn load_session_metadata_picks_up_first_prompt_normal() {
+        let _g = TempConfigHome::new();
+        let messages = vec![
+            ChatMessage::user("Refactor the renderer".into()),
+            ChatMessage::assistant("Plan: …".into()),
+        ];
+        let id = "ses_20260506_120200";
+        save_session(id, &messages, Some("/tmp/proj"), None);
+        let meta = load_session_metadata(id).expect("metadata loads");
+        assert_eq!(meta.id, id);
+        assert_eq!(meta.first_prompt.as_deref(), Some("Refactor the renderer"));
+        assert_eq!(meta.message_count, 2);
+        assert_eq!(meta.cwd.as_deref(), Some("/tmp/proj"));
+    }
+
+    // Robust: corrupted JSON in a session file makes load_session_metadata
+    // return None without aborting (parse errors are logged and swallowed).
+    #[test]
+    fn load_session_metadata_handles_corrupted_robust() {
+        let _g = TempConfigHome::new();
+        let dir = sessions_dir();
+        std::fs::create_dir_all(&dir).expect("dir");
+        let path = dir.join("ses_corrupted.json");
+        std::fs::write(&path, "{ this is not json").expect("write garbage");
+        assert!(load_session_metadata("ses_corrupted").is_none());
+    }
+
+    // Normal: list_sessions returns all known ids, newest-first by id sort
+    // (which is also chronological for the `ses_YYYYMMDD_HHMMSS` shape).
+    #[test]
+    fn list_sessions_returns_all_sorted_newest_first_normal() {
+        let _g = TempConfigHome::new();
+        let m = vec![ChatMessage::user("hi".into())];
+        save_session("ses_20260101_000000", &m, None, None);
+        save_session("ses_20260601_000000", &m, None, None);
+        save_session("ses_20260301_000000", &m, None, None);
+        let ids = list_sessions();
+        assert_eq!(
+            ids,
+            vec![
+                "ses_20260601_000000".to_owned(),
+                "ses_20260301_000000".to_owned(),
+                "ses_20260101_000000".to_owned(),
+            ],
+        );
+    }
+
+    // Robust: list_sessions on a non-existent sessions directory returns
+    // an empty vec rather than panicking.
+    #[test]
+    fn list_sessions_missing_dir_is_empty_robust() {
+        let _g = TempConfigHome::new();
+        // No save_session calls — directory doesn't even exist yet.
+        assert!(list_sessions().is_empty());
+    }
+
+    // Normal: list_sessions_filtered with a cwd filter returns only that
+    // project's sessions plus any legacy (cwd=None) entries.
+    #[test]
+    fn list_sessions_filtered_includes_matching_and_legacy_normal() {
+        let _g = TempConfigHome::new();
+        let m = vec![ChatMessage::user("hi".into())];
+        save_session("ses_20260101_000000", &m, Some("/projA"), None);
+        save_session("ses_20260201_000000", &m, Some("/projB"), None);
+        save_session("ses_20260301_000000", &m, Some("/projA"), None);
+
+        let only_a = list_sessions_filtered(Some("/projA"));
+        let ids: Vec<&str> = only_a.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, vec!["ses_20260301_000000", "ses_20260101_000000"]);
+
+        // No filter (None) returns all sessions sorted newest-first by
+        // updated_at.
+        let all = list_sessions_filtered(None);
+        assert_eq!(all.len(), 3);
+    }
+
+    // Normal: most_recent_session_for_cwd returns the newest in the matching
+    // project bucket.
+    #[test]
+    fn most_recent_session_for_cwd_returns_top_normal() {
+        let _g = TempConfigHome::new();
+        let m = vec![ChatMessage::user("hi".into())];
+        save_session("ses_20260101_000000", &m, Some("/proj"), None);
+        save_session("ses_20260301_000000", &m, Some("/proj"), None);
+        save_session("ses_20260201_000000", &m, Some("/other"), None);
+        let top = most_recent_session_for_cwd(Some("/proj"));
+        assert_eq!(top.as_deref(), Some("ses_20260301_000000"));
+    }
+
+    // Robust: most_recent_session (global) returns the newest id regardless
+    // of cwd.
+    #[test]
+    fn most_recent_session_global_robust() {
+        let _g = TempConfigHome::new();
+        let m = vec![ChatMessage::user("hi".into())];
+        save_session("ses_20260101_000000", &m, None, None);
+        save_session("ses_20260601_000000", &m, None, None);
+        let top = most_recent_session();
+        assert_eq!(top.as_deref(), Some("ses_20260601_000000"));
+    }
+
+    // Normal: set_session_title writes a custom title that overrides
+    // first_prompt in display.
+    #[test]
+    fn set_session_title_persists_and_overrides_first_prompt_normal() {
+        let _g = TempConfigHome::new();
+        let m = vec![ChatMessage::user("Original prompt".into())];
+        let id = "ses_20260506_140000";
+        save_session(id, &m, Some("/tmp"), None);
+        set_session_title(id, "My custom title");
+        let meta = load_session_metadata(id).expect("loaded");
+        assert_eq!(meta.title.as_deref(), Some("My custom title"));
+        assert_eq!(meta.display_title(), "My custom title");
+    }
+
+    // Robust: set_session_title on a non-existent id is a no-op (does not
+    // panic, does not create files).
+    #[test]
+    fn set_session_title_missing_session_is_noop_robust() {
+        let _g = TempConfigHome::new();
+        // Don't save — target doesn't exist.
+        set_session_title("ses_nope", "ignored");
+        assert!(load_session_metadata("ses_nope").is_none());
+    }
+
+    // Normal: when re-saving an existing session, the original created_at
+    // and cwd are preserved (cwd is pinned at first save).
+    #[test]
+    fn save_session_preserves_created_at_and_cwd_normal() {
+        let _g = TempConfigHome::new();
+        let m = vec![ChatMessage::user("first".into())];
+        let id = "ses_20260506_141500";
+        save_session(id, &m, Some("/orig"), None);
+        let meta1 = load_session_metadata(id).expect("first save");
+        let created_at = meta1.created_at.clone();
+
+        // Re-save with a different cwd — should NOT migrate.
+        let m2 = vec![ChatMessage::user("first".into()), ChatMessage::assistant("reply".into())];
+        save_session(id, &m2, Some("/elsewhere"), None);
+        let meta2 = load_session_metadata(id).expect("second save");
+        assert_eq!(meta2.created_at, created_at);
+        assert_eq!(meta2.cwd.as_deref(), Some("/orig"));
+        assert_eq!(meta2.message_count, 2);
+    }
+
+    // Normal: round-trip a tool message with full input + output content.
+    // Exercises the serialize_part / deserialize_part / serialize_tool_input
+    // / deserialize_tool_input paths for a non-trivial tool variant.
+    #[test]
+    fn save_load_with_tool_message_round_trips_normal() {
+        let _g = TempConfigHome::new();
+        let tool = ToolCall {
+            id: "tool-1".into(),
+            kind: ToolKind::Bash,
+            status: ToolStatus::Complete,
+            input: ToolInput::Bash {
+                command: "echo hi".into(),
+                timeout: Some(30_000),
+                workdir: Some("/tmp".into()),
+            },
+            output: ToolOutput::Command {
+                stdout: "hi\n".into(),
+                stderr: String::new(),
+                exit_code: Some(0),
+            },
+            is_collapsed: true,
+            expanded: false,
+            elapsed_ms: Some(123),
+            started_at: None,
+            pinned: false,
+        };
+        let messages = vec![
+            ChatMessage::user("run a command".into()),
+            ChatMessage::assistant_parts(vec![
+                crate::types::MessagePart::Tool(tool),
+            ]),
+        ];
+        let id = "ses_20260506_142000";
+        save_session(id, &messages, Some("/tmp"), Some("opus"));
+        let loaded = load_session(id).expect("loaded");
+        assert_eq!(loaded.len(), 2);
+        let tool_part = loaded[1]
+            .parts
+            .iter()
+            .find(|p| matches!(p, crate::types::MessagePart::Tool(_)))
+            .expect("tool part");
+        match tool_part {
+            crate::types::MessagePart::Tool(tc) => {
+                assert_eq!(tc.kind, ToolKind::Bash);
+                match &tc.input {
+                    ToolInput::Bash { command, timeout, workdir } => {
+                        assert_eq!(command, "echo hi");
+                        assert_eq!(*timeout, Some(30_000));
+                        assert_eq!(workdir.as_deref(), Some("/tmp"));
+                    }
+                    other => panic!("expected Bash input, got {other:?}"),
+                }
+                match &tc.output {
+                    ToolOutput::Command { stdout, exit_code, .. } => {
+                        assert_eq!(stdout, "hi\n");
+                        assert_eq!(*exit_code, Some(0));
+                    }
+                    _ => panic!("expected Command output"),
+                }
+                // is_collapsed survives, expanded does not (per design).
+                assert!(tc.is_collapsed);
+                assert!(!tc.expanded);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    // Robust: deserialize_tool_status maps unknown statuses to Complete
+    // (graceful fallback when an old/foreign status string lands).
+    #[test]
+    fn deserialize_tool_status_unknown_falls_back_robust() {
+        // The function is private, but we can exercise it through
+        // deserializing a SerializedPart::Tool with an unknown status.
+        let part = SerializedPart::Tool {
+            id: "x".into(),
+            kind: "bash".into(),
+            status: "exotic".into(),
+            is_collapsed: false,
+            input: None,
+            output: None,
+        };
+        let mp = deserialize_part(part);
+        match mp {
+            crate::types::MessagePart::Tool(tc) => {
+                assert_eq!(tc.status, ToolStatus::Complete);
+                // Default reconstructed Bash stub — empty command.
+                assert!(matches!(tc.input, ToolInput::Bash { .. }));
+                assert!(matches!(tc.output, ToolOutput::Empty));
+            }
+            _ => panic!("expected Tool"),
+        }
+    }
+
+    // Robust: deserialize_task_lifecycle maps unknown variants to Pending.
+    #[test]
+    fn deserialize_task_lifecycle_unknown_falls_back_robust() {
+        let part = SerializedPart::TaskStatus {
+            task_id: "t1".into(),
+            description: "x".into(),
+            status: "wat".into(),
+            summary: None,
+            error: None,
+            elapsed_ms: None,
+        };
+        let mp = deserialize_part(part);
+        match mp {
+            crate::types::MessagePart::TaskStatus(ts) => {
+                assert_eq!(ts.status, crate::types::TaskLifecycle::Pending);
+            }
+            _ => panic!("expected TaskStatus"),
+        }
+    }
+
+    // Normal: SerializedToolOutput's custom deserializer accepts a plain
+    // string (legacy v0 format) and produces a Text variant.
+    #[test]
+    fn serialized_tool_output_accepts_legacy_string_normal() {
+        let parsed: SerializedToolOutput =
+            serde_json::from_str(r#""legacy plaintext output""#).expect("ok");
+        assert!(matches!(parsed, SerializedToolOutput::Text { .. }));
+    }
+
+    // Robust: a null in the output slot deserializes to Empty (not error).
+    #[test]
+    fn serialized_tool_output_null_to_empty_robust() {
+        let parsed: SerializedToolOutput = serde_json::from_str("null").expect("ok");
+        assert!(matches!(parsed, SerializedToolOutput::Empty));
+    }
+}
