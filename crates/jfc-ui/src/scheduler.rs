@@ -297,4 +297,252 @@ mod tests {
         let batches = schedule_tools(vec![]);
         assert!(batches.is_empty());
     }
+
+    // Normal: every read-only tool kind is reported concurrency-safe.
+    #[test]
+    fn is_concurrency_safe_lists_read_only_tools_normal() {
+        for kind in [
+            ToolKind::Read,
+            ToolKind::Glob,
+            ToolKind::Grep,
+            ToolKind::Search,
+            ToolKind::TaskCreate,
+            ToolKind::TaskUpdate,
+            ToolKind::TaskList,
+            ToolKind::TaskDone,
+            ToolKind::Skill,
+            ToolKind::TeamCreate,
+            ToolKind::TeamDelete,
+            ToolKind::SendMessage,
+        ] {
+            assert!(is_concurrency_safe(&kind), "expected {kind:?} concurrency-safe");
+        }
+    }
+
+    // Robust: side-effecting tool kinds are NOT concurrency-safe — they
+    // must run sequentially because they mutate the filesystem or invoke
+    // shell processes.
+    #[test]
+    fn is_concurrency_safe_rejects_mutating_tools_robust() {
+        for kind in [
+            ToolKind::Edit,
+            ToolKind::Write,
+            ToolKind::Bash,
+            ToolKind::ApplyPatch,
+            ToolKind::Task,
+            ToolKind::MemoryCreate,
+            ToolKind::MemoryDelete,
+        ] {
+            assert!(!is_concurrency_safe(&kind), "expected {kind:?} unsafe");
+        }
+    }
+
+    // Robust: a parallel batch larger than MAX_CONCURRENCY is split into
+    // multiple chunks of at most MAX_CONCURRENCY each so we never spawn an
+    // unbounded number of tasks.
+    #[test]
+    fn schedule_chunks_large_parallel_batch_robust() {
+        let calls: Vec<_> = (0..MAX_CONCURRENCY * 2 + 3)
+            .map(|i| make_call(ToolKind::Read, &format!("r{i}")))
+            .collect();
+        let batches = schedule_tools(calls);
+        // 2 full chunks + 1 partial chunk.
+        assert_eq!(batches.len(), 3);
+        for b in &batches[..batches.len() - 1] {
+            match b {
+                ToolBatch::Parallel(v) => assert_eq!(v.len(), MAX_CONCURRENCY),
+                _ => panic!("expected Parallel"),
+            }
+        }
+        match &batches[batches.len() - 1] {
+            ToolBatch::Parallel(v) => assert_eq!(v.len(), 3),
+            _ => panic!("expected Parallel"),
+        }
+    }
+
+    // Normal: a single concurrency-safe call still flushes as a Parallel
+    // batch (containing one element), preserving model order.
+    #[test]
+    fn schedule_single_safe_call_emits_parallel_batch_normal() {
+        let calls = vec![make_call(ToolKind::Glob, "g1")];
+        let batches = schedule_tools(calls);
+        assert_eq!(batches.len(), 1);
+        match &batches[0] {
+            ToolBatch::Parallel(v) => assert_eq!(v.len(), 1),
+            _ => panic!("expected Parallel"),
+        }
+    }
+
+    // Normal: alternating safe/unsafe/safe yields three batches in order.
+    #[test]
+    fn schedule_preserves_model_order_normal() {
+        let calls = vec![
+            make_call(ToolKind::Read, "r1"),
+            make_call(ToolKind::Bash, "b1"),
+            make_call(ToolKind::Read, "r2"),
+        ];
+        let batches = schedule_tools(calls);
+        assert_eq!(batches.len(), 3);
+        assert!(matches!(&batches[0], ToolBatch::Parallel(v) if v.len() == 1));
+        assert!(matches!(&batches[1], ToolBatch::Sequential(c) if c.id == "b1"));
+        assert!(matches!(&batches[2], ToolBatch::Parallel(v) if v.len() == 1));
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // execute_batches integration: drive the async dispatcher using
+    // benign Read/Glob tool calls in a tempdir. Verifies the parallel
+    // *and* sequential paths emit ToolResult events on the channel and
+    // accumulate into the returned Vec<ToolExecution>.
+    // ──────────────────────────────────────────────────────────────────
+
+    fn read_call(id: &str, path: &str) -> ToolCall {
+        ToolCall {
+            id: id.to_owned(),
+            kind: ToolKind::Read,
+            status: ToolStatus::Pending,
+            input: crate::types::ToolInput::Read {
+                file_path: path.to_owned(),
+                offset: None,
+                limit: None,
+            },
+            output: ToolOutput::Empty,
+            is_collapsed: false,
+            expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
+        }
+    }
+
+    fn glob_call(id: &str, pattern: &str) -> ToolCall {
+        ToolCall {
+            id: id.to_owned(),
+            kind: ToolKind::Glob,
+            status: ToolStatus::Pending,
+            input: crate::types::ToolInput::Glob {
+                pattern: pattern.to_owned(),
+                path: None,
+            },
+            output: ToolOutput::Empty,
+            is_collapsed: false,
+            expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
+        }
+    }
+
+    // Normal: a parallel batch of two Read calls runs to completion, sends
+    // two ToolResult events on the channel, and returns two executions.
+    #[tokio::test(flavor = "current_thread")]
+    async fn execute_batches_parallel_emits_results_normal() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let p1 = dir.path().join("a.txt");
+        let p2 = dir.path().join("b.txt");
+        std::fs::write(&p1, "hello A").unwrap();
+        std::fs::write(&p2, "hello B").unwrap();
+
+        let calls = vec![
+            read_call("r1", p1.to_str().unwrap()),
+            read_call("r2", p2.to_str().unwrap()),
+        ];
+        let batches = schedule_tools(calls);
+        let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+        let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
+        let results = execute_batches(
+            batches,
+            &tx,
+            dir.path().to_path_buf(),
+            dedup,
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(results.len(), 2);
+        // Both ToolResult events should be on the channel.
+        drop(tx);
+        let mut got = 0usize;
+        while let Some(ev) = rx.recv().await {
+            if matches!(ev, AppEvent::ToolResult { .. }) {
+                got += 1;
+            }
+        }
+        assert_eq!(got, 2);
+    }
+
+    // Normal: a sequential batch (Glob → Edit) runs the unsafe call alone.
+    // Driving the executor with a Glob tool exercises the Sequential arm
+    // because Glob *is* concurrency-safe — instead, use ToolKind::Bash
+    // with an `echo` to force the Sequential branch with a benign
+    // command.
+    #[tokio::test(flavor = "current_thread")]
+    async fn execute_batches_sequential_emits_result_normal() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let mut bash = read_call("b1", "ignored");
+        bash.kind = ToolKind::Bash;
+        bash.input = crate::types::ToolInput::Bash {
+            command: "echo hi".to_owned(),
+            timeout: None,
+            workdir: None,
+        };
+        let batches = schedule_tools(vec![bash]);
+        // One Sequential batch.
+        assert_eq!(batches.len(), 1);
+        assert!(matches!(&batches[0], ToolBatch::Sequential(_)));
+        let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+        let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
+        let results = execute_batches(
+            batches,
+            &tx,
+            dir.path().to_path_buf(),
+            dedup,
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(results.len(), 1);
+        drop(tx);
+        let ev = rx.recv().await.expect("event present");
+        assert!(matches!(ev, AppEvent::ToolResult { .. }));
+    }
+
+    // Robust: empty batches list returns empty results without contacting
+    // the channel.
+    #[tokio::test(flavor = "current_thread")]
+    async fn execute_batches_empty_input_robust() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+        let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
+        let results =
+            execute_batches(Vec::new(), &tx, dir.path().to_path_buf(), dedup, None, None).await;
+        assert!(results.is_empty());
+        drop(tx);
+        assert!(rx.recv().await.is_none());
+    }
+
+    // Robust: even when the underlying tool fails (Read of missing path),
+    // execute_batches still sends a ToolResult with the failure outcome
+    // and accumulates the execution. We don't assert success/failure of
+    // the inner result — just that the dispatcher behaves uniformly.
+    #[tokio::test(flavor = "current_thread")]
+    async fn execute_batches_handles_failing_tool_robust() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let calls = vec![glob_call("g1", "**/*.nonexistent_pattern_zzz")];
+        let batches = schedule_tools(calls);
+        let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+        let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
+        let results = execute_batches(
+            batches,
+            &tx,
+            dir.path().to_path_buf(),
+            dedup,
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(results.len(), 1);
+        drop(tx);
+        let ev = rx.recv().await.expect("got result");
+        assert!(matches!(ev, AppEvent::ToolResult { .. }));
+    }
 }

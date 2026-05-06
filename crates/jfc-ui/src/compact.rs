@@ -1153,4 +1153,277 @@ mod level_tests {
         let body = r#"{"error":{"message":"litellm.BadRequestError: too long","code":"400"}}"#;
         assert!(!is_usable_summary(body));
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Pure-helper coverage: split_into_groups, estimate_tokens,
+    // count_user_turns_since_last_compact, token_gap_step,
+    // format_compact_summary, parse_actual_tokens_from_error,
+    // should_compact boundary, and is_usable_summary additional paths.
+    // ──────────────────────────────────────────────────────────────────
+
+    use crate::types::ChatMessage;
+
+    fn user_msg(text: &str) -> ChatMessage {
+        ChatMessage::user(text.to_owned())
+    }
+
+    fn assistant_msg(text: &str) -> ChatMessage {
+        ChatMessage::assistant(text.to_owned())
+    }
+
+    // Normal: splitting on user-turn boundaries collects groups so each
+    // starts with the user message that initiated it.
+    #[test]
+    fn split_into_groups_separates_at_user_turns_normal() {
+        let messages = vec![
+            user_msg("first prompt"),
+            assistant_msg("first reply"),
+            user_msg("second prompt"),
+            assistant_msg("second reply"),
+            assistant_msg("more reply"),
+        ];
+        let groups = split_into_groups(&messages);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].messages.len(), 2);
+        assert_eq!(groups[1].messages.len(), 3);
+    }
+
+    // Robust: an empty messages slice produces no groups.
+    #[test]
+    fn split_into_groups_empty_robust() {
+        let groups = split_into_groups(&[]);
+        assert!(groups.is_empty());
+    }
+
+    // Robust: assistant-first conversation collects everything into one group
+    // because the loop only splits when a *user* message is seen with prior
+    // content already buffered.
+    #[test]
+    fn split_into_groups_assistant_first_robust() {
+        let messages = vec![assistant_msg("starts here"), user_msg("then user")];
+        let groups = split_into_groups(&messages);
+        assert_eq!(groups.len(), 2);
+        // First group: just the assistant message.
+        assert_eq!(groups[0].messages.len(), 1);
+        // Second group: the user message that triggered the split.
+        assert_eq!(groups[1].messages.len(), 1);
+    }
+
+    // Normal: estimate_tokens scales with input length and applies the
+    // overhead multiplier (3/2 = 1.5x).
+    #[test]
+    fn estimate_tokens_applies_overhead_normal() {
+        // 16-char message → base = 4 tokens → est = 6.
+        let messages = vec![user_msg("0123456789abcdef")];
+        let est = estimate_tokens(&messages);
+        assert_eq!(est, 6);
+    }
+
+    // Normal: estimate_tokens on empty input returns 0.
+    #[test]
+    fn estimate_tokens_empty_is_zero_normal() {
+        assert_eq!(estimate_tokens(&[]), 0);
+    }
+
+    // Normal: count_user_turns counts back from the end and stops at the
+    // first compact boundary it sees.
+    #[test]
+    fn count_user_turns_stops_at_compact_boundary_normal() {
+        let messages = vec![
+            user_msg("very old"),
+            ChatMessage::compact_boundary("summary", 1234),
+            user_msg("after compact 1"),
+            assistant_msg("reply"),
+            user_msg("after compact 2"),
+        ];
+        let count = count_user_turns_since_last_compact(&messages);
+        assert_eq!(count, 2);
+    }
+
+    // Robust: with no compact boundary at all, every user turn counts.
+    #[test]
+    fn count_user_turns_no_boundary_counts_all_robust() {
+        let messages = vec![
+            user_msg("u1"),
+            assistant_msg("a1"),
+            user_msg("u2"),
+            user_msg("u3"),
+        ];
+        assert_eq!(count_user_turns_since_last_compact(&messages), 3);
+    }
+
+    // Normal: token_gap_step with `None` falls back to halving (current/2),
+    // never zero.
+    #[test]
+    fn token_gap_step_falls_back_to_halving_normal() {
+        let group_tokens = vec![100, 200, 300, 400];
+        assert_eq!(token_gap_step(None, &group_tokens, 4), 2);
+        assert_eq!(token_gap_step(None, &group_tokens, 1), 1); // never zero
+    }
+
+    // Normal: with a token_gap, walk groups backward accumulating tokens
+    // until enough has been freed.
+    #[test]
+    fn token_gap_step_walks_until_gap_freed_normal() {
+        let group_tokens = vec![100, 200, 300, 400];
+        // gap=350 starting at split=4: walk 400 (>=350) → 1 group.
+        assert_eq!(token_gap_step(Some(350), &group_tokens, 4), 1);
+        // gap=500: 400 + 300 = 700 covers it → 2 groups.
+        assert_eq!(token_gap_step(Some(500), &group_tokens, 4), 2);
+        // gap=999_999: walks all 4 groups.
+        assert_eq!(token_gap_step(Some(999_999), &group_tokens, 4), 4);
+    }
+
+    // Robust: token_gap_step returns at least 1 even when gap is 0.
+    #[test]
+    fn token_gap_step_returns_at_least_one_robust() {
+        let group_tokens = vec![100, 200];
+        assert_eq!(token_gap_step(Some(0), &group_tokens, 2), 1);
+    }
+
+    // Normal: format_compact_summary strips <analysis> blocks and keeps the
+    // <summary> body, prefixed with "Summary:".
+    #[test]
+    fn format_compact_summary_strips_analysis_normal() {
+        let raw = "<analysis>\nDraft notes here.\n</analysis>\n<summary>\nFinal summary text.\n</summary>";
+        let formatted = format_compact_summary(raw);
+        assert!(!formatted.contains("Draft notes"));
+        assert!(formatted.starts_with("Summary:"));
+        assert!(formatted.contains("Final summary text."));
+    }
+
+    // Robust: a response without tags is returned trimmed (whitespace).
+    #[test]
+    fn format_compact_summary_passes_through_untagged_robust() {
+        let raw = "  Just a plain summary, no tags.  ";
+        let formatted = format_compact_summary(raw);
+        assert_eq!(formatted, "Just a plain summary, no tags.");
+    }
+
+    // Robust: triple newlines collapse to double in the cleanup pass.
+    #[test]
+    fn format_compact_summary_collapses_triple_newlines_robust() {
+        let raw = "first\n\n\nsecond";
+        let formatted = format_compact_summary(raw);
+        assert!(!formatted.contains("\n\n\n"));
+        assert!(formatted.contains("first"));
+        assert!(formatted.contains("second"));
+    }
+
+    // Normal: parse_actual_tokens picks the FIRST integer >10_000 from
+    // an Anthropic too-long error, so the calibrated approx_tokens lines
+    // up with the API's view.
+    #[test]
+    fn parse_actual_tokens_picks_first_large_integer_normal() {
+        let msg = "prompt is too long: 1456365 tokens > 1000000 maximum";
+        assert_eq!(parse_actual_tokens_from_error(msg), Some(1_456_365));
+    }
+
+    // Robust: small numbers (<=10_000) are skipped — they're status codes,
+    // line numbers, etc., not token counts.
+    #[test]
+    fn parse_actual_tokens_skips_small_numbers_robust() {
+        let msg = "error 400: 200 tokens isn't right";
+        // No number is > 10_000, so None.
+        assert_eq!(parse_actual_tokens_from_error(msg), None);
+    }
+
+    // Normal: should_compact fires when level is Compact or Blocked.
+    #[test]
+    fn should_compact_fires_at_compact_threshold_normal() {
+        let _g = lock();
+        clear_env();
+        // Compact threshold for 200K window = 187K.
+        assert!(!should_compact(186_999, W));
+        assert!(should_compact(187_000, W));
+        assert!(should_compact(199_000, W));
+    }
+
+    // Robust: when auto-compact is disabled, should_compact only fires at
+    // the hard Blocked level (api-enforced ceiling).
+    #[test]
+    fn should_compact_disabled_only_blocks_robust() {
+        let _g = lock();
+        clear_env();
+        unsafe {
+            std::env::set_var("JFC_DISABLE_AUTO_COMPACT", "1");
+        }
+        assert!(!should_compact(195_000, W));
+        // Blocked still fires regardless of disable.
+        assert!(should_compact(198_000, W));
+        clear_env();
+    }
+
+    // Normal: blocked override env var lowers the blocked threshold.
+    #[test]
+    fn blocked_override_lowers_threshold_normal() {
+        let _g = lock();
+        clear_env();
+        unsafe {
+            std::env::set_var("JFC_BLOCKING_LIMIT_OVERRIDE", "50000");
+        }
+        // Now anything >= 50K should be Blocked.
+        assert_eq!(compact_level(50_000, W), CompactLevel::Blocked);
+        clear_env();
+    }
+
+    // Robust: `auto_compact_disabled()` reflects either env var.
+    #[test]
+    fn auto_compact_disabled_responds_to_env_robust() {
+        let _g = lock();
+        clear_env();
+        assert!(!auto_compact_disabled());
+        unsafe {
+            std::env::set_var("JFC_DISABLE_COMPACT", "true");
+        }
+        assert!(auto_compact_disabled());
+        clear_env();
+        unsafe {
+            std::env::set_var("JFC_DISABLE_AUTO_COMPACT", "1");
+        }
+        assert!(auto_compact_disabled());
+        clear_env();
+    }
+
+    // Robust: zero or invalid pct_override values are ignored — the default
+    // threshold applies.
+    #[test]
+    fn pct_override_ignores_invalid_values_robust() {
+        let _g = lock();
+        clear_env();
+        unsafe {
+            std::env::set_var("JFC_AUTOCOMPACT_PCT_OVERRIDE", "not-a-number");
+        }
+        assert_eq!(compact_threshold(W), 187_000);
+        unsafe {
+            std::env::set_var("JFC_AUTOCOMPACT_PCT_OVERRIDE", "0");
+        }
+        assert_eq!(compact_threshold(W), 187_000);
+        unsafe {
+            std::env::set_var("JFC_AUTOCOMPACT_PCT_OVERRIDE", "200");
+        }
+        // Out of range — ignored.
+        assert_eq!(compact_threshold(W), 187_000);
+        clear_env();
+    }
+
+    // Normal: estimate_group_tokens of a single-message group equals
+    // estimate_tokens of that one message. (Sanity round-trip.)
+    #[test]
+    fn estimate_group_tokens_matches_estimate_tokens_normal() {
+        let group = ConversationGroup {
+            messages: vec![user_msg("0123456789abcdef")], // 16 chars → 6 tokens
+        };
+        assert_eq!(estimate_group_tokens(&group), 6);
+    }
+
+    // Normal: format_compact_summary trims trailing whitespace from extracted
+    // summary content even when nested in surrounding text.
+    #[test]
+    fn format_compact_summary_extracts_inner_summary_normal() {
+        let raw = "Some preamble.\n<summary>\n  inner content  \n</summary>\nignored after";
+        let formatted = format_compact_summary(raw);
+        assert!(formatted.starts_with("Summary:"));
+        assert!(formatted.contains("inner content"));
+    }
 }
