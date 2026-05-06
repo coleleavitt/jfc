@@ -1144,7 +1144,7 @@ async fn run(
                             toast::Toast::new(toast::ToastKind::Info, msg),
                         );
                     }
-                    TeammateEvent::Progress { task_id, agent_id: _, token_count: _, tool_use_count: _, last_tool } => {
+                    TeammateEvent::Progress { task_id, agent_id: _, token_count, tool_use_count, last_tool } => {
                         // Update background task state for UI display.
                         // Revive an Idle task back to Running — the agent
                         // is producing tool-progress events again, so it
@@ -1154,6 +1154,14 @@ async fn run(
                                 bt.status = crate::types::TaskLifecycle::Running;
                             }
                             bt.last_tool = last_tool;
+                            // The teammate event already gives us a
+                            // single combined token figure; route it
+                            // into `latest_input_tokens` so the fan UI
+                            // shows it without overwriting the
+                            // per-turn output sum. (Teammates don't
+                            // emit input/output separately yet.)
+                            bt.latest_input_tokens = token_count;
+                            bt.tool_use_count = tool_use_count as u32;
                         }
                         // Mark this teammate as the live one for the
                         // spinner-area tree highlight.
@@ -2488,6 +2496,9 @@ async fn run(
                         error: None,
                         last_tool: None,
                         messages: Vec::new(),
+                        tool_use_count: 0,
+                        latest_input_tokens: 0,
+                        cumulative_output_tokens: 0,
                     },
                 );
                 let part = MessagePart::TaskStatus(TaskStatusPart {
@@ -2510,6 +2521,9 @@ async fn run(
                 task_id,
                 last_tool,
                 elapsed_ms,
+                tool_use_count,
+                input_tokens,
+                output_tokens,
             } => {
                 if let Some(bt) = app.background_tasks.get_mut(&task_id) {
                     if let Some(ref tool) = last_tool {
@@ -2524,6 +2538,18 @@ async fn run(
                         bt.messages.push(format!("[{elapsed_s}s] {tool}"));
                     }
                     bt.last_tool = last_tool;
+                    if let Some(n) = tool_use_count {
+                        bt.tool_use_count = n;
+                    }
+                    if let Some(n) = input_tokens {
+                        bt.latest_input_tokens = n;
+                    }
+                    if let Some(n) = output_tokens {
+                        // Cumulative — sum across every round-trip,
+                        // matching v131's `cumulativeOutputTokens` field.
+                        bt.cumulative_output_tokens =
+                            bt.cumulative_output_tokens.saturating_add(n);
+                    }
                 }
                 for msg in &mut app.messages {
                     for part in &mut msg.parts {

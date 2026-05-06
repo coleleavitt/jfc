@@ -129,6 +129,15 @@ pub enum AppEvent {
         task_id: String,
         last_tool: Option<String>,
         elapsed_ms: u64,
+        /// Cumulative tools invoked this run (None = no update). Routed
+        /// to `BackgroundTask.tool_use_count` so the fan UI can render
+        /// "(N tools)" beside the spinner.
+        tool_use_count: Option<u32>,
+        /// Latest API request's input-token count (None = no update).
+        input_tokens: Option<u64>,
+        /// Output tokens consumed during the latest API round-trip
+        /// (None = no update). Folded into `cumulative_output_tokens`.
+        output_tokens: Option<u64>,
     },
     TaskCompleted {
         task_id: String,
@@ -355,6 +364,18 @@ pub struct BackgroundTask {
     pub error: Option<String>,
     pub last_tool: Option<String>,
     pub messages: Vec<String>,
+    /// Cumulative tool invocations the subagent has made this run.
+    /// Mirrors v131's `toolUseCount` (cli.2.1.131.beautified.js, `jOH()`).
+    pub tool_use_count: u32,
+    /// Most recent request's input-token count (driven by `Usage` stream
+    /// events when the provider emits them, falls back to a 4-chars-per-
+    /// token byte estimate otherwise). Mirrors v131's `latestInputTokens`.
+    pub latest_input_tokens: u64,
+    /// Sum of output tokens across every API round-trip in this run.
+    /// Mirrors v131's `cumulativeOutputTokens`. The fan-UI badge displays
+    /// `latest_input + cumulative_output` to match Claude Code's
+    /// "89.7k tokens" figure.
+    pub cumulative_output_tokens: u64,
 }
 
 pub struct App {

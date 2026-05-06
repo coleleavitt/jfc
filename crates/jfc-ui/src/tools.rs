@@ -1578,6 +1578,28 @@ pub async fn execute_task(
     let mut final_text = String::new();
     let mut last_error: Option<String> = None;
     let mut turn: u32 = 0;
+    // Cumulative counters surfaced to the parent UI via TaskProgress
+    // so the fan view can render "(N tools, M tokens)". Mirrors v131
+    // Claude Code's `toolUseCount` / `cumulativeOutputTokens` fields.
+    let mut total_tool_uses: u32 = 0;
+    let started_at = std::time::Instant::now();
+    let emit_progress = |tx: Option<&tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
+                         id: Option<&str>,
+                         last_tool: Option<String>,
+                         tool_use_count: Option<u32>,
+                         input_tokens: Option<u64>,
+                         output_tokens: Option<u64>| {
+        if let (Some(tx), Some(id)) = (tx, id) {
+            let _ = tx.send(crate::app::AppEvent::TaskProgress {
+                task_id: id.to_owned(),
+                last_tool,
+                elapsed_ms: started_at.elapsed().as_millis() as u64,
+                tool_use_count,
+                input_tokens,
+                output_tokens,
+            });
+        }
+    };
 
     'outer: loop {
         turn += 1;
@@ -1676,6 +1698,24 @@ pub async fn execute_task(
                 }) => {
                     tool_uses.push((tool_use_id, tool_name, input_json));
                 }
+                Ok(StreamEvent::Usage {
+                    input_tokens,
+                    output_tokens,
+                    ..
+                }) => {
+                    // Surface this turn's input + output tokens to the
+                    // parent fan UI. `latest_input_tokens` is overwritten
+                    // (the live request size); `output_tokens` is folded
+                    // into `cumulative_output_tokens` by the handler.
+                    emit_progress(
+                        tx,
+                        task_id,
+                        None,
+                        None,
+                        Some(input_tokens as u64),
+                        Some(output_tokens as u64),
+                    );
+                }
                 Ok(StreamEvent::Done { stop_reason: sr }) => {
                     stop_reason = Some(sr);
                 }
@@ -1767,6 +1807,15 @@ pub async fn execute_task(
                 content: crate::stream::truncate_tool_result(&result.output),
                 is_error,
             });
+            total_tool_uses = total_tool_uses.saturating_add(1);
+            emit_progress(
+                tx,
+                task_id,
+                Some(name.clone()),
+                Some(total_tool_uses),
+                None,
+                None,
+            );
         }
         conversation.push(ProviderMessage {
             role: ProviderRole::User,

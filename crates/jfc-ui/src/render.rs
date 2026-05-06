@@ -2559,6 +2559,43 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
 /// active `BackgroundTask`. Same shape as the teammate tree so the
 /// user's eye recognises the structure regardless of whether they're
 /// in a team or just running parallel Explore agents.
+/// Render a token count in Claude-Code-style condensed form: 8945 → "8.9k",
+/// 89_745 → "89.7k", 1_240_000 → "1.2M", anything <1000 stays raw. The
+/// status badge and the per-subagent fan rows both use this so multiple
+/// agents can fit on a 40-col-wide row without wrapping.
+pub(crate) fn format_token_count(n: u64) -> String {
+    if n < 1_000 {
+        format!("{n}")
+    } else if n < 1_000_000 {
+        format!("{:.1}k", n as f64 / 1_000.0)
+    } else {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    }
+}
+
+/// Build the trailing "· N tools · K tok" suffix for a subagent row.
+/// Empty when there's no live data yet (the task just started; nothing
+/// to show beyond the description). Mirrors v131's
+/// `(${z.toolUseCount} tools, ${z.tokenCount} tokens)` from
+/// cli.2.1.131.beautified.js.
+pub(crate) fn format_subagent_counters(bt: &crate::app::BackgroundTask) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if bt.tool_use_count > 0 {
+        parts.push(format!("{} tool{}",
+            bt.tool_use_count,
+            if bt.tool_use_count == 1 { "" } else { "s" }));
+    }
+    let total_tokens = bt.latest_input_tokens.saturating_add(bt.cumulative_output_tokens);
+    if total_tokens > 0 {
+        parts.push(format!("{} tok", format_token_count(total_tokens)));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" · {}", parts.join(" · "))
+    }
+}
+
 fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     if area.height == 0 || area.width < 20 {
         return;
@@ -2616,10 +2653,13 @@ fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
         let activity = if is_idle {
             "  · idle".to_string()
         } else {
-            match &bt.last_tool {
+            // Layered: tool name (when known) + counter suffix. Mirrors
+            // v131's "Running N agents · 22 tool uses · 89.7k tokens".
+            let tool_part = match &bt.last_tool {
                 Some(tool) => format!("  · {tool}"),
                 None => String::new(),
-            }
+            };
+            format!("{tool_part}{}", format_subagent_counters(bt))
         };
         // Emphasize whichever agent emitted the most-recent chunk or
         // tool-progress event so the user can spot which one is
@@ -3116,14 +3156,33 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
         badges.push("[task view]".to_string());
     }
 
-    // Active subagents
-    let active_subagents = app
+    // Active subagents — aggregate tools + tokens across the fan so a
+    // single status line summarizes "Running 3 agents · 22 tools · 89.7k
+    // tok" the way Claude Code's CLI does. Counters fold to zero when
+    // the agents haven't reported yet (suppressed cleanly).
+    let alive: Vec<&crate::app::BackgroundTask> = app
         .background_tasks
         .values()
         .filter(|bt| bt.status.is_alive())
-        .count();
-    if active_subagents > 0 {
-        badges.push(format!("⏵ {active_subagents}"));
+        .collect();
+    if !alive.is_empty() {
+        let total_tools: u32 = alive.iter().map(|b| b.tool_use_count).sum();
+        let total_tokens: u64 = alive
+            .iter()
+            .map(|b| b.latest_input_tokens.saturating_add(b.cumulative_output_tokens))
+            .sum();
+        let mut s = format!("⏵ {}", alive.len());
+        if total_tools > 0 {
+            s.push_str(&format!(
+                " · {} tool{}",
+                total_tools,
+                if total_tools == 1 { "" } else { "s" }
+            ));
+        }
+        if total_tokens > 0 {
+            s.push_str(&format!(" · {} tok", format_token_count(total_tokens)));
+        }
+        badges.push(s);
     }
 
     // Worktrees
@@ -5826,3 +5885,107 @@ mod pure_helper_tests {
     }
 }
 
+#[cfg(test)]
+mod subagent_counter_tests {
+    use super::*;
+    use crate::app::BackgroundTask;
+    use crate::types::TaskLifecycle;
+
+    fn task_with(tools: u32, in_tok: u64, out_tok: u64) -> BackgroundTask {
+        BackgroundTask {
+            task_id: "t1".into(),
+            description: "research".into(),
+            status: TaskLifecycle::Running,
+            started_at: std::time::Instant::now(),
+            summary: None,
+            error: None,
+            last_tool: None,
+            messages: Vec::new(),
+            tool_use_count: tools,
+            latest_input_tokens: in_tok,
+            cumulative_output_tokens: out_tok,
+        }
+    }
+
+    // Normal: <1000 tokens stays raw.
+    #[test]
+    fn format_token_count_under_thousand_raw_normal() {
+        assert_eq!(format_token_count(0), "0");
+        assert_eq!(format_token_count(1), "1");
+        assert_eq!(format_token_count(999), "999");
+    }
+
+    // Normal: >=1000 collapses to single-decimal "k".
+    #[test]
+    fn format_token_count_thousands_normal() {
+        assert_eq!(format_token_count(1_000), "1.0k");
+        assert_eq!(format_token_count(8_945), "8.9k");
+        assert_eq!(format_token_count(89_745), "89.7k");
+    }
+
+    // Normal: >=1_000_000 collapses to single-decimal "M".
+    #[test]
+    fn format_token_count_millions_normal() {
+        assert_eq!(format_token_count(1_000_000), "1.0M");
+        assert_eq!(format_token_count(1_240_000), "1.2M");
+    }
+
+    // Robust: u64::MAX renders without panicking.
+    #[test]
+    fn format_token_count_u64_max_robust() {
+        let _ = format_token_count(u64::MAX);
+    }
+
+    // Normal: subagent counters render in v131-style suffix order
+    // (tool count, then token count).
+    #[test]
+    fn format_subagent_counters_full_normal() {
+        let bt = task_with(22, 50_000, 39_745);
+        let s = format_subagent_counters(&bt);
+        assert!(s.contains("22 tools"));
+        assert!(s.contains("89.7k tok"));
+        assert!(s.starts_with(" · "));
+    }
+
+    // Normal: singular form for exactly 1 tool.
+    #[test]
+    fn format_subagent_counters_singular_tool_normal() {
+        let bt = task_with(1, 0, 500);
+        let s = format_subagent_counters(&bt);
+        assert!(s.contains("1 tool"));
+        assert!(!s.contains("1 tools"));
+    }
+
+    // Robust: zero tools and zero tokens produces an empty suffix
+    // (we suppress the row entirely until the agent has reported
+    // something, otherwise the UI flickers " · 0 tools" right after
+    // spawn).
+    #[test]
+    fn format_subagent_counters_empty_when_zero_robust() {
+        let bt = task_with(0, 0, 0);
+        assert_eq!(format_subagent_counters(&bt), "");
+    }
+
+    // Robust: tool count without tokens still renders (and vice versa).
+    #[test]
+    fn format_subagent_counters_partial_data_robust() {
+        let only_tools = task_with(3, 0, 0);
+        let s = format_subagent_counters(&only_tools);
+        assert!(s.contains("3 tools"));
+        assert!(!s.contains("tok"));
+
+        let only_tokens = task_with(0, 1_500, 0);
+        let s2 = format_subagent_counters(&only_tokens);
+        assert!(s2.contains("1.5k tok"));
+        assert!(!s2.contains("tools"));
+    }
+
+    // Normal: combined input + cumulative_output sum is what gets
+    // formatted (matches v131's `latestInputTokens + cumulativeOutputTokens`).
+    #[test]
+    fn format_subagent_counters_sums_input_and_output_normal() {
+        let bt = task_with(0, 80_000, 9_745);
+        let s = format_subagent_counters(&bt);
+        assert!(s.contains("89.7k tok"));
+    }
+}
