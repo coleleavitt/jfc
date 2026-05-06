@@ -392,16 +392,34 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
         let started_at = std::time::Instant::now();
         let system = format!(
             "You are a competitive solver agent in a code-bounty market. \
-             Your goal: produce a minimal, correct patch that satisfies the \
-             acceptance criteria. Output a unified diff and a one-paragraph \
-             explanation. No filler — every token costs the bounty pool.\n\n\
+             Your goal: produce a minimal, correct solution that satisfies \
+             the acceptance criteria. No filler — every token costs the \
+             bounty pool.\n\n\
+             OUTPUT FORMAT (mandatory):\n\
+             For each new or modified file, emit a block:\n\
+             ===FILE: <path relative to project root, OR absolute path \
+             if the bounty explicitly names one>===\n\
+             <full file contents>\n\
+             ===END===\n\n\
+             You may emit any number of blocks back-to-back. After all \
+             blocks, write one paragraph of explanation. If a unified \
+             diff is more natural for an existing repo, emit it inside \
+             a ```diff fence INSTEAD of FILE blocks.\n\n\
              Acceptance criteria: {}",
             prompt.acceptance_criteria,
         );
         let user = format!(
-            "Bounty {} — {}\n\nReturn:\n```diff\n<your patch>\n```\n\n\
-             Then a one-paragraph explanation.",
+            "Bounty {} — {}\n\nProduce the solution now using the FILE \
+             block format described in the system prompt. Then a \
+             one-paragraph explanation.",
             prompt.bounty_id, prompt.bounty_description
+        );
+        tracing::debug!(
+            target: "jfc::ui::economy",
+            agent = %prompt.agent_id.0,
+            bounty_id = %prompt.bounty_id,
+            max_tokens = prompt.max_tokens,
+            "invoke_solver: streaming"
         );
         match self.one_shot(system, user, prompt.max_tokens, Some(&task_id)).await {
             Ok((text, tokens)) => {
@@ -452,6 +470,14 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
         );
         self.emit_started(&task_id, &desc);
         let started_at = std::time::Instant::now();
+        tracing::debug!(
+            target: "jfc::ui::economy",
+            validator = %prompt.validator_id.0,
+            bounty_id = %prompt.bounty_id,
+            solver = %prompt.solution.agent_id.0,
+            max_tokens = prompt.max_tokens,
+            "invoke_validator: streaming"
+        );
         let system = "You are an adversarial validator in a code-bounty \
              market. Your job: find any flaw in the submitted solution. \
              You earn tokens for VALID flaws (reproducible by a test) and \
@@ -516,6 +542,234 @@ pub(crate) fn split_patch_and_explanation(text: &str) -> (String, String) {
         }
     }
     (text.trim().to_string(), String::new())
+}
+
+/// Result of applying a winning solver's solution to disk.
+pub(crate) struct AppliedSolution {
+    /// Files that were created or overwritten, relative to cwd.
+    pub files: Vec<std::path::PathBuf>,
+    /// Human-readable summary line for the tool result body.
+    pub summary: String,
+}
+
+/// Apply a winning solver's `solution.patch` to disk under `cwd`.
+///
+/// Solvers may return either:
+///   1. A unified diff (handled by `git apply` if cwd is a git repo).
+///   2. One or more `===FILE: <path>===\n<contents>\n===END===\n`
+///      blocks — our explicit, parser-friendly format the solver
+///      prompt nudges them toward when the bounty is a green-field
+///      "create files at <path>" request.
+///   3. Raw content — saved to `.jfc/bounties/<id>/winner.patch` as a
+///      fallback so the user can inspect it.
+///
+/// Always writes `winner.patch` and `winner.md` under
+/// `.jfc/bounties/<bounty_id>/` for audit. Returns the list of
+/// affected paths so the dispatcher can report them to the user.
+///
+/// This closes the 2026-05-06 HMAC bug where run_bounty reported
+/// "settled" but never actually wrote the solver's patch — every
+/// successful cycle now produces visible files.
+pub(crate) fn apply_winning_solution(
+    cwd: &std::path::Path,
+    bounty_id: &str,
+    solution: Option<&jfc_economy::types::Solution>,
+) -> AppliedSolution {
+    let Some(sol) = solution else {
+        tracing::warn!(
+            target: "jfc::ui::bounty",
+            bounty_id = %bounty_id,
+            "no winning solution to apply (cycle settled with no winner)"
+        );
+        return AppliedSolution {
+            files: vec![],
+            summary: "No winning solution — nothing written.".into(),
+        };
+    };
+    let audit_dir = cwd.join(".jfc").join("bounties").join(bounty_id);
+    if let Err(e) = std::fs::create_dir_all(&audit_dir) {
+        tracing::error!(
+            target: "jfc::ui::bounty",
+            bounty_id = %bounty_id,
+            error = %e,
+            "failed to create audit dir"
+        );
+        return AppliedSolution {
+            files: vec![],
+            summary: format!("Failed to create audit dir: {e}"),
+        };
+    }
+    let _ = std::fs::write(audit_dir.join("winner.patch"), &sol.patch);
+    let _ = std::fs::write(audit_dir.join("winner.md"), &sol.explanation);
+    tracing::info!(
+        target: "jfc::ui::bounty",
+        bounty_id = %bounty_id,
+        winner = %sol.agent_id.0,
+        patch_bytes = sol.patch.len(),
+        audit_dir = %audit_dir.display(),
+        "wrote winner audit files"
+    );
+
+    // Path 2: explicit FILE blocks — robust against LLMs that don't
+    // produce valid diffs.
+    let file_blocks = parse_file_blocks(&sol.patch);
+    if !file_blocks.is_empty() {
+        let mut written = Vec::new();
+        for (path, contents) in &file_blocks {
+            let abs = if path.is_absolute() {
+                path.clone()
+            } else {
+                cwd.join(path)
+            };
+            if let Some(parent) = abs.parent()
+                && let Err(e) = std::fs::create_dir_all(parent)
+            {
+                tracing::warn!(
+                    target: "jfc::ui::bounty",
+                    bounty_id = %bounty_id,
+                    path = %abs.display(),
+                    error = %e,
+                    "mkdir parent failed"
+                );
+                continue;
+            }
+            match std::fs::write(&abs, contents) {
+                Ok(_) => {
+                    tracing::info!(
+                        target: "jfc::ui::bounty",
+                        bounty_id = %bounty_id,
+                        path = %abs.display(),
+                        bytes = contents.len(),
+                        "wrote solver file"
+                    );
+                    written.push(abs);
+                }
+                Err(e) => tracing::warn!(
+                    target: "jfc::ui::bounty",
+                    bounty_id = %bounty_id,
+                    path = %abs.display(),
+                    error = %e,
+                    "write failed"
+                ),
+            }
+        }
+        let summary = if written.is_empty() {
+            format!(
+                "Patch saved to {} but no files written (all writes failed).",
+                audit_dir.display()
+            )
+        } else {
+            let mut s = format!("Wrote {} file(s):", written.len());
+            for p in written.iter().take(10) {
+                s.push_str(&format!("\n  - {}", p.display()));
+            }
+            if written.len() > 10 {
+                s.push_str(&format!("\n  ... and {} more", written.len() - 10));
+            }
+            s.push_str(&format!(
+                "\nFull patch + explanation: {}",
+                audit_dir.display()
+            ));
+            s
+        };
+        return AppliedSolution {
+            files: written,
+            summary,
+        };
+    }
+
+    // Path 1: try `git apply` if it looks like a unified diff and cwd
+    // is a git repo.
+    if looks_like_unified_diff(&sol.patch) {
+        let patch_path = audit_dir.join("winner.patch");
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(cwd)
+            .arg("apply")
+            .arg("--whitespace=nowarn")
+            .arg(&patch_path)
+            .output();
+        match out {
+            Ok(o) if o.status.success() => {
+                tracing::info!(
+                    target: "jfc::ui::bounty",
+                    bounty_id = %bounty_id,
+                    "git apply succeeded"
+                );
+                return AppliedSolution {
+                    files: vec![patch_path.clone()],
+                    summary: format!(
+                        "Applied unified diff via `git apply` (audit: {}).",
+                        audit_dir.display()
+                    ),
+                };
+            }
+            Ok(o) => tracing::warn!(
+                target: "jfc::ui::bounty",
+                bounty_id = %bounty_id,
+                stderr = %String::from_utf8_lossy(&o.stderr),
+                "git apply failed; falling back to audit-only"
+            ),
+            Err(e) => tracing::warn!(
+                target: "jfc::ui::bounty",
+                bounty_id = %bounty_id,
+                error = %e,
+                "git apply could not be invoked"
+            ),
+        }
+    }
+
+    // Path 3: audit-only fallback.
+    AppliedSolution {
+        files: vec![audit_dir.join("winner.patch")],
+        summary: format!(
+            "Solution didn't parse as a diff or FILE block — audit copy at {}.",
+            audit_dir.display()
+        ),
+    }
+}
+
+/// Recognise our explicit file-block format. Format:
+///
+///   ===FILE: path/relative/to/cwd===
+///   <file contents, any number of lines>
+///   ===END===
+///
+/// Multiple blocks may appear back-to-back. Whitespace around the
+/// path is trimmed. Returns (path, contents) pairs in source order.
+pub(crate) fn parse_file_blocks(text: &str) -> Vec<(std::path::PathBuf, String)> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("===FILE:") {
+        let after = &rest[start + "===FILE:".len()..];
+        let header_end = match after.find("===") {
+            Some(i) => i,
+            None => break,
+        };
+        let path_str = after[..header_end].trim();
+        let body_start = header_end + 3; // skip "==="
+        let body_after_newline = match after[body_start..].find('\n') {
+            Some(i) => body_start + i + 1,
+            None => break,
+        };
+        let body_text = &after[body_after_newline..];
+        let end_marker = match body_text.find("===END===") {
+            Some(i) => i,
+            None => break,
+        };
+        let contents = body_text[..end_marker].to_string();
+        if !path_str.is_empty() {
+            out.push((std::path::PathBuf::from(path_str), contents));
+        }
+        rest = &body_text[end_marker + "===END===".len()..];
+    }
+    out
+}
+
+fn looks_like_unified_diff(text: &str) -> bool {
+    text.lines().any(|l| l.starts_with("diff --git ") || l.starts_with("--- "))
+        && text.lines().any(|l| l.starts_with("+++ "))
+        && text.lines().any(|l| l.starts_with("@@"))
 }
 
 /// Crude parser for the validator's structured output. Tolerant of
@@ -2033,28 +2287,47 @@ pub async fn execute_tool(
             let invoker = EconomyAgentInvoker::new(provider, model);
             let swarm = EconomySwarmProvider::new(cwd.clone());
             let n_solvers = max_solvers.unwrap_or(2).clamp(1, 5);
+            tracing::info!(
+                target: "jfc::ui::bounty",
+                bounty_id = %bounty_id,
+                n_solvers = n_solvers,
+                cwd = %cwd.display(),
+                "run_bounty: kicking off cycle"
+            );
             let cycle_result = {
                 let mut orch = market_orchestrator().lock().await;
                 orch.run_bounty_cycle(&bounty_id, &invoker, &swarm, n_solvers, 1)
                     .await
             };
             match cycle_result {
-                Ok(settlement) => ExecutionResult::success(format!(
-                    "Bounty `{bounty_id}` settled.\n\
-                     Winner: {}\n\
-                     Total cost: {} tok\n\
-                     Payouts: {}\n\
-                     Trust updates: {}\n\
-                     Run /market or market_status to see updated trust + budget.",
-                    settlement
-                        .winner
-                        .as_ref()
-                        .map(|a| a.0.as_str())
-                        .unwrap_or("(no winning solution)"),
-                    settlement.total_cost,
-                    settlement.payouts.len(),
-                    settlement.trust_updates.len(),
-                )),
+                Ok(outcome) => {
+                    let written = apply_winning_solution(&cwd, &bounty_id, outcome.winning_solution.as_ref());
+                    tracing::info!(
+                        target: "jfc::ui::bounty",
+                        bounty_id = %bounty_id,
+                        winner = outcome.settlement.winner.as_ref().map(|a| a.0.as_str()).unwrap_or("(none)"),
+                        files_written = written.files.len(),
+                        "run_bounty settled"
+                    );
+                    ExecutionResult::success(format!(
+                        "Bounty `{bounty_id}` settled.\n\
+                         Winner: {}\n\
+                         Total cost: {} tok\n\
+                         Payouts: {}\n\
+                         Trust updates: {}\n\
+                         {}\n\
+                         Run /market or market_status to see updated trust + budget.",
+                        outcome.settlement
+                            .winner
+                            .as_ref()
+                            .map(|a| a.0.as_str())
+                            .unwrap_or("(no winning solution)"),
+                        outcome.settlement.total_cost,
+                        outcome.settlement.payouts.len(),
+                        outcome.settlement.trust_updates.len(),
+                        written.summary,
+                    ))
+                }
                 Err(e) => ExecutionResult::failure(format!(
                     "run_bounty cycle for `{bounty_id}` failed: {e}"
                 )),
@@ -4056,7 +4329,7 @@ mod tests {
             .expect("post_bounty");
         let invoker = StubInvoker::new();
         let swarm = StubSwarm;
-        let settlement = orch
+        let outcome = orch
             .run_bounty_cycle(&id, &invoker, &swarm, 2, 1)
             .await
             .expect("cycle should settle");
@@ -4065,7 +4338,14 @@ mod tests {
         // Sealed validation: one validator per surviving solution.
         assert_eq!(*invoker.validator_calls.lock().unwrap(), 2);
         // A winner was selected (compiles=true, tests=true on both).
-        assert!(settlement.winner.is_some(), "expected a winning solver");
+        assert!(outcome.settlement.winner.is_some(), "expected a winning solver");
+        // Cycle outcome carries the winning solution so the dispatcher
+        // can apply its patch to disk — without this, run_bounty would
+        // claim success but write nothing (the 2026-05-06 HMAC bug).
+        assert!(
+            outcome.winning_solution.is_some(),
+            "winning_solution must be exposed for patch application"
+        );
     }
 
     // Robust: even when the invoker errors on a solver, the cycle
@@ -4096,12 +4376,13 @@ mod tests {
         let id = orch
             .post_bounty("test".into(), 500, "cargo test".into(), Some(1))
             .expect("post_bounty");
-        let settlement = orch
+        let outcome = orch
             .run_bounty_cycle(&id, &ErroringInvoker, &StubSwarm, 1, 1)
             .await
             .expect("cycle should still settle (no winner)");
         // No winner because all solvers failed; settlement still produced.
-        assert!(settlement.winner.is_none());
+        assert!(outcome.settlement.winner.is_none());
+        assert!(outcome.winning_solution.is_none());
     }
 
     // Normal: register_active_provider snapshot round-trip — the
@@ -4259,6 +4540,100 @@ mod tests {
     fn graph_history_test_lock() -> &'static std::sync::Mutex<()> {
         static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    // Normal: parse_file_blocks extracts a single FILE block.
+    #[test]
+    fn parse_file_blocks_single_block_normal() {
+        let s = "===FILE: src/lib.rs===\npub fn x() {}\n===END===\n";
+        let got = parse_file_blocks(s);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].0, std::path::PathBuf::from("src/lib.rs"));
+        assert_eq!(got[0].1, "pub fn x() {}\n");
+    }
+
+    // Normal: parse_file_blocks handles multiple back-to-back blocks
+    // and trims path whitespace.
+    #[test]
+    fn parse_file_blocks_multiple_normal() {
+        let s = "preamble text\n\
+                 ===FILE:  Cargo.toml ===\n[package]\nname=\"x\"\n===END===\n\
+                 ===FILE: src/main.rs===\nfn main() {}\n===END===\n\
+                 trailing prose";
+        let got = parse_file_blocks(s);
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].0, std::path::PathBuf::from("Cargo.toml"));
+        assert_eq!(got[1].0, std::path::PathBuf::from("src/main.rs"));
+    }
+
+    // Robust: parse_file_blocks is empty when no blocks present.
+    #[test]
+    fn parse_file_blocks_no_blocks_robust() {
+        assert!(parse_file_blocks("just a unified diff\n--- a/foo\n+++ b/foo\n@@\n").is_empty());
+        assert!(parse_file_blocks("").is_empty());
+    }
+
+    // Robust: a block missing its END marker is dropped (no panic, no
+    // partial write).
+    #[test]
+    fn parse_file_blocks_missing_end_robust() {
+        let s = "===FILE: x.rs===\ncontent without end marker\n";
+        assert!(parse_file_blocks(s).is_empty());
+    }
+
+    // Normal: looks_like_unified_diff recognises a real diff.
+    #[test]
+    fn looks_like_unified_diff_recognises_normal() {
+        let d = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n";
+        assert!(looks_like_unified_diff(d));
+    }
+
+    // Robust: random prose is not classified as a unified diff.
+    #[test]
+    fn looks_like_unified_diff_rejects_prose_robust() {
+        assert!(!looks_like_unified_diff("just some explanation"));
+        assert!(!looks_like_unified_diff(""));
+    }
+
+    // Normal: apply_winning_solution writes audit files + creates the
+    // FILE-block paths under cwd.
+    #[test]
+    fn apply_winning_solution_writes_file_blocks_normal() {
+        use jfc_economy::types::{AgentId, Solution};
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let cwd = tmp.path();
+        let sol = Solution {
+            agent_id: AgentId::new("solver"),
+            bounty_id: "test_b".into(),
+            patch: "===FILE: hello.txt===\nhi there\n===END===\n".into(),
+            explanation: "wrote hello".into(),
+            self_assessment: 0.5,
+            tokens_consumed: 10,
+            compiles: None,
+            tests_pass: None,
+            suspicious: false,
+        };
+        let res = apply_winning_solution(cwd, "test_b", Some(&sol));
+        assert_eq!(res.files.len(), 1, "summary={}", res.summary);
+        assert!(cwd.join("hello.txt").exists(), "file should be written");
+        assert_eq!(
+            std::fs::read_to_string(cwd.join("hello.txt")).unwrap(),
+            "hi there\n"
+        );
+        assert!(
+            cwd.join(".jfc/bounties/test_b/winner.patch").exists(),
+            "audit copy should exist"
+        );
+    }
+
+    // Robust: apply_winning_solution with None reports nothing-written
+    // and creates no audit dir.
+    #[test]
+    fn apply_winning_solution_none_solution_robust() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let res = apply_winning_solution(tmp.path(), "no_winner", None);
+        assert!(res.files.is_empty());
+        assert!(res.summary.contains("No winning solution"));
     }
 
     // Normal: querying records the query in history; snapshot returns
