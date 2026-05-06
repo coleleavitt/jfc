@@ -89,6 +89,7 @@ pub fn create_permission_request(
 // ─── Write / Read requests ───────────────────────────────────────────────────
 
 /// Write a pending permission request to disk.
+#[tracing::instrument(target = "jfc::swarm", level = "trace", skip_all, fields(id = %request.id, team = %request.team_name, tool = %request.tool_name))]
 pub async fn write_permission_request(
     request: &SwarmPermissionRequest,
 ) -> anyhow::Result<()> {
@@ -128,6 +129,7 @@ pub async fn read_pending_permissions(team_name: &str) -> Vec<SwarmPermissionReq
 }
 
 /// Resolve a permission request (move from pending to resolved).
+#[tracing::instrument(target = "jfc::swarm", level = "trace", skip_all, fields(id = request_id, team = team_name, decision = ?resolution.decision))]
 pub async fn resolve_permission(
     request_id: &str,
     resolution: &PermissionResolution,
@@ -241,4 +243,275 @@ pub async fn cleanup_old_resolutions(team_name: &str, max_age: Duration) -> u32 
         debug!("[PermissionSync] Cleaned up {cleaned} old resolutions");
     }
     cleaned
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::swarm::test_support::HomeOverride;
+
+    fn make_request(team: &str, tool: &str) -> SwarmPermissionRequest {
+        create_permission_request(
+            tool,
+            "tool-use-1",
+            serde_json::json!({"file": "x"}),
+            "test perm",
+            "alice@team",
+            "alice",
+            Some("#FF0000"),
+            team,
+        )
+    }
+
+    #[test]
+    fn generate_request_id_is_unique_normal() {
+        let a = generate_request_id();
+        let b = generate_request_id();
+        assert_ne!(a, b);
+        assert!(a.starts_with("perm-"));
+    }
+
+    #[test]
+    fn create_permission_request_populates_fields_normal() {
+        let req = create_permission_request(
+            "Bash",
+            "use-1",
+            serde_json::json!({"cmd": "ls"}),
+            "list dir",
+            "alice@alpha",
+            "alice",
+            Some("#abc"),
+            "alpha",
+        );
+        assert_eq!(req.tool_name, "Bash");
+        assert_eq!(req.tool_use_id, "use-1");
+        assert_eq!(req.worker_id, "alice@alpha");
+        assert_eq!(req.worker_name, "alice");
+        assert_eq!(req.worker_color.as_deref(), Some("#abc"));
+        assert_eq!(req.team_name, "alpha");
+        assert_eq!(req.status, PermissionRequestStatus::Pending);
+        assert!(req.resolved_by.is_none());
+        assert!(req.created_at > 0);
+    }
+
+    #[tokio::test]
+    async fn write_and_read_pending_round_trip_normal() {
+        let _g = HomeOverride::new();
+        let req = make_request("alpha", "Bash");
+        write_permission_request(&req).await.unwrap();
+        let pending = read_pending_permissions("alpha").await;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].id, req.id);
+        assert_eq!(pending[0].tool_name, "Bash");
+    }
+
+    #[tokio::test]
+    async fn read_pending_permissions_empty_when_dir_missing_robust() {
+        let _g = HomeOverride::new();
+        // Directory has never been created — read should yield an empty Vec,
+        // not panic.
+        let pending = read_pending_permissions("ghost").await;
+        assert!(pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_pending_permissions_sorted_by_created_at_normal() {
+        let _g = HomeOverride::new();
+        let mut r1 = make_request("alpha", "first");
+        r1.created_at = 100;
+        let mut r2 = make_request("alpha", "second");
+        r2.created_at = 50;
+        let mut r3 = make_request("alpha", "third");
+        r3.created_at = 200;
+        // Make the IDs unique so they're stored as separate files.
+        r1.id = "perm-100".into();
+        r2.id = "perm-050".into();
+        r3.id = "perm-200".into();
+        write_permission_request(&r1).await.unwrap();
+        write_permission_request(&r2).await.unwrap();
+        write_permission_request(&r3).await.unwrap();
+        let pending = read_pending_permissions("alpha").await;
+        let order: Vec<_> = pending.iter().map(|r| r.tool_name.as_str()).collect();
+        assert_eq!(order, vec!["second", "first", "third"]);
+    }
+
+    #[tokio::test]
+    async fn resolve_permission_moves_pending_to_resolved_normal() {
+        let _g = HomeOverride::new();
+        let req = make_request("alpha", "Bash");
+        let id = req.id.clone();
+        write_permission_request(&req).await.unwrap();
+
+        let resolution = PermissionResolution {
+            decision: PermissionDecision::Approved,
+            resolved_by: "user".into(),
+            feedback: Some("approved".into()),
+            updated_input: None,
+            permission_updates: Vec::new(),
+        };
+        let moved = resolve_permission(&id, &resolution, "alpha").await.unwrap();
+        assert!(moved);
+
+        // Pending should be empty.
+        assert!(read_pending_permissions("alpha").await.is_empty());
+
+        // Resolved file should be readable with status updated.
+        let resolved = read_resolved_permission(&id, "alpha")
+            .await
+            .expect("resolved file present");
+        assert_eq!(resolved.status, PermissionRequestStatus::Approved);
+        assert_eq!(resolved.resolved_by.as_deref(), Some("user"));
+        assert_eq!(resolved.feedback.as_deref(), Some("approved"));
+        assert!(resolved.resolved_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn resolve_permission_rejected_decision_normal() {
+        let _g = HomeOverride::new();
+        let req = make_request("alpha", "WriteFile");
+        let id = req.id.clone();
+        write_permission_request(&req).await.unwrap();
+
+        let resolution = PermissionResolution {
+            decision: PermissionDecision::Rejected,
+            resolved_by: "leader".into(),
+            feedback: None,
+            updated_input: None,
+            permission_updates: Vec::new(),
+        };
+        resolve_permission(&id, &resolution, "alpha").await.unwrap();
+        let resolved = read_resolved_permission(&id, "alpha").await.unwrap();
+        assert_eq!(resolved.status, PermissionRequestStatus::Rejected);
+    }
+
+    #[tokio::test]
+    async fn resolve_permission_returns_false_for_missing_robust() {
+        let _g = HomeOverride::new();
+        let resolution = PermissionResolution {
+            decision: PermissionDecision::Approved,
+            resolved_by: "u".into(),
+            feedback: None,
+            updated_input: None,
+            permission_updates: Vec::new(),
+        };
+        let moved = resolve_permission("nonexistent", &resolution, "alpha")
+            .await
+            .unwrap();
+        assert!(!moved);
+    }
+
+    #[tokio::test]
+    async fn read_resolved_permission_returns_none_when_absent_robust() {
+        let _g = HomeOverride::new();
+        assert!(read_resolved_permission("nope", "alpha").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn delete_resolved_permission_is_idempotent_robust() {
+        let _g = HomeOverride::new();
+        // Deleting a non-existent file should not error.
+        delete_resolved_permission("nope", "alpha").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_resolved_permission_removes_file_normal() {
+        let _g = HomeOverride::new();
+        let req = make_request("alpha", "Bash");
+        let id = req.id.clone();
+        write_permission_request(&req).await.unwrap();
+        resolve_permission(
+            &id,
+            &PermissionResolution {
+                decision: PermissionDecision::Approved,
+                resolved_by: "u".into(),
+                feedback: None,
+                updated_input: None,
+                permission_updates: Vec::new(),
+            },
+            "alpha",
+        )
+        .await
+        .unwrap();
+        assert!(read_resolved_permission(&id, "alpha").await.is_some());
+
+        delete_resolved_permission(&id, "alpha").await.unwrap();
+        assert!(read_resolved_permission(&id, "alpha").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn poll_for_response_returns_immediately_when_resolved_normal() {
+        let _g = HomeOverride::new();
+        let req = make_request("alpha", "Bash");
+        let id = req.id.clone();
+        write_permission_request(&req).await.unwrap();
+        resolve_permission(
+            &id,
+            &PermissionResolution {
+                decision: PermissionDecision::Approved,
+                resolved_by: "u".into(),
+                feedback: None,
+                updated_input: None,
+                permission_updates: Vec::new(),
+            },
+            "alpha",
+        )
+        .await
+        .unwrap();
+
+        let resp = poll_for_response(&id, "alpha", Duration::from_millis(500)).await;
+        let resp = resp.expect("must find resolved");
+        assert_eq!(resp.status, PermissionRequestStatus::Approved);
+        // After polling, the resolved file is cleaned up.
+        assert!(read_resolved_permission(&id, "alpha").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn poll_for_response_times_out_when_unresolved_robust() {
+        let _g = HomeOverride::new();
+        // No resolved file ever appears — poll should give up cleanly.
+        let resp = poll_for_response("never", "alpha", Duration::from_millis(50)).await;
+        assert!(resp.is_none());
+    }
+
+    #[tokio::test]
+    async fn cleanup_old_resolutions_removes_aged_files_normal() {
+        let _g = HomeOverride::new();
+        // Write a resolved file with a very old `resolved_at`.
+        ensure_permission_dirs("alpha").await.unwrap();
+        let mut req = make_request("alpha", "Bash");
+        req.status = PermissionRequestStatus::Approved;
+        req.resolved_at = Some(0); // unix epoch — very old
+        let path = resolved_dir("alpha").join(format!("{}.json", req.id));
+        let json = serde_json::to_string_pretty(&req).unwrap();
+        tokio::fs::write(&path, json).await.unwrap();
+
+        let cleaned = cleanup_old_resolutions("alpha", Duration::from_secs(60)).await;
+        assert_eq!(cleaned, 1);
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn cleanup_old_resolutions_keeps_fresh_files_normal() {
+        let _g = HomeOverride::new();
+        ensure_permission_dirs("alpha").await.unwrap();
+        let mut req = make_request("alpha", "Bash");
+        req.status = PermissionRequestStatus::Approved;
+        req.resolved_at = Some(super::super::team_helpers::now_millis()); // brand-new
+        let path = resolved_dir("alpha").join(format!("{}.json", req.id));
+        let json = serde_json::to_string_pretty(&req).unwrap();
+        tokio::fs::write(&path, json).await.unwrap();
+
+        let cleaned = cleanup_old_resolutions("alpha", Duration::from_secs(3600)).await;
+        assert_eq!(cleaned, 0);
+        assert!(path.exists());
+    }
+
+    #[tokio::test]
+    async fn cleanup_old_resolutions_returns_zero_when_dir_missing_robust() {
+        let _g = HomeOverride::new();
+        let cleaned = cleanup_old_resolutions("ghost", Duration::from_secs(1)).await;
+        assert_eq!(cleaned, 0);
+    }
 }

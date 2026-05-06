@@ -20,10 +20,13 @@ pub fn team_file_path(team_name: &str) -> PathBuf {
 }
 
 /// Get the tasks directory for a team.
+///
+/// Honors the same `JFC_SWARM_HOME_OVERRIDE` test hook that `mailbox::team_dir`
+/// uses so tests keep both team config and task state inside one `TempDir`.
 pub fn tasks_dir(team_name: &str) -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".claude")
+    let home = mailbox::swarm_home_override()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")));
+    home.join(".claude")
         .join("tasks")
         .join(sanitize_name(team_name))
 }
@@ -81,6 +84,7 @@ pub async fn write_team_file_exclusive(
 // ─── Team Lifecycle ──────────────────────────────────────────────────────────
 
 /// Create a new team. Returns the paths created.
+#[tracing::instrument(target = "jfc::swarm", level = "trace", skip_all, fields(team = team_name))]
 pub async fn create_team(
     team_name: &str,
     description: Option<&str>,
@@ -128,6 +132,7 @@ pub async fn create_team(
 }
 
 /// Delete a team and all its associated directories.
+#[tracing::instrument(target = "jfc::swarm", level = "trace", skip_all, fields(team = team_name))]
 pub async fn delete_team(team_name: &str) -> anyhow::Result<()> {
     // Remove team directory
     let team = mailbox::team_dir(team_name);
@@ -265,4 +270,381 @@ pub fn now_millis() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::swarm::test_support::HomeOverride;
+
+    #[test]
+    fn team_file_path_lands_in_team_dir_normal() {
+        let _g = HomeOverride::new();
+        let path = team_file_path("alpha");
+        assert!(path.ends_with("teams/alpha/config.json"));
+    }
+
+    #[test]
+    fn tasks_dir_uses_override_normal() {
+        let _g = HomeOverride::new();
+        let dir = tasks_dir("My Team");
+        assert!(dir.ends_with("tasks/my-team"));
+    }
+
+    #[test]
+    fn now_millis_is_nonzero_normal() {
+        // Sanity: should produce a roughly-current epoch millisecond stamp.
+        let n = now_millis();
+        assert!(n > 1_500_000_000_000, "expected post-2017 ms epoch, got {n}");
+    }
+
+    #[test]
+    fn is_team_leader_returns_true_when_lead_set_normal() {
+        let mut ctx = TeamContext::default();
+        assert!(!is_team_leader(&ctx));
+        ctx.lead_agent_id = Some("lead@alpha".into());
+        assert!(is_team_leader(&ctx));
+    }
+
+    #[tokio::test]
+    async fn read_team_file_returns_none_for_missing_robust() {
+        let _g = HomeOverride::new();
+        assert!(read_team_file("ghost").await.is_none());
+    }
+
+    #[test]
+    fn read_team_file_sync_returns_none_for_missing_robust() {
+        let _g = HomeOverride::new();
+        assert!(read_team_file_sync("ghost").is_none());
+    }
+
+    #[tokio::test]
+    async fn create_team_writes_config_and_dirs_normal() {
+        let _g = HomeOverride::new();
+        let tf = create_team(
+            "alpha",
+            Some("first team"),
+            "lead@alpha",
+            Some("opus-4-7"),
+            "/tmp/cwd",
+        )
+        .await
+        .unwrap();
+        assert_eq!(tf.name, "alpha");
+        assert_eq!(tf.description.as_deref(), Some("first team"));
+        assert_eq!(tf.members.len(), 1);
+        assert_eq!(tf.members[0].name, super::super::TEAM_LEAD_NAME);
+
+        // The config.json + tasks dir + inboxes dir must all exist.
+        assert!(team_file_path("alpha").exists());
+        assert!(tasks_dir("alpha").exists());
+        assert!(super::mailbox::team_dir("alpha").join("inboxes").exists());
+
+        // Round-trip read.
+        let read_back = read_team_file("alpha").await.expect("read");
+        assert_eq!(read_back.name, "alpha");
+    }
+
+    #[tokio::test]
+    async fn create_team_fails_when_already_exists_robust() {
+        let _g = HomeOverride::new();
+        create_team("alpha", None, "lead@alpha", None, "/tmp")
+            .await
+            .unwrap();
+        // Second create with same name → exclusive write rejects it.
+        let err = create_team("alpha", None, "lead@alpha", None, "/tmp").await;
+        assert!(err.is_err());
+    }
+
+    #[tokio::test]
+    async fn delete_team_removes_config_and_tasks_normal() {
+        let _g = HomeOverride::new();
+        create_team("alpha", None, "lead@alpha", None, "/tmp")
+            .await
+            .unwrap();
+        assert!(team_file_path("alpha").exists());
+
+        delete_team("alpha").await.unwrap();
+        assert!(!team_file_path("alpha").exists());
+        assert!(!tasks_dir("alpha").exists());
+    }
+
+    #[tokio::test]
+    async fn delete_team_is_idempotent_robust() {
+        let _g = HomeOverride::new();
+        // No team exists → delete should still succeed.
+        delete_team("ghost").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn add_member_appends_to_roster_normal() {
+        let _g = HomeOverride::new();
+        create_team("alpha", None, "lead@alpha", None, "/tmp")
+            .await
+            .unwrap();
+        let new_member = TeamMember {
+            agent_id: "alice@alpha".into(),
+            name: "alice".into(),
+            agent_type: Some("researcher".into()),
+            model: None,
+            color: Some("#4FC3F7".into()),
+            plan_mode_required: Some(false),
+            joined_at: 0,
+            cwd: None,
+            worktree_path: None,
+            backend_type: Some(BackendType::InProcess),
+            is_active: Some(true),
+            mode: None,
+        };
+        add_member("alpha", new_member).await.unwrap();
+        let tf = read_team_file("alpha").await.unwrap();
+        assert_eq!(tf.members.len(), 2);
+        assert!(tf.members.iter().any(|m| m.name == "alice"));
+    }
+
+    #[tokio::test]
+    async fn add_member_fails_for_missing_team_robust() {
+        let _g = HomeOverride::new();
+        let m = TeamMember {
+            agent_id: "x".into(),
+            name: "x".into(),
+            agent_type: None,
+            model: None,
+            color: None,
+            plan_mode_required: None,
+            joined_at: 0,
+            cwd: None,
+            worktree_path: None,
+            backend_type: None,
+            is_active: None,
+            mode: None,
+        };
+        assert!(add_member("ghost", m).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn remove_member_by_id_removes_match_normal() {
+        let _g = HomeOverride::new();
+        create_team("alpha", None, "lead@alpha", None, "/tmp")
+            .await
+            .unwrap();
+        let m = TeamMember {
+            agent_id: "alice@alpha".into(),
+            name: "alice".into(),
+            agent_type: None,
+            model: None,
+            color: None,
+            plan_mode_required: None,
+            joined_at: 0,
+            cwd: None,
+            worktree_path: None,
+            backend_type: None,
+            is_active: None,
+            mode: None,
+        };
+        add_member("alpha", m).await.unwrap();
+        let removed = remove_member_by_id("alpha", "alice@alpha").await.unwrap();
+        assert!(removed);
+        let tf = read_team_file("alpha").await.unwrap();
+        assert_eq!(tf.members.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn remove_member_by_id_returns_false_for_missing_robust() {
+        let _g = HomeOverride::new();
+        create_team("alpha", None, "lead@alpha", None, "/tmp")
+            .await
+            .unwrap();
+        let removed = remove_member_by_id("alpha", "nonexistent").await.unwrap();
+        assert!(!removed);
+    }
+
+    #[tokio::test]
+    async fn remove_member_by_name_removes_match_normal() {
+        let _g = HomeOverride::new();
+        create_team("alpha", None, "lead@alpha", None, "/tmp")
+            .await
+            .unwrap();
+        let m = TeamMember {
+            agent_id: "alice@alpha".into(),
+            name: "alice".into(),
+            agent_type: None,
+            model: None,
+            color: None,
+            plan_mode_required: None,
+            joined_at: 0,
+            cwd: None,
+            worktree_path: None,
+            backend_type: None,
+            is_active: None,
+            mode: None,
+        };
+        add_member("alpha", m).await.unwrap();
+        let removed = remove_member_by_name("alpha", "alice").await.unwrap();
+        assert!(removed);
+    }
+
+    #[tokio::test]
+    async fn remove_member_by_name_returns_false_for_missing_robust() {
+        let _g = HomeOverride::new();
+        create_team("alpha", None, "lead@alpha", None, "/tmp")
+            .await
+            .unwrap();
+        let removed = remove_member_by_name("alpha", "ghost").await.unwrap();
+        assert!(!removed);
+    }
+
+    #[tokio::test]
+    async fn set_member_active_updates_flag_normal() {
+        let _g = HomeOverride::new();
+        create_team("alpha", None, "lead@alpha", None, "/tmp")
+            .await
+            .unwrap();
+        let m = TeamMember {
+            agent_id: "alice@alpha".into(),
+            name: "alice".into(),
+            agent_type: None,
+            model: None,
+            color: None,
+            plan_mode_required: None,
+            joined_at: 0,
+            cwd: None,
+            worktree_path: None,
+            backend_type: None,
+            is_active: Some(true),
+            mode: None,
+        };
+        add_member("alpha", m).await.unwrap();
+        set_member_active("alpha", "alice", false).await.unwrap();
+        let tf = read_team_file("alpha").await.unwrap();
+        let alice = tf.members.iter().find(|m| m.name == "alice").unwrap();
+        assert_eq!(alice.is_active, Some(false));
+    }
+
+    #[tokio::test]
+    async fn set_member_mode_updates_mode_normal() {
+        let _g = HomeOverride::new();
+        create_team("alpha", None, "lead@alpha", None, "/tmp")
+            .await
+            .unwrap();
+        let m = TeamMember {
+            agent_id: "alice@alpha".into(),
+            name: "alice".into(),
+            agent_type: None,
+            model: None,
+            color: None,
+            plan_mode_required: None,
+            joined_at: 0,
+            cwd: None,
+            worktree_path: None,
+            backend_type: None,
+            is_active: Some(true),
+            mode: None,
+        };
+        add_member("alpha", m).await.unwrap();
+        set_member_mode("alpha", "alice", "bypass-permissions")
+            .await
+            .unwrap();
+        let tf = read_team_file("alpha").await.unwrap();
+        let alice = tf.members.iter().find(|m| m.name == "alice").unwrap();
+        assert_eq!(alice.mode.as_deref(), Some("bypass-permissions"));
+    }
+
+    #[tokio::test]
+    async fn get_leader_name_returns_lead_member_normal() {
+        let _g = HomeOverride::new();
+        create_team("alpha", None, "lead@alpha", None, "/tmp")
+            .await
+            .unwrap();
+        let leader = get_leader_name("alpha").await.unwrap();
+        assert_eq!(leader, super::super::TEAM_LEAD_NAME);
+    }
+
+    #[tokio::test]
+    async fn get_leader_name_none_for_missing_team_robust() {
+        let _g = HomeOverride::new();
+        assert!(get_leader_name("ghost").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn get_active_teammates_excludes_lead_and_inactive_normal() {
+        let _g = HomeOverride::new();
+        create_team("alpha", None, "lead@alpha", None, "/tmp")
+            .await
+            .unwrap();
+        // Active teammate.
+        add_member(
+            "alpha",
+            TeamMember {
+                agent_id: "alice@alpha".into(),
+                name: "alice".into(),
+                agent_type: None,
+                model: None,
+                color: None,
+                plan_mode_required: None,
+                joined_at: 0,
+                cwd: None,
+                worktree_path: None,
+                backend_type: None,
+                is_active: Some(true),
+                mode: None,
+            },
+        )
+        .await
+        .unwrap();
+        // Inactive teammate.
+        add_member(
+            "alpha",
+            TeamMember {
+                agent_id: "bob@alpha".into(),
+                name: "bob".into(),
+                agent_type: None,
+                model: None,
+                color: None,
+                plan_mode_required: None,
+                joined_at: 0,
+                cwd: None,
+                worktree_path: None,
+                backend_type: None,
+                is_active: Some(false),
+                mode: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let active = get_active_teammates("alpha").await;
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].name, "alice");
+    }
+
+    #[tokio::test]
+    async fn get_active_teammates_empty_for_missing_team_robust() {
+        let _g = HomeOverride::new();
+        let active = get_active_teammates("ghost").await;
+        assert!(active.is_empty());
+    }
+
+    #[test]
+    fn read_team_file_sync_round_trips_normal() {
+        // Use blocking I/O directly so this test stays in a normal sync ctx.
+        let _g = HomeOverride::new();
+        let dir = mailbox::team_dir("alpha");
+        std::fs::create_dir_all(&dir).unwrap();
+        let tf = TeamFile {
+            name: "alpha".into(),
+            description: None,
+            created_at: 1,
+            lead_agent_id: "lead@alpha".into(),
+            lead_session_id: None,
+            members: vec![],
+        };
+        let json = serde_json::to_string(&tf).unwrap();
+        std::fs::write(dir.join("config.json"), json).unwrap();
+
+        let read_back = read_team_file_sync("alpha").expect("read");
+        assert_eq!(read_back.name, "alpha");
+    }
 }
