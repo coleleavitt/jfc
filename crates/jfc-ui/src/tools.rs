@@ -113,6 +113,36 @@ pub(crate) fn snapshot_active_provider() -> Option<(
         .and_then(|g| g.as_ref().map(|(p, m)| (std::sync::Arc::clone(p), m.clone())))
 }
 
+/// Process-global handle to the AppEvent channel. Set by main.rs
+/// once at startup so bounty solver/validator subagents can emit
+/// the same `TaskStarted` / `AgentChunk` / `TaskCompleted` events
+/// the regular Task tool's swarm does — without that, the fan UI
+/// and ctrl+X subagent panel show nothing while a cycle is running.
+fn active_event_sender_handle() -> &'static std::sync::RwLock<
+    Option<tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
+> {
+    static H: OnceLock<
+        std::sync::RwLock<
+            Option<tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
+        >,
+    > = OnceLock::new();
+    H.get_or_init(|| std::sync::RwLock::new(None))
+}
+
+pub fn register_event_sender(
+    tx: tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>,
+) {
+    if let Ok(mut g) = active_event_sender_handle().write() {
+        *g = Some(tx);
+    }
+}
+
+pub(crate) fn snapshot_event_sender() -> Option<
+    tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>,
+> {
+    active_event_sender_handle().read().ok().and_then(|g| g.clone())
+}
+
 /// SwarmProvider impl for jfc-ui — delegates to the existing
 /// `worktrees` module. Each solver gets a worktree named
 /// `economy/<bounty_id>/<agent_id>` so concurrent bounties don't
@@ -207,6 +237,12 @@ impl jfc_economy::reporting::SwarmProvider for EconomySwarmProvider {
 pub(crate) struct EconomyAgentInvoker {
     provider: std::sync::Arc<dyn crate::provider::Provider>,
     model: crate::provider::ModelId,
+    /// Optional UI event channel — when set, every solver / validator
+    /// invocation emits TaskStarted before streaming, AgentChunk for
+    /// each text delta, and TaskCompleted/Failed at the end. This is
+    /// what makes bounty subagents show up in the same fan UI / ctrl+X
+    /// panel as regular Task-tool subagents. None is fine for tests.
+    event_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
 }
 
 impl EconomyAgentInvoker {
@@ -214,17 +250,25 @@ impl EconomyAgentInvoker {
         provider: std::sync::Arc<dyn crate::provider::Provider>,
         model: crate::provider::ModelId,
     ) -> Self {
-        Self { provider, model }
+        Self {
+            provider,
+            model,
+            event_tx: snapshot_event_sender(),
+        }
     }
 
     /// Drive a single LLM call and return `(text, tokens_consumed)`.
     /// Tokens fall back to a byte estimate when the provider doesn't
-    /// emit a Usage event (most don't on the first chunk).
+    /// emit a Usage event (most don't on the first chunk). When
+    /// `task_id` is provided and the invoker has an event channel,
+    /// streams text deltas as `AgentChunk` events keyed by that
+    /// task_id so the fan UI fills live.
     async fn one_shot(
         &self,
         system: String,
         user: String,
         max_tokens: u64,
+        task_id: Option<&str>,
     ) -> Result<(String, u64), String> {
         use crate::provider::*;
         use futures::StreamExt;
@@ -245,7 +289,15 @@ impl EconomyAgentInvoker {
         let mut output_tokens: u64 = 0;
         while let Some(ev) = stream.next().await {
             match ev {
-                Ok(StreamEvent::TextDelta { delta, .. }) => text.push_str(&delta),
+                Ok(StreamEvent::TextDelta { delta, .. }) => {
+                    if let (Some(tx), Some(id)) = (&self.event_tx, task_id) {
+                        let _ = tx.send(crate::app::AppEvent::AgentChunk {
+                            task_id: id.to_owned(),
+                            text: delta.clone(),
+                        });
+                    }
+                    text.push_str(&delta);
+                }
                 Ok(StreamEvent::TextDone { text: t, .. }) => {
                     if text.is_empty() {
                         text = t;
@@ -258,6 +310,16 @@ impl EconomyAgentInvoker {
                 }) => {
                     input_tokens = i as u64;
                     output_tokens = o as u64;
+                    if let (Some(tx), Some(id)) = (&self.event_tx, task_id) {
+                        let _ = tx.send(crate::app::AppEvent::TaskProgress {
+                            task_id: id.to_owned(),
+                            last_tool: None,
+                            elapsed_ms: 0,
+                            tool_use_count: None,
+                            input_tokens: Some(i as u64),
+                            output_tokens: Some(o as u64),
+                        });
+                    }
                 }
                 Ok(StreamEvent::Error { message }) => {
                     return Err(format!("provider stream error: {message}"));
@@ -274,6 +336,38 @@ impl EconomyAgentInvoker {
         };
         Ok((text, tokens))
     }
+
+    /// Emit `TaskStarted` so a `BackgroundTask` shows up in the fan
+    /// UI and ctrl+X panel for the duration of this subagent. Call
+    /// before starting the actual stream; pair with `emit_completed`
+    /// or `emit_failed` after.
+    fn emit_started(&self, task_id: &str, description: &str) {
+        if let Some(tx) = &self.event_tx {
+            let _ = tx.send(crate::app::AppEvent::TaskStarted {
+                task_id: task_id.to_owned(),
+                description: description.to_owned(),
+            });
+        }
+    }
+
+    fn emit_completed(&self, task_id: &str, summary: &str, elapsed_ms: u64) {
+        if let Some(tx) = &self.event_tx {
+            let _ = tx.send(crate::app::AppEvent::TaskCompleted {
+                task_id: task_id.to_owned(),
+                summary: summary.to_owned(),
+                elapsed_ms,
+            });
+        }
+    }
+
+    fn emit_failed(&self, task_id: &str, error: &str) {
+        if let Some(tx) = &self.event_tx {
+            let _ = tx.send(crate::app::AppEvent::TaskFailed {
+                task_id: task_id.to_owned(),
+                error: error.to_owned(),
+            });
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -282,6 +376,20 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
         &self,
         prompt: jfc_economy::reporting::SolverPrompt,
     ) -> Result<jfc_economy::types::Solution, String> {
+        let task_id = format!("economy-solver-{}", prompt.agent_id.0);
+        let desc = format!(
+            "Solver: {}",
+            prompt
+                .bounty_description
+                .lines()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take(60)
+                .collect::<String>()
+        );
+        self.emit_started(&task_id, &desc);
+        let started_at = std::time::Instant::now();
         let system = format!(
             "You are a competitive solver agent in a code-bounty market. \
              Your goal: produce a minimal, correct patch that satisfies the \
@@ -295,28 +403,55 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
              Then a one-paragraph explanation.",
             prompt.bounty_id, prompt.bounty_description
         );
-        let (text, tokens) = self.one_shot(system, user, prompt.max_tokens).await?;
-        let (patch, explanation) = split_patch_and_explanation(&text);
-        Ok(jfc_economy::types::Solution {
-            agent_id: prompt.agent_id,
-            bounty_id: prompt.bounty_id,
-            patch,
-            explanation,
-            self_assessment: 0.5,
-            tokens_consumed: tokens,
-            // We can't run cargo here without spawning a subprocess
-            // in the worktree — defer mechanistic verification to
-            // the orchestrator's settlement phase. Mark unknown.
-            compiles: None,
-            tests_pass: None,
-            suspicious: false,
-        })
+        match self.one_shot(system, user, prompt.max_tokens, Some(&task_id)).await {
+            Ok((text, tokens)) => {
+                let (patch, explanation) = split_patch_and_explanation(&text);
+                let summary = format!(
+                    "{} bytes patch, {} tokens",
+                    patch.len(),
+                    tokens
+                );
+                self.emit_completed(&task_id, &summary, started_at.elapsed().as_millis() as u64);
+                Ok(jfc_economy::types::Solution {
+                    agent_id: prompt.agent_id,
+                    bounty_id: prompt.bounty_id,
+                    patch,
+                    explanation,
+                    self_assessment: 0.5,
+                    tokens_consumed: tokens,
+                    // We can't run cargo here without spawning a subprocess
+                    // in the worktree — defer mechanistic verification to
+                    // the orchestrator's settlement phase. Mark unknown.
+                    compiles: None,
+                    tests_pass: None,
+                    suspicious: false,
+                })
+            }
+            Err(e) => {
+                self.emit_failed(&task_id, &e);
+                Err(e)
+            }
+        }
     }
 
     async fn invoke_validator(
         &self,
         prompt: jfc_economy::reporting::ValidatorPrompt,
     ) -> Result<jfc_economy::reporting::ValidatorOutcome, String> {
+        let task_id = format!("economy-validator-{}", prompt.validator_id.0);
+        let desc = format!(
+            "Validator: {}",
+            prompt
+                .bounty_description
+                .lines()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take(60)
+                .collect::<String>()
+        );
+        self.emit_started(&task_id, &desc);
+        let started_at = std::time::Instant::now();
         let system = "You are an adversarial validator in a code-bounty \
              market. Your job: find any flaw in the submitted solution. \
              You earn tokens for VALID flaws (reproducible by a test) and \
@@ -336,14 +471,33 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
             prompt.solution.patch.chars().take(4_000).collect::<String>(),
             prompt.solution.explanation.chars().take(500).collect::<String>(),
         );
-        let (text, tokens) = self.one_shot(system, user, prompt.max_tokens).await?;
-        let (flaw, confidence, test_code) = parse_validator_output(&text);
-        Ok(jfc_economy::reporting::ValidatorOutcome {
-            flaw,
-            test_code,
-            confidence,
-            tokens_consumed: tokens,
-        })
+        match self.one_shot(system, user, prompt.max_tokens, Some(&task_id)).await {
+            Ok((text, tokens)) => {
+                let (flaw, confidence, test_code) = parse_validator_output(&text);
+                let summary = match (&flaw, &test_code) {
+                    (Some(f), Some(_)) => format!(
+                        "flaw with reproducible test (conf {confidence:.2}): {}",
+                        f.chars().take(80).collect::<String>()
+                    ),
+                    (Some(f), None) => format!(
+                        "flaw without test (conf {confidence:.2}): {}",
+                        f.chars().take(80).collect::<String>()
+                    ),
+                    (None, _) => format!("no flaw found (conf {confidence:.2})"),
+                };
+                self.emit_completed(&task_id, &summary, started_at.elapsed().as_millis() as u64);
+                Ok(jfc_economy::reporting::ValidatorOutcome {
+                    flaw,
+                    test_code,
+                    confidence,
+                    tokens_consumed: tokens,
+                })
+            }
+            Err(e) => {
+                self.emit_failed(&task_id, &e);
+                Err(e)
+            }
+        }
     }
 }
 
@@ -1797,28 +1951,47 @@ pub async fn execute_tool(
             // surviving solution — sealed validation gives one
             // independent verdict per solver.
             let n_solvers = max_solvers.unwrap_or(2).clamp(1, 5);
+            tracing::info!(
+                target: "jfc::ui::bounty",
+                bounty_id = %bounty_id,
+                n_solvers = n_solvers,
+                cwd = %cwd.display(),
+                "post_bounty auto_dispatch: kicking off cycle"
+            );
             let cycle_result = {
                 let mut orch = market_orchestrator().lock().await;
                 orch.run_bounty_cycle(&bounty_id, &invoker, &swarm, n_solvers, 1)
                     .await
             };
             match cycle_result {
-                Ok(settlement) => ExecutionResult::success(format!(
-                    "Bounty `{bounty_id}` settled.\n\
-                     Winner: {}\n\
-                     Total cost: {} tok\n\
-                     Payouts: {}\n\
-                     Trust updates: {}\n\
-                     Run /market to see updated trust + budget.",
-                    settlement
-                        .winner
-                        .as_ref()
-                        .map(|a| a.0.as_str())
-                        .unwrap_or("(no winning solution)"),
-                    settlement.total_cost,
-                    settlement.payouts.len(),
-                    settlement.trust_updates.len(),
-                )),
+                Ok(outcome) => {
+                    let written = apply_winning_solution(&cwd, &bounty_id, outcome.winning_solution.as_ref());
+                    tracing::info!(
+                        target: "jfc::ui::bounty",
+                        bounty_id = %bounty_id,
+                        winner = outcome.settlement.winner.as_ref().map(|a| a.0.as_str()).unwrap_or("(none)"),
+                        files_written = written.files.len(),
+                        "post_bounty auto_dispatch settled"
+                    );
+                    ExecutionResult::success(format!(
+                        "Bounty `{bounty_id}` settled.\n\
+                         Winner: {}\n\
+                         Total cost: {} tok\n\
+                         Payouts: {}\n\
+                         Trust updates: {}\n\
+                         {}\n\
+                         Run /market to see updated trust + budget.",
+                        outcome.settlement
+                            .winner
+                            .as_ref()
+                            .map(|a| a.0.as_str())
+                            .unwrap_or("(no winning solution)"),
+                        outcome.settlement.total_cost,
+                        outcome.settlement.payouts.len(),
+                        outcome.settlement.trust_updates.len(),
+                        written.summary,
+                    ))
+                }
                 Err(e) => ExecutionResult::failure(format!(
                     "auto_dispatch cycle for `{bounty_id}` failed: {e}"
                 )),

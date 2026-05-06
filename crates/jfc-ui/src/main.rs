@@ -607,6 +607,12 @@ async fn run(
     initial_prompt: Option<String>,
 ) -> anyhow::Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+    // Make the channel reachable from non-Task code paths (bounty
+    // solver/validator agents, future cron-triggered work) so they
+    // emit the same TaskStarted/AgentChunk/TaskCompleted events the
+    // fan UI + ctrl+X panel render. Mirrors register_active_provider.
+    crate::tools::register_event_sender(tx.clone());
+    tracing::info!(target: "jfc::ui::events", "registered AppEvent sender for non-Task agent paths");
     let mut app = App::new(provider, model);
     app.providers = providers.clone();
 
@@ -1869,6 +1875,17 @@ async fn run(
                 app.streaming_reasoning.clear();
                 app.streaming_response_bytes = 0;
                 app.streaming_assistant_idx = None;
+                // Clear the turn clock and any pending tool calls so the
+                // spinner row stops rendering. Without this, the
+                // `show_spinner` condition stays true (it checks
+                // `turn_started_at.is_some()` and `!pending_tool_calls.is_empty()`)
+                // and the spinner/counter keeps animating after an
+                // interrupt or network error.
+                app.turn_started_at = None;
+                app.pending_tool_calls.clear();
+                // Reset the interrupt flag so background tasks or the
+                // next auto-retry don't see a stale `true`.
+                app.interrupt_flag.store(false, std::sync::atomic::Ordering::SeqCst);
                 app.messages.push(ChatMessage::assistant(format!(
                     "**Error:** {e}\n\n_Press Ctrl+R to retry the last prompt._"
                 )));

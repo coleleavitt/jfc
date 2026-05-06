@@ -201,6 +201,19 @@ pub struct ValidatorOutcome {
     pub tokens_consumed: u64,
 }
 
+/// Aggregate result of a full `run_bounty_cycle` call.
+///
+/// `winning_solution` is what the run_bounty tool dispatcher needs to
+/// actually write the patch to disk — settlement alone only carries
+/// payouts/trust deltas. Without this hook the user gets a "settled"
+/// confirmation but no files, which is exactly the bug from the
+/// 2026-05-06 HMAC screenshot.
+#[derive(Debug, Clone)]
+pub struct CycleOutcome {
+    pub settlement: crate::types::Settlement,
+    pub winning_solution: Option<crate::types::Solution>,
+}
+
 /// Trait that turns a solver / validator prompt into a real LLM call.
 ///
 /// Defined in jfc-economy so the orchestrator can drive a full bounty

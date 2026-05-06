@@ -124,8 +124,8 @@ impl MarketOrchestrator {
         swarm: &dyn crate::reporting::SwarmProvider,
         n_solvers: u8,
         n_validators_per_solution: u8,
-    ) -> Result<crate::types::Settlement, OrchestratorError> {
-        use crate::reporting::{SolverPrompt, ValidatorPrompt};
+    ) -> Result<crate::reporting::CycleOutcome, OrchestratorError> {
+        use crate::reporting::{CycleOutcome, SolverPrompt, ValidatorPrompt};
         use crate::types::{AgentId, ValidationChallenge};
 
         let bounty = self
@@ -133,6 +133,15 @@ impl MarketOrchestrator {
             .get(bounty_id)
             .ok_or_else(|| OrchestratorError::CharterViolation(format!("unknown bounty: {bounty_id}")))?
             .clone();
+        tracing::info!(
+            target: "jfc::economy::cycle",
+            bounty_id = %bounty_id,
+            reward = bounty.reward,
+            n_solvers = n_solvers,
+            n_validators = n_validators_per_solution,
+            description = %bounty.description.chars().take(80).collect::<String>(),
+            "starting bounty cycle"
+        );
 
         // Cap n_solvers by charter and the bounty's own max_solvers.
         let actual_solvers = (n_solvers as usize)
@@ -325,6 +334,16 @@ impl MarketOrchestrator {
         self.bounties
             .transition(bounty_id, MarketState::Settling)
             .map_err(OrchestratorError::Bounty)?;
+        // Capture the winning solution before settlement mutates pools.
+        // run_bounty in the dispatcher needs `winning_solution.patch`
+        // to actually write the work to disk — without it, the cycle
+        // looks done but the user sees no files (the bug from the
+        // 2026-05-06 screenshot).
+        let winning_solution = self
+            .solvers
+            .rank_solutions()
+            .first()
+            .map(|s| (*s).clone());
         let settlement = self
             .settle_bounty(bounty_id)
             .ok_or_else(|| OrchestratorError::CharterViolation(
@@ -333,7 +352,19 @@ impl MarketOrchestrator {
         self.bounties
             .transition(bounty_id, MarketState::Complete)
             .map_err(OrchestratorError::Bounty)?;
-        Ok(settlement)
+        tracing::info!(
+            target: "jfc::economy::cycle",
+            bounty_id = %bounty_id,
+            winner = settlement.winner.as_ref().map(|a| a.0.as_str()).unwrap_or("(none)"),
+            total_cost = settlement.total_cost,
+            payouts = settlement.payouts.len(),
+            patch_bytes = winning_solution.as_ref().map(|s| s.patch.len()).unwrap_or(0),
+            "bounty cycle settled"
+        );
+        Ok(CycleOutcome {
+            settlement,
+            winning_solution,
+        })
     }
 
     /// Access the settlement engine (stateless, so just delegates).
