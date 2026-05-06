@@ -13,11 +13,20 @@
 //! so future versions of oh-my-opencode adding fields don't make our parser
 //! reject existing user configs.
 //!
-//! Provider lookup is left to whoever consumes the resolved string — both bare
-//! ids (`"claude-opus-4-7"`) and prefixed ids (`"anthropic/claude-opus-4-7"`)
-//! pass through verbatim. This module is purely about *which* string to feed
-//! to the existing `Provider::stream` pipeline; wiring that string into the
-//! provider call site is intentionally out of scope here.
+//! ## Model specifier format
+//!
+//! The `model` field accepts two forms (see `provider::ModelSpec`):
+//!
+//! - **Qualified**: `"provider/model-id"` — routes directly to the named provider.
+//!   Examples: `"openwebui/bedrock-claude-4-6-opus"`, `"anthropic/claude-opus-4-7"`
+//!
+//! - **Bare**: `"model-id"` — provider resolved by heuristic (static catalogue
+//!   match, then OpenWebUI catch-all for non-`claude-` prefixed ids).
+//!   Examples: `"claude-opus-4-7"`, `"bedrock-claude-4-6-opus"`
+//!
+//! The qualified form eliminates the class of bugs where model and provider are
+//! resolved independently and end up mismatched (e.g. a Bedrock model id
+//! routed to the Anthropic API, yielding a 404).
 
 use std::collections::HashMap;
 use std::path::PathBuf;

@@ -14,6 +14,8 @@ mod input;
 mod lsp_client;
 mod lsp_rpc;
 mod markdown;
+mod memory;
+mod notifications;
 mod mentions;
 mod message_view;
 mod provider;
@@ -26,6 +28,7 @@ mod session;
 mod spinner;
 mod stream;
 mod tasks;
+mod swarm;
 mod theme;
 mod toast;
 mod tools;
@@ -36,20 +39,24 @@ use std::{io, sync::Arc, time::Duration};
 
 use clap::Parser;
 use crossterm::{
+    cursor::SetCursorStyle,
     event::{
         self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
         Event, KeyEventKind, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
         PushKeyboardEnhancementFlags,
     },
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{
+        BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
+        SetTitle, disable_raw_mode, enable_raw_mode,
+    },
 };
 use futures::StreamExt;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::mpsc;
 
 use app::{App, AppEvent, PendingApproval, SPINNER, TICK_MS};
-use provider::{ModelId, Provider, ProviderId};
+use provider::{ModelId, ModelSpec, Provider, ProviderId};
 use providers::{AnthropicOAuthProvider, AnthropicProvider, OpenWebUIProvider};
 use types::*;
 
@@ -349,8 +356,9 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent
     let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
     let model = app.model.clone();
     let tx = tx.clone();
+    let interrupt = app.interrupt_flag.clone();
     tokio::spawn(async move {
-        stream::stream_response(provider, messages, model, tx).await;
+        stream::stream_response(provider, messages, model, tx, interrupt).await;
     });
 }
 
@@ -390,10 +398,41 @@ struct ProvidersInit {
 /// Active selection mirrors the prior single-provider precedence: explicit `ANTHROPIC_API_KEY`
 /// wins, then `OPENWEBUI_BASE_URL`, then OAuth.
 fn build_providers() -> ProvidersInit {
-    let model = std::env::var("ANTHROPIC_MODEL")
-        .or_else(|_| std::env::var("OPENWEBUI_MODEL"))
-        .map(ModelId::from)
-        .unwrap_or_else(|_| ModelId::from("claude-opus-4-5"));
+    // Cascade for the startup model id:
+    //   1. ANTHROPIC_MODEL / OPENWEBUI_MODEL env (explicit override for one run)
+    //   2. ~/.config/jfc/config.toml `[default].model` (the user's persisted choice)
+    //   3. recent_models[0] (last model the user picked from the UI)
+    //   4. hardcoded `claude-opus-4-5` (last-resort fallback)
+    //
+    // The config value may be a qualified `ModelSpec` like `"openwebui/bedrock-claude-4-6-opus"`
+    // or a bare model id like `"claude-opus-4-7"`. When qualified, the provider prefix
+    // directly routes to the matching provider — no heuristic guessing needed.
+    let env_model = std::env::var("ANTHROPIC_MODEL")
+        .ok()
+        .or_else(|| std::env::var("OPENWEBUI_MODEL").ok())
+        .filter(|s| !s.is_empty());
+    let cfg_model = config::load().default.model.filter(|s| !s.is_empty());
+    let recent_model = crate::app::load_recent_models()
+        .into_iter()
+        .next()
+        .filter(|s| !s.is_empty());
+    let resolved_raw = env_model
+        .or(cfg_model)
+        .or(recent_model)
+        .unwrap_or_else(|| "claude-opus-4-5".to_owned());
+
+    // Parse as ModelSpec: "provider/model" or bare "model"
+    let spec: ModelSpec = resolved_raw.parse().unwrap_or_else(|_| {
+        ModelSpec::bare(resolved_raw.clone())
+    });
+    tracing::info!(
+        target: "jfc::startup",
+        spec = %spec,
+        provider_prefix = ?spec.provider().map(|p| p.as_str()),
+        model_id = %spec.model(),
+        "resolved startup model spec"
+    );
+    let model = spec.model().clone();
 
     let mut providers: Vec<Arc<dyn Provider>> = Vec::new();
     let mut prefer: Option<&'static str> = None;
@@ -421,7 +460,8 @@ fn build_providers() -> ProvidersInit {
     // OpenWebUI is registered as a candidate so its models show up in the picker, but
     // it only becomes the *default* when the user explicitly opts in via OPENWEBUI_BASE_URL.
     let openwebui = OpenWebUIProvider::new();
-    if openwebui.has_usable_config() {
+    let has_openwebui_config = openwebui.has_usable_config();
+    if has_openwebui_config {
         providers.push(Arc::new(openwebui));
         if std::env::var("OPENWEBUI_BASE_URL").is_ok() {
             prefer.get_or_insert("openwebui");
@@ -435,7 +475,70 @@ fn build_providers() -> ProvidersInit {
         prefer = Some("anthropic-oauth");
     }
 
-    let active_idx = prefer
+    // Provider routing — three-tier:
+    //
+    // 1. **Explicit prefix** (from ModelSpec): `"openwebui/bedrock-claude-4-6-opus"`
+    //    → directly look up provider named "openwebui". No guessing.
+    //
+    // 2. **Static catalogue match**: scan each provider's `available_models()` for
+    //    an id matching the model portion. First match wins.
+    //
+    // 3. **Heuristic fallback**: if no static match AND OpenWebUI is configured AND
+    //    the model id doesn't look Anthropic-native (`claude-…`), route to OpenWebUI
+    //    as the catch-all proxy whose catalogue is populated at runtime.
+    //
+    // Without any of these matching, fall back to the env-var precedence (`prefer`).
+    let model_str = model.as_str();
+
+    let provider_for_model: Option<String> = if let Some(prefix) = spec.provider() {
+        // Tier 1: explicit provider prefix from config
+        tracing::info!(
+            target: "jfc::startup",
+            model = %model_str,
+            explicit_provider = %prefix,
+            "model spec has explicit provider prefix — routing directly"
+        );
+        Some(prefix.as_str().to_owned())
+    } else {
+        // Tier 2: static catalogue lookup
+        let static_match: Option<String> = providers
+            .iter()
+            .find(|p| {
+                p.available_models()
+                    .iter()
+                    .any(|m| m.id.as_str() == model_str)
+            })
+            .map(|p| p.name().to_owned());
+
+        static_match.or_else(|| {
+            // Tier 3: heuristic — non-`claude-` ids route to OpenWebUI proxy
+            let looks_proxy_routed =
+                !model_str.is_empty() && !model_str.starts_with("claude-");
+            if has_openwebui_config && looks_proxy_routed {
+                tracing::info!(
+                    target: "jfc::startup",
+                    model = %model_str,
+                    "no static match, model looks proxy-routed → openwebui"
+                );
+                Some("openwebui".to_owned())
+            } else {
+                None
+            }
+        })
+    };
+
+    if let Some(name) = provider_for_model.as_deref() {
+        tracing::info!(
+            target: "jfc::startup",
+            model = %model_str,
+            matched_provider = %name,
+            "routed startup model to its owning provider"
+        );
+    }
+
+    let active_idx = provider_for_model
+        .as_deref()
+        .or(prefer)
         .and_then(|name| providers.iter().position(|p| p.name() == name))
         .unwrap_or(0);
 
@@ -445,6 +548,46 @@ fn build_providers() -> ProvidersInit {
         model,
         oauth: oauth_arc,
     }
+}
+
+/// Route a model id to the provider that owns it.
+///
+/// Accepts either a qualified `"provider/model"` spec or a bare `"model"` id.
+/// When qualified, looks up the provider by name directly. Otherwise uses the
+/// same three-tier logic as `build_providers`: static catalogue → heuristic.
+///
+/// Used by `--continue`/`--resume` to re-route when the saved session's model
+/// belongs to a different provider than the env-var precedence picked.
+fn provider_for_model(providers: &[Arc<dyn Provider>], model_id: &str) -> Option<Arc<dyn Provider>> {
+    if model_id.is_empty() {
+        return None;
+    }
+    // Try parsing as ModelSpec — if qualified, route directly by provider name
+    if let Ok(spec) = model_id.parse::<ModelSpec>() {
+        if let Some(prefix) = spec.provider() {
+            return providers
+                .iter()
+                .find(|p| p.name() == prefix.as_str())
+                .cloned();
+        }
+    }
+    // Tier 2: static catalogue lookup
+    if let Some(p) = providers.iter().find(|p| {
+        p.available_models()
+            .iter()
+            .any(|m| m.id.as_str() == model_id)
+    }) {
+        return Some(Arc::clone(p));
+    }
+    // Tier 3: heuristic — non-`claude-` ids route to OpenWebUI proxy
+    let has_openwebui = providers.iter().any(|p| p.name() == "openwebui");
+    if has_openwebui && !model_id.starts_with("claude-") {
+        return providers
+            .iter()
+            .find(|p| p.name() == "openwebui")
+            .cloned();
+    }
+    None
 }
 
 async fn run(
@@ -483,8 +626,19 @@ async fn run(
                         "continuing most recent session"
                     );
                     app.messages = messages;
-                    app.current_session_id = Some(session_id);
+                    app.current_session_id = Some(session_id.clone());
+                    // Re-open task store so tasks from the resumed session are loaded.
+                    app.task_store = crate::tasks::TaskStore::open(&session_id);
                     if let Some(model_id) = saved_model {
+                        if let Some(p) = provider_for_model(&app.providers, &model_id) {
+                            tracing::info!(
+                                target: "jfc::session",
+                                model = %model_id,
+                                routed_provider = %p.name(),
+                                "rerouting active provider to match saved session model"
+                            );
+                            app.provider = p;
+                        }
                         app.model = model_id.into();
                     }
                     app.recompute_token_estimate();
@@ -516,8 +670,19 @@ async fn run(
                     );
                 }
                 app.messages = messages;
-                app.current_session_id = Some(session_id);
+                app.current_session_id = Some(session_id.clone());
+                // Re-open task store so tasks from the resumed session are loaded.
+                app.task_store = crate::tasks::TaskStore::open(&session_id);
                 if let Some(model_id) = saved_model {
+                    if let Some(p) = provider_for_model(&app.providers, &model_id) {
+                        tracing::info!(
+                            target: "jfc::session",
+                            model = %model_id,
+                            routed_provider = %p.name(),
+                            "rerouting active provider to match saved session model"
+                        );
+                        app.provider = p;
+                    }
                     app.model = model_id.into();
                 }
                 app.recompute_token_estimate();
@@ -586,6 +751,17 @@ async fn run(
         });
     }
 
+    // Forward teammate runner events into the main event channel.
+    {
+        let tx = tx.clone();
+        let mut teammate_rx = app.teammate_event_rx.take().unwrap();
+        tokio::spawn(async move {
+            while let Some(ev) = teammate_rx.recv().await {
+                let _ = tx.send(AppEvent::TeammateEvent(ev));
+            }
+        });
+    }
+
     // Initial `cargo check` so the diagnostic row populates without
     // waiting for `/check`. Skipped via `JFC_DISABLE_CARGO_CHECK=1` for
     // CI / non-Rust workspaces. Best-effort — `run_once` silently no-ops
@@ -615,7 +791,10 @@ async fn run(
     }
 
     app.sync_task_completions();
-    terminal.draw(|f| render::frame(f, &mut app))?;
+    draw_synchronized(terminal, &mut app)?;
+    // Initial terminal title — updates whenever the model or session
+    // changes.
+    set_terminal_title(&app);
 
     // Submit initial prompt if provided via --prompt flag
     if let Some(prompt) = queued_initial_prompt {
@@ -645,8 +824,9 @@ async fn run(
         let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
         let model = app.model.clone();
         let tx_clone = tx.clone();
+        let interrupt = app.interrupt_flag.clone();
         tokio::spawn(async move {
-            stream::stream_response(provider, messages, model, tx_clone).await;
+            stream::stream_response(provider, messages, model, tx_clone, interrupt).await;
         });
     }
 
@@ -669,13 +849,75 @@ async fn run(
                 }
             }
             AppEvent::Term(Event::Paste(text)) => {
-                app.textarea.insert_str(&text);
+                // Try image clipboard first — when the user pastes a
+                // screenshot the OS sends a bracketed-paste *event*
+                // with empty/garbage text, but the actual image is
+                // available via arboard's `get_image()`. If that
+                // succeeds we attach it; otherwise fall through to
+                // the text path. Mirrors v126's clipboard-image flow.
+                let attached_image = match attachments::read_clipboard_image() {
+                    Ok(Some(att)) => {
+                        toast::push_with_cap(
+                            &mut app.toasts,
+                            toast::Toast::new(
+                                toast::ToastKind::Info,
+                                format!("📎 image attached ({} bytes)", att.bytes.len()),
+                            ),
+                        );
+                        app.pending_attachments.push(att);
+                        true
+                    }
+                    Ok(None) => false,
+                    Err(e) => {
+                        tracing::debug!(target: "jfc::input", error = %e, "image paste check failed");
+                        false
+                    }
+                };
+                // Always insert the text — it may be a path or
+                // contextual prose alongside the image.
+                if !attached_image || !text.is_empty() {
+                    app.textarea.insert_str(&text);
+                }
             }
             AppEvent::Term(Event::Mouse(mouse)) => {
                 use crossterm::event::{MouseButton, MouseEventKind};
                 match mouse.kind {
                     MouseEventKind::ScrollUp => app.scroll_up(3),
                     MouseEventKind::ScrollDown => app.scroll_down(3),
+                    MouseEventKind::Drag(MouseButton::Left) => {
+                        // Drag-scroll: convert vertical delta into
+                        // scroll_offset adjustments. Anchor on the
+                        // first Drag event and re-anchor on every
+                        // subsequent one so the next delta is one
+                        // row's worth, not cumulative. Up-drag scrolls
+                        // up (look at older content); down-drag
+                        // scrolls down. Gated to the messages area —
+                        // dragging in the input bar still selects.
+                        let in_messages = app
+                            .messages_rect
+                            .borrow()
+                            .as_ref()
+                            .is_some_and(|r| {
+                                mouse.column >= r.x
+                                    && mouse.column < r.x + r.width
+                                    && mouse.row >= r.y
+                                    && mouse.row < r.y + r.height
+                            });
+                        if in_messages {
+                            if let Some(anchor) = app.drag_anchor_y {
+                                let delta = mouse.row as i32 - anchor as i32;
+                                if delta > 0 {
+                                    app.scroll_up(delta as usize);
+                                } else if delta < 0 {
+                                    app.scroll_down((-delta) as usize);
+                                }
+                            }
+                            app.drag_anchor_y = Some(mouse.row);
+                        }
+                    }
+                    MouseEventKind::Up(_) => {
+                        app.drag_anchor_y = None;
+                    }
                     // Left-click on the message pane copies the assistant
                     // message under the cursor to the clipboard. ratatui
                     // doesn't expose hit-testing, so we approximate: any
@@ -698,16 +940,156 @@ async fn run(
                             mouse.row,
                         )
                         .map(str::to_owned);
-                        if let Some(tool_id) = hit {
-                            for msg in &mut app.messages {
-                                for part in &mut msg.parts {
-                                    if let MessagePart::Tool(tc) = part {
-                                        if tc.id == tool_id {
-                                            tc.expanded = !tc.expanded;
+                        // Toast click → dismiss. Toasts render newest-
+                        // first; row 0 corresponds to the last entry
+                        // in `app.toasts`, row 1 to the second-to-last,
+                        // etc. (See `iter().rev().take(h)` in
+                        // `toast_overlay`.) Pop the matched toast.
+                        let toast_hit = app
+                            .toasts_rect
+                            .borrow()
+                            .as_ref()
+                            .filter(|r| {
+                                mouse.column >= r.x
+                                    && mouse.column < r.x + r.width
+                                    && mouse.row >= r.y
+                                    && mouse.row < r.y + r.height
+                            })
+                            .map(|r| {
+                                let local = mouse.row.saturating_sub(r.y) as usize;
+                                local
+                            });
+                        if let Some(local_row) = toast_hit {
+                            if local_row < app.toasts.len() {
+                                let drop_idx = app.toasts.len() - 1 - local_row;
+                                app.toasts.remove(drop_idx);
+                            }
+                            continue;
+                        }
+
+                        // Sidebar session-row click: convert pixel
+                        // coordinates back to a session index using
+                        // the same row math the renderer uses.
+                        let sidebar_hit = app
+                            .sidebar_rect
+                            .borrow()
+                            .as_ref()
+                            .filter(|r| {
+                                mouse.column >= r.x
+                                    && mouse.column < r.x + r.width
+                                    && mouse.row >= r.y
+                                    && mouse.row < r.y + r.height
+                            })
+                            .copied();
+                        let mut handled_in_sidebar = false;
+                        if let Some(rect) = sidebar_hit {
+                            // Inside borders: subtract 1 row top/bottom.
+                            let local_row = mouse.row.saturating_sub(rect.y + 1);
+                            // Skip the empty/no-sessions placeholder row.
+                            if !app.session_meta.is_empty() {
+                                let cwd = app.cwd.clone();
+                                let (this_project, other) =
+                                    crate::session::group_by_cwd(
+                                        app.session_meta.clone(),
+                                        Some(cwd.as_str()),
+                                    );
+                                // Walk rows: header rows are 1 each; rest are sessions.
+                                let mut row = 0u16;
+                                let mut session_idx: Option<usize> = None;
+                                if !this_project.is_empty() {
+                                    row += 1; // "── This project ──" header
+                                    for (i, _) in this_project.iter().enumerate() {
+                                        if row == local_row {
+                                            session_idx = Some(i);
+                                        }
+                                        row += 1;
+                                    }
+                                }
+                                if !other.is_empty() {
+                                    row += 1; // "── Other projects ──" header
+                                    for (i, _) in other.iter().enumerate() {
+                                        if row == local_row {
+                                            session_idx = Some(this_project.len() + i);
+                                        }
+                                        row += 1;
+                                    }
+                                }
+                                if let Some(idx) = session_idx {
+                                    let ordered: Vec<String> = this_project
+                                        .into_iter()
+                                        .chain(other.into_iter())
+                                        .map(|s| s.id)
+                                        .collect();
+                                    if let Some(id) = ordered.get(idx).cloned() {
+                                        if let Some(messages) =
+                                            crate::session::load_session(&id)
+                                        {
+                                            app.messages = messages;
+                                            app.switch_session(Some(id));
+                                            app.streaming_text.clear();
+                                            app.streaming_reasoning.clear();
+                                            app.streaming_response_bytes = 0;
+                                            app.streaming_assistant_idx = None;
+                                            app.session_selected = idx;
+                                            app.session_list_state
+                                                .select(Some(idx));
+                                            app.scroll_to_bottom();
+                                            handled_in_sidebar = true;
                                         }
                                     }
                                 }
                             }
+                        }
+                        if handled_in_sidebar {
+                            // Sidebar consumed the click; skip the
+                            // tool/yank fallthrough.
+                        } else if let Some(group_key) = hit
+                            .as_ref()
+                            .and_then(|s| s.strip_prefix("group:"))
+                            .map(str::to_owned)
+                        {
+                            // Click on a collapsed tool-group header.
+                            // Toggle expansion — flips the next render
+                            // between the single-line "▶ N reads"
+                            // teaser and individual tool blocks.
+                            if !app.tool_group_expanded.remove(&group_key) {
+                                app.tool_group_expanded.insert(group_key);
+                            }
+                        } else if let Some(tool_id) = hit {
+                            const DOUBLE_CLICK_MS: u128 = 350;
+                            let now = std::time::Instant::now();
+                            let is_double_click = match &app.last_tool_click {
+                                Some((prev_id, prev_at))
+                                    if prev_id == &tool_id
+                                        && now.duration_since(*prev_at).as_millis()
+                                            < DOUBLE_CLICK_MS =>
+                                {
+                                    true
+                                }
+                                _ => false,
+                            };
+                            for msg in &mut app.messages {
+                                for part in &mut msg.parts {
+                                    if let MessagePart::Tool(tc) = part {
+                                        if tc.id == tool_id {
+                                            if is_double_click {
+                                                // Toggle pin. Pinning
+                                                // forces expanded; unpinning
+                                                // leaves expanded as-is so
+                                                // the user can collapse with
+                                                // a subsequent single click.
+                                                tc.pinned = !tc.pinned;
+                                                if tc.pinned {
+                                                    tc.expanded = true;
+                                                }
+                                            } else {
+                                                tc.expanded = !tc.expanded;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            app.last_tool_click = Some((tool_id, now));
                         } else {
                             let in_input = mouse.row as usize
                                 >= app
@@ -723,12 +1105,324 @@ async fn run(
                 }
             }
             AppEvent::Term(_) => {}
+            AppEvent::TeammateEvent(teammate_ev) => {
+                use crate::swarm::runner::TeammateEvent;
+                match teammate_ev {
+                    TeammateEvent::Idle { task_id: _, agent_id: _, agent_name, reason, summary } => {
+                        tracing::info!(
+                            "[Swarm] Teammate {agent_name} went idle (reason: {reason:?})"
+                        );
+                        // Surface to the user as a toast — without this
+                        // the user has no way to tell that a teammate
+                        // finished its turn and is waiting. Summary
+                        // (when present) is the model's own one-line
+                        // recap, which reads better than the raw reason.
+                        let msg = match (summary.as_deref(), reason.as_deref()) {
+                            (Some(s), _) if !s.is_empty() => {
+                                format!("⏸ {agent_name} idle — {s}")
+                            }
+                            (_, Some(r)) if !r.is_empty() => {
+                                format!("⏸ {agent_name} idle ({r})")
+                            }
+                            _ => format!("⏸ {agent_name} is idle"),
+                        };
+                        toast::push_with_cap(
+                            &mut app.toasts,
+                            toast::Toast::new(toast::ToastKind::Info, msg),
+                        );
+                    }
+                    TeammateEvent::Progress { task_id, agent_id: _, token_count: _, tool_use_count: _, last_tool } => {
+                        // Update background task state for UI display
+                        if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                            bt.last_tool = last_tool;
+                        }
+                        // Mark this teammate as the live one for the
+                        // spinner-area tree highlight.
+                        app.last_active_agent_task = Some(task_id);
+                    }
+                    TeammateEvent::TextDelta { task_id, agent_id: _, delta } => {
+                        // Translate to AgentChunk so the existing
+                        // chunk handler (with coalescing rules and
+                        // BackgroundTask.messages append) handles it
+                        // — same path as one-shot subagents.
+                        let _ = tx.send(AppEvent::AgentChunk {
+                            task_id,
+                            text: delta,
+                        });
+                    }
+                    TeammateEvent::Completed { task_id, agent_id } => {
+                        tracing::info!("[Swarm] Teammate {agent_id} completed");
+                        if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                            bt.status = crate::types::TaskLifecycle::Completed;
+                        }
+                        // Mark the member inactive on the team file so a
+                        // later `set_member_active(true)` (e.g. an agent
+                        // that gets re-spawned) can observe the prior
+                        // state and the roster reflects who's currently
+                        // running.
+                        if let Some(team_name) = app.team_context.team_name.clone() {
+                            // agent_id is "name@team" — `set_member_active`
+                            // matches on the bare name field.
+                            let member_name = agent_id
+                                .split_once('@')
+                                .map(|(n, _)| n.to_owned())
+                                .unwrap_or_else(|| agent_id.clone());
+                            tokio::spawn(async move {
+                                let _ = crate::swarm::team_helpers::set_member_active(
+                                    &team_name,
+                                    &member_name,
+                                    false,
+                                )
+                                .await;
+                            });
+                        }
+                    }
+                    TeammateEvent::Failed { task_id, agent_id, error } => {
+                        tracing::warn!("[Swarm] Teammate {agent_id} failed: {error}");
+                        if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                            bt.status = crate::types::TaskLifecycle::Completed;
+                            bt.error = Some(error);
+                        }
+                        if let Some(team_name) = app.team_context.team_name.clone() {
+                            let member_name = agent_id
+                                .split_once('@')
+                                .map(|(n, _)| n.to_owned())
+                                .unwrap_or_else(|| agent_id.clone());
+                            tokio::spawn(async move {
+                                let _ = crate::swarm::team_helpers::set_member_active(
+                                    &team_name,
+                                    &member_name,
+                                    false,
+                                )
+                                .await;
+                            });
+                        }
+                    }
+                    TeammateEvent::MessageSent { from, to, text, summary } => {
+                        tracing::info!("[Swarm] Message from {from} → {to}");
+                        // Route the outbound message to the recipient's
+                        // mailbox so its polling loop picks it up. Mirrors
+                        // v126's `sendMessageToTeammate` (cli.js around
+                        // 396870) — the producing teammate writes; the
+                        // recipient consumes via `read_mailbox`. Without
+                        // this, the SendMessage tool was a no-op past
+                        // logging.
+                        let team_name = app
+                            .team_context
+                            .team_name
+                            .clone()
+                            .unwrap_or_default();
+                        if team_name.is_empty() {
+                            tracing::warn!(
+                                "[Swarm] MessageSent dropped — no active team_context"
+                            );
+                        } else {
+                            let recipient = to.clone();
+                            let msg = crate::swarm::types::MailboxMessage {
+                                from: from.clone(),
+                                text: text.clone(),
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                                color: None,
+                                summary: summary.clone(),
+                                read: false,
+                            };
+                            tokio::spawn(async move {
+                                if let Err(e) = crate::swarm::mailbox::write_to_mailbox(
+                                    &recipient,
+                                    msg,
+                                    &team_name,
+                                )
+                                .await
+                                {
+                                    tracing::warn!(
+                                        "[Swarm] Failed to deliver message {from} → {to}: {e}"
+                                    );
+                                }
+                            });
+                        }
+                    }
+                }
+            }
             AppEvent::Tick => {
                 app.spinner_frame = (app.spinner_frame + 1) % SPINNER.len();
                 // Auto-clear expired toasts every tick. Cheap (O(N) over
                 // a tiny vec capped at MAX_TOASTS) and the only reliable
                 // place to do it — toasts have no creation-time timer.
                 toast::prune_expired(&mut app.toasts, std::time::Instant::now());
+
+                // Refresh the worktree count at most once per second
+                // so the status-bar `⌥ N wt` badge reflects /worktree
+                // create|remove and agent-isolation churn without
+                // shelling to `git worktree list` on every render.
+                let now = std::time::Instant::now();
+                let due = app
+                    .worktree_count_last_refresh
+                    .map(|t| now.duration_since(t).as_millis() >= 1_000)
+                    .unwrap_or(true);
+                if due {
+                    let cwd = std::env::current_dir().unwrap_or_default();
+                    app.worktree_count = match worktrees::list_worktrees(&cwd) {
+                        // Entry 0 is the primary checkout — subtract it
+                        // so the badge counts agent-isolated trees only.
+                        Ok(list) => list.len().saturating_sub(1),
+                        Err(_) => 0,
+                    };
+                    app.worktree_count_last_refresh = Some(now);
+                }
+
+                // Git branch refresh — every 5s. Reads `.git/HEAD`
+                // directly (no shell-out): faster, doesn't spawn a
+                // subprocess, and "ref: refs/heads/<branch>" is the
+                // dominant form in normal workflows. Detached HEAD
+                // (HEAD = sha) gets reported as "(detached)".
+                let git_due = app
+                    .git_branch_last_refresh
+                    .map(|t| now.duration_since(t).as_millis() >= 5_000)
+                    .unwrap_or(true);
+                if git_due {
+                    let cwd = std::env::current_dir().unwrap_or_default();
+                    app.git_branch = read_git_branch(&cwd);
+                    app.git_branch_last_refresh = Some(now);
+                }
+
+                // Resolve any pending teammate permission requests at
+                // ~1Hz (12 ticks × 80ms). The teammate runner blocks
+                // on `poll_for_response` after writing a request; if
+                // nothing ever resolves, the call times out at 5
+                // minutes and the tool fails. This loop provides the
+                // leader-side response: apply the leader's own
+                // permission_mode to the request and write a resolution
+                // file the teammate's poll picks up.
+                if app.team_context.is_active() && app.spinner_frame % 12 == 0 {
+                    if let Some(team_name) = app.team_context.team_name.clone() {
+                        let mode = app.permission_mode;
+                        let tx_swarm = tx.clone();
+                        tokio::spawn(async move {
+                            let pending = crate::swarm::permission_sync::read_pending_permissions(
+                                &team_name,
+                            )
+                            .await;
+                            for req in pending {
+                                if !matches!(
+                                    req.status,
+                                    crate::swarm::types::PermissionRequestStatus::Pending
+                                ) {
+                                    continue;
+                                }
+                                let mutation = matches!(
+                                    req.tool_name.as_str(),
+                                    "Bash" | "Write" | "Edit" | "ApplyPatch"
+                                );
+                                // Three outcomes:
+                                //   Some(true)  → auto-approve
+                                //   Some(false) → auto-deny
+                                //   None        → defer to the user
+                                let auto: Option<bool> = match mode {
+                                    crate::app::PermissionMode::BypassPermissions => Some(true),
+                                    crate::app::PermissionMode::Plan => Some(false),
+                                    crate::app::PermissionMode::AcceptEdits => {
+                                        if matches!(req.tool_name.as_str(), "Bash") {
+                                            None
+                                        } else {
+                                            Some(true)
+                                        }
+                                    }
+                                    crate::app::PermissionMode::Default
+                                    | crate::app::PermissionMode::Auto => {
+                                        if mutation {
+                                            // Mutations need a human in
+                                            // Default/Auto. Surface to
+                                            // the user via toast +
+                                            // /swarm-approve|deny.
+                                            None
+                                        } else {
+                                            Some(true)
+                                        }
+                                    }
+                                };
+                                match auto {
+                                    Some(approve) => {
+                                        let resolution = crate::swarm::types::PermissionResolution {
+                                            decision: if approve {
+                                                crate::swarm::types::PermissionDecision::Approved
+                                            } else {
+                                                crate::swarm::types::PermissionDecision::Rejected
+                                            },
+                                            resolved_by: "leader".to_owned(),
+                                            feedback: if approve {
+                                                None
+                                            } else {
+                                                Some(format!(
+                                                    "Auto-denied by leader permission_mode={:?}",
+                                                    mode
+                                                ))
+                                            },
+                                            updated_input: None,
+                                            permission_updates: Vec::new(),
+                                        };
+                                        if let Err(e) = crate::swarm::permission_sync::resolve_permission(
+                                            &req.id,
+                                            &resolution,
+                                            &team_name,
+                                        )
+                                        .await
+                                        {
+                                            tracing::warn!(
+                                                target: "jfc::swarm",
+                                                error = %e,
+                                                request_id = %req.id,
+                                                "failed to resolve permission request"
+                                            );
+                                        }
+                                    }
+                                    None => {
+                                        // User-gate path: surface a
+                                        // toast (once per request id).
+                                        // The toast tells the user
+                                        // exactly which slash command
+                                        // resolves it.
+                                        let toast_text = format!(
+                                            "🔒 {} wants to {} — /swarm-approve {} or /swarm-deny {}",
+                                            req.worker_name,
+                                            req.tool_name,
+                                            req.id,
+                                            req.id,
+                                        );
+                                        let _ = tx_swarm.send(AppEvent::Toast {
+                                            kind: crate::toast::ToastKind::Warning,
+                                            text: toast_text,
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+
+                // Poll leader inbox for teammate messages every ~1s (12 ticks * 80ms).
+                // Only active when a team is running.
+                if app.team_context.is_active() && app.spinner_frame % 12 == 0 {
+                    if let Some(ref team_name) = app.team_context.team_name {
+                        let team_name = team_name.clone();
+                        let tx_inbox = tx.clone();
+                        tokio::spawn(async move {
+                            let messages =
+                                crate::swarm::runner::poll_leader_inbox(&team_name).await;
+                            for msg in messages {
+                                // Hand off to the main thread which has
+                                // mutable access to `app.messages` —
+                                // injects into the transcript AND shows
+                                // a toast in one place. Mirrors v126's
+                                // `<teammate-message>` injection.
+                                let _ = tx_inbox.send(AppEvent::TeammateInbox {
+                                    from: msg.from,
+                                    text: msg.text,
+                                    summary: msg.summary,
+                                });
+                            }
+                        });
+                    }
+                }
             }
             AppEvent::StreamChunk { text, reasoning } => {
                 // Reset the stall clock on every chunk so the spinner's
@@ -971,9 +1665,39 @@ async fn run(
                     {
                         let elapsed = std::time::Instant::now().duration_since(start);
                         let label = spinner::format_finished(elapsed);
+                        // Pull the assistant's text body for the
+                        // notification preview before re-borrowing
+                        // mutably to stamp the elapsed footer.
+                        let preview = app
+                            .messages
+                            .get(idx)
+                            .and_then(|m| {
+                                m.parts.iter().find_map(|p| match p {
+                                    types::MessagePart::Text(s) if !s.is_empty() => {
+                                        Some(s.clone())
+                                    }
+                                    _ => None,
+                                })
+                            })
+                            .unwrap_or_default();
                         if let Some(msg) = app.messages.get_mut(idx) {
                             msg.elapsed = Some(label);
                         }
+                        notifications::notify_turn_complete(elapsed, &preview);
+                    }
+                    // Push this turn's total token count onto the
+                    // sparkline history. `last_usage_input` reflects
+                    // the API's wire-truth count (cumulative across
+                    // the turn) and `last_usage_output` is the model's
+                    // generated count. Together they give a per-turn
+                    // sense of "how much work did this take."
+                    let turn_total = (app.last_usage_input as u64)
+                        .saturating_add(app.last_usage_output as u64);
+                    if turn_total > 0 {
+                        if app.token_history.len() >= app::TOKEN_HISTORY_CAP {
+                            app.token_history.pop_front();
+                        }
+                        app.token_history.push_back(turn_total);
                     }
                 }
                 app.streaming_started_at = None;
@@ -1038,6 +1762,7 @@ async fn run(
                             Some(std::sync::Arc::clone(&app.task_store)),
                             std::sync::Arc::clone(&app.provider),
                             app.model.clone(),
+                            app.teammate_event_tx.clone(),
                         );
                     } else if app.pending_approval.is_some() || !app.approval_queue.is_empty() {
                         tracing::info!(
@@ -1096,8 +1821,25 @@ async fn run(
                 app.streaming_reasoning.clear();
                 app.streaming_response_bytes = 0;
                 app.streaming_assistant_idx = None;
-                app.messages
-                    .push(ChatMessage::assistant(format!("**Error:** {e}")));
+                app.messages.push(ChatMessage::assistant(format!(
+                    "**Error:** {e}\n\n_Press Ctrl+R to retry the last prompt._"
+                )));
+                // Surface as a toast too so the user sees the failure
+                // even if they aren't looking at the bottom of the
+                // transcript when it lands. Cap to 120 chars so a
+                // multi-paragraph error stays readable in the strip.
+                let mut preview_cap = e.len().min(120);
+                while preview_cap > 0 && !e.is_char_boundary(preview_cap) {
+                    preview_cap -= 1;
+                }
+                let preview = &e[..preview_cap];
+                toast::push_with_cap(
+                    &mut app.toasts,
+                    toast::Toast::new(
+                        toast::ToastKind::Error,
+                        format!("Stream error: {preview}"),
+                    ),
+                );
                 app.scroll_to_bottom();
             }
             AppEvent::StreamUsage {
@@ -1208,13 +1950,36 @@ async fn run(
                     for part in &mut msg.parts {
                         if let MessagePart::Tool(tc) = part {
                             if tc.id == tool_id {
-                                tc.output = if LargeText::should_collapse(&result.output) {
+                                // Stamp wall-clock duration as soon as
+                                // the result lands. The renderer reads
+                                // `tc.elapsed_ms` to draw a muted
+                                // "[2.3s]" badge after the title. Falls
+                                // back to None if `started_at` was lost
+                                // (e.g., resumed session) — the badge
+                                // just doesn't appear in that case.
+                                if let Some(start) = tc.started_at {
+                                    tc.elapsed_ms =
+                                        Some(start.elapsed().as_millis() as u64);
+                                }
+                                // Tool authors can attach a structured
+                                // DiffView (Edit, Write-overwrite) so
+                                // the renderer shows colorized hunks
+                                // instead of a flat success string.
+                                tc.output = if let Some(diff) = result.diff.clone() {
+                                    ToolOutput::Diff(diff)
+                                } else if LargeText::should_collapse(&result.output) {
                                     ToolOutput::LargeText(LargeText::new(result.output.clone()))
                                 } else {
                                     ToolOutput::Text(result.output.clone())
                                 };
-                                if LargeText::should_collapse(&result.output) {
+                                if matches!(tc.output, ToolOutput::LargeText(_)) {
                                     tc.is_collapsed = true;
+                                }
+                                if result.is_error() {
+                                    notifications::notify_tool_failed(
+                                        tc.kind.label(),
+                                        &result.output,
+                                    );
                                 }
                                 tc.status = if result.is_error() {
                                     ToolStatus::Failed
@@ -1281,9 +2046,14 @@ async fn run(
                         target: "jfc::compact",
                         "skipping post-response compact — suppressed after permanent failure"
                     );
-                } else if manual || compact::should_compact(&app.messages, app.max_context_tokens) {
+                } else if manual || compact::should_compact(app.tool_ctx.approx_tokens, app.max_context_tokens) {
                     if manual {
+                        // /compact is the user's explicit override — clear
+                        // BOTH the suppression flag AND the rapid-refill
+                        // counter. Otherwise a previously tripped breaker
+                        // would still fast-fail this manual attempt.
                         app.compact_suppressed = false;
+                        app.tool_ctx.rapid_refill_count = 0;
                     }
                     tracing::info!(
                         target: "jfc::compact",
@@ -1343,21 +2113,36 @@ async fn run(
                                     post_tokens,
                                 });
                             }
-                            compact::CompactResult::Unsupported
-                            | compact::CompactResult::TooFewGroups => {
+                            compact::CompactResult::Unsupported => {
                                 tracing::info!(
                                     target: "jfc::compact",
-                                    "post-response compaction skipped (unsupported/too few groups)"
+                                    "post-response compaction skipped (provider unsupported)"
                                 );
-                                // Send CompactionFailed so compacting_started_at
-                                // gets cleared and the spinner stops. Without this,
-                                // the UI shows "Compacting…" forever and the guard
-                                // above prevents re-entry even on manual /compact.
                                 let _ = tx_compact.send(AppEvent::CompactionFailed(
                                     "Provider does not support compaction — \
                                      try /clear or switch to a provider with non-streaming support."
                                         .into(),
                                     None,
+                                    false, // permanent: provider mismatch won't fix itself
+                                ));
+                            }
+                            compact::CompactResult::TooFewGroups => {
+                                tracing::info!(
+                                    target: "jfc::compact",
+                                    "post-response compaction skipped (single user turn)"
+                                );
+                                // Transient: the next user message creates a
+                                // second group, so auto-compaction can fire
+                                // again. Don't latch `compact_suppressed` —
+                                // otherwise a single huge agentic batch leaves
+                                // auto-compact dormant for the rest of the
+                                // session until the user remembers /compact.
+                                let _ = tx_compact.send(AppEvent::CompactionFailed(
+                                    "Nothing to compact yet — only one conversation turn so far. \
+                                     Auto-compact will retry after your next message."
+                                        .into(),
+                                    None,
+                                    true, // transient: more user turns will unblock it
                                 ));
                             }
                             compact::CompactResult::CircuitBreakerTripped => {
@@ -1368,6 +2153,7 @@ async fn run(
                                 let _ = tx_compact.send(AppEvent::CompactionFailed(
                                     "Circuit breaker tripped — compaction keeps refilling".into(),
                                     None,
+                                    false,
                                 ));
                             }
                             compact::CompactResult::Exhausted { attempts } => {
@@ -1378,7 +2164,7 @@ async fn run(
                                 );
                                 let _ = tx_compact.send(AppEvent::CompactionFailed(format!(
                                     "Exhausted {attempts} compaction attempts"
-                                ), None));
+                                ), None, false));
                             }
                         }
                     });
@@ -1392,7 +2178,19 @@ async fn run(
                 // visibly stalls. From the v126 log: 5 bash tools synthesized
                 // then conversation died after first approval. Holding the
                 // continuation here lets the user finish all approvals first.
-                if app.pending_approval.is_none()
+                if app
+                    .interrupt_flag
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    tracing::info!(
+                        target: "jfc::stream",
+                        "agentic loop NOT continuing — user requested interrupt"
+                    );
+                    // Clear so the next user submission starts fresh.
+                    app.interrupt_flag
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                    app.is_streaming = false;
+                } else if app.pending_approval.is_none()
                     && app.approval_queue.is_empty()
                     && stream::should_continue_loop(&app.messages)
                 {
@@ -1478,11 +2276,12 @@ async fn run(
                     ),
                 );
             }
-            AppEvent::CompactionFailed(reason, calibrated_tokens) => {
+            AppEvent::CompactionFailed(reason, calibrated_tokens, transient) => {
                 tracing::warn!(
                     target: "jfc::compact",
                     %reason,
                     ?calibrated_tokens,
+                    transient,
                     "compaction failed — surfacing toast to user"
                 );
                 if let Some(real_count) = calibrated_tokens {
@@ -1492,16 +2291,30 @@ async fn run(
                 app.compacting_output_chars = 0;
                 app.compacting_attempt_baseline = 0;
                 app.compacting_last_progress = 0;
-                // Suppress future auto-compact attempts so we don't keep
-                // failing on every AllToolsComplete. The user can retry
-                // manually with /compact (which clears the flag).
-                app.compact_suppressed = true;
+                // Permanent failures (provider unsupported, exhausted retries,
+                // breaker tripped) latch suppression so we stop spamming
+                // compact attempts on every AllToolsComplete; the user clears
+                // it explicitly with /compact. Transient failures (e.g.
+                // TooFewGroups) self-resolve as the conversation grows, so
+                // suppressing them would silently disable auto-compact for
+                // the rest of the session.
+                if !transient {
+                    app.compact_suppressed = true;
+                    notifications::notify_compact_failed(&reason);
+                }
+                let toast_kind = if transient {
+                    toast::ToastKind::Info
+                } else {
+                    toast::ToastKind::Error
+                };
+                let toast_msg = if transient {
+                    reason.clone()
+                } else {
+                    format!("Compaction failed: {reason}")
+                };
                 toast::push_with_cap(
                     &mut app.toasts,
-                    toast::Toast::new(
-                        toast::ToastKind::Error,
-                        format!("Compaction failed: {reason}"),
-                    ),
+                    toast::Toast::new(toast_kind, toast_msg),
                 );
             }
             AppEvent::Submit(text) => {
@@ -1521,12 +2334,61 @@ async fn run(
                 // when a long-running compaction or classifier spams.
                 toast::push_with_cap(&mut app.toasts, toast::Toast::new(kind, text));
             }
+            AppEvent::TeammateInbox { from, text, summary } => {
+                // Append the teammate's message to the transcript as a
+                // user-role turn tagged with the teammate's name so it
+                // survives session save/load and the model sees it on
+                // its next request. v126 wraps these in a
+                // `<teammate-message from="…">…</teammate-message>` XML
+                // block; we use the same shape so the leader's system
+                // prompt rules for parsing teammate messages still
+                // apply.
+                let body = format!(
+                    "<teammate-message from=\"{}\">\n{}\n</teammate-message>",
+                    from, text
+                );
+                let mut msg = ChatMessage::user(body);
+                msg.agent_name = Some(from.clone());
+                app.messages.push(msg);
+                // Also surface a brief toast so the user notices the
+                // arrival without needing to scroll the transcript.
+                let preview = summary
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_owned())
+                    .unwrap_or_else(|| {
+                        // Snap to a char boundary so multi-byte chars
+                        // (emoji, accented) at byte 60 don't panic.
+                        let mut cap = text.len().min(60);
+                        while cap > 0 && !text.is_char_boundary(cap) {
+                            cap -= 1;
+                        }
+                        text[..cap].to_owned()
+                    });
+                toast::push_with_cap(
+                    &mut app.toasts,
+                    toast::Toast::new(
+                        toast::ToastKind::Info,
+                        format!("💬 {from}: {preview}"),
+                    ),
+                );
+                // Persist so a session reload doesn't lose the message.
+                if let Some(ref session_id) = app.current_session_id {
+                    session::save_session(
+                        session_id,
+                        &app.messages,
+                        Some(app.cwd.as_str()),
+                        Some(app.model.as_str()),
+                    );
+                }
+            }
             AppEvent::AgentChunk { task_id, text } => {
                 // Subagent emitted a streaming text chunk — append to its
                 // task's message log so the task view shows live output
                 // rather than the "No messages yet" empty state. v126
                 // pipes nested-stream chunks the same way so the user
                 // can drill into a running agent and see what it's doing.
+                app.last_active_agent_task = Some(task_id.clone());
                 if let Some(bt) = app.background_tasks.get_mut(&task_id) {
                     // Coalesce with the previous chunk when both came in
                     // rapid succession AND the previous entry doesn't end
@@ -1692,10 +2554,110 @@ async fn run(
         }
 
         app.sync_task_completions();
-        terminal.draw(|f| render::frame(f, &mut app))?;
+        draw_synchronized(terminal, &mut app)?;
+        // Cheap on every loop tick: only sends the SetTitle escape if
+        // the model or session id changed since the last render.
+        set_terminal_title(&app);
+        // Mode-aware cursor: BlinkingUnderScore in input mode reads
+        // as "type here", SteadyBlock during active streaming reads
+        // as "Claude is talking, hold on". Crossterm guards make this
+        // a no-op on terminals that don't support DECSCUSR.
+        let want_streaming_cursor = app.is_streaming || app.compacting_started_at.is_some();
+        let _ = execute!(
+            io::stdout(),
+            if want_streaming_cursor {
+                SetCursorStyle::SteadyBlock
+            } else {
+                SetCursorStyle::BlinkingUnderScore
+            }
+        );
     }
 
     Ok(())
+}
+
+/// Wrap `terminal.draw` with `BeginSynchronizedUpdate`/`EndSynchronizedUpdate`
+/// (DCS 2026 / xterm 'sync' mode) so the terminal swaps the new frame in one
+/// shot instead of streaming bytes through the rendering pipeline. On
+/// terminals that don't support the protocol the escape is silently
+/// ignored, so this is safe everywhere. Eliminates the visible flicker
+/// that was visible in heavy-streaming sessions.
+fn draw_synchronized(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    app: &mut App,
+) -> io::Result<()> {
+    let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
+    let res = terminal.draw(|f| render::frame(f, app));
+    let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+    res.map(|_| ())
+}
+
+/// Walk up from `cwd` looking for a `.git/HEAD` file. When found,
+/// returns the current branch (or "(detached)" for a detached HEAD).
+/// Returns `None` outside any git repo. Pure file I/O — no subprocess
+/// spawn — so it's cheap enough to call every Tick refresh window.
+fn read_git_branch(cwd: &std::path::Path) -> Option<String> {
+    let mut dir = cwd.to_path_buf();
+    loop {
+        let head = dir.join(".git/HEAD");
+        if head.exists() {
+            let content = std::fs::read_to_string(&head).ok()?;
+            let trimmed = content.trim();
+            if let Some(rest) = trimmed.strip_prefix("ref: refs/heads/") {
+                return Some(rest.to_owned());
+            }
+            return Some("(detached)".to_owned());
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+/// Set the terminal-window title to "jfc · {model} · {cwd-basename}"
+/// so users running multiple jfc instances in different windows can
+/// spot which is which. Tracks the last-set title and short-circuits
+/// when nothing changed to avoid re-issuing the OSC escape every tick.
+///
+/// When the user is streaming AND has scrolled away from the bottom
+/// of the transcript, prepends "(streaming)" so backgrounded windows
+/// flag activity without the user having to refocus to check.
+fn set_terminal_title(app: &App) {
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
+    static LAST: OnceLock<Mutex<String>> = OnceLock::new();
+    let last = LAST.get_or_init(|| Mutex::new(String::new()));
+    let cwd_label = std::path::Path::new(app.cwd.as_str())
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| app.cwd.clone());
+    // "(N new)" prefix is shown when the user has scrolled up from
+    // the bottom of the transcript while content is arriving — the
+    // count is the number of message lines pushed below the
+    // viewport since the last time we were at the bottom. Streaming
+    // alone (without scroll-away) doesn't trigger the badge, since
+    // the user is already watching.
+    let lines_below = app
+        .total_lines
+        .saturating_sub(app.scroll_offset + app.viewport_height);
+    let prefix = if !app.follow_bottom && lines_below > 0 {
+        format!("({} new) ", lines_below)
+    } else if app.is_streaming {
+        "● ".to_owned()
+    } else {
+        String::new()
+    };
+    let title = format!("{}jfc · {} · {}", prefix, app.model, cwd_label);
+    let mut guard = match last.lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    if *guard == title {
+        return;
+    }
+    *guard = title.clone();
+    let _ = execute!(io::stdout(), SetTitle(title));
 }
 
 fn update_task_activities(app: &mut app::App, calls: &[types::ToolCall]) {

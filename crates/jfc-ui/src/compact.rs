@@ -31,8 +31,10 @@ const OVERHEAD_MULTIPLIER_NUM: usize = 3;
 const OVERHEAD_MULTIPLIER_DEN: usize = 2; // 3/2 = 1.5×
 const MAX_ATTEMPTS: u32 = 8;
 const CIRCUIT_BREAKER_LIMIT: u32 = 3;
-/// If context refills within this many user turns after a compact, it counts as thrash.
-const THRASH_TURN_WINDOW: u32 = 2;
+/// If context refills within this many user turns after a compact, it counts
+/// as thrash. Mirrors v126's `lG6 = 3` (cli.2.1.126.deob.js:397362) — was 2,
+/// which made the breaker trip one turn earlier than upstream.
+const THRASH_TURN_WINDOW: u32 = 3;
 
 // v126 threshold algorithm — `gG6` / `ZB7` in cli.js (lines 397177-397203).
 // The model's nominal window minus three headrooms gives three trigger levels.
@@ -153,13 +155,26 @@ pub fn compact_level(tokens: usize, window: usize) -> CompactLevel {
     level
 }
 
-pub fn should_compact(messages: &[ChatMessage], max_context_tokens: usize) -> bool {
-    let est = estimate_tokens(messages);
-    let level = compact_level(est, max_context_tokens);
+/// Decide whether compaction should fire for a context of `current_tokens`.
+///
+/// Callers should pass the *calibrated* context size — i.e. `tool_ctx
+/// .approx_tokens`, which `recompute_token_estimate` keeps in sync with the
+/// last API-reported usage (mirroring v126's `tokenCountWithEstimation`:
+/// API anchor + rough estimate of messages added after the anchor).
+///
+/// We do NOT recompute `estimate_tokens(messages)` here. The raw estimator
+/// over-counts tool outputs because it sums their full byte length, while
+/// the wire format truncates each tool result to `MAX_TOOL_RESULT_CHARS`.
+/// Triggering off the over-estimate caused compaction to fire on every
+/// turn that contained a large Read/Bash output, even when the API saw a
+/// context with plenty of headroom — the "randomly starts compacting"
+/// symptom.
+pub fn should_compact(current_tokens: usize, max_context_tokens: usize) -> bool {
+    let level = compact_level(current_tokens, max_context_tokens);
     let should = matches!(level, CompactLevel::Compact | CompactLevel::Blocked);
     debug!(
         target: "jfc::compact",
-        est, max_context_tokens, ?level, should,
+        current_tokens, max_context_tokens, ?level, should,
         "should_compact check"
     );
     should
@@ -338,6 +353,28 @@ pub async fn compact(
     window: usize,
     on_progress: Option<CompactProgressCb>,
 ) -> CompactResult {
+    // Recovery: reset the rapid-refill counter when enough turns have
+    // elapsed since the last compact. v126's `cli.2.1.126.deob.js:397270`
+    // re-evaluates this each turn — `consecutiveRapidRefills` resets to 0
+    // whenever `turnCounter >= lG6`. Without this, jfc only reset inside
+    // the success path, so once tripped the breaker stayed latched until
+    // the user noticed and ran something to clear it.
+    let turns_since_compact = tool_ctx
+        .total_user_turns
+        .saturating_sub(tool_ctx.last_compact_turn);
+    if turns_since_compact >= THRASH_TURN_WINDOW
+        && tool_ctx.rapid_refill_count > 0
+    {
+        info!(
+            target: "jfc::compact",
+            turns_since_compact,
+            thrash_window = THRASH_TURN_WINDOW,
+            prev_count = tool_ctx.rapid_refill_count,
+            "auto-clearing circuit breaker — enough turns elapsed"
+        );
+        tool_ctx.rapid_refill_count = 0;
+    }
+
     if tool_ctx.rapid_refill_count >= CIRCUIT_BREAKER_LIMIT {
         warn!(
             target: "jfc::compact",

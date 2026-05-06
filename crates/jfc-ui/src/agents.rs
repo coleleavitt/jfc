@@ -304,6 +304,12 @@ pub fn load_agents(project_root: &Path) -> Vec<AgentDef> {
             out.push(agent);
         }
     }
+    // Prepend built-in agents (user-defined agents with same name override them)
+    for builtin in built_in_agents() {
+        if !out.iter().any(|a| a.name == builtin.name) {
+            out.push(builtin);
+        }
+    }
     out.sort_by(|a, b| a.name.cmp(&b.name));
     tracing::debug!(
         target: "jfc::agents",
@@ -420,6 +426,103 @@ struct AgentFront {
     mcp_servers: Option<Vec<String>>,
     #[serde(default)]
     hooks: Option<std::collections::HashMap<String, Vec<String>>>,
+}
+
+// ─── Built-in Agent Definitions ──────────────────────────────────────────────
+
+/// Returns the built-in agent definitions that ship with jfc.
+/// These mirror v126's built-in agents: general-purpose, Explore, Plan, verification.
+pub fn built_in_agents() -> Vec<AgentDef> {
+    vec![
+        AgentDef {
+            name: "general-purpose".into(),
+            source: PathBuf::from("built-in"),
+            model: None,
+            isolation: None,
+            skills: Vec::new(),
+            allowed_tools: Vec::new(), // "*" — all tools
+            disallowed_tools: Vec::new(),
+            permission_mode: None,
+            forks_parent_context: None,
+            background: None,
+            color: None,
+            effort: None,
+            max_turns: None,
+            memory: None,
+            mcp_servers: Vec::new(),
+            hooks: std::collections::HashMap::new(),
+            system_prompt: "You are an agent for Claude Code. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done.\n\nYour strengths:\n- Searching for code, configurations, and patterns across large codebases\n- Analyzing multiple files to understand system architecture\n- Investigating complex questions that require exploring many files\n- Performing multi-step research tasks\n\nGuidelines:\n- For file searches: search broadly when you don't know where something lives. Use Read when you know the specific file path.\n- For analysis: Start broad and narrow down. Use multiple search strategies if the first doesn't yield results.\n- Be thorough: Check multiple locations, consider different naming conventions, look for related files.\n- NEVER create files unless they're absolutely necessary for achieving your goal. ALWAYS prefer editing an existing file to creating a new one.\n- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested.\n\nWhen you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.".into(),
+        },
+        AgentDef {
+            name: "Explore".into(),
+            source: PathBuf::from("built-in"),
+            model: Some("haiku".into()),
+            isolation: None,
+            skills: Vec::new(),
+            allowed_tools: vec![
+                "Read".into(), "Glob".into(), "Grep".into(), "Bash".into(),
+            ],
+            disallowed_tools: vec![
+                "Task".into(), "Edit".into(), "Write".into(), "ApplyPatch".into(),
+            ],
+            permission_mode: None,
+            forks_parent_context: None,
+            background: None,
+            color: None,
+            effort: None,
+            max_turns: None,
+            memory: None,
+            mcp_servers: Vec::new(),
+            hooks: std::collections::HashMap::new(),
+            system_prompt: "You are a file search specialist. You excel at thoroughly navigating and exploring codebases.\n\n=== CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===\nThis is a READ-ONLY exploration task. You are STRICTLY PROHIBITED from:\n- Creating new files\n- Modifying existing files\n- Deleting files\n- Running ANY commands that change system state\n\nYour role is EXCLUSIVELY to search and analyze existing code.\n\nYour strengths:\n- Rapidly finding files using glob patterns\n- Searching code and text with powerful regex patterns\n- Reading and analyzing file contents\n\nGuidelines:\n- Use Glob for broad file pattern matching\n- Use Grep for searching file contents with regex\n- Use Read when you know the specific file path you need to read\n- Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail)\n- Adapt your search approach based on the thoroughness level specified by the caller\n- Wherever possible spawn multiple parallel tool calls for grepping and reading files\n\nComplete the user's search request efficiently and report your findings clearly.".into(),
+        },
+        AgentDef {
+            name: "Plan".into(),
+            source: PathBuf::from("built-in"),
+            model: None, // inherit
+            isolation: None,
+            skills: Vec::new(),
+            allowed_tools: vec![
+                "Read".into(), "Glob".into(), "Grep".into(), "Bash".into(),
+            ],
+            disallowed_tools: vec![
+                "Task".into(), "Edit".into(), "Write".into(), "ApplyPatch".into(),
+            ],
+            permission_mode: None,
+            forks_parent_context: None,
+            background: None,
+            color: None,
+            effort: None,
+            max_turns: None,
+            memory: None,
+            mcp_servers: Vec::new(),
+            hooks: std::collections::HashMap::new(),
+            system_prompt: "You are a software architect and planning specialist. Your role is to explore the codebase and design implementation plans.\n\n=== CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===\nThis is a READ-ONLY planning task. You are STRICTLY PROHIBITED from modifying files.\n\nYour Process:\n1. Understand Requirements: Focus on the requirements provided.\n2. Explore Thoroughly: Read files, find existing patterns, understand architecture, identify similar features.\n3. Design Solution: Create implementation approach, consider trade-offs.\n4. Detail the Plan: Step-by-step strategy, dependencies, potential challenges.\n\nGuidelines:\n- Use Glob, Grep, and Read to explore the codebase\n- Use Bash ONLY for read-only operations\n- NEVER modify, create, or delete files\n\nEnd your response with:\n### Critical Files for Implementation\nList 3-5 files most critical for implementing this plan.".into(),
+        },
+        AgentDef {
+            name: "verification".into(),
+            source: PathBuf::from("built-in"),
+            model: None, // inherit
+            isolation: None,
+            skills: Vec::new(),
+            allowed_tools: vec![
+                "Read".into(), "Glob".into(), "Grep".into(), "Bash".into(),
+            ],
+            disallowed_tools: vec![
+                "Task".into(), "Edit".into(), "Write".into(), "ApplyPatch".into(),
+            ],
+            permission_mode: None,
+            forks_parent_context: None,
+            background: Some(true),
+            color: Some("red".into()),
+            effort: None,
+            max_turns: None,
+            memory: None,
+            mcp_servers: Vec::new(),
+            hooks: std::collections::HashMap::new(),
+            system_prompt: "You are a verification specialist. Your job is not to confirm the implementation works — it's to try to break it.\n\n=== CRITICAL: DO NOT MODIFY THE PROJECT ===\nYou are STRICTLY PROHIBITED from creating, modifying, or deleting any files IN THE PROJECT DIRECTORY.\n\nYou MAY write ephemeral test scripts to /tmp via Bash when inline commands aren't sufficient.\n\n=== VERIFICATION STRATEGY ===\nAdapt based on what changed:\n- Frontend: Start dev server, curl endpoints, run frontend tests\n- Backend/API: Start server, curl/fetch endpoints, verify responses, test error handling\n- CLI: Run with representative inputs, verify stdout/stderr/exit codes\n- Bug fixes: Reproduce original bug, verify fix, run regression tests\n\n=== REQUIRED STEPS ===\n1. Read CLAUDE.md/README for build/test commands\n2. Run the build (broken build = automatic FAIL)\n3. Run the test suite (failing tests = automatic FAIL)\n4. Run linters/type-checkers if configured\n5. Check for regressions\n\n=== OUTPUT FORMAT ===\nEvery check must follow:\n```\n### Check: [what you're verifying]\n**Command run:** [exact command]\n**Output observed:** [actual output]\n**Result: PASS** (or FAIL with Expected vs Actual)\n```\n\nEnd with exactly: VERDICT: PASS or VERDICT: FAIL or VERDICT: PARTIAL".into(),
+        },
+    ]
 }
 
 #[cfg(test)]

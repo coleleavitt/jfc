@@ -386,6 +386,19 @@ impl TableState {
 
         let mut lines = Vec::new();
 
+        // Top border `┌──┬──┐` so the table is enclosed on all four
+        // sides. Without this the table read as "free-standing rows
+        // with internal dividers" — easy to miss in dense prose.
+        let mut top = vec![Span::styled("┌─", border_style)];
+        for (i, &w) in widths.iter().enumerate() {
+            top.push(Span::styled("─".repeat(w), border_style));
+            if i + 1 < ncols {
+                top.push(Span::styled("─┬─", border_style));
+            }
+        }
+        top.push(Span::styled("─┐", border_style));
+        lines.push(Line::from(top));
+
         if !self.head_row.is_empty() {
             let mut spans = vec![Span::styled("│ ", border_style)];
             for (i, cell) in self.head_row.iter().enumerate() {
@@ -420,6 +433,17 @@ impl TableState {
             }
             lines.push(Line::from(spans));
         }
+
+        // Bottom border `└──┴──┘`.
+        let mut bot = vec![Span::styled("└─", border_style)];
+        for (i, &w) in widths.iter().enumerate() {
+            bot.push(Span::styled("─".repeat(w), border_style));
+            if i + 1 < ncols {
+                bot.push(Span::styled("─┴─", border_style));
+            }
+        }
+        bot.push(Span::styled("─┘", border_style));
+        lines.push(Line::from(bot));
 
         lines
     }
@@ -570,7 +594,12 @@ where
                 } else {
                     format!("▸ {lang}")
                 };
-                let header_style = Style::default().fg(self.theme.accent);
+                let header_style = Style::default()
+                    .fg(self.theme.accent)
+                    .add_modifier(Modifier::BOLD);
+                // Emphasize the language tag a bit more — the previous
+                // bare accent color blended into prose. Bold + the
+                // small lang badge makes code blocks pop visually.
                 self.push_line(Line::from(vec![
                     Span::styled("┌─ ", Style::default().fg(self.theme.border)),
                     Span::styled(header_label, header_style),

@@ -76,6 +76,183 @@ macro_rules! string_id {
 string_id!(ProviderId);
 string_id!(ModelId);
 
+/// A qualified model specifier: optionally prefixed with a provider name.
+///
+/// Parsed from strings in one of two forms:
+///   - `"provider/model-id"` → explicit provider routing (e.g. `"openwebui/bedrock-claude-4-6-opus"`)
+///   - `"model-id"`          → bare model, provider resolved by heuristic
+///
+/// Inspired by Cargo's `PackageIdSpec` (`name@version`) and Rust target triples
+/// (`arch-vendor-os`): a structured identifier parsed from a single string with
+/// `FromStr`, round-tripped via `Display`, and carrying enough type information
+/// to route without ambient guessing.
+///
+/// The `/` separator was chosen because:
+///   1. It's already the convention in the config (`"anthropic/claude-opus-4-7"`)
+///   2. No known model id starts with a provider name followed by `/`
+///   3. It mirrors container image naming (`registry/image:tag`)
+///
+/// # Examples
+/// ```
+/// use jfc_ui::provider::ModelSpec;
+///
+/// let spec: ModelSpec = "anthropic/claude-opus-4-7".parse().unwrap();
+/// assert_eq!(spec.provider().map(|p| p.as_str()), Some("anthropic"));
+/// assert_eq!(spec.model().as_str(), "claude-opus-4-7");
+/// assert_eq!(spec.to_string(), "anthropic/claude-opus-4-7");
+///
+/// let bare: ModelSpec = "claude-opus-4-7".parse().unwrap();
+/// assert_eq!(bare.provider(), None);
+/// assert_eq!(bare.model().as_str(), "claude-opus-4-7");
+/// assert_eq!(bare.to_string(), "claude-opus-4-7");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ModelSpec {
+    provider: Option<ProviderId>,
+    model: ModelId,
+}
+
+impl ModelSpec {
+    /// Construct from parts explicitly.
+    pub fn new(provider: Option<ProviderId>, model: ModelId) -> Self {
+        Self { provider, model }
+    }
+
+    /// Construct a bare (provider-less) spec from a model id.
+    pub fn bare(model: impl Into<ModelId>) -> Self {
+        Self {
+            provider: None,
+            model: model.into(),
+        }
+    }
+
+    /// Construct a fully qualified spec.
+    pub fn qualified(provider: impl Into<ProviderId>, model: impl Into<ModelId>) -> Self {
+        Self {
+            provider: Some(provider.into()),
+            model: model.into(),
+        }
+    }
+
+    /// The explicit provider prefix, if present.
+    pub fn provider(&self) -> Option<&ProviderId> {
+        self.provider.as_ref()
+    }
+
+    /// The model identifier (the part after the `/`, or the whole string if bare).
+    pub fn model(&self) -> &ModelId {
+        &self.model
+    }
+
+    /// Consume self and return the model id (discarding provider info).
+    pub fn into_model(self) -> ModelId {
+        self.model
+    }
+
+    /// Whether this spec has an explicit provider prefix.
+    pub fn is_qualified(&self) -> bool {
+        self.provider.is_some()
+    }
+}
+
+/// Parsing: split on the *first* `/`.
+///
+/// - Empty string → error
+/// - No `/` → bare model
+/// - `/` present → left = provider, right = model (both must be non-empty)
+impl std::str::FromStr for ModelSpec {
+    type Err = ModelSpecParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(ModelSpecParseError::Empty);
+        }
+        if let Some((provider, model)) = s.split_once('/') {
+            if provider.is_empty() {
+                return Err(ModelSpecParseError::EmptyProvider(s.to_owned()));
+            }
+            if model.is_empty() {
+                return Err(ModelSpecParseError::EmptyModel(s.to_owned()));
+            }
+            Ok(ModelSpec {
+                provider: Some(ProviderId::new(provider)),
+                model: ModelId::new(model),
+            })
+        } else {
+            Ok(ModelSpec {
+                provider: None,
+                model: ModelId::new(s),
+            })
+        }
+    }
+}
+
+/// Display round-trips: `provider/model` when qualified, bare `model` otherwise.
+impl fmt::Display for ModelSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(ref p) = self.provider {
+            write!(f, "{}/{}", p, self.model)
+        } else {
+            write!(f, "{}", self.model)
+        }
+    }
+}
+
+/// Allows constructing from a raw string (bare model — no provider routing).
+/// Use `.parse::<ModelSpec>()` for full `provider/model` parsing.
+impl From<String> for ModelSpec {
+    fn from(s: String) -> Self {
+        // Attempt qualified parse; fall back to bare if it fails
+        s.parse().unwrap_or_else(|_| ModelSpec::bare(ModelId::new(s)))
+    }
+}
+
+impl From<&str> for ModelSpec {
+    fn from(s: &str) -> Self {
+        s.parse()
+            .unwrap_or_else(|_| ModelSpec::bare(ModelId::new(s)))
+    }
+}
+
+impl serde::Serialize for ModelSpec {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ModelSpec {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelSpecParseError {
+    /// The input string was empty.
+    Empty,
+    /// Provider portion (before `/`) was empty: `"/model-id"`.
+    EmptyProvider(String),
+    /// Model portion (after `/`) was empty: `"provider/"`.
+    EmptyModel(String),
+}
+
+impl fmt::Display for ModelSpecParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => write!(f, "model spec cannot be empty"),
+            Self::EmptyProvider(s) => {
+                write!(f, "model spec has empty provider: {:?}", s)
+            }
+            Self::EmptyModel(s) => {
+                write!(f, "model spec has empty model after '/': {:?}", s)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ModelSpecParseError {}
+
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     TextDelta {
@@ -343,5 +520,139 @@ pub trait Provider: Send + Sync {
         _options: &StreamOptions,
     ) -> anyhow::Result<CompletionResponse> {
         anyhow::bail!("{} does not support non-streaming completion", self.name())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ─── ModelSpec parsing ────────────────────────────────────────────────
+
+    #[test]
+    fn parse_qualified_spec_normal() {
+        let spec: ModelSpec = "anthropic/claude-opus-4-7".parse().unwrap();
+        assert_eq!(spec.provider().unwrap().as_str(), "anthropic");
+        assert_eq!(spec.model().as_str(), "claude-opus-4-7");
+        assert!(spec.is_qualified());
+    }
+
+    #[test]
+    fn parse_bare_spec_normal() {
+        let spec: ModelSpec = "claude-opus-4-7".parse().unwrap();
+        assert_eq!(spec.provider(), None);
+        assert_eq!(spec.model().as_str(), "claude-opus-4-7");
+        assert!(!spec.is_qualified());
+    }
+
+    #[test]
+    fn parse_openwebui_prefix_normal() {
+        let spec: ModelSpec = "openwebui/bedrock-claude-4-6-opus".parse().unwrap();
+        assert_eq!(spec.provider().unwrap().as_str(), "openwebui");
+        assert_eq!(spec.model().as_str(), "bedrock-claude-4-6-opus");
+    }
+
+    #[test]
+    fn parse_anthropic_oauth_prefix_normal() {
+        let spec: ModelSpec = "anthropic-oauth/claude-sonnet-4-6".parse().unwrap();
+        assert_eq!(spec.provider().unwrap().as_str(), "anthropic-oauth");
+        assert_eq!(spec.model().as_str(), "claude-sonnet-4-6");
+    }
+
+    #[test]
+    fn parse_empty_is_error_robust() {
+        let err = "".parse::<ModelSpec>().unwrap_err();
+        assert_eq!(err, ModelSpecParseError::Empty);
+    }
+
+    #[test]
+    fn parse_leading_slash_is_error_robust() {
+        let err = "/claude-opus-4-7".parse::<ModelSpec>().unwrap_err();
+        assert!(matches!(err, ModelSpecParseError::EmptyProvider(_)));
+    }
+
+    #[test]
+    fn parse_trailing_slash_is_error_robust() {
+        let err = "anthropic/".parse::<ModelSpec>().unwrap_err();
+        assert!(matches!(err, ModelSpecParseError::EmptyModel(_)));
+    }
+
+    #[test]
+    fn parse_multiple_slashes_takes_first_normal() {
+        // "openrouter/anthropic/claude-3.5-sonnet" → provider="openrouter", model="anthropic/claude-3.5-sonnet"
+        let spec: ModelSpec = "openrouter/anthropic/claude-3.5-sonnet".parse().unwrap();
+        assert_eq!(spec.provider().unwrap().as_str(), "openrouter");
+        assert_eq!(spec.model().as_str(), "anthropic/claude-3.5-sonnet");
+    }
+
+    // ─── ModelSpec display round-trip ─────────────────────────────────────
+
+    #[test]
+    fn display_qualified_roundtrips_normal() {
+        let input = "anthropic/claude-opus-4-7";
+        let spec: ModelSpec = input.parse().unwrap();
+        assert_eq!(spec.to_string(), input);
+    }
+
+    #[test]
+    fn display_bare_roundtrips_normal() {
+        let input = "claude-opus-4-7";
+        let spec: ModelSpec = input.parse().unwrap();
+        assert_eq!(spec.to_string(), input);
+    }
+
+    // ─── ModelSpec serde ──────────────────────────────────────────────────
+
+    #[test]
+    fn serde_roundtrip_qualified_normal() {
+        let spec = ModelSpec::qualified("openwebui", "bedrock-claude-4-6-opus");
+        let json = serde_json::to_string(&spec).unwrap();
+        assert_eq!(json, "\"openwebui/bedrock-claude-4-6-opus\"");
+        let back: ModelSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, spec);
+    }
+
+    #[test]
+    fn serde_roundtrip_bare_normal() {
+        let spec = ModelSpec::bare("claude-opus-4-7");
+        let json = serde_json::to_string(&spec).unwrap();
+        assert_eq!(json, "\"claude-opus-4-7\"");
+        let back: ModelSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, spec);
+    }
+
+    #[test]
+    fn serde_deserialize_empty_is_error_robust() {
+        let result = serde_json::from_str::<ModelSpec>("\"\"");
+        assert!(result.is_err());
+    }
+
+    // ─── ModelSpec constructors ───────────────────────────────────────────
+
+    #[test]
+    fn from_string_parses_qualified_normal() {
+        let spec = ModelSpec::from("openwebui/gpt-4o".to_owned());
+        assert_eq!(spec.provider().unwrap().as_str(), "openwebui");
+        assert_eq!(spec.model().as_str(), "gpt-4o");
+    }
+
+    #[test]
+    fn from_str_bare_normal() {
+        let spec = ModelSpec::from("claude-opus-4-7");
+        assert_eq!(spec.provider(), None);
+        assert_eq!(spec.model().as_str(), "claude-opus-4-7");
+    }
+
+    // ─── ModelSpec error Display ──────────────────────────────────────────
+
+    #[test]
+    fn error_display_messages_robust() {
+        assert!(ModelSpecParseError::Empty.to_string().contains("empty"));
+        assert!(ModelSpecParseError::EmptyProvider("/foo".to_owned())
+            .to_string()
+            .contains("empty provider"));
+        assert!(ModelSpecParseError::EmptyModel("foo/".to_owned())
+            .to_string()
+            .contains("empty model"));
     }
 }

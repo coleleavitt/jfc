@@ -258,6 +258,24 @@ pub struct ToolCall {
     /// long stdout, multi-hunk diffs, and big file reads all start
     /// preview-only so they don't drown out the rest of the chat.
     pub expanded: bool,
+    /// Wall-clock millis between the tool's dispatch and its result
+    /// landing. `None` while the tool is in flight. Set by the
+    /// `ToolResult` handler in `main.rs`. Surfaced in the title as
+    /// a muted `[2.3s]` badge so the user can spot slow operations
+    /// at a glance.
+    pub elapsed_ms: Option<u64>,
+    /// Wall-clock instant when the tool transitioned into flight —
+    /// captured at construction and used to compute `elapsed_ms` on
+    /// completion. Not persisted (recomputing the duration after a
+    /// session reload is meaningless), so this isn't serialized.
+    pub started_at: Option<std::time::Instant>,
+    /// True when the user has double-clicked the tool to pin it
+    /// expanded. The renderer adds a small 📌 glyph to the title
+    /// and the click handler resists toggling it off — only an
+    /// explicit double-click can unpin. Without this, a long Read
+    /// the user wants to keep visible while scrolling around can
+    /// silently re-collapse.
+    pub pinned: bool,
 }
 
 /// The lifecycle state of a spawned sub-agent task.
@@ -304,19 +322,46 @@ pub struct TaskInput {
     pub category: Option<String>,
     pub run_in_background: bool,
     pub model: Option<String>,
+    /// Name for the spawned agent — makes it addressable via SendMessage.
+    /// When set along with `team_name`, spawns a persistent teammate instead
+    /// of a one-shot subagent.
+    pub name: Option<String>,
+    /// Team to spawn the agent into. Uses current team context if omitted.
+    pub team_name: Option<String>,
+    /// Permission mode for the spawned teammate (e.g., "plan" to require approval).
+    pub mode: Option<String>,
+    /// Isolation mode: "worktree" creates a temp git worktree for the agent.
+    pub isolation: Option<String>,
 }
 
 impl TaskInput {
     pub fn summary(&self) -> String {
-        format!(
-            "{} ({})",
-            self.description,
-            if self.run_in_background {
-                "background"
-            } else {
-                "foreground"
-            }
-        )
+        if let Some(ref name) = self.name {
+            format!("spawn teammate: {name} — {}", self.description)
+        } else {
+            format!(
+                "{} ({})",
+                self.description,
+                if self.run_in_background {
+                    "background"
+                } else {
+                    "foreground"
+                }
+            )
+        }
+    }
+
+    /// Whether this Task invocation should spawn a persistent teammate
+    /// rather than a one-shot subagent.
+    pub fn is_teammate_spawn(&self) -> bool {
+        self.name.is_some() && self.team_name.is_some()
+    }
+
+    /// Whether this is a fork (no subagent_type specified). Forks inherit
+    /// the parent's full conversation context and share the prompt cache.
+    /// This is the cheapest delegation path.
+    pub fn is_fork(&self) -> bool {
+        self.subagent_type.is_none() && !self.is_teammate_spawn()
     }
 }
 
@@ -367,6 +412,16 @@ pub enum ToolKind {
     TaskDone,
     Task,
     Skill,
+    MemoryCreate,
+    MemoryDelete,
+    TeamCreate,
+    TeamDelete,
+    SendMessage,
+    /// Change a teammate's permission mode at runtime — wraps
+    /// `swarm::team_helpers::set_member_mode`. Lets the leader
+    /// promote/demote a teammate (e.g. plan → default) without
+    /// respawning it.
+    TeamMemberMode,
     Generic(String),
 }
 
@@ -442,6 +497,29 @@ pub enum ToolInput {
         name: String,
         args: Option<String>,
     },
+    MemoryCreate {
+        level: String,
+        memory_type: String,
+        scope: String,
+        body: String,
+    },
+    MemoryDelete {
+        path: String,
+    },
+    TeamCreate {
+        team_name: String,
+        description: Option<String>,
+    },
+    TeamDelete,
+    SendMessage {
+        to: String,
+        message: String,
+        summary: Option<String>,
+    },
+    TeamMemberMode {
+        member_name: String,
+        mode: String,
+    },
     Generic {
         summary: String,
     },
@@ -487,8 +565,17 @@ pub enum ToolOutput {
 }
 
 impl ToolOutput {
+    /// Mirror of the wire-format truncation cap in `stream.rs`
+    /// (`MAX_TOOL_RESULT_CHARS`). The API only ever sees a tool result
+    /// shortened to this many bytes, so the local token estimate must cap
+    /// here too — otherwise a 500KB Read output makes `compact_level` think
+    /// the context is full when the API only received 30KB of it. That
+    /// mismatch is what made compaction trigger on every tool batch with a
+    /// large file in it.
+    pub const APPROX_LEN_CAP: usize = 30_000;
+
     pub fn approx_text_len(&self) -> usize {
-        match self {
+        let raw = match self {
             Self::Text(s) => s.len(),
             Self::LargeText(lt) => lt.byte_count,
             Self::Diff(d) => d
@@ -501,7 +588,8 @@ impl ToolOutput {
             Self::Command { stdout, stderr, .. } => stdout.len() + stderr.len(),
             Self::FileList(files) => files.iter().map(|f| f.len()).sum(),
             Self::Empty => 0,
-        }
+        };
+        raw.min(Self::APPROX_LEN_CAP)
     }
 
     pub fn text_only(&self) -> String {
@@ -715,6 +803,12 @@ impl ToolKind {
             "taskdone" => Self::TaskDone,
             "task" => Self::Task,
             "skill" => Self::Skill,
+            "memorycreate" => Self::MemoryCreate,
+            "memorydelete" => Self::MemoryDelete,
+            "teamcreate" => Self::TeamCreate,
+            "teamdelete" => Self::TeamDelete,
+            "sendmessage" => Self::SendMessage,
+            "teammembermode" => Self::TeamMemberMode,
             _ => Self::Generic(name.to_owned()),
         }
     }
@@ -735,6 +829,12 @@ impl ToolKind {
             Self::TaskDone => "TaskDone",
             Self::Task => "Task",
             Self::Skill => "Skill",
+            Self::MemoryCreate => "MemoryCreate",
+            Self::MemoryDelete => "MemoryDelete",
+            Self::TeamCreate => "TeamCreate",
+            Self::TeamDelete => "TeamDelete",
+            Self::SendMessage => "SendMessage",
+            Self::TeamMemberMode => "TeamMemberMode",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -755,6 +855,12 @@ impl ToolKind {
             Self::TaskDone => "TaskDone",
             Self::Task => "Task",
             Self::Skill => "Skill",
+            Self::MemoryCreate => "MemoryCreate",
+            Self::MemoryDelete => "MemoryDelete",
+            Self::TeamCreate => "TeamCreate",
+            Self::TeamDelete => "TeamDelete",
+            Self::SendMessage => "SendMessage",
+            Self::TeamMemberMode => "TeamMemberMode",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -808,6 +914,20 @@ impl ToolInput {
                 Some(a) => format!("{name}: {a}"),
                 None => name.clone(),
             },
+            Self::MemoryCreate { body, level, .. } => {
+                let preview: String = body.chars().take(50).collect();
+                format!("remember ({level}): {preview}")
+            }
+            Self::MemoryDelete { path } => format!("forget: {path}"),
+            Self::TeamCreate { team_name, .. } => format!("create team: {team_name}"),
+            Self::TeamDelete => "cleanup team".into(),
+            Self::SendMessage { to, summary, .. } => match summary {
+                Some(s) => format!("→ {to}: {s}"),
+                None => format!("→ {to}"),
+            },
+            Self::TeamMemberMode { member_name, mode } => {
+                format!("set {member_name} → {mode}")
+            }
             Self::Generic { summary } => summary.clone(),
         }
     }
@@ -911,10 +1031,46 @@ impl ToolInput {
                 category: opt_str_field("category"),
                 run_in_background: bool_field("run_in_background"),
                 model: opt_str_field("model"),
+                name: opt_str_field("name"),
+                team_name: opt_str_field("team_name"),
+                mode: opt_str_field("mode"),
+                isolation: opt_str_field("isolation"),
             }),
             ToolKind::Skill => Self::Skill {
                 name: str_field("name"),
                 args: opt_str_field("args"),
+            },
+            ToolKind::MemoryCreate => Self::MemoryCreate {
+                level: str_field("level"),
+                memory_type: str_field("memory_type"),
+                scope: str_field("scope"),
+                body: str_field("body"),
+            },
+            ToolKind::MemoryDelete => Self::MemoryDelete {
+                path: str_field("path"),
+            },
+            ToolKind::TeamCreate => Self::TeamCreate {
+                team_name: str_field("team_name"),
+                description: v.get("description").and_then(|d| d.as_str()).map(str::to_owned),
+            },
+            ToolKind::TeamDelete => Self::TeamDelete,
+            ToolKind::SendMessage => Self::SendMessage {
+                to: str_field("to"),
+                message: v
+                    .get("message")
+                    .map(|m| {
+                        if let Some(s) = m.as_str() {
+                            s.to_owned()
+                        } else {
+                            m.to_string()
+                        }
+                    })
+                    .unwrap_or_default(),
+                summary: v.get("summary").and_then(|s| s.as_str()).map(str::to_owned),
+            },
+            ToolKind::TeamMemberMode => Self::TeamMemberMode {
+                member_name: str_field("member_name"),
+                mode: str_field("mode"),
             },
             ToolKind::Generic(_) => Self::Generic {
                 summary: v.to_string(),
@@ -1076,6 +1232,43 @@ impl ToolInput {
                 }
                 v
             }
+            Self::MemoryCreate {
+                level,
+                memory_type,
+                scope,
+                body,
+            } => json!({
+                "level": level,
+                "memory_type": memory_type,
+                "scope": scope,
+                "body": body,
+            }),
+            Self::MemoryDelete { path } => json!({ "path": path }),
+            Self::TeamCreate {
+                team_name,
+                description,
+            } => {
+                let mut v = json!({ "team_name": team_name });
+                if let Some(d) = description {
+                    v["description"] = json!(d);
+                }
+                v
+            }
+            Self::TeamDelete => json!({}),
+            Self::SendMessage {
+                to,
+                message,
+                summary,
+            } => {
+                let mut v = json!({ "to": to, "message": message });
+                if let Some(s) = summary {
+                    v["summary"] = json!(s);
+                }
+                v
+            }
+            Self::TeamMemberMode { member_name, mode } => {
+                json!({ "member_name": member_name, "mode": mode })
+            }
             Self::Generic { summary } => {
                 serde_json::from_str(summary).unwrap_or(json!({ "input": summary }))
             }
@@ -1109,6 +1302,9 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             output: ToolOutput::Diff(diff),
             is_collapsed: false,
             expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "bash-1".into(),
@@ -1127,6 +1323,9 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             },
             is_collapsed: false,
             expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "read-1".into(),
@@ -1145,6 +1344,9 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             },
             is_collapsed: true,
             expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "write-1".into(),
@@ -1157,6 +1359,9 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             output: ToolOutput::Text("Waiting for approval".into()),
             is_collapsed: true,
             expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "search-1".into(),
@@ -1173,6 +1378,9 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             ]),
             is_collapsed: true,
             expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "patch-1".into(),
@@ -1190,6 +1398,9 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             )),
             is_collapsed: true,
             expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "generic-1".into(),
@@ -1201,6 +1412,9 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             output: ToolOutput::Empty,
             is_collapsed: true,
             expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
         }),
     ])
 }
@@ -1395,6 +1609,10 @@ mod tests {
             category: None,
             run_in_background: false,
             model: None,
+            name: None,
+            team_name: None,
+            mode: None,
+            isolation: None,
         };
         assert!(fg.summary().contains("foreground"));
 
@@ -1414,6 +1632,10 @@ mod tests {
             category: None,
             run_in_background: true,
             model: None,
+            name: None,
+            team_name: None,
+            mode: None,
+            isolation: None,
         });
         let v = input.to_value();
         assert_eq!(v["description"], "research");
