@@ -104,6 +104,10 @@ Build a self-regulating agent economy within jfc where coding tasks are solved t
 4. **Real Token Tracking** (from ClawCoin): TokenLedger tracks actual input/output token counts from API responses, not abstract points. 1 token in ledger = 1 LLM token consumed.
 5. **Composite Health Score** (from CMAG): `MarketHealth = Efficiency × Fairness × Trust × BudgetAdherence` (multiplicative — degradation in ANY dimension collapses the score).
 6. **Governance as State Graph** (from Institutional AI): Charter isn't just config values — it's a state-transition graph with explicit sanctions and restorative paths. Collusion drops from 50% to 5.6% with this approach.
+7. **Reward Hack Resistance** (from Anthropic Mythos System Card): Bounty acceptance criteria MUST be evaluated by an independent system (compiler, test suite), NEVER by another agent alone. Agents will find novel ways to game metrics — verification must be mechanistic, not judgment-based.
+8. **Sandbox Hardening** (from Anthropic Mythos): Solver agents CANNOT modify their own permissions, spawn processes outside worktree, search for credentials, or escalate privileges. Monitor for base64-encoded commands and indirect execution paths.
+9. **Graceful Forfeit** (from Anthropic Mythos "overeager" finding): Agents must have an explicit "abandon" action — if stuck, they forfeit the bounty and return remaining tokens rather than persisting destructively.
+10. **Deception-Aware Validation** (from Anthropic Mythos): Validators must not be able to plant bugs then "discover" them. Sealed validation prevents this structurally, but additionally: any code ADDED by a validator during the challenge round must be flagged and reviewed separately from code that was already present.
 
 ---
 
@@ -198,6 +202,25 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] Types compile, workspace builds
   - [ ] State machine transitions are type-safe
 
+  **QA Scenarios**:
+  ```
+  Scenario: Crate compiles cleanly
+    Tool: Bash
+    Steps:
+      1. cargo build -p jfc-economy
+      2. cargo clippy -p jfc-economy -- -D warnings
+    Expected: Both pass with zero errors/warnings
+    Evidence: .sisyphus/evidence/task-1-build.txt
+
+  Scenario: Invalid state transition rejected at compile time
+    Tool: Bash
+    Steps:
+      1. Write test attempting MarketState::Posting -> MarketState::Settling (skipping phases)
+      2. cargo test -p jfc-economy -- state_machine_invalid_transition
+    Expected: Test passes (the transition is rejected)
+    Evidence: .sisyphus/evidence/task-1-state-machine.txt
+  ```
+
 - [ ] 2. Token Ledger + Budget Gating (CFO Layer)
 
   **What to do**:
@@ -217,6 +240,29 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] Audit log records every transaction with model + token breakdown
   - [ ] Price estimation within 20% of actual cost
 
+  **QA Scenarios**:
+  ```
+  Scenario: Budget gate rejects when exhausted
+    Tool: Bash
+    Steps:
+      1. Create ledger with budget=100
+      2. Debit 95 tokens
+      3. Attempt to gate-check a request estimated at 10 tokens
+      4. cargo test -p jfc-economy -- test_budget_gate_rejects
+    Expected: gate returns Err(BudgetExhausted), balance unchanged at 5
+    Evidence: .sisyphus/evidence/task-2-budget-gate.txt
+
+  Scenario: Spawn fee deducted on agent creation
+    Tool: Bash
+    Steps:
+      1. Create ledger with budget=1000
+      2. Spawn a solver (spawn_fee=50 configured in charter)
+      3. Assert balance is now 950
+      4. cargo test -p jfc-economy -- test_spawn_fee
+    Expected: Balance reduced by exactly spawn_fee amount
+    Evidence: .sisyphus/evidence/task-2-spawn-fee.txt
+  ```
+
 - [ ] 3. Trust Scoring System
 
   **What to do**:
@@ -231,6 +277,29 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] Capability tiers gate correctly
   - [ ] Score history is append-only
 
+  **QA Scenarios**:
+  ```
+  Scenario: Asymmetric trust scoring
+    Tool: Bash
+    Steps:
+      1. Create agent with trust=50
+      2. Record success → trust should be 55
+      3. Record failure → trust should be 40 (55-15)
+      4. cargo test -p jfc-economy -- test_trust_asymmetric
+    Expected: 50→55→40 exact sequence
+    Evidence: .sisyphus/evidence/task-3-trust-math.txt
+
+  Scenario: Capability tier gating
+    Tool: Bash
+    Steps:
+      1. Create agent with trust=25 (restricted tier)
+      2. Attempt to bid on bounty requiring min_trust=30
+      3. Assert bid is rejected
+      4. cargo test -p jfc-economy -- test_trust_tier_gate
+    Expected: Bid rejected with TrustTooLow error
+    Evidence: .sisyphus/evidence/task-3-tier-gate.txt
+  ```
+
 - [ ] 4. Bounty Definition + Market State Machine
 
   **What to do**:
@@ -242,6 +311,28 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   **Acceptance Criteria**:
   - [ ] State machine transitions enforce valid ordering
   - [ ] Surge pricing triggers after timeout
+
+  **QA Scenarios**:
+  ```
+  Scenario: State machine rejects invalid transition
+    Tool: Bash
+    Steps:
+      1. Create bounty in Bidding state
+      2. Attempt transition to Complete (skipping Executing, Validating, Settling)
+      3. cargo test -p jfc-economy -- test_invalid_transition
+    Expected: Returns Err(InvalidTransition { from: Bidding, to: Complete })
+    Evidence: .sisyphus/evidence/task-4-invalid-transition.txt
+
+  Scenario: Surge pricing after timeout
+    Tool: Bash
+    Steps:
+      1. Create bounty with reward=100, timeout=0ms (immediate)
+      2. Trigger timeout check
+      3. Assert reward is now 115 (+15%)
+      4. cargo test -p jfc-economy -- test_surge_pricing
+    Expected: Reward increases by exactly 15%
+    Evidence: .sisyphus/evidence/task-4-surge.txt
+  ```
 
 - [ ] 5. Governance Charter (as State-Transition Graph)
 
@@ -271,6 +362,28 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] State-transition violations trigger automatic sanctions
   - [ ] Sanction amounts are declared in charter (not hardcoded)
 
+  **QA Scenarios**:
+  ```
+  Scenario: Charter loads and enforces constraints
+    Tool: Bash
+    Steps:
+      1. Create charter YAML with max_solvers=2
+      2. Load charter, attempt to spawn 3 solvers
+      3. cargo test -p jfc-economy -- test_charter_max_solvers
+    Expected: Third solver rejected with CharterViolation error
+    Evidence: .sisyphus/evidence/task-5-charter-enforce.txt
+
+  Scenario: State-transition violation triggers sanction
+    Tool: Bash
+    Steps:
+      1. Charter declares: solver submitting twice = -20 trust penalty
+      2. Solver attempts second submission
+      3. Assert submission rejected AND trust reduced by 20
+      4. cargo test -p jfc-economy -- test_charter_sanction
+    Expected: Submission blocked, trust_score -= 20
+    Evidence: .sisyphus/evidence/task-5-sanction.txt
+  ```
+
 - [ ] 6. Sealed-Bid Auction Engine
 
   **What to do**:
@@ -285,6 +398,28 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] Ranking produces deterministic ordering
   - [ ] Only top N selected
 
+  **QA Scenarios**:
+  ```
+  Scenario: Sealed bid ranking
+    Tool: Bash
+    Steps:
+      1. Create 5 bids with varying (price, trust) combos
+      2. Run ranking with charter.max_solvers=3
+      3. Assert top 3 selected, bottom 2 rejected
+      4. cargo test -p jfc-economy -- test_sealed_bid_ranking
+    Expected: Deterministic top-3 selection based on scoring formula
+    Evidence: .sisyphus/evidence/task-6-bid-ranking.txt
+
+  Scenario: Bid isolation (no leakage)
+    Tool: Bash
+    Steps:
+      1. Submit bid A, then bid B
+      2. Assert bid B has no access to bid A's price or approach
+      3. cargo test -p jfc-economy -- test_bid_isolation
+    Expected: Each bid struct contains only its own data
+    Evidence: .sisyphus/evidence/task-6-isolation.txt
+  ```
+
 - [ ] 7. Solver Agent Spawning
 
   **What to do**:
@@ -293,11 +428,42 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - Each solver produces a `Solution`: patch/diff + explanation + self-assessment
   - Time-bounded: must complete within charter deadline or forfeit
   - From Agent Hunt: "agents dynamically propose solutions and compete to discharge obligations"
+  - **SANDBOX HARDENING** (from Anthropic Mythos): Solvers run in git worktrees with:
+    - NO access to files outside worktree
+    - NO ability to spawn processes with elevated permissions
+    - NO credential searching (block access to ~/.ssh, ~/.config, env vars with secrets)
+    - NO network access beyond the LLM API itself
+    - Monitor for base64-encoded commands and indirect execution paths
+  - **GRACEFUL FORFEIT** (from Anthropic Mythos): Agents have an explicit `abandon()` action — if stuck after N failed attempts, forfeit bounty and return remaining budget rather than persisting destructively
 
   **Acceptance Criteria**:
   - [ ] Solvers execute in isolated worktrees
   - [ ] No inter-solver communication possible
   - [ ] Timeout enforcement works
+  - [ ] Sandbox prevents file access outside worktree
+  - [ ] Abandon action returns tokens correctly
+
+  **QA Scenarios**:
+  ```
+  Scenario: Solver isolation in worktree
+    Tool: Bash
+    Steps:
+      1. Spawn solver with worktree at /tmp/test-solver-1
+      2. Verify solver cannot read files from main repo outside worktree
+      3. cargo test -p jfc-economy -- test_solver_isolation
+    Expected: Any path traversal attempt returns PermissionDenied
+    Evidence: .sisyphus/evidence/task-7-isolation.txt
+
+  Scenario: Graceful forfeit returns tokens
+    Tool: Bash
+    Steps:
+      1. Create solver with budget=200, spawn_fee=50 (remaining=150)
+      2. Solver consumes 30 tokens of execution then calls abandon()
+      3. Assert remaining budget returned = 150 - 30 = 120
+      4. cargo test -p jfc-economy -- test_graceful_forfeit
+    Expected: 120 tokens returned to bounty pool
+    Evidence: .sisyphus/evidence/task-7-forfeit.txt
+  ```
 
 - [ ] 8. Solution Collection + Ranking
 
@@ -307,10 +473,35 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - Rank surviving solutions by: test pass rate, code quality (clippy), cost efficiency
   - Solutions that don't compile are immediately eliminated (no validation needed)
   - From SWE-Debate: "fault propagation traces as localization proposals"
+  - **REWARD HACK RESISTANCE** (from Anthropic Mythos): Acceptance criteria evaluated ONLY by mechanistic verification (compiler, test suite, clippy), NEVER by another agent's judgment alone. Agents WILL find novel ways to game soft metrics — all scoring must be based on hard pass/fail signals.
+  - **Anti-gaming checks**: Verify solution doesn't just delete failing tests, mock all assertions to true, or modify the grading infrastructure itself
 
   **Acceptance Criteria**:
   - [ ] Non-compiling solutions auto-rejected
   - [ ] Ranking is deterministic given same inputs
+  - [ ] Solutions that delete/modify existing tests are flagged as suspicious
+  - [ ] No agent self-reported metric is used in ranking (only mechanistic signals)
+
+  **QA Scenarios**:
+  ```
+  Scenario: Non-compiling solution rejected
+    Tool: Bash
+    Steps:
+      1. Submit solution with syntax error
+      2. Run collection phase
+      3. cargo test -p jfc-economy -- test_reject_noncompiling
+    Expected: Solution filtered out, not passed to validation phase
+    Evidence: .sisyphus/evidence/task-8-reject-bad.txt
+
+  Scenario: Test-deleting solution flagged
+    Tool: Bash
+    Steps:
+      1. Submit solution whose diff removes a test file
+      2. Run anti-gaming checks
+      3. cargo test -p jfc-economy -- test_flag_test_deletion
+    Expected: Solution marked suspicious=true, flagged for human review
+    Evidence: .sisyphus/evidence/task-8-anti-gaming.txt
+  ```
 
 - [ ] 9. Validator Agent Spawning
 
@@ -326,6 +517,28 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] Validator cannot validate own solution (identity check)
   - [ ] Validator receives full graph context for affected functions
   - [ ] Successful invalidation = reward
+
+  **QA Scenarios**:
+  ```
+  Scenario: Self-validation blocked
+    Tool: Bash
+    Steps:
+      1. Agent A produces solution
+      2. Attempt to assign Agent A as validator for its own solution
+      3. cargo test -p jfc-economy -- test_self_validation_blocked
+    Expected: Returns Err(SelfValidationForbidden)
+    Evidence: .sisyphus/evidence/task-9-self-validate.txt
+
+  Scenario: Successful invalidation earns reward
+    Tool: Bash
+    Steps:
+      1. Validator finds real flaw (writes failing test)
+      2. Adjudication confirms flaw is valid
+      3. Assert validator balance increases by validation_reward
+      4. cargo test -p jfc-economy -- test_invalidation_reward
+    Expected: Validator earns tokens, solver penalized
+    Evidence: .sisyphus/evidence/task-9-reward.txt
+  ```
 
 - [ ] 10. Validation Protocol (3-Round Structured Challenge)
 
@@ -347,6 +560,28 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] Validators cannot see each other's verdicts until submission complete
   - [ ] Validators can issue graph_query for evidence during rounds
 
+  **QA Scenarios**:
+  ```
+  Scenario: Three-round debate produces verdict
+    Tool: Bash
+    Steps:
+      1. Validator proposes flaw in round 1
+      2. Solver defends in round 2
+      3. Adjudicator rules in round 3 (runs the proposed test)
+      4. cargo test -p jfc-economy -- test_three_round_debate
+    Expected: Verdict is Upheld or Dismissed based on test result
+    Evidence: .sisyphus/evidence/task-10-debate.txt
+
+  Scenario: Early termination on high confidence
+    Tool: Bash
+    Steps:
+      1. Validator reports "no flaw found, confidence=0.97" after round 1
+      2. Assert rounds 2 and 3 are skipped
+      3. cargo test -p jfc-economy -- test_early_termination
+    Expected: Validation completes after round 1, status=NoFlawFound
+    Evidence: .sisyphus/evidence/task-10-early-term.txt
+  ```
+
 - [ ] 11. Market Cycle Orchestrator
 
   **What to do**:
@@ -359,6 +594,27 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] Full cycle completes for happy path
   - [ ] Timeout triggers surge pricing and re-post
   - [ ] All state transitions logged
+
+  **QA Scenarios**:
+  ```
+  Scenario: Happy path full cycle
+    Tool: Bash
+    Steps:
+      1. Post bounty → receives bids → selects solvers → collects solutions → validates → settles
+      2. cargo test -p jfc-economy -- test_full_cycle_happy_path
+    Expected: Final state is Complete, winner assigned, tokens distributed
+    Evidence: .sisyphus/evidence/task-11-happy-path.txt
+
+  Scenario: No bids triggers surge
+    Tool: Bash
+    Steps:
+      1. Post bounty with timeout=0
+      2. No bids arrive
+      3. Assert state transitions to Bidding again with +15% reward
+      4. cargo test -p jfc-economy -- test_no_bids_surge
+    Expected: Reward increased, bounty re-posted
+    Evidence: .sisyphus/evidence/task-11-surge.txt
+  ```
 
 - [ ] 12. Settlement Engine
 
@@ -377,6 +633,28 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] Trust scores update for all participants
   - [ ] Payment floor enforced (solver always gets ≥ 50%)
 
+  **QA Scenarios**:
+  ```
+  Scenario: Token conservation (no leak)
+    Tool: Bash
+    Steps:
+      1. Post bounty with reward=1000
+      2. Complete full cycle with 3 solvers, 2 validators
+      3. Sum all payouts + execution costs + fees
+      4. cargo test -p jfc-economy -- test_token_conservation
+    Expected: Total distributed = initial bounty (zero leak/creation)
+    Evidence: .sisyphus/evidence/task-12-conservation.txt
+
+  Scenario: Payment floor enforced
+    Tool: Bash
+    Steps:
+      1. Solver wins with mediocre quality (payment_ratio would be 0.3)
+      2. Assert actual payment is floor(0.5) * reward, not 0.3 * reward
+      3. cargo test -p jfc-economy -- test_payment_floor
+    Expected: Solver receives at least 50% of bounty reward
+    Evidence: .sisyphus/evidence/task-12-floor.txt
+  ```
+
 - [ ] 13. Anti-Collusion Enforcement
 
   **What to do**:
@@ -392,6 +670,27 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] Rubber-stamping detection triggers trust penalty
   - [ ] Griefing detection triggers trust penalty
 
+  **QA Scenarios**:
+  ```
+  Scenario: Rubber-stamping detected
+    Tool: Bash
+    Steps:
+      1. Validator approves 10 consecutive solutions without finding any flaw
+      2. Statistical check detects approval rate > 2σ from mean
+      3. cargo test -p jfc-economy -- test_rubber_stamp_detection
+    Expected: Validator flagged, trust penalty applied
+    Evidence: .sisyphus/evidence/task-13-rubber-stamp.txt
+
+  Scenario: Griefing detected
+    Tool: Bash
+    Steps:
+      1. Validator rejects 10 consecutive solutions with non-reproducible flaws
+      2. Statistical check detects rejection rate > 2σ from mean
+      3. cargo test -p jfc-economy -- test_griefing_detection
+    Expected: Validator flagged, trust penalty applied
+    Evidence: .sisyphus/evidence/task-13-griefing.txt
+  ```
+
 - [ ] 14. Integration with jfc Swarm/Mailbox System
 
   **What to do**:
@@ -405,6 +704,27 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] Results appear in standard jfc tool output
   - [ ] Graph context available to market participants
 
+  **QA Scenarios**:
+  ```
+  Scenario: Solver uses existing swarm worktree
+    Tool: Bash
+    Steps:
+      1. Post bounty in a jfc session with swarm enabled
+      2. Verify solver creates a git worktree (git worktree list)
+      3. cargo test -p jfc-economy -- test_swarm_integration
+    Expected: Worktree created at expected path, solver operates within it
+    Evidence: .sisyphus/evidence/task-14-swarm.txt
+
+  Scenario: Graph context available to solver
+    Tool: Bash
+    Steps:
+      1. Solver receives bounty about function "foo"
+      2. Solver can call graph_query("fn(\"foo\") | callees | depth 2")
+      3. cargo test -p jfc-economy -- test_graph_context_available
+    Expected: graph_query returns valid results from jfc-graph engine
+    Evidence: .sisyphus/evidence/task-14-graph.txt
+  ```
+
 - [ ] 15. User-Facing Bounty Tool
 
   **What to do**:
@@ -417,6 +737,28 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] PostBounty tool is callable by LLM
   - [ ] Returns winning solution with validation evidence
   - [ ] Budget is deducted from session budget
+
+  **QA Scenarios**:
+  ```
+  Scenario: PostBounty tool callable
+    Tool: Bash
+    Steps:
+      1. Build workspace with ToolKind::PostBounty in types.rs
+      2. Verify tool dispatch compiles (cargo build --workspace)
+      3. cargo test --workspace -- test_post_bounty_dispatches
+    Expected: Tool dispatch matches correctly, returns result type
+    Evidence: .sisyphus/evidence/task-15-tool-dispatch.txt
+
+  Scenario: Budget deducted after bounty
+    Tool: Bash
+    Steps:
+      1. Start with session budget=5000
+      2. Post bounty with budget=1000
+      3. After cycle completes, verify session budget reduced by actual spend
+      4. cargo test -p jfc-economy -- test_budget_deducted
+    Expected: session_budget = 5000 - actual_tokens_consumed
+    Evidence: .sisyphus/evidence/task-15-budget.txt
+  ```
 
 - [ ] 16. Market Status Reporting + Health Score
 
@@ -437,6 +779,28 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] MarketHealth score computed after each cycle
   - [ ] Health < 0.3 triggers alert to user
 
+  **QA Scenarios**:
+  ```
+  Scenario: Health score computation
+    Tool: Bash
+    Steps:
+      1. Run 3 bounty cycles with known outcomes
+      2. Compute MarketHealth = Efficiency × Fairness × Trust × BudgetAdherence
+      3. cargo test -p jfc-economy -- test_market_health_score
+    Expected: Score is multiplicative, matches hand-calculated value
+    Evidence: .sisyphus/evidence/task-16-health.txt
+
+  Scenario: Low health triggers alert
+    Tool: Bash
+    Steps:
+      1. Force a scenario where efficiency=0.2 (most solutions fail)
+      2. Compute health, assert health < 0.3
+      3. Assert alert event emitted
+      4. cargo test -p jfc-economy -- test_health_alert
+    Expected: HealthAlert event with score and recommendation
+    Evidence: .sisyphus/evidence/task-16-alert.txt
+  ```
+
 - [ ] 17. End-to-End Integration Test
 
   **What to do**:
@@ -451,14 +815,108 @@ Unlike Diagon (general tasks) or Agent Hunt (theorem proving), our market is spe
   - [ ] Winner's solution actually works
   - [ ] Total cost < allocated budget
 
+  **QA Scenarios**:
+  ```
+  Scenario: End-to-end fibonacci bounty
+    Tool: Bash
+    Steps:
+      1. Post bounty: "Add pub fn fibonacci(n: u64) -> u64 to lib.rs"
+      2. Wait for market cycle to complete
+      3. Verify winning solution: cargo test -p jfc-economy -- test_fibonacci_e2e
+      4. Assert fibonacci(10) == 55
+      5. Assert total_cost < bounty_budget
+    Expected: Working fibonacci function, tests pass, within budget
+    Evidence: .sisyphus/evidence/task-17-e2e.txt
+
+  Scenario: Budget respected even with multiple solvers
+    Tool: Bash
+    Steps:
+      1. Post bounty with budget=500 tokens, max_solvers=3
+      2. Complete cycle
+      3. Assert sum(all_agent_costs) <= 500
+      4. cargo test -p jfc-economy -- test_e2e_budget_respected
+    Expected: Total spend never exceeds allocated budget
+    Evidence: .sisyphus/evidence/task-17-budget.txt
+  ```
+
 ---
 
 ## Final Verification Wave
 
 - [ ] F1. **Plan Compliance Audit** — verify all Must Have implemented, all Must NOT Have absent
+
+  **QA Scenario**:
+  ```
+  Scenario: All Must Have items present
+    Tool: Bash
+    Steps:
+      1. Run cargo test -p jfc-economy -- test_competitive (≥2 solvers)
+      2. Run cargo test -p jfc-economy -- test_adversarial (validator challenges)
+      3. Run cargo test -p jfc-economy -- test_budget_gate (hard constraint)
+      4. Run cargo test -p jfc-economy -- test_trust (scoring updates)
+      5. Run cargo test -p jfc-economy -- test_anti_collusion (self-validation blocked)
+      6. Run cargo test -p jfc-economy -- test_audit (trail exists)
+    Expected: All 6 tests pass
+    Evidence: .sisyphus/evidence/f1-compliance.txt
+
+  Scenario: All Must NOT Have items absent
+    Tool: Bash
+    Steps:
+      1. grep -r "blockchain\|ethereum\|web3" crates/jfc-economy/src/ → 0 matches
+      2. grep -r "reproduce\|evolve\|spawn_child" crates/jfc-economy/src/ → 0 matches
+      3. Verify no network calls beyond LLM API in sandbox
+    Expected: Zero matches for forbidden patterns
+    Evidence: .sisyphus/evidence/f1-must-not-have.txt
+  ```
+
 - [ ] F2. **Code Quality Review** — clippy clean, tests pass, no unwrap in prod
-- [ ] F3. **Real Manual QA** — run actual bounty, observe market cycle
+
+  **QA Scenario**:
+  ```
+  Scenario: Code quality gates
+    Tool: Bash
+    Steps:
+      1. cargo clippy -p jfc-economy -- -D warnings
+      2. cargo test -p jfc-economy
+      3. grep -rn "\.unwrap()" crates/jfc-economy/src/ --include="*.rs" | grep -v test | grep -v "#\[cfg(test)" → 0 matches
+      4. cargo build --workspace
+    Expected: clippy clean, all tests pass, no unwrap in non-test code, workspace builds
+    Evidence: .sisyphus/evidence/f2-quality.txt
+  ```
+
+- [ ] F3. **Real QA — Full Bounty Lifecycle** (agent-executed, no human)
+
+  **QA Scenario**:
+  ```
+  Scenario: Execute a real bounty end-to-end
+    Tool: Bash
+    Steps:
+      1. Initialize GraphSession from crates/jfc-graph/tests/fixtures/
+      2. Post bounty: "Add a function pub fn double(x: i32) -> i32 { x * 2 } to a new file"
+      3. Run market cycle with 2 mock solvers (hardcoded responses) + 1 mock validator
+      4. Assert winning solution contains "fn double"
+      5. Assert total tokens consumed < budget
+      6. Assert trust scores updated for all 3 participants
+      7. Assert audit log has ≥ 7 entries (one per state transition)
+      8. cargo test -p jfc-economy -- test_real_bounty_lifecycle
+    Expected: All assertions pass, complete audit trail
+    Evidence: .sisyphus/evidence/f3-real-qa.txt
+  ```
+
 - [ ] F4. **Scope Fidelity Check** — no blockchain, no evolution, no unbounded spend
+
+  **QA Scenario**:
+  ```
+  Scenario: Scope boundaries enforced
+    Tool: Bash
+    Steps:
+      1. grep -r "async fn reproduce\|fn evolve\|fn mutate_agent" crates/jfc-economy/ → 0 matches
+      2. grep -r "reqwest\|hyper\|tokio::net" crates/jfc-economy/src/ → 0 (no external network)
+      3. Verify TokenLedger has no negative balance path: cargo test -- test_no_negative_balance
+      4. Verify max 5 solvers enforced: cargo test -- test_max_solvers_cap
+    Expected: All scope constraints verified mechanistically
+    Evidence: .sisyphus/evidence/f4-scope.txt
+  ```
 
 ---
 
@@ -511,3 +969,4 @@ cargo clippy --workspace -- -D warnings  # Clean
 | ClawCoin (2604.19026) | Compute-cost-indexed token (future reference) |
 | MAEBE (2506.03053) | Emergent behavior risks, peer pressure |
 | Agent Economy (2602.14219) | Five-layer architecture reference |
+| **Anthropic Claude Mythos System Card** | Reward hacking, sandbox escape, deception, overeager persistence, strategic manipulation feature activations |
