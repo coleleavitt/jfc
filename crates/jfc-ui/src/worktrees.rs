@@ -301,4 +301,175 @@ mod tests {
             "whitespace-only input must produce empty vec"
         );
     }
+
+    // Robust: bare-repo entries surface as `(bare)` so the UI's branch
+    // column never has an empty cell.
+    #[test]
+    fn parse_worktree_porcelain_handles_bare_robust() {
+        let blob = "worktree /a/bare\nbare\n";
+        let got = parse_porcelain_output(blob);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].path, "/a/bare");
+        assert_eq!(got[0].branch, "(bare)");
+    }
+
+    // Robust: a non-heads ref path on `branch` (e.g. refs/remotes/origin/main)
+    // still gets surfaced verbatim instead of being dropped.
+    #[test]
+    fn parse_worktree_porcelain_keeps_non_heads_branch_robust() {
+        let blob = "worktree /a\nHEAD abc\nbranch refs/remotes/origin/main\n";
+        let got = parse_porcelain_output(blob);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].branch, "refs/remotes/origin/main");
+    }
+
+    // ── Live-git fixture tests (use #[ignore] when git isn't available) ──
+
+    /// Initialize a fresh git repo in `dir` so the worktree commands have
+    /// something to operate on. Returns true on success, false otherwise so
+    /// callers can skip without failing.
+    fn init_git_repo(dir: &Path) -> bool {
+        let ok = Command::new("git")
+            .args(["init", "-q", "--initial-branch=main"])
+            .current_dir(dir)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !ok {
+            return false;
+        }
+        // Set local user.name/email so commit doesn't error in CI sandboxes
+        // that lack a global config.
+        let _ = Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(dir)
+            .status();
+        let _ = Command::new("git")
+            .args(["config", "user.name", "test"])
+            .current_dir(dir)
+            .status();
+        // Need a commit on the branch — `git worktree add -b foo` requires a
+        // valid base ref.
+        std::fs::write(dir.join("seed.txt"), "x").ok();
+        let _ = Command::new("git")
+            .args(["add", "."])
+            .current_dir(dir)
+            .status();
+        Command::new("git")
+            .args(["commit", "-q", "-m", "seed"])
+            .current_dir(dir)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    /// Build a unique tempdir for the test fixture. Skip the test if the
+    /// platform's temp dir is unwritable.
+    fn fixture_tempdir(label: &str) -> Option<std::path::PathBuf> {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "jfc_worktrees_{label}_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&p).ok()?;
+        Some(p)
+    }
+
+    // Normal: create a worktree against a fresh fixture repo, then list and
+    // remove it. Skips silently if `git` isn't on PATH (CI-safe).
+    #[test]
+    fn create_list_remove_worktree_round_trip_normal() {
+        let Some(repo) = fixture_tempdir("create") else {
+            eprintln!("temp dir unavailable, skipping");
+            return;
+        };
+        if !init_git_repo(&repo) {
+            eprintln!("git unavailable, skipping create_worktree round-trip");
+            let _ = std::fs::remove_dir_all(&repo);
+            return;
+        }
+        let info = create_worktree(&repo, "feat-x").expect("create_worktree should succeed");
+        assert_eq!(info.branch, "jfc/feat-x");
+        assert!(info.path.contains(".jfc-worktrees"));
+        // The new worktree directory must exist on disk.
+        let wt_dir = repo.join(".jfc-worktrees").join("feat-x");
+        assert!(wt_dir.exists(), "worktree dir was not created at {wt_dir:?}");
+
+        let listed = list_worktrees(&repo).expect("list_worktrees should succeed");
+        assert!(
+            listed.iter().any(|w| w.branch == "jfc/feat-x"),
+            "expected jfc/feat-x in {listed:?}"
+        );
+
+        // Remove and confirm it's gone from the listing.
+        remove_worktree(&repo, "feat-x").expect("remove_worktree should succeed");
+        let after = list_worktrees(&repo).expect("list after remove");
+        assert!(
+            !after.iter().any(|w| w.branch == "jfc/feat-x"),
+            "expected jfc/feat-x NOT in {after:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    // Robust: an invalid worktree name short-circuits in validate_name
+    // before git ever runs — no tempdir needed.
+    #[test]
+    fn create_worktree_invalid_name_robust() {
+        let err = create_worktree(Path::new("/tmp"), "../traverse")
+            .expect_err("invalid name must be rejected");
+        assert!(err.contains("must match") || err.contains("traversal") || err.contains("/"),
+            "unexpected error: {err}");
+    }
+
+    #[test]
+    fn remove_worktree_invalid_name_robust() {
+        let err = remove_worktree(Path::new("/tmp"), "")
+            .expect_err("empty name must be rejected");
+        assert!(err.contains("empty"), "unexpected error: {err}");
+    }
+
+    // Robust: duplicate creation attempts surface git's stderr instead of
+    // panicking. Skips silently when git isn't available.
+    #[test]
+    fn create_worktree_duplicate_errors_robust() {
+        let Some(repo) = fixture_tempdir("dup") else {
+            return;
+        };
+        if !init_git_repo(&repo) {
+            let _ = std::fs::remove_dir_all(&repo);
+            return;
+        }
+        let _ = create_worktree(&repo, "feat-dup").expect("first create");
+        let err = create_worktree(&repo, "feat-dup")
+            .expect_err("second create with same name should fail");
+        assert!(
+            err.contains("git worktree add") || err.contains("already") || err.contains("exists"),
+            "expected git error message, got: {err}"
+        );
+        // Cleanup.
+        let _ = remove_worktree(&repo, "feat-dup");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    // Robust: list_worktrees against a non-repo directory surfaces git's
+    // stderr as Err, not a panic.
+    #[test]
+    fn list_worktrees_non_repo_errors_robust() {
+        let Some(dir) = fixture_tempdir("notrepo") else {
+            return;
+        };
+        // Don't `git init` — this is the negative case.
+        let result = list_worktrees(&dir);
+        // Either err (git installed, no repo) or err (git missing) — both
+        // are Err and neither should panic.
+        assert!(
+            result.is_err(),
+            "non-repo directory should yield Err, got {result:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

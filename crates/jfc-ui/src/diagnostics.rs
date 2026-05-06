@@ -342,4 +342,105 @@ mod tests {
         let unack = unacknowledged(&entries, &std::collections::HashSet::new());
         assert_eq!(unack.len(), 2);
     }
+
+    // Normal: render_for_prompt produces a Markdown-ish block that includes
+    // total/file counts plus per-file groupings of formatted entries.
+    #[test]
+    fn render_for_prompt_groups_by_file_normal() {
+        let entries = vec![
+            d("src/a.rs", 1, 1, "missing semi", Severity::Error),
+            d("src/a.rs", 4, 2, "unused", Severity::Warning),
+            d("src/b.rs", 7, 3, "type mismatch", Severity::Error),
+        ];
+        let out = render_for_prompt(&entries).expect("entries → some");
+        assert!(out.contains("## Current diagnostics"));
+        assert!(
+            out.contains("3 diagnostic(s) across 2 file(s)"),
+            "summary line missing: {out}"
+        );
+        assert!(out.contains("2 error(s)"));
+        assert!(out.contains("1 warning(s)"));
+        assert!(out.contains("- src/a.rs"));
+        assert!(out.contains("- src/b.rs"));
+        assert!(out.contains("missing semi"));
+        assert!(out.contains("unused"));
+        assert!(out.contains("type mismatch"));
+        // Per-file grouping must appear in first-seen order.
+        let pos_a = out.find("src/a.rs").unwrap();
+        let pos_b = out.find("src/b.rs").unwrap();
+        assert!(pos_a < pos_b);
+    }
+
+    // Robust: an empty entries slice returns None so the caller skips the
+    // section entirely.
+    #[test]
+    fn render_for_prompt_empty_returns_none_robust() {
+        assert!(render_for_prompt(&[]).is_none());
+    }
+
+    // Robust: when a single file has more than MAX_PER_FILE entries, only
+    // the first 20 render and a `… and N more` footer accounts for the rest.
+    #[test]
+    fn render_for_prompt_per_file_truncation_robust() {
+        let mut entries = Vec::new();
+        for i in 0..25 {
+            entries.push(d(
+                "x.rs",
+                i + 1,
+                1,
+                &format!("issue {i}"),
+                Severity::Warning,
+            ));
+        }
+        let out = render_for_prompt(&entries).unwrap();
+        assert!(
+            out.contains("… and 5 more in this file"),
+            "footer missing: {out}"
+        );
+        // First 20 are present.
+        assert!(out.contains("issue 0"));
+        assert!(out.contains("issue 19"));
+        // 21st should NOT (truncated).
+        assert!(!out.contains("issue 20"));
+    }
+
+    // Robust: an absurdly large diagnostic set hits the byte cap and
+    // surfaces a `(truncated)` marker instead of running unbounded.
+    #[test]
+    fn render_for_prompt_byte_cap_robust() {
+        // Use a long message + many files so we definitely exceed 6KB.
+        let long_msg: String = "x".repeat(500);
+        let mut entries = Vec::new();
+        for f in 0..30 {
+            // Only one entry per file so the per-file truncation doesn't
+            // kick in before the byte cap does.
+            entries.push(d(
+                &format!("file_{f}.rs"),
+                1,
+                1,
+                &long_msg,
+                Severity::Warning,
+            ));
+        }
+        let out = render_for_prompt(&entries).unwrap();
+        assert!(
+            out.contains("… (truncated)"),
+            "byte-cap truncation marker missing: out_len={}, snippet={}",
+            out.len(),
+            &out[out.len().saturating_sub(80)..]
+        );
+    }
+
+    // Normal: set_global_snapshot followed by global_snapshot returns the
+    // exact same payload. Mutex-guarded.
+    #[test]
+    fn global_snapshot_round_trip_normal() {
+        let entries = vec![d("g.rs", 1, 1, "msg", Severity::Error)];
+        set_global_snapshot(entries.clone());
+        let got = global_snapshot();
+        assert_eq!(got, entries);
+        // Reset so we don't pollute other tests in this process.
+        set_global_snapshot(Vec::new());
+        assert!(global_snapshot().is_empty());
+    }
 }

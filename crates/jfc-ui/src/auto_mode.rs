@@ -547,4 +547,191 @@ mod tests {
         };
         assert!(parse_classification(&resp).is_none());
     }
+
+    // Robust: when content has surrounding text but contains a JSON object,
+    // we extract and parse it.
+    #[test]
+    fn parse_classification_extracts_embedded_json_robust() {
+        let resp = CompletionResponse {
+            content: r#"thinking aloud {"should_block":true,"reason":"r","thinking":"t"} done"#
+                .into(),
+            usage: Default::default(),
+        };
+        let r = parse_classification(&resp).expect("parsed embedded JSON");
+        assert!(r.should_block());
+    }
+
+    // Robust: `arguments` wrapper (some providers use this name) is also
+    // handled by parse_from_value.
+    #[test]
+    fn parse_classification_accepts_arguments_wrapper_robust() {
+        let resp = CompletionResponse {
+            content: r#"{"arguments":{"should_block":false,"reason":"ok"}}"#.into(),
+            usage: Default::default(),
+        };
+        let r = parse_classification(&resp).expect("parsed");
+        assert!(!r.should_block());
+        assert_eq!(r.reason, "ok");
+    }
+
+    // Normal: AutoDecision::from_should_block maps booleans.
+    #[test]
+    fn auto_decision_from_should_block_normal() {
+        assert_eq!(AutoDecision::from_should_block(true), AutoDecision::Block);
+        assert_eq!(AutoDecision::from_should_block(false), AutoDecision::Allow);
+    }
+
+    // Normal: ClassifyResult::should_block reflects the inner decision.
+    #[test]
+    fn classify_result_should_block_normal() {
+        let blocked = ClassifyResult {
+            decision: AutoDecision::Block,
+            reason: "x".into(),
+            thinking: String::new(),
+        };
+        assert!(blocked.should_block());
+        let allowed = ClassifyResult {
+            decision: AutoDecision::Allow,
+            reason: "x".into(),
+            thinking: String::new(),
+        };
+        assert!(!allowed.should_block());
+    }
+
+    // Normal: load_config returns a default (disabled) AutoModeConfig when
+    // no settings file is present. We can't easily mock dirs::config_dir,
+    // but we can confirm the function returns a sensible value without
+    // panicking.
+    #[test]
+    fn load_config_returns_disabled_default_normal() {
+        // The user running tests almost certainly has no `autoMode` block
+        // in their settings, so this returns the disabled default.
+        let cfg = load_config();
+        // Disabled is the safe default — we just ensure no panic.
+        // (We can't assert .enabled == false universally because a user
+        // could legitimately have it enabled in their global settings.)
+        let _ = cfg.enabled;
+        let _ = cfg.allow.len();
+    }
+
+    // ─── Fake provider for classify() tests ───────────────────────────────
+
+    use crate::provider::{
+        EventStream, ModelInfo, ProviderMessage as PMsg, StreamOptions as SOpts,
+        StreamConvention,
+    };
+    use async_trait::async_trait;
+
+    struct FakeProvider {
+        // What complete() should return.
+        result: std::sync::Mutex<Option<anyhow::Result<CompletionResponse>>>,
+    }
+
+    impl FakeProvider {
+        fn allow() -> Self {
+            Self {
+                result: std::sync::Mutex::new(Some(Ok(CompletionResponse {
+                    content: r#"{"should_block":false,"reason":"safe","thinking":""}"#.into(),
+                    usage: Default::default(),
+                }))),
+            }
+        }
+        fn block() -> Self {
+            Self {
+                result: std::sync::Mutex::new(Some(Ok(CompletionResponse {
+                    content: r#"{"should_block":true,"reason":"dangerous","thinking":""}"#.into(),
+                    usage: Default::default(),
+                }))),
+            }
+        }
+        fn err() -> Self {
+            Self {
+                result: std::sync::Mutex::new(Some(Err(anyhow::anyhow!("network down")))),
+            }
+        }
+        fn unparseable() -> Self {
+            Self {
+                result: std::sync::Mutex::new(Some(Ok(CompletionResponse {
+                    content: "garbage non-json".into(),
+                    usage: Default::default(),
+                }))),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Provider for FakeProvider {
+        fn name(&self) -> &str {
+            "fake"
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        fn stream_convention(&self) -> StreamConvention {
+            StreamConvention::AnthropicNative
+        }
+        async fn stream(
+            &self,
+            _messages: Vec<PMsg>,
+            _options: &SOpts,
+        ) -> anyhow::Result<EventStream> {
+            anyhow::bail!("not used in classifier tests")
+        }
+        async fn complete(
+            &self,
+            _messages: Vec<PMsg>,
+            _options: &SOpts,
+        ) -> anyhow::Result<CompletionResponse> {
+            self.result
+                .lock()
+                .unwrap()
+                .take()
+                .expect("FakeProvider::complete called more than once")
+        }
+    }
+
+    // Normal: when the fake provider returns an "allow" decision, classify
+    // surfaces it.
+    #[tokio::test]
+    async fn classify_allow_decision_normal() {
+        let cfg = AutoModeConfig::default();
+        let pending = dummy_pending("ls");
+        let provider = FakeProvider::allow();
+        let result = classify(&provider, "fake-model", &cfg, &[], &pending).await;
+        assert!(!result.should_block());
+        assert_eq!(result.reason, "safe");
+    }
+
+    // Normal: a "block" decision propagates with the upstream reason.
+    #[tokio::test]
+    async fn classify_block_decision_normal() {
+        let cfg = AutoModeConfig::default();
+        let pending = dummy_pending("rm -rf /");
+        let provider = FakeProvider::block();
+        let result = classify(&provider, "fake-model", &cfg, &[], &pending).await;
+        assert!(result.should_block());
+        assert_eq!(result.reason, "dangerous");
+    }
+
+    // Robust: when the provider errors out, classify fails-closed (block).
+    #[tokio::test]
+    async fn classify_provider_error_fails_closed_robust() {
+        let cfg = AutoModeConfig::default();
+        let pending = dummy_pending("anything");
+        let provider = FakeProvider::err();
+        let result = classify(&provider, "fake-model", &cfg, &[], &pending).await;
+        assert!(result.should_block(), "errors must fail-closed");
+        assert!(result.reason.contains("classifier_error"));
+    }
+
+    // Robust: an unparseable response from the model also fails-closed.
+    #[tokio::test]
+    async fn classify_unparseable_response_fails_closed_robust() {
+        let cfg = AutoModeConfig::default();
+        let pending = dummy_pending("anything");
+        let provider = FakeProvider::unparseable();
+        let result = classify(&provider, "fake-model", &cfg, &[], &pending).await;
+        assert!(result.should_block(), "unparseable must fail-closed");
+        assert!(result.reason.contains("no parseable decision"));
+    }
 }

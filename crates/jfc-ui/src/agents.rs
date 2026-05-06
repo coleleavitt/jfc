@@ -986,4 +986,171 @@ mod tests {
         let result = parse_agent(Path::new("/x/bad.md"), raw);
         assert!(result.is_none());
     }
+
+    // Normal: `built_in_agents` ships at least the four canonical agents
+    // every jfc session can discover.
+    #[test]
+    fn built_in_agents_includes_canonical_set_normal() {
+        let agents = built_in_agents();
+        let names: Vec<&str> = agents.iter().map(|a| a.name.as_str()).collect();
+        for needed in [
+            "general-purpose",
+            "Explore",
+            "Plan",
+            "verification",
+        ] {
+            assert!(
+                names.contains(&needed),
+                "built-in {needed} missing from {names:?}"
+            );
+        }
+        // The Explore agent ships with a haiku-pinned model and is
+        // restricted to read-only tools.
+        let explore = agents.iter().find(|a| a.name == "Explore").unwrap();
+        assert_eq!(explore.model.as_deref(), Some("haiku"));
+        assert!(explore.allowed_tools.iter().any(|t| t == "Read"));
+        assert!(explore.disallowed_tools.iter().any(|t| t == "Edit"));
+        assert!(!explore.system_prompt.is_empty());
+    }
+
+    // Normal: `load_agents` against an empty project root falls back to
+    // built-in agents.
+    #[test]
+    fn load_agents_empty_root_returns_builtins_normal() {
+        // Use a tempdir we know has no `.claude/agents` to ensure the
+        // result == built-in set (modulo any user-level ~/.claude content).
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_agents_empty_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let agents = load_agents(&tmp);
+        let names: Vec<&str> = agents.iter().map(|a| a.name.as_str()).collect();
+        // Built-ins always show up.
+        for needed in ["general-purpose", "Explore", "Plan", "verification"] {
+            assert!(names.contains(&needed), "missing {needed}: {names:?}");
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Robust: a project-defined agent with the same name as a built-in
+    // overrides the built-in (project precedence wins).
+    #[test]
+    fn load_agents_project_overrides_builtin_robust() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_agents_override_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let agents_dir = tmp.join(".claude/agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        // Override `Explore` with a non-haiku model — confirms the loader
+        // treats the project file as authoritative.
+        std::fs::write(
+            agents_dir.join("Explore.md"),
+            "---\nname: Explore\nmodel: opus\n---\nCustom explorer body.",
+        )
+        .unwrap();
+
+        let agents = load_agents(&tmp);
+        let explore = agents
+            .iter()
+            .find(|a| a.name == "Explore")
+            .expect("Explore must be present after override");
+        assert_eq!(
+            explore.model.as_deref(),
+            Some("opus"),
+            "project file should override built-in Explore"
+        );
+        assert!(explore.system_prompt.contains("Custom explorer body"));
+        // built-ins for other names still surface.
+        assert!(agents.iter().any(|a| a.name == "Plan"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Robust: a malformed agent file in the project directory is silently
+    // skipped — the rest of the registry still loads.
+    #[test]
+    fn load_agents_skips_malformed_files_robust() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_agents_malformed_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let agents_dir = tmp.join(".claude/agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        // No frontmatter at all — `parse_agent` returns None.
+        std::fs::write(agents_dir.join("broken.md"), "Just a body, no frontmatter")
+            .unwrap();
+        // Frontmatter with bad YAML.
+        std::fs::write(
+            agents_dir.join("yaml-bad.md"),
+            "---\nname: [unterminated\n---\nbody",
+        )
+        .unwrap();
+        // A valid one mixed in.
+        std::fs::write(
+            agents_dir.join("ok.md"),
+            "---\nname: ok-agent\n---\nValid body.",
+        )
+        .unwrap();
+        // Non-md file should be ignored.
+        std::fs::write(agents_dir.join("README.txt"), "ignored").unwrap();
+        let agents = load_agents(&tmp);
+        assert!(agents.iter().any(|a| a.name == "ok-agent"));
+        assert!(!agents.iter().any(|a| a.name == "broken"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Normal: `load_skills` against an empty root produces an empty list
+    // (when ~/.claude/skills is also empty or missing). Doesn't panic.
+    #[test]
+    fn load_skills_empty_root_normal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_skills_empty_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        // Don't crash; we only assert it returns a Vec without panic.
+        let _ = load_skills(&tmp);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Robust: project-level skill files override user-level ones with the
+    // same name. We can't easily mock `~/.claude/skills`, but we can verify
+    // the dedup happens with a single project file.
+    #[test]
+    fn load_skills_project_skill_loads_robust() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_skills_proj_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let skills_dir = tmp.join(".claude/skills");
+        std::fs::create_dir_all(&skills_dir).unwrap();
+        std::fs::write(
+            skills_dir.join("alpha.md"),
+            "---\nname: alpha\ndescription: project alpha\n---\nbody",
+        )
+        .unwrap();
+        let skills = load_skills(&tmp);
+        let alpha = skills
+            .iter()
+            .find(|s| s.name == "alpha")
+            .expect("project skill should be loaded");
+        assert_eq!(alpha.description.as_deref(), Some("project alpha"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }

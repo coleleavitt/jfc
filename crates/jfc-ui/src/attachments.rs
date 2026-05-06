@@ -286,4 +286,59 @@ mod tests {
         let block_jpeg = to_anthropic_content_block(&att_jpeg);
         assert_eq!(block_jpeg["source"]["media_type"], "image/jpeg");
     }
+
+    // Normal: GIF and WebP round-trip too — exercise the remaining match
+    // arms in mime_type / to_anthropic_content_block.
+    #[test]
+    fn to_anthropic_content_block_gif_and_webp_normal() {
+        let gif_att = Attachment {
+            kind: AttachmentKind::ImageGif,
+            bytes: b"GIF89a-data".to_vec(),
+        };
+        let gif_block = to_anthropic_content_block(&gif_att);
+        assert_eq!(gif_block["source"]["media_type"], "image/gif");
+
+        let webp_att = Attachment {
+            kind: AttachmentKind::ImageWebp,
+            bytes: vec![0xAB; 16],
+        };
+        let webp_block = to_anthropic_content_block(&webp_att);
+        assert_eq!(webp_block["source"]["media_type"], "image/webp");
+    }
+
+    // Robust: an empty Attachment still produces a well-shaped content block
+    // (empty base64 "" is valid).
+    #[test]
+    fn to_anthropic_content_block_empty_bytes_robust() {
+        let att = Attachment {
+            kind: AttachmentKind::ImagePng,
+            bytes: Vec::new(),
+        };
+        let block = to_anthropic_content_block(&att);
+        assert_eq!(block["source"]["data"], "");
+        assert_eq!(block["type"], "image");
+    }
+
+    // Normal: AttachmentKind round-trips via mime_type for every variant
+    // exhaustively.
+    #[test]
+    fn mime_type_exhaustive_variants_normal() {
+        for (kind, expected) in [
+            (AttachmentKind::ImagePng, "image/png"),
+            (AttachmentKind::ImageJpeg, "image/jpeg"),
+            (AttachmentKind::ImageGif, "image/gif"),
+            (AttachmentKind::ImageWebp, "image/webp"),
+        ] {
+            assert_eq!(kind.mime_type(), expected);
+        }
+    }
+
+    // Robust: detect_kind on a buffer that *contains* a JPEG marker not at
+    // the start must NOT match (we sniff the head, not the body).
+    #[test]
+    fn detect_kind_marker_only_at_head_robust() {
+        let mut hidden = vec![0x00, 0x00, 0x00];
+        hidden.extend_from_slice(&[0xFF, 0xD8, 0xFF]); // JPEG marker, but offset
+        assert_eq!(detect_kind(&hidden), None);
+    }
 }
