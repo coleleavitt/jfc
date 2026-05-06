@@ -2636,6 +2636,39 @@ fn handle_slash_command(
             app.messages.push(ChatMessage::user("/agents".into()));
             app.messages.push(ChatMessage::assistant(body));
         }
+        "/graph-history" => {
+            let records = crate::tools::graph_history_snapshot();
+            let body = if records.is_empty() {
+                "No graph queries recorded yet. Run `graph_query` (via the model) or \
+                 ask the model to query the code graph, then re-invoke `/graph-history` \
+                 to see the most recent queries with their result counts.".to_owned()
+            } else {
+                let mut s = format!("**{} graph quer{} recorded** (most recent first):\n\n",
+                    records.len(),
+                    if records.len() == 1 { "y" } else { "ies" });
+                for record in records.iter().rev().take(20) {
+                    let trunc_marker = if record.was_truncated { " [truncated]" } else { "" };
+                    let cycle_marker = if record.cycles_detected > 0 {
+                        format!(" [{} cycle{} detected]",
+                            record.cycles_detected,
+                            if record.cycles_detected == 1 { "" } else { "s" })
+                    } else {
+                        String::new()
+                    };
+                    s.push_str(&format!(
+                        "- `{}`\n  → {} node{}{}{}\n",
+                        record.query_text,
+                        record.result_node_count,
+                        if record.result_node_count == 1 { "" } else { "s" },
+                        trunc_marker,
+                        cycle_marker,
+                    ));
+                }
+                s
+            };
+            app.messages.push(ChatMessage::user("/graph-history".into()));
+            app.messages.push(ChatMessage::assistant(body));
+        }
         "/task-list" | "/tasks" => {
             let tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
             let body = if tasks.is_empty() {
@@ -5393,6 +5426,29 @@ mod tests {
         let mut app = test_app();
         run_slash_command(&mut app, "/swarm-deny abc-123");
         assert!(!app.messages.is_empty());
+    }
+
+    // Normal: /graph-history with no recorded queries shows the empty-
+    // state hint instead of erroring (some users will run it before
+    // they've ever invoked graph_query).
+    #[test]
+    fn slash_graph_history_empty_state_normal() {
+        let mut app = test_app();
+        run_slash_command(&mut app, "/graph-history");
+        assert!(!app.messages.is_empty());
+        let last = app.messages.last().unwrap();
+        let body: String = last
+            .parts
+            .iter()
+            .filter_map(|p| match p {
+                crate::types::MessagePart::Text(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            body.contains("No graph queries recorded yet"),
+            "expected empty-state hint, got: {body}"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────

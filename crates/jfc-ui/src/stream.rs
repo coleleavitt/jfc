@@ -921,6 +921,15 @@ pub async fn stream_response(
         if let Some(block) = crate::diagnostics::render_for_prompt(&diags) {
             system_prompt.push_str(&block);
         }
+
+        // Auto-context: when the previous turn(s) edited files via
+        // Edit / Write / symbol_edit, surface the callers of the
+        // affected functions so the model doesn't have to re-grep
+        // them. v131 plan task 23. Drained on use so a single edit
+        // injects exactly once.
+        if let Some(block) = crate::tools::render_pending_auto_context(&cwd_path) {
+            system_prompt.push_str(&block);
+        }
     }
     // Thinking is a 3-way choice: adaptive (4.6+ Anthropic-native),
     // legacy budget_tokens (older Anthropic-native + select deployments),

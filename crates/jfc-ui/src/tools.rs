@@ -48,6 +48,119 @@ pub fn invalidate_graph_session_cache(cwd: Option<&std::path::Path>) {
     }
 }
 
+/// Process-global graph-query history — task 27 from the
+/// graph-context-engine plan. Stores the last 50 query / result
+/// pairs so the user can inspect what the model has been asking
+/// the graph and re-issue any of them via `/graph-history`. The
+/// graph crate provides the underlying ring-buffer; we just keep
+/// one handle per process and route inserts through it.
+fn graph_history() -> &'static std::sync::Mutex<jfc_graph::history::GraphHistory> {
+    static HISTORY: OnceLock<std::sync::Mutex<jfc_graph::history::GraphHistory>> = OnceLock::new();
+    HISTORY.get_or_init(|| std::sync::Mutex::new(jfc_graph::history::GraphHistory::new(50)))
+}
+
+/// Snapshot of recent graph-query records, most recent last. Used
+/// by the `/graph-history` slash command and any UI panel that
+/// wants to render the history without holding the lock.
+pub fn graph_history_snapshot() -> Vec<jfc_graph::history::QueryRecord> {
+    match graph_history().lock() {
+        Ok(g) => g.all().iter().cloned().collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn record_graph_query(query: &str, result: &jfc_graph::dsl::QueryResult) {
+    if let Ok(mut g) = graph_history().lock() {
+        g.record(query, result);
+    }
+}
+
+/// Queue of files modified by recent Edit/Write/symbol_edit calls,
+/// awaiting auto-context injection at the next stream call. Mirrors
+/// v131 Claude Code's behavior of surfacing affected callers to the
+/// model after a function edit so it doesn't have to grep them
+/// itself. Drained by `render_pending_auto_context()`; the renderer
+/// runs `fn(name) | callers | depth 1` against the cached graph for
+/// each modified file's functions and returns a single block to
+/// splice into the next system prompt.
+fn auto_context_queue() -> &'static std::sync::Mutex<Vec<std::path::PathBuf>> {
+    static QUEUE: OnceLock<std::sync::Mutex<Vec<std::path::PathBuf>>> = OnceLock::new();
+    QUEUE.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+/// Record that `path` was edited. Called from the Edit / Write /
+/// symbol_edit tool handlers after a successful write. Cheap — just
+/// appends to a Vec under a Mutex. The actual graph query runs
+/// lazily inside `render_pending_auto_context()` at the next stream
+/// boundary.
+pub(crate) fn record_edited_file(path: &std::path::Path) {
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if let Ok(mut q) = auto_context_queue().lock() {
+        if !q.contains(&canonical) {
+            q.push(canonical);
+        }
+    }
+}
+
+/// Drain the auto-context queue and render a single Graph Context
+/// block describing callers of any function that lives in a
+/// recently-edited file. Returns `None` when the queue is empty,
+/// the graph isn't built, or no callers were found. Output is hard
+/// capped at ~500 chars to honor the v131 token-budget convention
+/// (auto-context is a hint, not a substitute for the model running
+/// its own queries).
+pub fn render_pending_auto_context(cwd: &std::path::Path) -> Option<String> {
+    const MAX_CHARS: usize = 500;
+    let edited: Vec<std::path::PathBuf> = match auto_context_queue().lock() {
+        Ok(mut q) => std::mem::take(&mut *q),
+        Err(_) => return None,
+    };
+    if edited.is_empty() {
+        return None;
+    }
+    let session = get_or_build_graph_session(cwd);
+
+    let mut out = String::new();
+    out.push_str("\n\n## Graph Context\nCallers of recently-edited functions \
+        (auto-generated; ignore if unrelated to your next move):\n");
+    let mut any_callers = false;
+    'outer: for file in &edited {
+        // Function nodes whose `file_path` matches the edited file.
+        let fns: Vec<_> = session
+            .graph
+            .nodes_by_kind(jfc_graph::nodes::NodeKind::Function)
+            .into_iter()
+            .filter(|n| n.file_path == *file)
+            .collect();
+        for f in fns {
+            let q = format!("fn(\"{}\") | callers | depth 1", f.name);
+            // Per-function budget keeps any one fn from filling the block.
+            let budget = MAX_CHARS / 4;
+            if let Ok(result) = session.query(&q, budget)
+                && result.nodes_total > 0
+            {
+                any_callers = true;
+                out.push_str(&format!(
+                    "\n- `{}` ({}): {} caller(s)\n  {}\n",
+                    f.name,
+                    file.display(),
+                    result.nodes_total,
+                    result.text.lines().take(4).collect::<Vec<_>>().join("  ")
+                ));
+                if out.len() >= MAX_CHARS {
+                    out.truncate(MAX_CHARS);
+                    out.push_str("…");
+                    break 'outer;
+                }
+            }
+        }
+    }
+    if !any_callers {
+        return None;
+    }
+    Some(out)
+}
+
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
@@ -744,6 +857,7 @@ pub async fn execute_tool(
                 // Drop the cached graph for this workspace so the next
                 // graph_query reflects the new file content.
                 invalidate_graph_session_cache(Some(&cwd));
+                record_edited_file(Path::new(&file_path));
             }
             result
         }
@@ -762,6 +876,7 @@ pub async fn execute_tool(
                     cache.lock().await.invalidate(Path::new(&file_path));
                 }
                 invalidate_graph_session_cache(Some(&cwd));
+                record_edited_file(Path::new(&file_path));
             }
             result
         }
@@ -852,6 +967,15 @@ pub async fn execute_tool(
         (ToolKind::GraphQuery, ToolInput::GraphQuery { query, max_tokens }) => {
             let budget = max_tokens.unwrap_or(4000);
             let session = get_or_build_graph_session(&cwd);
+            // Run twice: once raw (so we can record the structured
+            // QueryResult to history) and once formatted with the
+            // budget. The raw call is cheap — same parse, just
+            // skips the formatting pass — and the alternative
+            // (changing format_query_result to also expose the
+            // QueryResult) would touch the jfc-graph public API.
+            if let Ok(raw) = session.query_raw(&query) {
+                record_graph_query(&query, &raw);
+            }
             match session.query(&query, budget) {
                 Ok(output) => {
                     if output.was_truncated {
@@ -885,14 +1009,54 @@ pub async fn execute_tool(
                 }
             };
 
+            // v131-style cascade: when the edit changes a function
+            // signature, the surrounding call sites likely need
+            // updating too. Generate per-file CascadeTask descriptors
+            // and surface them in the tool's success string so the
+            // model knows what it needs to fix next without having
+            // to grep for callers itself. Validation runs first so
+            // an obviously-broken edit blocks before we touch disk.
+            let mut cascade_summary = String::new();
             if validate {
-                let validator = jfc_graph::validation::VirtualValidator::new(&session.graph);
-                let affected = validator.preview_affected_call_sites(&entry.node_id);
-                if !affected.is_empty() {
-                    let _sites: Vec<String> = affected.iter()
-                        .map(|s| format!("  - {} ({}:{})", s.caller_name, s.call_span.file.display(), s.call_span.start_line))
-                        .collect();
-                    tracing::info!("SymbolEdit validation: {} affected call sites", affected.len());
+                let cascade = jfc_graph::cascade::generate_cascade(
+                    &session.graph,
+                    &entry.node_id,
+                    new_content.lines().next().unwrap_or("").trim(),
+                    &format!("symbol_edit on '{handle}'"),
+                );
+                if !cascade.is_empty() {
+                    let total_sites: usize = cascade.iter().map(|t| t.call_sites.len()).sum();
+                    let mut summary = format!(
+                        "\n\n--- cascade ---\n{} call site{} across {} file{} may need updating:",
+                        total_sites,
+                        if total_sites == 1 { "" } else { "s" },
+                        cascade.len(),
+                        if cascade.len() == 1 { "" } else { "s" }
+                    );
+                    for task in &cascade {
+                        summary.push_str(&format!(
+                            "\n  - {} ({} site{}): {}",
+                            task.call_sites
+                                .first()
+                                .map(|s| s.file_path.display().to_string())
+                                .unwrap_or_default(),
+                            task.call_sites.len(),
+                            if task.call_sites.len() == 1 { "" } else { "s" },
+                            task.call_sites
+                                .iter()
+                                .map(|s| s.caller_name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ));
+                    }
+                    summary.push_str("\nDispatch the Task tool per file to update them in parallel.");
+                    cascade_summary = summary;
+                    tracing::info!(
+                        target: "jfc::tools",
+                        sites = total_sites,
+                        files = cascade.len(),
+                        "symbol_edit produced cascade"
+                    );
                 }
             }
 
@@ -913,10 +1077,17 @@ pub async fn execute_tool(
             }
             // Invalidate the cached graph session for this workspace so
             // the next graph_query re-parses the modified file and the
-            // user sees the symbol's new shape.
+            // user sees the symbol's new shape. Also queue the file
+            // for auto-context injection on the next stream call.
             invalidate_graph_session_cache(Some(&cwd));
+            record_edited_file(&entry.file_path);
 
-            ExecutionResult::success(format!("Edited symbol '{}' in {}", handle, entry.file_path.display()))
+            ExecutionResult::success(format!(
+                "Edited symbol '{}' in {}{}",
+                handle,
+                entry.file_path.display(),
+                cascade_summary
+            ))
         }
         (kind, _) => ExecutionResult::failure(format!("Tool {:?} not yet implemented", kind)),
     }
@@ -2408,6 +2579,128 @@ mod tests {
         invalidate_graph_session_cache(None);
         let after = graph_session_cache().lock().expect("cache lock").len();
         assert_eq!(after, 0);
+    }
+
+    // ─── auto-context queue (task 23) ────────────────────────────────────
+
+    fn drain_auto_context_queue() {
+        if let Ok(mut q) = auto_context_queue().lock() {
+            q.clear();
+        }
+    }
+
+    // Normal: empty queue means no block to inject. Render returns None.
+    #[test]
+    fn auto_context_empty_queue_returns_none_normal() {
+        drain_auto_context_queue();
+        let fixtures = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../jfc-graph/tests/fixtures"
+        ));
+        assert!(render_pending_auto_context(fixtures).is_none());
+    }
+
+    // Robust: recording the same path twice doesn't queue it twice
+    // (de-dup keeps the queue small even if the LLM writes the same
+    // file in three consecutive turns).
+    #[test]
+    fn record_edited_file_dedupes_robust() {
+        drain_auto_context_queue();
+        let p = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"));
+        record_edited_file(p);
+        record_edited_file(p);
+        record_edited_file(p);
+        let len = auto_context_queue().lock().expect("queue lock").len();
+        assert_eq!(len, 1);
+        drain_auto_context_queue();
+    }
+
+    // Normal: rendering drains the queue (single-use semantics — we
+    // don't want the same file's callers re-injected on every turn).
+    #[test]
+    fn render_auto_context_drains_queue_normal() {
+        drain_auto_context_queue();
+        let p = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"));
+        record_edited_file(p);
+        let fixtures = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../jfc-graph/tests/fixtures"
+        ));
+        // Cargo.toml isn't a source file in the fixture graph, so
+        // there are no callers — but the queue still drains either way.
+        let _ = render_pending_auto_context(fixtures);
+        let len = auto_context_queue().lock().expect("queue lock").len();
+        assert_eq!(len, 0);
+    }
+
+    // ─── graph history (task 27) ─────────────────────────────────────────
+
+    fn clear_graph_history() {
+        if let Ok(mut g) = graph_history().lock() {
+            g.clear();
+        }
+    }
+
+    /// Tests that mutate the process-global graph_history have to be
+    /// serialized against each other — without this, two tests racing
+    /// `clear_graph_history()` + `record_graph_query()` will trip each
+    /// other's assertions (e.g. one test clears just after the other
+    /// recorded its entry but before the assertion runs).
+    fn graph_history_test_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    // Normal: querying records the query in history; snapshot returns
+    // the recorded entry. We don't assert on count since other tests in
+    // the suite may have produced entries — just that ours appears.
+    #[test]
+    fn graph_history_records_query_normal() {
+        let _guard = graph_history_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        clear_graph_history();
+        let fixtures = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../jfc-graph/tests/fixtures"
+        ));
+        let session = get_or_build_graph_session(fixtures);
+        if let Ok(raw) = session.query_raw("fn(\"foo\")") {
+            record_graph_query("fn(\"foo\")", &raw);
+        }
+        let snap = graph_history_snapshot();
+        assert!(snap.iter().any(|r| r.query_text == "fn(\"foo\")"));
+        clear_graph_history();
+    }
+
+    // Robust: history caps at 50 records (the constructor's setting).
+    // Push 60 distinct queries; only the most recent 50 survive.
+    #[test]
+    fn graph_history_caps_at_max_robust() {
+        let _guard = graph_history_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        clear_graph_history();
+        let fixtures = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../jfc-graph/tests/fixtures"
+        ));
+        let session = get_or_build_graph_session(fixtures);
+        let raw = session.query_raw("fn(\"unused\")").unwrap_or(jfc_graph::dsl::QueryResult {
+            nodes: vec![],
+            edges: vec![],
+            was_truncated: false,
+            total_before_truncation: 0,
+            cycles_detected: vec![],
+        });
+        for i in 0..60 {
+            record_graph_query(&format!("query_{i}"), &raw);
+        }
+        let snap = graph_history_snapshot();
+        assert!(
+            snap.len() <= 50,
+            "history should cap at 50, got {}",
+            snap.len()
+        );
+        // Oldest remaining entry should be query_10 (60-50=10), not query_0.
+        assert!(snap.iter().all(|r| r.query_text != "query_0"));
+        clear_graph_history();
     }
 
     #[test]
