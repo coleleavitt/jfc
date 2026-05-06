@@ -2633,6 +2633,138 @@ mod tests {
         assert_eq!(len, 0);
     }
 
+    // Normal: when an edited file contains functions with real
+    // callers in the graph, render produces a non-empty Graph
+    // Context block with at least one row (each row carries the
+    // "caller(s)" suffix from the format template). This is the
+    // load-bearing path — the unit-level "queue empty" tests can't
+    // catch a regression where the query runs but produces no rows.
+    #[test]
+    fn render_auto_context_emits_rows_when_callers_exist_normal() {
+        drain_auto_context_queue();
+        let fixtures = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../jfc-graph/tests/fixtures"
+        ));
+        // sample.rs contains foo→bar→baz plus impls; multiple
+        // functions in this file have callers, so the rendered
+        // block should pick up at least one row.
+        let edited = fixtures.join("sample.rs");
+        record_edited_file(&edited);
+        let block = render_pending_auto_context(fixtures)
+            .expect("expected Graph Context block when callers exist");
+        assert!(
+            block.contains("Graph Context"),
+            "block missing header: {block}"
+        );
+        assert!(
+            block.contains("caller(s)"),
+            "block missing any caller-row marker: {block}"
+        );
+        // Path of the edited file must appear in at least one row
+        // so the model can associate callers with the source.
+        assert!(
+            block.contains("sample.rs"),
+            "block missing source path reference: {block}"
+        );
+    }
+
+    // Robust: render_pending_auto_context honors the ~500-char cap.
+    // If multiple files with many callers pile up, the block doesn't
+    // grow without bound.
+    #[test]
+    fn render_auto_context_respects_size_cap_robust() {
+        drain_auto_context_queue();
+        let fixtures = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../jfc-graph/tests/fixtures"
+        ));
+        // Queue every fixture file — overdo it so the cap kicks in.
+        if let Ok(entries) = std::fs::read_dir(fixtures) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|s| s.to_str()) == Some("rs") {
+                    record_edited_file(&p);
+                }
+            }
+        }
+        if let Some(block) = render_pending_auto_context(fixtures) {
+            // 600 = 500 cap + slack for the truncation marker / header.
+            assert!(block.len() <= 600, "block over cap: {} bytes", block.len());
+        }
+    }
+
+    // ─── cascade integration (task 25) ────────────────────────────────
+
+    // Normal: generate_cascade against a real fixture produces non-empty
+    // CascadeTasks for a function with callers. Confirms the bridge
+    // between jfc_graph::cascade and the symbol_edit handler is wired
+    // (the handler builds the same description string from this output).
+    #[test]
+    fn cascade_summary_for_caller_chain_normal() {
+        let fixtures = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../jfc-graph/tests/fixtures"
+        ));
+        let session = get_or_build_graph_session(fixtures);
+        // Find bar() in sample.rs — foo() calls it, so bar is a non-leaf
+        // and should produce at least one cascade task.
+        let bar = session
+            .graph
+            .nodes_by_kind(jfc_graph::nodes::NodeKind::Function)
+            .into_iter()
+            .find(|n| n.name == "bar")
+            .expect("fixture must contain bar()");
+        let tasks = jfc_graph::cascade::generate_cascade(
+            &session.graph,
+            &bar.id,
+            "fn bar(extra: i32)",
+            "test cascade",
+        );
+        assert!(!tasks.is_empty(), "expected ≥1 cascade task for bar()");
+        assert!(
+            tasks.iter().any(|t| t.call_sites.iter().any(|s| s.caller_name == "foo")),
+            "expected foo as caller of bar in cascade output"
+        );
+    }
+
+    // Robust: a leaf function (no callers) produces an empty cascade —
+    // symbol_edit on a leaf shouldn't surface a misleading "0 sites
+    // need updating" note.
+    #[test]
+    fn cascade_summary_empty_for_leaf_robust() {
+        let fixtures = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../jfc-graph/tests/fixtures"
+        ));
+        let session = get_or_build_graph_session(fixtures);
+        // baz() is a leaf in sample.rs — bar calls it but nothing
+        // calls baz further.
+        let baz = session
+            .graph
+            .nodes_by_kind(jfc_graph::nodes::NodeKind::Function)
+            .into_iter()
+            .find(|n| n.name == "baz")
+            .expect("fixture must contain baz()");
+        // baz has one caller (bar) so the cascade is non-empty for it
+        // too. Pick a true leaf — `helper_one` from the helpers module
+        // has no callers in sample.rs.
+        let helper = session
+            .graph
+            .nodes_by_kind(jfc_graph::nodes::NodeKind::Function)
+            .into_iter()
+            .find(|n| n.name == "helper_one")
+            .expect("fixture must contain helper_one()");
+        let _ = baz; // silence dead var
+        let tasks = jfc_graph::cascade::generate_cascade(
+            &session.graph,
+            &helper.id,
+            "fn helper_one(x: i32) -> i32",
+            "test cascade for leaf",
+        );
+        assert!(tasks.is_empty(), "leaf must yield empty cascade");
+    }
+
     // ─── graph history (task 27) ─────────────────────────────────────────
 
     fn clear_graph_history() {
