@@ -550,6 +550,15 @@ pub enum ToolInput {
         acceptance_criteria: String,
         #[serde(default)]
         max_solvers: Option<u8>,
+        /// When true, `execute_tool` runs the full Post→Bid→Solve→
+        /// Validate→Settle cycle synchronously, spawning real solver
+        /// + validator subagents that hit the LLM. Default false:
+        /// the bounty is queued as Open and the user / model drives
+        /// progress manually via `market_status`. Set true only
+        /// when you want a complete competitive resolve in one
+        /// tool call (expensive).
+        #[serde(default)]
+        auto_dispatch: bool,
     },
     MarketStatus {
         #[serde(default)]
@@ -1170,6 +1179,7 @@ impl ToolInput {
                     .and_then(|m| m.get("max_solvers"))
                     .and_then(|v| v.as_u64())
                     .map(|n| n.min(255) as u8),
+                auto_dispatch: bool_field("auto_dispatch"),
             },
             ToolKind::MarketStatus => Self::MarketStatus {
                 bounty_id: obj
@@ -1391,7 +1401,7 @@ impl ToolInput {
                 }
                 v
             }
-            Self::PostBounty { description, budget, acceptance_criteria, max_solvers } => {
+            Self::PostBounty { description, budget, acceptance_criteria, max_solvers, auto_dispatch } => {
                 let mut v = json!({
                     "description": description,
                     "budget": budget,
@@ -1399,6 +1409,9 @@ impl ToolInput {
                 });
                 if let Some(n) = max_solvers {
                     v["max_solvers"] = json!(n);
+                }
+                if *auto_dispatch {
+                    v["auto_dispatch"] = json!(true);
                 }
                 v
             }

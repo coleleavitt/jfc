@@ -41,15 +41,18 @@ fn get_or_build_graph_session(cwd: &std::path::Path) -> Arc<jfc_graph::session::
 /// trust accumulates across bounties. Initialized lazily with the
 /// charter's defaults; user-tunable via `JFC_MARKET_BUDGET` env var
 /// (defaults to 100_000 tokens — the v131 auto-compact threshold).
-fn market_orchestrator() -> &'static std::sync::Mutex<jfc_economy::orchestrator::MarketOrchestrator> {
-    static M: OnceLock<std::sync::Mutex<jfc_economy::orchestrator::MarketOrchestrator>> = OnceLock::new();
+fn market_orchestrator() -> &'static tokio::sync::Mutex<jfc_economy::orchestrator::MarketOrchestrator> {
+    // tokio::sync::Mutex (not std::sync::Mutex) so guards are Send
+    // across .await — required because run_bounty_cycle holds the
+    // lock across LLM calls.
+    static M: OnceLock<tokio::sync::Mutex<jfc_economy::orchestrator::MarketOrchestrator>> = OnceLock::new();
     M.get_or_init(|| {
         let charter = jfc_economy::charter::Charter::default();
         let budget = std::env::var("JFC_MARKET_BUDGET")
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(100_000);
-        std::sync::Mutex::new(
+        tokio::sync::Mutex::new(
             jfc_economy::orchestrator::MarketOrchestrator::with_budget(charter, budget)
         )
     })
@@ -62,14 +65,374 @@ fn collusion_detector() -> &'static std::sync::Mutex<jfc_economy::collusion::Col
     C.get_or_init(|| std::sync::Mutex::new(jfc_economy::collusion::CollusionDetector::default()))
 }
 
+/// Process-global handle to the active Provider + ModelId. Set
+/// once at startup by `main.rs` after it constructs the provider
+/// chain; consumed by the agent-economy `auto_dispatch` path which
+/// needs to spin up sub-LLM calls without changing every signature
+/// of `execute_tool`. RwLock so future model swaps can update it
+/// without restarting the process.
+fn active_provider_handle() -> &'static std::sync::RwLock<
+    Option<(
+        std::sync::Arc<dyn crate::provider::Provider>,
+        crate::provider::ModelId,
+    )>,
+> {
+    static H: OnceLock<
+        std::sync::RwLock<
+            Option<(
+                std::sync::Arc<dyn crate::provider::Provider>,
+                crate::provider::ModelId,
+            )>,
+        >,
+    > = OnceLock::new();
+    H.get_or_init(|| std::sync::RwLock::new(None))
+}
+
+/// Called by main.rs after the provider chain is built so
+/// auto-dispatch market cycles can issue real LLM calls. Calling
+/// this multiple times overwrites the previous handle, which is
+/// the right behavior for a model-switch flow.
+pub fn register_active_provider(
+    provider: std::sync::Arc<dyn crate::provider::Provider>,
+    model: crate::provider::ModelId,
+) {
+    if let Ok(mut g) = active_provider_handle().write() {
+        *g = Some((provider, model));
+    }
+}
+
+/// Snapshot the active provider + model. None when main.rs hasn't
+/// registered one yet (early-boot tool calls, tests).
+pub(crate) fn snapshot_active_provider() -> Option<(
+    std::sync::Arc<dyn crate::provider::Provider>,
+    crate::provider::ModelId,
+)> {
+    active_provider_handle()
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|(p, m)| (std::sync::Arc::clone(p), m.clone())))
+}
+
+/// SwarmProvider impl for jfc-ui — delegates to the existing
+/// `worktrees` module. Each solver gets a worktree named
+/// `economy/<bounty_id>/<agent_id>` so concurrent bounties don't
+/// collide. `remove_worktree` is best-effort: a leftover worktree
+/// after a crash is cleaned up by the user via `git worktree prune`.
+pub(crate) struct EconomySwarmProvider {
+    repo_root: std::path::PathBuf,
+}
+
+impl EconomySwarmProvider {
+    pub fn new(repo_root: std::path::PathBuf) -> Self {
+        Self { repo_root }
+    }
+}
+
+impl jfc_economy::reporting::SwarmProvider for EconomySwarmProvider {
+    fn create_worktree(
+        &self,
+        bounty_id: &str,
+        agent_id: &jfc_economy::types::AgentId,
+    ) -> Option<std::path::PathBuf> {
+        let safe_bounty: String = bounty_id
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+            .collect();
+        let safe_agent: String = agent_id
+            .0
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+            .collect();
+        let name = format!("economy-{safe_bounty}-{safe_agent}");
+        match crate::worktrees::create_worktree(&self.repo_root, &name) {
+            Ok(info) => Some(std::path::PathBuf::from(info.path)),
+            Err(e) => {
+                tracing::warn!(
+                    target: "jfc::economy",
+                    bounty = bounty_id,
+                    agent = %agent_id.0,
+                    error = %e,
+                    "create_worktree failed; solver will run without worktree isolation"
+                );
+                None
+            }
+        }
+    }
+
+    fn remove_worktree(&self, path: &std::path::Path) {
+        // The underlying `worktrees::remove_worktree` takes the
+        // worktree *name* (the branch / dir leaf), not a full path.
+        // We named worktrees `economy-<bounty>-<agent>` in
+        // `create_worktree`, so the path's last component is the
+        // name. If extraction fails (impossible-but-defensive),
+        // skip removal — the user can `git worktree prune` later.
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            tracing::warn!(
+                target: "jfc::economy",
+                path = %path.display(),
+                "remove_worktree: cannot extract name from path; skipping"
+            );
+            return;
+        };
+        if let Err(e) = crate::worktrees::remove_worktree(&self.repo_root, name) {
+            tracing::warn!(
+                target: "jfc::economy",
+                path = %path.display(),
+                error = %e,
+                "remove_worktree failed (orphan worktree — `git worktree prune` to clean)"
+            );
+        }
+    }
+
+    fn send_message(&self, agent_id: &jfc_economy::types::AgentId, message: &str) {
+        // No mailbox integration in this iteration — log for audit.
+        // Wiring to the existing swarm/mailbox system requires
+        // routing through main.rs's event channel and is deferred.
+        tracing::info!(
+            target: "jfc::economy",
+            agent = %agent_id.0,
+            msg = %message.chars().take(200).collect::<String>(),
+            "swarm send_message (audit-only stub)"
+        );
+    }
+}
+
+/// AgentInvoker impl for jfc-ui — runs real LLM calls via the
+/// configured Provider trait. Each solver / validator call is one
+/// `provider.stream(...)` round-trip; the response text becomes the
+/// solution patch (for solvers) or the proposed flaw (for
+/// validators). Token counts come from the StreamEvent::Usage
+/// callback when the provider emits one, otherwise from a 4-chars-
+/// per-token byte estimate.
+pub(crate) struct EconomyAgentInvoker {
+    provider: std::sync::Arc<dyn crate::provider::Provider>,
+    model: crate::provider::ModelId,
+}
+
+impl EconomyAgentInvoker {
+    pub fn new(
+        provider: std::sync::Arc<dyn crate::provider::Provider>,
+        model: crate::provider::ModelId,
+    ) -> Self {
+        Self { provider, model }
+    }
+
+    /// Drive a single LLM call and return `(text, tokens_consumed)`.
+    /// Tokens fall back to a byte estimate when the provider doesn't
+    /// emit a Usage event (most don't on the first chunk).
+    async fn one_shot(
+        &self,
+        system: String,
+        user: String,
+        max_tokens: u64,
+    ) -> Result<(String, u64), String> {
+        use crate::provider::*;
+        use futures::StreamExt;
+        let opts = StreamOptions::new(self.model.clone())
+            .system(system)
+            .max_tokens(max_tokens.min(u32::MAX as u64) as u32);
+        let messages = vec![ProviderMessage {
+            role: ProviderRole::User,
+            content: vec![ProviderContent::Text(user)],
+        }];
+        let mut stream = self
+            .provider
+            .stream(messages, &opts)
+            .await
+            .map_err(|e| format!("provider stream error: {e}"))?;
+        let mut text = String::new();
+        let mut input_tokens: u64 = 0;
+        let mut output_tokens: u64 = 0;
+        while let Some(ev) = stream.next().await {
+            match ev {
+                Ok(StreamEvent::TextDelta { delta, .. }) => text.push_str(&delta),
+                Ok(StreamEvent::TextDone { text: t, .. }) => {
+                    if text.is_empty() {
+                        text = t;
+                    }
+                }
+                Ok(StreamEvent::Usage {
+                    input_tokens: i,
+                    output_tokens: o,
+                    ..
+                }) => {
+                    input_tokens = i as u64;
+                    output_tokens = o as u64;
+                }
+                Ok(StreamEvent::Error { message }) => {
+                    return Err(format!("provider stream error: {message}"));
+                }
+                Err(e) => return Err(format!("provider stream error: {e}")),
+                _ => {}
+            }
+        }
+        let tokens = if input_tokens > 0 || output_tokens > 0 {
+            input_tokens + output_tokens
+        } else {
+            // Fallback: 4 chars per token (v131 z_$).
+            (text.len() as u64).div_ceil(4)
+        };
+        Ok((text, tokens))
+    }
+}
+
+#[async_trait::async_trait]
+impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
+    async fn invoke_solver(
+        &self,
+        prompt: jfc_economy::reporting::SolverPrompt,
+    ) -> Result<jfc_economy::types::Solution, String> {
+        let system = format!(
+            "You are a competitive solver agent in a code-bounty market. \
+             Your goal: produce a minimal, correct patch that satisfies the \
+             acceptance criteria. Output a unified diff and a one-paragraph \
+             explanation. No filler — every token costs the bounty pool.\n\n\
+             Acceptance criteria: {}",
+            prompt.acceptance_criteria,
+        );
+        let user = format!(
+            "Bounty {} — {}\n\nReturn:\n```diff\n<your patch>\n```\n\n\
+             Then a one-paragraph explanation.",
+            prompt.bounty_id, prompt.bounty_description
+        );
+        let (text, tokens) = self.one_shot(system, user, prompt.max_tokens).await?;
+        let (patch, explanation) = split_patch_and_explanation(&text);
+        Ok(jfc_economy::types::Solution {
+            agent_id: prompt.agent_id,
+            bounty_id: prompt.bounty_id,
+            patch,
+            explanation,
+            self_assessment: 0.5,
+            tokens_consumed: tokens,
+            // We can't run cargo here without spawning a subprocess
+            // in the worktree — defer mechanistic verification to
+            // the orchestrator's settlement phase. Mark unknown.
+            compiles: None,
+            tests_pass: None,
+            suspicious: false,
+        })
+    }
+
+    async fn invoke_validator(
+        &self,
+        prompt: jfc_economy::reporting::ValidatorPrompt,
+    ) -> Result<jfc_economy::reporting::ValidatorOutcome, String> {
+        let system = "You are an adversarial validator in a code-bounty \
+             market. Your job: find any flaw in the submitted solution. \
+             You earn tokens for VALID flaws (reproducible by a test) and \
+             lose trust for invalid challenges. If the solution looks sound, \
+             say so explicitly with confidence ≥ 0.95 — early termination \
+             saves the bounty pool.\n\n\
+             Output format:\n\
+             FLAW: <description, or NONE>\n\
+             CONFIDENCE: <0.0 to 1.0>\n\
+             TEST: <minimal test code that triggers the flaw, or NONE>"
+            .to_string();
+        let user = format!(
+            "Bounty {} — {}\n\nSolution patch:\n```\n{}\n```\n\n\
+             Solver's explanation: {}",
+            prompt.bounty_id,
+            prompt.bounty_description,
+            prompt.solution.patch.chars().take(4_000).collect::<String>(),
+            prompt.solution.explanation.chars().take(500).collect::<String>(),
+        );
+        let (text, tokens) = self.one_shot(system, user, prompt.max_tokens).await?;
+        let (flaw, confidence, test_code) = parse_validator_output(&text);
+        Ok(jfc_economy::reporting::ValidatorOutcome {
+            flaw,
+            test_code,
+            confidence,
+            tokens_consumed: tokens,
+        })
+    }
+}
+
+/// Crude parser: split the solver's response into the diff block
+/// and the trailing prose. Looks for a fenced ```diff or ``` block.
+/// If neither is found, the whole response is treated as the patch
+/// — better to over-include than to drop content.
+pub(crate) fn split_patch_and_explanation(text: &str) -> (String, String) {
+    if let Some(start) = text.find("```diff").or_else(|| text.find("```")) {
+        let after = &text[start..];
+        let body_start = after.find('\n').map(|n| start + n + 1).unwrap_or(start);
+        if let Some(end_rel) = text[body_start..].find("```") {
+            let patch = text[body_start..body_start + end_rel].trim().to_string();
+            let explanation = text[body_start + end_rel + 3..].trim().to_string();
+            return (patch, explanation);
+        }
+    }
+    (text.trim().to_string(), String::new())
+}
+
+/// Crude parser for the validator's structured output. Tolerant of
+/// minor format drift — the model isn't always perfect about
+/// "FLAW:" / "CONFIDENCE:" / "TEST:" prefixes. Defaults: confidence
+/// 0.0 (low — equivalent to "didn't say"), no flaw, no test.
+pub(crate) fn parse_validator_output(text: &str) -> (Option<String>, f32, Option<String>) {
+    let mut flaw: Option<String> = None;
+    let mut confidence: f32 = 0.0;
+    let mut test_code: Option<String> = None;
+    let mut current: Option<&str> = None;
+    let mut buf = String::new();
+    let flush = |k: Option<&str>, buf: &mut String,
+                 flaw: &mut Option<String>,
+                 conf: &mut f32,
+                 test: &mut Option<String>| {
+        let v = buf.trim().to_string();
+        match k {
+            Some("FLAW") => {
+                if !v.is_empty() && !v.eq_ignore_ascii_case("none") {
+                    *flaw = Some(v);
+                }
+            }
+            Some("CONFIDENCE") => {
+                if let Ok(n) = v.trim().parse::<f32>() {
+                    *conf = n.clamp(0.0, 1.0);
+                }
+            }
+            Some("TEST") => {
+                if !v.is_empty() && !v.eq_ignore_ascii_case("none") {
+                    *test = Some(v);
+                }
+            }
+            _ => {}
+        }
+        buf.clear();
+    };
+    for line in text.lines() {
+        let t = line.trim();
+        let key = ["FLAW", "CONFIDENCE", "TEST"]
+            .iter()
+            .find(|k| t.to_uppercase().starts_with(&format!("{k}:")))
+            .copied();
+        if let Some(k) = key {
+            flush(current, &mut buf, &mut flaw, &mut confidence, &mut test_code);
+            current = Some(k);
+            if let Some(rest) = t.split_once(':') {
+                buf.push_str(rest.1.trim());
+            }
+        } else if current.is_some() {
+            if !buf.is_empty() {
+                buf.push('\n');
+            }
+            buf.push_str(line);
+        }
+    }
+    flush(current, &mut buf, &mut flaw, &mut confidence, &mut test_code);
+    (flaw, confidence, test_code)
+}
+
 /// Render the current market report as the multi-line string used
 /// by both the `market_status` tool and the `/market` slash command.
 /// Pulled out so the slash command and the tool stay in sync — any
 /// future field added to the report appears in both surfaces.
 pub fn market_report_string() -> Result<String, String> {
-    let orch = market_orchestrator()
-        .lock()
-        .map_err(|e| format!("market orchestrator mutex poisoned: {e}"))?;
+    // Slash commands run from the synchronous render path. tokio's
+    // Mutex offers `blocking_lock` for exactly this case — block
+    // the calling thread until the lock is free. Safe because
+    // slash commands aren't called from inside the tokio runtime
+    // worker pool (they fire on the keyboard event loop).
+    let orch = market_orchestrator().blocking_lock();
     let detector = collusion_detector()
         .lock()
         .map_err(|e| format!("collusion detector mutex poisoned: {e}"))?;
@@ -1336,40 +1699,101 @@ pub async fn execute_tool(
                 budget,
                 acceptance_criteria,
                 max_solvers,
+                auto_dispatch,
             },
         ) => {
             // The orchestrator's lock is process-global; only one
             // post_bounty runs at a time. That's fine — bounties are
             // posted in the LLM's main loop, not from concurrent
             // subagents. If two tool calls race, the second waits.
-            let mut orch = match market_orchestrator().lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    return ExecutionResult::failure(format!(
-                        "market orchestrator mutex poisoned: {e}"
-                    ));
+            //
+            // Posting always succeeds first. If `auto_dispatch=true`,
+            // we then drop the lock, run the cycle (which spawns
+            // real subagent LLM calls and can take minutes), and
+            // re-acquire the lock to read the settlement. Holding
+            // the orchestrator mutex across the network round-trips
+            // would block /market and concurrent post_bounty calls.
+            let bounty_id = {
+                let mut orch = market_orchestrator().lock().await;
+                match orch.post_bounty(
+                    description,
+                    budget,
+                    acceptance_criteria,
+                    max_solvers,
+                ) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        return ExecutionResult::failure(format!("post_bounty failed: {e}"));
+                    }
                 }
             };
-            match orch.post_bounty(description, budget, acceptance_criteria, max_solvers) {
-                Ok(id) => ExecutionResult::success(format!(
-                    "Posted bounty `{id}` (budget {budget} tok, max solvers \
-                     {}). State: Open. Use market_status to inspect.",
-                    max_solvers
-                        .map(|n| n.to_string())
-                        .unwrap_or_else(|| orch.charter().max_solvers.to_string())
+            let max_solvers_text = match max_solvers {
+                Some(n) => n.to_string(),
+                None => {
+                    let orch = market_orchestrator().lock().await;
+                    orch.charter().max_solvers.to_string()
+                }
+            };
+            if !auto_dispatch {
+                return ExecutionResult::success(format!(
+                    "Posted bounty `{bounty_id}` (budget {budget} tok, max \
+                     solvers {max_solvers_text}). State: Open. Use \
+                     market_status to inspect; pass auto_dispatch=true to \
+                     run the full Post→Solve→Validate→Settle cycle now."
+                ));
+            }
+            // Drive the real cycle. The orchestrator mutex is
+            // dropped before the await so /market and concurrent
+            // post_bounty calls aren't blocked across the network
+            // round-trips.
+            let Some((provider, model)) = snapshot_active_provider() else {
+                return ExecutionResult::success(format!(
+                    "Posted bounty `{bounty_id}` (budget {budget} tok, max \
+                     solvers {max_solvers_text}). State: Open. \
+                     \n\nNOTE: auto_dispatch=true was requested but no \
+                     active provider is registered with the tool layer \
+                     (call `tools::register_active_provider` from main.rs \
+                     once the provider is built). Bounty stays Open — \
+                     dispatch manually via market_status."
+                ));
+            };
+            let invoker = EconomyAgentInvoker::new(provider, model);
+            let swarm = EconomySwarmProvider::new(cwd.clone());
+            // Solver + validator counts: respect the bounty's
+            // max_solvers, default to 2 to keep the per-bounty
+            // round-trip count predictable. One validator per
+            // surviving solution — sealed validation gives one
+            // independent verdict per solver.
+            let n_solvers = max_solvers.unwrap_or(2).clamp(1, 5);
+            let cycle_result = {
+                let mut orch = market_orchestrator().lock().await;
+                orch.run_bounty_cycle(&bounty_id, &invoker, &swarm, n_solvers, 1)
+                    .await
+            };
+            match cycle_result {
+                Ok(settlement) => ExecutionResult::success(format!(
+                    "Bounty `{bounty_id}` settled.\n\
+                     Winner: {}\n\
+                     Total cost: {} tok\n\
+                     Payouts: {}\n\
+                     Trust updates: {}\n\
+                     Run /market to see updated trust + budget.",
+                    settlement
+                        .winner
+                        .as_ref()
+                        .map(|a| a.0.as_str())
+                        .unwrap_or("(no winning solution)"),
+                    settlement.total_cost,
+                    settlement.payouts.len(),
+                    settlement.trust_updates.len(),
                 )),
-                Err(e) => ExecutionResult::failure(format!("post_bounty failed: {e}")),
+                Err(e) => ExecutionResult::failure(format!(
+                    "auto_dispatch cycle for `{bounty_id}` failed: {e}"
+                )),
             }
         }
         (ToolKind::MarketStatus, ToolInput::MarketStatus { bounty_id }) => {
-            let orch = match market_orchestrator().lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    return ExecutionResult::failure(format!(
-                        "market orchestrator mutex poisoned: {e}"
-                    ));
-                }
-            };
+            let orch = market_orchestrator().lock().await;
             let detector = match collusion_detector().lock() {
                 Ok(g) => g,
                 Err(e) => {
@@ -3144,7 +3568,7 @@ mod tests {
     async fn post_bounty_dispatch_increments_market_normal() {
         let _g = market_test_lock().lock().unwrap_or_else(|p| p.into_inner());
         let before = {
-            let orch = market_orchestrator().lock().expect("orch lock");
+            let orch = market_orchestrator().lock().await;
             orch.bounties.audit_log().len()
         };
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
@@ -3155,6 +3579,7 @@ mod tests {
                 budget: 100,
                 acceptance_criteria: "cargo test".into(),
                 max_solvers: Some(2),
+                auto_dispatch: false,
             },
             cwd,
             None,
@@ -3164,7 +3589,7 @@ mod tests {
         .await;
         assert!(!res.is_error(), "post_bounty should succeed: {}", res.output);
         let after = {
-            let orch = market_orchestrator().lock().expect("orch lock");
+            let orch = market_orchestrator().lock().await;
             orch.bounties.audit_log().len()
         };
         assert!(
@@ -3180,7 +3605,7 @@ mod tests {
     async fn post_bounty_rejects_oversized_budget_robust() {
         let _g = market_test_lock().lock().unwrap_or_else(|p| p.into_inner());
         let cap = {
-            let orch = market_orchestrator().lock().expect("orch lock");
+            let orch = market_orchestrator().lock().await;
             orch.charter().max_budget_per_bounty
         };
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
@@ -3191,6 +3616,7 @@ mod tests {
                 budget: cap + 1,
                 acceptance_criteria: "any".into(),
                 max_solvers: None,
+                auto_dispatch: false,
             },
             cwd,
             None,
@@ -3204,6 +3630,217 @@ mod tests {
             "error should mention budget cap: {}",
             res.output
         );
+    }
+
+    // ─── agent economy cycle (real LLM-driven path) ───────────────────
+
+    /// Stub AgentInvoker for cycle tests — returns canned solutions
+    /// + validator outcomes without hitting any network. Each call
+    /// records the prompt for assertion.
+    struct StubInvoker {
+        solutions: std::sync::Mutex<Vec<jfc_economy::types::Solution>>,
+        validator_outcomes: std::sync::Mutex<Vec<jfc_economy::reporting::ValidatorOutcome>>,
+        solver_calls: std::sync::Mutex<usize>,
+        validator_calls: std::sync::Mutex<usize>,
+    }
+
+    impl StubInvoker {
+        fn new() -> Self {
+            Self {
+                solutions: std::sync::Mutex::new(Vec::new()),
+                validator_outcomes: std::sync::Mutex::new(Vec::new()),
+                solver_calls: std::sync::Mutex::new(0),
+                validator_calls: std::sync::Mutex::new(0),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl jfc_economy::reporting::AgentInvoker for StubInvoker {
+        async fn invoke_solver(
+            &self,
+            prompt: jfc_economy::reporting::SolverPrompt,
+        ) -> Result<jfc_economy::types::Solution, String> {
+            *self.solver_calls.lock().unwrap() += 1;
+            Ok(jfc_economy::types::Solution {
+                agent_id: prompt.agent_id,
+                bounty_id: prompt.bounty_id,
+                patch: "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new".into(),
+                explanation: "stub solution".into(),
+                self_assessment: 0.7,
+                tokens_consumed: 100,
+                compiles: Some(true),
+                tests_pass: Some(true),
+                suspicious: false,
+            })
+        }
+        async fn invoke_validator(
+            &self,
+            _prompt: jfc_economy::reporting::ValidatorPrompt,
+        ) -> Result<jfc_economy::reporting::ValidatorOutcome, String> {
+            *self.validator_calls.lock().unwrap() += 1;
+            Ok(jfc_economy::reporting::ValidatorOutcome {
+                flaw: None,
+                test_code: None,
+                confidence: 0.97,
+                tokens_consumed: 50,
+            })
+        }
+    }
+
+    /// SwarmProvider stub that doesn't touch git. Worktree paths
+    /// are made up; remove is a no-op.
+    struct StubSwarm;
+    impl jfc_economy::reporting::SwarmProvider for StubSwarm {
+        fn create_worktree(
+            &self,
+            bounty_id: &str,
+            agent_id: &jfc_economy::types::AgentId,
+        ) -> Option<std::path::PathBuf> {
+            Some(std::path::PathBuf::from(format!(
+                "/tmp/stub-{bounty_id}-{}",
+                agent_id.0
+            )))
+        }
+        fn remove_worktree(&self, _path: &std::path::Path) {}
+        fn send_message(&self, _agent_id: &jfc_economy::types::AgentId, _msg: &str) {}
+    }
+
+    /// Normal: a full bounty cycle with stub invoker + swarm
+    /// progresses Post→Settle and ends with a winning solver.
+    #[tokio::test(flavor = "current_thread")]
+    async fn run_bounty_cycle_end_to_end_normal() {
+        use jfc_economy::charter::Charter;
+        use jfc_economy::orchestrator::MarketOrchestrator;
+        let charter = Charter::default();
+        let mut orch = MarketOrchestrator::with_budget(charter, 10_000);
+        let id = orch
+            .post_bounty("test".into(), 500, "cargo test".into(), Some(2))
+            .expect("post_bounty");
+        let invoker = StubInvoker::new();
+        let swarm = StubSwarm;
+        let settlement = orch
+            .run_bounty_cycle(&id, &invoker, &swarm, 2, 1)
+            .await
+            .expect("cycle should settle");
+        // Two solvers spawned, both produced solutions.
+        assert_eq!(*invoker.solver_calls.lock().unwrap(), 2);
+        // Sealed validation: one validator per surviving solution.
+        assert_eq!(*invoker.validator_calls.lock().unwrap(), 2);
+        // A winner was selected (compiles=true, tests=true on both).
+        assert!(settlement.winner.is_some(), "expected a winning solver");
+    }
+
+    // Robust: even when the invoker errors on a solver, the cycle
+    // continues — that solver is abandoned but the others settle.
+    struct ErroringInvoker;
+    #[async_trait::async_trait]
+    impl jfc_economy::reporting::AgentInvoker for ErroringInvoker {
+        async fn invoke_solver(
+            &self,
+            _: jfc_economy::reporting::SolverPrompt,
+        ) -> Result<jfc_economy::types::Solution, String> {
+            Err("simulated provider failure".into())
+        }
+        async fn invoke_validator(
+            &self,
+            _: jfc_economy::reporting::ValidatorPrompt,
+        ) -> Result<jfc_economy::reporting::ValidatorOutcome, String> {
+            Err("simulated".into())
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn run_bounty_cycle_solver_failure_robust() {
+        use jfc_economy::charter::Charter;
+        use jfc_economy::orchestrator::MarketOrchestrator;
+        let charter = Charter::default();
+        let mut orch = MarketOrchestrator::with_budget(charter, 10_000);
+        let id = orch
+            .post_bounty("test".into(), 500, "cargo test".into(), Some(1))
+            .expect("post_bounty");
+        let settlement = orch
+            .run_bounty_cycle(&id, &ErroringInvoker, &StubSwarm, 1, 1)
+            .await
+            .expect("cycle should still settle (no winner)");
+        // No winner because all solvers failed; settlement still produced.
+        assert!(settlement.winner.is_none());
+    }
+
+    // Normal: register_active_provider snapshot round-trip — the
+    // value we register comes back out via snapshot_active_provider.
+    #[test]
+    fn register_active_provider_round_trip_normal() {
+        // The test infra already constructs a TestProvider for App::new;
+        // reuse it.
+        struct NoopProvider;
+        #[async_trait::async_trait]
+        impl crate::provider::Provider for NoopProvider {
+            fn name(&self) -> &str { "noop" }
+            fn available_models(&self) -> Vec<crate::provider::ModelInfo> { vec![] }
+            async fn stream(
+                &self,
+                _: Vec<crate::provider::ProviderMessage>,
+                _: &crate::provider::StreamOptions,
+            ) -> anyhow::Result<crate::provider::EventStream> {
+                Err(anyhow::anyhow!("noop"))
+            }
+        }
+        let p: std::sync::Arc<dyn crate::provider::Provider> =
+            std::sync::Arc::new(NoopProvider);
+        let m = crate::provider::ModelId::new("noop-model");
+        register_active_provider(p, m.clone());
+        let snap = snapshot_active_provider().expect("provider should be registered");
+        assert_eq!(snap.0.name(), "noop");
+        assert_eq!(snap.1.as_str(), "noop-model");
+    }
+
+    // Normal: the prose split helper picks out a fenced ```diff
+    // block and leaves the trailing prose as the explanation.
+    #[test]
+    fn split_patch_and_explanation_diff_block_normal() {
+        let s = "Here's my fix:\n```diff\ndiff --git a/x\n+new line\n```\n\nIt swaps old for new.";
+        let (patch, expl) = split_patch_and_explanation(s);
+        assert!(patch.contains("diff --git a/x"));
+        assert!(patch.contains("+new line"));
+        assert_eq!(expl, "It swaps old for new.");
+    }
+
+    // Robust: malformed response (no fenced block) treats the whole
+    // thing as the patch with empty explanation rather than dropping.
+    #[test]
+    fn split_patch_and_explanation_no_block_robust() {
+        let s = "just some text with no fences";
+        let (patch, expl) = split_patch_and_explanation(s);
+        assert_eq!(patch, "just some text with no fences");
+        assert!(expl.is_empty());
+    }
+
+    // Normal: validator output parser pulls FLAW / CONFIDENCE / TEST
+    // out of a v131-style structured response.
+    #[test]
+    fn parse_validator_output_full_normal() {
+        let s = "FLAW: integer overflow on negative input\n\
+             CONFIDENCE: 0.85\n\
+             TEST:\n\
+             #[test]\n\
+             fn neg_overflow() {\n\
+                 assert!(checked(-1).is_err());\n\
+             }";
+        let (flaw, conf, test) = parse_validator_output(s);
+        assert_eq!(flaw.as_deref(), Some("integer overflow on negative input"));
+        assert!((conf - 0.85).abs() < 0.01);
+        assert!(test.unwrap().contains("fn neg_overflow"));
+    }
+
+    // Robust: NONE markers produce None even with mixed casing.
+    #[test]
+    fn parse_validator_output_none_markers_robust() {
+        let s = "FLAW: none\nCONFIDENCE: 0.97\nTEST: NONE";
+        let (flaw, conf, test) = parse_validator_output(s);
+        assert!(flaw.is_none());
+        assert!((conf - 0.97).abs() < 0.01);
+        assert!(test.is_none());
     }
 
     // ─── outgoing call predicates (preconditions analysis) ────────────

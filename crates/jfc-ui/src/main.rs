@@ -130,6 +130,13 @@ async fn main() -> anyhow::Result<()> {
     let oauth_handle = init.oauth;
     let provider = providers[active_idx].clone();
 
+    // Register the active provider with the tools layer so the
+    // agent-economy auto_dispatch path can spawn real solver +
+    // validator subagent LLM calls without needing a wider
+    // signature change. Safe to call multiple times — model swaps
+    // overwrite the registered handle.
+    crate::tools::register_active_provider(provider.clone(), model.clone());
+
     install_terminal_panic_hook();
     enable_raw_mode()?;
     let mut stdout = io::stdout();
