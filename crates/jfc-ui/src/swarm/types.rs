@@ -414,3 +414,175 @@ impl PlanApprovalRequest {
         }
     }
 }
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::style::Color;
+
+    #[test]
+    fn make_agent_id_combines_name_and_team_normal() {
+        assert_eq!(make_agent_id("alice", "alpha"), "alice@alpha");
+    }
+
+    #[test]
+    fn sanitize_name_keeps_alphanumeric_and_dashes_normal() {
+        assert_eq!(sanitize_name("alice-bob_42"), "alice-bob_42");
+    }
+
+    #[test]
+    fn sanitize_name_lowercases_and_replaces_invalid_robust() {
+        // Spaces, slashes, and unicode are folded to dashes; ASCII letters
+        // are lowercased. Names land in file paths so we must keep them
+        // path-safe.
+        assert_eq!(sanitize_name("Alice Bob"), "alice-bob");
+        assert_eq!(sanitize_name("a/b"), "a-b");
+        assert_eq!(sanitize_name("FOO!"), "foo-");
+        assert_eq!(sanitize_name(""), "");
+        assert_eq!(sanitize_name("café"), "caf-");
+    }
+
+    #[test]
+    fn format_teammate_message_no_color_no_summary_normal() {
+        let formatted = format_teammate_message("alice", "hello", None, None);
+        assert!(formatted.contains("teammate_id=\"alice\""));
+        assert!(formatted.contains("hello"));
+        assert!(!formatted.contains("color="));
+        assert!(!formatted.contains("summary="));
+    }
+
+    #[test]
+    fn format_teammate_message_with_color_and_summary_normal() {
+        let formatted =
+            format_teammate_message("bob", "report", Some("#123abc"), Some("done"));
+        assert!(formatted.contains("teammate_id=\"bob\""));
+        assert!(formatted.contains("color=\"#123abc\""));
+        assert!(formatted.contains("summary=\"done\""));
+        assert!(formatted.contains("report"));
+    }
+
+    #[test]
+    fn hex_to_color_parses_six_digit_hex_normal() {
+        assert_eq!(hex_to_color("#FF0000"), Color::Rgb(255, 0, 0));
+        assert_eq!(hex_to_color("00FF00"), Color::Rgb(0, 255, 0));
+        assert_eq!(hex_to_color("#0000ff"), Color::Rgb(0, 0, 255));
+    }
+
+    #[test]
+    fn hex_to_color_returns_white_on_bad_input_robust() {
+        // Wrong length / not hex → fall back to White instead of panicking.
+        assert_eq!(hex_to_color("abc"), Color::White);
+        assert_eq!(hex_to_color("#1234567"), Color::White);
+        assert_eq!(hex_to_color(""), Color::White);
+    }
+
+    #[test]
+    fn teammate_color_falls_back_to_white_normal() {
+        assert_eq!(teammate_color(None), Color::White);
+        assert_eq!(teammate_color(Some("#FFFFFF")), Color::Rgb(255, 255, 255));
+    }
+
+    #[test]
+    fn team_context_is_active_only_when_team_set_normal() {
+        let mut ctx = TeamContext::default();
+        assert!(!ctx.is_active());
+        ctx.team_name = Some("alpha".into());
+        assert!(ctx.is_active());
+    }
+
+    #[test]
+    fn team_context_teammate_names_returns_empty_for_default_normal() {
+        let ctx = TeamContext::default();
+        assert!(ctx.teammate_names().is_empty());
+    }
+
+    #[test]
+    fn plan_approval_request_new_generates_unique_id_normal() {
+        let r1 = PlanApprovalRequest::new("alice", "do x");
+        let r2 = PlanApprovalRequest::new("alice", "do x");
+        assert_eq!(r1.from, "alice");
+        assert_eq!(r1.plan, "do x");
+        assert_eq!(r1.msg_type, "plan_approval_request");
+        assert!(r1.request_id.starts_with("plan-"));
+        assert_ne!(r1.request_id, r2.request_id, "uuids must differ");
+    }
+
+    #[test]
+    fn backend_type_serde_uses_kebab_case_normal() {
+        let json = serde_json::to_string(&BackendType::InProcess).unwrap();
+        assert_eq!(json, "\"in-process\"");
+        let parsed: BackendType = serde_json::from_str("\"tmux\"").unwrap();
+        assert_eq!(parsed, BackendType::Tmux);
+    }
+
+    #[test]
+    fn permission_request_status_serde_lowercase_normal() {
+        let s = serde_json::to_string(&PermissionRequestStatus::Pending).unwrap();
+        assert_eq!(s, "\"pending\"");
+        let parsed: PermissionRequestStatus =
+            serde_json::from_str("\"approved\"").unwrap();
+        assert_eq!(parsed, PermissionRequestStatus::Approved);
+    }
+
+    #[test]
+    fn team_file_round_trips_through_json_normal() {
+        let now = 1234u64;
+        let tf = TeamFile {
+            name: "alpha".into(),
+            description: Some("test".into()),
+            created_at: now,
+            lead_agent_id: "lead@alpha".into(),
+            lead_session_id: None,
+            members: vec![TeamMember {
+                agent_id: "lead@alpha".into(),
+                name: "team-lead".into(),
+                agent_type: Some("team-lead".into()),
+                model: None,
+                color: None,
+                plan_mode_required: None,
+                joined_at: now,
+                cwd: Some("/tmp".into()),
+                worktree_path: None,
+                backend_type: Some(BackendType::InProcess),
+                is_active: Some(true),
+                mode: None,
+            }],
+        };
+        let json = serde_json::to_string(&tf).unwrap();
+        let parsed: TeamFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.name, "alpha");
+        assert_eq!(parsed.members.len(), 1);
+        assert_eq!(parsed.members[0].name, "team-lead");
+        assert_eq!(parsed.members[0].backend_type, Some(BackendType::InProcess));
+    }
+
+    #[test]
+    fn mailbox_message_defaults_normal() {
+        // Required fields only — `read`, `color`, `summary` default to false/None.
+        let json = r#"{"from":"x","text":"y","timestamp":"t"}"#;
+        let parsed: MailboxMessage = serde_json::from_str(json).unwrap();
+        assert!(!parsed.read);
+        assert!(parsed.color.is_none());
+        assert!(parsed.summary.is_none());
+    }
+
+    #[test]
+    fn idle_notification_serde_uses_camel_case_normal() {
+        let n = IdleNotification {
+            msg_type: "idle_notification".into(),
+            from: "alice".into(),
+            timestamp: "t".into(),
+            idle_reason: Some("done".into()),
+            summary: None,
+            completed_task_id: Some("task-1".into()),
+            completed_status: Some("ok".into()),
+            failure_reason: None,
+        };
+        let json = serde_json::to_value(&n).unwrap();
+        assert_eq!(json["type"], "idle_notification");
+        assert_eq!(json["idleReason"], "done");
+        assert_eq!(json["completedTaskId"], "task-1");
+    }
+}
