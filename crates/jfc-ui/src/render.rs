@@ -826,6 +826,94 @@ fn highlight_mentions_in(s: &str, t: Theme, phase: f32) -> Vec<Span<'static>> {
     spans
 }
 
+/// Prompt-character animation mode. Selects which glyph (or glyph
+/// cycle) appears at the start of the input. Picked by parsing the
+/// `JFC_PROMPT_CHAR` env var: a leading `:` denotes a named animation
+/// preset; anything else is treated as a literal char.
+#[derive(Clone, Debug)]
+enum PromptMode {
+    Comet,
+    Moon,
+    Dice,
+    Notes,
+    Hourglass,
+    Atom,
+    /// Static literal — user picked a single char (e.g. `JFC_PROMPT_CHAR=⌬`).
+    Static(String),
+}
+
+fn parse_prompt_mode(raw: &str) -> PromptMode {
+    let trimmed = raw.trim();
+    match trimmed {
+        ":comet" => PromptMode::Comet,
+        ":moon" | ":moons" | ":moon_phases" => PromptMode::Moon,
+        ":dice" | ":die" => PromptMode::Dice,
+        ":notes" | ":music" => PromptMode::Notes,
+        ":hourglass" | ":time" => PromptMode::Hourglass,
+        ":atom" => PromptMode::Atom,
+        s if !s.is_empty() && s.chars().count() <= 2 => {
+            PromptMode::Static(s.to_owned())
+        }
+        _ => PromptMode::Comet,
+    }
+}
+
+/// Pick the glyph for this frame given the mode + wall-clock + state.
+fn prompt_mode_frame(mode: &PromptMode, streaming: bool, ms: u128) -> &'static str {
+    match mode {
+        PromptMode::Comet => "☄",
+        PromptMode::Atom => "⚛",
+        PromptMode::Moon => {
+            // 8-frame waxing/waning cycle that mirrors actual moon
+            // phase order. Uses 1-cell symbolic glyphs (not emoji)
+            // so ratatui's column tracking stays accurate. Idle
+            // settles on full moon (`●`) — most "present" looking.
+            if !streaming {
+                return "●";
+            }
+            const FRAMES: &[&str] = &["○", "◐", "●", "◑"];
+            FRAMES[((ms / 250) as usize) % FRAMES.len()]
+        }
+        PromptMode::Dice => {
+            // Dice rolling at 120ms/face for a fast shuffle that
+            // reads as "the model is thinking, anything could come
+            // out". Idle lands on ⚀ so the prompt is visually
+            // stable when nothing is happening.
+            if !streaming {
+                return "⚀";
+            }
+            const FACES: &[&str] = &["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
+            FACES[((ms / 120) as usize) % FACES.len()]
+        }
+        PromptMode::Notes => {
+            // Music-note cycle at 280ms/note — slightly slower so
+            // each glyph reads. Idle settles on ♪ (eighth note) as
+            // the most "musical" looking single character.
+            if !streaming {
+                return "♪";
+            }
+            const NOTES: &[&str] = &["♩", "♪", "♫", "♬"];
+            NOTES[((ms / 280) as usize) % NOTES.len()]
+        }
+        PromptMode::Hourglass => {
+            // Flip every 800ms — `⌛` (sand running) → `⌚` (drained
+            // / time face). Slow enough to read each state. Idle
+            // shows the full hourglass.
+            if !streaming {
+                return "⌛";
+            }
+            if (ms / 800) % 2 == 0 { "⌛" } else { "⌚" }
+        }
+        PromptMode::Static(_) => {
+            // Static is handled via fallback below (returns the
+            // user-supplied char). Sentinel here for the type to
+            // line up; the input renderer reads
+            // `prompt_mode_frame_static` for this branch.
+            ""
+        }
+    }
+}
+
 /// Public form for cross-module callers (sparkle in message_view, etc.)
 /// — the private `pulse_color` is preferred inside this file for
 /// brevity.
@@ -2353,30 +2441,40 @@ fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
 fn input(f: &mut Frame, app: &mut App, area: Rect) {
     let t = app.theme;
     // Boxed input with rounded border. The prompt char sits INLINE
-    // at the start of the typing surface — like a shell prompt
-    // (`$ command`). Three cells before the textarea are reserved
-    // for the prompt + a 2-cell streak tail that animates while
-    // streaming. Layout per row:
+    // at the start of the typing surface — like a shell prompt.
+    // Up to 4 cells reserved for the prompt + an animation tail
+    // (currently only used by `:comet` mode).
     //
-    //   ╭──────────────────────────────────────╮
-    //   │ · · ☄ send a message…                │
-    //   ╰──────────────────────────────────────╯
-    //
-    // The two `·` cells before the comet light up sequentially as
-    // a streak when streaming, then go dark while idle.
-    //
-    // Prompt char defaults to `☄` (comet); override with
-    // `JFC_PROMPT_CHAR=...`. Edit mode swaps to `✎` (pencil).
+    // Prompt mode selector via `JFC_PROMPT_CHAR`:
+    //   :comet     — comet `☄` with streak tail (default)
+    //   :moon      — moon phases ○◐●◑ cycle while streaming
+    //   :dice      — dice faces ⚀⚁⚂⚃⚄⚅ shuffle while streaming
+    //   :notes     — music notes ♩♪♫♬ cycle while streaming
+    //   :hourglass — `⌛` ↔ `⌚` flip every 800ms
+    //   :atom      — atom `⚛` (just color pulse, no shape change)
+    //   <any single char> — that char as a static glyph (color pulse)
+    // Edit mode overrides any choice with `✎` (pencil).
     let in_edit_mode = app.editing_message_idx.is_some();
-    let base_char = std::env::var("JFC_PROMPT_CHAR")
-        .ok()
-        .filter(|s| !s.is_empty() && s.chars().count() <= 2)
-        .unwrap_or_else(|| "☄".to_string());
+    let raw_setting = std::env::var("JFC_PROMPT_CHAR")
+        .unwrap_or_else(|_| ":comet".to_string());
+    let mode = parse_prompt_mode(&raw_setting);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let streaming_for_anim = app.is_streaming && !crate::spinner::reduced_motion();
     let prompt_char: String = if in_edit_mode {
         "✎".to_string()
+    } else if let PromptMode::Static(s) = &mode {
+        s.clone()
     } else {
-        base_char
+        prompt_mode_frame(&mode, streaming_for_anim, now_ms).to_string()
     };
+    // Only `:comet` gets a streak tail; other modes carry their
+    // animation in the glyph itself, so the trail is wasted real
+    // estate for them. Disable the tail when the user picks
+    // something other than the comet.
+    let show_streak_tail = matches!(mode, PromptMode::Comet);
 
     let (prompt_color, border_color) = if in_edit_mode {
         (t.warning, t.warning)
@@ -2438,8 +2536,10 @@ fn input(f: &mut Frame, app: &mut App, area: Rect) {
         // Per-cell brightness as a wave that travels right toward
         // the comet head. Each trail cell peaks at a different
         // phase, so the streak reads as motion rather than blink.
+        // Disabled for non-comet modes — those carry their own
+        // animation in the glyph itself.
         let trail_intensity = |cell_index: usize| -> f32 {
-            if !streaming {
+            if !streaming || !show_streak_tail {
                 return 0.0;
             }
             // Cell 0 (leftmost) peaks at phase 0.0; cell 1 peaks at 0.5.
