@@ -17,6 +17,24 @@ use crate::markdown;
 use crate::theme::Theme;
 use crate::types::*;
 
+/// One full UI redraw. The hot path — runs every Tick (~80ms) and
+/// on every input event. Tracing here is at TRACE level so it's
+/// off in normal runs but easy to flip on with
+/// `RUST_LOG=jfc::render=trace cargo run` when diagnosing layout
+/// math, scroll behavior, or animation timing bugs.
+#[tracing::instrument(
+    target = "jfc::render",
+    level = "trace",
+    skip_all,
+    fields(
+        w = f.area().width,
+        h = f.area().height,
+        msgs = app.messages.len(),
+        streaming = app.is_streaming,
+        scroll = app.scroll_offset,
+        follow_bottom = app.follow_bottom,
+    ),
+)]
 pub fn frame(f: &mut Frame, app: &mut App) {
     let t = app.theme;
 
@@ -29,37 +47,19 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 
     f.render_widget(Block::default().style(Style::default().bg(t.bg)), f.area());
 
-    // Input width is the messages-column width MINUS the input
-    // box's chrome: 2 border cols + 2 padding cols + 2 prompt-strip
-    // cols = 6 cols of overhead. Earlier this called
-    // `input_visual_line_count(app, f.area().width - 4)` against
-    // the *full screen* width, ignoring sidebar visibility AND the
-    // 2-col prompt strip. A multi-line draft was visually wrapped
-    // at the narrower real width but counted at the wider fake
-    // width → input_height too small → the textarea ate into the
-    // message column or hid the user's bottom row of typing.
-    //
-    // Replicate the same sidebar-width math the layout below uses
-    // so we get the right number first try (no chicken-and-egg).
+    // Input box width = full terminal width minus the input's own
+    // chrome: 2 border cols + 2 padding cols + 2 prompt-strip cols
+    // = 6 cols. The earlier "subtract sidebars" math was wrong —
+    // sidebars only split `chunks[0]` (the messages row); the
+    // input lives in `chunks[4]` which gets the FULL terminal
+    // width regardless of which sidebars are open. So the wrap
+    // estimate must use full width too, otherwise input_height is
+    // over-counted when sidebars are visible (estimated wrap at a
+    // narrower phantom width = more visual rows than the real
+    // render produces) and the input box ends up taller than
+    // needed, eating into the message column.
     let total_w_pre = f.area().width as usize;
-    let show_left_pre = app.show_sidebar;
-    let show_right_pre = app.show_info_sidebar && f.area().width >= 100;
-    let left_w_pre = if show_left_pre {
-        (total_w_pre / 5).clamp(20, 32)
-    } else {
-        0
-    };
-    let right_w_pre = if show_right_pre {
-        if total_w_pre < 140 {
-            32
-        } else {
-            (total_w_pre / 6).clamp(36, 48)
-        }
-    } else {
-        0
-    };
-    let mid_w_pre = total_w_pre.saturating_sub(left_w_pre + right_w_pre);
-    let input_content_w = mid_w_pre.saturating_sub(6);
+    let input_content_w = total_w_pre.saturating_sub(6);
     let input_lines = input_visual_line_count(app, input_content_w);
     let input_height = (input_lines + 2).min(8) as u16;
     // Two rows when in task view: tab strip on top, key-hint row
@@ -1550,6 +1550,23 @@ fn session_row(
     ListItem::new(vec![line1, line2])
 }
 
+/// Render the messages column. Computes `total_lines` at the same
+/// width MessageView will actually render at, sets `scroll_offset`
+/// (pinning to the bottom when `follow_bottom` is true), and hands
+/// off to `MessageView`. Bug-prone arithmetic — every column the
+/// width is off by triggers a follow-bottom miscount, so this fn
+/// gets the most tracing.
+#[tracing::instrument(
+    target = "jfc::render::messages",
+    level = "trace",
+    skip(f, app),
+    fields(
+        x = area.x,
+        y = area.y,
+        w = area.width,
+        h = area.height,
+    ),
+)]
 fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     use crate::message_view::MessageView;
     use ratatui::widgets::Widget;
@@ -1590,11 +1607,27 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     let visible = area.height.saturating_sub(2) as usize;
     app.viewport_height = visible;
 
+    let scroll_before = app.scroll_offset;
     if app.follow_bottom {
         app.scroll_offset = total_lines.saturating_sub(visible);
     } else if app.scroll_offset + visible > total_lines {
         app.scroll_offset = total_lines.saturating_sub(visible);
     }
+    // Trace the scroll math result. Bug class this catches: when
+    // `total_lines` is undercounted (width mismatch), `scroll_offset`
+    // gets pinned to a value smaller than the true bottom row,
+    // leaving the latest content offscreen. Compare `total_lines`
+    // here against actual rendered height to spot off-by-N errors.
+    tracing::trace!(
+        target: "jfc::render::scroll",
+        inner_width,
+        total_lines,
+        visible,
+        scroll_before,
+        scroll_after = app.scroll_offset,
+        follow_bottom = app.follow_bottom,
+        "messages scroll math"
+    );
 
     let at_bottom = app.is_at_bottom();
     let title_right = if !at_bottom {
@@ -2720,6 +2753,23 @@ fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
+/// Render the input box. Hot path — runs every frame including
+/// while the user is typing. Tracing here catches wrap miscounts
+/// (the textarea's reported cursor column vs the rendered cell
+/// position), prompt-mode dispatch, and edit-mode flips.
+#[tracing::instrument(
+    target = "jfc::render::input",
+    level = "trace",
+    skip(f, app),
+    fields(
+        x = area.x,
+        y = area.y,
+        w = area.width,
+        h = area.height,
+        editing = app.editing_message_idx.is_some(),
+        streaming = app.is_streaming,
+    ),
+)]
 fn input(f: &mut Frame, app: &mut App, area: Rect) {
     let t = app.theme;
     // Boxed input with rounded border. The prompt char sits INLINE
@@ -2862,8 +2912,17 @@ fn input(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|line| Line::from(input_line_to_spans(line, t, rainbow_phase)))
         .collect::<Vec<_>>();
 
+    // `.wrap(Wrap{trim:false})` — without it, ratatui falls back to
+    // `LineTruncator` and any visible line longer than `inner.width`
+    // cells gets clipped at the right edge. `input_soft_wrapped_lines`
+    // pre-wraps to fit, but pre-wrapping is char-count based; for
+    // multi-cell unicode (CJK / emoji / fullwidth punctuation) the
+    // pre-wrapped line was N chars but 2N cells wide → second half
+    // disappeared.
     f.render_widget(
-        Paragraph::new(visible).style(Style::default().bg(t.surface)),
+        Paragraph::new(visible)
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .style(Style::default().bg(t.surface)),
         inner,
     );
 
@@ -2928,9 +2987,12 @@ fn input_visual_line_count(app: &App, content_width: usize) -> usize {
 }
 
 fn input_soft_wrapped_lines(app: &App, content_width: usize) -> (Vec<String>, usize, usize) {
+    use unicode_width::UnicodeWidthChar;
+
     let width = content_width.max(1);
     let logical_lines = app.textarea.lines();
-    let cursor = app.textarea.cursor(); let (cursor_line, cursor_col) = (cursor.0, cursor.1);
+    let cursor = app.textarea.cursor();
+    let (cursor_line, cursor_col) = (cursor.0, cursor.1);
     let mut out = Vec::new();
     let mut visual_cursor_row = 0usize;
     let mut visual_cursor_col = 0usize;
@@ -2941,11 +3003,36 @@ fn input_soft_wrapped_lines(app: &App, content_width: usize) -> (Vec<String>, us
     }
 
     for (line_idx, line) in logical_lines.iter().enumerate() {
-        let wrapped = markdown::hard_wrap_str(line, width);
         if line_idx == cursor_line {
-            visual_cursor_row = out.len() + cursor_col / width;
-            visual_cursor_col = cursor_col % width;
+            // The textarea reports `cursor_col` as a CHAR INDEX, but
+            // `hard_wrap_str` now wraps by CELL WIDTH. Convert by
+            // walking the line up to the cursor's character index,
+            // accumulating cell widths, and tracking which wrap row
+            // the running total falls into.
+            //
+            // Earlier this used `cursor_col / width` and
+            // `cursor_col % width` — correct only when 1 char = 1
+            // cell. For CJK / emoji / fullwidth chars (each 2 cells)
+            // the cursor displayed in the wrong visual position,
+            // sometimes offscreen, and pre-wrapped lines didn't
+            // line up with the rendered cell columns.
+            let mut col_width = 0usize;
+            let mut wrap_row = 0usize;
+            for (i, ch) in line.chars().enumerate() {
+                if i >= cursor_col {
+                    break;
+                }
+                let cw = UnicodeWidthChar::width(ch).unwrap_or(1);
+                if cw > 0 && col_width + cw > width {
+                    wrap_row += 1;
+                    col_width = 0;
+                }
+                col_width += cw;
+            }
+            visual_cursor_row = out.len() + wrap_row;
+            visual_cursor_col = col_width;
         }
+        let wrapped = markdown::hard_wrap_str(line, width);
         out.extend(wrapped);
     }
 
@@ -4650,5 +4737,208 @@ mod mcp_tests {
     fn mcp_status_color_error_is_error_normal() {
         let t = Theme::dark();
         assert_eq!(mcp_status_color(McpStatus::Error, t), t.error);
+    }
+}
+
+#[cfg(test)]
+mod render_helpers_tests {
+    use super::*;
+    use crate::theme::Theme;
+
+    fn t() -> Theme {
+        Theme::dark()
+    }
+
+    // ─── pulse_color ───────────────────────────────────────────────
+    // Normal: t=0 returns c1, t=1 returns c2, t=0.5 returns midpoint.
+    #[test]
+    fn pulse_color_endpoints_normal() {
+        let c1 = Color::Rgb(0, 0, 0);
+        let c2 = Color::Rgb(200, 100, 50);
+        assert_eq!(pulse_color(c1, c2, 0.0), Color::Rgb(0, 0, 0));
+        assert_eq!(pulse_color(c1, c2, 1.0), Color::Rgb(200, 100, 50));
+        // Midpoint blend.
+        if let Color::Rgb(r, g, b) = pulse_color(c1, c2, 0.5) {
+            assert!((r as i32 - 100).abs() <= 1);
+            assert!((g as i32 - 50).abs() <= 1);
+            assert!((b as i32 - 25).abs() <= 1);
+        } else {
+            panic!("expected Rgb");
+        }
+    }
+
+    // Robust: ANSI-named colors (no RGB triple) fall back to the
+    // start color since blending isn't well-defined.
+    #[test]
+    fn pulse_color_named_falls_back_robust() {
+        assert_eq!(pulse_color(Color::Red, Color::Blue, 0.5), Color::Red);
+    }
+
+    // Robust: `t` outside [0,1] gets clamped via interpolate_rgb.
+    #[test]
+    fn pulse_color_clamps_t_robust() {
+        let c1 = Color::Rgb(0, 0, 0);
+        let c2 = Color::Rgb(255, 255, 255);
+        // t = -1 should clamp to 0 → c1
+        assert_eq!(pulse_color(c1, c2, -1.0), Color::Rgb(0, 0, 0));
+        // t = 5 should clamp to 1 → c2
+        assert_eq!(pulse_color(c1, c2, 5.0), Color::Rgb(255, 255, 255));
+    }
+
+    // ─── tail_truncate ─────────────────────────────────────────────
+    // Normal: short input fits, returns unchanged.
+    #[test]
+    fn tail_truncate_short_unchanged_normal() {
+        assert_eq!(tail_truncate("hello", 10), "hello");
+    }
+
+    // Normal: long input keeps the tail with a `…/` prefix.
+    #[test]
+    fn tail_truncate_keeps_tail_normal() {
+        let s = "/home/cole/RustProjects/active/jfc";
+        let truncated = tail_truncate(s, 12);
+        assert!(truncated.starts_with("…/"));
+        assert!(truncated.ends_with("jfc"));
+        assert!(truncated.chars().count() <= 12);
+    }
+
+    // Robust: max=0 returns empty (no panic).
+    #[test]
+    fn tail_truncate_zero_max_robust() {
+        assert_eq!(tail_truncate("anything", 0), "");
+    }
+
+    // Robust: max < 4 (too narrow for "…/") falls back to head truncation.
+    #[test]
+    fn tail_truncate_narrow_falls_back_robust() {
+        let s = "long/path/here";
+        let result = tail_truncate(s, 3);
+        // Should not panic, should be 3 cells or fewer.
+        assert!(result.chars().count() <= 3);
+    }
+
+    // ─── wrap_text_to_width ────────────────────────────────────────
+    // Normal: text shorter than width returns one line.
+    #[test]
+    fn wrap_text_short_one_line_normal() {
+        let lines = wrap_text_to_width("hello world", 30);
+        assert_eq!(lines, vec!["hello world"]);
+    }
+
+    // Normal: long text wraps at word boundaries.
+    #[test]
+    fn wrap_text_word_wraps_normal() {
+        let lines = wrap_text_to_width("one two three four five", 10);
+        // Each line should be ≤ 10 chars, breaking at spaces.
+        for l in &lines {
+            assert!(l.chars().count() <= 10, "line too long: {l:?}");
+            assert!(!l.trim().is_empty(), "blank line in middle: {lines:?}");
+        }
+    }
+
+    // Robust: a single word longer than width gets truncated with `…`
+    // so it doesn't bleed off the edge.
+    #[test]
+    fn wrap_text_oversize_word_truncates_robust() {
+        let lines = wrap_text_to_width("supercalifragilistic", 8);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].chars().count() <= 8);
+        assert!(lines[0].ends_with('…') || lines[0].chars().count() < 8);
+    }
+
+    // Robust: width=0 returns one empty line, no panic.
+    #[test]
+    fn wrap_text_zero_width_robust() {
+        let lines = wrap_text_to_width("anything", 0);
+        assert_eq!(lines, vec![String::new()]);
+    }
+
+    // Robust: empty input returns one empty line so callers can
+    // unconditionally `.push(Line::from(row))`.
+    #[test]
+    fn wrap_text_empty_input_robust() {
+        let lines = wrap_text_to_width("", 20);
+        assert_eq!(lines, vec![String::new()]);
+    }
+
+    // (path_color tests live alongside the `message_view::path_color`
+    // helper so they can use the in-module function directly without
+    // needing a re-export.)
+
+    // ─── parse_prompt_mode ─────────────────────────────────────────
+    // Normal: each named preset parses to its variant.
+    #[test]
+    fn parse_prompt_mode_named_presets_normal() {
+        assert!(matches!(parse_prompt_mode(":comet"), PromptMode::Comet));
+        assert!(matches!(parse_prompt_mode(":moon"), PromptMode::Moon));
+        assert!(matches!(parse_prompt_mode(":dice"), PromptMode::Dice));
+        assert!(matches!(parse_prompt_mode(":notes"), PromptMode::Notes));
+        assert!(matches!(parse_prompt_mode(":hourglass"), PromptMode::Hourglass));
+        assert!(matches!(parse_prompt_mode(":atom"), PromptMode::Atom));
+    }
+
+    // Normal: aliases resolve to the same variant.
+    #[test]
+    fn parse_prompt_mode_aliases_normal() {
+        assert!(matches!(parse_prompt_mode(":moons"), PromptMode::Moon));
+        assert!(matches!(parse_prompt_mode(":die"), PromptMode::Dice));
+        assert!(matches!(parse_prompt_mode(":music"), PromptMode::Notes));
+        assert!(matches!(parse_prompt_mode(":time"), PromptMode::Hourglass));
+    }
+
+    // Normal: bare char becomes Static.
+    #[test]
+    fn parse_prompt_mode_bare_char_static_normal() {
+        if let PromptMode::Static(s) = parse_prompt_mode("⌬") {
+            assert_eq!(s, "⌬");
+        } else {
+            panic!("expected Static");
+        }
+    }
+
+    // Robust: empty input falls through to default Comet.
+    #[test]
+    fn parse_prompt_mode_empty_default_robust() {
+        assert!(matches!(parse_prompt_mode(""), PromptMode::Comet));
+    }
+
+    // Robust: a too-long literal (>2 chars) falls through to default.
+    #[test]
+    fn parse_prompt_mode_long_literal_default_robust() {
+        assert!(matches!(parse_prompt_mode("abcd"), PromptMode::Comet));
+    }
+
+    // ─── prompt_mode_frame ─────────────────────────────────────────
+    // Normal: comet returns the comet glyph regardless of streaming/ms.
+    #[test]
+    fn prompt_mode_frame_comet_constant_normal() {
+        assert_eq!(prompt_mode_frame(&PromptMode::Comet, false, 0), "☄");
+        assert_eq!(prompt_mode_frame(&PromptMode::Comet, true, 1234), "☄");
+    }
+
+    // Normal: moon idle is full moon, streaming cycles through 4 phases.
+    #[test]
+    fn prompt_mode_frame_moon_cycle_normal() {
+        assert_eq!(prompt_mode_frame(&PromptMode::Moon, false, 0), "●");
+        // Frame at ms=0 is FRAMES[0] = "○".
+        assert_eq!(prompt_mode_frame(&PromptMode::Moon, true, 0), "○");
+        // Frame at ms=250 is FRAMES[1] = "◐".
+        assert_eq!(prompt_mode_frame(&PromptMode::Moon, true, 250), "◐");
+    }
+
+    // Normal: dice idle stays at ⚀, streaming shuffles.
+    #[test]
+    fn prompt_mode_frame_dice_idle_normal() {
+        assert_eq!(prompt_mode_frame(&PromptMode::Dice, false, 0), "⚀");
+        // Streaming at ms=0 is the first face.
+        assert_eq!(prompt_mode_frame(&PromptMode::Dice, true, 0), "⚀");
+    }
+
+    // Robust: hourglass flips every 800ms.
+    #[test]
+    fn prompt_mode_frame_hourglass_flip_robust() {
+        assert_eq!(prompt_mode_frame(&PromptMode::Hourglass, true, 0), "⌛");
+        assert_eq!(prompt_mode_frame(&PromptMode::Hourglass, true, 800), "⌚");
+        assert_eq!(prompt_mode_frame(&PromptMode::Hourglass, true, 1600), "⌛");
     }
 }

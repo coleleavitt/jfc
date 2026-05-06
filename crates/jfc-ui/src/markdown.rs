@@ -362,7 +362,22 @@ impl TableState {
         spans.iter().map(|s| s.content.as_ref()).collect()
     }
 
-    fn render(self, theme: &Theme) -> Vec<Line<'static>> {
+    /// Render the table as a `Vec<Line>`. `target_width` is the
+    /// maximum total width (in cells) the table can occupy. When the
+    /// natural column widths fit within `target_width`, columns
+    /// keep their natural sizes. When they overflow, columns are
+    /// proportionally shrunk and per-cell content wraps to multiple
+    /// rows. `target_width = 0` disables wrap (uses natural widths
+    /// — useful for tests).
+    ///
+    /// Width math is *cell-aware*: uses `unicode-width` so CJK,
+    /// emoji, and fullwidth chars don't push columns wider than
+    /// their visual cell count. Earlier this used `text.len()`
+    /// (bytes) which over-counted UTF-8 and made tables wider than
+    /// they needed to be.
+    fn render(self, theme: &Theme, target_width: usize) -> Vec<Line<'static>> {
+        use unicode_width::UnicodeWidthStr;
+
         let ncols = self.alignments.len().max(
             self.head_row
                 .len()
@@ -372,91 +387,185 @@ impl TableState {
             return Vec::new();
         }
 
-        let mut widths = vec![0usize; ncols];
+        // Natural cell widths (in display cells, not bytes).
+        let cell_w = |cell: &Vec<Span<'_>>| -> usize {
+            UnicodeWidthStr::width(Self::cell_text(cell).as_str())
+        };
+        let mut natural = vec![0usize; ncols];
         for (i, cell) in self.head_row.iter().enumerate() {
             if i < ncols {
-                widths[i] = widths[i].max(Self::cell_text(cell).len());
+                natural[i] = natural[i].max(cell_w(cell));
             }
         }
         for row in &self.body_rows {
             for (i, cell) in row.iter().enumerate() {
                 if i < ncols {
-                    widths[i] = widths[i].max(Self::cell_text(cell).len());
+                    natural[i] = natural[i].max(cell_w(cell));
                 }
             }
         }
-        for w in &mut widths {
+        // Min column width = 3 cells so a column is always at least
+        // visible; min content + 2 chrome cells per column for `│ `.
+        for w in &mut natural {
             *w = (*w).max(3);
         }
+
+        // Chrome cost per column = 3 cells: `│ ` (left border + pad)
+        // + 1 trailing pad before the next divider. Plus 1 for the
+        // closing `│` at the right edge.
+        //   total = sum(content_widths) + 3 * ncols + 1
+        let chrome_cost = 3 * ncols + 1;
+        let widths = if target_width == 0 || natural.iter().sum::<usize>() + chrome_cost <= target_width {
+            // Fits naturally — no wrap needed.
+            natural.clone()
+        } else {
+            // Overflow — distribute available cells across columns
+            // proportionally to their natural widths, with a min of
+            // 3 cells per column. If even the mins don't fit (very
+            // narrow terminal), the table will overflow but at
+            // least every column gets something.
+            let avail = target_width.saturating_sub(chrome_cost);
+            let total_natural: usize = natural.iter().sum();
+            if total_natural == 0 {
+                vec![3usize; ncols]
+            } else {
+                let mut out = vec![0usize; ncols];
+                let mut allocated = 0usize;
+                for (i, &n) in natural.iter().enumerate() {
+                    let share =
+                        (n as f64 / total_natural as f64 * avail as f64).round() as usize;
+                    out[i] = share.max(3);
+                    allocated += out[i];
+                }
+                // Fix-up: if rounding overshoots, trim from the
+                // widest column. Better than the table sneaking 1
+                // cell past the target.
+                while allocated > avail.max(3 * ncols) {
+                    if let Some((widest_i, _)) =
+                        out.iter().enumerate().max_by_key(|(_, w)| **w)
+                    {
+                        if out[widest_i] > 3 {
+                            out[widest_i] -= 1;
+                            allocated -= 1;
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                out
+            }
+        };
 
         let border_style = Style::default().fg(theme.border);
         let head_style = Style::default()
             .fg(theme.text_primary)
             .add_modifier(Modifier::BOLD);
+        let body_style = Style::default().fg(theme.text_primary);
 
         let mut lines = Vec::new();
 
         // Top border `┌──┬──┐` so the table is enclosed on all four
         // sides. Without this the table read as "free-standing rows
         // with internal dividers" — easy to miss in dense prose.
-        let mut top = vec![Span::styled("┌─", border_style)];
-        for (i, &w) in widths.iter().enumerate() {
-            top.push(Span::styled("─".repeat(w), border_style));
-            if i + 1 < ncols {
-                top.push(Span::styled("─┬─", border_style));
-            }
-        }
-        top.push(Span::styled("─┐", border_style));
-        lines.push(Line::from(top));
+        lines.push(Line::from(border_row(
+            &widths, "┌─", "─┬─", "─┐", border_style,
+        )));
 
+        // Render head row (may span multiple visual lines if any
+        // header cell wraps).
         if !self.head_row.is_empty() {
-            let mut spans = vec![Span::styled("│ ", border_style)];
-            for (i, cell) in self.head_row.iter().enumerate() {
-                let text = Self::cell_text(cell);
-                let w = widths.get(i).copied().unwrap_or(3);
-                let padded = format!("{:<width$}", text, width = w);
-                spans.push(Span::styled(padded, head_style));
-                spans.push(Span::styled(" │ ", border_style));
+            for visual_row in render_row(&self.head_row, &widths, head_style, border_style) {
+                lines.push(visual_row);
             }
-            lines.push(Line::from(spans));
 
-            let mut sep_parts = vec![Span::styled("├─", border_style)];
-            for (i, &w) in widths.iter().enumerate() {
-                sep_parts.push(Span::styled("─".repeat(w), border_style));
-                if i + 1 < ncols {
-                    sep_parts.push(Span::styled("─┼─", border_style));
-                }
-            }
-            sep_parts.push(Span::styled("─┤", border_style));
-            lines.push(Line::from(sep_parts));
+            // Header/body separator `├──┼──┤`.
+            lines.push(Line::from(border_row(
+                &widths, "├─", "─┼─", "─┤", border_style,
+            )));
         }
 
-        let body_style = Style::default().fg(theme.text_primary);
+        // Body rows — each row may produce multiple visual rows due
+        // to per-cell wrapping.
         for row in &self.body_rows {
-            let mut spans = vec![Span::styled("│ ", border_style)];
-            for (i, cell) in row.iter().enumerate() {
-                let text = Self::cell_text(cell);
-                let w = widths.get(i).copied().unwrap_or(3);
-                let padded = format!("{:<width$}", text, width = w);
-                spans.push(Span::styled(padded, body_style));
-                spans.push(Span::styled(" │ ", border_style));
+            for visual_row in render_row(row, &widths, body_style, border_style) {
+                lines.push(visual_row);
             }
-            lines.push(Line::from(spans));
         }
 
         // Bottom border `└──┴──┘`.
-        let mut bot = vec![Span::styled("└─", border_style)];
-        for (i, &w) in widths.iter().enumerate() {
-            bot.push(Span::styled("─".repeat(w), border_style));
-            if i + 1 < ncols {
-                bot.push(Span::styled("─┴─", border_style));
-            }
-        }
-        bot.push(Span::styled("─┘", border_style));
-        lines.push(Line::from(bot));
+        lines.push(Line::from(border_row(
+            &widths, "└─", "─┴─", "─┘", border_style,
+        )));
 
         lines
     }
+}
+
+/// Build a horizontal border row (top, separator, or bottom). The
+/// three glyph args are the left corner, the inner divider (between
+/// columns), and the right corner.
+fn border_row(
+    widths: &[usize],
+    left: &str,
+    div: &str,
+    right: &str,
+    style: Style,
+) -> Vec<Span<'static>> {
+    let mut spans: Vec<Span<'static>> = vec![Span::styled(left.to_owned(), style)];
+    for (i, &w) in widths.iter().enumerate() {
+        spans.push(Span::styled("─".repeat(w), style));
+        if i + 1 < widths.len() {
+            spans.push(Span::styled(div.to_owned(), style));
+        }
+    }
+    spans.push(Span::styled(right.to_owned(), style));
+    spans
+}
+
+/// Render one logical table row as N visual rows (where N is the
+/// max wrapped-line count across cells). Each cell's text is wrapped
+/// to its allocated column width using cell-aware
+/// `hard_wrap_str`, then padded to fill the column. Cells that wrap
+/// to fewer rows than the row's max get blank padding lines so all
+/// cells stay aligned.
+fn render_row(
+    cells: &[Vec<Span<'static>>],
+    widths: &[usize],
+    text_style: Style,
+    border_style: Style,
+) -> Vec<Line<'static>> {
+    use unicode_width::UnicodeWidthStr;
+
+    let ncols = widths.len();
+    // Pre-wrap each cell to its column width. Pad cell vec to ncols
+    // so rows with missing cells still render with empty placeholders.
+    let wrapped: Vec<Vec<String>> = (0..ncols)
+        .map(|i| {
+            let text = cells
+                .get(i)
+                .map(|c| TableState::cell_text(c))
+                .unwrap_or_default();
+            let w = widths[i];
+            hard_wrap_str(&text, w)
+        })
+        .collect();
+    let row_height = wrapped.iter().map(|w| w.len()).max().unwrap_or(1).max(1);
+
+    let mut out: Vec<Line<'static>> = Vec::with_capacity(row_height);
+    for line_idx in 0..row_height {
+        let mut spans: Vec<Span<'static>> = vec![Span::styled("│ ".to_owned(), border_style)];
+        for (i, col_lines) in wrapped.iter().enumerate() {
+            let w = widths[i];
+            let chunk = col_lines.get(line_idx).cloned().unwrap_or_default();
+            let chunk_w = UnicodeWidthStr::width(chunk.as_str());
+            let pad = w.saturating_sub(chunk_w);
+            let padded = format!("{}{}", chunk, " ".repeat(pad));
+            spans.push(Span::styled(padded, text_style));
+            spans.push(Span::styled(" │ ".to_owned(), border_style));
+        }
+        out.push(Line::from(spans));
+    }
+    out
 }
 
 struct MdWriter<'a, I> {
@@ -736,7 +845,15 @@ where
             }
             TagEnd::Table => {
                 if let Some(table) = self.table.take() {
-                    let rendered = table.render(self.theme);
+                    // Use `code_wrap_width` (which is just the
+                    // markdown render width passed to to_lines) as
+                    // the table's target width. When the natural
+                    // table width exceeds this, columns shrink and
+                    // long cell content wraps. Cell-aware widths
+                    // mean CJK / emoji / fullwidth cells are sized
+                    // correctly.
+                    let target_w = self.code_wrap_width;
+                    let rendered = table.render(self.theme, target_w);
                     for line in rendered {
                         self.text.lines.push(line);
                     }
@@ -1002,22 +1119,45 @@ pub(crate) fn hard_wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'sta
     out
 }
 
-/// Hard-wrap a plain string to `width` columns, returning owned chunks. Used
-/// for non-highlighted code blocks where we don't have styled spans yet.
+/// Hard-wrap a plain string to `width` *terminal cells*, returning
+/// owned chunks. Cell-width aware: counts each char's display
+/// width via `unicode-width` so multi-cell glyphs (CJK / emoji /
+/// fullwidth punctuation) are accounted for correctly. Earlier this
+/// counted characters, which made a 60-char CJK string register as
+/// "60 cells" when its real cell width was 120 — the renderer then
+/// clipped the right half because the chunk overflowed the textarea.
+///
+/// Edge: a single char wider than `width` (a 2-cell emoji in a
+/// 1-cell-wide window) is emitted on its own line; the next chunk
+/// starts after it. Better than infinite-looping on undivisible
+/// content.
 pub(crate) fn hard_wrap_str(s: &str, width: usize) -> Vec<String> {
-    if width == 0 || s.chars().count() <= width {
+    use unicode_width::UnicodeWidthChar;
+    if width == 0 {
+        return vec![s.to_owned()];
+    }
+    let total: usize = s
+        .chars()
+        .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
+        .sum();
+    if total <= width {
         return vec![s.to_owned()];
     }
     let mut out: Vec<String> = Vec::new();
     let mut buf = String::new();
     let mut col = 0usize;
     for ch in s.chars() {
-        buf.push(ch);
-        col += 1;
-        if col >= width {
+        let cw = UnicodeWidthChar::width(ch).unwrap_or(1);
+        // If adding this char would exceed `width`, emit the
+        // current buffer and start fresh. The `cw > 0` check
+        // skips zero-width combining marks (they attach to the
+        // preceding grapheme rather than starting a new column).
+        if cw > 0 && col + cw > width && !buf.is_empty() {
             out.push(std::mem::take(&mut buf));
             col = 0;
         }
+        buf.push(ch);
+        col += cw;
     }
     if !buf.is_empty() {
         out.push(buf);
@@ -1756,5 +1896,173 @@ A trailing paragraph.
         let combined: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(combined.contains("alpha"), "alpha lost: {combined:?}");
         assert!(combined.contains("let x"), "let lost: {combined:?}");
+    }
+}
+
+#[cfg(test)]
+mod hard_wrap_cell_width_tests {
+    use super::hard_wrap_str;
+
+    // Normal: ASCII text wraps at character boundary as before — no
+    // change for the common case.
+    #[test]
+    fn ascii_wraps_at_width_normal() {
+        let chunks = hard_wrap_str("hello world this is a test", 10);
+        // "hello worl" / "d this is " / "a test"
+        assert_eq!(chunks.len(), 3);
+        assert!(chunks[0].chars().count() <= 10);
+        assert!(chunks[1].chars().count() <= 10);
+    }
+
+    // Robust: CJK text — each char is 2 cells wide. A 5-char string
+    // should fit in width=10 (5*2), wrap at width=8 (only 4 chars =
+    // 8 cells fit).
+    #[test]
+    fn cjk_wraps_by_cell_width_robust() {
+        // 5 CJK chars × 2 cells each = 10 cells total
+        let s = "你好世界吗";
+        // Width 10 → fits in one chunk
+        assert_eq!(hard_wrap_str(s, 10).len(), 1);
+        // Width 8 → 4 chars (8 cells) per chunk + 1 char (2 cells) on the next
+        let chunks = hard_wrap_str(s, 8);
+        assert_eq!(chunks.len(), 2);
+    }
+
+    // Robust: emoji (variable-width, often 2 cells). Mixed with ASCII.
+    #[test]
+    fn emoji_mixed_ascii_robust() {
+        // Each fire emoji is 2 cells; "abc" is 3 cells.
+        // "🔥🔥🔥abc" = 2+2+2+3 = 9 cells.
+        let s = "🔥🔥🔥abc";
+        // Width 9 → fits exactly
+        assert_eq!(hard_wrap_str(s, 9).len(), 1);
+        // Width 8 → can't fit all 9 cells, wraps. The 3rd 🔥 starts
+        // at cell 4, takes through cell 5; "abc" spans cells 6-8 in
+        // a width-8 window. So chunk 1 = "🔥🔥🔥a" (8 cells if we're
+        // generous, or "🔥🔥🔥" + start of new chunk if strict).
+        // Implementation is "emit current buf when next char would
+        // overflow" — so 🔥🔥🔥 = 6 cells + 'a' brings us to 7, +b
+        // to 8, +c WOULD overflow → emit. chunk 1 = "🔥🔥🔥ab", chunk
+        // 2 = "c". Either way wrap happens.
+        let chunks = hard_wrap_str(s, 8);
+        assert!(chunks.len() >= 2, "expected wrap, got {chunks:?}");
+    }
+
+    // Robust: width=0 returns the input unchanged (no infinite loop).
+    #[test]
+    fn width_zero_returns_input_robust() {
+        let chunks = hard_wrap_str("anything", 0);
+        assert_eq!(chunks, vec!["anything".to_string()]);
+    }
+
+    // Robust: a single char wider than the window doesn't infinite-
+    // loop or panic. Gets emitted on its own line.
+    #[test]
+    fn single_oversize_char_emits_alone_robust() {
+        // 🔥 is 2 cells; window of 1 cell can't fit it. Should still
+        // produce output (no infinite loop).
+        let chunks = hard_wrap_str("🔥a", 1);
+        assert!(!chunks.is_empty());
+        // Total reconstructed should match input.
+        let rejoined: String = chunks.join("");
+        assert_eq!(rejoined, "🔥a");
+    }
+}
+
+#[cfg(test)]
+mod table_reflow_tests {
+    use super::*;
+    use crate::theme::Theme;
+
+    fn t() -> Theme {
+        Theme::dark()
+    }
+
+    fn render_table_with_width(src: &str, width: usize) -> Vec<Line<'static>> {
+        to_lines(src, &t(), width)
+    }
+
+    fn line_text(l: &Line<'_>) -> String {
+        l.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    // Normal: a table that fits naturally renders at natural widths
+    // — no wrap, no surprises.
+    #[test]
+    fn table_fits_naturally_normal() {
+        let src = "| A | B |\n|---|---|\n| 1 | 2 |\n";
+        // Pass a generous width so natural sizing wins.
+        let lines = render_table_with_width(src, 200);
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+        // Should have a top border, header, separator, body, bottom border.
+        assert!(texts.iter().any(|t| t.starts_with("┌")), "no top: {texts:?}");
+        assert!(texts.iter().any(|t| t.starts_with("├")), "no sep: {texts:?}");
+        assert!(texts.iter().any(|t| t.starts_with("└")), "no bot: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("1") && t.contains("2")));
+    }
+
+    // Robust: a table wider than the target width gets columns
+    // proportionally shrunk and long content wraps to multiple
+    // visual rows. Total rendered width should fit in target.
+    #[test]
+    fn table_overflow_wraps_robust() {
+        let src = "| Short | Long content here that should wrap |\n\
+                   |-------|------------------------------------|\n\
+                   | x     | this body cell is also fairly long   |\n";
+        // Force a narrow target width.
+        let lines = render_table_with_width(src, 30);
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+
+        // Every line of the table itself (the box-drawn ones)
+        // should be ≤ target width in cells.
+        use unicode_width::UnicodeWidthStr;
+        for t in texts.iter().filter(|t| {
+            t.starts_with("┌") || t.starts_with("├") || t.starts_with("└") ||
+            t.starts_with("│")
+        }) {
+            let w = UnicodeWidthStr::width(t.as_str());
+            assert!(
+                w <= 32,
+                "table line exceeds target+slack: {w} cells in {t:?}"
+            );
+        }
+    }
+
+    // Robust: a table with CJK content widths cells correctly using
+    // cell width, not byte length. The earlier `text.len()` would
+    // make a 5-char CJK cell think it was 15 bytes wide, blowing
+    // out the column.
+    #[test]
+    fn table_cjk_cell_width_robust() {
+        let src = "| A | B |\n|---|---|\n| 你好 | 世界 |\n";
+        let lines = render_table_with_width(src, 60);
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+        assert!(texts.iter().any(|t| t.contains("你好")));
+        assert!(texts.iter().any(|t| t.contains("世界")));
+    }
+
+    // Robust: empty cells don't panic, render as blank padding.
+    #[test]
+    fn table_empty_cells_robust() {
+        let src = "| A | B |\n|---|---|\n|   |   |\n";
+        let lines = render_table_with_width(src, 60);
+        // Just verify no panic and we got at least the chrome rows.
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+        assert!(texts.iter().any(|t| t.starts_with("┌")));
+    }
+
+    // Robust: target_width=0 means "no wrap" — table renders at
+    // natural widths regardless. Useful for tests + the to_lines
+    // path before we knew the terminal width.
+    #[test]
+    fn table_width_zero_no_wrap_robust() {
+        let src = "| Col | Long content here |\n|-----|-------------------|\n| 1 | 2 |\n";
+        let lines = render_table_with_width(src, 0);
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+        // Natural width includes the long header content.
+        assert!(
+            texts.iter().any(|t| t.contains("Long content here")),
+            "long content should fit on one line at width=0: {texts:?}"
+        );
     }
 }

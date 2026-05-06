@@ -20,6 +20,13 @@ tokio = { workspace = true, features = ["full"] }
 tokio-stream = "0.1"
 futures = { workspace = true }
 anyhow = { workspace = true }
+# Cell-width aware string measurement. Used by the input wrap to
+# correctly handle CJK / emoji / full-width chars (those occupy 2
+# terminal cells per char). Without it `hard_wrap_str` was wrapping
+# at character count, so 60 chars of CJK rendered as 120 cells —
+# overshot the textarea width and got clipped by `LineTruncator`,
+# making typed text disappear at the right edge.
+unicode-width = "0.2"
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"

@@ -3979,3 +3979,67 @@ mod bash_chain_tests {
         assert!(parse_grep_line(line).is_none());
     }
 }
+
+#[cfg(test)]
+mod path_color_tests {
+    use super::*;
+    use crate::theme::Theme;
+
+    fn t() -> Theme {
+        Theme::dark()
+    }
+
+    // Normal: code extensions get the accent color so paths in grep
+    // results stand out as code files.
+    #[test]
+    fn path_color_code_extensions_normal() {
+        let theme = t();
+        for path in &["main.rs", "src/foo.go", "scripts/run.py", "app.ts"] {
+            assert_eq!(
+                path_color(path, theme),
+                theme.accent,
+                "{path} should be accent"
+            );
+        }
+    }
+
+    // Normal: config / data files get text_secondary so they
+    // visually demote below code.
+    #[test]
+    fn path_color_config_extensions_normal() {
+        let theme = t();
+        assert_eq!(path_color("Cargo.toml", theme), theme.text_secondary);
+        assert_eq!(path_color("package.json", theme), theme.text_secondary);
+        assert_eq!(path_color("config.yaml", theme), theme.text_secondary);
+        assert_eq!(path_color(".env", theme), theme.text_muted); // no ext
+    }
+
+    // Normal: docs (md, txt, rst) get text_primary (white) so they
+    // stand out as readable content.
+    #[test]
+    fn path_color_doc_extensions_normal() {
+        let theme = t();
+        assert_eq!(path_color("README.md", theme), theme.text_primary);
+        assert_eq!(path_color("notes.txt", theme), theme.text_primary);
+    }
+
+    // Robust: unknown extension falls back to text_muted (least
+    // attention-grabbing).
+    #[test]
+    fn path_color_unknown_falls_back_robust() {
+        let theme = t();
+        assert_eq!(path_color("file.xyz", theme), theme.text_muted);
+        assert_eq!(path_color("noext", theme), theme.text_muted);
+        assert_eq!(path_color("", theme), theme.text_muted);
+    }
+
+    // Robust: extension matching is case-insensitive — a path like
+    // `MAIN.RS` (some Windows tools emit uppercase) still resolves
+    // to the Rust accent color.
+    #[test]
+    fn path_color_case_insensitive_robust() {
+        let theme = t();
+        assert_eq!(path_color("Main.RS", theme), theme.accent);
+        assert_eq!(path_color("CONFIG.TOML", theme), theme.text_secondary);
+    }
+}
