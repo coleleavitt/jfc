@@ -1418,4 +1418,541 @@ mod thinking_gate_tests {
         assert!(!model_supports_thinking("claude-haiku-4-5"));
         assert!(!model_supports_adaptive_thinking("claude-haiku-4-5"));
     }
+
+    // ── is_proxy_routed_model: each prefix is its own equivalence class ──
+
+    // Normal: every documented proxy prefix returns true. The renderer +
+    // stream pipeline decide whether to send `thinking` based on this gate,
+    // so adding a new proxy means adding a row here.
+    #[test]
+    fn is_proxy_routed_recognizes_all_prefixes_normal() {
+        for id in [
+            "bedrock-claude-4-6-opus",
+            "aws-claude-4-6-opus",
+            "vertex-claude-4-6-opus",
+            "litellm-claude-4-6-opus",
+            "openrouter-claude-4-6-opus",
+            "openwebui-claude-4-6-opus",
+        ] {
+            assert!(is_proxy_routed_model(id), "expected proxy match for {id}");
+        }
+    }
+
+    // Robust: case-insensitive matching — uppercase variants must still hit
+    // the proxy rules. v126's gate normalizes via lowercase before checking.
+    #[test]
+    fn is_proxy_routed_is_case_insensitive_robust() {
+        assert!(is_proxy_routed_model("BEDROCK-CLAUDE-4-6-OPUS"));
+        assert!(is_proxy_routed_model("Vertex-Claude"));
+    }
+
+    // Robust: an Anthropic-native id (no proxy prefix) is NOT classified as
+    // proxy-routed even though it contains substrings that look prefix-like.
+    #[test]
+    fn is_proxy_routed_native_anthropic_negative_robust() {
+        assert!(!is_proxy_routed_model("claude-opus-4-7"));
+        assert!(!is_proxy_routed_model("claude-sonnet-4-6"));
+        assert!(!is_proxy_routed_model("claude-haiku-4-5"));
+    }
+
+    // Robust: empty string defaults to false — the unknown-model code paths
+    // shouldn't be tricked into the proxy branch by garbage inputs.
+    #[test]
+    fn is_proxy_routed_empty_returns_false_robust() {
+        assert!(!is_proxy_routed_model(""));
+    }
+
+    // ── max_output_tokens_for: every model family has a tested branch ────
+
+    // Normal: 4.x extended-output Opus / Sonnet → 128k. The single test
+    // validates each variant arm of the lowercase contains() chain.
+    #[test]
+    fn max_output_4x_extended_normal() {
+        assert_eq!(max_output_tokens_for("claude-opus-4-7"), 128_000);
+        assert_eq!(max_output_tokens_for("claude-opus-4-6"), 128_000);
+        assert_eq!(max_output_tokens_for("claude-sonnet-4-6"), 128_000);
+        assert_eq!(max_output_tokens_for("claude-sonnet-4-5"), 128_000);
+        // Future-proofing: 5.x lands in the same bucket.
+        assert_eq!(max_output_tokens_for("claude-opus-5-0"), 128_000);
+        assert_eq!(max_output_tokens_for("claude-sonnet-5-0"), 128_000);
+    }
+
+    // Normal: Haiku 4.5 caps at 16k — distinct from Opus/Sonnet 4.x even
+    // though both share the "4.5" version segment.
+    #[test]
+    fn max_output_haiku_4_5_normal() {
+        assert_eq!(max_output_tokens_for("claude-haiku-4-5"), 16_384);
+        assert_eq!(max_output_tokens_for("claude-haiku-4-5-20251001"), 16_384);
+    }
+
+    // Normal: 3.x families get 8k. Distinct from the 4.x branch above.
+    #[test]
+    fn max_output_legacy_opus_sonnet_normal() {
+        assert_eq!(max_output_tokens_for("claude-3-7-sonnet-20250219"), 8_192);
+        assert_eq!(max_output_tokens_for("claude-opus-3-5"), 8_192);
+    }
+
+    // Robust: an unknown / proxy-routed id falls through to the safe v126
+    // default of 16k. Matches the comment-documented contract.
+    #[test]
+    fn max_output_unknown_falls_back_robust() {
+        assert_eq!(max_output_tokens_for("bedrock-claude-mystery"), 16_384);
+        assert_eq!(max_output_tokens_for("totally-new-model"), 16_384);
+        assert_eq!(max_output_tokens_for(""), 16_384);
+    }
+
+    // Robust: case-insensitive — the helper lowercases internally so
+    // PascalCase or all-caps ids resolve correctly.
+    #[test]
+    fn max_output_case_insensitive_robust() {
+        assert_eq!(max_output_tokens_for("CLAUDE-OPUS-4-7"), 128_000);
+        assert_eq!(max_output_tokens_for("Claude-Haiku-4-5"), 16_384);
+    }
+
+    // ── model_supports_thinking edge cases ───────────────────────────────
+
+    // Robust: Sonnet 4.4 (a hypothetical or pre-release) should NOT light up
+    // adaptive thinking — only 4.5+ Sonnet families do. Catches off-by-one
+    // version bumps.
+    #[test]
+    fn sonnet_below_4_5_is_not_adaptive_robust() {
+        assert!(!model_supports_adaptive_thinking("claude-sonnet-4-0"));
+        assert!(!model_supports_adaptive_thinking("claude-sonnet-3-7"));
+    }
+
+    // Normal: legacy-thinking sonnet 4.5 returns true on the budget branch
+    // (used as the second arm in stream_response after adaptive).
+    #[test]
+    fn sonnet_4_5_supports_thinking_normal() {
+        assert!(model_supports_thinking("claude-sonnet-4-5"));
+        assert!(model_supports_thinking("claude-sonnet-4-5-20250929"));
+    }
+}
+
+#[cfg(test)]
+mod build_provider_messages_tests {
+    use super::*;
+
+    fn user_msg(text: &str) -> ChatMessage {
+        let mut m = ChatMessage::user(text.to_owned());
+        m.parts = vec![MessagePart::Text(text.to_owned())];
+        m
+    }
+
+    fn assistant_msg(text: &str) -> ChatMessage {
+        let mut m = ChatMessage::assistant(text.to_owned());
+        m.parts = vec![MessagePart::Text(text.to_owned())];
+        m
+    }
+
+    fn assistant_with_parts(parts: Vec<MessagePart>) -> ChatMessage {
+        ChatMessage::assistant_parts(parts)
+    }
+
+    fn make_tool_call(id: &str, kind: ToolKind, status: ToolStatus, output: ToolOutput) -> ToolCall {
+        ToolCall {
+            id: id.to_owned(),
+            kind,
+            status,
+            input: ToolInput::Generic { summary: "x".into() },
+            output,
+            is_collapsed: false,
+            expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
+        }
+    }
+
+    // Normal: text-only conversation maps 1:1 to ProviderMessage::Text. The
+    // ensure_user_last invariant kicks in if the conversation ended with the
+    // assistant turn — we exercise that elsewhere.
+    #[test]
+    fn build_text_only_normal() {
+        let msgs = vec![user_msg("hi"), assistant_msg("hello")];
+        let out = build_provider_messages(&msgs);
+        // Three messages: user, assistant, synthetic-user-trailer.
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].role, ProviderRole::User);
+        assert_eq!(out[1].role, ProviderRole::Assistant);
+        assert_eq!(out[2].role, ProviderRole::User);
+    }
+
+    // Normal: a message with multiple text parts joins them with newlines so
+    // the model sees a single coherent block per turn.
+    #[test]
+    fn build_multi_text_part_joins_with_newlines_normal() {
+        let m = ChatMessage {
+            role: Role::User,
+            parts: vec![
+                MessagePart::Text("first".into()),
+                MessagePart::Text("second".into()),
+            ],
+            agent_name: None,
+            model_name: None,
+            cost_tier: None,
+            elapsed: None,
+            usage: None,
+        };
+        let out = build_provider_messages(&[m]);
+        assert_eq!(out.len(), 1);
+        match &out[0].content[0] {
+            ProviderContent::Text(t) => assert_eq!(t, "first\nsecond"),
+            _ => panic!("expected text content"),
+        }
+    }
+
+    // Robust: empty / whitespace-only messages drop out entirely so the API
+    // doesn't see a degenerate user turn (which Bedrock rejects with 400).
+    #[test]
+    fn build_drops_empty_text_messages_robust() {
+        let m = ChatMessage {
+            role: Role::User,
+            parts: vec![MessagePart::Text(String::new())],
+            agent_name: None,
+            model_name: None,
+            cost_tier: None,
+            elapsed: None,
+            usage: None,
+        };
+        let out = build_provider_messages(&[m]);
+        // Empty input → nothing emitted, ensure_user_last leaves the result
+        // empty too because there's no trailing assistant to fix up.
+        assert!(out.is_empty());
+    }
+
+    // Robust: empty input produces empty output (no synthetic injection on
+    // a fully-empty conversation).
+    #[test]
+    fn build_empty_input_robust() {
+        let out = build_provider_messages(&[]);
+        assert!(out.is_empty());
+    }
+
+    // ── build_provider_messages_with_tool_results ─────────────────────────
+
+    // Normal: assistant turn with a completed tool produces a 2-message pair
+    // — the assistant's tool_use, then the user's tool_result.
+    #[test]
+    fn build_with_tool_results_completed_pair_normal() {
+        let tool = make_tool_call(
+            "toolu_a",
+            ToolKind::Bash,
+            ToolStatus::Complete,
+            ToolOutput::Text("hello world".into()),
+        );
+        let msgs = vec![
+            user_msg("run ls"),
+            assistant_with_parts(vec![MessagePart::Tool(tool)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        // user, assistant(tool_use), user(tool_result)
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[1].role, ProviderRole::Assistant);
+        match &out[1].content[0] {
+            ProviderContent::ToolUse { id, .. } => assert_eq!(id, "toolu_a"),
+            _ => panic!("expected ToolUse"),
+        }
+        assert_eq!(out[2].role, ProviderRole::User);
+        match &out[2].content[0] {
+            ProviderContent::ToolResult { tool_use_id, content, is_error } => {
+                assert_eq!(tool_use_id, "toolu_a");
+                assert_eq!(content, "hello world");
+                assert!(!is_error);
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    // Normal: a Failed tool surfaces as is_error=true so the model can react
+    // to the failure on its next turn.
+    #[test]
+    fn build_with_tool_results_failed_marks_is_error_normal() {
+        let tool = make_tool_call(
+            "toolu_b",
+            ToolKind::Bash,
+            ToolStatus::Failed,
+            ToolOutput::Text("permission denied".into()),
+        );
+        let msgs = vec![
+            user_msg("run rm -rf /"),
+            assistant_with_parts(vec![MessagePart::Tool(tool)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        let last = out.last().unwrap();
+        match &last.content[0] {
+            ProviderContent::ToolResult { is_error, .. } => {
+                assert!(*is_error, "Failed tool must be flagged is_error");
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    // Robust: a Pending / Running tool was abandoned (the user moved on
+    // without approving). The builder synthesizes a stub error result so the
+    // API sees a well-formed tool_result for every tool_use — Anthropic 400s
+    // on orphaned tool_use blocks.
+    #[test]
+    fn build_with_tool_results_pending_synthesizes_abandoned_stub_robust() {
+        let tool = make_tool_call(
+            "toolu_orphan",
+            ToolKind::Bash,
+            ToolStatus::Pending,
+            ToolOutput::Empty,
+        );
+        let msgs = vec![
+            user_msg("hi"),
+            assistant_with_parts(vec![MessagePart::Tool(tool)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        let last = out.last().unwrap();
+        match &last.content[0] {
+            ProviderContent::ToolResult { content, is_error, .. } => {
+                assert!(*is_error, "abandoned tool must be flagged is_error");
+                assert!(
+                    content.contains("abandoned"),
+                    "abandoned-tool stub must mention abandonment, got: {content}"
+                );
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    // Normal: Command output formats to "exit/stdout/stderr" tri-line.
+    #[test]
+    fn build_with_tool_results_command_output_formats_normal() {
+        let tool = make_tool_call(
+            "toolu_c",
+            ToolKind::Bash,
+            ToolStatus::Complete,
+            ToolOutput::Command {
+                stdout: "ok\n".into(),
+                stderr: String::new(),
+                exit_code: Some(0),
+            },
+        );
+        let msgs = vec![
+            user_msg("run"),
+            assistant_with_parts(vec![MessagePart::Tool(tool)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        let last = out.last().unwrap();
+        match &last.content[0] {
+            ProviderContent::ToolResult { content, .. } => {
+                assert!(content.contains("exit: 0"));
+                assert!(content.contains("stdout: ok"));
+                assert!(content.contains("stderr:"));
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    // Normal: FileContent → content string passes through untouched.
+    #[test]
+    fn build_with_tool_results_file_content_normal() {
+        let tool = make_tool_call(
+            "toolu_d",
+            ToolKind::Read,
+            ToolStatus::Complete,
+            ToolOutput::FileContent {
+                path: "/tmp/x.rs".into(),
+                content: "fn main() {}".into(),
+                language: "rust".into(),
+            },
+        );
+        let msgs = vec![
+            user_msg("read x.rs"),
+            assistant_with_parts(vec![MessagePart::Tool(tool)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        match &out.last().unwrap().content[0] {
+            ProviderContent::ToolResult { content, .. } => {
+                assert_eq!(content, "fn main() {}");
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    // Normal: FileList output → joined-with-newlines.
+    #[test]
+    fn build_with_tool_results_file_list_normal() {
+        let tool = make_tool_call(
+            "toolu_e",
+            ToolKind::Glob,
+            ToolStatus::Complete,
+            ToolOutput::FileList(vec!["/a".into(), "/b".into(), "/c".into()]),
+        );
+        let msgs = vec![
+            user_msg("glob"),
+            assistant_with_parts(vec![MessagePart::Tool(tool)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        match &out.last().unwrap().content[0] {
+            ProviderContent::ToolResult { content, .. } => {
+                assert_eq!(content, "/a\n/b\n/c");
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    // Normal: an assistant turn that has both prose AND a tool emits both
+    // content blocks in order — text first, then tool_use. Anthropic relies
+    // on this ordering to render the chain-of-thought.
+    #[test]
+    fn build_with_tool_results_text_and_tool_in_order_normal() {
+        let tool = make_tool_call(
+            "toolu_f",
+            ToolKind::Bash,
+            ToolStatus::Complete,
+            ToolOutput::Text("ok".into()),
+        );
+        let msgs = vec![
+            user_msg("hi"),
+            assistant_with_parts(vec![
+                MessagePart::Text("I'll run it.".into()),
+                MessagePart::Tool(tool),
+            ]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        // out[1] is the assistant turn — content[0]=text, content[1]=tool_use.
+        assert_eq!(out[1].content.len(), 2);
+        assert!(matches!(out[1].content[0], ProviderContent::Text(_)));
+        assert!(matches!(out[1].content[1], ProviderContent::ToolUse { .. }));
+    }
+
+    // Robust: multiple tools in one assistant turn produce one tool_result
+    // per tool, all in the same trailing user message — Anthropic requires
+    // batched tool_result blocks to share a single message.
+    #[test]
+    fn build_with_tool_results_batched_results_robust() {
+        let t1 = make_tool_call("a", ToolKind::Bash, ToolStatus::Complete, ToolOutput::Text("1".into()));
+        let t2 = make_tool_call("b", ToolKind::Read, ToolStatus::Complete, ToolOutput::Text("2".into()));
+        let msgs = vec![
+            user_msg("hi"),
+            assistant_with_parts(vec![MessagePart::Tool(t1), MessagePart::Tool(t2)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        // Tool-result message is the last (no synthetic-user trailer needed).
+        let last = out.last().unwrap();
+        assert_eq!(last.role, ProviderRole::User);
+        assert_eq!(last.content.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod truncate_more_tests {
+    use super::*;
+
+    // Robust: an exact-cap-length input passes through unchanged (no
+    // truncation marker injected). Boundary value test: cap is the threshold
+    // at which truncation begins.
+    #[test]
+    fn truncate_at_exact_cap_passes_through_robust() {
+        let s: String = "x".repeat(MAX_TOOL_RESULT_CHARS);
+        let out = truncate_tool_result(&s);
+        assert_eq!(out, s);
+        assert!(!out.contains("bytes omitted"));
+    }
+
+    // Robust: a one-byte-over-cap input gets truncated. Verifies the >
+    // boundary in `if s.len() <= MAX_TOOL_RESULT_CHARS`.
+    #[test]
+    fn truncate_one_over_cap_does_truncate_robust() {
+        let s: String = "y".repeat(MAX_TOOL_RESULT_CHARS + 1);
+        let out = truncate_tool_result(&s);
+        assert!(out.contains("bytes omitted"));
+    }
+
+    // Normal: floor_char_boundary at byte 0 returns 0; at the end returns len.
+    #[test]
+    fn floor_char_boundary_endpoints_normal() {
+        let s = "hello";
+        assert_eq!(floor_char_boundary(s, 0), 0);
+        assert_eq!(floor_char_boundary(s, s.len()), s.len());
+        assert_eq!(floor_char_boundary(s, 100), s.len());
+    }
+
+    // Normal: ceil_char_boundary at byte 0 returns 0; at the end returns len.
+    #[test]
+    fn ceil_char_boundary_endpoints_normal() {
+        let s = "hello";
+        assert_eq!(ceil_char_boundary(s, 0), 0);
+        assert_eq!(ceil_char_boundary(s, s.len()), s.len());
+        assert_eq!(ceil_char_boundary(s, 100), s.len());
+    }
+}
+
+#[cfg(test)]
+mod should_continue_loop_tests {
+    use super::*;
+
+    fn assistant_with_tool(status: ToolStatus) -> ChatMessage {
+        ChatMessage::assistant_parts(vec![MessagePart::Tool(ToolCall {
+            id: "toolu_x".into(),
+            kind: ToolKind::Bash,
+            status,
+            input: ToolInput::Generic { summary: "x".into() },
+            output: ToolOutput::Empty,
+            is_collapsed: false,
+            expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
+        })])
+    }
+
+    // Normal: when the last assistant has all tools Complete, the loop
+    // continues so the agent gets a chance to react to the tool results.
+    #[test]
+    fn continues_when_all_tools_complete_normal() {
+        let msgs = vec![assistant_with_tool(ToolStatus::Complete)];
+        assert!(should_continue_loop(&msgs));
+    }
+
+    // Normal: a Failed tool also signals "go again" — the agent might try
+    // a different approach.
+    #[test]
+    fn continues_when_tool_failed_normal() {
+        let msgs = vec![assistant_with_tool(ToolStatus::Failed)];
+        assert!(should_continue_loop(&msgs));
+    }
+
+    // Robust: a Pending tool means the user hasn't approved yet, so the loop
+    // does NOT continue (we'd send a half-assembled state to the model).
+    #[test]
+    fn does_not_continue_when_tool_pending_robust() {
+        let msgs = vec![assistant_with_tool(ToolStatus::Pending)];
+        assert!(!should_continue_loop(&msgs));
+    }
+
+    // Robust: a Running tool is still in flight — the loop must wait.
+    #[test]
+    fn does_not_continue_when_tool_running_robust() {
+        let msgs = vec![assistant_with_tool(ToolStatus::Running)];
+        assert!(!should_continue_loop(&msgs));
+    }
+
+    // Normal: assistant turn with no tools (pure prose) → loop terminates.
+    // The agent finished its turn cleanly.
+    #[test]
+    fn does_not_continue_for_text_only_assistant_normal() {
+        let msgs = vec![ChatMessage::assistant("done".into())];
+        assert!(!should_continue_loop(&msgs));
+    }
+
+    // Robust: empty conversation → no continuation. Used when the session is
+    // freshly resumed and there's nothing to react to.
+    #[test]
+    fn does_not_continue_when_no_assistant_robust() {
+        let msgs = vec![ChatMessage::user("hi".into())];
+        assert!(!should_continue_loop(&msgs));
+    }
+
+    // Robust: completely empty message list — defensive check for the
+    // resume-from-disk code path.
+    #[test]
+    fn does_not_continue_on_empty_messages_robust() {
+        let msgs: Vec<ChatMessage> = vec![];
+        assert!(!should_continue_loop(&msgs));
+    }
 }

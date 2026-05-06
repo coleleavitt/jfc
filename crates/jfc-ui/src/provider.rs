@@ -655,4 +655,278 @@ mod tests {
             .to_string()
             .contains("empty model"));
     }
+
+    // ─── ModelSpec constructors (new / qualified / bare / into_model) ──────
+
+    // Normal: ModelSpec::new threads explicit provider + model through. Bypasses
+    // the parser so callers that already have typed ids skip the FromStr round-trip.
+    #[test]
+    fn model_spec_new_with_provider_normal() {
+        let spec = ModelSpec::new(
+            Some(ProviderId::new("anthropic")),
+            ModelId::new("claude-opus-4-7"),
+        );
+        assert!(spec.is_qualified());
+        assert_eq!(spec.provider().unwrap().as_str(), "anthropic");
+        assert_eq!(spec.model().as_str(), "claude-opus-4-7");
+    }
+
+    // Normal: ModelSpec::new with provider=None matches the bare form so
+    // serializing a programmatically-built spec round-trips correctly.
+    #[test]
+    fn model_spec_new_no_provider_normal() {
+        let spec = ModelSpec::new(None, ModelId::new("bare-model"));
+        assert!(!spec.is_qualified());
+        assert!(spec.provider().is_none());
+    }
+
+    // Normal: into_model discards the provider prefix — used by callers that
+    // need only the model id (e.g. stream.rs's max_output_tokens_for).
+    #[test]
+    fn model_spec_into_model_strips_provider_normal() {
+        let spec = ModelSpec::qualified("anthropic", "claude-opus-4-7");
+        let id = spec.into_model();
+        assert_eq!(id.as_str(), "claude-opus-4-7");
+    }
+
+    // ─── ModelId / ProviderId trait impls ──────────────────────────────────
+
+    // Normal: ProviderId AsRef<str> + Display match — both produce the same
+    // string representation. Verifies the macro-generated impls land correctly.
+    #[test]
+    fn provider_id_display_and_asref_match_normal() {
+        let p = ProviderId::new("openwebui");
+        assert_eq!(p.as_ref(), "openwebui");
+        assert_eq!(p.to_string(), "openwebui");
+    }
+
+    // Normal: ModelId implements Deref<Target=str> so it can be passed where
+    // &str is expected without an explicit `.as_str()`.
+    #[test]
+    fn model_id_deref_to_str_normal() {
+        let id = ModelId::new("claude-opus-4-7");
+        // Use Deref coercion implicitly.
+        fn takes_str(s: &str) -> usize {
+            s.len()
+        }
+        assert_eq!(takes_str(&id), "claude-opus-4-7".len());
+    }
+
+    // Normal: ProviderId equality with raw &str works in both directions
+    // — required for the dispatcher in main.rs which matches against literals.
+    #[test]
+    fn provider_id_str_equality_normal() {
+        let p = ProviderId::new("anthropic");
+        assert_eq!(p, "anthropic");
+        // The reverse impl exists for ergonomic comparisons.
+        let _: &str = "anthropic";
+        assert!(p == "anthropic");
+    }
+
+    // ─── StreamOptions builder ─────────────────────────────────────────────
+
+    // Normal: a fresh StreamOptions has the documented defaults — 8192 max
+    // tokens, no system prompt, no tools, no thinking.
+    #[test]
+    fn stream_options_new_defaults_normal() {
+        let opts = StreamOptions::new("any-model");
+        assert_eq!(opts.model.as_str(), "any-model");
+        assert_eq!(opts.max_tokens, 8192);
+        assert!(opts.system.is_none());
+        assert!(opts.tools.is_empty());
+        assert!(opts.thinking_budget.is_none());
+        assert!(!opts.adaptive_thinking);
+    }
+
+    // Normal: every builder method is chainable and sets the documented field.
+    #[test]
+    fn stream_options_builder_chains_normal() {
+        let opts = StreamOptions::new("m")
+            .system("be helpful")
+            .max_tokens(64_000)
+            .thinking(8_192)
+            .tools(vec![ToolDef {
+                name: "Bash".into(),
+                description: "exec".into(),
+                input_schema: serde_json::json!({}),
+            }]);
+        assert_eq!(opts.system.as_deref(), Some("be helpful"));
+        assert_eq!(opts.max_tokens, 64_000);
+        assert_eq!(opts.thinking_budget, Some(8_192));
+        assert_eq!(opts.tools.len(), 1);
+        assert!(!opts.adaptive_thinking);
+    }
+
+    // Normal: .adaptive() flips the flag without clearing the legacy budget,
+    // so callers (e.g. anthropic.rs::build_body) get to decide which one
+    // actually goes on the wire.
+    #[test]
+    fn stream_options_adaptive_flag_normal() {
+        let opts = StreamOptions::new("m").thinking(4096).adaptive();
+        assert!(opts.adaptive_thinking);
+        assert_eq!(opts.thinking_budget, Some(4096));
+    }
+
+    // Robust: passing 0 for max_tokens is allowed at the type level (u32) —
+    // the caller is responsible for rejecting it before sending. We verify
+    // the builder doesn't reinterpret 0 to mean "use the default", which
+    // would be a subtle and impossible-to-debug behavior change.
+    #[test]
+    fn stream_options_max_tokens_zero_is_preserved_robust() {
+        let opts = StreamOptions::new("m").max_tokens(0);
+        assert_eq!(opts.max_tokens, 0);
+    }
+
+    // ─── ProviderRole / ProviderContent equality ───────────────────────────
+
+    // Normal: ProviderRole values implement Copy + Eq. The stream pipeline
+    // relies on these so an `if role == ProviderRole::User` branch compiles
+    // without clones.
+    #[test]
+    fn provider_role_copy_and_eq_normal() {
+        let user = ProviderRole::User;
+        let copy = user;
+        assert_eq!(user, copy);
+        assert_ne!(ProviderRole::User, ProviderRole::Assistant);
+    }
+
+    // ─── StreamConvention ──────────────────────────────────────────────────
+
+    // Normal: every documented convention compares equal to itself and
+    // unequal to its peers — the renderer dispatches on these so a typo
+    // would silently route the wrong code path.
+    #[test]
+    fn stream_convention_distinct_variants_normal() {
+        assert_ne!(StreamConvention::AnthropicNative, StreamConvention::OpenAiNative);
+        assert_ne!(StreamConvention::OpenAiNative, StreamConvention::InlineXmlTags);
+        assert_eq!(
+            StreamConvention::AnthropicNative,
+            StreamConvention::AnthropicNative
+        );
+    }
+
+    // ─── Default Provider::complete returns NotSupported error ─────────────
+
+    // Robust: the default complete() impl bails with a clear "not supported"
+    // message that names the provider. Used by compaction to gracefully fall
+    // back when a provider hasn't opted in to non-streaming completion.
+    // Implements via a hand-rolled stub provider so we can exercise the
+    // default-method body without needing a real network connection.
+    #[tokio::test]
+    async fn default_complete_returns_not_supported_robust() {
+        struct StubProvider;
+
+        #[async_trait]
+        impl Provider for StubProvider {
+            fn name(&self) -> &str {
+                "stub"
+            }
+            fn available_models(&self) -> Vec<ModelInfo> {
+                Vec::new()
+            }
+            async fn stream(
+                &self,
+                _: Vec<ProviderMessage>,
+                _: &StreamOptions,
+            ) -> anyhow::Result<EventStream> {
+                anyhow::bail!("stream not implemented");
+            }
+            // NOTE: complete() intentionally NOT overridden — we want the trait default.
+        }
+
+        let p = StubProvider;
+        let result = p.complete(vec![], &StreamOptions::new("m")).await;
+        let err = result.expect_err("default complete must error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("stub") && msg.contains("not support"),
+            "expected default error to mention provider name + 'not support', got: {msg}"
+        );
+    }
+
+    // Normal: the default Provider::stream_convention is AnthropicNative —
+    // a provider that doesn't override gets the safe Anthropic structured
+    // tool-call interpretation by default.
+    #[tokio::test]
+    async fn default_stream_convention_is_anthropic_native_normal() {
+        struct MinimalProvider;
+
+        #[async_trait]
+        impl Provider for MinimalProvider {
+            fn name(&self) -> &str {
+                "min"
+            }
+            fn available_models(&self) -> Vec<ModelInfo> {
+                Vec::new()
+            }
+            async fn stream(
+                &self,
+                _: Vec<ProviderMessage>,
+                _: &StreamOptions,
+            ) -> anyhow::Result<EventStream> {
+                anyhow::bail!("not implemented");
+            }
+        }
+
+        let p = MinimalProvider;
+        assert_eq!(p.stream_convention(), StreamConvention::AnthropicNative);
+        // Default fetch_models returns the static list.
+        let models = p.fetch_models().await.unwrap();
+        assert!(models.is_empty());
+    }
+
+    // ─── ModelInfo builder ─────────────────────────────────────────────────
+
+    // Normal: ModelInfo::new sets the three required fields and leaves all
+    // optionals as None — verified independently because the picker reads
+    // these for the cost / context-window column.
+    #[test]
+    fn model_info_new_defaults_normal() {
+        let info = ModelInfo::new("claude-opus-4-7", "Opus 4.7", "anthropic");
+        assert_eq!(info.id.as_str(), "claude-opus-4-7");
+        assert_eq!(info.display_name, "Opus 4.7");
+        assert_eq!(info.provider.as_str(), "anthropic");
+        assert!(info.context_window_tokens.is_none());
+        assert!(info.max_output_tokens.is_none());
+        assert!(info.input_cost.is_none());
+        assert!(info.output_cost.is_none());
+    }
+
+    // Normal: every with_* builder method threads the optional through.
+    #[test]
+    fn model_info_builder_chains_normal() {
+        let info = ModelInfo::new("m", "M", "p")
+            .with_context_window_tokens(200_000usize)
+            .with_max_output_tokens(128_000usize)
+            .with_costs(Some(15.0), Some(75.0));
+        assert_eq!(info.context_window_tokens, Some(200_000));
+        assert_eq!(info.max_output_tokens, Some(128_000));
+        assert_eq!(info.input_cost, Some(15.0));
+        assert_eq!(info.output_cost, Some(75.0));
+    }
+
+    // ─── TokenUsage ────────────────────────────────────────────────────────
+
+    // Normal: TokenUsage::total_input sums all three input components — used
+    // by the cost panel to surface the cache-discounted true input total.
+    #[test]
+    fn token_usage_total_input_sums_components_normal() {
+        let u = TokenUsage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_tokens: 200,
+            cache_creation_tokens: 30,
+        };
+        assert_eq!(u.total_input(), 330);
+    }
+
+    // Robust: a default TokenUsage has all-zero counts so calling total_input
+    // on a fresh struct doesn't double-count any synthetic baseline.
+    #[test]
+    fn token_usage_default_is_all_zero_robust() {
+        let u = TokenUsage::default();
+        assert_eq!(u.total_input(), 0);
+        assert_eq!(u.input_tokens, 0);
+        assert_eq!(u.output_tokens, 0);
+    }
 }

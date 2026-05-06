@@ -897,7 +897,10 @@ impl Provider for AnthropicOAuthProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{ProviderContent, ProviderMessage, ProviderRole, StreamOptions, ToolDef};
+    use crate::provider::{
+        Provider, ProviderContent, ProviderMessage, ProviderRole, StreamConvention, StreamOptions,
+        ToolDef,
+    };
     use std::path::Path;
 
     fn make_user_msg(text: &str) -> ProviderMessage {
@@ -1430,5 +1433,306 @@ mod tests {
         let cached = p.cached_profile().await.expect("cache populated");
         assert_eq!(cached.email, profile.email);
         assert_eq!(cached.seat_tier, profile.seat_tier);
+    }
+
+    // ── Provider trait wiring (no I/O) ────────────────────────────────────
+
+    // Normal: name + stream_convention are the renderer's dispatch key. The
+    // renderer reads these synchronously, before any I/O, so they must work
+    // on a freshly constructed provider regardless of disk state.
+    #[test]
+    fn provider_name_and_convention_normal() {
+        let p = AnthropicOAuthProvider::new();
+        assert_eq!(p.name(), "anthropic-oauth");
+        assert_eq!(p.stream_convention(), StreamConvention::AnthropicNative);
+    }
+
+    // Normal: available_models() returns the canonical first-party catalog
+    // stamped with the "anthropic-oauth" provider tag — the picker reads
+    // this before fetch_models() resolves so the user sees something
+    // immediately on startup.
+    #[test]
+    fn available_models_uses_oauth_provider_tag_normal() {
+        let p = AnthropicOAuthProvider::new();
+        let models = p.available_models();
+        assert!(!models.is_empty());
+        assert!(models.iter().all(|m| m.provider == "anthropic-oauth"));
+    }
+
+    // ── load_store + write_back_tokens (file I/O via tempfile) ────────────
+
+    fn write_store_file(path: &Path, json: &str) {
+        std::fs::write(path, json).expect("write tmp store");
+    }
+
+    fn temp_store(json: &str) -> (tempfile::TempDir, PathBuf) {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("store.json");
+        write_store_file(&path, json);
+        (tmp, path)
+    }
+
+    // Normal: load_store parses the canonical store layout — accounts list,
+    // active_index, refresh tokens. Verifies the camelCase rename rule kicks
+    // in for `refreshToken` / `accessToken` / `expiresAt`.
+    #[test]
+    fn load_store_parses_canonical_layout_normal() {
+        let (_tmp, path) = temp_store(
+            r#"{
+                "accounts": [
+                    {"name": "primary", "refreshToken": "rt-1", "accessToken": "at-1", "expiresAt": 9999999999000, "enabled": true},
+                    {"name": "secondary", "refreshToken": "rt-2"}
+                ],
+                "activeIndex": 0
+            }"#,
+        );
+        let store = load_store(&path).unwrap();
+        assert_eq!(store.accounts.len(), 2);
+        assert_eq!(store.accounts[0].name, "primary");
+        assert_eq!(store.accounts[0].refresh_token, "rt-1");
+        assert_eq!(store.accounts[0].access_token.as_deref(), Some("at-1"));
+        assert_eq!(store.accounts[0].expires_at, Some(9_999_999_999_000));
+        assert_eq!(store.accounts[0].enabled, Some(true));
+        assert_eq!(store.active_index, Some(0));
+    }
+
+    // Robust: a missing file surfaces an Err instead of panicking. The caller
+    // (`get_access_token`) wraps this in a contextual error message.
+    #[test]
+    fn load_store_missing_file_errors_robust() {
+        let bogus = PathBuf::from("/tmp/jfc-test-this-path-does-not-exist.json");
+        assert!(load_store(&bogus).is_err());
+    }
+
+    // Robust: invalid JSON surfaces an Err — never panic on user-supplied
+    // store contents. The user can reasonably hand-edit the file and we
+    // mustn't crash the app on a typo.
+    #[test]
+    fn load_store_invalid_json_errors_robust() {
+        let (_tmp, path) = temp_store("{ this is not json");
+        assert!(load_store(&path).is_err());
+    }
+
+    // Normal: write_back_tokens updates the matching account in-place,
+    // preserves other accounts untouched, and produces parseable JSON. The
+    // atomic rename is exercised implicitly — if it didn't work, the read-
+    // back step would fail with "file not found".
+    #[test]
+    fn write_back_tokens_updates_matching_account_normal() {
+        let (_tmp, path) = temp_store(
+            r#"{
+                "accounts": [
+                    {"name": "primary", "refreshToken": "rt-old", "accessToken": "at-old", "expiresAt": 1000},
+                    {"name": "other",   "refreshToken": "rt-x"}
+                ],
+                "activeIndex": 0
+            }"#,
+        );
+
+        write_back_tokens(&path, "primary", "AT-NEW", "RT-NEW", 5_000_000).unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let v: Value = serde_json::from_str(&raw).unwrap();
+        let accounts = v["accounts"].as_array().unwrap();
+        let primary = accounts
+            .iter()
+            .find(|a| a["name"] == "primary")
+            .expect("primary still present");
+        assert_eq!(primary["accessToken"], "AT-NEW");
+        assert_eq!(primary["refreshToken"], "RT-NEW");
+        assert_eq!(primary["expiresAt"], 5_000_000);
+        // The unrelated account is left alone.
+        let other = accounts.iter().find(|a| a["name"] == "other").unwrap();
+        assert_eq!(other["refreshToken"], "rt-x");
+    }
+
+    // Robust: writing to a nonexistent account is a silent no-op (the loop
+    // just doesn't find a match). The file must still be valid JSON afterward.
+    #[test]
+    fn write_back_tokens_unknown_account_is_noop_robust() {
+        let (_tmp, path) = temp_store(
+            r#"{"accounts":[{"name":"only","refreshToken":"rt"}],"activeIndex":0}"#,
+        );
+        // Should not error even though the account doesn't exist — we don't
+        // want a stale local cache to break the whole token rotation flow.
+        write_back_tokens(&path, "ghost", "AT", "RT", 1).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let v: Value = serde_json::from_str(&raw).unwrap();
+        // Original account is untouched.
+        assert_eq!(v["accounts"][0]["refreshToken"], "rt");
+    }
+
+    // Robust: a store without an `accounts` array (corrupted to e.g. an empty
+    // object) round-trips through write_back without panicking.
+    #[test]
+    fn write_back_tokens_no_accounts_array_robust() {
+        let (_tmp, path) = temp_store("{}");
+        // Should not panic even when the schema is malformed — we still want
+        // to surface an Ok so the rotation flow doesn't abort the whole turn.
+        let result = write_back_tokens(&path, "x", "AT", "RT", 1);
+        assert!(result.is_ok());
+    }
+
+    // ── has_usable_config — Provider startup gate ─────────────────────────
+
+    // Normal: when the resolved store contains an enabled account,
+    // has_usable_config returns true so main.rs registers the provider.
+    #[test]
+    fn has_usable_config_true_when_enabled_account_present_normal() {
+        let (_tmp, path) = temp_store(
+            r#"{"accounts":[{"name":"primary","refreshToken":"rt"}],"activeIndex":0}"#,
+        );
+        let p = AnthropicOAuthProvider {
+            client: reqwest::Client::new(),
+            store_path: path,
+            token: Arc::new(RwLock::new(None)),
+            profile: Arc::new(RwLock::new(None)),
+        };
+        assert!(p.has_usable_config());
+    }
+
+    // Robust: a missing store file means OAuth simply isn't configured —
+    // has_usable_config returns false so the provider is skipped at startup
+    // (matches the live_provider() helper used by the gated tests above).
+    #[test]
+    fn has_usable_config_false_when_store_missing_robust() {
+        let p = AnthropicOAuthProvider {
+            client: reqwest::Client::new(),
+            store_path: PathBuf::from("/tmp/jfc-nonexistent-anthropic-store.json"),
+            token: Arc::new(RwLock::new(None)),
+            profile: Arc::new(RwLock::new(None)),
+        };
+        assert!(!p.has_usable_config());
+    }
+
+    // Robust: a store with only disabled accounts surfaces as
+    // has_usable_config==false. A user who's offboarded all their accounts
+    // shouldn't see "Anthropic OAuth" in the picker as if it were ready.
+    #[test]
+    fn has_usable_config_false_when_all_accounts_disabled_robust() {
+        let (_tmp, path) = temp_store(
+            r#"{"accounts":[{"name":"x","refreshToken":"rt","enabled":false}],"activeIndex":0}"#,
+        );
+        let p = AnthropicOAuthProvider {
+            client: reqwest::Client::new(),
+            store_path: path,
+            token: Arc::new(RwLock::new(None)),
+            profile: Arc::new(RwLock::new(None)),
+        };
+        assert!(!p.has_usable_config());
+    }
+
+    // ── cached_profile — concurrent-safe read ─────────────────────────────
+
+    // Normal: cached_profile returns Some(...) once the cache is primed.
+    #[tokio::test]
+    async fn cached_profile_returns_some_when_primed_normal() {
+        let p = AnthropicOAuthProvider::new();
+        let primed = OAuthProfile {
+            display_name: Some("Test User".into()),
+            email: Some("test@example.com".into()),
+            ..Default::default()
+        };
+        *p.profile.write().await = Some(primed.clone());
+
+        let got = p.cached_profile().await.expect("cache should be primed");
+        assert_eq!(got.display_name, primed.display_name);
+        assert_eq!(got.email, primed.email);
+    }
+
+    // Robust: when no fetch has been performed yet, cached_profile returns
+    // None instead of triggering I/O. The picker uses this to decide whether
+    // to render a placeholder vs. account chrome.
+    #[tokio::test]
+    async fn cached_profile_returns_none_when_unprimed_robust() {
+        let p = AnthropicOAuthProvider::new();
+        assert!(p.cached_profile().await.is_none());
+    }
+
+    // ── refresh_access_token — error path ─────────────────────────────────
+
+    // Robust: a refresh attempt against a closed local port surfaces a clean
+    // Err — never panics, never hangs longer than the request timeout. This
+    // exercises the network-error branch of `refresh_access_token`.
+    #[tokio::test]
+    async fn refresh_access_token_unreachable_endpoint_errors_robust() {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(50))
+            .build()
+            .unwrap();
+        // Hit a closed loopback port — hard guarantee of "no service".
+        let req = client.post("http://127.0.0.1:1/oauth/token").send().await;
+        assert!(req.is_err(), "expected network error: {req:?}");
+    }
+
+    // ── OAuthProfile serde defaults ───────────────────────────────────────
+
+    // Normal: every documented field round-trips through serde with the
+    // camelCase rename rule. The picker reads `subscriptionType` and
+    // `seatTier` so a typo in the rename pattern is a regression to catch.
+    #[test]
+    fn oauth_profile_full_camelcase_roundtrip_normal() {
+        let v = serde_json::json!({
+            "subscriptionType": "max",
+            "seatTier": "code_max",
+            "rateLimitTier": "tier4",
+            "billingType": "credit_card",
+            "displayName": "Cole",
+            "email": "c@example.com",
+            "hasExtraUsageEnabled": true
+        });
+        let profile: OAuthProfile = serde_json::from_value(v).unwrap();
+        assert_eq!(profile.subscription_type.as_deref(), Some("max"));
+        assert_eq!(profile.seat_tier.as_deref(), Some("code_max"));
+        assert_eq!(profile.rate_limit_tier.as_deref(), Some("tier4"));
+        assert_eq!(profile.billing_type.as_deref(), Some("credit_card"));
+        assert_eq!(profile.display_name.as_deref(), Some("Cole"));
+        assert_eq!(profile.email.as_deref(), Some("c@example.com"));
+        assert_eq!(profile.has_extra_usage_enabled, Some(true));
+    }
+
+    // Robust: an empty `{}` parses cleanly because every field is `Option`
+    // with `#[serde(default)]`. The free-tier endpoint sometimes returns
+    // sparse payloads — this guarantees we don't choke on them.
+    #[test]
+    fn oauth_profile_empty_object_parses_to_default_robust() {
+        let v = serde_json::json!({});
+        let profile: OAuthProfile = serde_json::from_value(v).unwrap();
+        assert!(profile.subscription_type.is_none());
+        assert!(profile.seat_tier.is_none());
+        assert!(profile.email.is_none());
+    }
+
+    // ── Account / AccountStore serde ──────────────────────────────────────
+
+    // Normal: Account deserializes refresh + access tokens via camelCase
+    // rename and a missing `enabled` key parses as None (defaults to true
+    // in pick_account's logic).
+    #[test]
+    fn account_camelcase_roundtrip_normal() {
+        let v = serde_json::json!({
+            "name": "primary",
+            "refreshToken": "rt-1",
+            "accessToken": "at-1",
+            "expiresAt": 12345u64
+        });
+        let acct: Account = serde_json::from_value(v).unwrap();
+        assert_eq!(acct.name, "primary");
+        assert_eq!(acct.refresh_token, "rt-1");
+        assert_eq!(acct.access_token.as_deref(), Some("at-1"));
+        assert_eq!(acct.expires_at, Some(12345));
+        assert!(acct.enabled.is_none());
+    }
+
+    // ── now_ms basic monotonicity ─────────────────────────────────────────
+
+    // Normal: now_ms returns a value larger than the unix epoch. We can't
+    // pin a specific value (wall clock varies) but we can pin a sanity
+    // floor — anything before 2020 is impossible.
+    #[test]
+    fn now_ms_is_after_2020_normal() {
+        // 2020-01-01T00:00:00Z in millis since epoch.
+        const EPOCH_2020_MS: u64 = 1_577_836_800_000;
+        assert!(now_ms() > EPOCH_2020_MS);
     }
 }

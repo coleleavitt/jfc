@@ -970,6 +970,422 @@ mod tests {
         assert_eq!(body["stream"], json!(true));
         assert!(body.get("stream_options").is_some());
     }
+
+    // ── Provider trait wiring (no I/O) ────────────────────────────────────
+
+    // Normal: name + stream_convention are read synchronously by the
+    // renderer's dispatch; OpenWebUI uses InlineXmlTags for safety against
+    // server-side shims that inject XML into plain text.
+    #[test]
+    fn provider_name_and_convention_normal() {
+        let p = OpenWebUIProvider::new();
+        assert_eq!(p.name(), "openwebui");
+        assert_eq!(p.stream_convention(), StreamConvention::InlineXmlTags);
+    }
+
+    // Normal: available_models() is intentionally empty for OpenWebUI — the
+    // catalog is server-driven and only fetch_models() returns real entries.
+    #[test]
+    fn available_models_returns_empty_normal() {
+        let p = OpenWebUIProvider::new();
+        assert!(p.available_models().is_empty());
+    }
+
+    // ── load_account error paths ──────────────────────────────────────────
+
+    fn temp_account_file(json: &str) -> (tempfile::TempDir, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("openwebui-accounts.json");
+        std::fs::write(&path, json).unwrap();
+        (tmp, path)
+    }
+
+    // Normal: a single enabled account loads cleanly. Verifies the camelCase
+    // rename (`baseUrl`) lands on `base_url`.
+    #[test]
+    fn load_account_canonical_layout_normal() {
+        let (_tmp, path) = temp_account_file(
+            r#"{
+                "accounts": {
+                    "primary": {
+                        "name": "primary",
+                        "baseUrl": "https://owui.example.com",
+                        "token": "tok-1"
+                    }
+                },
+                "current": "primary"
+            }"#,
+        );
+        let acct = load_account(&path).unwrap();
+        assert_eq!(acct.name, "primary");
+        assert_eq!(acct.base_url, "https://owui.example.com");
+        assert_eq!(acct.token, "tok-1");
+    }
+
+    // Robust: no `current` field → the loader walks accounts.values() and
+    // returns the first enabled one. Determinism is best-effort because
+    // HashMap iteration order isn't stable; we only assert the result is
+    // non-error and that the returned account is enabled.
+    #[test]
+    fn load_account_no_current_falls_back_to_first_enabled_robust() {
+        let (_tmp, path) = temp_account_file(
+            r#"{"accounts":{"a":{"name":"a","baseUrl":"https://x","token":"t"}}}"#,
+        );
+        let acct = load_account(&path).unwrap();
+        assert_eq!(acct.name, "a");
+    }
+
+    // Robust: `current` points to a disabled account → fall back to first
+    // enabled. Documents the contract: an admin who disables their primary
+    // account doesn't lose the provider entirely.
+    #[test]
+    fn load_account_disabled_current_falls_back_to_enabled_robust() {
+        let (_tmp, path) = temp_account_file(
+            r#"{
+                "accounts": {
+                    "primary": {"name":"primary","baseUrl":"https://x","token":"t","disabled":true},
+                    "secondary": {"name":"secondary","baseUrl":"https://y","token":"u"}
+                },
+                "current": "primary"
+            }"#,
+        );
+        let acct = load_account(&path).unwrap();
+        assert_eq!(acct.name, "secondary");
+        assert_eq!(acct.base_url, "https://y");
+    }
+
+    // Robust: every account disabled → Err. Without this, the picker would
+    // happily route requests to a disabled instance and 401 mid-stream.
+    #[test]
+    fn load_account_all_disabled_errors_robust() {
+        let (_tmp, path) = temp_account_file(
+            r#"{
+                "accounts": {
+                    "x": {"name":"x","baseUrl":"https://x","token":"t","disabled":true}
+                }
+            }"#,
+        );
+        assert!(load_account(&path).is_err());
+    }
+
+    // Robust: empty accounts map → Err. The store must always describe at
+    // least one usable account.
+    #[test]
+    fn load_account_empty_map_errors_robust() {
+        let (_tmp, path) = temp_account_file(r#"{"accounts": {}}"#);
+        assert!(load_account(&path).is_err());
+    }
+
+    // Robust: malformed JSON surfaces as Err — the user can hand-edit the
+    // file and we don't want a typo to crash the app.
+    #[test]
+    fn load_account_invalid_json_errors_robust() {
+        let (_tmp, path) = temp_account_file("{ this is not valid");
+        assert!(load_account(&path).is_err());
+    }
+
+    // ── context_window_from_value: robust JSON shape detection ────────────
+
+    // Normal: a non-object / non-array Value never finds a match. The OWUI
+    // metadata blob can legitimately be `Null` for sparse models.
+    #[test]
+    fn context_window_from_value_null_returns_none_normal() {
+        assert_eq!(context_window_from_value(&Value::Null), None);
+        assert_eq!(context_window_from_value(&json!(42)), None);
+        assert_eq!(context_window_from_value(&json!("string")), None);
+    }
+
+    // Normal: a String-form numeric ("32768") passes through value_as_usize.
+    // Real OWUI metadata occasionally stringifies numeric values.
+    #[test]
+    fn value_as_usize_string_form_normal() {
+        assert_eq!(value_as_usize(&json!("12345")), Some(12345));
+    }
+
+    // Robust: a Number that doesn't fit in usize returns None instead of
+    // panicking on overflow.
+    #[test]
+    fn value_as_usize_negative_returns_none_robust() {
+        assert_eq!(value_as_usize(&json!(-1i64)), None);
+    }
+
+    // Robust: a non-numeric string returns None.
+    #[test]
+    fn value_as_usize_non_numeric_string_returns_none_robust() {
+        assert_eq!(value_as_usize(&json!("not-a-number")), None);
+        assert_eq!(value_as_usize(&Value::Null), None);
+        assert_eq!(value_as_usize(&json!(true)), None);
+    }
+
+    // Normal: an array of objects — find_map walks them. Verifies the
+    // recursive Array branch of context_window_from_value.
+    #[test]
+    fn context_window_from_value_array_normal() {
+        let v = json!([{"context_length": 4096}]);
+        assert_eq!(context_window_from_value(&v), Some(4096));
+    }
+
+    // ── infer_context_window_from_model_name: every branch ───────────────
+
+    // Normal: every documented family resolves to its tested constant. The
+    // helper is small enough that we cover each branch in one test.
+    #[test]
+    fn infer_context_window_per_family_normal() {
+        assert_eq!(
+            infer_context_window_from_model_name("anthropic/claude-opus-4-6", None),
+            1_000_000
+        );
+        assert_eq!(
+            infer_context_window_from_model_name("anthropic/claude-sonnet-4-5", None),
+            200_000
+        );
+        assert_eq!(
+            infer_context_window_from_model_name("openai/gpt-5-nano", None),
+            1_000_000
+        );
+        assert_eq!(
+            infer_context_window_from_model_name("openai/gpt-4o", None),
+            128_000
+        );
+        assert_eq!(
+            infer_context_window_from_model_name("meta/llama-4-maverick-100b", None),
+            1_048_576
+        );
+        assert_eq!(
+            infer_context_window_from_model_name("meta/llama-4-scout", None),
+            131_072
+        );
+        assert_eq!(
+            infer_context_window_from_model_name("meta/llama-3-70b", None),
+            131_072
+        );
+        assert_eq!(
+            infer_context_window_from_model_name("google/gemma-3-27b", None),
+            128_000
+        );
+        assert_eq!(
+            infer_context_window_from_model_name("google/gemini-2-flash", None),
+            1_048_576
+        );
+        assert_eq!(
+            infer_context_window_from_model_name("amazon/nova-pro", None),
+            300_000
+        );
+        assert_eq!(
+            infer_context_window_from_model_name("amazon/nova-lite", None),
+            300_000
+        );
+    }
+
+    // Robust: an entirely unrecognized id falls through to the conservative
+    // 128k default — the picker still surfaces *some* number rather than
+    // showing a blank context column.
+    #[test]
+    fn infer_context_window_unknown_falls_back_robust() {
+        assert_eq!(
+            infer_context_window_from_model_name("custom/totally-unknown", None),
+            128_000
+        );
+    }
+
+    // Normal: the optional `name` field is folded into the haystack so a
+    // display name like "Claude Opus 4.6" still resolves correctly even when
+    // the id is opaque.
+    #[test]
+    fn infer_context_window_uses_name_when_id_opaque_normal() {
+        // id is meaningless but name carries the brand.
+        assert_eq!(
+            infer_context_window_from_model_name("custom/x", Some("Claude Opus 4-6 (private)")),
+            1_000_000
+        );
+    }
+
+    // ── bedrock_sanitize_messages additional shapes ──────────────────────
+
+    // Robust: an array `content` with one non-empty text block passes
+    // through unchanged. Bedrock accepts well-formed arrays — we only
+    // intervene when the array is empty.
+    #[test]
+    fn bedrock_non_empty_array_content_unchanged_robust() {
+        let mut msgs = vec![json!({
+            "role": "user",
+            "content": [{"type": "text", "text": "hello"}]
+        })];
+        bedrock_sanitize_messages(&mut msgs);
+        let arr = msgs[0]["content"].as_array().unwrap();
+        assert_eq!(arr[0]["text"], "hello");
+    }
+
+    // Robust: a message that's not even an object (Value::Null in the wrong
+    // slot) is left alone — the loop continues without panicking.
+    #[test]
+    fn bedrock_non_object_message_left_alone_robust() {
+        let mut msgs = vec![Value::Null];
+        bedrock_sanitize_messages(&mut msgs);
+        assert_eq!(msgs[0], Value::Null);
+    }
+
+    // ── messages_reference_tools edge cases ──────────────────────────────
+
+    // Robust: a non-object array entry returns false (defensive — the JSON
+    // shape we expect is always objects, but the function must not panic).
+    #[test]
+    fn messages_reference_tools_non_object_robust() {
+        let msgs = vec![Value::String("garbage".into())];
+        assert!(!messages_reference_tools(&msgs));
+    }
+
+    // Robust: empty tool_calls array → still false (the array exists but
+    // has no entries).
+    #[test]
+    fn messages_reference_tools_empty_tool_calls_array_robust() {
+        let msgs = vec![json!({"role":"assistant", "tool_calls": []})];
+        assert!(!messages_reference_tools(&msgs));
+    }
+
+    // ── push_chunk_events_stateful additional behaviors ──────────────────
+
+    // Normal: `reasoning_content` is forwarded as ThinkingDelta. OpenWebUI
+    // uses this for o1/o3-style reasoning models.
+    #[test]
+    fn stateful_reasoning_content_emits_thinking_delta_normal() {
+        let mut state: HashMap<usize, AccumTool> = HashMap::new();
+        let events = evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    reasoning_content: Some("internal thought".into()),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+        assert!(events.iter().any(|e| matches!(
+            e,
+            StreamEvent::ThinkingDelta { delta, .. } if delta == "internal thought"
+        )));
+    }
+
+    // Normal: `refusal` content surfaces as a TextDelta — we don't have a
+    // separate Refusal event, so it lands in the same channel as plain text
+    // for the user to see.
+    #[test]
+    fn stateful_refusal_emits_text_delta_normal() {
+        let mut state: HashMap<usize, AccumTool> = HashMap::new();
+        let events = evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    refusal: Some("I cannot help with that".into()),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+        assert!(events.iter().any(|e| matches!(
+            e,
+            StreamEvent::TextDelta { delta, .. } if delta.contains("cannot help")
+        )));
+    }
+
+    // Robust: a finish_reason of "length" maps to MaxTokens — important
+    // for the UI to show "Hit max tokens" rather than "Stopped".
+    #[test]
+    fn stateful_finish_length_maps_to_max_tokens_robust() {
+        let mut state: HashMap<usize, AccumTool> = HashMap::new();
+        let events = evs_stateful(&mut state, chunk(ChunkDelta::default(), Some("length")));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            StreamEvent::Done {
+                stop_reason: StopReason::MaxTokens
+            }
+        )));
+    }
+
+    // Robust: an unrecognized finish_reason maps to StopReason::Other
+    // verbatim. Future-proofs against a proxy emitting a novel reason.
+    #[test]
+    fn stateful_finish_unknown_maps_to_other_robust() {
+        let mut state: HashMap<usize, AccumTool> = HashMap::new();
+        let events = evs_stateful(
+            &mut state,
+            chunk(ChunkDelta::default(), Some("content_filter")),
+        );
+        let done = events
+            .iter()
+            .find_map(|e| match e {
+                StreamEvent::Done { stop_reason } => Some(stop_reason.clone()),
+                _ => None,
+            })
+            .expect("Done");
+        assert_eq!(done, StopReason::Other("content_filter".into()));
+    }
+
+    // Robust: a chunk with no choices at all is a no-op — push_chunk_events_stateful
+    // returns early without panicking.
+    #[test]
+    fn stateful_chunk_with_no_choices_is_noop_robust() {
+        let mut state: HashMap<usize, AccumTool> = HashMap::new();
+        let chunk = ChatChunk {
+            choices: vec![],
+            usage: None,
+        };
+        let events = evs_stateful(&mut state, chunk);
+        assert!(events.is_empty());
+    }
+
+    // Robust: empty content / empty text deltas don't emit a TextDelta —
+    // would otherwise spam the renderer with no-op events on streams that
+    // have content="" placeholder chunks.
+    #[test]
+    fn stateful_empty_content_does_not_emit_text_delta_robust() {
+        let mut state: HashMap<usize, AccumTool> = HashMap::new();
+        let events = evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    content: Some(String::new()),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+        assert!(!events.iter().any(|e| matches!(e, StreamEvent::TextDelta { .. })));
+    }
+
+    // ── build_body when system prompt is set ─────────────────────────────
+
+    // Normal: a system prompt is prepended as a `role:"system"` message at
+    // index 0 — OpenWebUI's OpenAI-compatible API expects system messages
+    // inline rather than as a top-level field.
+    #[test]
+    fn build_body_system_message_inline_normal() {
+        let opts = StreamOptions::new("m").system("be terse");
+        let body = build_body(vec![user_msg("hi")], &opts);
+        let msgs = body["messages"].as_array().unwrap();
+        // First message is the system prompt; user message follows.
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[0]["content"], "be terse");
+        assert_eq!(msgs[1]["role"], "user");
+    }
+
+    // Normal: trailing assistant prefill is stripped — Bedrock rejects
+    // assistant-last conversations. Verifies the post-build pop loop.
+    #[test]
+    fn build_body_strips_trailing_assistant_prefill_normal() {
+        let history = vec![
+            user_msg("hi"),
+            ProviderMessage {
+                role: ProviderRole::Assistant,
+                content: vec![ProviderContent::Text("partial reply".into())],
+            },
+        ];
+        let body = build_body(history, &StreamOptions::new("m"));
+        let msgs = body["messages"].as_array().unwrap();
+        let last_role = msgs.last().unwrap().get("role").and_then(|v| v.as_str());
+        // After strip, last role must NOT be assistant.
+        assert_ne!(last_role, Some("assistant"));
+    }
 }
 
 // OpenAI-compatible SSE delta shapes. Tool calls arrive as
