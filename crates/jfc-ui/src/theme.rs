@@ -212,3 +212,321 @@ impl Theme {
             .add_modifier(Modifier::BOLD)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pull the RGB triple out of a `Color`. Returns None for non-RGB
+    /// variants so tests can detect when a theme accidentally maps a
+    /// slot to a 16-color terminal value (which would render incorrectly
+    /// against a custom palette).
+    fn rgb_of(color: Color) -> Option<(u8, u8, u8)> {
+        match color {
+            Color::Rgb(r, g, b) => Some((r, g, b)),
+            _ => None,
+        }
+    }
+
+    /// Every slot on every bundled theme must be a true-color RGB value —
+    /// using a 16-color or palette index would produce the wrong contrast
+    /// against neighbouring slots that *are* RGB.
+    fn assert_all_slots_rgb(theme: &Theme, name: &str) {
+        let slots: [(&str, Color); 21] = [
+            ("bg", theme.bg),
+            ("surface", theme.surface),
+            ("surface_raised", theme.surface_raised),
+            ("border", theme.border),
+            ("text_primary", theme.text_primary),
+            ("text_secondary", theme.text_secondary),
+            ("text_muted", theme.text_muted),
+            ("accent", theme.accent),
+            ("success", theme.success),
+            ("warning", theme.warning),
+            ("error", theme.error),
+            ("user_bubble_bg", theme.user_bubble_bg),
+            ("asst_bubble_bg", theme.asst_bubble_bg),
+            ("code_bg", theme.code_bg),
+            ("code_fg", theme.code_fg),
+            ("code_string", theme.code_string),
+            ("code_keyword", theme.code_keyword),
+            ("code_comment", theme.code_comment),
+            ("code_number", theme.code_number),
+            ("reasoning_bg", theme.reasoning_bg),
+            ("reasoning_fg", theme.reasoning_fg),
+        ];
+        for (slot_name, color) in slots {
+            assert!(
+                rgb_of(color).is_some(),
+                "theme {name} slot {slot_name} must be Color::Rgb, got {color:?}",
+            );
+        }
+    }
+
+    /// Distinct foreground/background pairs are required for legibility:
+    /// if `text_primary == bg` the theme is unreadable. The minimum 32 / 256
+    /// luminance gap is conservative — actual perceptual contrast checks
+    /// would need a WCAG calculation, but a flat-equal check catches the
+    /// most common authoring mistake.
+    fn assert_text_distinct_from_bg(theme: &Theme, name: &str) {
+        let (fr, fg, fb) = rgb_of(theme.text_primary).unwrap();
+        let (br, bg, bb) = rgb_of(theme.bg).unwrap();
+        let max_diff = ((fr as i32 - br as i32).abs())
+            .max((fg as i32 - bg as i32).abs())
+            .max((fb as i32 - bb as i32).abs());
+        assert!(
+            max_diff > 32,
+            "theme {name}: text_primary and bg too close — max channel diff {max_diff}",
+        );
+    }
+
+    // ─── per-theme palette sanity ────────────────────────────────────────
+
+    #[test]
+    fn dark_theme_has_rgb_slots_normal() {
+        let t = Theme::dark();
+        assert_all_slots_rgb(&t, "dark");
+        assert_text_distinct_from_bg(&t, "dark");
+    }
+
+    #[test]
+    fn light_theme_has_rgb_slots_normal() {
+        let t = Theme::light();
+        assert_all_slots_rgb(&t, "light");
+        assert_text_distinct_from_bg(&t, "light");
+    }
+
+    #[test]
+    fn solarized_dark_theme_has_rgb_slots_normal() {
+        let t = Theme::solarized_dark();
+        assert_all_slots_rgb(&t, "solarized_dark");
+        assert_text_distinct_from_bg(&t, "solarized_dark");
+    }
+
+    #[test]
+    fn catppuccin_theme_has_rgb_slots_normal() {
+        let t = Theme::catppuccin();
+        assert_all_slots_rgb(&t, "catppuccin");
+        assert_text_distinct_from_bg(&t, "catppuccin");
+    }
+
+    #[test]
+    fn dark_and_light_have_inverted_brightness_robust() {
+        // Sanity-check the dark/light division: dark.bg should be much
+        // darker than light.bg. If a refactor accidentally swapped them
+        // this test catches it before users see white-on-white.
+        let dark_bg_luma: u32 = {
+            let (r, g, b) = rgb_of(Theme::dark().bg).unwrap();
+            r as u32 + g as u32 + b as u32
+        };
+        let light_bg_luma: u32 = {
+            let (r, g, b) = rgb_of(Theme::light().bg).unwrap();
+            r as u32 + g as u32 + b as u32
+        };
+        assert!(
+            light_bg_luma > dark_bg_luma + 200,
+            "light bg luma ({light_bg_luma}) should dwarf dark bg luma ({dark_bg_luma})",
+        );
+    }
+
+    #[test]
+    fn each_theme_distinguishes_user_and_asst_bubbles_robust() {
+        for (name, theme) in [
+            ("dark", Theme::dark()),
+            ("light", Theme::light()),
+            ("solarized_dark", Theme::solarized_dark()),
+            ("catppuccin", Theme::catppuccin()),
+        ] {
+            assert_ne!(
+                rgb_of(theme.user_bubble_bg),
+                rgb_of(theme.asst_bubble_bg),
+                "theme {name}: user/asst bubble must be visually distinct",
+            );
+        }
+    }
+
+    #[test]
+    fn semantic_colors_are_distinct_per_theme_robust() {
+        // success/warning/error must each be different — otherwise a red
+        // exit code looks identical to a yellow warning.
+        for (name, theme) in [
+            ("dark", Theme::dark()),
+            ("light", Theme::light()),
+            ("solarized_dark", Theme::solarized_dark()),
+            ("catppuccin", Theme::catppuccin()),
+        ] {
+            assert_ne!(
+                rgb_of(theme.success),
+                rgb_of(theme.warning),
+                "theme {name}: success and warning must differ",
+            );
+            assert_ne!(
+                rgb_of(theme.warning),
+                rgb_of(theme.error),
+                "theme {name}: warning and error must differ",
+            );
+            assert_ne!(
+                rgb_of(theme.success),
+                rgb_of(theme.error),
+                "theme {name}: success and error must differ",
+            );
+        }
+    }
+
+    // ─── Theme::by_name dispatch ─────────────────────────────────────────
+
+    #[test]
+    fn by_name_resolves_canonical_names_normal() {
+        assert!(Theme::by_name("dark").is_some());
+        assert!(Theme::by_name("light").is_some());
+        assert!(Theme::by_name("solarized").is_some());
+        assert!(Theme::by_name("catppuccin").is_some());
+    }
+
+    #[test]
+    fn by_name_resolves_aliases_normal() {
+        // Both "solarized" and "solarized-dark" should map to the same
+        // theme — and likewise "catppuccin" / "catppuccin-mocha".
+        let s1 = Theme::by_name("solarized").unwrap();
+        let s2 = Theme::by_name("solarized-dark").unwrap();
+        assert_eq!(rgb_of(s1.bg), rgb_of(s2.bg));
+
+        let c1 = Theme::by_name("catppuccin").unwrap();
+        let c2 = Theme::by_name("catppuccin-mocha").unwrap();
+        assert_eq!(rgb_of(c1.bg), rgb_of(c2.bg));
+    }
+
+    #[test]
+    fn by_name_returns_none_for_unknown_robust() {
+        assert!(Theme::by_name("not-a-theme").is_none());
+        assert!(Theme::by_name("").is_none());
+        assert!(Theme::by_name("DARK").is_none(), "case-sensitive lookup");
+    }
+
+    #[test]
+    fn available_names_is_non_empty_and_resolves_normal() {
+        let names = Theme::available_names();
+        assert!(!names.is_empty(), "must list at least one theme");
+        for name in names {
+            assert!(
+                Theme::by_name(name).is_some(),
+                "available name {name:?} must resolve via by_name",
+            );
+        }
+    }
+
+    #[test]
+    fn available_names_does_not_include_aliases_normal() {
+        // The list shows canonical names only — aliases ("solarized-dark",
+        // "catppuccin-mocha") aren't surfaced.
+        let names = Theme::available_names();
+        assert!(!names.contains(&"solarized-dark"));
+        assert!(!names.contains(&"catppuccin-mocha"));
+    }
+
+    // ─── Style helpers (impl block 2) ─────────────────────────────────────
+
+    #[test]
+    fn base_style_uses_text_primary_and_bg_normal() {
+        let theme = Theme::dark();
+        let style = theme.base();
+        assert_eq!(style.fg, Some(theme.text_primary));
+        assert_eq!(style.bg, Some(theme.bg));
+    }
+
+    #[test]
+    fn surface_style_uses_surface_color_normal() {
+        let theme = Theme::dark();
+        let style = theme.surface();
+        assert_eq!(style.bg, Some(theme.surface));
+    }
+
+    #[test]
+    fn border_style_uses_border_fg_normal() {
+        let theme = Theme::light();
+        let style = theme.border();
+        assert_eq!(style.fg, Some(theme.border));
+    }
+
+    #[test]
+    fn muted_style_uses_text_muted_normal() {
+        let theme = Theme::dark();
+        let style = theme.muted();
+        assert_eq!(style.fg, Some(theme.text_muted));
+    }
+
+    #[test]
+    fn accent_style_uses_accent_color_normal() {
+        let theme = Theme::dark();
+        let style = theme.accent();
+        assert_eq!(style.fg, Some(theme.accent));
+    }
+
+    #[test]
+    fn bold_and_italic_styles_carry_modifiers_normal() {
+        let theme = Theme::dark();
+
+        let b = theme.bold();
+        assert!(b.add_modifier.contains(Modifier::BOLD));
+
+        let i = theme.italic();
+        assert!(i.add_modifier.contains(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn semantic_helpers_use_semantic_slots_normal() {
+        let theme = Theme::dark();
+        assert_eq!(theme.success().fg, Some(theme.success));
+        assert_eq!(theme.warning().fg, Some(theme.warning));
+        assert_eq!(theme.error().fg, Some(theme.error));
+    }
+
+    #[test]
+    fn code_block_style_combines_code_fg_and_bg_normal() {
+        let theme = Theme::dark();
+        let style = theme.code_block();
+        assert_eq!(style.fg, Some(theme.code_fg));
+        assert_eq!(style.bg, Some(theme.code_bg));
+    }
+
+    #[test]
+    fn inline_code_uses_code_string_color_normal() {
+        let theme = Theme::dark();
+        let style = theme.inline_code();
+        assert_eq!(style.fg, Some(theme.code_string));
+    }
+
+    #[test]
+    fn reasoning_combines_fg_and_bg_normal() {
+        let theme = Theme::dark();
+        let style = theme.reasoning();
+        assert_eq!(style.fg, Some(theme.reasoning_fg));
+        assert_eq!(style.bg, Some(theme.reasoning_bg));
+    }
+
+    #[test]
+    fn user_label_is_bold_accent_normal() {
+        let theme = Theme::dark();
+        let style = theme.user_label();
+        assert_eq!(style.fg, Some(theme.accent));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn asst_label_is_bold_text_secondary_normal() {
+        let theme = Theme::light();
+        let style = theme.asst_label();
+        assert_eq!(style.fg, Some(theme.text_secondary));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn theme_is_copyable_normal() {
+        // The Copy bound matters because Theme is held in App and passed
+        // by value into render functions every frame. If a refactor adds
+        // a String field this test breaks at compile time.
+        let t = Theme::dark();
+        let copy = t;
+        let _both_usable = (t.accent, copy.accent);
+    }
+}

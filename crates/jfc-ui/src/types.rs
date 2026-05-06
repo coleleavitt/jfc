@@ -1723,4 +1723,930 @@ mod tests {
             other => panic!("expected Generic, got {other:?}"),
         }
     }
+
+    // ─── TaskLifecycle ────────────────────────────────────────────────────
+
+    #[test]
+    fn task_lifecycle_label_normal() {
+        assert_eq!(TaskLifecycle::Pending.label(), "pending");
+        assert_eq!(TaskLifecycle::Running.label(), "running");
+        assert_eq!(TaskLifecycle::Idle.label(), "idle");
+        assert_eq!(TaskLifecycle::Completed.label(), "completed");
+        assert_eq!(TaskLifecycle::Failed.label(), "failed");
+        assert_eq!(TaskLifecycle::Cancelled.label(), "cancelled");
+    }
+
+    #[test]
+    fn task_lifecycle_is_alive_normal() {
+        assert!(TaskLifecycle::Pending.is_alive());
+        assert!(TaskLifecycle::Running.is_alive());
+        assert!(TaskLifecycle::Idle.is_alive());
+        assert!(!TaskLifecycle::Completed.is_alive());
+        assert!(!TaskLifecycle::Failed.is_alive());
+        assert!(!TaskLifecycle::Cancelled.is_alive());
+    }
+
+    #[test]
+    fn task_lifecycle_terminal_and_alive_partition_robust() {
+        // Every variant must be exactly one of: alive XOR terminal.
+        // If a refactor adds a Limbo variant that's neither, this test
+        // catches it before we ship a state the agent fan can't display.
+        for state in [
+            TaskLifecycle::Pending,
+            TaskLifecycle::Running,
+            TaskLifecycle::Idle,
+            TaskLifecycle::Completed,
+            TaskLifecycle::Failed,
+            TaskLifecycle::Cancelled,
+        ] {
+            assert_ne!(
+                state.is_alive(),
+                state.is_terminal(),
+                "{state:?} must be exactly one of alive/terminal",
+            );
+        }
+    }
+
+    // ─── McpStatus / LspStatus ────────────────────────────────────────────
+
+    #[test]
+    fn mcp_status_labels_normal() {
+        assert_eq!(McpStatus::Connected.label(), "Connected");
+        assert_eq!(McpStatus::Disabled.label(), "Disabled");
+        assert_eq!(McpStatus::Error.label(), "Error");
+    }
+
+    // ─── ToolStatus ───────────────────────────────────────────────────────
+
+    #[test]
+    fn tool_status_labels_normal() {
+        assert_eq!(ToolStatus::Pending.label(), "pending");
+        assert_eq!(ToolStatus::Running.label(), "running");
+        assert_eq!(ToolStatus::Complete.label(), "done");
+        assert_eq!(ToolStatus::Failed.label(), "failed");
+    }
+
+    // ─── ReplacementMode ──────────────────────────────────────────────────
+
+    #[test]
+    fn replacement_mode_from_replace_all_normal() {
+        assert_eq!(
+            ReplacementMode::from_replace_all(true),
+            ReplacementMode::All
+        );
+        assert_eq!(
+            ReplacementMode::from_replace_all(false),
+            ReplacementMode::FirstOnly
+        );
+    }
+
+    #[test]
+    fn replacement_mode_replace_all_normal() {
+        assert!(ReplacementMode::All.replace_all());
+        assert!(!ReplacementMode::FirstOnly.replace_all());
+    }
+
+    // ─── ToolKind labels & API names ──────────────────────────────────────
+
+    #[test]
+    fn tool_kind_label_returns_pascal_case_normal() {
+        assert_eq!(ToolKind::Edit.label(), "Edit");
+        assert_eq!(ToolKind::Write.label(), "Write");
+        assert_eq!(ToolKind::Bash.label(), "Bash");
+        assert_eq!(ToolKind::ApplyPatch.label(), "Patch");
+        assert_eq!(ToolKind::Generic("Foo".into()).label(), "Foo");
+    }
+
+    #[test]
+    fn tool_kind_api_name_for_search_uses_snake_case_normal() {
+        // Search and ApplyPatch use snake_case on the wire even though
+        // their display label is PascalCase. Mirrors v126's tool table.
+        assert_eq!(ToolKind::Search.api_name(), "codebase_search");
+        assert_eq!(ToolKind::ApplyPatch.api_name(), "apply_patch");
+        assert_eq!(ToolKind::Edit.api_name(), "Edit");
+    }
+
+    // ─── TaskInput::is_teammate_spawn / is_fork ───────────────────────────
+
+    fn make_task_input() -> TaskInput {
+        TaskInput {
+            description: "task".into(),
+            prompt: "do it".into(),
+            subagent_type: None,
+            category: None,
+            run_in_background: false,
+            model: None,
+            name: None,
+            team_name: None,
+            mode: None,
+            isolation: None,
+        }
+    }
+
+    #[test]
+    fn task_input_is_fork_when_no_subagent_or_team_normal() {
+        let ti = make_task_input();
+        assert!(ti.is_fork());
+        assert!(!ti.is_teammate_spawn());
+    }
+
+    #[test]
+    fn task_input_with_subagent_type_is_not_fork_normal() {
+        let ti = TaskInput {
+            subagent_type: Some("explore".into()),
+            ..make_task_input()
+        };
+        assert!(!ti.is_fork());
+        assert!(!ti.is_teammate_spawn());
+    }
+
+    #[test]
+    fn task_input_teammate_spawn_requires_both_name_and_team_normal() {
+        // name alone or team alone is not a teammate spawn.
+        let only_name = TaskInput {
+            name: Some("alice".into()),
+            ..make_task_input()
+        };
+        assert!(!only_name.is_teammate_spawn());
+
+        let only_team = TaskInput {
+            team_name: Some("alpha".into()),
+            ..make_task_input()
+        };
+        assert!(!only_team.is_teammate_spawn());
+
+        let both = TaskInput {
+            name: Some("alice".into()),
+            team_name: Some("alpha".into()),
+            ..make_task_input()
+        };
+        assert!(both.is_teammate_spawn());
+    }
+
+    #[test]
+    fn task_input_teammate_spawn_excludes_fork_robust() {
+        // is_fork() must return false for teammate spawns even though
+        // subagent_type is None — otherwise the dispatcher would try the
+        // fork path on a teammate.
+        let teammate = TaskInput {
+            name: Some("alice".into()),
+            team_name: Some("alpha".into()),
+            ..make_task_input()
+        };
+        assert!(!teammate.is_fork());
+    }
+
+    #[test]
+    fn task_input_summary_teammate_format_normal() {
+        let ti = TaskInput {
+            name: Some("alice".into()),
+            team_name: Some("alpha".into()),
+            description: "deploy".into(),
+            ..make_task_input()
+        };
+        let s = ti.summary();
+        assert!(s.contains("spawn teammate: alice"), "{s}");
+        assert!(s.contains("deploy"), "{s}");
+    }
+
+    // ─── LargeText ────────────────────────────────────────────────────────
+
+    #[test]
+    fn large_text_new_counts_lines_and_bytes_normal() {
+        let lt = LargeText::new("a\nb\nc\n".into());
+        assert_eq!(lt.line_count, 3);
+        assert_eq!(lt.byte_count, 6);
+    }
+
+    #[test]
+    fn large_text_should_not_collapse_below_thresholds_normal() {
+        let s = "x".repeat(LargeText::COLLAPSE_BYTES);
+        // Exactly at byte limit shouldn't collapse — the check is `>` not `>=`.
+        assert!(!LargeText::should_collapse(&s));
+    }
+
+    #[test]
+    fn large_text_size_label_includes_kilobytes_normal() {
+        let lt = LargeText::new("x".repeat(2048));
+        let label = lt.size_label();
+        assert!(label.contains("KB"), "{label}");
+        assert!(label.contains("lines"), "{label}");
+    }
+
+    // ─── ToolOutput::approx_text_len & APPROX_LEN_CAP ─────────────────────
+
+    #[test]
+    fn tool_output_approx_text_len_caps_at_30k_robust() {
+        // Even a megabyte of text reports cap value — important for token
+        // estimation against the truncated wire result.
+        let huge = "x".repeat(2_000_000);
+        let out = ToolOutput::Text(huge);
+        assert_eq!(out.approx_text_len(), ToolOutput::APPROX_LEN_CAP);
+    }
+
+    #[test]
+    fn tool_output_approx_text_len_command_combines_streams_normal() {
+        let out = ToolOutput::Command {
+            stdout: "abc".into(),
+            stderr: "de".into(),
+            exit_code: Some(0),
+        };
+        assert_eq!(out.approx_text_len(), 5);
+    }
+
+    #[test]
+    fn tool_output_approx_text_len_empty_is_zero_normal() {
+        assert_eq!(ToolOutput::Empty.approx_text_len(), 0);
+    }
+
+    #[test]
+    fn tool_output_approx_text_len_filelist_sums_path_lens_normal() {
+        let out = ToolOutput::FileList(vec!["abc".into(), "de".into()]);
+        assert_eq!(out.approx_text_len(), 5);
+    }
+
+    #[test]
+    fn tool_output_approx_text_len_diff_sums_line_content_normal() {
+        let view = parse_unified_diff(
+            "x.rs",
+            "@@ -1,1 +1,1 @@\n-abc\n+abcd\n",
+        );
+        let out = ToolOutput::Diff(view);
+        // "abc" (3) + "abcd" (4) = 7
+        assert_eq!(out.approx_text_len(), 7);
+    }
+
+    #[test]
+    fn tool_output_text_only_diff_includes_counts_normal() {
+        let view = parse_unified_diff(
+            "x.rs",
+            "@@ -1,1 +1,1 @@\n-old\n+new\n",
+        );
+        let s = ToolOutput::Diff(view).text_only();
+        assert!(s.contains("x.rs"), "{s}");
+        assert!(s.contains("+1"), "{s}");
+        assert!(s.contains("-1"), "{s}");
+    }
+
+    #[test]
+    fn tool_output_text_only_command_renders_exit_code_normal() {
+        let s = ToolOutput::Command {
+            stdout: "ok".into(),
+            stderr: String::new(),
+            exit_code: Some(2),
+        }
+        .text_only();
+        assert!(s.contains("exit=2"), "{s}");
+        assert!(s.contains("stdout=2B"), "{s}");
+    }
+
+    #[test]
+    fn tool_output_text_only_command_renders_question_mark_when_no_code_robust() {
+        // exit_code: None (kill via signal, etc.) renders "?".
+        let s = ToolOutput::Command {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+        }
+        .text_only();
+        assert!(s.contains("exit=?"), "{s}");
+    }
+
+    #[test]
+    fn tool_output_text_only_filecontent_includes_path_normal() {
+        let s = ToolOutput::FileContent {
+            path: "src/main.rs".into(),
+            content: "fn main() {}".into(),
+            language: "rust".into(),
+        }
+        .text_only();
+        assert!(s.contains("src/main.rs"), "{s}");
+    }
+
+    #[test]
+    fn tool_output_text_only_filelist_count_normal() {
+        let s = ToolOutput::FileList(vec!["a".into(), "b".into(), "c".into()])
+            .text_only();
+        assert_eq!(s, "3 files");
+    }
+
+    #[test]
+    fn tool_output_to_display_string_command_truncates_at_100_chars_robust() {
+        let huge = "x".repeat(200);
+        let s = ToolOutput::Command {
+            stdout: huge,
+            stderr: String::new(),
+            exit_code: Some(0),
+        }
+        .to_display_string();
+        assert!(s.contains("..."), "expected ellipsis on truncation: {s}");
+    }
+
+    #[test]
+    fn tool_output_to_display_string_empty_renders_marker_normal() {
+        assert_eq!(ToolOutput::Empty.to_display_string(), "[empty]");
+    }
+
+    #[test]
+    fn tool_output_to_api_text_falls_back_to_display_robust() {
+        // Non-LargeText variants delegate to to_display_string.
+        let t = ToolOutput::Text("hello".into());
+        assert_eq!(t.to_api_text(), "hello");
+    }
+
+    // ─── ToolInput::summary ───────────────────────────────────────────────
+
+    #[test]
+    fn tool_input_summary_bash_with_workdir_appends_in_dir_normal() {
+        let i = ToolInput::Bash {
+            command: "ls".into(),
+            timeout: None,
+            workdir: Some("/tmp".into()),
+        };
+        assert_eq!(i.summary(), "ls in /tmp");
+    }
+
+    #[test]
+    fn tool_input_summary_bash_without_workdir_is_command_only_normal() {
+        let i = ToolInput::Bash {
+            command: "ls -la".into(),
+            timeout: None,
+            workdir: None,
+        };
+        assert_eq!(i.summary(), "ls -la");
+    }
+
+    #[test]
+    fn tool_input_summary_glob_grep_search_format_normal() {
+        let g = ToolInput::Glob {
+            pattern: "**/*.rs".into(),
+            path: Some("crates".into()),
+        };
+        assert_eq!(g.summary(), "**/*.rs in crates");
+
+        let gg = ToolInput::Grep {
+            pattern: "todo".into(),
+            path: None,
+            glob: None,
+            output_mode: None,
+        };
+        assert_eq!(gg.summary(), "todo");
+
+        let s = ToolInput::Search {
+            query: "auth".into(),
+            path: Some("src".into()),
+        };
+        assert_eq!(s.summary(), "auth in src");
+    }
+
+    #[test]
+    fn tool_input_summary_apply_patch_includes_byte_count_normal() {
+        let i = ToolInput::ApplyPatch {
+            patch: "*** Begin Patch\n*** End Patch\n".into(),
+        };
+        let s = i.summary();
+        assert!(s.contains("apply patch"));
+        assert!(s.contains("bytes"));
+    }
+
+    #[test]
+    fn tool_input_summary_skill_renders_args_when_present_normal() {
+        let with = ToolInput::Skill {
+            name: "review".into(),
+            args: Some("the PR".into()),
+        };
+        assert_eq!(with.summary(), "review: the PR");
+
+        let without = ToolInput::Skill {
+            name: "review".into(),
+            args: None,
+        };
+        assert_eq!(without.summary(), "review");
+
+        // Empty-string args is treated as "no args".
+        let empty_args = ToolInput::Skill {
+            name: "review".into(),
+            args: Some(String::new()),
+        };
+        assert_eq!(empty_args.summary(), "review");
+    }
+
+    #[test]
+    fn tool_input_summary_memory_create_truncates_body_at_50_robust() {
+        let body = "x".repeat(200);
+        let i = ToolInput::MemoryCreate {
+            level: "user".into(),
+            memory_type: "context".into(),
+            scope: "private".into(),
+            body,
+        };
+        let s = i.summary();
+        // Format: "remember (user): xxxxx..." — count of x's is capped.
+        let x_count = s.chars().filter(|c| *c == 'x').count();
+        assert_eq!(x_count, 50, "body should truncate to 50 chars: {s}");
+    }
+
+    #[test]
+    fn tool_input_summary_send_message_with_and_without_summary_normal() {
+        let with = ToolInput::SendMessage {
+            to: "alice".into(),
+            message: "hi".into(),
+            summary: Some("greeting".into()),
+        };
+        assert!(with.summary().contains("→ alice"));
+        assert!(with.summary().contains("greeting"));
+
+        let without = ToolInput::SendMessage {
+            to: "bob".into(),
+            message: "hi".into(),
+            summary: None,
+        };
+        assert_eq!(without.summary(), "→ bob");
+    }
+
+    #[test]
+    fn tool_input_summary_team_member_mode_format_normal() {
+        let i = ToolInput::TeamMemberMode {
+            member_name: "alice".into(),
+            mode: "default".into(),
+        };
+        assert_eq!(i.summary(), "set alice → default");
+    }
+
+    #[test]
+    fn tool_input_summary_team_create_includes_team_name_normal() {
+        let i = ToolInput::TeamCreate {
+            team_name: "frontend".into(),
+            description: None,
+        };
+        assert_eq!(i.summary(), "create team: frontend");
+    }
+
+    #[test]
+    fn tool_input_summary_task_list_with_and_without_filter_normal() {
+        let with = ToolInput::TaskList {
+            status_filter: Some("pending".into()),
+            owner_filter: None,
+        };
+        assert_eq!(with.summary(), "list tasks (pending)");
+
+        let without = ToolInput::TaskList {
+            status_filter: None,
+            owner_filter: None,
+        };
+        assert_eq!(without.summary(), "list tasks");
+    }
+
+    // ─── ToolInput::from_value ────────────────────────────────────────────
+
+    #[test]
+    fn tool_input_from_value_edit_normal() {
+        let v = serde_json::json!({
+            "file_path": "src/main.rs",
+            "old_string": "fn old",
+            "new_string": "fn new",
+            "replace_all": true,
+        });
+        let input = ToolInput::from_value("Edit", v);
+        match input {
+            ToolInput::Edit {
+                file_path,
+                replacement,
+                ..
+            } => {
+                assert_eq!(file_path, "src/main.rs");
+                assert!(replacement.replace_all());
+            }
+            other => panic!("expected Edit, got {:?}", other.summary()),
+        }
+    }
+
+    #[test]
+    fn tool_input_from_value_read_optional_fields_normal() {
+        let v = serde_json::json!({"file_path": "x", "offset": 10, "limit": 50});
+        let input = ToolInput::from_value("Read", v);
+        match input {
+            ToolInput::Read {
+                file_path,
+                offset,
+                limit,
+            } => {
+                assert_eq!(file_path, "x");
+                assert_eq!(offset, Some(10));
+                assert_eq!(limit, Some(50));
+            }
+            _ => panic!("expected Read"),
+        }
+    }
+
+    #[test]
+    fn tool_input_from_value_task_complete_payload_normal() {
+        let v = serde_json::json!({
+            "description": "deploy",
+            "prompt": "ship it",
+            "subagent_type": "ops",
+            "run_in_background": true,
+            "name": "alice",
+            "team_name": "alpha",
+            "mode": "plan",
+            "isolation": "worktree",
+        });
+        let input = ToolInput::from_value("Task", v);
+        match input {
+            ToolInput::Task(ti) => {
+                assert_eq!(ti.description, "deploy");
+                assert_eq!(ti.prompt, "ship it");
+                assert_eq!(ti.subagent_type.as_deref(), Some("ops"));
+                assert!(ti.run_in_background);
+                assert_eq!(ti.name.as_deref(), Some("alice"));
+                assert_eq!(ti.team_name.as_deref(), Some("alpha"));
+                assert_eq!(ti.mode.as_deref(), Some("plan"));
+                assert_eq!(ti.isolation.as_deref(), Some("worktree"));
+            }
+            _ => panic!("expected Task"),
+        }
+    }
+
+    #[test]
+    fn tool_input_from_value_task_create_with_blocked_by_array_normal() {
+        let v = serde_json::json!({
+            "subject": "ship",
+            "description": "release v1",
+            "blocked_by": ["t1", "t2"],
+        });
+        let input = ToolInput::from_value("TaskCreate", v);
+        match input {
+            ToolInput::TaskCreate { blocked_by, .. } => {
+                assert_eq!(blocked_by.len(), 2);
+                assert!(blocked_by.contains(&"t1".into()));
+            }
+            _ => panic!("expected TaskCreate"),
+        }
+    }
+
+    #[test]
+    fn tool_input_from_value_send_message_object_payload_robust() {
+        // SendMessage's `message` field accepts string OR object — when an
+        // object arrives we serialize it to a JSON string for the body.
+        let v = serde_json::json!({
+            "to": "alice",
+            "message": {"kind": "ping", "n": 42},
+            "summary": "ping",
+        });
+        let input = ToolInput::from_value("SendMessage", v);
+        match input {
+            ToolInput::SendMessage { to, message, .. } => {
+                assert_eq!(to, "alice");
+                // Object-form should be serialized — must contain both keys.
+                assert!(message.contains("ping"), "{message}");
+                assert!(message.contains("42"), "{message}");
+            }
+            _ => panic!("expected SendMessage"),
+        }
+    }
+
+    #[test]
+    fn tool_input_from_value_unknown_kind_falls_through_to_generic_robust() {
+        let v = serde_json::json!({"foo": "bar"});
+        let input = ToolInput::from_value("not_a_real_tool", v);
+        match input {
+            ToolInput::Generic { summary } => {
+                // Generic stores the original JSON as a string.
+                assert!(summary.contains("foo"), "{summary}");
+                assert!(summary.contains("bar"), "{summary}");
+            }
+            _ => panic!("expected Generic"),
+        }
+    }
+
+    #[test]
+    fn tool_input_from_value_handles_missing_fields_robust() {
+        // Required fields missing default to empty strings — the executor
+        // surfaces an error later, but parsing must not panic.
+        let v = serde_json::json!({});
+        let input = ToolInput::from_value("Edit", v);
+        match input {
+            ToolInput::Edit {
+                file_path,
+                old_string,
+                new_string,
+                replacement,
+            } => {
+                assert!(file_path.is_empty());
+                assert!(old_string.is_empty());
+                assert!(new_string.is_empty());
+                assert!(!replacement.replace_all());
+            }
+            _ => panic!("expected Edit"),
+        }
+    }
+
+    // ─── ToolInput::to_value (round-trip-ish) ─────────────────────────────
+
+    #[test]
+    fn tool_input_to_value_bash_with_optional_fields_normal() {
+        let i = ToolInput::Bash {
+            command: "echo hi".into(),
+            timeout: Some(5_000),
+            workdir: Some("/tmp".into()),
+        };
+        let v = i.to_value();
+        assert_eq!(v["command"], "echo hi");
+        assert_eq!(v["timeout"], 5_000);
+        assert_eq!(v["workdir"], "/tmp");
+    }
+
+    #[test]
+    fn tool_input_to_value_bash_omits_unset_optionals_normal() {
+        let i = ToolInput::Bash {
+            command: "ls".into(),
+            timeout: None,
+            workdir: None,
+        };
+        let v = i.to_value();
+        assert_eq!(v["command"], "ls");
+        assert!(v.get("timeout").is_none());
+        assert!(v.get("workdir").is_none());
+    }
+
+    #[test]
+    fn tool_input_to_value_grep_omits_unset_optionals_normal() {
+        let i = ToolInput::Grep {
+            pattern: "todo".into(),
+            path: None,
+            glob: None,
+            output_mode: None,
+        };
+        let v = i.to_value();
+        assert_eq!(v["pattern"], "todo");
+        assert!(v.get("path").is_none());
+        assert!(v.get("glob").is_none());
+        assert!(v.get("output_mode").is_none());
+    }
+
+    #[test]
+    fn tool_input_to_value_team_create_with_description_normal() {
+        let i = ToolInput::TeamCreate {
+            team_name: "ops".into(),
+            description: Some("operations".into()),
+        };
+        let v = i.to_value();
+        assert_eq!(v["team_name"], "ops");
+        assert_eq!(v["description"], "operations");
+    }
+
+    #[test]
+    fn tool_input_to_value_send_message_omits_summary_when_none_robust() {
+        let i = ToolInput::SendMessage {
+            to: "alice".into(),
+            message: "hi".into(),
+            summary: None,
+        };
+        let v = i.to_value();
+        assert_eq!(v["to"], "alice");
+        assert!(v.get("summary").is_none());
+    }
+
+    #[test]
+    fn tool_input_to_value_team_delete_is_empty_object_normal() {
+        let v = ToolInput::TeamDelete.to_value();
+        assert!(v.is_object());
+        assert_eq!(v.as_object().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn tool_input_to_value_generic_parses_when_valid_json_robust() {
+        let i = ToolInput::Generic {
+            summary: r#"{"hello":"world"}"#.into(),
+        };
+        let v = i.to_value();
+        assert_eq!(v["hello"], "world");
+    }
+
+    #[test]
+    fn tool_input_to_value_generic_falls_back_to_input_field_robust() {
+        // Non-JSON strings get wrapped in `{"input": "..."}` so the wire
+        // always sees an object, never a bare scalar.
+        let i = ToolInput::Generic {
+            summary: "not even close to json".into(),
+        };
+        let v = i.to_value();
+        assert_eq!(v["input"], "not even close to json");
+    }
+
+    // ─── MessagePart helpers ──────────────────────────────────────────────
+
+    #[test]
+    fn message_part_text_only_for_compact_boundary_includes_token_count_normal() {
+        let p = MessagePart::CompactBoundary { pre_tokens: 12_500 };
+        let s = p.text_only();
+        assert!(s.contains("12500"), "{s}");
+    }
+
+    #[test]
+    fn message_part_approx_text_len_text_normal() {
+        let p = MessagePart::Text("hello world".into());
+        assert_eq!(p.approx_text_len(), 11);
+    }
+
+    #[test]
+    fn message_part_approx_text_len_compact_boundary_zero_robust() {
+        let p = MessagePart::CompactBoundary { pre_tokens: 999 };
+        assert_eq!(p.approx_text_len(), 0);
+    }
+
+    #[test]
+    fn message_part_approx_text_len_task_status_includes_summary_normal() {
+        let p = MessagePart::TaskStatus(TaskStatusPart {
+            task_id: "t1".into(),
+            description: "do it".into(),
+            status: TaskLifecycle::Running,
+            summary: Some("almost done".into()),
+            error: None,
+            elapsed_ms: None,
+        });
+        assert_eq!(p.approx_text_len(), "do it".len() + "almost done".len());
+    }
+
+    #[test]
+    fn message_part_to_display_string_reasoning_wraps_with_marker_normal() {
+        let p = MessagePart::Reasoning("internal monologue".into());
+        let s = p.to_display_string();
+        assert!(s.starts_with("[Reasoning"), "{s}");
+        assert!(s.contains("internal monologue"), "{s}");
+    }
+
+    // ─── ChatMessage helpers ──────────────────────────────────────────────
+
+    #[test]
+    fn chat_message_user_constructs_text_part_normal() {
+        let m = ChatMessage::user("hi".into());
+        assert!(m.role_is_user());
+        assert!(matches!(&m.parts[0], MessagePart::Text(s) if s == "hi"));
+        assert!(m.agent_name.is_none(), "user msgs have no agent name");
+    }
+
+    #[test]
+    fn chat_message_assistant_constructs_text_part_normal() {
+        let m = ChatMessage::assistant("hello".into());
+        assert!(!m.role_is_user());
+        assert!(matches!(&m.parts[0], MessagePart::Text(s) if s == "hello"));
+    }
+
+    #[test]
+    fn chat_message_assistant_parts_preserves_input_normal() {
+        let parts = vec![
+            MessagePart::Reasoning("think".into()),
+            MessagePart::Text("speak".into()),
+        ];
+        let m = ChatMessage::assistant_parts(parts);
+        assert_eq!(m.parts.len(), 2);
+    }
+
+    #[test]
+    fn chat_message_compact_boundary_marks_role_user_with_system_agent_robust() {
+        let m = ChatMessage::compact_boundary("summary text", 12_345);
+        assert!(m.role_is_user(), "compact boundary uses user role for replay");
+        assert!(m.is_compact_boundary());
+        assert_eq!(m.agent_name.as_deref(), Some("system"));
+    }
+
+    #[test]
+    fn chat_message_is_compact_boundary_only_when_part_present_normal() {
+        let regular = ChatMessage::user("hi".into());
+        assert!(!regular.is_compact_boundary());
+    }
+
+    // ─── ModelUsage::cache_hit_pct ────────────────────────────────────────
+
+    #[test]
+    fn model_usage_cache_hit_pct_zero_input_safe_normal() {
+        let u = ModelUsage::default();
+        assert_eq!(u.cache_hit_pct(), 0.0);
+    }
+
+    #[test]
+    fn model_usage_cache_hit_pct_capped_at_100_robust() {
+        // If a buggy provider reports cache_read > input we still cap at 100%.
+        let u = ModelUsage {
+            input_tokens: 10,
+            cache_read_tokens: 50,
+            ..Default::default()
+        };
+        assert_eq!(u.cache_hit_pct(), 100.0);
+    }
+
+    #[test]
+    fn model_usage_cache_hit_pct_normal_value_normal() {
+        let u = ModelUsage {
+            input_tokens: 100,
+            cache_read_tokens: 25,
+            ..Default::default()
+        };
+        assert_eq!(u.cache_hit_pct(), 25.0);
+    }
+
+    #[test]
+    fn model_usage_total_context_tokens_sums_all_normal() {
+        let u = ModelUsage {
+            input_tokens: 100,
+            output_tokens: 200,
+            cache_read_tokens: 10,
+            cache_write_tokens: 20,
+            cost_usd: None,
+        };
+        assert_eq!(u.total_context_tokens(), 330);
+    }
+
+    #[test]
+    fn model_usage_add_delta_accumulates_normal() {
+        let mut u = ModelUsage::default();
+        u.add_delta(10, 20, 5, 3);
+        u.add_delta(1, 2, 0, 0);
+        assert_eq!(u.input_tokens, 11);
+        assert_eq!(u.output_tokens, 22);
+        assert_eq!(u.cache_read_tokens, 5);
+        assert_eq!(u.cache_write_tokens, 3);
+    }
+
+    // ─── parse_unified_diff / parse_hunk_header / parse_hunk_start ─────────
+
+    #[test]
+    fn parse_hunk_start_strips_sign_and_count_normal() {
+        assert_eq!(parse_hunk_start("-12,5"), 12);
+        assert_eq!(parse_hunk_start("+200,1"), 200);
+        assert_eq!(parse_hunk_start("17"), 17);
+    }
+
+    #[test]
+    fn parse_hunk_start_returns_one_for_unparseable_robust() {
+        assert_eq!(parse_hunk_start("notanumber"), 1);
+        assert_eq!(parse_hunk_start(""), 1);
+    }
+
+    #[test]
+    fn parse_hunk_header_extracts_old_new_starts_normal() {
+        let (old, new, _) = parse_hunk_header("@@ -1,5 +10,7 @@ fn foo");
+        assert_eq!(old, 1);
+        assert_eq!(new, 10);
+    }
+
+    #[test]
+    fn parse_unified_diff_counts_additions_deletions_normal() {
+        let view = parse_unified_diff(
+            "x.rs",
+            "@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n",
+        );
+        assert_eq!(view.additions, 1);
+        assert_eq!(view.deletions, 1);
+        assert_eq!(view.file_path, "x.rs");
+        assert_eq!(view.hunks.len(), 1);
+    }
+
+    #[test]
+    fn parse_unified_diff_handles_multiple_hunks_normal() {
+        let view = parse_unified_diff(
+            "x.rs",
+            "@@ -1,1 +1,1 @@\n-a\n+b\n@@ -10,1 +10,1 @@\n-c\n+d\n",
+        );
+        assert_eq!(view.hunks.len(), 2);
+        assert_eq!(view.additions, 2);
+        assert_eq!(view.deletions, 2);
+    }
+
+    #[test]
+    fn parse_unified_diff_lines_before_hunk_skipped_robust() {
+        // Lines before the first @@ have no hunk to attach to — they're
+        // dropped silently. A real "missing header" produces an empty
+        // hunk list, not a panic.
+        let view = parse_unified_diff("x.rs", "stray text\n");
+        assert!(view.hunks.is_empty());
+        assert_eq!(view.additions, 0);
+    }
+
+    // ─── truncate_lines ──────────────────────────────────────────────────
+
+    #[test]
+    fn truncate_lines_below_max_returns_unchanged_normal() {
+        let s = "a\nb\nc\n";
+        // Note: the implementation's `lines.iter().take(max).join("\n")`
+        // strips trailing newline since `lines()` doesn't include it.
+        let out = truncate_lines(s, 10);
+        assert_eq!(out, "a\nb\nc");
+    }
+
+    #[test]
+    fn truncate_lines_above_max_appends_more_marker_robust() {
+        let s = "a\nb\nc\nd\ne\n";
+        let out = truncate_lines(s, 2);
+        assert!(out.contains("a"));
+        assert!(out.contains("b"));
+        assert!(!out.contains("c"));
+        assert!(out.contains("3 more"), "{out}");
+    }
+
+    #[test]
+    fn truncate_lines_empty_input_robust() {
+        assert_eq!(truncate_lines("", 5), "");
+    }
 }

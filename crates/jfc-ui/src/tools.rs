@@ -2058,4 +2058,1173 @@ mod tests {
             result.output
         );
     }
+
+    // ─── all_tool_defs catalogue checks ──────────────────────────────────
+
+    #[test]
+    fn all_tool_defs_includes_every_canonical_tool_normal() {
+        // Every primary tool name must appear in the catalogue. If a refactor
+        // accidentally drops one (e.g. by gating it behind a feature flag),
+        // the API call will 400 with "tool X not found".
+        let defs = all_tool_defs();
+        let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
+        for required in [
+            "Bash",
+            "Read",
+            "Write",
+            "Edit",
+            "Glob",
+            "Grep",
+            "TaskCreate",
+            "TaskUpdate",
+            "TaskList",
+            "TaskDone",
+            "Skill",
+            "Task",
+            "MemoryCreate",
+            "MemoryDelete",
+            "TeamCreate",
+            "TeamDelete",
+            "SendMessage",
+            "TeamMemberMode",
+        ] {
+            assert!(
+                names.contains(&required),
+                "all_tool_defs missing {required}; got {names:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn all_tool_defs_have_object_schemas_robust() {
+        // Anthropic's tool API requires `input_schema.type == "object"`. If
+        // any tool ships a bare scalar schema the entire stream errors at
+        // request time.
+        for def in all_tool_defs() {
+            assert_eq!(
+                def.input_schema.get("type").and_then(|v| v.as_str()),
+                Some("object"),
+                "tool {} schema must be object-typed",
+                def.name,
+            );
+        }
+    }
+
+    // ─── filter_tools_for_agent ──────────────────────────────────────────
+
+    fn make_tool_def(name: &str) -> ToolDef {
+        ToolDef {
+            name: name.into(),
+            description: "test".into(),
+            input_schema: serde_json::json!({"type": "object"}),
+        }
+    }
+
+    #[test]
+    fn filter_tools_drops_task_unconditionally_robust() {
+        // Recursive subagent spawning is intentionally blocked.
+        let all = vec![make_tool_def("Bash"), make_tool_def("Task")];
+        let filtered = filter_tools_for_agent(all, &[], &[]);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "Bash");
+    }
+
+    #[test]
+    fn filter_tools_empty_allowed_means_all_normal() {
+        let all = vec![
+            make_tool_def("Bash"),
+            make_tool_def("Read"),
+            make_tool_def("Write"),
+        ];
+        let filtered = filter_tools_for_agent(all, &[], &[]);
+        assert_eq!(filtered.len(), 3);
+    }
+
+    #[test]
+    fn filter_tools_allowed_is_exact_membership_normal() {
+        let all = vec![
+            make_tool_def("Bash"),
+            make_tool_def("Read"),
+            make_tool_def("Write"),
+        ];
+        let filtered =
+            filter_tools_for_agent(all, &["Read".into(), "Write".into()], &[]);
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().any(|t| t.name == "Read"));
+        assert!(filtered.iter().any(|t| t.name == "Write"));
+    }
+
+    #[test]
+    fn filter_tools_disallowed_subtracts_from_allowed_normal() {
+        let all = vec![
+            make_tool_def("Bash"),
+            make_tool_def("Read"),
+            make_tool_def("Write"),
+        ];
+        let filtered = filter_tools_for_agent(all, &[], &["Bash".into()]);
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().all(|t| t.name != "Bash"));
+    }
+
+    #[test]
+    fn filter_tools_case_insensitive_robust() {
+        // Allow/disallow lists in agent definitions are user-edited; case
+        // variation must not silently drop or skip tools.
+        let all = vec![make_tool_def("Bash"), make_tool_def("Read")];
+        let filtered = filter_tools_for_agent(all, &["BASH".into()], &[]);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "Bash");
+    }
+
+    #[test]
+    fn filter_tools_disallow_overrides_allow_robust() {
+        let all = vec![make_tool_def("Bash"), make_tool_def("Read")];
+        // Same tool both allow- and disallow-listed: disallow wins.
+        let filtered =
+            filter_tools_for_agent(all, &["Bash".into()], &["Bash".into()]);
+        assert_eq!(filtered.len(), 0);
+    }
+
+    // ─── configure_tool_command — env stripping ──────────────────────────
+
+    #[test]
+    fn configure_tool_command_sets_no_prompt_envs_normal() {
+        // We can't actually inspect the configured env without spawning,
+        // so verify by running a bash command and checking the env it
+        // sees. (If configure_tool_command silently regressed, the env
+        // wouldn't be set and `$GIT_TERMINAL_PROMPT` would be empty.)
+        let mut cmd = Command::new("bash");
+        cmd.arg("-c")
+            .arg("echo \"$GIT_TERMINAL_PROMPT|$SUDO_ASKPASS|$SSH_ASKPASS\"");
+        configure_tool_command(&mut cmd);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let out = rt.block_on(async { cmd.output().await.unwrap() });
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("0|/bin/false|/bin/false"), "got: {stdout}");
+    }
+
+    // ─── non_interactive_shell_command — extra cases ─────────────────────
+
+    #[test]
+    fn non_interactive_bare_sudo_gets_minus_n_normal() {
+        // Plain "sudo" with no args ought to still be made non-interactive.
+        assert_eq!(non_interactive_shell_command("sudo"), "sudo -n");
+    }
+
+    #[test]
+    fn non_interactive_already_minus_n_is_unchanged_robust() {
+        assert_eq!(
+            non_interactive_shell_command("sudo -n true"),
+            "sudo -n true"
+        );
+    }
+
+    #[test]
+    fn non_interactive_preserves_leading_whitespace_normal() {
+        // Pre-existing indentation in the user's script must stay intact —
+        // shell heredocs and `set -e; sudo …` blocks rely on it.
+        let cmd = "  sudo apt update";
+        let out = non_interactive_shell_command(cmd);
+        assert!(out.starts_with("  "), "leading ws lost: {out}");
+        assert!(out.contains("sudo -n"), "{out}");
+    }
+
+    #[test]
+    fn non_interactive_unrelated_command_unchanged_normal() {
+        assert_eq!(non_interactive_shell_command("ls"), "ls");
+        assert_eq!(non_interactive_shell_command(""), "");
+    }
+
+    // ─── terminal_safe_text — extra cases ────────────────────────────────
+
+    #[test]
+    fn terminal_safe_text_preserves_tab_newline_cr_normal() {
+        let raw = "a\tb\nc\rd";
+        assert_eq!(terminal_safe_text(raw), "a\tb\nc\rd");
+    }
+
+    #[test]
+    fn terminal_safe_text_drops_lone_escape_normal() {
+        // Lone escape with no follow-up is dropped (no terminal sequence
+        // to consume) — all that remains is the surrounding text.
+        let raw = "before\u{1b}";
+        assert_eq!(terminal_safe_text(raw), "before");
+    }
+
+    #[test]
+    fn terminal_safe_text_handles_osc_terminator_with_st_robust() {
+        // OSC sequences can terminate with either BEL (\x07) or ST (ESC \\).
+        let raw = "\u{1b}]0;title\u{1b}\\after";
+        assert_eq!(terminal_safe_text(raw), "after");
+    }
+
+    #[test]
+    fn terminal_safe_text_handles_unrecognized_escape_robust() {
+        // ESC followed by something other than [ or ] consumes the next
+        // byte and continues — no panic, no mojibake.
+        let raw = "\u{1b}=normal";
+        assert_eq!(terminal_safe_text(raw), "normal");
+    }
+
+    #[test]
+    fn terminal_safe_text_passes_unicode_normal() {
+        let raw = "héllo wörld 世界";
+        assert_eq!(terminal_safe_text(raw), "héllo wörld 世界");
+    }
+
+    // ─── ExecutionResult builders ────────────────────────────────────────
+
+    #[test]
+    fn execution_result_success_has_no_diagnostics_normal() {
+        let r = ExecutionResult::success("ok");
+        assert!(!r.is_error());
+        assert!(r.diagnostics.is_empty());
+        assert!(r.diff.is_none());
+        assert!(r.provenance.is_none());
+    }
+
+    #[test]
+    fn execution_result_with_provenance_attaches_normal() {
+        let r = ExecutionResult::success("ok").with_provenance(ToolProvenance {
+            cwd: PathBuf::from("/tmp"),
+            source: ToolSource::LocalExecutor,
+        });
+        assert!(r.provenance.is_some());
+        assert_eq!(r.provenance.unwrap().cwd, PathBuf::from("/tmp"));
+    }
+
+    #[test]
+    fn execution_result_with_diff_attaches_normal() {
+        let view = crate::types::parse_unified_diff(
+            "x.rs",
+            "@@ -1,1 +1,1 @@\n-a\n+b\n",
+        );
+        let r = ExecutionResult::success("ok").with_diff(view);
+        assert!(r.diff.is_some());
+    }
+
+    // ─── execute_bash dispatch ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn execute_bash_success_carries_provenance_normal() {
+        let result = execute_bash("echo hello", Some(5_000), Path::new(".")).await;
+        assert!(!result.is_error());
+        assert!(result.output.contains("hello"), "{}", result.output);
+        // Successful bash should attach provenance pointing at the cwd.
+        assert!(result.provenance.is_some(), "bash success must carry cwd");
+        assert_eq!(
+            result.provenance.unwrap().source,
+            ToolSource::LocalExecutor
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_bash_nonzero_exit_is_complete_with_header_normal() {
+        // Per Anthropic semantics, a non-zero exit code is *output*, not
+        // a tool failure. The result is still Success and includes
+        // `[exit N]` at the top so the model can read the code.
+        let result =
+            execute_bash("false", Some(5_000), Path::new(".")).await;
+        assert!(!result.is_error(), "exit-1 must be Success: {:?}", result);
+        assert!(result.output.contains("[exit 1]"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_bash_timeout_returns_failure_robust() {
+        // sleep longer than the timeout — must time out cleanly.
+        let result =
+            execute_bash("sleep 5", Some(100), Path::new(".")).await;
+        assert!(result.is_error());
+        assert!(result.output.contains("timed out"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_bash_combines_stdout_and_stderr_normal() {
+        let result = execute_bash(
+            "echo out; echo err >&2",
+            Some(5_000),
+            Path::new("."),
+        )
+        .await;
+        assert!(!result.is_error());
+        assert!(result.output.contains("out"), "{}", result.output);
+        assert!(result.output.contains("err"), "{}", result.output);
+        assert!(
+            result.output.contains("---stderr---"),
+            "stdout+stderr split marker missing: {}",
+            result.output
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_bash_strips_ansi_escape_codes_normal() {
+        // bash subprocess emits ANSI red — terminal_safe_text strips it.
+        let result = execute_bash(
+            "printf '\\033[31mred\\033[0m'",
+            Some(5_000),
+            Path::new("."),
+        )
+        .await;
+        assert!(!result.is_error());
+        assert!(!result.output.contains('\u{1b}'), "ANSI leaked: {:?}", result.output);
+        assert!(result.output.contains("red"), "{}", result.output);
+    }
+
+    // ─── execute_read ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn execute_read_returns_numbered_lines_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("hello.txt");
+        tokio::fs::write(&path, "alpha\nbravo\ncharlie\n").await.unwrap();
+
+        let result =
+            execute_read(path.to_str().unwrap(), None, None, None).await;
+        assert!(!result.is_error());
+        assert!(result.output.contains("1: alpha"), "{}", result.output);
+        assert!(result.output.contains("2: bravo"), "{}", result.output);
+        assert!(result.output.contains("3: charlie"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_read_directory_lists_entries_with_slash_suffix_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        tokio::fs::write(dir.path().join("a.txt"), "x").await.unwrap();
+        tokio::fs::create_dir(dir.path().join("subdir")).await.unwrap();
+
+        let result =
+            execute_read(dir.path().to_str().unwrap(), None, None, None).await;
+        assert!(!result.is_error());
+        assert!(result.output.contains("a.txt"), "{}", result.output);
+        assert!(result.output.contains("subdir/"), "dir suffix missing: {}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_read_offset_and_limit_paginate_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("big.txt");
+        let body: String = (1..=20).map(|i| format!("line{i}\n")).collect();
+        tokio::fs::write(&path, body).await.unwrap();
+
+        let result =
+            execute_read(path.to_str().unwrap(), Some(5), Some(3), None).await;
+        assert!(!result.is_error());
+        // Should show lines 5, 6, 7 only.
+        assert!(result.output.contains("5: line5"), "{}", result.output);
+        assert!(result.output.contains("7: line7"), "{}", result.output);
+        assert!(!result.output.contains("8: line8"), "{}", result.output);
+        assert!(!result.output.contains("4: line4"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_read_missing_file_returns_failure_robust() {
+        let result = execute_read(
+            "/tmp/jfc-definitely-not-here-9999/x.txt",
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(result.is_error());
+        assert!(result.output.contains("Cannot read"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_read_dedup_returns_unchanged_marker_robust() {
+        use crate::context::ReadDedupCache;
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("d.txt");
+        tokio::fs::write(&path, "stable\n").await.unwrap();
+
+        let cache = Arc::new(Mutex::new(ReadDedupCache::new()));
+        // First full read: populates the cache.
+        let r1 = execute_read(
+            path.to_str().unwrap(),
+            None,
+            None,
+            Some(&cache),
+        )
+        .await;
+        assert!(!r1.is_error());
+
+        // Second full read on the unchanged file returns the dedup marker.
+        let r2 = execute_read(
+            path.to_str().unwrap(),
+            None,
+            None,
+            Some(&cache),
+        )
+        .await;
+        assert!(!r2.is_error());
+        assert!(
+            r2.output.contains("File unchanged since last full read"),
+            "expected dedup stub, got: {}",
+            r2.output
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_read_paginated_skips_dedup_robust() {
+        use crate::context::ReadDedupCache;
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("p.txt");
+        let body: String = (1..=10).map(|i| format!("L{i}\n")).collect();
+        tokio::fs::write(&path, body).await.unwrap();
+
+        let cache = Arc::new(Mutex::new(ReadDedupCache::new()));
+        // Full read populates cache.
+        let _ = execute_read(
+            path.to_str().unwrap(),
+            None,
+            None,
+            Some(&cache),
+        )
+        .await;
+        // Paginated read on the same path: dedup must NOT short-circuit.
+        let r = execute_read(
+            path.to_str().unwrap(),
+            Some(2),
+            Some(3),
+            Some(&cache),
+        )
+        .await;
+        assert!(!r.is_error());
+        assert!(!r.output.contains("File unchanged"), "{}", r.output);
+        assert!(r.output.contains("2: L2"), "{}", r.output);
+    }
+
+    // ─── execute_write ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn execute_write_creates_file_with_summary_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("new.txt");
+
+        let result =
+            execute_write(path.to_str().unwrap(), "hello\nworld\n").await;
+        assert!(!result.is_error());
+        assert!(path.exists(), "file should exist after write");
+        let on_disk = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(on_disk, "hello\nworld\n");
+        assert!(result.output.starts_with("Wrote "), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_write_overwrite_uses_updated_header_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("ow.txt");
+        tokio::fs::write(&path, "original").await.unwrap();
+
+        let result =
+            execute_write(path.to_str().unwrap(), "replaced").await;
+        assert!(!result.is_error());
+        assert!(result.output.starts_with("Updated "), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_write_creates_parent_dirs_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("nested/two/three/file.txt");
+
+        let result =
+            execute_write(path.to_str().unwrap(), "x").await;
+        assert!(!result.is_error(), "{}", result.output);
+        assert!(path.exists());
+    }
+
+    #[tokio::test]
+    async fn execute_write_long_content_truncates_preview_robust() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("long.txt");
+        let body: String = (1..=100).map(|i| format!("line{i}\n")).collect();
+
+        let result =
+            execute_write(path.to_str().unwrap(), &body).await;
+        assert!(!result.is_error());
+        assert!(
+            result.output.contains("more lines"),
+            "should announce truncation: {}",
+            result.output
+        );
+        // File on disk has the full content, even though preview is short.
+        let on_disk = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(on_disk.lines().count(), 100);
+    }
+
+    // ─── execute_edit ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn execute_edit_first_only_replaces_one_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("e.txt");
+        tokio::fs::write(&path, "foo bar foo").await.unwrap();
+
+        let result = execute_edit(
+            path.to_str().unwrap(),
+            "foo",
+            "BAZ",
+            ReplacementMode::All,
+        )
+        .await;
+        assert!(!result.is_error(), "{}", result.output);
+        let after = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(after, "BAZ bar BAZ");
+        assert!(result.diff.is_some(), "Edit must produce a DiffView");
+    }
+
+    #[tokio::test]
+    async fn execute_edit_multiple_matches_without_replace_all_fails_robust() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("m.txt");
+        tokio::fs::write(&path, "a a a").await.unwrap();
+
+        let result = execute_edit(
+            path.to_str().unwrap(),
+            "a",
+            "b",
+            ReplacementMode::FirstOnly,
+        )
+        .await;
+        assert!(result.is_error());
+        assert!(
+            result.output.contains("matches"),
+            "expected 'multiple matches' error: {}",
+            result.output
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_edit_old_string_not_found_fails_robust() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("nf.txt");
+        tokio::fs::write(&path, "abc").await.unwrap();
+
+        let result = execute_edit(
+            path.to_str().unwrap(),
+            "missing",
+            "x",
+            ReplacementMode::FirstOnly,
+        )
+        .await;
+        assert!(result.is_error());
+        assert!(result.output.contains("not found"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_edit_empty_old_on_nonempty_file_rejects_robust() {
+        // Empty old_string on a non-empty file is ambiguous (where to
+        // insert?) so we reject — only allowed on a missing/empty file
+        // as a "create" path.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("ne.txt");
+        tokio::fs::write(&path, "stuff").await.unwrap();
+
+        let result = execute_edit(
+            path.to_str().unwrap(),
+            "",
+            "new",
+            ReplacementMode::FirstOnly,
+        )
+        .await;
+        assert!(result.is_error());
+        assert!(result.output.contains("old_string is empty"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_edit_empty_old_on_missing_file_creates_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("create.txt");
+
+        let result = execute_edit(
+            path.to_str().unwrap(),
+            "",
+            "fresh content",
+            ReplacementMode::FirstOnly,
+        )
+        .await;
+        assert!(!result.is_error(), "{}", result.output);
+        let body = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(body, "fresh content");
+        assert!(result.output.contains("Created new file"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_edit_replace_all_mentions_count_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("r.txt");
+        tokio::fs::write(&path, "x x x x").await.unwrap();
+
+        let result = execute_edit(
+            path.to_str().unwrap(),
+            "x",
+            "Y",
+            ReplacementMode::All,
+        )
+        .await;
+        assert!(!result.is_error());
+        assert!(
+            result.output.contains("4 occurrences"),
+            "{}",
+            result.output
+        );
+    }
+
+    // ─── build_edit_diff_view ────────────────────────────────────────────
+
+    #[test]
+    fn build_edit_diff_view_no_change_yields_empty_hunks_normal() {
+        let view = build_edit_diff_view("x.rs", "abc\n", "abc\n");
+        assert!(view.hunks.is_empty());
+        assert_eq!(view.additions, 0);
+        assert_eq!(view.deletions, 0);
+    }
+
+    #[test]
+    fn build_edit_diff_view_counts_added_removed_normal() {
+        let view = build_edit_diff_view(
+            "x.rs",
+            "a\nb\nc\n",
+            "a\nB\nc\n",
+        );
+        assert_eq!(view.additions, 1);
+        assert_eq!(view.deletions, 1);
+        assert_eq!(view.hunks.len(), 1);
+        assert_eq!(view.file_path, "x.rs");
+    }
+
+    #[test]
+    fn build_edit_diff_view_pure_addition_robust() {
+        let view = build_edit_diff_view(
+            "x.rs",
+            "a\nb\n",
+            "a\nb\nc\n",
+        );
+        assert_eq!(view.additions, 1);
+        assert_eq!(view.deletions, 0);
+    }
+
+    // ─── execute_glob ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn execute_glob_matches_files_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        tokio::fs::write(dir.path().join("a.rs"), "").await.unwrap();
+        tokio::fs::write(dir.path().join("b.rs"), "").await.unwrap();
+        tokio::fs::write(dir.path().join("c.txt"), "").await.unwrap();
+
+        let result = execute_glob("*.rs", None, dir.path()).await;
+        assert!(!result.is_error(), "{}", result.output);
+        assert!(result.output.contains("a.rs"), "{}", result.output);
+        assert!(result.output.contains("b.rs"), "{}", result.output);
+        assert!(!result.output.contains("c.txt"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_glob_no_match_returns_message_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let result = execute_glob("*.zzz", None, dir.path()).await;
+        assert!(!result.is_error());
+        assert!(
+            result.output.contains("No files matched"),
+            "{}",
+            result.output
+        );
+    }
+
+    // ─── execute_grep ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn execute_grep_finds_pattern_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        tokio::fs::write(
+            dir.path().join("a.txt"),
+            "line one\nlooking-for-this\nfinal\n",
+        )
+        .await
+        .unwrap();
+
+        let result =
+            execute_grep("looking-for-this", None, None, None, dir.path()).await;
+        assert!(!result.is_error(), "{}", result.output);
+        assert!(result.output.contains("looking-for-this"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_grep_no_match_returns_message_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        tokio::fs::write(dir.path().join("a.txt"), "x\n").await.unwrap();
+
+        let result =
+            execute_grep("never-here-zzz", None, None, None, dir.path()).await;
+        assert!(!result.is_error());
+        assert!(result.output.contains("No matches"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_grep_files_with_matches_mode_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        tokio::fs::write(dir.path().join("a.txt"), "needle here\n")
+            .await
+            .unwrap();
+        tokio::fs::write(dir.path().join("b.txt"), "no needle\n")
+            .await
+            .unwrap();
+
+        let result = execute_grep(
+            "needle",
+            None,
+            None,
+            Some("files_with_matches"),
+            dir.path(),
+        )
+        .await;
+        assert!(!result.is_error(), "{}", result.output);
+        assert!(result.output.contains("a.txt"), "{}", result.output);
+    }
+
+    // ─── execute_task_create / update / list / done ──────────────────────
+
+    #[test]
+    fn execute_task_create_without_store_fails_robust() {
+        let r = execute_task_create(None, "subj".into(), "desc".into(), None, vec![]);
+        assert!(r.is_error());
+        assert!(r.output.contains("Task store not available"));
+    }
+
+    #[test]
+    fn execute_task_create_with_store_returns_task_json_normal() {
+        let store = TaskStore::in_memory();
+        let r = execute_task_create(
+            Some(store.clone()),
+            "ship".into(),
+            "release v1".into(),
+            None,
+            vec![],
+        );
+        assert!(!r.is_error(), "{:?}", r);
+        // The output is the JSON of the created task — should mention the
+        // subject and a `t1` id.
+        assert!(r.output.contains("ship"), "{}", r.output);
+        assert!(r.output.contains("t1"), "{}", r.output);
+    }
+
+    #[test]
+    fn execute_task_create_with_unknown_dependency_fails_robust() {
+        let store = TaskStore::in_memory();
+        let r = execute_task_create(
+            Some(store),
+            "x".into(),
+            "y".into(),
+            None,
+            vec!["t999".into()],
+        );
+        assert!(r.is_error(), "{:?}", r);
+    }
+
+    #[test]
+    fn execute_task_update_without_store_fails_robust() {
+        let r = execute_task_update(None, "t1", None, None, None, None);
+        assert!(r.is_error());
+    }
+
+    #[test]
+    fn execute_task_update_changes_status_normal() {
+        let store = TaskStore::in_memory();
+        let create = execute_task_create(
+            Some(store.clone()),
+            "alpha".into(),
+            "do alpha".into(),
+            None,
+            vec![],
+        );
+        assert!(!create.is_error());
+        // First-created task gets id `t1`.
+        let r = execute_task_update(
+            Some(store.clone()),
+            "t1",
+            Some("in_progress".into()),
+            None,
+            None,
+            None,
+        );
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("in_progress"), "{}", r.output);
+    }
+
+    #[test]
+    fn execute_task_update_invalid_status_does_not_set_robust() {
+        // Garbage status string: parser yields None and the patch leaves
+        // status untouched. The update otherwise succeeds.
+        let store = TaskStore::in_memory();
+        execute_task_create(
+            Some(store.clone()),
+            "x".into(),
+            "y".into(),
+            None,
+            vec![],
+        );
+        let r = execute_task_update(
+            Some(store),
+            "t1",
+            Some("not_a_status".into()),
+            Some("renamed".into()),
+            None,
+            None,
+        );
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("renamed"), "{}", r.output);
+    }
+
+    #[test]
+    fn execute_task_done_marks_completed_normal() {
+        let store = TaskStore::in_memory();
+        execute_task_create(
+            Some(store.clone()),
+            "do".into(),
+            "it".into(),
+            None,
+            vec![],
+        );
+        let r = execute_task_done(Some(store), "t1");
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("completed"), "{}", r.output);
+    }
+
+    #[test]
+    fn execute_task_done_unknown_id_fails_robust() {
+        let store = TaskStore::in_memory();
+        let r = execute_task_done(Some(store), "tnosuch");
+        assert!(r.is_error());
+    }
+
+    #[test]
+    fn execute_task_list_without_store_fails_robust() {
+        let r = execute_task_list(None, None, None);
+        assert!(r.is_error());
+    }
+
+    #[test]
+    fn execute_task_list_returns_tasks_normal() {
+        let store = TaskStore::in_memory();
+        execute_task_create(
+            Some(store.clone()),
+            "alpha".into(),
+            "first".into(),
+            None,
+            vec![],
+        );
+        execute_task_create(
+            Some(store.clone()),
+            "bravo".into(),
+            "second".into(),
+            None,
+            vec![],
+        );
+        let r = execute_task_list(Some(store), None, None);
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("alpha"), "{}", r.output);
+        assert!(r.output.contains("bravo"), "{}", r.output);
+    }
+
+    #[test]
+    fn execute_task_list_filters_by_owner_robust() {
+        let store = TaskStore::in_memory();
+        execute_task_create(
+            Some(store.clone()),
+            "x".into(),
+            "y".into(),
+            None,
+            vec![],
+        );
+        execute_task_update(
+            Some(store.clone()),
+            "t1",
+            None,
+            None,
+            None,
+            Some("alice".into()),
+        );
+        let only_alice =
+            execute_task_list(Some(store.clone()), None, Some("alice"));
+        assert!(only_alice.output.contains("alice"), "{}", only_alice.output);
+
+        let only_bob = execute_task_list(Some(store), None, Some("bob"));
+        assert!(!only_bob.output.contains("alice"), "{}", only_bob.output);
+    }
+
+    // ─── execute_memory_create / delete ──────────────────────────────────
+
+    #[test]
+    fn execute_memory_create_invalid_level_fails_robust() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let r = execute_memory_create(
+            "bogus", "context", "private", "body", dir.path(),
+        );
+        assert!(r.is_error());
+        assert!(r.output.contains("Invalid level"), "{}", r.output);
+    }
+
+    #[test]
+    fn execute_memory_create_invalid_type_fails_robust() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let r = execute_memory_create(
+            "user", "wibble", "private", "body", dir.path(),
+        );
+        assert!(r.is_error());
+    }
+
+    #[test]
+    fn execute_memory_create_invalid_scope_fails_robust() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let r = execute_memory_create(
+            "user", "context", "wibble", "body", dir.path(),
+        );
+        assert!(r.is_error());
+    }
+
+    #[test]
+    fn execute_memory_create_empty_body_fails_robust() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let r = execute_memory_create(
+            "project", "context", "private", "   ", dir.path(),
+        );
+        assert!(r.is_error());
+        assert!(r.output.contains("body cannot be empty"), "{}", r.output);
+    }
+
+    #[test]
+    fn execute_memory_create_project_writes_file_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let r = execute_memory_create(
+            "project",
+            "context",
+            "private",
+            "Remember the alamo.",
+            dir.path(),
+        );
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("Memory saved to"), "{}", r.output);
+    }
+
+    #[test]
+    fn execute_memory_delete_missing_path_fails_robust() {
+        let r = execute_memory_delete("/tmp/jfc-no-such-memory-path-xyz-9831.md");
+        assert!(r.is_error());
+        assert!(r.output.contains("File not found"), "{}", r.output);
+    }
+
+    #[test]
+    fn execute_memory_delete_outside_memory_dir_rejected_robust() {
+        // delete_memory refuses paths outside ~/.config/jfc/memory or
+        // <project>/.jfc/memory. A scratch file in tempdir hits that
+        // guardrail — the executor surfaces the failure cleanly.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("not-a-memory.md");
+        std::fs::write(&path, "scratch").unwrap();
+        let r = execute_memory_delete(path.to_str().unwrap());
+        assert!(r.is_error(), "expected failure for path outside memory dir");
+        assert!(
+            r.output.contains("Failed to delete memory"),
+            "{}",
+            r.output
+        );
+    }
+
+    // ─── execute_team_member_mode validation ─────────────────────────────
+
+    #[tokio::test]
+    async fn execute_team_member_mode_invalid_mode_fails_robust() {
+        let r =
+            execute_team_member_mode("alice", "godmode", Some("alpha")).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("Invalid mode"), "{}", r.output);
+    }
+
+    #[tokio::test]
+    async fn execute_team_member_mode_no_team_fails_robust() {
+        // Mode is valid but there's no active team.
+        let r = execute_team_member_mode("alice", "default", None).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("No active team"), "{}", r.output);
+    }
+
+    // ─── execute_tool dispatch ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn execute_tool_dispatches_bash_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let result = execute_tool(
+            ToolKind::Bash,
+            ToolInput::Bash {
+                command: "echo dispatched".into(),
+                timeout: Some(5_000),
+                workdir: None,
+            },
+            dir.path().to_path_buf(),
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(!result.is_error(), "{}", result.output);
+        assert!(result.output.contains("dispatched"), "{}", result.output);
+    }
+
+    #[tokio::test]
+    async fn execute_tool_task_kind_rejects_with_streaming_message_robust() {
+        // The Task tool can't be dispatched through the normal executor;
+        // it requires the streaming path. The dispatcher returns a clear
+        // error rather than silently no-op'ing.
+        let r = execute_tool(
+            ToolKind::Task,
+            ToolInput::Task(crate::types::TaskInput {
+                description: "x".into(),
+                prompt: "y".into(),
+                subagent_type: None,
+                category: None,
+                run_in_background: false,
+                model: None,
+                name: None,
+                team_name: None,
+                mode: None,
+                isolation: None,
+            }),
+            PathBuf::from("."),
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(r.is_error());
+        assert!(r.output.contains("streaming"), "{}", r.output);
+    }
+
+    #[tokio::test]
+    async fn execute_tool_kind_input_mismatch_falls_through_robust() {
+        // Mismatched kind/input pair returns "not yet implemented" so a
+        // routing bug surfaces clearly rather than silently dropping.
+        let r = execute_tool(
+            ToolKind::Bash,
+            ToolInput::Generic {
+                summary: "wrong shape".into(),
+            },
+            PathBuf::from("."),
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(r.is_error());
+        assert!(r.output.contains("not yet implemented"), "{}", r.output);
+    }
+
+    #[tokio::test]
+    async fn execute_tool_invalidates_dedup_after_write_normal() {
+        use crate::context::ReadDedupCache;
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("inv.txt");
+        tokio::fs::write(&path, "v1\n").await.unwrap();
+
+        let cache = Arc::new(Mutex::new(ReadDedupCache::new()));
+
+        // Prime cache with a Read.
+        let r1 = execute_tool(
+            ToolKind::Read,
+            ToolInput::Read {
+                file_path: path.to_string_lossy().to_string(),
+                offset: None,
+                limit: None,
+            },
+            dir.path().to_path_buf(),
+            Some(cache.clone()),
+            None,
+            None,
+        )
+        .await;
+        assert!(!r1.is_error());
+
+        // Write through the dispatcher — this should invalidate the cache.
+        let w = execute_tool(
+            ToolKind::Write,
+            ToolInput::Write {
+                file_path: path.to_string_lossy().to_string(),
+                content: "v2\n".into(),
+            },
+            dir.path().to_path_buf(),
+            Some(cache.clone()),
+            None,
+            None,
+        )
+        .await;
+        assert!(!w.is_error());
+
+        // Next Read should NOT short-circuit with the dedup stub.
+        let r2 = execute_tool(
+            ToolKind::Read,
+            ToolInput::Read {
+                file_path: path.to_string_lossy().to_string(),
+                offset: None,
+                limit: None,
+            },
+            dir.path().to_path_buf(),
+            Some(cache),
+            None,
+            None,
+        )
+        .await;
+        assert!(!r2.is_error());
+        assert!(
+            !r2.output.contains("File unchanged"),
+            "Write should have invalidated the dedup cache: {}",
+            r2.output
+        );
+        assert!(r2.output.contains("v2"), "{}", r2.output);
+    }
+
+    #[tokio::test]
+    async fn execute_tool_dispatches_glob_normal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        tokio::fs::write(dir.path().join("hit.rs"), "").await.unwrap();
+        let r = execute_tool(
+            ToolKind::Glob,
+            ToolInput::Glob {
+                pattern: "*.rs".into(),
+                path: None,
+            },
+            dir.path().to_path_buf(),
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("hit.rs"), "{}", r.output);
+    }
+
+    #[tokio::test]
+    async fn execute_tool_dispatches_task_create_normal() {
+        let store = TaskStore::in_memory();
+        let r = execute_tool(
+            ToolKind::TaskCreate,
+            ToolInput::TaskCreate {
+                subject: "via dispatcher".into(),
+                description: "test".into(),
+                active_form: None,
+                blocked_by: vec![],
+            },
+            PathBuf::from("."),
+            None,
+            Some(store),
+            None,
+        )
+        .await;
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("via dispatcher"), "{}", r.output);
+    }
 }
