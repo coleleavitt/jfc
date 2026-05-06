@@ -267,7 +267,7 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "Task".into(),
-            description: "Spawn a sub-agent to handle a focused task. The sub-agent runs with the same provider/model and returns a result. Use run_in_background=true for parallel work.".into(),
+            description: "Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities. With name + team_name, spawns a persistent teammate addressable via SendMessage.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -294,9 +294,140 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                     "model": {
                         "type": "string",
                         "description": "Optional model override in 'provider/model' format"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name for the spawned agent. Makes it addressable via SendMessage({to: name}) while running."
+                    },
+                    "team_name": {
+                        "type": "string",
+                        "description": "Team name for spawning. Uses current team context if omitted."
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "Permission mode for spawned teammate (e.g., 'plan' to require plan approval)."
+                    },
+                    "isolation": {
+                        "type": "string",
+                        "enum": ["worktree"],
+                        "description": "Isolation mode. 'worktree' creates a temporary git worktree."
                     }
                 },
                 "required": ["description", "prompt", "run_in_background"]
+            }),
+        },
+        ToolDef {
+            name: "MemoryCreate".into(),
+            description: "Save a persistent memory that will be included in future conversations. Use this to remember user preferences, project conventions, feedback, and important context.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "level": {
+                        "type": "string",
+                        "enum": ["user", "project"],
+                        "description": "Where to store: 'user' (~/.config/jfc/memory/) for personal prefs, 'project' (.jfc/memory/) for project knowledge"
+                    },
+                    "memory_type": {
+                        "type": "string",
+                        "enum": ["feedback", "preference", "project", "context"],
+                        "description": "Category: 'feedback' for corrections/confirmations, 'preference' for style/workflow, 'project' for goals/initiatives, 'context' for general facts"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": ["private", "team"],
+                        "description": "Visibility: 'private' for current user only, 'team' for all project users"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "The memory content. Lead with the rule/fact, then a Why: line and How to apply: line."
+                    }
+                },
+                "required": ["level", "memory_type", "scope", "body"]
+            }),
+        },
+        ToolDef {
+            name: "MemoryDelete".into(),
+            description: "Delete a previously saved memory file. Use when a memory is stale, incorrect, or superseded.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the memory file to delete"
+                    }
+                },
+                "required": ["path"]
+            }),
+        },
+        ToolDef {
+            name: "TeamCreate".into(),
+            description: "Create a new team for coordinating multiple agents. Teams have a 1:1 correspondence with task lists.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "team_name": {
+                        "type": "string",
+                        "description": "Name for the new team to create."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Team description/purpose."
+                    }
+                },
+                "required": ["team_name"]
+            }),
+        },
+        ToolDef {
+            name: "TeamDelete".into(),
+            description: "Clean up team and task directories when the swarm is complete. Must terminate all teammates first.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+        ToolDef {
+            name: "SendMessage".into(),
+            description: "Send a message to another agent. Your plain text output is NOT visible to other agents — to communicate, you MUST call this tool.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "to": {
+                        "type": "string",
+                        "description": "Recipient: teammate name"
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "A 5-10 word summary shown as a preview in the UI"
+                    },
+                    "message": {
+                        "description": "Plain text message content or structured protocol message",
+                        "oneOf": [
+                            { "type": "string" },
+                            { "type": "object" }
+                        ]
+                    }
+                },
+                "required": ["to", "message"]
+            }),
+        },
+        ToolDef {
+            name: "TeamMemberMode".into(),
+            description: "Change a teammate's permission mode at runtime. Use to promote (e.g. plan → default) once a teammate has earned trust, or demote (default → plan) for high-stakes work. Modes: plan, default, acceptEdits, bypassPermissions.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "member_name": {
+                        "type": "string",
+                        "description": "Name of the teammate to update."
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "New permission mode: plan | default | acceptEdits | bypassPermissions",
+                        "enum": ["plan", "default", "acceptEdits", "bypassPermissions"]
+                    }
+                },
+                "required": ["member_name", "mode"]
             }),
         },
     ]
@@ -308,6 +439,11 @@ pub struct ExecutionResult {
     pub outcome: ToolOutcome,
     pub diagnostics: Vec<ToolDiagnostic>,
     pub provenance: Option<ToolProvenance>,
+    /// When set, the renderer prefers this structured diff over
+    /// `output`/`Text`. Used by Edit (and Write-as-overwrite) to surface
+    /// a colorized diff in the transcript instead of a flat
+    /// "file updated successfully" string.
+    pub diff: Option<crate::types::DiffView>,
 }
 
 impl ExecutionResult {
@@ -317,6 +453,7 @@ impl ExecutionResult {
             outcome: ToolOutcome::Success,
             diagnostics: Vec::new(),
             provenance: None,
+            diff: None,
         }
     }
 
@@ -327,11 +464,17 @@ impl ExecutionResult {
             output,
             outcome: ToolOutcome::Failed,
             provenance: None,
+            diff: None,
         }
     }
 
     pub fn with_provenance(mut self, provenance: ToolProvenance) -> Self {
         self.provenance = Some(provenance);
+        self
+    }
+
+    pub fn with_diff(mut self, diff: crate::types::DiffView) -> Self {
+        self.diff = Some(diff);
         self
     }
 
@@ -471,6 +614,7 @@ pub async fn execute_tool(
     cwd: std::path::PathBuf,
     dedup: Option<Arc<Mutex<ReadDedupCache>>>,
     task_store: Option<Arc<TaskStore>>,
+    active_team_name: Option<&str>,
 ) -> ExecutionResult {
     match (kind, input) {
         (
@@ -573,7 +717,64 @@ pub async fn execute_tool(
         (ToolKind::Skill, ToolInput::Skill { name, args }) => {
             execute_skill(&name, args.as_deref()).await
         }
+        (
+            ToolKind::MemoryCreate,
+            ToolInput::MemoryCreate {
+                level,
+                memory_type,
+                scope,
+                body,
+            },
+        ) => execute_memory_create(&level, &memory_type, &scope, &body, &cwd),
+        (ToolKind::MemoryDelete, ToolInput::MemoryDelete { path }) => {
+            execute_memory_delete(&path)
+        }
+        (ToolKind::TeamCreate, ToolInput::TeamCreate { team_name, description }) => {
+            execute_team_create(&team_name, description.as_deref(), &cwd).await
+        }
+        (ToolKind::TeamDelete, ToolInput::TeamDelete) => {
+            execute_team_delete(active_team_name).await
+        }
+        (ToolKind::SendMessage, ToolInput::SendMessage { to, message, summary }) => {
+            execute_send_message(&to, &message, summary.as_deref(), active_team_name).await
+        }
+        (ToolKind::TeamMemberMode, ToolInput::TeamMemberMode { member_name, mode }) => {
+            execute_team_member_mode(&member_name, &mode, active_team_name).await
+        }
         (kind, _) => ExecutionResult::failure(format!("Tool {:?} not yet implemented", kind)),
+    }
+}
+
+async fn execute_team_member_mode(
+    member_name: &str,
+    mode: &str,
+    active_team_name: Option<&str>,
+) -> ExecutionResult {
+    // Validate the mode string against the same vocabulary the leader's
+    // `PermissionMode` understands. Reject anything else so a typo
+    // doesn't silently leave the teammate in an undefined state.
+    const VALID_MODES: &[&str] =
+        &["plan", "default", "acceptEdits", "bypassPermissions"];
+    if !VALID_MODES.iter().any(|v| v.eq_ignore_ascii_case(mode)) {
+        return ExecutionResult::failure(format!(
+            "Invalid mode '{mode}'. Must be one of: plan | default | acceptEdits | bypassPermissions"
+        ));
+    }
+    let team_name = match active_team_name {
+        Some(t) => t,
+        None => {
+            return ExecutionResult::failure(
+                "No active team. Use TeamCreate first to establish a team.",
+            );
+        }
+    };
+    match crate::swarm::team_helpers::set_member_mode(team_name, member_name, mode).await {
+        Ok(_) => ExecutionResult::success(format!(
+            "{member_name} mode set to {mode}"
+        )),
+        Err(e) => ExecutionResult::failure(format!(
+            "Failed to update {member_name}'s mode: {e}"
+        )),
     }
 }
 
@@ -687,18 +888,28 @@ async fn execute_read(
             }
         }
     } else {
-        if let Some(cache) = dedup {
-            let guard = cache.lock().await;
-            if guard.is_unchanged(&path) {
-                trace!(target: "jfc::tools", file_path, "read: dedup cache hit, file unchanged");
-                return ExecutionResult::success(
-                    "File unchanged since last read. The content from the \
-                             earlier Read tool_result in this conversation is still \
-                             current — refer to that instead of re-reading."
-                        .to_string(),
-                );
+        // Dedup only applies to a full re-read (no offset, no limit).
+        // Paginated reads (offset/limit set) are how the model walks
+        // long files — blocking those leaves it stuck after the first
+        // page. The previous behavior treated every Read as "already
+        // saw it" because the cache keyed on path alone, so attempts
+        // to read line 2000+ of a file got the unchanged stub.
+        let is_full_read = offset.is_none() && limit.is_none();
+        if is_full_read {
+            if let Some(cache) = dedup {
+                let guard = cache.lock().await;
+                if guard.is_unchanged(&path) {
+                    trace!(target: "jfc::tools", file_path, "read: dedup cache hit on full re-read");
+                    return ExecutionResult::success(
+                        "File unchanged since last full read. The content from \
+                         the earlier Read tool_result in this conversation is \
+                         still current — refer to that, or pass `offset`/`limit` \
+                         to read a specific range."
+                            .to_string(),
+                    );
+                }
+                drop(guard);
             }
-            drop(guard);
         }
 
         match tokio::fs::read_to_string(&path).await {
@@ -706,7 +917,8 @@ async fn execute_read(
                 let max_lines = limit.unwrap_or(2000) as usize;
                 let start = offset.unwrap_or(1).saturating_sub(1) as usize;
                 let lines: Vec<&str> = content.lines().collect();
-                let slice = &lines[start.min(lines.len())..];
+                let total_lines = lines.len();
+                let slice = &lines[start.min(total_lines)..];
                 let slice = &slice[..slice.len().min(max_lines)];
                 let numbered: String = slice
                     .iter()
@@ -715,11 +927,20 @@ async fn execute_read(
                     .collect::<Vec<_>>()
                     .join("\n");
 
-                if let Some(cache) = dedup {
-                    cache.lock().await.record_read(path);
+                // Only record a "full read" in the cache so partial
+                // reads don't poison subsequent full reads with a
+                // false-positive unchanged stub.
+                if is_full_read {
+                    if let Some(cache) = dedup {
+                        cache.lock().await.record_read(path);
+                    }
                 }
 
-                debug!(target: "jfc::tools", file_path, line_count = slice.len(), "read: success");
+                debug!(
+                    target: "jfc::tools",
+                    file_path, line_count = slice.len(), total_lines, start,
+                    "read: success"
+                );
                 ExecutionResult::success(numbered)
             }
             Err(e) => {
@@ -832,15 +1053,25 @@ async fn execute_edit(
                         (0, r) => format!("-{r} lines"),
                         (a, r) => format!("+{a}/-{r} lines"),
                     };
-                    if replacement.replace_all() && count > 1 {
-                        ExecutionResult::success(format!(
-                            "The file {file_path} has been updated ({line_summary}). All {count} occurrences replaced."
-                        ))
+                    // Build a structured DiffView so the renderer
+                    // shows a colorized hunk like Write does for new
+                    // files. The previous "file updated successfully"
+                    // string told the user nothing about WHAT changed
+                    // — they had to open the file to verify. Mirrors
+                    // v126's Edit-tool diff display.
+                    let diff = build_edit_diff_view(
+                        file_path,
+                        &content,
+                        &new_content,
+                    );
+                    let header = if replacement.replace_all() && count > 1 {
+                        format!(
+                            "{file_path} updated ({line_summary}, {count} occurrences)"
+                        )
                     } else {
-                        ExecutionResult::success(format!(
-                            "The file {file_path} has been updated successfully ({line_summary})."
-                        ))
-                    }
+                        format!("{file_path} updated ({line_summary})")
+                    };
+                    ExecutionResult::success(header).with_diff(diff)
                 }
                 Err(e) => {
                     warn!(target: "jfc::tools", file_path, error = %e, "edit: cannot write after edit");
@@ -862,6 +1093,122 @@ async fn execute_edit(
             warn!(target: "jfc::tools", file_path, error = %e, "edit: cannot read file");
             ExecutionResult::failure(format!("Cannot read file: {e}"))
         }
+    }
+}
+
+/// Build a `DiffView` that walks the line-by-line difference between
+/// `old` and `new` and groups changed-region(s) into hunks with a few
+/// lines of context. Not as fancy as a real LCS-based diff (no min-edit
+/// guarantees) but adequate for Edit-tool display where the change is a
+/// localized old_string→new_string replacement. Mirrors what unified
+/// diff renders look like, fed straight into the existing
+/// `ToolOutput::Diff` renderer.
+fn build_edit_diff_view(
+    file_path: &str,
+    old: &str,
+    new: &str,
+) -> crate::types::DiffView {
+    use crate::types::{DiffHunk, DiffLine, DiffLineKind, DiffView};
+    const CONTEXT: usize = 3;
+    let old_lines: Vec<&str> = old.lines().collect();
+    let new_lines: Vec<&str> = new.lines().collect();
+
+    // Find the first and last lines that differ. If the file is
+    // unchanged, this yields an empty hunk list and the renderer just
+    // shows the title — matches v126's "no-op edit" rendering.
+    let mut first = 0;
+    while first < old_lines.len()
+        && first < new_lines.len()
+        && old_lines[first] == new_lines[first]
+    {
+        first += 1;
+    }
+    let mut last_old = old_lines.len();
+    let mut last_new = new_lines.len();
+    while last_old > first
+        && last_new > first
+        && old_lines[last_old - 1] == new_lines[last_new - 1]
+    {
+        last_old -= 1;
+        last_new -= 1;
+    }
+
+    let mut additions = 0usize;
+    let mut deletions = 0usize;
+    let mut hunks: Vec<DiffHunk> = Vec::new();
+    let has_change = last_old > first || last_new > first;
+    if has_change {
+        let ctx_start = first.saturating_sub(CONTEXT);
+        let ctx_end_old = (last_old + CONTEXT).min(old_lines.len());
+        let ctx_end_new = (last_new + CONTEXT).min(new_lines.len());
+        let mut lines: Vec<DiffLine> = Vec::new();
+        // Leading context (from old; identical in new at this offset).
+        let mut old_lineno = ctx_start + 1;
+        let mut new_lineno = ctx_start + 1;
+        for line in &old_lines[ctx_start..first] {
+            lines.push(DiffLine {
+                kind: DiffLineKind::Context,
+                old_line: Some(old_lineno),
+                new_line: Some(new_lineno),
+                content: (*line).to_owned(),
+            });
+            old_lineno += 1;
+            new_lineno += 1;
+        }
+        // Removed lines.
+        for line in &old_lines[first..last_old] {
+            lines.push(DiffLine {
+                kind: DiffLineKind::Removed,
+                old_line: Some(old_lineno),
+                new_line: None,
+                content: (*line).to_owned(),
+            });
+            old_lineno += 1;
+            deletions += 1;
+        }
+        // Added lines.
+        for line in &new_lines[first..last_new] {
+            lines.push(DiffLine {
+                kind: DiffLineKind::Added,
+                old_line: None,
+                new_line: Some(new_lineno),
+                content: (*line).to_owned(),
+            });
+            new_lineno += 1;
+            additions += 1;
+        }
+        // Trailing context.
+        for (i, line) in old_lines[last_old..ctx_end_old].iter().enumerate() {
+            lines.push(DiffLine {
+                kind: DiffLineKind::Context,
+                old_line: Some(old_lineno + i),
+                new_line: Some(new_lineno + i),
+                content: (*line).to_owned(),
+            });
+        }
+        let _ = ctx_end_new; // reserved for future LCS-based hunks
+        let header = format!(
+            "@@ -{old_start},{old_count} +{new_start},{new_count} @@",
+            old_start = ctx_start + 1,
+            old_count = ctx_end_old - ctx_start,
+            new_start = ctx_start + 1,
+            new_count = (ctx_end_old - ctx_start)
+                + new_lines.len()
+                - old_lines.len(),
+        );
+        hunks.push(DiffHunk {
+            old_start: ctx_start + 1,
+            new_start: ctx_start + 1,
+            header,
+            lines,
+        });
+    }
+
+    DiffView {
+        file_path: file_path.to_owned(),
+        hunks,
+        additions,
+        deletions,
     }
 }
 
@@ -1093,6 +1440,48 @@ async fn execute_skill_in(cwd: &Path, name: &str, args: Option<&str>) -> Executi
     }
 }
 
+/// Default agentic-loop bound when an agent definition doesn't pin one.
+/// Generous enough that legitimate multi-tool tasks complete; tight enough
+/// that a runaway subagent can't burn unlimited tokens. Mirrors v126's
+/// `MAX_AGENT_TURNS` default in cli.2.1.126 (the subagent runner there
+/// caps at ~20 iterations).
+const DEFAULT_AGENT_MAX_TURNS: u32 = 20;
+
+/// Apply an agent's `allowedTools` (allowlist) and `disallowedTools`
+/// (blocklist) to the parent's full tool catalogue. An empty `allowed`
+/// means "all tools allowed" (matches v126 conventions); a non-empty
+/// `allowed` is exact membership. `disallowed` always subtracts.
+/// The Task tool itself is also dropped — recursive subagent spawning
+/// is intentionally not wired (would deadlock the single-stream model).
+fn filter_tools_for_agent(
+    all: Vec<ToolDef>,
+    allowed: &[String],
+    disallowed: &[String],
+) -> Vec<ToolDef> {
+    let allow_all = allowed.is_empty();
+    all.into_iter()
+        .filter(|t| {
+            if t.name.eq_ignore_ascii_case("Task") {
+                return false;
+            }
+            if !allow_all && !allowed.iter().any(|a| a.eq_ignore_ascii_case(&t.name)) {
+                return false;
+            }
+            !disallowed.iter().any(|d| d.eq_ignore_ascii_case(&t.name))
+        })
+        .collect()
+}
+
+/// Run a subagent. The agent gets its own system prompt, tool catalogue
+/// (filtered by the agent's allow/disallow lists), an optional cwd
+/// override (used for worktree isolation), and a turn cap from
+/// `agent_def.max_turns` (defaults to `DEFAULT_AGENT_MAX_TURNS`).
+///
+/// This is a real agentic loop — when the subagent emits `tool_use`,
+/// we execute the tool here and feed the `tool_result` back to the
+/// model on the next iteration, exactly like the parent stream loop in
+/// `stream::stream_response`. Without the loop the subagent could never
+/// `Read` a file or run `Bash`; it could only produce prose.
 pub async fn execute_task(
     task_input: &crate::types::TaskInput,
     provider: &dyn crate::provider::Provider,
@@ -1100,16 +1489,12 @@ pub async fn execute_task(
     tx: Option<&tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
     task_id: Option<&str>,
     agent_def: Option<&crate::agents::AgentDef>,
+    cwd_override: Option<PathBuf>,
 ) -> ExecutionResult {
     use crate::provider::{
-        ProviderContent, ProviderMessage, ProviderRole, StreamEvent, StreamOptions,
+        ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, StreamOptions,
     };
     use futures::StreamExt;
-
-    let messages = vec![ProviderMessage {
-        role: ProviderRole::User,
-        content: vec![ProviderContent::Text(task_input.prompt.clone())],
-    }];
 
     let model = if let Some(m) = &task_input.model {
         crate::provider::ModelId::new(m.clone())
@@ -1117,69 +1502,374 @@ pub async fn execute_task(
         model_id
     };
 
-    // If a matching `AgentDef` was passed, build its effective system
-    // prompt by concatenating each referenced skill body. Skipped skills
-    // (missing names) are logged as warnings inside
-    // `build_agent_system_prompt`. When no agent matched, the spawned
-    // task runs without a system prompt, preserving prior behavior.
-    let options = StreamOptions::new(model);
-    let options = match agent_def {
+    let cwd = cwd_override
+        .clone()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    // System prompt: prefer the agent's compiled prompt when we have a
+    // definition. Without one, fall back to a minimal default that
+    // tells the model it's a subagent with tools — without ANY system
+    // prompt some models just ack and emit `end_turn` immediately,
+    // which produced the "Task completed in 3 seconds with empty
+    // output" symptom when subagent_type lookup missed.
+    let system_prompt = match agent_def {
         Some(agent) => {
-            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             let skills = crate::agents::load_skills(&cwd);
-            let system_prompt = crate::agents::build_agent_system_prompt(agent, &skills);
-            options.system(system_prompt)
+            Some(crate::agents::build_agent_system_prompt(agent, &skills))
         }
-        None => options,
+        None => Some(
+            "You are a subagent dispatched to handle a specific task. You have \
+             direct access to the user's filesystem and shell via tools (Bash, \
+             Read, Write, Edit, Glob, Grep, etc.). Use the tools to complete the \
+             task — don't just describe what you would do. When you have enough \
+             information, write a thorough text summary of your findings and \
+             stop. Working directory: "
+                .to_owned()
+                + cwd.display().to_string().as_str(),
+        ),
     };
 
-    let stream = match provider.stream(messages, &options).await {
-        Ok(s) => s,
-        Err(e) => return ExecutionResult::failure(format!("Task stream error: {e}")),
+    // Tool catalogue: full list filtered by the agent's allow/disallow.
+    // When there's no agent definition we still drop `Task` to avoid
+    // recursive subagent spawning, but otherwise pass everything.
+    let (allowed, disallowed): (&[String], &[String]) = match agent_def {
+        Some(a) => (&a.allowed_tools, &a.disallowed_tools),
+        None => (&[], &[]),
     };
+    let tools = filter_tools_for_agent(all_tool_defs(), allowed, disallowed);
 
-    tokio::pin!(stream);
+    let max_turns = agent_def
+        .and_then(|a| a.max_turns)
+        .unwrap_or(DEFAULT_AGENT_MAX_TURNS);
 
-    let mut text = String::new();
-    let mut error: Option<String> = None;
+    let mut conversation = vec![ProviderMessage {
+        role: ProviderRole::User,
+        content: vec![ProviderContent::Text(task_input.prompt.clone())],
+    }];
+    let mut final_text = String::new();
+    let mut last_error: Option<String> = None;
+    let mut turn: u32 = 0;
 
-    while let Some(event) = stream.next().await {
-        match event {
-            Ok(StreamEvent::TextDelta { delta, .. }) => {
-                // Pipe each chunk into the parent's event loop tagged
-                // with this subagent's task id. The main handler
-                // appends it to `BackgroundTask.messages` so the task
-                // view shows the agent's prose live as it streams.
-                // Mirrors v126's per-agent stream forwarding.
-                if let (Some(tx), Some(id)) = (tx, task_id) {
-                    let _ = tx.send(crate::app::AppEvent::AgentChunk {
-                        task_id: id.to_owned(),
-                        text: delta.clone(),
-                    });
-                }
-                text.push_str(&delta);
-            }
-            Ok(StreamEvent::TextDone { text: t, .. }) => {
-                if text.is_empty() {
-                    text = t;
-                }
-            }
-            Ok(StreamEvent::Error { message }) => {
-                error = Some(message);
-                break;
-            }
-            Err(e) => {
-                error = Some(e.to_string());
-                break;
-            }
-            Ok(_) => {}
+    'outer: loop {
+        turn += 1;
+        if turn > max_turns {
+            warn!(
+                target: "jfc::tools",
+                task_id = ?task_id,
+                turn,
+                max_turns,
+                "subagent exceeded max_turns — bailing"
+            );
+            last_error = Some(format!(
+                "Subagent exceeded max_turns ({max_turns}). Returning partial output."
+            ));
+            break;
         }
+
+        let mut options = StreamOptions::new(model.clone()).tools(tools.clone());
+        if let Some(sp) = &system_prompt {
+            options = options.system(sp.clone());
+        }
+
+        let stream = match provider.stream(conversation.clone(), &options).await {
+            Ok(s) => s,
+            Err(e) => return ExecutionResult::failure(format!("Subagent stream error: {e}")),
+        };
+        tokio::pin!(stream);
+
+        // Per-iteration accumulators. `tool_uses` collects every
+        // tool_use block the model emits this turn so we can execute
+        // them in order and feed the results back on the next pass.
+        let mut turn_text = String::new();
+        let mut tool_uses: Vec<(String, String, String)> = Vec::new(); // (id, name, input_json)
+        let mut stop_reason: Option<StopReason> = None;
+
+        while let Some(event) = stream.next().await {
+            match event {
+                Ok(StreamEvent::TextDelta { delta, .. }) => {
+                    // Pipe deltas through to the task panel so the user
+                    // sees the subagent's prose stream live.
+                    if let (Some(tx), Some(id)) = (tx, task_id) {
+                        let _ = tx.send(crate::app::AppEvent::AgentChunk {
+                            task_id: id.to_owned(),
+                            text: delta.clone(),
+                        });
+                    }
+                    turn_text.push_str(&delta);
+                }
+                Ok(StreamEvent::TextDone { text: t, .. }) => {
+                    if turn_text.is_empty() {
+                        turn_text = t;
+                    }
+                }
+                Ok(StreamEvent::ToolDone {
+                    tool_name,
+                    tool_use_id,
+                    input_json,
+                    ..
+                }) => {
+                    tool_uses.push((tool_use_id, tool_name, input_json));
+                }
+                Ok(StreamEvent::Done { stop_reason: sr }) => {
+                    stop_reason = Some(sr);
+                }
+                Ok(StreamEvent::Error { message }) => {
+                    last_error = Some(message);
+                    break 'outer;
+                }
+                Err(e) => {
+                    last_error = Some(e.to_string());
+                    break 'outer;
+                }
+                Ok(_) => {}
+            }
+        }
+
+        // Append the assistant turn (text + tool_uses, if any) so the
+        // next iteration's request reflects the running history.
+        let mut assistant_content = Vec::new();
+        if !turn_text.is_empty() {
+            assistant_content.push(ProviderContent::Text(turn_text.clone()));
+        }
+        for (id, name, input_json) in &tool_uses {
+            let parsed_input: serde_json::Value =
+                serde_json::from_str(input_json).unwrap_or(serde_json::Value::Null);
+            assistant_content.push(ProviderContent::ToolUse {
+                id: id.clone(),
+                name: name.clone(),
+                input: parsed_input,
+            });
+        }
+        if !assistant_content.is_empty() {
+            conversation.push(ProviderMessage {
+                role: ProviderRole::Assistant,
+                content: assistant_content,
+            });
+        }
+
+        if !turn_text.is_empty() {
+            // Replace, not append — the most recent text is the one to
+            // surface as the subagent's final reply when the loop ends.
+            final_text = turn_text;
+        }
+
+        // No tool calls → subagent is done speaking. Don't also gate on
+        // `stop_reason == EndTurn`: the OWUI/LiteLLM proxy emits
+        // `Done{EndTurn}` on the final `[DONE]` SSE marker even when
+        // the chunk that *finished* the turn carried tool_calls — so
+        // the stop_reason we end up with is `EndTurn` despite there
+        // being unexecuted tool_uses. Trusting it would cause the
+        // subagent to return empty in 3–7s without ever calling Read /
+        // Glob / Grep, exactly the symptom in the user's screenshot.
+        if tool_uses.is_empty() {
+            break;
+        }
+        let _ = stop_reason; // suppress "unused" — kept for future use
+
+        // Execute every tool the subagent requested this turn, then
+        // feed the results back as a single user turn (Anthropic API
+        // requires all `tool_result`s to be batched in one user msg
+        // immediately following the assistant turn that called them).
+        let mut tool_results: Vec<ProviderContent> = Vec::new();
+        for (id, name, input_json) in tool_uses {
+            // Defense in depth: even though the tool list was filtered
+            // upstream, re-check here in case the model hallucinated a
+            // disallowed name. Provider-side filtering should already
+            // make this unreachable for compliant models.
+            if !disallowed.is_empty()
+                && disallowed.iter().any(|d| d.eq_ignore_ascii_case(&name))
+            {
+                tool_results.push(ProviderContent::ToolResult {
+                    tool_use_id: id.clone(),
+                    content: format!("Tool '{name}' is not allowed for this agent."),
+                    is_error: true,
+                });
+                continue;
+            }
+            let kind = ToolKind::from_name(&name);
+            let parsed: serde_json::Value =
+                serde_json::from_str(&input_json).unwrap_or(serde_json::Value::Null);
+            let input = ToolInput::from_value(&name, parsed);
+            let result = execute_tool(kind, input, cwd.clone(), None, None, None).await;
+            let is_error = result.is_error();
+            tool_results.push(ProviderContent::ToolResult {
+                tool_use_id: id.clone(),
+                content: result.output,
+                is_error,
+            });
+        }
+        conversation.push(ProviderMessage {
+            role: ProviderRole::User,
+            content: tool_results,
+        });
     }
 
-    if let Some(err) = error {
-        ExecutionResult::failure(err)
+    if let Some(err) = last_error {
+        if final_text.is_empty() {
+            ExecutionResult::failure(err)
+        } else {
+            ExecutionResult::success(format!("{final_text}\n\n[note: {err}]"))
+        }
     } else {
-        ExecutionResult::success(text)
+        ExecutionResult::success(final_text)
+    }
+}
+
+// ─── Memory tool executors ───────────────────────────────────────────────────
+
+fn execute_memory_create(
+    level: &str,
+    memory_type: &str,
+    scope: &str,
+    body: &str,
+    project_root: &Path,
+) -> ExecutionResult {
+    use crate::memory;
+
+    let mem_level = match level.to_lowercase().as_str() {
+        "user" => memory::MemoryLevel::User,
+        "project" => memory::MemoryLevel::Project,
+        other => {
+            return ExecutionResult::failure(format!(
+                "Invalid level '{other}'. Use 'user' or 'project'."
+            ))
+        }
+    };
+
+    let mem_type = match memory_type.parse::<memory::MemoryType>() {
+        Ok(t) => t,
+        Err(e) => return ExecutionResult::failure(e),
+    };
+
+    let mem_scope = match scope.parse::<memory::MemoryScope>() {
+        Ok(s) => s,
+        Err(e) => return ExecutionResult::failure(e),
+    };
+
+    if body.trim().is_empty() {
+        return ExecutionResult::failure("Memory body cannot be empty.");
+    }
+
+    match memory::create_memory(mem_level, mem_type, mem_scope, body.trim(), project_root) {
+        Ok(path) => ExecutionResult::success(format!(
+            "Memory saved to: {}\n\nThis memory will be included in future conversations.",
+            path.display()
+        )),
+        Err(e) => ExecutionResult::failure(format!("Failed to create memory: {e}")),
+    }
+}
+
+fn execute_memory_delete(path_str: &str) -> ExecutionResult {
+    use crate::memory;
+    use std::path::PathBuf;
+
+    let path = PathBuf::from(path_str);
+
+    if !path.exists() {
+        return ExecutionResult::failure(format!("File not found: {}", path.display()));
+    }
+
+    match memory::delete_memory(&path) {
+        Ok(()) => ExecutionResult::success(format!(
+            "Memory deleted: {}\n\nThis memory will no longer be included in future conversations.",
+            path.display()
+        )),
+        Err(e) => ExecutionResult::failure(format!("Failed to delete memory: {e}")),
+    }
+}
+
+// ─── Swarm tools ─────────────────────────────────────────────────────────────
+
+async fn execute_team_create(
+    team_name: &str,
+    description: Option<&str>,
+    cwd: &Path,
+) -> ExecutionResult {
+    use crate::swarm::{self, team_helpers, types::make_agent_id};
+
+    let lead_id = make_agent_id(swarm::TEAM_LEAD_NAME, team_name);
+
+    match team_helpers::create_team(
+        team_name,
+        description,
+        &lead_id,
+        None,
+        &cwd.to_string_lossy(),
+    )
+    .await
+    {
+        Ok(_team_file) => {
+            let file_path = team_helpers::team_file_path(team_name);
+            let result = serde_json::json!({
+                "team_name": team_name,
+                "team_file_path": file_path.to_string_lossy(),
+                "lead_agent_id": lead_id,
+            });
+            ExecutionResult::success(serde_json::to_string_pretty(&result).unwrap_or_default())
+        }
+        Err(e) => ExecutionResult::failure(format!("Failed to create team: {e}")),
+    }
+}
+
+async fn execute_team_delete(active_team_name: Option<&str>) -> ExecutionResult {
+    use crate::swarm::team_helpers;
+
+    let team_name = match active_team_name {
+        Some(name) => name,
+        None => {
+            return ExecutionResult::failure(
+                "No active team. Use TeamCreate first to establish a team.",
+            );
+        }
+    };
+
+    match team_helpers::delete_team(team_name).await {
+        Ok(()) => {
+            let result = serde_json::json!({
+                "success": true,
+                "message": format!("Cleaned up directories for team \"{team_name}\""),
+                "team_name": team_name,
+            });
+            ExecutionResult::success(serde_json::to_string_pretty(&result).unwrap_or_default())
+        }
+        Err(e) => ExecutionResult::failure(format!("Failed to delete team: {e}")),
+    }
+}
+
+async fn execute_send_message(
+    to: &str,
+    message: &str,
+    summary: Option<&str>,
+    active_team_name: Option<&str>,
+) -> ExecutionResult {
+    use crate::swarm::mailbox;
+    use crate::swarm::types::MailboxMessage;
+
+    let team_name = active_team_name.unwrap_or(crate::swarm::DEFAULT_TEAM_NAME);
+
+    let msg = MailboxMessage {
+        from: crate::swarm::TEAM_LEAD_NAME.to_owned(),
+        text: message.to_owned(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        color: None,
+        summary: summary.map(str::to_owned),
+        read: false,
+    };
+
+    match mailbox::write_to_mailbox(to, msg, team_name).await {
+        Ok(()) => {
+            let result = serde_json::json!({
+                "success": true,
+                "message": format!("Message sent to {to}'s inbox"),
+                "routing": {
+                    "sender": crate::swarm::TEAM_LEAD_NAME,
+                    "target": format!("@{to}"),
+                    "summary": summary,
+                }
+            });
+            ExecutionResult::success(serde_json::to_string_pretty(&result).unwrap_or_default())
+        }
+        Err(e) => ExecutionResult::failure(format!("Failed to send message: {e}")),
     }
 }
 

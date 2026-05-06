@@ -157,7 +157,7 @@ fn context_window_from_model(model: &ApiModelInfo) -> usize {
         .unwrap_or_else(|| infer_context_window_from_model_name(&model.id, model.name.as_deref()))
 }
 
-fn infer_context_window_from_model_name(id: &str, name: Option<&str>) -> usize {
+pub fn infer_context_window_from_model_name(id: &str, name: Option<&str>) -> usize {
     let haystack = format!("{} {}", id, name.unwrap_or_default()).to_lowercase();
     let has = |needle: &str| haystack.contains(needle);
     let has_version = |major: &str, minor: &str| {

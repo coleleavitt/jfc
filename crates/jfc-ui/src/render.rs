@@ -29,7 +29,11 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 
     let input_lines = input_visual_line_count(app, f.area().width.saturating_sub(4) as usize);
     let input_height = (input_lines + 2).min(8) as u16;
-    let subagent_footer_height: u16 = if app.viewing_task_id.is_some() { 1 } else { 0 };
+    // Two rows when in task view: tab strip on top, key-hint row
+    // below. Was 1 when the footer was a flat back/next string;
+    // expanded for the Tabs widget redesign so each tab has space
+    // for its glyph + truncated description.
+    let subagent_footer_height: u16 = if app.viewing_task_id.is_some() { 2 } else { 0 };
     // v126 puts the "Fermenting…" spinner as a dedicated row above the input
     // (not as the input's border title) — so the input bar stays visually
     // stable during streaming and the spinner reads as part of the
@@ -46,7 +50,36 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     let show_spinner = app.is_streaming
         || app.compacting_started_at.is_some()
         || !app.pending_tool_calls.is_empty();
-    let spinner_row_height: u16 = if show_spinner { 2 } else { 0 };
+    // When a team is active, the spinner area expands to show the teammate tree:
+    // 2 base rows (spinner + next-task hint) + 1 leader row + N teammate rows.
+    // For non-team parallel subagents (the "fire 5 Explore agents" case),
+    // expand for the same reason — the user sees one row per agent.
+    let teammate_count = if app.team_context.is_active() {
+        app.team_context.teammates.len().saturating_sub(1) // exclude leader
+    } else {
+        0
+    };
+    let active_subagent_count = if !app.team_context.is_active() {
+        app.background_tasks
+            .values()
+            .filter(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running))
+            .count()
+    } else {
+        0
+    };
+    let tree_rows = teammate_count.max(active_subagent_count);
+    let spinner_row_height: u16 = if show_spinner {
+        if tree_rows > 0 {
+            (3 + tree_rows as u16).min(10) // cap at 10 to avoid starving chat
+        } else {
+            2
+        }
+    } else if tree_rows > 0 {
+        // Show the tree even when not streaming (background work in flight)
+        (2 + tree_rows as u16).min(8)
+    } else {
+        0
+    };
     // Diagnostic summary row — only shown when there are *new*
     // (unacknowledged) entries. v126 cli.js:231025-231036 keeps a
     // per-URI "delivered" set; entries already shown to the user don't
@@ -73,14 +106,27 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     let show_left = app.show_sidebar;
     let show_right = app.show_info_sidebar && f.area().width >= 100;
 
+    // Responsive sidebars: at narrow widths the sessions sidebar
+    // shrinks toward 20 cols and the info sidebar drops below 32, so
+    // the message column always retains a usable working area. v126
+    // does the same — sidebars scale with terminal width instead of
+    // pinning to fixed column counts.
+    let total_w = f.area().width as usize;
+    let left_w = (total_w / 5).clamp(20, 32) as u16;
+    let right_w = if total_w < 140 {
+        32
+    } else {
+        (total_w / 6).clamp(36, 48) as u16
+    };
+
     match (show_left, show_right) {
         (true, true) => {
             let split = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Length(28),
+                    Constraint::Length(left_w),
                     Constraint::Min(20),
-                    Constraint::Length(42),
+                    Constraint::Length(right_w),
                 ])
                 .split(chunks[0]);
             sidebar(f, app, split[0]);
@@ -90,7 +136,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         (true, false) => {
             let split = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Length(28), Constraint::Min(20)])
+                .constraints([Constraint::Length(left_w), Constraint::Min(20)])
                 .split(chunks[0]);
             sidebar(f, app, split[0]);
             messages(f, app, split[1]);
@@ -98,7 +144,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         (false, true) => {
             let split = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(20), Constraint::Length(42)])
+                .constraints([Constraint::Min(20), Constraint::Length(right_w)])
                 .split(chunks[0]);
             messages(f, app, split[0]);
             info_sidebar(f, app, split[1]);
@@ -114,7 +160,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     if unack_count > 0 {
         diagnostic_row(f, app, chunks[2]);
     }
-    if show_spinner {
+    if show_spinner || tree_rows > 0 {
         spinner_row(f, app, chunks[3]);
     }
     input(f, app, chunks[4]);
@@ -142,6 +188,20 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 
     if app.show_diagnostic_panel && !app.diagnostics.is_empty() {
         diagnostic_panel(f, app);
+    }
+
+    if app.show_help {
+        help_overlay(f, app);
+    }
+
+    if app.transcript_search.is_some() {
+        search_bar(f, app);
+    }
+
+    // Slash-command autocomplete: opens above the input bar when
+    // the user has typed `/<prefix>` and there are matching commands.
+    if let Some(prefix) = current_slash_prefix(app) {
+        slash_popup(f, app, &prefix);
     }
 
     if app.pending_approval.is_some() {
@@ -221,6 +281,20 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(Line::from(vec![Span::styled(
             format!("{} output", fmt_number(out_tokens as u64)),
             Style::default().fg(t.text_muted),
+        )]));
+    }
+
+    // Per-turn token sparkline. Renders nothing until at least 2
+    // turns have completed (a single bar isn't a "trend"). Uses
+    // ratatui's `Sparkline` which natively renders unicode block
+    // chars `▁▂▃▄▅▆▇█` proportional to bar height.
+    if app.token_history.len() >= 2 {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![Span::styled(
+            "Tokens / turn",
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
         )]));
     }
 
@@ -369,6 +443,49 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     lines.push(Line::from(""));
+
+    // Team section - show active teammates
+    if app.team_context.is_active() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![Span::styled(
+            "Team",
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        )]));
+
+        if let Some(ref team_name) = app.team_context.team_name {
+            lines.push(Line::from(vec![Span::styled(
+                format!("  {team_name}"),
+                Style::default().fg(t.text_secondary),
+            )]));
+        }
+
+        for (_, info) in &app.team_context.teammates {
+            if info.name == crate::swarm::TEAM_LEAD_NAME {
+                continue;
+            }
+            let color_dot = info.color.as_deref().unwrap_or("○");
+            let status_icon = "●"; // active indicator
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {status_icon} "),
+                    Style::default().fg(ratatui::style::Color::Green),
+                ),
+                Span::styled(
+                    &info.name,
+                    Style::default().fg(t.text_secondary),
+                ),
+            ]));
+        }
+
+        if app.team_context.teammates.len() <= 1 {
+            lines.push(Line::from(vec![Span::styled(
+                "  (no teammates)",
+                Style::default().fg(t.text_secondary),
+            )]));
+        }
+    }
 
     // Tasks section - show pending/in-progress todos
     let tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
@@ -552,8 +669,32 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         Span::styled("local", Style::default().fg(t.text_muted)),
     ]));
 
+    // The lines paragraph renders into the top of the inner area. If
+    // we have token history, reserve a single row at the bottom of
+    // the inner block for the sparkline so it doesn't get pushed
+    // off-screen by long content.
+    let sparkline_h: u16 = if app.token_history.len() >= 2 { 1 } else { 0 };
+    let lines_area = Rect {
+        height: inner.height.saturating_sub(sparkline_h),
+        ..inner
+    };
     let para = Paragraph::new(lines).style(Style::default().bg(t.bg));
-    f.render_widget(para, inner);
+    f.render_widget(para, lines_area);
+
+    if sparkline_h > 0 {
+        use ratatui::widgets::Sparkline;
+        let data: Vec<u64> = app.token_history.iter().copied().collect();
+        let sparkline = Sparkline::default()
+            .data(&data)
+            .style(Style::default().fg(t.accent));
+        let spark_area = Rect {
+            x: inner.x,
+            y: inner.y + lines_area.height,
+            width: inner.width,
+            height: 1,
+        };
+        f.render_widget(sparkline, spark_area);
+    }
 }
 
 fn gauge_color(pct: f64, t: crate::theme::Theme) -> Color {
@@ -658,6 +799,10 @@ fn truncate_str(s: &str, max: usize) -> String {
 /// `cwd · time · msgs` badge on bottom. Selecting a row with Enter loads
 /// its messages into `App::messages`.
 fn sidebar(f: &mut Frame, app: &mut App, area: Rect) {
+    // Record bounds for the click handler. Borders eat one row top and
+    // bottom; the click handler subtracts those before computing the
+    // row index.
+    *app.sidebar_rect.borrow_mut() = Some(area);
     let t = app.theme;
     let block = Block::default()
         .borders(Borders::ALL)
@@ -720,7 +865,8 @@ fn sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         .block(block)
         .highlight_style(
             Style::default()
-                .bg(t.surface_raised)
+                .fg(t.bg)
+                .bg(t.accent)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
@@ -819,6 +965,8 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     use crate::message_view::MessageView;
     use ratatui::widgets::Widget;
 
+    // Record area for the mouse handler (drag-scroll target).
+    *app.messages_rect.borrow_mut() = Some(area);
     let t = app.theme;
 
     if let Some(ref task_id) = app.viewing_task_id.clone() {
@@ -871,11 +1019,55 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
                 "What can I help you with?",
                 Style::default().fg(t.text_muted),
             )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  ?    keybindings",
+                Style::default().fg(t.text_muted),
+            )),
+            Line::from(Span::styled(
+                "  Ctrl+P    palette · Ctrl+M    model picker",
+                Style::default().fg(t.text_muted),
+            )),
         ])
         .style(Style::default().bg(t.bg));
         f.render_widget(placeholder, inner);
     } else {
-        MessageView { app }.render(inner, f.buffer_mut());
+        // Reserve a 1-col gutter on the right for the scrollbar so
+        // long lines don't render under it. The scrollbar itself
+        // renders the full block area (including the border) so its
+        // thumb glyphs sit on the right border line.
+        let scrollbar_visible = total_lines > visible && visible > 0;
+        let content_inner = if scrollbar_visible {
+            Rect {
+                width: inner.width.saturating_sub(1),
+                ..inner
+            }
+        } else {
+            inner
+        };
+        MessageView { app }.render(content_inner, f.buffer_mut());
+
+        if scrollbar_visible {
+            // ratatui::widgets::Scrollbar drives off ScrollbarState
+            // (content length, position, viewport length). Mapping
+            // jfc's existing `scroll_offset / total_lines` straight
+            // in. The thumb is bound to the body region (excluding
+            // top+bottom borders) by passing `area` (the bordered
+            // block) and using `Vertical-Right` orientation.
+            use ratatui::prelude::StatefulWidget;
+            use ratatui::widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState};
+            let mut state = ScrollbarState::new(total_lines.saturating_sub(visible))
+                .position(app.scroll_offset)
+                .viewport_content_length(visible);
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("▲"))
+                .end_symbol(Some("▼"))
+                .thumb_symbol("█")
+                .track_symbol(Some("│"))
+                .style(Style::default().fg(t.text_muted))
+                .thumb_style(Style::default().fg(t.accent));
+            scrollbar.render(area, f.buffer_mut(), &mut state);
+        }
     }
 }
 
@@ -916,12 +1108,17 @@ pub(crate) fn task_view_body_lines(
     expanded: &std::collections::HashSet<usize>,
     theme: &Theme,
     inner_width: usize,
+    task_done: bool,
 ) -> Vec<Line<'static>> {
     let mut out: Vec<Line<'static>> = Vec::new();
     for (idx, raw) in messages.iter().enumerate() {
         let line_count = raw.lines().count();
-        let collapsible = line_count > TASK_VIEW_COLLAPSE_LINES
-            || raw.len() > TASK_VIEW_COLLAPSE_BYTES;
+        // For finished tasks, never auto-collapse — the whole point
+        // of opening the task view is to see the result. Only running
+        // tasks (whose output is still streaming) get the threshold.
+        let collapsible = !task_done
+            && (line_count > TASK_VIEW_COLLAPSE_LINES
+                || raw.len() > TASK_VIEW_COLLAPSE_BYTES);
         let is_expanded = expanded.contains(&idx);
 
         if collapsible && !is_expanded {
@@ -962,11 +1159,28 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
                 &bt.task_id[..bt.task_id.len().min(12)],
                 bt.description
             );
+            // Look up per-task expansion state. Empty set means
+            // "nothing manually expanded" — collapse threshold still
+            // applies. For finished tasks the body renderer also
+            // bypasses the threshold so the user sees the full
+            // result without pressing `o`.
+            static EMPTY: std::sync::OnceLock<std::collections::HashSet<usize>> =
+                std::sync::OnceLock::new();
+            let empty = EMPTY.get_or_init(std::collections::HashSet::new);
+            let expanded = app
+                .viewing_task_expanded
+                .get(task_id)
+                .unwrap_or(empty);
+            let task_done = matches!(
+                bt.status,
+                crate::types::TaskLifecycle::Completed
+            );
             let lines = task_view_body_lines(
                 &bt.messages,
-                &app.viewing_task_expanded,
+                expanded,
                 &t,
                 inner_width,
+                task_done,
             );
             (title, lines)
         }
@@ -984,10 +1198,47 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    let task_is_running = app
+        .background_tasks
+        .get(task_id)
+        .map(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running))
+        .unwrap_or(false);
+
+    // While the task is still running, append a spinner+"Receiving…"
+    // row so the user can tell at a glance that more output is on
+    // the way (vs. a frozen panel). The frame index pulls from the
+    // same wall-clock source as `tool_status_icon_animated` so the
+    // glyph rotates in lockstep with the running-tool bullet.
+    let mut body_lines = body_lines;
+    if task_is_running {
+        let frame = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| (d.as_millis() / 80) as usize)
+            .unwrap_or(0);
+        let spinner_glyph = crate::app::SPINNER[frame % crate::app::SPINNER.len()];
+        if !body_lines.is_empty() {
+            body_lines.push(Line::from(""));
+        }
+        body_lines.push(Line::from(vec![
+            Span::styled(
+                spinner_glyph.to_string(),
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                "Receiving output…",
+                Style::default().fg(t.text_muted),
+            ),
+        ]));
+    }
+
     let total_lines = body_lines.len();
     let visible = inner.height as usize;
 
-    if app.follow_bottom {
+    // Pin to bottom while the task is streaming so each new chunk is
+    // visible without manual scrolling. If the user explicitly
+    // scrolled up (`follow_bottom` flipped off), respect that instead.
+    if app.follow_bottom || task_is_running {
         app.scroll_offset = total_lines.saturating_sub(visible);
     }
 
@@ -995,10 +1246,15 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
     app.viewport_height = visible;
 
     if body_lines.is_empty() {
+        let placeholder_text = if task_is_running {
+            "Waiting for first chunk…"
+        } else {
+            "No messages yet for this background task."
+        };
         let placeholder = Paragraph::new(vec![
             Line::from(""),
             Line::from(Span::styled(
-                "No messages yet for this background task.",
+                placeholder_text,
                 Style::default().fg(t.text_muted),
             )),
         ])
@@ -1018,50 +1274,89 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
 }
 
 fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
+    use ratatui::widgets::Tabs;
     let t = app.theme;
-    let task_ids: Vec<&String> = app.background_tasks.keys().collect();
-    let task_count = task_ids.len();
-
-    let (task_desc, pos_label) = match &app.viewing_task_id {
-        None => (String::from("no task"), String::from("─")),
-        Some(id) => {
-            let desc = app
-                .background_tasks
-                .get(id)
-                .map(|bt| bt.description.as_str())
-                .unwrap_or(id.as_str())
-                .to_owned();
-            let pos = task_ids.iter().position(|t| *t == id).unwrap_or(0);
-            let label = format!("{} of {}", pos + 1, task_count);
-            (desc, label)
-        }
-    };
-
-    let short_id = app
+    // Show one tab per running BackgroundTask. Selected tab tracks
+    // `viewing_task_id`. Hint row sits below the tabs so the user
+    // sees both `← →` cycling and the `↑` exit at a glance — the
+    // previous one-line `[1 of N] ◀ back ▶ next` collapsed both
+    // navigation and identity into a string that scanned poorly with
+    // 5+ tasks.
+    let task_ids: Vec<String> = app.background_tasks.keys().cloned().collect();
+    if task_ids.is_empty() {
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("↑ back  · no tasks", Style::default().fg(t.text_muted)),
+            ]))
+            .style(Style::default().bg(t.bg)),
+            area,
+        );
+        return;
+    }
+    let selected = app
         .viewing_task_id
-        .as_deref()
-        .and_then(|id| id.get(..8))
-        .unwrap_or("");
+        .as_ref()
+        .and_then(|id| task_ids.iter().position(|t| t == id))
+        .unwrap_or(0);
+    let titles: Vec<Line> = task_ids
+        .iter()
+        .map(|id| {
+            let bt = app.background_tasks.get(id);
+            let desc = bt
+                .map(|b| b.description.as_str())
+                .unwrap_or(id.as_str());
+            let trimmed = if desc.chars().count() > 24 {
+                let mut s: String = desc.chars().take(23).collect();
+                s.push('…');
+                s
+            } else {
+                desc.to_owned()
+            };
+            // Status glyph: animated for Running, static for Completed/Failed.
+            let glyph = match bt.map(|b| &b.status) {
+                Some(crate::types::TaskLifecycle::Running) => {
+                    let frame = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| (d.as_millis() / 240) as usize)
+                        .unwrap_or(0);
+                    ["✶", "✷", "✸", "✹"][frame % 4]
+                }
+                Some(crate::types::TaskLifecycle::Completed) => "●",
+                _ => "○",
+            };
+            Line::from(vec![
+                Span::raw(glyph),
+                Span::raw(" "),
+                Span::raw(trimmed),
+            ])
+        })
+        .collect();
 
-    let line = Line::from(vec![
-        Span::styled("◀ back (↑)  ", Style::default().fg(t.text_muted)),
-        Span::styled("task  ", Style::default().fg(t.accent)),
-        Span::styled(
-            format!("{short_id}  "),
-            Style::default().fg(t.text_secondary),
-        ),
-        Span::styled(
-            truncate_str(&task_desc, 40),
-            Style::default().fg(t.text_primary),
-        ),
-        Span::styled(
-            format!("  [{}]  ", pos_label),
-            Style::default().fg(t.text_muted),
-        ),
-        Span::styled("▶ next (→)", Style::default().fg(t.text_muted)),
+    let split = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(area);
+
+    let tabs = Tabs::new(titles)
+        .select(selected)
+        .style(Style::default().fg(t.text_secondary).bg(t.bg))
+        .highlight_style(
+            Style::default()
+                .fg(t.accent)
+                .bg(t.surface_raised)
+                .add_modifier(Modifier::BOLD),
+        )
+        .divider(Span::styled("·", Style::default().fg(t.text_muted)))
+        .padding(" ", " ");
+    f.render_widget(tabs, split[0]);
+
+    let hint = Line::from(vec![
+        Span::styled("↑ back · ←/→ cycle · ↓ jump to latest", Style::default().fg(t.text_muted)),
     ]);
-
-    f.render_widget(Paragraph::new(line).style(Style::default().bg(t.bg)), area);
+    f.render_widget(
+        Paragraph::new(hint).style(Style::default().bg(t.bg)),
+        split[1],
+    );
 }
 
 /// Pick the next open task to surface under the spinner — first
@@ -1355,6 +1650,209 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             row1,
         );
     }
+
+    // ─── Spinner Tree ────────────────────────────────────────────────────
+    // Below the verb + Next-row, surface the running parallel work as a
+    // tree. v126 shows this as the "agent fan" — when the user fires
+    // off five Explore agents, they see five rows ticking in parallel
+    // instead of just `5 agents…`.
+    //
+    // Two sources, picked in this order:
+    //   1. Active team (renders a tree-shaped roster of teammates).
+    //   2. Plain background subagents (one-shot Task tool calls).
+    // Falling back to (2) means the user's "fire off Explore agents"
+    // case shows individual rows even outside team mode.
+    if area.height > 2 {
+        let tree_area = Rect {
+            x: area.x,
+            y: area.y + 2,
+            width: area.width,
+            height: area.height.saturating_sub(2),
+        };
+        if app.team_context.is_active() {
+            render_teammate_tree(f, app, tree_area);
+        } else {
+            render_subagent_tree(f, app, tree_area);
+        }
+    }
+}
+
+/// Tree of running subagents for the non-team case — one line per
+/// active `BackgroundTask`. Same shape as the teammate tree so the
+/// user's eye recognises the structure regardless of whether they're
+/// in a team or just running parallel Explore agents.
+fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
+    if area.height == 0 || area.width < 20 {
+        return;
+    }
+    let t = app.theme;
+
+    // Show only rows that aren't done. A finished one-shot subagent
+    // doesn't deserve a tree row — its result is already in the
+    // transcript. `viewing_task_id` short-circuits this entire branch
+    // because the task-view UI takes over the whole region.
+    let mut active: Vec<&crate::app::BackgroundTask> = app
+        .background_tasks
+        .values()
+        .filter(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running))
+        .collect();
+    if active.is_empty() {
+        return;
+    }
+    active.sort_by_key(|bt| bt.task_id.clone());
+
+    let mut lines: Vec<Line> = Vec::new();
+    // Leader row (mirrors the team-tree shape so the visual is consistent).
+    lines.push(Line::from(vec![
+        Span::styled("   ╒═ ", Style::default().fg(t.text_muted)),
+        Span::styled(
+            "agents",
+            Style::default()
+                .fg(ratatui::style::Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    let count = active.len();
+    for (i, bt) in active.iter().enumerate() {
+        let is_last = i == count - 1;
+        let connector = if is_last { "   └─ " } else { "   ├─ " };
+        // Description is the human label the model passed when calling
+        // Task; truncate so it doesn't blow out narrow terminals.
+        let desc = bt
+            .description
+            .as_str();
+        let desc_trimmed = if desc.chars().count() > 48 {
+            let mut s: String = desc.chars().take(47).collect();
+            s.push('…');
+            s
+        } else {
+            desc.to_owned()
+        };
+        let activity = match &bt.last_tool {
+            Some(tool) => format!("  · {tool}"),
+            None => String::new(),
+        };
+        // Emphasize whichever agent emitted the most-recent chunk or
+        // tool-progress event so the user can spot which one is
+        // currently moving in a fan of N parallel agents.
+        let is_active = app
+            .last_active_agent_task
+            .as_deref()
+            .map(|id| id == bt.task_id.as_str())
+            .unwrap_or(false);
+        let name_style = if is_active {
+            Style::default()
+                .fg(t.accent)
+                .bg(t.surface_raised)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(t.accent)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(connector, Style::default().fg(t.text_muted)),
+            Span::styled(desc_trimmed, name_style),
+            Span::styled(activity, Style::default().fg(t.text_muted)),
+        ]));
+    }
+
+    let available_height = area.height as usize;
+    let display: Vec<Line> = lines.into_iter().take(available_height).collect();
+    f.render_widget(
+        Paragraph::new(display).style(Style::default().bg(t.bg)),
+        area,
+    );
+}
+
+/// Render the teammate tree widget (the "agent fan").
+///
+/// Shows the team structure with box-drawing connectors:
+/// ```text
+///    ╒═ team-lead
+///    ├─ researcher: Researching… · 1.2k tokens
+///    ├─ implementer: Idle for 3s
+///    └─ tester: Running tests… · 5 tool uses
+/// ```
+fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
+    use crate::swarm::{self, types::teammate_color};
+
+    if area.height == 0 || area.width < 20 {
+        return;
+    }
+
+    let t = app.theme;
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Collect teammates (sorted by name for stability)
+    let mut teammates: Vec<(&String, &swarm::TeammateInfo)> =
+        app.team_context.teammates.iter().collect();
+    teammates.sort_by_key(|(_, info)| &info.name);
+
+    // Filter out leader
+    let teammates: Vec<_> = teammates
+        .into_iter()
+        .filter(|(_, info)| info.name != swarm::TEAM_LEAD_NAME)
+        .collect();
+
+    if teammates.is_empty() {
+        return;
+    }
+
+    // Leader row
+    lines.push(Line::from(vec![
+        Span::styled("   ╒═ ", Style::default().fg(t.text_muted)),
+        Span::styled(
+            "team-lead",
+            Style::default()
+                .fg(ratatui::style::Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    // Teammate rows
+    for (i, (_, info)) in teammates.iter().enumerate() {
+        let is_last = i == teammates.len() - 1;
+        let connector = if is_last { "   └─ " } else { "   ├─ " };
+
+        let color = teammate_color(info.color.as_deref());
+
+        // Look up activity from background tasks
+        let task_key = format!("teammate-{}@{}", info.name,
+            app.team_context.team_name.as_deref().unwrap_or(""));
+        let activity = app.background_tasks
+            .values()
+            .find(|bt| bt.task_id.contains(&info.name))
+            .and_then(|bt| bt.last_tool.clone());
+
+        let status_text = match &activity {
+            Some(tool) => format!(": {}…", tool),
+            None => {
+                let elapsed = info.spawned_at.elapsed();
+                if elapsed.as_secs() > 5 {
+                    format!(": Idle for {}s", elapsed.as_secs())
+                } else {
+                    ": Working…".to_owned()
+                }
+            }
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(connector, Style::default().fg(t.text_muted)),
+            Span::styled(
+                &info.name,
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(status_text, Style::default().fg(t.text_muted)),
+        ]));
+    }
+
+    // Render
+    let available_height = area.height as usize;
+    let display_lines: Vec<Line> = lines.into_iter().take(available_height).collect();
+    f.render_widget(
+        Paragraph::new(display_lines).style(Style::default().bg(t.bg)),
+        area,
+    );
 }
 
 fn input(f: &mut Frame, app: &mut App, area: Rect) {
@@ -1489,15 +1987,94 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
         String::new()
     };
 
+    // Surface active worktrees so the user knows isolation is in
+    // effect. The count is refreshed by the Tick handler (≈ once per
+    // second) into `app.worktree_count`; reading it here is just a
+    // field load, so render stays cheap.
+    let worktree_badge = if app.worktree_count > 0 {
+        format!("  ⌥ {} wt", app.worktree_count)
+    } else {
+        String::new()
+    };
+    // Git branch indicator. Truncated to 24 chars so a long
+    // branch name (`feat/some-feature-name-someone-typed-out`)
+    // doesn't push the rest of the status off-screen.
+    // Rolling session cost. Hidden when zero so unauth/free runs
+    // don't show a constant `$0.00`. Two decimal places when
+    // <$10, three when smaller so a $0.003 turn is still visible.
+    // In-flight subagents — same count the spinner-row shows but
+    // surfaced in the status bar so it's visible even when the user
+    // is not actively streaming. `Running` rather than total because
+    // completed background tasks don't deserve continued attention.
+    let active_subagents = app
+        .background_tasks
+        .values()
+        .filter(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running))
+        .count();
+    let agents_badge = if active_subagents > 0 {
+        format!("  ⏵ {active_subagents}")
+    } else {
+        String::new()
+    };
+    // Pending tool approvals: the user has tools queued behind a
+    // modal. Without the badge they can't tell from a glance whether
+    // there's still input waiting on them mid-turn.
+    let approval_count = app
+        .approval_queue
+        .len()
+        + if app.pending_approval.is_some() { 1 } else { 0 };
+    let approvals_badge = if approval_count > 0 {
+        format!("  ⏸ {approval_count}")
+    } else {
+        String::new()
+    };
+
+    let cost_total = crate::cost::total_cost(&app.usage_by_model);
+    let cost_badge = if cost_total > 0.001 {
+        if cost_total < 0.01 {
+            format!("  $ {:.4}", cost_total)
+        } else if cost_total < 10.0 {
+            format!("  $ {:.3}", cost_total)
+        } else {
+            format!("  $ {:.2}", cost_total)
+        }
+    } else {
+        String::new()
+    };
+    let git_badge = match app.git_branch.as_deref() {
+        Some(branch) if !branch.is_empty() => {
+            let trimmed: String = if branch.chars().count() > 24 {
+                let mut s: String = branch.chars().take(23).collect();
+                s.push('…');
+                s
+            } else {
+                branch.to_owned()
+            };
+            format!("  ⎇ {}", trimmed)
+        }
+        _ => String::new(),
+    };
+
     let left = format!(
-        " {}{}{}{}{}  {}  {} msgs ",
-        app.model, profile_badge, mode_badge, queue_badge, leader_badge, cwd_display, msg_count
+        " {}{}{}{}{}{}{}{}{}{}  {}  {} msgs ",
+        app.model,
+        profile_badge,
+        mode_badge,
+        queue_badge,
+        leader_badge,
+        worktree_badge,
+        agents_badge,
+        approvals_badge,
+        git_badge,
+        cost_badge,
+        cwd_display,
+        msg_count
     );
     // Single right-hand hint: the palette key. All other shortcuts are
     // discoverable inside the palette itself (Ctrl+P) — keeping just one
     // pointer here de-clutters the status row and matches v126's layout
     // where the bottom rail only points to the command index.
-    let right = " Ctrl+P: palette ";
+    let right = " ? help · Ctrl+P palette ";
 
     let total_width = area.width as usize;
     let right_start = total_width.saturating_sub(right.len());
@@ -1566,6 +2143,7 @@ fn toast_overlay(f: &mut Frame, app: &App) {
     let count = app.toasts.len() as u16;
     let h = count.min(5); // MAX_TOASTS, but bound to layout
     if h == 0 {
+        *app.toasts_rect.borrow_mut() = None;
         return;
     }
     let area = Rect {
@@ -1574,6 +2152,7 @@ fn toast_overlay(f: &mut Frame, app: &App) {
         width: w,
         height: h,
     };
+    *app.toasts_rect.borrow_mut() = Some(area);
     f.render_widget(Clear, area);
     let mut lines: Vec<Line> = Vec::new();
     for toast in app.toasts.iter().rev().take(h as usize).collect::<Vec<_>>() {
@@ -1658,6 +2237,289 @@ fn diagnostic_row(f: &mut Frame, app: &App, area: Rect) {
 /// emission order) and listed underneath. We don't render the URI scheme
 /// suffix v126 does (`(file://)`) — paths are already cwd-relative so
 /// it's noise.
+/// All slash commands jfc accepts, with a one-line description for
+/// the autocomplete popup. Order = display order. Keep in sync with
+/// the actual handlers in `input.rs`.
+const SLASH_COMMANDS: &[(&str, &str)] = &[
+    ("/clear", "clear the conversation"),
+    ("/compact", "summarize earlier messages to free context"),
+    ("/help", "show jfc help"),
+    ("/export", "save the transcript as markdown"),
+    ("/worktree", "create / list / remove a git worktree"),
+    ("/swarm-approve", "approve a pending swarm tool request"),
+    ("/swarm-deny", "deny a pending swarm tool request"),
+    ("/auto-mode", "toggle the autonomous classifier"),
+];
+
+/// Returns the `/<prefix>` the user is currently typing, when the
+/// input bar contains a single line that starts with `/`. The popup
+/// renders only when this returns Some so multi-line drafts and
+/// non-slash input don't trigger.
+pub(crate) fn current_slash_prefix(app: &App) -> Option<String> {
+    let lines = app.textarea.lines();
+    if lines.len() != 1 {
+        return None;
+    }
+    let line = &lines[0];
+    if !line.starts_with('/') {
+        return None;
+    }
+    // Single-token: drop everything after the first space so the
+    // popup goes away once the user has committed to a verb and
+    // is typing arguments. v126's slash UI does the same.
+    let token = line.split_whitespace().next().unwrap_or(line);
+    Some(token.to_string())
+}
+
+pub(crate) fn slash_matches<'a>(prefix: &'a str) -> Vec<&'static (&'static str, &'static str)> {
+    SLASH_COMMANDS
+        .iter()
+        .filter(|(cmd, _)| cmd.starts_with(prefix))
+        .collect()
+}
+
+fn slash_popup(f: &mut Frame, app: &App, prefix: &str) {
+    let matches = slash_matches(prefix);
+    if matches.is_empty() {
+        return;
+    }
+    let t = app.theme;
+    let area = f.area();
+    let h = (matches.len() as u16).min(8) + 2;
+    let w: u16 = 60u16.min(area.width.saturating_sub(2));
+    if area.height < h + 4 {
+        return;
+    }
+    // Anchor above the input bar (which sits at the bottom of the
+    // frame). Reserve 2 rows for the input border and 1 for the
+    // status bar so the popup doesn't overlap them.
+    let popup_y = area.y + area.height.saturating_sub(h + 4);
+    let popup = Rect {
+        x: area.x + 2,
+        y: popup_y,
+        width: w,
+        height: h,
+    };
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(t.accent))
+        .title(Span::styled(
+            " slash commands ",
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().bg(t.surface));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let selected = app.slash_popup_selected.unwrap_or(0).min(matches.len() - 1);
+    let lines: Vec<Line> = matches
+        .iter()
+        .enumerate()
+        .take(inner.height as usize)
+        .map(|(i, (cmd, desc))| {
+            let active = i == selected;
+            let row_style = if active {
+                Style::default().fg(t.bg).bg(t.accent).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(t.text_primary)
+            };
+            let desc_style = if active {
+                Style::default().fg(t.bg).bg(t.accent)
+            } else {
+                Style::default().fg(t.text_muted)
+            };
+            Line::from(vec![
+                Span::styled(format!(" {:<18}", cmd), row_style),
+                Span::styled(format!(" {desc}"), desc_style),
+            ])
+        })
+        .collect();
+    f.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(t.surface)),
+        inner,
+    );
+}
+
+/// Bottom-anchored search bar shown while `app.transcript_search`
+/// is `Some`. Mirrors Vim's `/` prompt: query on the left, match
+/// counter on the right ("3 of 12"). The currently-focused match
+/// is already scrolled into view by the input handler — this is
+/// purely the input-bar UI for typing the query and stepping
+/// through matches.
+fn search_bar(f: &mut Frame, app: &App) {
+    let Some(s) = &app.transcript_search else {
+        return;
+    };
+    let t = app.theme;
+    let area = f.area();
+    if area.width < 20 || area.height < 3 {
+        return;
+    }
+    let h: u16 = 2;
+    let bar = Rect {
+        x: area.x,
+        y: area.y + area.height.saturating_sub(h + 2),
+        width: area.width,
+        height: h,
+    };
+    f.render_widget(Clear, bar);
+
+    let count_label = if s.query.is_empty() {
+        " (type to search) ".to_string()
+    } else if s.matches.is_empty() {
+        " (no matches) ".to_string()
+    } else {
+        format!(" {} of {} ", s.cursor + 1, s.matches.len())
+    };
+    let prompt = Line::from(vec![
+        Span::styled(
+            "  /",
+            Style::default()
+                .fg(t.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            s.query.clone(),
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("▏", Style::default().fg(t.accent)),
+    ]);
+    let hint = Line::from(vec![
+        Span::styled(
+            count_label,
+            Style::default()
+                .fg(if s.matches.is_empty() && !s.query.is_empty() {
+                    t.warning
+                } else {
+                    t.text_secondary
+                })
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " ↑/↓ navigate · Enter jump · Esc close",
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
+        ),
+    ]);
+    f.render_widget(
+        Paragraph::new(vec![prompt, hint]).style(Style::default().bg(t.surface)),
+        bar,
+    );
+}
+
+/// Centered keybinding overlay toggled by `?`. Groups bindings by
+/// context — Input bar, Transcript, Task view, Picker/Palette, Leader
+/// chord, ESC behavior — so the user can find the chord they need
+/// without grepping the source.
+fn help_overlay(f: &mut Frame, app: &App) {
+    let t = app.theme;
+    let area = f.area();
+    let width = (area.width * 7 / 10).clamp(60, 96);
+    let height = (area.height * 8 / 10).clamp(20, 32);
+    let x = area.x + area.width.saturating_sub(width) / 2;
+    let y = area.y + area.height.saturating_sub(height) / 2;
+    let popup = Rect::new(x, y, width, height);
+    f.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(t.accent))
+        .title(Span::styled(
+            " keybindings · press ? or Esc to close ",
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().bg(t.surface));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    // Each entry: (key, description). Sections separated by None.
+    type Section = (&'static str, &'static [(&'static str, &'static str)]);
+    const SECTIONS: &[Section] = &[
+        ("Input bar", &[
+            ("Enter", "send message"),
+            ("Shift+Enter", "newline"),
+            ("Up", "recall queued prompt (if input empty)"),
+            ("Ctrl+V", "paste (text or image from clipboard)"),
+            ("Ctrl+Z", "undo last edit"),
+            ("Ctrl+Shift+Z", "redo"),
+            ("Ctrl+F", "search inside the textarea"),
+            ("Ctrl+R", "retry last prompt"),
+            ("/export", "save transcript as markdown"),
+        ]),
+        ("Transcript", &[
+            ("Ctrl+P", "command palette"),
+            ("Ctrl+M", "switch model"),
+            ("Ctrl+B", "toggle sessions sidebar"),
+            ("Ctrl+S/I", "toggle info sidebar"),
+            ("Ctrl+T", "show task panel"),
+            ("Ctrl+O", "expand diagnostic row / large tool block"),
+            ("o", "toggle expand on most recent collapsible block"),
+            ("Ctrl+Y", "yank last assistant response"),
+            ("Shift+Tab", "cycle permission modes"),
+            ("PgUp/PgDn", "scroll a page"),
+            ("Ctrl+Home/End", "jump to top/bottom"),
+        ]),
+        ("Task view", &[
+            ("Ctrl+X then ↓", "enter task view"),
+            ("←/→", "previous / next running task"),
+            ("↓", "jump to most recent task"),
+            ("↑ or Esc", "exit task view"),
+            ("o", "expand the most recent collapsible message"),
+        ]),
+        ("Picker / Palette", &[
+            ("↑/↓ or k/j", "navigate"),
+            ("Home/End", "first / last"),
+            ("PgUp/PgDn", "page"),
+            ("Enter", "select"),
+            ("Esc", "cancel"),
+            ("type", "filter inline"),
+        ]),
+        ("Interrupt & approvals", &[
+            ("Esc Esc", "interrupt streaming / agentic loop"),
+            ("y / n / a", "approve / deny / always (in approval modal)"),
+            ("/swarm-approve <id>", "approve teammate permission request"),
+            ("/swarm-deny <id> [reason]", "deny teammate permission request"),
+        ]),
+    ];
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for (section_name, entries) in SECTIONS.iter() {
+        if !lines.is_empty() {
+            lines.push(Line::from(""));
+        }
+        lines.push(Line::from(Span::styled(
+            (*section_name).to_string(),
+            Style::default()
+                .fg(t.accent)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        )));
+        for (key, desc) in entries.iter() {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    format!("{key:<24}"),
+                    Style::default()
+                        .fg(t.text_primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    (*desc).to_string(),
+                    Style::default().fg(t.text_secondary),
+                ),
+            ]));
+        }
+    }
+
+    let para = Paragraph::new(lines)
+        .style(Style::default().bg(t.surface))
+        .scroll((0, 0));
+    f.render_widget(para, inner);
+}
+
 fn diagnostic_panel(f: &mut Frame, app: &App) {
     let t = app.theme;
     let area = f.area();
@@ -2066,9 +2928,14 @@ fn model_picker(f: &mut Frame, app: &mut App) {
     let table = Table::new(rows, widths)
         .header(header)
         .column_spacing(1)
+        // Inverted-color highlight so the selected row reads at a
+        // glance even on dark themes. `surface_raised` was too subtle
+        // — looked nearly identical to the unselected row on terminal
+        // backgrounds with low contrast deltas.
         .row_highlight_style(
             Style::default()
-                .bg(t.surface_raised)
+                .fg(t.bg)
+                .bg(t.accent)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ")
@@ -2189,6 +3056,51 @@ fn task_panel(f: &mut Frame, app: &mut App) {
         app.task_panel_state.select(Some(app.task_panel_selected));
     }
 
+    // Empty state: show a useful hint instead of a header-only table
+    // when no tasks exist. The model creates tasks via TaskCreate;
+    // this tells the user that and gives them a slash command path.
+    if all_tasks.is_empty() {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(t.border))
+            .title(Span::styled(
+                title.clone(),
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+            ))
+            .title_bottom(Span::styled(
+                " Esc close ",
+                Style::default().fg(t.text_muted),
+            ))
+            .style(Style::default().bg(t.surface));
+        let inner = block.inner(popup);
+        f.render_widget(block, popup);
+        let placeholder = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "  No tasks yet",
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  The model creates tasks via TaskCreate when planning",
+                Style::default().fg(t.text_muted),
+            )),
+            Line::from(Span::styled(
+                "  multi-step work. Ask it to break down a request and",
+                Style::default().fg(t.text_muted),
+            )),
+            Line::from(Span::styled(
+                "  the list will populate here.",
+                Style::default().fg(t.text_muted),
+            )),
+        ])
+        .style(Style::default().bg(t.surface));
+        f.render_widget(placeholder, inner);
+        return;
+    }
+
     let table = Table::new(
         rows,
         [
@@ -2257,11 +3169,9 @@ fn approval(f: &mut Frame, app: &App) {
 
     f.render_widget(Clear, dialog_area);
 
-    let tool_summary = format!(
-        "{} {}",
-        pending.tool.kind.label(),
-        pending.tool.input.summary()
-    );
+    let kind_color = crate::message_view::tool_kind_color(&pending.tool.kind, &t);
+    let tool_label = pending.tool.kind.label();
+    let tool_input_summary = pending.tool.input.summary();
 
     // Count the queue depth so the user knows there's more behind the current
     // approval. Without this, multi-tool turns silently waited on each modal.
@@ -2294,13 +3204,24 @@ fn approval(f: &mut Frame, app: &App) {
             ])
             .split(inner);
 
-        let truncated: String = tool_summary
-            .chars()
-            .take((rows[0].width as usize).saturating_sub(2))
-            .collect();
+        // Tool name styled with its kind color; arguments truncated
+        // to fit the dialog width. Splitting into two spans makes the
+        // identity colored without bleeding into the args.
+        let arg_cap = (rows[0].width as usize)
+            .saturating_sub(tool_label.chars().count() + 3);
+        let arg_truncated: String = tool_input_summary.chars().take(arg_cap).collect();
         f.render_widget(
             Paragraph::new(vec![
-                Line::from(Span::styled(truncated, Style::default().fg(t.text_primary))),
+                Line::from(vec![
+                    Span::styled(
+                        tool_label.to_string(),
+                        Style::default()
+                            .fg(kind_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" "),
+                    Span::styled(arg_truncated, Style::default().fg(t.text_primary)),
+                ]),
                 Line::from(""),
             ]),
             rows[0],
@@ -2324,13 +3245,21 @@ fn approval(f: &mut Frame, app: &App) {
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(2), Constraint::Min(1)])
             .split(inner);
-        let truncated: String = tool_summary
-            .chars()
-            .take((width as usize).saturating_sub(4))
-            .collect();
+        let arg_cap = (width as usize)
+            .saturating_sub(tool_label.chars().count() + 5);
+        let arg_truncated: String = tool_input_summary.chars().take(arg_cap).collect();
         f.render_widget(
             Paragraph::new(vec![
-                Line::from(Span::styled(truncated, Style::default().fg(t.text_primary))),
+                Line::from(vec![
+                    Span::styled(
+                        tool_label.to_string(),
+                        Style::default()
+                            .fg(kind_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" "),
+                    Span::styled(arg_truncated, Style::default().fg(t.text_primary)),
+                ]),
                 Line::from(""),
             ]),
             chunks[0],
@@ -2487,7 +3416,7 @@ mod task_view_tests {
             "Before <tool_call>{\"name\":\"foo\"}</tool_call> after".to_string(),
         ];
         let expanded = HashSet::new();
-        let lines = task_view_body_lines(&messages, &expanded, &theme, 80);
+        let lines = task_view_body_lines(&messages, &expanded, &theme, 80, false);
         let joined: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
             !joined.contains("<tool_call>"),
@@ -2519,6 +3448,7 @@ mod task_view_tests {
             &HashSet::new(),
             &theme,
             80,
+            false,
         );
         let collapsed_text: String = collapsed_lines
             .iter()
@@ -2548,7 +3478,7 @@ mod task_view_tests {
 
         let mut expanded = HashSet::new();
         expanded.insert(0);
-        let expanded_lines = task_view_body_lines(&messages, &expanded, &theme, 80);
+        let expanded_lines = task_view_body_lines(&messages, &expanded, &theme, 80, false);
         let expanded_text: String = expanded_lines
             .iter()
             .map(line_text)
@@ -2578,7 +3508,7 @@ mod task_view_tests {
         // expansion footer, just whatever markdown::to_lines produced.
         let theme = Theme::dark();
         let messages = vec!["just one short line".to_string()];
-        let lines = task_view_body_lines(&messages, &HashSet::new(), &theme, 80);
+        let lines = task_view_body_lines(&messages, &HashSet::new(), &theme, 80, false);
         let joined: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(joined.contains("just one short line"));
         assert!(!joined.contains("press o to expand"));
@@ -2591,7 +3521,7 @@ mod task_view_tests {
         let theme = Theme::dark();
         let big = "x".repeat(TASK_VIEW_COLLAPSE_BYTES + 100);
         let messages = vec![big];
-        let lines = task_view_body_lines(&messages, &HashSet::new(), &theme, 80);
+        let lines = task_view_body_lines(&messages, &HashSet::new(), &theme, 80, false);
         let joined: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
             joined.contains("press o to expand"),

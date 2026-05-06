@@ -195,6 +195,15 @@ pub enum SerializedToolInput {
         #[serde(default)]
         args: Option<String>,
     },
+    MemoryCreate {
+        level: String,
+        memory_type: String,
+        scope: String,
+        body: String,
+    },
+    MemoryDelete {
+        path: String,
+    },
     Generic {
         summary: String,
     },
@@ -891,6 +900,32 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             name: name.clone(),
             args: args.clone(),
         },
+        ToolInput::MemoryCreate {
+            level,
+            memory_type,
+            scope,
+            body,
+        } => SerializedToolInput::MemoryCreate {
+            level: level.clone(),
+            memory_type: memory_type.clone(),
+            scope: scope.clone(),
+            body: body.clone(),
+        },
+        ToolInput::MemoryDelete { path } => SerializedToolInput::MemoryDelete {
+            path: path.clone(),
+        },
+        ToolInput::TeamCreate { team_name, description } => SerializedToolInput::Generic {
+            summary: format!("TeamCreate: {team_name}"),
+        },
+        ToolInput::TeamDelete => SerializedToolInput::Generic {
+            summary: "TeamDelete".to_owned(),
+        },
+        ToolInput::SendMessage { to, summary, .. } => SerializedToolInput::Generic {
+            summary: format!("SendMessage to {to}: {}", summary.as_deref().unwrap_or("(message)")),
+        },
+        ToolInput::TeamMemberMode { member_name, mode } => SerializedToolInput::Generic {
+            summary: format!("TeamMemberMode {member_name}: {mode}"),
+        },
         ToolInput::Generic { summary } => SerializedToolInput::Generic {
             summary: summary.clone(),
         },
@@ -1001,6 +1036,13 @@ fn deserialize_part(part: SerializedPart) -> MessagePart {
             // expanded flag in the on-disk format would persist UI
             // chrome state we don't want to roundtrip.
             expanded: false,
+            // elapsed_ms could in principle round-trip, but it's
+            // cosmetic — leave None on resume so we don't lock in a
+            // stale duration. started_at is meaningless after a
+            // reload (would always say "elapsed since session-load").
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
         }),
         SerializedPart::TaskStatus {
             task_id,
@@ -1106,6 +1148,10 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             category,
             run_in_background,
             model,
+            name: None,
+            team_name: None,
+            mode: None,
+            isolation: None,
         }),
         SerializedToolInput::TaskCreate {
             subject,
@@ -1140,6 +1186,18 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
         },
         SerializedToolInput::TaskDone { task_id } => ToolInput::TaskDone { task_id },
         SerializedToolInput::Skill { name, args } => ToolInput::Skill { name, args },
+        SerializedToolInput::MemoryCreate {
+            level,
+            memory_type,
+            scope,
+            body,
+        } => ToolInput::MemoryCreate {
+            level,
+            memory_type,
+            scope,
+            body,
+        },
+        SerializedToolInput::MemoryDelete { path } => ToolInput::MemoryDelete { path },
         SerializedToolInput::Generic { summary } => ToolInput::Generic { summary },
     }
 }

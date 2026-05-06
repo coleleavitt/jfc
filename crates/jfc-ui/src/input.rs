@@ -91,6 +91,178 @@ fn input_has_text(app: &App) -> bool {
     app.textarea.lines().iter().any(|line| !line.is_empty())
 }
 
+/// Recompute `app.transcript_search.matches` from a fresh query.
+/// Case-insensitive substring match against each message's text /
+/// reasoning content. Updates `cursor` to 0 and scrolls to the first
+/// match if any. Empty query clears matches but leaves the search
+/// overlay open (so the user can keep typing).
+fn refresh_search_matches(app: &mut App, query: &str) {
+    let q = query.to_lowercase();
+    let mut matches: Vec<usize> = Vec::new();
+    if !q.is_empty() {
+        for (idx, msg) in app.messages.iter().enumerate() {
+            let body_hit = msg.parts.iter().any(|p| match p {
+                crate::types::MessagePart::Text(s) => s.to_lowercase().contains(&q),
+                crate::types::MessagePart::Reasoning(s) => s.to_lowercase().contains(&q),
+                crate::types::MessagePart::Tool(tc) => {
+                    tc.input.summary().to_lowercase().contains(&q)
+                        || match &tc.output {
+                            crate::types::ToolOutput::Text(s) => {
+                                s.to_lowercase().contains(&q)
+                            }
+                            crate::types::ToolOutput::LargeText(lt) => {
+                                lt.content.to_lowercase().contains(&q)
+                            }
+                            _ => false,
+                        }
+                }
+                _ => false,
+            });
+            if body_hit {
+                matches.push(idx);
+            }
+        }
+    }
+    let first_target = if let Some(s) = app.transcript_search.as_mut() {
+        s.matches = matches;
+        s.cursor = 0;
+        s.matches.first().copied()
+    } else {
+        None
+    };
+    if let Some(target) = first_target {
+        scroll_to_message(app, target);
+    }
+}
+
+// ─── Jump-to navigation helpers ──────────────────────────────────────────
+// Each helper scans `app.messages` from the end backwards for a target,
+// computes the cumulative line offset of the message above the match,
+// and pins `scroll_offset` so that line lands near the top of the
+// viewport. Falls back to scrolling to the bottom if no match is
+// found. The line counts are derived from the same MessageView height
+// math the renderer uses, so the resulting position lines up precisely.
+
+/// Scroll the transcript so the message at `target_idx` lands near the
+/// top of the viewport. Pure scroll-state mutator; does no rendering
+/// itself. Skips if `target_idx` is out of range.
+fn scroll_to_message(app: &mut App, target_idx: usize) {
+    if target_idx >= app.messages.len() {
+        return;
+    }
+    // Coarse height estimate per message — enough to position the
+    // scroll near the target. The renderer's clamp logic will pull
+    // the offset back into bounds on the next frame, and the user's
+    // arrow keys can fine-tune from there. Going through the exact
+    // MessageView width-sensitive math from here would require
+    // knowing the messages-area width, which input.rs doesn't have.
+    let approx_width: usize = 80;
+    let mut offset = 0usize;
+    for (i, msg) in app.messages.iter().enumerate() {
+        if i >= target_idx {
+            break;
+        }
+        // Role label = 1 row.
+        offset += 1;
+        for part in &msg.parts {
+            let chars = part.approx_text_len();
+            if chars == 0 {
+                offset += 1;
+            } else {
+                offset += chars.div_ceil(approx_width);
+            }
+        }
+        // Trailing blank between messages.
+        offset += 1;
+    }
+    app.scroll_offset = offset;
+    app.follow_bottom = false;
+    crate::toast::push_with_cap(
+        &mut app.toasts,
+        crate::toast::Toast::new(
+            crate::toast::ToastKind::Info,
+            format!("jumped to message {}/{}", target_idx + 1, app.messages.len()),
+        ),
+    );
+}
+
+fn jump_to_last_error(app: &mut App) {
+    use crate::types::{MessagePart, ToolStatus};
+    let target = app.messages.iter().enumerate().rev().find(|(_, m)| {
+        m.parts.iter().any(|p| {
+            matches!(
+                p,
+                MessagePart::Tool(tc) if tc.status == ToolStatus::Failed
+            )
+        })
+    });
+    match target {
+        Some((idx, _)) => scroll_to_message(app, idx),
+        None => crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Warning,
+                "no failed tools in this session".to_string(),
+            ),
+        ),
+    }
+}
+
+fn jump_to_last_tool(app: &mut App) {
+    use crate::types::MessagePart;
+    let target = app.messages.iter().enumerate().rev().find(|(_, m)| {
+        m.parts.iter().any(|p| matches!(p, MessagePart::Tool(_)))
+    });
+    match target {
+        Some((idx, _)) => scroll_to_message(app, idx),
+        None => crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Warning,
+                "no tool calls in this session".to_string(),
+            ),
+        ),
+    }
+}
+
+fn jump_to_last_user(app: &mut App) {
+    let target = app
+        .messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, m)| m.role_is_user() && !m.is_compact_boundary());
+    match target {
+        Some((idx, _)) => scroll_to_message(app, idx),
+        None => crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Warning,
+                "no user messages yet".to_string(),
+            ),
+        ),
+    }
+}
+
+fn jump_to_last_assistant(app: &mut App) {
+    let target = app
+        .messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, m)| !m.role_is_user());
+    match target {
+        Some((idx, _)) => scroll_to_message(app, idx),
+        None => crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Warning,
+                "no assistant messages yet".to_string(),
+            ),
+        ),
+    }
+}
+
 /// Collect every user-message prompt text in chronological order.
 /// Used by the up-arrow history recall to walk backwards through what
 /// the user has typed this session. Excludes empty messages and tool
@@ -165,6 +337,7 @@ fn dispatch_approved_tool(app: &App, tool: ToolCall, tx: &mpsc::UnboundedSender<
         Some(Arc::clone(&app.task_store)),
         Arc::clone(&app.provider),
         app.model.clone(),
+        app.teammate_event_tx.clone(),
     );
 }
 
@@ -212,6 +385,7 @@ fn advance_approval_queue(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent>) {
             Some(Arc::clone(&app.task_store)),
             Arc::clone(&app.provider),
             app.model.clone(),
+            app.teammate_event_tx.clone(),
         );
     }
 }
@@ -518,6 +692,138 @@ pub async fn handle_key(
         }
     }
 
+    // ─── Slash autocomplete popup ─────────────────────────────────────────
+    // Active whenever the input bar is exactly one line starting with
+    // `/` and there's at least one matching command. Tab/Enter
+    // commits the highlighted entry, Up/Down navigate, Esc dismisses.
+    if let Some(prefix) = crate::render::current_slash_prefix(app) {
+        let matches = crate::render::slash_matches(&prefix);
+        if !matches.is_empty() {
+            match key.code {
+                KeyCode::Tab | KeyCode::Enter => {
+                    let idx = app.slash_popup_selected.unwrap_or(0).min(matches.len() - 1);
+                    let (cmd, _) = matches[idx];
+                    // Replace the textarea content with the chosen
+                    // command + a trailing space (so the user can
+                    // immediately type args).
+                    app.textarea.select_all();
+                    app.textarea.cut();
+                    app.textarea.insert_str(&format!("{cmd} "));
+                    app.slash_popup_selected = None;
+                    return Ok(false);
+                }
+                KeyCode::Down => {
+                    let idx = app.slash_popup_selected.unwrap_or(0);
+                    app.slash_popup_selected = Some((idx + 1) % matches.len());
+                    return Ok(false);
+                }
+                KeyCode::Up => {
+                    let idx = app.slash_popup_selected.unwrap_or(0);
+                    app.slash_popup_selected = Some(if idx == 0 {
+                        matches.len() - 1
+                    } else {
+                        idx - 1
+                    });
+                    return Ok(false);
+                }
+                KeyCode::Esc => {
+                    // Dismiss the popup but leave the typed text
+                    // alone so the user can keep editing.
+                    app.slash_popup_selected = None;
+                    // Don't consume Esc — fall through so the user
+                    // can still chain Esc to clear input or interrupt.
+                }
+                _ => {
+                    // Any other key — let the textarea handle it as
+                    // normal. Reset the highlight so it re-anchors
+                    // to the new top-match on the next char.
+                    app.slash_popup_selected = None;
+                }
+            }
+        }
+    }
+
+    // ─── Transcript search (Ctrl+F) ──────────────────────────────────────
+    if app.transcript_search.is_some() {
+        match key.code {
+            KeyCode::Esc => {
+                // Cancel: drop the search state without scrolling.
+                app.transcript_search = None;
+            }
+            KeyCode::Enter => {
+                // Commit + exit. Scroll to the currently-focused
+                // match (already done via Up/Down navigation), then
+                // close the search bar.
+                if let Some(s) = app.transcript_search.take() {
+                    if let Some(&idx) = s.matches.get(s.cursor) {
+                        scroll_to_message(app, idx);
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(s) = app.transcript_search.as_mut() {
+                    s.query.pop();
+                    let q = s.query.clone();
+                    refresh_search_matches(app, &q);
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Some(s) = app.transcript_search.as_mut() {
+                    s.query.push(c);
+                    let q = s.query.clone();
+                    refresh_search_matches(app, &q);
+                }
+            }
+            KeyCode::Down => {
+                if let Some(s) = app.transcript_search.as_mut() {
+                    if !s.matches.is_empty() {
+                        s.cursor = (s.cursor + 1) % s.matches.len();
+                        let target = s.matches[s.cursor];
+                        scroll_to_message(app, target);
+                    }
+                }
+            }
+            KeyCode::Up => {
+                if let Some(s) = app.transcript_search.as_mut() {
+                    if !s.matches.is_empty() {
+                        s.cursor = if s.cursor == 0 {
+                            s.matches.len() - 1
+                        } else {
+                            s.cursor - 1
+                        };
+                        let target = s.matches[s.cursor];
+                        scroll_to_message(app, target);
+                    }
+                }
+            }
+            _ => {}
+        }
+        return Ok(false);
+    }
+
+    // ─── Jump-to navigation (Ctrl+G prefix) ──────────────────────────────
+    if app.jump_armed {
+        if let Some(t) = app.jump_armed_at {
+            if t.elapsed() >= std::time::Duration::from_secs(2) {
+                app.jump_armed = false;
+                app.jump_armed_at = None;
+            }
+        }
+    }
+    if app.jump_armed {
+        app.jump_armed = false;
+        app.jump_armed_at = None;
+        match key.code {
+            KeyCode::Char('e') => jump_to_last_error(app),
+            KeyCode::Char('t') => jump_to_last_tool(app),
+            KeyCode::Char('m') => jump_to_last_user(app),
+            KeyCode::Char('a') => jump_to_last_assistant(app),
+            KeyCode::Esc => {}
+            _ => {}
+        }
+        return Ok(false);
+    }
+
     if app.leader_key_active {
         app.leader_key_active = false;
         app.leader_key_timeout = None;
@@ -538,13 +844,11 @@ pub async fn handle_key(
                         Some(i) => (i + 1).min(task_count - 1),
                     };
                     app.viewing_task_id = task_ids.into_iter().nth(next);
-                    app.viewing_task_expanded.clear();
-                    app.scroll_to_bottom();
+                        app.scroll_to_bottom();
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 app.viewing_task_id = None;
-                app.viewing_task_expanded.clear();
                 app.scroll_to_bottom();
             }
             KeyCode::Left | KeyCode::Char('h') => {
@@ -552,8 +856,7 @@ pub async fn handle_key(
                     let pos = task_ids.iter().position(|t| t == id).unwrap_or(0);
                     if pos > 0 {
                         app.viewing_task_id = task_ids.into_iter().nth(pos - 1);
-                        app.viewing_task_expanded.clear();
-                    }
+                            }
                 }
             }
             KeyCode::Right | KeyCode::Char('l') => {
@@ -561,8 +864,7 @@ pub async fn handle_key(
                     let pos = task_ids.iter().position(|t| t == id).unwrap_or(0);
                     if pos + 1 < task_count {
                         app.viewing_task_id = task_ids.into_iter().nth(pos + 1);
-                        app.viewing_task_expanded.clear();
-                    }
+                            }
                 }
             }
             _ => {}
@@ -723,6 +1025,106 @@ pub async fn handle_key(
             }
             return Ok(true);
         }
+        (KeyModifiers::CONTROL, KeyCode::Char('g')) => {
+            // Arm jump-to mode. The next single keystroke (e / t / m /
+            // a) picks a target and scrolls the transcript to it. Esc
+            // or any unbound key cancels. Auto-disarms after 2s so a
+            // forgotten chord doesn't intercept user typing.
+            app.jump_armed = true;
+            app.jump_armed_at = Some(std::time::Instant::now());
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Info,
+                    "jump: e=last error · t=last tool · m=last user · a=last assistant".to_string(),
+                ),
+            );
+            return Ok(false);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('f')) if !input_has_text(app) => {
+            // Arm transcript search. Empty bar (input has no text)
+            // gates this so the user can still type literal Ctrl+F
+            // sequences if some legacy keybinding software passes
+            // them through. The search overlay renders at the bottom
+            // of the screen via `app.transcript_search.is_some()`.
+            app.transcript_search = Some(crate::app::TranscriptSearch::default());
+            return Ok(false);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('r')) => {
+            // Retry: re-submit the most recent user prompt as a fresh
+            // turn. Useful after a stream error or when the model's
+            // response wasn't useful and the user wants another roll
+            // of the dice. The retry is a *new* turn — we don't strip
+            // the prior assistant response, so the conversation
+            // history reflects "I asked twice" rather than rewriting
+            // history.
+            if app.is_streaming
+                || !app.pending_tool_calls.is_empty()
+                || app.pending_approval.is_some()
+            {
+                crate::toast::push_with_cap(
+                    &mut app.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Warning,
+                        "retry: still in flight, finish or interrupt first".to_string(),
+                    ),
+                );
+                return Ok(false);
+            }
+            // Walk back for the most recent user prompt that wasn't
+            // a slash command or a compact boundary.
+            let last_prompt: Option<String> = app
+                .messages
+                .iter()
+                .rev()
+                .find(|m| {
+                    m.role_is_user()
+                        && !m.is_compact_boundary()
+                        && m.parts.iter().any(|p| {
+                            matches!(p, MessagePart::Text(s) if !s.starts_with('/'))
+                        })
+                })
+                .and_then(|m| {
+                    m.parts.iter().find_map(|p| match p {
+                        MessagePart::Text(s) if !s.is_empty() => Some(s.clone()),
+                        _ => None,
+                    })
+                });
+            match last_prompt {
+                Some(text) => {
+                    let _ = tx.send(crate::app::AppEvent::Submit(text));
+                }
+                None => {
+                    crate::toast::push_with_cap(
+                        &mut app.toasts,
+                        crate::toast::Toast::new(
+                            crate::toast::ToastKind::Info,
+                            "no prompt to retry".to_string(),
+                        ),
+                    );
+                }
+            }
+            return Ok(false);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('z')) => {
+            // Undo the last textarea edit. ratatui-textarea tracks
+            // history internally — Ctrl+Z is the universal undo
+            // gesture and was previously unbound. Returns false when
+            // there's nothing to undo, which we silently ignore so
+            // the keystroke isn't reflected.
+            app.textarea.undo();
+            return Ok(false);
+        }
+        (mods, KeyCode::Char('Z'))
+            if mods.contains(KeyModifiers::CONTROL)
+                && mods.contains(KeyModifiers::SHIFT) =>
+        {
+            // Ctrl+Shift+Z redo. The shift modifier may or may not be
+            // exposed depending on the kitty-protocol negotiation, so
+            // match the modifier-set explicitly.
+            app.textarea.redo();
+            return Ok(false);
+        }
         (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
             app.show_palette = true;
             app.palette_input.clear();
@@ -845,6 +1247,16 @@ pub async fn handle_key(
             app.show_diagnostic_panel = false;
             return Ok(false);
         }
+        (KeyModifiers::NONE, KeyCode::Char('?')) if !input_has_text(app) => {
+            // `?` toggles the help overlay. Gated on empty input so
+            // the user can still type a literal `?` mid-message.
+            app.show_help = !app.show_help;
+            return Ok(false);
+        }
+        (KeyModifiers::SHIFT, KeyCode::Char('?')) if !input_has_text(app) => {
+            app.show_help = !app.show_help;
+            return Ok(false);
+        }
         (KeyModifiers::NONE, KeyCode::Char('o')) if !input_has_text(app) => {
             // In the subagent task view (`viewing_task_id.is_some()`),
             // `o` toggles expansion of the most recent long entry in
@@ -869,8 +1281,12 @@ pub async fn handle_key(
                         })
                         .map(|(i, _)| i);
                     if let Some(idx) = last_collapsible {
-                        if !app.viewing_task_expanded.insert(idx) {
-                            app.viewing_task_expanded.remove(&idx);
+                        let entry = app
+                            .viewing_task_expanded
+                            .entry(task_id.clone())
+                            .or_default();
+                        if !entry.insert(idx) {
+                            entry.remove(&idx);
                         }
                     }
                 }
@@ -881,9 +1297,28 @@ pub async fn handle_key(
                 for msg in messages.iter_mut().rev() {
                     for part in msg.parts.iter_mut().rev() {
                         if let MessagePart::Tool(tc) = part {
-                            if matches!(tc.output, ToolOutput::LargeText(_)) {
-                                tc.is_collapsed = !tc.is_collapsed;
-                                break 'toggle;
+                            // Two-level expand: huge LargeText flips
+                            // `is_collapsed` (1-row teaser ⇄ body), all
+                            // other tools flip `expanded` (80-line cap
+                            // ⇄ 500-line cap). The user gets a single
+                            // `o` shortcut that scales: small Read →
+                            // expand to full, huge Bash dump → expand
+                            // teaser to body.
+                            match &tc.output {
+                                ToolOutput::LargeText(lt)
+                                    if lt.line_count
+                                        > crate::types::LargeText::COLLAPSE_LINES
+                                        || lt.content.len()
+                                            > crate::types::LargeText::COLLAPSE_BYTES =>
+                                {
+                                    tc.is_collapsed = !tc.is_collapsed;
+                                    break 'toggle;
+                                }
+                                ToolOutput::Empty => {}
+                                _ => {
+                                    tc.expanded = !tc.expanded;
+                                    break 'toggle;
+                                }
                             }
                         }
                     }
@@ -891,10 +1326,112 @@ pub async fn handle_key(
             }
             return Ok(false);
         }
+        // ─── Task view: sticky arrow navigation ──────────────────────────
+        // Once you're inside the task view (Ctrl+X then ↓ to enter, or you
+        // typed something equivalent) plain ←/→ cycle through running
+        // tasks, ↑ leaves the view, ↓ jumps to the most recent. No
+        // leader-key chord required for each step — the leader is only
+        // needed to *enter* the view. Without this the user had to type
+        // Ctrl+X → → → → → to walk through five running agents.
+        (KeyModifiers::NONE, KeyCode::Right) | (KeyModifiers::NONE, KeyCode::Left)
+            if app.viewing_task_id.is_some() && !input_has_text(app) =>
+        {
+            let task_ids: Vec<String> = app.background_tasks.keys().cloned().collect();
+            if task_ids.is_empty() {
+                return Ok(false);
+            }
+            let pos = app
+                .viewing_task_id
+                .as_ref()
+                .and_then(|id| task_ids.iter().position(|t| t == id))
+                .unwrap_or(0);
+            let next = match key.code {
+                KeyCode::Right => (pos + 1).min(task_ids.len() - 1),
+                KeyCode::Left => pos.saturating_sub(1),
+                _ => pos,
+            };
+            if next != pos {
+                app.viewing_task_id = Some(task_ids[next].clone());
+                app.scroll_to_bottom();
+            }
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::Up)
+            if app.viewing_task_id.is_some() && !input_has_text(app) =>
+        {
+            // Up exits the task view back to the main transcript —
+            // matches the leader-mode `k` behavior so muscle memory is
+            // consistent across modes. Per-task expansion state stays
+            // in `app.viewing_task_expanded` so re-entering the same
+            // task restores what was expanded.
+            app.viewing_task_id = None;
+            app.scroll_to_bottom();
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::Down)
+            if app.viewing_task_id.is_some() && !input_has_text(app) =>
+        {
+            // Down jumps to the most recently spawned task — useful
+            // when several agents are running and you want the one
+            // that just kicked off.
+            let task_ids: Vec<String> = app.background_tasks.keys().cloned().collect();
+            if let Some(last) = task_ids.last() {
+                app.viewing_task_id = Some(last.clone());
+                app.scroll_to_bottom();
+            }
+            return Ok(false);
+        }
         (KeyModifiers::NONE, KeyCode::Esc) => {
+            if app.show_help {
+                app.show_help = false;
+                return Ok(false);
+            }
             if app.viewing_task_id.is_some() {
                 app.viewing_task_id = None;
-                app.viewing_task_expanded.clear();
+                return Ok(false);
+            }
+
+            // Double-tap ESC interrupts active work — streaming, the
+            // agentic continuation loop, and the subagent runner all
+            // poll `interrupt_flag` between iterations. Single ESC just
+            // hints; the second within `DOUBLE_TAP_MS` flips the flag
+            // and the in-flight tasks unwind. Mirrors Claude Code's ESC
+            // behavior: one ESC arms the cancel, two confirms.
+            const DOUBLE_TAP_MS: u128 = 600;
+            let active = app.is_streaming
+                || app.compacting_started_at.is_some()
+                || !app.pending_tool_calls.is_empty()
+                || app
+                    .background_tasks
+                    .values()
+                    .any(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running));
+            if active {
+                let now = std::time::Instant::now();
+                let recent = app
+                    .last_esc_at
+                    .map(|t| now.duration_since(t).as_millis() < DOUBLE_TAP_MS)
+                    .unwrap_or(false);
+                if recent {
+                    app.interrupt_flag
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    app.last_esc_at = None;
+                    crate::toast::push_with_cap(
+                        &mut app.toasts,
+                        crate::toast::Toast::new(
+                            crate::toast::ToastKind::Warning,
+                            "⏹ Interrupting…".to_owned(),
+                        ),
+                    );
+                } else {
+                    app.last_esc_at = Some(now);
+                    crate::toast::push_with_cap(
+                        &mut app.toasts,
+                        crate::toast::Toast::new(
+                            crate::toast::ToastKind::Info,
+                            "Press ESC again to interrupt".to_owned(),
+                        ),
+                    );
+                }
                 return Ok(false);
             }
             reset_input(app);
@@ -1256,6 +1793,7 @@ async fn handle_submit(
                     let _ = tx_pre.send(crate::app::AppEvent::CompactionFailed(
                         "Circuit breaker tripped — submit again with `/compact` if needed".into(),
                         None,
+                        false,
                     ));
                 }
                 crate::compact::CompactResult::Exhausted { attempts } => {
@@ -1266,7 +1804,7 @@ async fn handle_submit(
                     );
                     let _ = tx_pre.send(crate::app::AppEvent::CompactionFailed(format!(
                         "Exhausted {attempts} compaction attempts — request is too large"
-                    ), Some(tool_ctx.approx_tokens)));
+                    ), Some(tool_ctx.approx_tokens), false));
                 }
                 _ => {
                     // Unsupported / TooFewGroups: provider can't compact.
@@ -1284,6 +1822,7 @@ async fn handle_submit(
                              or start a new session."
                                 .into(),
                             Some(tool_ctx.approx_tokens),
+                            false,
                         ));
                     } else {
                         tracing::debug!(
@@ -1333,6 +1872,10 @@ async fn handle_submit(
     let messages = crate::stream::build_provider_messages(&app.messages[..assistant_idx]);
     let model = app.model.clone();
     let tx = tx.clone();
+    let interrupt = app.interrupt_flag.clone();
+    // Fresh user submission resets any prior interrupt state — the user
+    // moved on, so the next stream should run unchecked.
+    interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
 
     tracing::info!(
         target: "jfc::input",
@@ -1345,7 +1888,7 @@ async fn handle_submit(
     );
 
     tokio::spawn(async move {
-        crate::stream::stream_response(provider, messages, model, tx).await;
+        crate::stream::stream_response(provider, messages, model, tx, interrupt).await;
     });
 
     Ok(())
@@ -1957,6 +2500,65 @@ fn handle_slash_command(
         "/worktree" => {
             handle_worktree_command(app, parts.get(1).copied().unwrap_or("").trim());
         }
+        "/export" => {
+            handle_export_command(app);
+        }
+        "/swarm-approve" | "/swarm-deny" => {
+            // Resolve a pending swarm permission request from the user's
+            // input bar. Toasts surface the request id when it lands;
+            // here we hand it back to `permission_sync::resolve_permission`
+            // with the leader as `resolved_by` so the teammate's poll
+            // loop unblocks.
+            let id = parts.get(1).copied().unwrap_or("").trim().to_owned();
+            let approve = parts[0] == "/swarm-approve";
+            let feedback = parts.get(2..).map(|rest| rest.join(" ")).filter(|s| !s.trim().is_empty());
+            if id.is_empty() {
+                app.messages.push(ChatMessage::assistant(format!(
+                    "Usage: {} <request-id> [feedback]\nFind the id in the toast that appeared when the teammate asked.",
+                    parts[0]
+                )));
+            } else {
+                let team_name = app.team_context.team_name.clone().unwrap_or_default();
+                let echo = if approve {
+                    format!("/swarm-approve {id}")
+                } else if let Some(ref f) = feedback {
+                    format!("/swarm-deny {id} {f}")
+                } else {
+                    format!("/swarm-deny {id}")
+                };
+                app.messages.push(ChatMessage::user(echo));
+                if team_name.is_empty() {
+                    app.messages.push(ChatMessage::assistant(
+                        "No active team — nothing to approve.".into(),
+                    ));
+                } else {
+                    let resolution = crate::swarm::types::PermissionResolution {
+                        decision: if approve {
+                            crate::swarm::types::PermissionDecision::Approved
+                        } else {
+                            crate::swarm::types::PermissionDecision::Rejected
+                        },
+                        resolved_by: "user".to_owned(),
+                        feedback,
+                        updated_input: None,
+                        permission_updates: Vec::new(),
+                    };
+                    let req_id = id.clone();
+                    tokio::spawn(async move {
+                        let _ = crate::swarm::permission_sync::resolve_permission(
+                            &req_id,
+                            &resolution,
+                            &team_name,
+                        )
+                        .await;
+                    });
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Resolved swarm request {id} → {}",
+                        if approve { "approved" } else { "denied" }
+                    )));
+                }
+            }
+        }
         _ => {
             // Skill-name fallthrough: `/<skill>` invokes the matching skill
             // body as if the user had pasted it. Mirrors v126 cli.js:226634
@@ -2046,8 +2648,10 @@ fn handle_slash_command(
                     crate::stream::build_provider_messages(&app.messages[..assistant_idx]);
                 let model = app.model.clone();
                 let tx_stream = tx.clone();
+                let interrupt = app.interrupt_flag.clone();
+                interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
                 tokio::spawn(async move {
-                    crate::stream::stream_response(provider, messages, model, tx_stream).await;
+                    crate::stream::stream_response(provider, messages, model, tx_stream, interrupt).await;
                 });
                 return;
             }
@@ -2066,6 +2670,143 @@ fn handle_slash_command(
 /// `"remove <name>"` removes, `"switch <name>"` prints the manual cd hint.
 ///
 /// The runtime cwd of `App` is fixed at startup (see `App::new` in app.rs), so
+/// `/export` — serialize the current transcript as markdown and write
+/// it to `~/.config/jfc/exports/{session-id}_{timestamp}.md`. Useful
+/// for sharing a session, archiving long-running work, or feeding
+/// the transcript into other tooling. Tool calls render as fenced
+/// code blocks with their kind in the language slot. Tool results
+/// are nested under their tool. Mirrors v126's `/export` command.
+fn handle_export_command(app: &mut App) {
+    use crate::types::{MessagePart, Role, ToolOutput};
+    let dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("jfc")
+        .join("exports");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Error,
+                format!("export: cannot create dir: {e}"),
+            ),
+        );
+        return;
+    }
+    let session_id = app
+        .current_session_id
+        .clone()
+        .unwrap_or_else(|| "untitled".to_owned());
+    let stamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+    let path = dir.join(format!("{session_id}_{stamp}.md"));
+
+    let mut out = String::new();
+    out.push_str(&format!("# {session_id}\n\n"));
+    out.push_str(&format!("- model: `{}`\n", app.model));
+    out.push_str(&format!("- cwd: `{}`\n", app.cwd));
+    out.push_str(&format!(
+        "- exported: {}\n\n---\n\n",
+        chrono::Utc::now().to_rfc3339()
+    ));
+
+    for msg in &app.messages {
+        let role = match msg.role {
+            Role::User => "user",
+            Role::Assistant => "assistant",
+        };
+        out.push_str(&format!("## {role}\n\n"));
+        for part in &msg.parts {
+            match part {
+                MessagePart::Text(s) => {
+                    out.push_str(s);
+                    out.push_str("\n\n");
+                }
+                MessagePart::Reasoning(s) => {
+                    out.push_str("> _reasoning:_\n>\n");
+                    for line in s.lines() {
+                        out.push_str("> ");
+                        out.push_str(line);
+                        out.push('\n');
+                    }
+                    out.push('\n');
+                }
+                MessagePart::Tool(tc) => {
+                    out.push_str(&format!(
+                        "**{}** `{}`\n\n",
+                        tc.kind.label(),
+                        tc.input.summary()
+                    ));
+                    let body = match &tc.output {
+                        ToolOutput::Text(s) => s.clone(),
+                        ToolOutput::LargeText(lt) => lt.content.clone(),
+                        ToolOutput::Command { stdout, stderr, exit_code } => {
+                            format!(
+                                "exit: {}\nstdout:\n{}\nstderr:\n{}",
+                                exit_code.unwrap_or(-1),
+                                stdout,
+                                stderr,
+                            )
+                        }
+                        ToolOutput::FileContent { path, content, .. } => {
+                            format!("// {}\n{}", path, content)
+                        }
+                        ToolOutput::FileList(files) => files.join("\n"),
+                        ToolOutput::Diff(d) => {
+                            format!(
+                                "// diff: +{}/-{} in {}",
+                                d.additions, d.deletions, d.file_path
+                            )
+                        }
+                        ToolOutput::Empty => String::new(),
+                    };
+                    if !body.is_empty() {
+                        out.push_str("```\n");
+                        out.push_str(&body);
+                        if !body.ends_with('\n') {
+                            out.push('\n');
+                        }
+                        out.push_str("```\n\n");
+                    }
+                }
+                MessagePart::TaskStatus(ts) => {
+                    out.push_str(&format!("- task: {}\n\n", ts.description));
+                }
+                MessagePart::CompactBoundary { pre_tokens } => {
+                    out.push_str(&format!(
+                        "\n---\n_(compaction at ~{} tokens)_\n---\n\n",
+                        pre_tokens
+                    ));
+                }
+            }
+        }
+        out.push_str("\n");
+    }
+
+    match std::fs::write(&path, out) {
+        Ok(_) => {
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Success,
+                    format!("exported to {}", path.display()),
+                ),
+            );
+            app.messages.push(crate::types::ChatMessage::assistant(format!(
+                "Session exported to `{}`",
+                path.display()
+            )));
+        }
+        Err(e) => {
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Error,
+                    format!("export failed: {e}"),
+                ),
+            );
+        }
+    }
+}
+
 /// `switch` cannot teleport the running session into a different checkout —
 /// it tells the user how to do it manually. Once App.cwd becomes mutable we
 /// can revisit.

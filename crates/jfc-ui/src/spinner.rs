@@ -236,6 +236,18 @@ pub fn format_status(
     let mut parts: Vec<String> = vec![fmt_elapsed(elapsed)];
     if output_tokens > 0 {
         parts.push(format!("↓ {} tokens", fmt_tokens(output_tokens)));
+        // Live token rate. Skipping the first 2 seconds because the
+        // initial burst is dominated by start-up latency and gives a
+        // misleading rate. Once we have meaningful data, show the
+        // rolling estimate so the user can spot when the stream
+        // actually slowed down vs. just feels slow.
+        let elapsed_secs = elapsed.as_secs_f64();
+        if elapsed_secs >= 2.0 {
+            let rate = output_tokens as f64 / elapsed_secs;
+            if rate > 0.5 {
+                parts.push(format!("{:.0} tok/s", rate));
+            }
+        }
     }
     // Thinking signal beats stall_status while live (mid-reasoning the
     // wire is silent for tens of seconds and the user would otherwise
@@ -243,7 +255,22 @@ pub fn format_status(
     // show the duration chip; *also* layer stall_status on top of that
     // when the post-thinking text stream goes quiet for >=15s.
     match thinking {
-        Some(ThinkingStatus::Live) => parts.push("thinking".to_string()),
+        Some(ThinkingStatus::Live) => {
+            // Animated braille glyph rotates with the wall-clock
+            // tick so the live thinking row reads as alive rather
+            // than frozen. Phase verb shifts with elapsed: planning
+            // → considering → drafting. v126 cli.js:323158 uses the
+            // same braille set; we feed it the spinner_frame index.
+            const FRAMES: &[&str] =
+                &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            let glyph = FRAMES[tick % FRAMES.len()];
+            let phase = match elapsed.as_secs() {
+                0..=11 => "planning",
+                12..=29 => "considering",
+                _ => "drafting",
+            };
+            parts.push(format!("thinking {glyph} {phase}"));
+        }
         Some(ThinkingStatus::Done(d)) => {
             let secs = d.as_secs().max(1);
             parts.push(format!("thought for {secs}s"));

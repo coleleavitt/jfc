@@ -68,7 +68,70 @@ pub fn message_view_total_lines(app: &App, inner_w: usize) -> usize {
                     }
                 }
                 MessagePart::Tool(tool) => {
-                    total += tool_block_height(tool, inner_w);
+                    // Apply the same grouping the renderer uses so
+                    // total-line math matches what we'll actually
+                    // draw. We approximate by checking each tool: if
+                    // it's the START of a groupable run of >=3 same-
+                    // kind tools AND the group is not expanded, the
+                    // run contributes 1 row total. Otherwise this
+                    // tool contributes its block height.
+                    if is_groupable(&tool.kind) {
+                        // Find the parts vector index for this tool
+                        // by pointer identity (cheap — same Vec).
+                        let pos = msg
+                            .parts
+                            .iter()
+                            .position(|p| match p {
+                                MessagePart::Tool(t) => std::ptr::eq(t, tool),
+                                _ => false,
+                            })
+                            .unwrap_or(0);
+                        // If the previous part was a same-kind groupable,
+                        // this tool's height was already counted as part
+                        // of the run header — skip it.
+                        let prev_is_same = pos > 0
+                            && matches!(
+                                &msg.parts[pos - 1],
+                                MessagePart::Tool(prev)
+                                    if std::mem::discriminant(&prev.kind)
+                                        == std::mem::discriminant(&tool.kind)
+                                        && is_groupable(&prev.kind)
+                            );
+                        if prev_is_same {
+                            continue;
+                        }
+                        // We're at the start of a run. Count length.
+                        let mut run_len = 1usize;
+                        let mut cursor = pos + 1;
+                        while cursor < msg.parts.len() {
+                            if let MessagePart::Tool(t2) = &msg.parts[cursor] {
+                                if std::mem::discriminant(&t2.kind)
+                                    == std::mem::discriminant(&tool.kind)
+                                {
+                                    run_len += 1;
+                                    cursor += 1;
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
+                        let group_key = format!("{}:{}", idx, tool.id);
+                        let expanded = app.tool_group_expanded.contains(&group_key);
+                        if run_len >= 3 && !expanded {
+                            // Single-row group header replaces the
+                            // entire run.
+                            total += 1;
+                        } else {
+                            // Sum the run's actual heights.
+                            for run_part in &msg.parts[pos..pos + run_len] {
+                                if let MessagePart::Tool(t2) = run_part {
+                                    total += tool_block_height(t2, inner_w);
+                                }
+                            }
+                        }
+                    } else {
+                        total += tool_block_height(tool, inner_w);
+                    }
                 }
                 MessagePart::TaskStatus(ts) => {
                     total += 1;
@@ -140,11 +203,25 @@ impl Widget for MessageView<'_> {
             // currently-visible tools. Tools partially clipped by scroll
             // still get a hit region for the visible portion — clicking
             // any visible row of a tool toggles its `expanded` state.
-            if let RenderItem::ToolBlock(tool) = item {
-                self.app
-                    .tool_hit_regions
-                    .borrow_mut()
-                    .push((tool.id.clone(), item_area));
+            // Hit-region: each clickable item registers its area so
+            // mouse handler can hit-test. Both individual tool blocks
+            // and collapsed groups participate. Group keys are
+            // prefixed with `group:` so the click handler can tell
+            // them apart from raw tool ids when toggling state.
+            match item {
+                RenderItem::ToolBlock(_, tool) => {
+                    self.app
+                        .tool_hit_regions
+                        .borrow_mut()
+                        .push((tool.id.clone(), item_area));
+                }
+                RenderItem::ToolGroup { key, .. } => {
+                    self.app
+                        .tool_hit_regions
+                        .borrow_mut()
+                        .push((format!("group:{key}"), item_area));
+                }
+                _ => {}
             }
             item.render_with_skip(item_area, buf, t, item_scroll_skip);
             y += render_h;
@@ -155,7 +232,22 @@ impl Widget for MessageView<'_> {
 
 enum RenderItem<'a> {
     TextLine(Line<'a>),
-    ToolBlock(&'a ToolCall),
+    /// Carries `&App` so the renderer can read `app.diagnostics`
+    /// when rendering a Read result — without piping the whole App
+    /// through the render-stack as a separate parameter at every
+    /// helper. Only the tool-block path needs it; other items don't.
+    ToolBlock(&'a App, &'a ToolCall),
+    /// Collapsed group of consecutive same-kind tool calls (Read,
+    /// Glob, Grep, Search). Renders as a single one-line teaser
+    /// "▶ N reads · click to expand"; click on the row or `o` flips
+    /// `app.tool_group_expanded` and the next render emits each
+    /// tool individually.
+    ToolGroup {
+        key: String,
+        kind_label: String,
+        count: usize,
+        kind_color: ratatui::style::Color,
+    },
     Blank,
 }
 
@@ -171,7 +263,8 @@ impl<'a> RenderItem<'a> {
                     w.div_ceil(width).max(1)
                 }
             }
-            RenderItem::ToolBlock(tool) => tool_block_height(tool, width),
+            RenderItem::ToolBlock(_, tool) => tool_block_height(tool, width),
+            RenderItem::ToolGroup { .. } => 1,
         }
     }
 
@@ -185,11 +278,117 @@ impl<'a> RenderItem<'a> {
                     .style(Style::default().bg(t.bg))
                     .render(area, buf);
             }
-            RenderItem::ToolBlock(tool) => {
-                render_tool_block(tool, area, t, buf, skip);
+            RenderItem::ToolBlock(app, tool) => {
+                render_tool_block(app, tool, area, t, buf, skip);
+            }
+            RenderItem::ToolGroup { kind_label, count, kind_color, .. } => {
+                if skip > 0 || area.height == 0 {
+                    return;
+                }
+                if area.x < buf.area().right() && area.y < buf.area().bottom() {
+                    let cell = &mut buf[(area.x, area.y)];
+                    cell.set_symbol("▌");
+                    cell.set_style(Style::default().fg(*kind_color));
+                }
+                let plural = if *count == 1 {
+                    kind_label.clone()
+                } else {
+                    format!("{}s", kind_label.to_lowercase())
+                };
+                let row = Rect {
+                    x: area.x + 1,
+                    y: area.y,
+                    width: area.width.saturating_sub(1),
+                    height: 1,
+                };
+                Paragraph::new(Line::from(vec![
+                    Span::styled("▶ ", Style::default().fg(t.text_muted)),
+                    Span::styled(
+                        format!("{count} {plural}"),
+                        Style::default()
+                            .fg(*kind_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        " · click or press o to expand".to_string(),
+                        Style::default()
+                            .fg(t.text_muted)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                ]))
+                .style(Style::default().bg(t.bg))
+                .render(row, buf);
             }
         }
     }
+}
+
+/// Build a `HashMap<line_number, Severity>` for the file path
+/// referenced by `input` (Read/Edit/Write), pulling from
+/// `app.diagnostics`. Returns an empty map when the input isn't a
+/// file-tool or no diagnostics match. The lookup uses the basename
+/// when the diagnostic stores a relative path that doesn't match
+/// the absolute one from the tool input — robust against either
+/// representation showing up.
+fn diagnostics_for_path(
+    app: &App,
+    input: &ToolInput,
+) -> std::collections::HashMap<usize, crate::diagnostics::Severity> {
+    use std::collections::HashMap;
+    let mut out: HashMap<usize, crate::diagnostics::Severity> = HashMap::new();
+    let path = match input {
+        ToolInput::Read { file_path, .. }
+        | ToolInput::Edit { file_path, .. }
+        | ToolInput::Write { file_path, .. } => file_path.as_str(),
+        _ => return out,
+    };
+    let path_basename = std::path::Path::new(path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(path);
+    for d in &app.diagnostics {
+        let d_basename = std::path::Path::new(&d.file)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(d.file.as_str());
+        let same_path = d.file == path
+            || d_basename == path_basename
+            || path.ends_with(d.file.as_str())
+            || d.file.ends_with(path);
+        if !same_path {
+            continue;
+        }
+        let entry = out.entry(d.line as usize).or_insert(d.severity);
+        // Higher severity wins when several diagnostics target the
+        // same line.
+        if severity_rank(d.severity) > severity_rank(*entry) {
+            *entry = d.severity;
+        }
+    }
+    out
+}
+
+fn severity_rank(s: crate::diagnostics::Severity) -> u8 {
+    use crate::diagnostics::Severity;
+    match s {
+        Severity::Error => 4,
+        Severity::Warning => 3,
+        Severity::Info => 2,
+        Severity::Hint => 1,
+    }
+}
+
+/// Tool kinds that get auto-grouped when the model fires several in a
+/// row. These are the "search-pattern" kinds — running 5 Reads or 5
+/// Greps individually drowns out the next user prompt; collapsing
+/// them keeps the transcript scannable while preserving the option
+/// to drill in. Edit/Write/Bash never group because each one's
+/// behavior matters per-call.
+fn is_groupable(kind: &ToolKind) -> bool {
+    matches!(
+        kind,
+        ToolKind::Read | ToolKind::Glob | ToolKind::Grep | ToolKind::Search
+    )
 }
 
 fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
@@ -226,7 +425,57 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
 
         let reasoning_expanded = app.reasoning_expanded.get(&idx).copied().unwrap_or(false);
 
-        for part in &msg.parts {
+        // Walk parts with peek-ahead so consecutive groupable tools
+        // (Read/Glob/Grep) collapse into a single ToolGroup row when
+        // the user hasn't expanded the group. Min run length is 3 —
+        // 1–2 tools render fine individually and grouping them just
+        // adds an extra click.
+        const MIN_GROUP_LEN: usize = 3;
+        let mut p = 0usize;
+        while p < msg.parts.len() {
+            let part = &msg.parts[p];
+            match part {
+                MessagePart::Tool(first_tool) if is_groupable(&first_tool.kind) => {
+                    // Probe forward for consecutive same-kind tools.
+                    let mut run_end = p + 1;
+                    while run_end < msg.parts.len() {
+                        if let MessagePart::Tool(t2) = &msg.parts[run_end] {
+                            if std::mem::discriminant(&t2.kind)
+                                == std::mem::discriminant(&first_tool.kind)
+                            {
+                                run_end += 1;
+                                continue;
+                            }
+                        }
+                        break;
+                    }
+                    let run_len = run_end - p;
+                    let group_key = format!("{}:{}", idx, first_tool.id);
+                    let expanded =
+                        app.tool_group_expanded.contains(&group_key);
+                    if run_len >= MIN_GROUP_LEN && !expanded {
+                        items.push(RenderItem::ToolGroup {
+                            key: group_key,
+                            kind_label: first_tool.kind.label().to_owned(),
+                            count: run_len,
+                            kind_color: tool_kind_color(&first_tool.kind, &t),
+                        });
+                        p = run_end;
+                        continue;
+                    }
+                    // Either the run was too short to bother grouping
+                    // or the user has expanded it — emit each tool
+                    // individually.
+                    for tool_part in &msg.parts[p..run_end] {
+                        if let MessagePart::Tool(tool) = tool_part {
+                            items.push(RenderItem::ToolBlock(app, tool));
+                        }
+                    }
+                    p = run_end;
+                    continue;
+                }
+                _ => {}
+            }
             match part {
                 MessagePart::Text(text) => {
                     let lines = {
@@ -247,7 +496,7 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
                     push_reasoning_lines(&mut items, text, reasoning_expanded, idx, &t);
                 }
                 MessagePart::Tool(tool) => {
-                    items.push(RenderItem::ToolBlock(tool));
+                    items.push(RenderItem::ToolBlock(app, tool));
                 }
                 MessagePart::TaskStatus(ts) => {
                     push_task_status_lines(&mut items, ts, &t);
@@ -263,6 +512,7 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
                     ])));
                 }
             }
+            p += 1;
         }
 
         // v126 cli.js:341376 — `Cooked for Nm Ns` post-turn footer with a
@@ -306,7 +556,12 @@ fn tool_block_height(tool: &ToolCall, inner_w: usize) -> usize {
     // line bash command — the title only fits the first line — so the
     // user sees the heredoc body, not just `cat > file <<'EOF'`.
     let cont = bash_continuation_lines(tool).len();
-    1 + cont + tool_content_height(&tool.output, inner_w.saturating_sub(2))
+    1 + cont
+        + tool_content_height_with(
+            &tool.output,
+            inner_w.saturating_sub(2),
+            tool.expanded,
+        )
 }
 
 pub fn tool_block_height_pub(tool: &ToolCall, inner_w: usize) -> usize {
@@ -314,52 +569,81 @@ pub fn tool_block_height_pub(tool: &ToolCall, inner_w: usize) -> usize {
 }
 
 fn tool_content_height(output: &ToolOutput, content_w: usize) -> usize {
+    tool_content_height_with(output, content_w, false)
+}
+
+/// Compute the rendered row count for a tool's body. `expanded` lifts
+/// the per-section preview caps so the user sees the full content
+/// after toggling expand (Ctrl+O / `o` / left-click on the tool
+/// block). The "+ N more" footer line is included in the count when
+/// the cap clips content; the renderer matches the same logic.
+fn tool_content_height_with(output: &ToolOutput, content_w: usize, expanded: bool) -> usize {
+    let cap = if expanded { 500 } else { 80 };
+    let footer_if = |total: usize| if total > cap { 1 } else { 0 };
     match output {
         ToolOutput::Empty => 0,
 
-        ToolOutput::Text(s) => wrapped_line_count(s, content_w).min(80),
+        ToolOutput::Text(s) => {
+            let total = wrapped_line_count(s, content_w);
+            total.min(cap) + footer_if(total)
+        }
 
         ToolOutput::LargeText(lt) => {
-            if lt.line_count > LargeText::COLLAPSE_LINES
-                || lt.content.len() > LargeText::COLLAPSE_BYTES
+            if !expanded
+                && (lt.line_count > LargeText::COLLAPSE_LINES
+                    || lt.content.len() > LargeText::COLLAPSE_BYTES)
             {
                 1
             } else {
-                wrapped_line_count(&lt.content, content_w).min(80)
+                let total = wrapped_line_count(&lt.content, content_w);
+                total.min(cap) + footer_if(total)
             }
         }
 
         ToolOutput::Command { stdout, stderr, .. } => {
-            1 + if stdout.is_empty() {
+            let stdout_total = if stdout.is_empty() {
                 0
             } else {
-                wrapped_line_count(stdout, content_w).min(80)
-            } + if stderr.is_empty() {
+                wrapped_line_count(stdout, content_w)
+            };
+            let stderr_total = if stderr.is_empty() {
                 0
             } else {
-                wrapped_line_count(stderr, content_w).min(80)
-            }
+                wrapped_line_count(stderr, content_w)
+            };
+            1 + stdout_total.min(cap)
+                + footer_if(stdout_total)
+                + stderr_total.min(cap)
+                + footer_if(stderr_total)
         }
 
         ToolOutput::Diff(diff) => {
-            // 1 row for the `□ Added N lines` summary + sum of hunk
-            // heights (header + clamped lines + optional `… N more`).
             let summary_row = if diff.additions > 0 || diff.deletions > 0 {
                 1
             } else {
                 0
             };
+            let hunk_cap = if expanded { 500 } else { 50 };
             summary_row
                 + diff
                     .hunks
                     .iter()
-                    .map(|h| 1 + h.lines.len().min(50) + if h.lines.len() > 50 { 1 } else { 0 })
+                    .map(|h| {
+                        1 + h.lines.len().min(hunk_cap)
+                            + if h.lines.len() > hunk_cap { 1 } else { 0 }
+                    })
                     .sum::<usize>()
         }
 
-        ToolOutput::FileContent { content, .. } => wrapped_line_count(content, content_w).min(80),
+        ToolOutput::FileContent { content, .. } => {
+            let total = wrapped_line_count(content, content_w);
+            total.min(cap) + footer_if(total)
+        }
 
-        ToolOutput::FileList(files) => files.len().min(20) + if files.len() > 20 { 1 } else { 0 },
+        ToolOutput::FileList(files) => {
+            let cap = if expanded { 500 } else { 20 };
+            files.len().min(cap) + if files.len() > cap { 1 } else { 0 }
+        }
     }
 }
 
@@ -376,57 +660,106 @@ fn wrapped_line_count(text: &str, width: usize) -> usize {
         .max(if text.is_empty() { 0 } else { 1 })
 }
 
-fn render_tool_block(tool: &ToolCall, area: Rect, t: Theme, buf: &mut Buffer, skip: usize) {
+fn render_tool_block(app: &App, tool: &ToolCall, area: Rect, t: Theme, buf: &mut Buffer, skip: usize) {
     if area.height == 0 {
         return;
     }
 
     if tool.is_collapsed {
         if skip == 0 {
+            let kind_color = tool_kind_color(&tool.kind, &t);
+            let gutter_color = match tool.status {
+                ToolStatus::Pending => t.warning,
+                ToolStatus::Running => kind_color,
+                ToolStatus::Complete => kind_color,
+                ToolStatus::Failed => t.error,
+            };
+            if area.x < buf.area().right() && area.y < buf.area().bottom() {
+                let cell = &mut buf[(area.x, area.y)];
+                cell.set_symbol("▌");
+                cell.set_style(Style::default().fg(gutter_color));
+            }
             let header = build_collapsed_header(tool, &t, area.width as usize);
             Paragraph::new(header)
                 .style(Style::default().bg(t.bg))
-                .render(Rect { height: 1, ..area }, buf);
+                .render(
+                    Rect {
+                        x: area.x + 1,
+                        y: area.y,
+                        width: area.width.saturating_sub(1),
+                        height: 1,
+                    },
+                    buf,
+                );
         }
         return;
     }
 
-    // Animate the icon for Running tools by deriving the frame from
-    // wall-clock time (every TICK_MS ticks → next frame). This sidesteps
-    // having to thread `app.spinner_frame` through `MessageView` while
-    // still pulsing in lockstep with the top-of-input spinner. v126
-    // cli.js:323158 does the same — frame cycles indexed by elapsed ms.
     let frame_idx = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| (d.as_millis() / 80) as usize)
         .unwrap_or(0);
     let (status_icon, status_style) = tool_status_icon_animated(tool, &t, frame_idx);
-    let title_spans = build_title_spans(
-        tool,
-        &t,
-        status_icon,
-        status_style,
-        area.width.saturating_sub(2) as usize,
-    );
 
     let full_h = tool_block_height(tool, area.width as usize) as u16;
     if skip >= full_h as usize {
         return;
     }
 
-    // Row 0: title — only draw it if scrolling hasn't pushed it out of view.
+    // ─── Left gutter frame ───────────────────────────────────────────────
+    // Draw a colored vertical bar down the left edge of the block,
+    // tinted to the tool's status. This frames the tool block as a
+    // distinct visual unit (Read, Edit, Bash, …) rather than letting
+    // its body bleed into surrounding prose. Mirrors Claude Code's
+    // tool-block frame from `MessageResponse.tsx`. Status color cycles
+    // with the same frame index as the bullet so a running tool's
+    // gutter pulses in lockstep with its glyph.
+    // Gutter color blends tool-kind identity with status: Failed
+    // forces red regardless of kind (a failed Bash should still read
+    // as failed), Running pulses between the kind color and muted,
+    // Complete uses the kind color directly, Pending uses warning.
+    let kind_color = tool_kind_color(&tool.kind, &t);
+    let gutter_color = match tool.status {
+        ToolStatus::Pending => t.warning,
+        ToolStatus::Running => {
+            let pulse = (frame_idx / 2) % 2 == 0;
+            if pulse { kind_color } else { t.text_muted }
+        }
+        ToolStatus::Complete => kind_color,
+        ToolStatus::Failed => t.error,
+    };
+    let gutter_style = Style::default().fg(gutter_color);
+    for row in 0..(full_h.saturating_sub(skip as u16)).min(area.height) {
+        if area.x >= buf.area().right() {
+            break;
+        }
+        let cell = &mut buf[(area.x, area.y + row)];
+        cell.set_symbol("▌");
+        cell.set_style(gutter_style);
+    }
+
+    let title_spans = build_title_spans(
+        tool,
+        &t,
+        status_icon,
+        status_style,
+        area.width.saturating_sub(3) as usize,
+    );
+
+    // Title sits one column to the right of the gutter so it doesn't
+    // collide with the bar.
     if skip == 0 && area.height > 0 {
-        let title_area = Rect { height: 1, ..area };
+        let title_area = Rect {
+            x: area.x + 1,
+            y: area.y,
+            width: area.width.saturating_sub(1),
+            height: 1,
+        };
         Paragraph::new(Line::from(title_spans))
             .style(Style::default().bg(t.bg))
             .render(title_area, buf);
     }
 
-    // Rows 1..N: indented content, 2-char left gutter to mirror v126's
-    // visual hierarchy (the title's leading status icon "owns" the column,
-    // so the body sits two cells in). When `skip == 0` we already consumed
-    // row 0 for the title; otherwise skip-1 rows of content have scrolled
-    // off and we keep going from there.
     let title_consumed: u16 = if skip == 0 { 1 } else { 0 };
     let content_skip = skip.saturating_sub(1);
     let content_y = area.y + title_consumed;
@@ -434,6 +767,8 @@ fn render_tool_block(tool: &ToolCall, area: Rect, t: Theme, buf: &mut Buffer, sk
     if content_h == 0 {
         return;
     }
+    // Body indents two columns (one for the gutter bar, one for visual
+    // padding). Width shrinks by the same amount.
     let content_area = Rect {
         x: area.x + 2,
         y: content_y,
@@ -441,12 +776,21 @@ fn render_tool_block(tool: &ToolCall, area: Rect, t: Theme, buf: &mut Buffer, sk
         height: content_h,
     };
     if content_area.width > 0 {
-        render_tool_content_with_skip(tool, content_area, t, buf, content_skip);
+        render_tool_content_with_skip(app, tool, content_area, t, buf, content_skip);
     }
 }
 
 fn build_collapsed_header<'a>(tool: &'a ToolCall, t: &Theme, width: usize) -> Line<'a> {
-    let (status_icon, status_style) = tool_status_icon(tool, t);
+    // Match the expanded-header path: derive the spinner frame from
+    // wall-clock time so a Pending or Running tool keeps animating
+    // even when it's collapsed (the more common case while a batch
+    // is in flight). Without this the bullet froze at `○`/`◌` and the
+    // user couldn't tell "queued and alive" apart from "stuck".
+    let frame_idx = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| (d.as_millis() / 80) as usize)
+        .unwrap_or(0);
+    let (status_icon, status_style) = tool_status_icon_animated(tool, t, frame_idx);
     let mut spans = vec![
         Span::styled("▶ ", Style::default().fg(t.text_muted)),
         Span::styled(status_icon.to_owned(), status_style),
@@ -483,38 +827,78 @@ fn build_title_spans<'a>(
         Span::styled(status_icon.to_owned(), status_style),
         Span::raw(" "),
     ];
-    let effective = width.min(tool_title_width_cap()).saturating_sub(4);
+    if tool.pinned {
+        spans.push(Span::styled(
+            "📌 ",
+            Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
+        ));
+    }
+    // Reserve a few columns at the right for the optional elapsed
+    // badge. `format_elapsed_badge` returns `Some("[2.3s]")` only for
+    // completed/failed tools that have a measured duration, otherwise
+    // None.
+    let badge = format_elapsed_badge(tool);
+    let badge_w = badge.as_ref().map(|s| s.chars().count() + 1).unwrap_or(0);
+    let effective = width
+        .min(tool_title_width_cap())
+        .saturating_sub(4 + badge_w);
     spans.extend(build_header_inner_spans(tool, t, effective));
+    if let Some(b) = badge {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            b,
+            Style::default().fg(t.text_muted).add_modifier(Modifier::DIM),
+        ));
+    }
     spans
+}
+
+/// Render the elapsed duration as a compact badge for the title row.
+/// Only shown after a tool finishes — pending/running tools show
+/// the spinner and don't need a badge yet. Skips sub-100ms results
+/// (their badge is too noisy and adds nothing — most reads, glob,
+/// memory ops finish in <100ms).
+fn format_elapsed_badge(tool: &ToolCall) -> Option<String> {
+    if !matches!(tool.status, ToolStatus::Complete | ToolStatus::Failed) {
+        return None;
+    }
+    let ms = tool.elapsed_ms?;
+    if ms < 100 {
+        return None;
+    }
+    if ms < 10_000 {
+        Some(format!("[{:.1}s]", ms as f64 / 1000.0))
+    } else if ms < 60_000 {
+        Some(format!("[{}s]", ms / 1000))
+    } else {
+        let mins = ms / 60_000;
+        let secs = (ms % 60_000) / 1000;
+        Some(format!("[{mins}m {secs}s]"))
+    }
 }
 
 fn build_header_inner_spans<'a>(tool: &'a ToolCall, t: &Theme, max_w: usize) -> Vec<Span<'a>> {
     let kind_label = tool.kind.label();
     let summary = tool.input.summary();
+    let kind_style = Style::default()
+        .fg(tool_kind_color(&tool.kind, t))
+        .add_modifier(Modifier::BOLD);
 
     match &tool.input {
         ToolInput::Bash { command, .. } => {
-            // `Bash(<command>)` — function-call shape matches v126 and
-            // reads consistently next to `Update(...)` / `Read(...)`.
-            // First-line-of-command since multi-line bash bodies are
-            // common and we cap at title width anyway.
             let first_line = command.lines().next().unwrap_or(command);
             let cmd = truncate_str(first_line, max_w.saturating_sub(8));
             vec![
-                Span::styled("Bash", Style::default().fg(t.accent)),
+                Span::styled("Bash", kind_style),
                 Span::styled("(", Style::default().fg(t.text_muted)),
                 Span::styled(cmd, Style::default().fg(t.text_primary)),
                 Span::styled(")", Style::default().fg(t.text_muted)),
             ]
         }
         ToolInput::Edit { file_path, .. } => {
-            // v126 style (cli.js diff renderer): `Update(<path>)` rather
-            // than `edit <path>` — the title reads as a function call,
-            // matching `Bash(<command>)` and `Read(<path>)` shapes so the
-            // tool list scans uniformly.
             let path = truncate_str(file_path, max_w.saturating_sub(8));
             vec![
-                Span::styled("Update", Style::default().fg(t.accent)),
+                Span::styled("Update", kind_style),
                 Span::styled("(", Style::default().fg(t.text_muted)),
                 Span::styled(path, Style::default().fg(t.text_primary)),
                 Span::styled(")", Style::default().fg(t.text_muted)),
@@ -523,7 +907,7 @@ fn build_header_inner_spans<'a>(tool: &'a ToolCall, t: &Theme, max_w: usize) -> 
         ToolInput::Write { file_path, .. } => {
             let path = truncate_str(file_path, max_w.saturating_sub(8));
             vec![
-                Span::styled("Write", Style::default().fg(t.accent)),
+                Span::styled("Write", kind_style),
                 Span::styled("(", Style::default().fg(t.text_muted)),
                 Span::styled(path, Style::default().fg(t.text_primary)),
                 Span::styled(")", Style::default().fg(t.text_muted)),
@@ -532,7 +916,7 @@ fn build_header_inner_spans<'a>(tool: &'a ToolCall, t: &Theme, max_w: usize) -> 
         ToolInput::Read { file_path, .. } => {
             let path = truncate_str(file_path, max_w.saturating_sub(7));
             vec![
-                Span::styled("Read", Style::default().fg(t.accent)),
+                Span::styled("Read", kind_style),
                 Span::styled("(", Style::default().fg(t.text_muted)),
                 Span::styled(path, Style::default().fg(t.text_secondary)),
                 Span::styled(")", Style::default().fg(t.text_muted)),
@@ -541,7 +925,7 @@ fn build_header_inner_spans<'a>(tool: &'a ToolCall, t: &Theme, max_w: usize) -> 
         _ => {
             let s = truncate_str(&summary, max_w.saturating_sub(kind_label.len() + 1));
             vec![
-                Span::styled(format!("{kind_label} "), Style::default().fg(t.text_muted)),
+                Span::styled(format!("{kind_label} "), kind_style),
                 Span::styled(s, Style::default().fg(t.text_secondary)),
             ]
         }
@@ -565,20 +949,62 @@ fn tool_status_icon(tool: &ToolCall, t: &Theme) -> (&'static str, Style) {
     }
 }
 
-/// Solid-blink variant for Running tools — single fixed icon (`●`,
-/// same shape as Complete) toggling between accent and muted color at
-/// ~500ms cadence so the bullet visibly *throbs* without rotating
-/// glyphs that are easy to miss. Mirrors v126's `Math.sin` opacity
-/// pulse (cli.js:323158): we can't fade alpha in a TUI, but
-/// alternating between two intensities at a steady beat reads as the
-/// same heartbeat.
+/// Distinct accent color per tool kind. The gutter bar and tool name
+/// span both pick this color (mixed with status state for Running /
+/// Failed) so the user can spot at a glance "this is a Bash" vs
+/// "this is a Read" without reading the label. Mirrors Claude Code's
+/// per-tool color identity.
 ///
-/// Why a solid blink, not a Braille spin: rotating glyphs (`⠋ ⠙ ⠹`)
-/// jitter the eye and are hard to glance at when scanning a list of
-/// tools — the user can't tell at a glance which is running. A
-/// fixed-icon-with-pulsing-color reads as "still running" instantly
-/// while the *shape* matches the resolved Complete state, so the
-/// transition Running→Complete is just the color settling.
+/// Picks are tuned for the dark theme to stay distinguishable from
+/// each other AND from status colors: success (green) and error (red)
+/// are reserved for status indicators, so Read/Write/etc. use blues,
+/// purples, and ambers that don't collide.
+pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
+    use ratatui::style::Color;
+    match kind {
+        ToolKind::Read => Color::Rgb(120, 180, 255),       // soft blue
+        ToolKind::Write => Color::Rgb(255, 200, 130),      // amber
+        ToolKind::Edit | ToolKind::ApplyPatch => Color::Rgb(160, 230, 170), // mint
+        ToolKind::Bash => Color::Rgb(180, 180, 200),       // neutral grey
+        ToolKind::Glob | ToolKind::Grep | ToolKind::Search => Color::Rgb(200, 160, 255), // lavender
+        ToolKind::Task => Color::Rgb(255, 170, 220),       // rose
+        ToolKind::TaskCreate
+        | ToolKind::TaskUpdate
+        | ToolKind::TaskList
+        | ToolKind::TaskDone => Color::Rgb(140, 220, 220),  // teal
+        ToolKind::MemoryCreate | ToolKind::MemoryDelete => Color::Rgb(220, 220, 140), // olive
+        ToolKind::TeamCreate
+        | ToolKind::TeamDelete
+        | ToolKind::SendMessage
+        | ToolKind::TeamMemberMode => Color::Rgb(255, 150, 130), // coral
+        ToolKind::Skill => Color::Rgb(180, 220, 255),       // ice
+        ToolKind::Generic(_) => t.text_secondary,
+    }
+}
+
+/// 4-frame star-burst rotation used for Running tools — same shape family
+/// as v126's tool-use indicator (Claude Code shows alternating `* ✱ +`
+/// glyphs as the bullet). Each frame is one codepoint so column width
+/// stays stable regardless of which frame is showing.
+const RUNNING_FRAMES: &[&str] = &["✶", "✷", "✸", "✹"];
+
+/// 2-frame pulse for Pending: open ring → dotted ring. Same column
+/// width, just enough motion that "queued behind another tool" reads
+/// as queued rather than frozen.
+const PENDING_FRAMES: &[&str] = &["○", "◌"];
+
+/// Per-frame animated icon. Running tools rotate through the star-burst
+/// frames at ~120ms each (one frame per ~1.5 ticks), so the bullet
+/// visibly steps through the cycle instead of just two-tone blinking the
+/// same shape — that was indistinguishable from a static `●` on most
+/// terminal themes. Pending tools alternate between `○` and `◌` at a
+/// slower cadence so a queued tool reads differently from an idle one.
+///
+/// Why glyph rotation over color-only blink: terminals with low foreground
+/// contrast (light themes, Solarized variants) wash out the bold/muted
+/// color toggle to the point of invisibility. A shape change is robust
+/// across themes — the user always sees motion. Mirrors v126's tool-use
+/// spinner (cli.js:323158) which rotates a glyph on every frame.
 pub fn tool_status_icon_animated(
     tool: &ToolCall,
     t: &Theme,
@@ -586,11 +1012,18 @@ pub fn tool_status_icon_animated(
 ) -> (&'static str, Style) {
     match tool.status {
         ToolStatus::Running => {
-            // 6 ticks at 80ms each = ~480ms per half-cycle, ≈1Hz blink.
-            // Even = bright accent (BOLD); odd = muted (no modifier).
-            // Intentionally a sharp transition — matches the user's
-            // mental model of "blink" rather than a smooth fade.
-            let bright = (frame / 6) % 2 == 0;
+            // Two-layer animation:
+            //  - Glyph rotates slowly (every 4 ticks ≈ 320ms per frame,
+            //    full cycle ≈ 1.28s). Rotation tells the eye "this is
+            //    moving" without strobing.
+            //  - Color pulses at a different cadence (every 9 ticks ≈
+            //    720ms BOLD ⇄ DIM) so the two effects don't sync into
+            //    a single distracting beat.
+            // Picked the prime-ish 4 vs 9 spacing so the two
+            // periodicities take ~25 ticks (2s) to align — beyond
+            // perceptual gestalt.
+            let glyph = RUNNING_FRAMES[(frame / 4) % RUNNING_FRAMES.len()];
+            let bright = (frame / 9) % 2 == 0;
             let style = if bright {
                 Style::default()
                     .fg(t.accent)
@@ -598,7 +1031,11 @@ pub fn tool_status_icon_animated(
             } else {
                 Style::default().fg(t.text_muted)
             };
-            ("●", style)
+            (glyph, style)
+        }
+        ToolStatus::Pending => {
+            let glyph = PENDING_FRAMES[(frame / 6) % PENDING_FRAMES.len()];
+            (glyph, Style::default().fg(t.warning))
         }
         _ => tool_status_icon(tool, t),
     }
@@ -613,8 +1050,9 @@ fn border_color_for_status(tool: &ToolCall, t: &Theme) -> Color {
     }
 }
 
-fn render_tool_content_clipped(tool: &ToolCall, area: Rect, t: Theme, buf: &mut Buffer) {
-    render_tool_content_with_skip(tool, area, t, buf, 0);
+#[allow(dead_code)]
+fn render_tool_content_clipped(app: &App, tool: &ToolCall, area: Rect, t: Theme, buf: &mut Buffer) {
+    render_tool_content_with_skip(app, tool, area, t, buf, 0);
 }
 
 /// Lines 2+ of a multi-line Bash command (the heredoc body, the `&&`
@@ -634,6 +1072,7 @@ fn bash_continuation_lines(tool: &ToolCall) -> Vec<String> {
 }
 
 fn render_tool_content_with_skip(
+    app: &App,
     tool: &ToolCall,
     area: Rect,
     t: Theme,
@@ -701,32 +1140,85 @@ fn render_tool_content_with_skip(
         ToolOutput::Text(s) => {
             let lang = infer_lang_from_tool(tool);
             if let Some(lang) = lang.as_deref() {
-                render_highlighted_with_line_numbers(lang, s, area, t, buf, skip);
+                // Build a per-line severity map for the file this
+                // tool is reading so the gutter can decorate
+                // offending rows. Only Read produces line-numbered
+                // output; for Edit/Write the path is the file but
+                // the content shown is the *new* state, not the
+                // current diagnostic-bearing state — skipping the
+                // map there avoids stale glyphs.
+                let diag_lines = if matches!(tool.kind, ToolKind::Read) {
+                    diagnostics_for_path(app, &tool.input)
+                } else {
+                    std::collections::HashMap::new()
+                };
+                render_highlighted_with_line_numbers(
+                    lang,
+                    s,
+                    area,
+                    t,
+                    buf,
+                    skip,
+                    tool.expanded,
+                    &diag_lines,
+                );
+            } else if matches!(tool.kind, ToolKind::Task) {
+                render_markdown_block_skip(s, area, t, buf, skip);
             } else {
-                render_text_block_skip(s, area, t.text_secondary, t, buf, skip);
+                render_text_block_skip(
+                    s,
+                    area,
+                    t.text_secondary,
+                    t,
+                    buf,
+                    skip,
+                    tool.expanded,
+                );
             }
         }
         ToolOutput::LargeText(lt) => {
-            if lt.line_count > LargeText::COLLAPSE_LINES
-                || lt.content.len() > LargeText::COLLAPSE_BYTES
-            {
+            // Three-state: huge + not expanded → 1-row teaser; huge +
+            // expanded → render through the same text path as moderate
+            // outputs; moderate → always render.
+            let huge = lt.line_count > LargeText::COLLAPSE_LINES
+                || lt.content.len() > LargeText::COLLAPSE_BYTES;
+            if huge && !tool.expanded {
                 if skip == 0 {
                     Paragraph::new(Line::from(Span::styled(
-                        format!("[{} · press o to expand]", lt.size_label()),
-                        Style::default().fg(t.text_muted),
+                        format!("[{} · click or press o to expand]", lt.size_label()),
+                        Style::default()
+                            .fg(t.text_muted)
+                            .add_modifier(Modifier::ITALIC),
                     )))
                     .style(Style::default().bg(t.bg))
                     .render(area, buf);
                 }
             } else {
-                render_text_block_skip(&lt.content, area, t.text_secondary, t, buf, skip);
+                render_text_block_skip(
+                    &lt.content,
+                    area,
+                    t.text_secondary,
+                    t,
+                    buf,
+                    skip,
+                    tool.expanded,
+                );
             }
         }
         ToolOutput::Command {
             stdout,
             stderr,
             exit_code,
-        } => render_command_output_skip(stdout, stderr, *exit_code, area, t, buf, skip),
+        } => render_command_output_skip(
+            stdout,
+            stderr,
+            *exit_code,
+            area,
+            t,
+            buf,
+            skip,
+            tool.expanded,
+        ),
         ToolOutput::Diff(diff) => render_diff_skip(diff, area, t, buf, skip),
         ToolOutput::FileContent {
             content, language, ..
@@ -736,10 +1228,94 @@ fn render_tool_content_with_skip(
             } else {
                 language.as_str()
             };
-            render_highlighted_block_skip(hl_lang, content, area, t, buf, skip);
+            render_highlighted_block_skip(
+                hl_lang,
+                content,
+                area,
+                t,
+                buf,
+                skip,
+                tool.expanded,
+            );
         }
         ToolOutput::FileList(files) => render_file_list_skip(files, area, t, buf, skip),
     }
+}
+
+/// Render `text` through the full markdown pipeline (`markdown::to_lines`)
+/// instead of the plain width-wrapper. Use for Task subagent output and
+/// other tool results that are known to be assistant-authored markdown.
+/// Caps at `MAX_LINES` so a runaway agent can't drown the transcript.
+fn render_markdown_block_skip(
+    text: &str,
+    area: Rect,
+    t: Theme,
+    buf: &mut Buffer,
+    skip: usize,
+) {
+    const MAX_LINES: usize = 200;
+    let width = area.width as usize;
+    let mut lines = markdown::to_lines(text, &t, width.max(1));
+    if lines.len() > MAX_LINES {
+        let total = lines.len();
+        lines.truncate(MAX_LINES);
+        lines.push(Line::from(Span::styled(
+            format!("… truncated ({total} lines total)"),
+            Style::default().fg(t.text_muted),
+        )));
+    }
+    Paragraph::new(lines)
+        .style(Style::default().bg(t.bg))
+        .scroll((skip as u16, 0))
+        .render(area, buf);
+}
+
+/// Wrap a styled `Line` to `width` columns, preserving span styles
+/// across wrap points. Used by the command-output renderer so a long
+/// red `error[E0382]: ...` line still wraps cleanly while keeping its
+/// red color on every continuation row. Returns one or more `Line`s.
+fn wrap_styled_line(line: &Line<'static>, width: usize) -> Vec<Line<'static>> {
+    if width == 0 {
+        return vec![line.clone()];
+    }
+    let total_chars: usize = line
+        .spans
+        .iter()
+        .map(|s| s.content.chars().count())
+        .sum();
+    if total_chars <= width {
+        return vec![line.clone()];
+    }
+    let mut out: Vec<Line<'static>> = Vec::new();
+    let mut current: Vec<Span<'static>> = Vec::new();
+    let mut current_w: usize = 0;
+    for span in &line.spans {
+        let mut buf = String::new();
+        for ch in span.content.chars() {
+            if current_w >= width {
+                if !buf.is_empty() {
+                    current.push(Span::styled(
+                        std::mem::take(&mut buf),
+                        span.style,
+                    ));
+                }
+                out.push(Line::from(std::mem::take(&mut current)));
+                current_w = 0;
+            }
+            buf.push(ch);
+            current_w += 1;
+        }
+        if !buf.is_empty() {
+            current.push(Span::styled(buf, span.style));
+        }
+    }
+    if !current.is_empty() {
+        out.push(Line::from(current));
+    }
+    if out.is_empty() {
+        out.push(line.clone());
+    }
+    out
 }
 
 fn render_text_block_skip(
@@ -749,8 +1325,12 @@ fn render_text_block_skip(
     t: Theme,
     buf: &mut Buffer,
     skip: usize,
+    expanded: bool,
 ) {
-    let max_lines = 80usize;
+    // Expanded blocks lift the cap from 80 to 500 so the user can
+    // see the full Read/Bash output without leaving the transcript.
+    // Click on the tool block (or `o` / Ctrl+O) toggles `expanded`.
+    let max_lines = if expanded { 500usize } else { 80usize };
     let width = area.width as usize;
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut count = 0usize;
@@ -759,9 +1339,15 @@ fn render_text_block_skip(
         let wrapped = markdown::hard_wrap_str(raw, width.max(1));
         for chunk in wrapped {
             if count >= max_lines {
+                let total = text.lines().count();
                 lines.push(Line::from(Span::styled(
-                    format!("… truncated ({} lines total)", text.lines().count()),
-                    Style::default().fg(t.text_muted),
+                    format!(
+                        "… {} more lines · click or press o to expand",
+                        total.saturating_sub(count)
+                    ),
+                    Style::default()
+                        .fg(t.text_muted)
+                        .add_modifier(Modifier::ITALIC),
                 )));
                 break 'outer;
             }
@@ -786,6 +1372,8 @@ fn render_highlighted_with_line_numbers(
     t: Theme,
     buf: &mut Buffer,
     skip: usize,
+    expanded: bool,
+    diag_lines: &std::collections::HashMap<usize, crate::diagnostics::Severity>,
 ) {
     let (line_numbers, code) = split_line_numbers(text);
     let code_ref = code.as_deref().unwrap_or(text);
@@ -795,31 +1383,64 @@ fn render_highlighted_with_line_numbers(
         .map(|nums| nums.iter().map(|n| n.len()).max().unwrap_or(0))
         .unwrap_or(0);
 
+    // When we have any diagnostics for this file, reserve one column
+    // for the severity glyph between the line number and separator
+    // (` 12 ✘ │ `). When no diagnostics, the gutter stays at the
+    // existing width so unaffected reads don't shift.
+    let has_diags = !diag_lines.is_empty();
+    let glyph_w: usize = if has_diags { 2 } else { 0 };
     let gutter_cols = if gutter_width > 0 {
-        gutter_width + 3
+        gutter_width + 3 + glyph_w
     } else {
         2
     };
     let code_w = (area.width as usize).saturating_sub(gutter_cols).max(10);
 
+    // Cap matches the body in tool_content_height_with: 80 collapsed,
+    // 500 expanded. Footer line tells the user how to see the rest.
+    let max_lines = if expanded { 500usize } else { 80usize };
     let highlighted = markdown::highlight_code_raw(lang, code_ref, code_w, &t);
+    let total = highlighted.len();
+    let truncated = total > max_lines;
+    let take_n = total.min(max_lines);
 
     let gutter_style = Style::default().fg(t.text_muted);
     let separator_style = Style::default().fg(t.border);
 
-    let lines: Vec<Line<'static>> = highlighted
+    let mut lines: Vec<Line<'static>> = highlighted
         .into_iter()
+        .take(take_n)
         .enumerate()
         .map(|(i, mut hl_line)| {
             let mut spans = if let Some(nums) = &line_numbers {
-                let num = nums.get(i).map(|s| s.as_str()).unwrap_or("");
-                vec![
-                    Span::styled(
-                        format!("{:>width$}", num, width = gutter_width),
-                        gutter_style,
-                    ),
-                    Span::styled(" │ ", separator_style),
-                ]
+                let num_str = nums.get(i).map(|s| s.as_str()).unwrap_or("");
+                let mut spans_init = vec![Span::styled(
+                    format!("{:>width$}", num_str, width = gutter_width),
+                    gutter_style,
+                )];
+                // Severity glyph column: shows ✘/⚠/ℹ on lines that
+                // have a diagnostic, blank otherwise. Color matches
+                // severity. The lookup uses the parsed line number,
+                // not the row index `i`, because Read tools may
+                // start at a non-zero offset.
+                if has_diags {
+                    let lineno: usize = num_str.parse().unwrap_or(0);
+                    let (glyph, color) = match diag_lines.get(&lineno) {
+                        Some(crate::diagnostics::Severity::Error) => ("✘", t.error),
+                        Some(crate::diagnostics::Severity::Warning) => ("⚠", t.warning),
+                        Some(crate::diagnostics::Severity::Info) => ("ℹ", t.accent),
+                        Some(crate::diagnostics::Severity::Hint) => {
+                            ("★", t.text_secondary)
+                        }
+                        None => (" ", t.text_muted),
+                    };
+                    spans_init.push(Span::styled(
+                        format!(" {glyph}"),
+                        Style::default().fg(color).add_modifier(Modifier::BOLD),
+                    ));
+                }
+                spans_init.push(Span::styled(" │ ", separator_style));
+                spans_init
             } else {
                 vec![Span::styled("│ ", separator_style)]
             };
@@ -827,6 +1448,18 @@ fn render_highlighted_with_line_numbers(
             Line::from(spans)
         })
         .collect();
+
+    if truncated {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "… {} more lines · click or press o to expand",
+                total - take_n
+            ),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
+        )));
+    }
 
     Paragraph::new(lines)
         .style(Style::default().bg(t.bg))
@@ -884,9 +1517,24 @@ fn render_highlighted_block_skip(
     t: Theme,
     buf: &mut Buffer,
     skip: usize,
+    expanded: bool,
 ) {
     let inner_w = area.width.saturating_sub(2) as usize;
-    let lines = markdown::highlight_code(lang, code, inner_w, &t);
+    let max_lines = if expanded { 500usize } else { 80usize };
+    let mut lines = markdown::highlight_code(lang, code, inner_w, &t);
+    let total = lines.len();
+    if total > max_lines {
+        lines.truncate(max_lines);
+        lines.push(Line::from(Span::styled(
+            format!(
+                "… {} more lines · click or press o to expand",
+                total - max_lines
+            ),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
+        )));
+    }
     Paragraph::new(lines)
         .style(Style::default().bg(t.bg))
         .scroll((skip as u16, 0))
@@ -901,7 +1549,10 @@ fn render_command_output_skip(
     t: Theme,
     buf: &mut Buffer,
     skip: usize,
+    expanded: bool,
 ) {
+    use ansi_to_tui::IntoText;
+
     let mut lines: Vec<Line<'static>> = Vec::new();
     let w = area.width as usize;
 
@@ -912,40 +1563,61 @@ fn render_command_output_skip(
     };
     lines.push(Line::from(Span::styled(code_str, code_style)));
 
-    let max_lines = 80usize;
+    let max_lines = if expanded { 500usize } else { 80usize };
     let mut count = 0usize;
 
-    for raw in stdout.lines() {
-        if count >= max_lines {
-            break;
+    // Route through `ansi-to-tui` so SGR codes from cargo / git diff /
+    // test runners survive as ratatui `Style`s. Falls back to the
+    // sanitize-and-stripe path when the parser rejects (rare — only
+    // truly malformed escape sequences). Each parsed Line is then
+    // wrapped to fit the column width while preserving its spans.
+    let push_styled = |raw: &str,
+                       fallback_style: Style,
+                       lines: &mut Vec<Line<'static>>,
+                       count: &mut usize| {
+        if *count >= max_lines {
+            return;
         }
-        for chunk in markdown::hard_wrap_str(raw, w.max(1)) {
-            lines.push(Line::from(Span::styled(
-                sanitize_terminal_text(&chunk),
-                Style::default().fg(t.text_secondary),
-            )));
-            count += 1;
-            if count >= max_lines {
-                break;
+        let parsed = raw.into_text().ok();
+        let source_lines: Vec<Line<'static>> = match parsed {
+            Some(text) => text.lines.into_iter().collect(),
+            None => raw
+                .lines()
+                .map(|l| Line::from(Span::styled(
+                    sanitize_terminal_text(l),
+                    fallback_style,
+                )))
+                .collect(),
+        };
+        for line in source_lines {
+            if *count >= max_lines {
+                return;
+            }
+            for wrapped in wrap_styled_line(&line, w.max(1)) {
+                lines.push(wrapped);
+                *count += 1;
+                if *count >= max_lines {
+                    return;
+                }
             }
         }
-    }
+    };
 
-    for raw in stderr.lines() {
-        if count >= max_lines {
-            break;
-        }
-        for chunk in markdown::hard_wrap_str(raw, w.max(1)) {
-            lines.push(Line::from(Span::styled(
-                sanitize_terminal_text(&chunk),
-                Style::default().fg(t.error),
-            )));
-            count += 1;
-            if count >= max_lines {
-                break;
-            }
-        }
+    push_styled(stdout, Style::default().fg(t.text_secondary), &mut lines, &mut count);
+    // Make the stdout→stderr boundary visible. Without this the user
+    // sees red lines mixed in with grey and can't tell where the
+    // failure stream begins. The divider only appears when both
+    // streams have content.
+    if !stdout.is_empty() && !stderr.is_empty() && count < max_lines {
+        lines.push(Line::from(Span::styled(
+            "↳ stderr",
+            Style::default()
+                .fg(t.error)
+                .add_modifier(Modifier::ITALIC | Modifier::BOLD),
+        )));
+        count += 1;
     }
+    push_styled(stderr, Style::default().fg(t.error), &mut lines, &mut count);
 
     Paragraph::new(lines)
         .style(Style::default().bg(t.bg))

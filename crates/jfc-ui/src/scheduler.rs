@@ -47,6 +47,9 @@ pub fn is_concurrency_safe(kind: &ToolKind) -> bool {
             | ToolKind::TaskList
             | ToolKind::TaskDone
             | ToolKind::Skill
+            | ToolKind::TeamCreate
+            | ToolKind::TeamDelete
+            | ToolKind::SendMessage
     )
 }
 
@@ -118,6 +121,7 @@ pub async fn execute_batches(
     cwd: PathBuf,
     dedup: Arc<Mutex<ReadDedupCache>>,
     task_store: Option<Arc<TaskStore>>,
+    active_team_name: Option<String>,
 ) -> Vec<ToolExecution> {
     let mut all_results = Vec::new();
 
@@ -144,8 +148,9 @@ pub async fn execute_batches(
                     let cwd = cwd.clone();
                     let dedup = Arc::clone(&dedup);
                     let ts = task_store.clone();
+                    let atn = active_team_name.clone();
                     handles.push(tokio::spawn(async move {
-                        let result = tools::execute_tool(kind.clone(), input, cwd, Some(dedup), ts).await;
+                        let result = tools::execute_tool(kind.clone(), input, cwd, Some(dedup), ts, atn.as_deref()).await;
                         (kind, ToolExecution {
                             tool_id: id,
                             result,
@@ -195,6 +200,7 @@ pub async fn execute_batches(
                     cwd.clone(),
                     Some(Arc::clone(&dedup)),
                     task_store.clone(),
+                    active_team_name.as_deref(),
                 )
                 .await;
                 info!(
@@ -236,6 +242,9 @@ mod tests {
             output: ToolOutput::Empty,
             is_collapsed: false,
             expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
         }
     }
 

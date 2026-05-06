@@ -425,6 +425,9 @@ mod tests {
             output: ToolOutput::Empty,
             is_collapsed: true,
             expanded: false,
+            elapsed_ms: None,
+            started_at: None,
+            pinned: false,
         }
     }
 

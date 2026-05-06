@@ -48,6 +48,11 @@ itertools = "0.14"
 clap = { version = "4", features = ["derive"] }
 rand = "0.10.1"
 libc = "0.2.186"
+# OS-level desktop notifications. Fire-and-forget: when a long-running
+# turn completes or a tool fails while jfc isn't focused, the user gets
+# a tray bubble instead of having to refocus to check. Disabled when
+# `JFC_DISABLE_NOTIFICATIONS=1` so headless / SSH sessions don't error.
+notify-rust = { version = "4", default-features = false, features = ["d"] }
 
 [build-dependencies]
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-onig", "yaml-load", "dump-create", "dump-load"] }

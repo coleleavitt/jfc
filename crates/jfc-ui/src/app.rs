@@ -59,7 +59,14 @@ pub enum AppEvent {
         pre_tokens: usize,
         post_tokens: usize,
     },
-    CompactionFailed(String, Option<usize>),
+    /// `(reason, calibrated_tokens, transient)`. When `transient` is true,
+    /// the failure is recoverable on the next user turn (e.g. `TooFewGroups`
+    /// — adding another turn creates a second group), so we must NOT set
+    /// `compact_suppressed`; otherwise the user has to remember to type
+    /// `/compact` to wake auto-compaction back up. Permanent failures
+    /// (provider doesn't support compaction, exhausted attempts) keep the
+    /// suppression flag so we don't spam compact requests every tool batch.
+    CompactionFailed(String, Option<usize>, bool),
     /// Submit a user prompt as if the user typed it and pressed Enter. Used
     /// internally by the pre-submit compaction gate to re-fire the user's
     /// original prompt once compaction has shrunk the context.
@@ -80,6 +87,16 @@ pub enum AppEvent {
     AgentChunk {
         task_id: String,
         text: String,
+    },
+    /// Inbound message from a teammate (delivered via the leader inbox).
+    /// Two outcomes: the message gets appended to the transcript as a
+    /// system-tagged user turn so the model can see it on its next
+    /// request, AND a toast surfaces the arrival so the user notices.
+    /// Mirrors v126's `<teammate-message>` injection.
+    TeammateInbox {
+        from: String,
+        text: String,
+        summary: Option<String>,
     },
     /// Background `Provider::fetch_models()` finished. `provider` is the `Provider::name()`
     /// the result belongs to. `models` is empty on a remote failure so the picker can
@@ -138,6 +155,8 @@ pub enum AppEvent {
     },
     Term(Event),
     Tick,
+    /// Event from an in-process teammate runner (idle, progress, completion, message).
+    TeammateEvent(crate::swarm::runner::TeammateEvent),
 }
 
 /// Permission modes matching v126 claude-code. Controls how tool execution
@@ -196,7 +215,9 @@ impl PermissionMode {
                 match tool.kind {
                     ToolKind::Read | ToolKind::Glob | ToolKind::Grep
                     | ToolKind::TaskCreate | ToolKind::TaskUpdate
-                    | ToolKind::TaskList | ToolKind::TaskDone => {
+                    | ToolKind::TaskList | ToolKind::TaskDone
+                    | ToolKind::TeamCreate | ToolKind::TeamDelete
+                    | ToolKind::SendMessage => {
                         PermissionDecision::Approved
                     }
                     ToolKind::Bash => {
@@ -215,7 +236,9 @@ impl PermissionMode {
                     ToolKind::Write | ToolKind::Edit | ToolKind::ApplyPatch
                     | ToolKind::Read | ToolKind::Glob | ToolKind::Grep
                     | ToolKind::TaskCreate | ToolKind::TaskUpdate
-                    | ToolKind::TaskList | ToolKind::TaskDone => {
+                    | ToolKind::TaskList | ToolKind::TaskDone
+                    | ToolKind::TeamCreate | ToolKind::TeamDelete
+                    | ToolKind::SendMessage => {
                         PermissionDecision::Approved
                     }
                     _ => PermissionDecision::NeedsPrompt,
@@ -283,6 +306,19 @@ pub struct PendingApproval {
 /// One entry in the input queue. v126's `queued_command` attachment carries
 /// `isMeta: true` for slash commands so they execute locally after the turn
 /// ends instead of being shipped to the API as a user message.
+/// Active transcript search state — armed by Ctrl+F. `query` is what
+/// the user has typed so far in the search bar; `matches` is the list
+/// of message indices whose body contains `query` (case-insensitive).
+/// `cursor` is the index into `matches` of the currently-focused
+/// result. `n` / `N` cycle the cursor; Enter commits and exits;
+/// Esc cancels.
+#[derive(Debug, Clone, Default)]
+pub struct TranscriptSearch {
+    pub query: String,
+    pub matches: Vec<usize>,
+    pub cursor: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct QueuedPrompt {
     pub text: String,
@@ -291,6 +327,10 @@ pub struct QueuedPrompt {
 
 pub const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 pub const TICK_MS: u64 = 80;
+/// Cap on how many turns of token usage we retain for the info-sidebar
+/// sparkline. 32 datapoints fit comfortably in a 30-col-wide sidebar
+/// while still showing a meaningful trend.
+pub const TOKEN_HISTORY_CAP: usize = 32;
 
 pub struct BackgroundTask {
     pub task_id: String,
@@ -388,6 +428,84 @@ pub struct App {
     /// user typed a slash command (v126's `isMeta: true`) — those run
     /// locally on drain instead of going to the API.
     pub queued_prompts: std::collections::VecDeque<QueuedPrompt>,
+    /// Cached count of agent-isolated worktrees (excludes the primary
+    /// checkout). Refreshed by the Tick handler at most every
+    /// `WORKTREE_REFRESH_MS` so the status-bar badge stays accurate
+    /// without shelling out to `git worktree list` on every redraw.
+    pub worktree_count: usize,
+    pub worktree_count_last_refresh: Option<std::time::Instant>,
+    /// Cached current git branch (e.g. "master", "feat/x"). Updated by
+    /// the Tick handler at most every `GIT_BRANCH_REFRESH_MS` ms so a
+    /// long session reflects branch switches without shelling out
+    /// every render frame. None when not in a git repo.
+    pub git_branch: Option<String>,
+    pub git_branch_last_refresh: Option<std::time::Instant>,
+    /// Set of group-keys (`format!("{msg_idx}:{first_tool_id}")`)
+    /// currently expanded. Default = collapsed: dense Read/Glob/Grep
+    /// runs render as one "▶ N reads · click to expand" row, click
+    /// or `o` toggles.
+    pub tool_group_expanded: std::collections::HashSet<String>,
+    /// Active transcript search. `None` when not searching. The
+    /// search bar at the bottom of the screen, the match highlight
+    /// in messages, and the n/N navigation all key off this.
+    pub transcript_search: Option<TranscriptSearch>,
+    /// Slash-command autocomplete popup state. `Some(idx)` while the
+    /// user is typing a command and the popup is open. None when the
+    /// popup is dismissed.
+    pub slash_popup_selected: Option<usize>,
+    /// Set to true on double-ESC. Streaming, agentic-loop continuation,
+    /// and the subagent runner all sample this between iterations and
+    /// bail when it flips. Wrapped in `Arc` so spawned tasks can clone
+    /// a handle into their own scope. Mirrors v126's `abortController`.
+    /// Toggled by `?` (when input bar is empty). When true, an
+    /// overlay listing every keybinding is rendered on top of the
+    /// transcript. Discoverability for muscle-memory features
+    /// (Ctrl+X chord, ESC×2 interrupt, `o` to expand, etc.) that
+    /// otherwise live only in source comments.
+    pub show_help: bool,
+    /// True between Ctrl+G and the follow-up letter that selects the
+    /// jump target (e/t/m/a). Esc cancels. Drives a small hint row
+    /// in the status area so the user knows the chord is armed.
+    pub jump_armed: bool,
+    pub jump_armed_at: Option<std::time::Instant>,
+    /// Most recent tool-block click timestamp, keyed by tool id. The
+    /// click handler uses this to detect double-click (same tool id
+    /// within `DOUBLE_CLICK_MS`) for the pin gesture.
+    pub last_tool_click: Option<(String, std::time::Instant)>,
+    /// Bounds of the sessions sidebar block (set on each render).
+    /// The mouse handler reads this to decide whether a click hit a
+    /// session row and which row it was. `None` when the sidebar is
+    /// hidden — in that case the click handler ignores sidebar
+    /// coordinates.
+    pub sidebar_rect: std::cell::RefCell<Option<ratatui::layout::Rect>>,
+    /// Bounds of the messages area, used by the drag-scroll handler
+    /// to convert pixel deltas to scroll offsets and to gate scroll
+    /// events to the right region.
+    pub messages_rect: std::cell::RefCell<Option<ratatui::layout::Rect>>,
+    /// Bounds of the toast overlay strip; used by the click handler
+    /// to map a click to a toast index for instant dismissal.
+    pub toasts_rect: std::cell::RefCell<Option<ratatui::layout::Rect>>,
+    /// Last known drag-Y, set on each MouseEventKind::Drag event so
+    /// the next drag delta can advance scroll_offset by the
+    /// difference. Reset on Down / Up so a fresh drag starts cleanly.
+    pub drag_anchor_y: Option<u16>,
+    /// Per-turn token usage history (input + output) for the
+    /// sparkline rendered in the info sidebar. Pushed each time a
+    /// `StreamUsage` event lands at end-of-turn. Capped at the last
+    /// `TOKEN_HISTORY_CAP` turns so a long session doesn't grow it
+    /// unbounded.
+    pub token_history: std::collections::VecDeque<u64>,
+    /// task_id of whichever subagent / teammate emitted activity most
+    /// recently (AgentChunk or Progress event). Render that row bold +
+    /// accent in the spinner-area tree so the user can tell which
+    /// agent is currently moving vs. idle. None means nothing has
+    /// reported activity this turn.
+    pub last_active_agent_task: Option<String>,
+    pub interrupt_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Timestamp of the most recent ESC press in the main shortcut
+    /// handler. The next ESC within `INTERRUPT_DOUBLE_TAP_MS` triggers
+    /// an interrupt instead of just clearing the input.
+    pub last_esc_at: Option<std::time::Instant>,
     pub always_approved: Vec<String>,
     pub session_approved: Vec<String>,
     pub follow_bottom: bool,
@@ -554,7 +672,12 @@ pub struct App {
     /// `Vec<ChatMessage>` and the subagent view renders through the same
     /// `MessageView` pipeline as the main chat, this field collapses into
     /// per-`ToolCall.is_collapsed` state and can be removed.
-    pub viewing_task_expanded: std::collections::HashSet<usize>,
+    /// Per-task expansion state. Keyed by `task_id` so navigating
+    /// between tasks (or out and back in) preserves what the user has
+    /// expanded. Previously a session-wide `HashSet<usize>` that got
+    /// `.clear()`ed on every switch — entering a task with 121 hidden
+    /// lines required pressing `o` again every time.
+    pub viewing_task_expanded: std::collections::HashMap<String, std::collections::HashSet<usize>>,
     /// Drained at submit time; future Ctrl+V handlers push here. Anthropic
     /// content-block conversion happens at provider-message-build time.
     pub pending_attachments: Vec<crate::attachments::Attachment>,
@@ -577,11 +700,21 @@ pub struct App {
     /// frame. Uses `RefCell` because `MessageView` borrows `&App` immutably
     /// during `Widget::render` but needs mutable cache access.
     pub render_cache: RefCell<RenderCache>,
+    /// Swarm / team orchestration state. Tracks the current team, spawned
+    /// teammates, and message delivery. `None` when no team is active.
+    pub team_context: crate::swarm::TeamContext,
+    /// Channel receiver for events from in-process teammate runners.
+    /// Polled in the main event loop alongside terminal/stream events.
+    pub teammate_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<crate::swarm::runner::TeammateEvent>>,
+    /// Sender side — cloned into each spawned teammate's runner.
+    pub teammate_event_tx: tokio::sync::mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
 }
 
 impl App {
     pub fn new(provider: Arc<dyn Provider>, model: impl Into<ModelId>) -> Self {
         let providers = vec![Arc::clone(&provider)];
+        let (teammate_tx, teammate_rx) =
+            tokio::sync::mpsc::unbounded_channel::<crate::swarm::runner::TeammateEvent>();
         let mut textarea = TextArea::default();
         textarea.set_cursor_line_style(Style::default());
         textarea.set_placeholder_text("Type a message… (Enter to send, Shift+Enter for newline)");
@@ -621,6 +754,25 @@ impl App {
             pending_approval: None,
             approval_queue: std::collections::VecDeque::new(),
             queued_prompts: std::collections::VecDeque::new(),
+            worktree_count: 0,
+            worktree_count_last_refresh: None,
+            git_branch: None,
+            git_branch_last_refresh: None,
+            tool_group_expanded: std::collections::HashSet::new(),
+            transcript_search: None,
+            slash_popup_selected: None,
+            show_help: false,
+            jump_armed: false,
+            jump_armed_at: None,
+            last_tool_click: None,
+            sidebar_rect: std::cell::RefCell::new(None),
+            messages_rect: std::cell::RefCell::new(None),
+            toasts_rect: std::cell::RefCell::new(None),
+            drag_anchor_y: None,
+            token_history: std::collections::VecDeque::with_capacity(TOKEN_HISTORY_CAP),
+            last_active_agent_task: None,
+            interrupt_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            last_esc_at: None,
             always_approved: Vec::new(),
             session_approved: Vec::new(),
             follow_bottom: true,
@@ -684,10 +836,13 @@ impl App {
             leader_key_active: false,
             leader_key_timeout: None,
             viewing_task_id: None,
-            viewing_task_expanded: std::collections::HashSet::new(),
+            viewing_task_expanded: std::collections::HashMap::new(),
             pending_attachments: Vec::new(),
             tool_hit_regions: RefCell::new(Vec::new()),
             render_cache: RefCell::new(RenderCache::new()),
+            team_context: crate::swarm::TeamContext::default(),
+            teammate_event_rx: Some(teammate_rx),
+            teammate_event_tx: teammate_tx,
         };
         // Open the task store with the real session id so tasks persist to disk.
         if let Some(ref sid) = app.current_session_id {
@@ -838,7 +993,15 @@ impl App {
     pub fn selected_context_window_tokens(&self) -> usize {
         let result = self.selected_model_info()
             .and_then(|model| model.context_window_tokens)
-            .unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
+            .unwrap_or_else(|| {
+                // Model info not yet loaded (async fetch_models hasn't completed).
+                // Use model-name heuristic to avoid the gauge showing 100% for
+                // large sessions on models with >200k windows (e.g. opus 4.6 = 1M).
+                crate::providers::openwebui::infer_context_window_from_model_name(
+                    self.model.as_str(),
+                    None,
+                )
+            });
         tracing::trace!(
             target: "jfc::app",
             model = %self.model,
@@ -967,7 +1130,7 @@ impl App {
 }
 
 /// Load recently used models from `~/.config/jfc/recent_models.json`.
-fn load_recent_models() -> Vec<String> {
+pub fn load_recent_models() -> Vec<String> {
     let path = dirs::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("jfc")

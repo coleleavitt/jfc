@@ -13,7 +13,10 @@ use crate::scheduler;
 use crate::tools;
 use crate::types::*;
 
-const MAX_TOOL_RESULT_CHARS: usize = 30_000;
+/// Reuse the same cap that `ToolOutput::approx_text_len` enforces — the wire
+/// truncation here and the local token estimate must agree to a byte, or
+/// `compact_level` will fire on phantom-large outputs that the API never sees.
+const MAX_TOOL_RESULT_CHARS: usize = ToolOutput::APPROX_LEN_CAP;
 
 /// Truncate `s` to at most `MAX_TOOL_RESULT_CHARS` bytes by keeping the first
 /// half and the last half, with an ellipsis marker in the middle. Slice
@@ -125,6 +128,7 @@ pub async fn stream_response(
     messages: Vec<ProviderMessage>,
     model: ModelId,
     tx: mpsc::UnboundedSender<AppEvent>,
+    interrupt: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {
     let cwd = std::env::current_dir()
         .ok()
@@ -166,6 +170,15 @@ pub async fn stream_response(
         let block = crate::agents::render_skills_section(&skills);
         if !block.is_empty() {
             system_prompt.push_str(&block);
+        }
+
+        // Memory system — load persistent memories from both user-level
+        // (~/.config/jfc/memory/) and project-level (.jfc/memory/) and
+        // inject them into the system prompt. Re-loaded on every stream
+        // call so newly-saved memories take effect on the next turn.
+        let memories = crate::memory::load_all_memories(&cwd_path);
+        if let Some(memories_section) = crate::memory::render_memories_section(&memories) {
+            system_prompt.push_str(&memories_section);
         }
     }
     // Thinking is a 3-way choice: adaptive (4.6+ Anthropic-native),
@@ -246,6 +259,18 @@ pub async fn stream_response(
     let mut tool_accum: HashMap<usize, (String, String, String)> = HashMap::new();
 
     while let Some(event) = stream.next().await {
+        // Cooperative cancel: the user pressed ESC twice — drop the
+        // stream mid-flight, surface a clean stop, and let the main
+        // loop reset state. Doing this *between* SSE events keeps the
+        // partial output the model sent so the user sees what made it
+        // through.
+        if interrupt.load(std::sync::atomic::Ordering::SeqCst) {
+            tracing::info!(target: "jfc::stream", "stream interrupted by user (ESC×2)");
+            let _ = tx.send(AppEvent::StreamError(
+                "Interrupted by user".to_owned(),
+            ));
+            return;
+        }
         let event = match event {
             Ok(e) => e,
             Err(e) => {
@@ -315,6 +340,9 @@ pub async fn stream_response(
                     output: ToolOutput::Empty,
                     is_collapsed: false,
                     expanded: false,
+                    elapsed_ms: None,
+                    started_at: Some(std::time::Instant::now()),
+                    pinned: false,
                 };
                 tool_accum.remove(&index);
                 let _ = tx.send(AppEvent::StreamTool(tool));
@@ -372,7 +400,7 @@ pub async fn stream_response(
     let _ = tx.send(AppEvent::StreamDone(stop_reason));
 }
 
-#[tracing::instrument(target = "jfc::stream", skip(tx, dedup, task_store, provider, model), fields(n = tool_calls.len()))]
+#[tracing::instrument(target = "jfc::stream", skip(tx, dedup, task_store, provider, model, teammate_event_tx), fields(n = tool_calls.len()))]
 pub fn dispatch_tools_batched(
     tool_calls: Vec<ToolCall>,
     tx: &mpsc::UnboundedSender<AppEvent>,
@@ -380,6 +408,7 @@ pub fn dispatch_tools_batched(
     task_store: Option<Arc<crate::tasks::TaskStore>>,
     provider: Arc<dyn crate::provider::Provider>,
     model: crate::provider::ModelId,
+    teammate_event_tx: mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
 ) {
     use crate::types::ToolInput;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -421,6 +450,120 @@ pub fn dispatch_tools_batched(
             ToolInput::Task(ti) => ti,
             _ => unreachable!(),
         };
+
+        // ─── Teammate spawn path ─────────────────────────────────────────
+        // When `name` + `team_name` are provided, spawn a persistent
+        // teammate instead of a one-shot subagent. The teammate runs
+        // in-process and communicates via the mailbox system.
+        if task_input.is_teammate_spawn() {
+            let tx_task = tx.clone();
+            let task_id = tc.id.clone();
+            let done = send_all_complete.clone();
+
+            let name = task_input.name.clone().unwrap_or_default();
+            let team_name = task_input.team_name.clone().unwrap_or_default();
+            let agent_id = crate::swarm::types::make_agent_id(&name, &team_name);
+            let color = crate::swarm::runner::assign_teammate_color();
+
+            let config = crate::swarm::runner::TeammateRunnerConfig {
+                identity: crate::swarm::TeammateIdentity {
+                    agent_id: agent_id.clone(),
+                    agent_name: name.clone(),
+                    team_name: team_name.clone(),
+                    color: Some(color.clone()),
+                    plan_mode_required: task_input.mode.as_deref() == Some("plan"),
+                    parent_session_id: String::new(),
+                },
+                prompt: task_input.prompt.clone(),
+                description: task_input.description.clone(),
+                model: task_input.model.clone(),
+                agent_type: task_input.subagent_type.clone(),
+                provider: provider.clone(),
+                model_id: model.clone(),
+                system_prompt: None,
+            };
+
+            let teammate_event_tx = teammate_event_tx.clone();
+            let (runner_task_id, _abort_tx) =
+                crate::swarm::runner::start_teammate(config, teammate_event_tx);
+            let _ = runner_task_id;
+
+            // Persist the new member into the team file so the team
+            // roster on disk matches the runtime spawn list. Without
+            // this, `team_helpers::set_member_active` /
+            // `set_member_mode` (which look up by name) silently no-op
+            // because members are never actually added.
+            let member = crate::swarm::types::TeamMember {
+                agent_id: agent_id.clone(),
+                name: name.clone(),
+                agent_type: task_input.subagent_type.clone(),
+                model: task_input.model.clone(),
+                color: Some(color.clone()),
+                plan_mode_required: Some(task_input.mode.as_deref() == Some("plan")),
+                joined_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0),
+                cwd: None,
+                worktree_path: None,
+                backend_type: Some(crate::swarm::types::BackendType::InProcess),
+                is_active: Some(true),
+                mode: task_input.mode.clone(),
+            };
+            {
+                let team_name = team_name.clone();
+                tokio::spawn(async move {
+                    if let Err(e) =
+                        crate::swarm::team_helpers::add_member(&team_name, member).await
+                    {
+                        tracing::warn!(
+                            target: "jfc::swarm",
+                            error = %e,
+                            "failed to register spawned teammate in team file"
+                        );
+                    }
+                });
+            }
+
+            // Report spawn as a successful tool result
+            let result_json = serde_json::json!({
+                "status": "teammate_spawned",
+                "teammate_id": agent_id,
+                "name": name,
+                "team_name": team_name,
+                "color": color,
+                "message": format!("Spawned successfully.\nagent_id: {agent_id}\nname: {name}\nteam_name: {team_name}\nThe agent is now running and will receive instructions via mailbox.")
+            });
+
+            // Two task IDs in play here:
+            //   - `task_id` (= `tc.id`, e.g. "tooluse_xOqQ…") is the
+            //     wire id the API uses to match the tool_use request
+            //     with our tool_result reply. It MUST be on the
+            //     ToolResult.
+            //   - `runner_task_id` (= "teammate-name@team") is the id
+            //     the runner stamps onto every Progress / TextDelta /
+            //     Completed / Failed event.
+            // Register the BackgroundTask under the *runner* id so
+            // when those events arrive their lookups hit. Otherwise
+            // the task panel reads "No messages yet" forever even
+            // though the runner is streaming.
+            let runner_task_id = crate::swarm::runner::teammate_task_id(&agent_id);
+            let _ = tx_task.send(AppEvent::TaskStarted {
+                task_id: runner_task_id.clone(),
+                description: format!("spawn teammate: {name}"),
+            });
+
+            let _ = tx_task.send(AppEvent::ToolResult {
+                tool_id: task_id,
+                result: crate::tools::ExecutionResult::success(
+                    serde_json::to_string_pretty(&result_json).unwrap_or_default(),
+                ),
+            });
+            done();
+            continue;
+        }
+
+        // ─── Normal subagent path ────────────────────────────────────────
         let tx_task = tx.clone();
         let provider_task = provider.clone();
         let model_task = model.clone();
@@ -431,13 +574,61 @@ pub fn dispatch_tools_batched(
         // Resolve `subagent_type` to a concrete `AgentDef`. When unset
         // or unknown, falls back to `None` and `execute_task` runs with
         // no system prompt (mirrors the prior, agent-less behavior).
+        // Case-insensitive lookup: the model has historically called
+        // Task with `subagent_type: "explore"` while we ship agents
+        // named "Explore" (markdown-friendly title-case) and v126 also
+        // mixes the two. An exact-match miss silently drops the
+        // definition — the subagent then runs without its system
+        // prompt or tool restrictions and usually exits in <5s with
+        // empty output. Fall through with `eq_ignore_ascii_case` so
+        // any reasonable casing routes correctly.
         let agent_def = task_input
             .subagent_type
             .as_deref()
-            .and_then(|t| agents.iter().find(|a| a.name == t))
+            .and_then(|t| {
+                agents
+                    .iter()
+                    .find(|a| a.name.eq_ignore_ascii_case(t))
+            })
             .cloned();
+        if agent_def.is_none() {
+            if let Some(t) = task_input.subagent_type.as_deref() {
+                tracing::warn!(
+                    target: "jfc::stream",
+                    requested = %t,
+                    available = ?agents.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+                    "subagent_type did not match any loaded agent — running without definition"
+                );
+            }
+        }
 
         tokio::spawn(async move {
+            // If isolation: "worktree", create a git worktree for this agent
+            let worktree_info = if task_input.isolation.as_deref() == Some("worktree") {
+                let name = format!("agent-{}", task_id.replace("toolu_", "").chars().take(8).collect::<String>());
+                let repo_root = std::env::current_dir().unwrap_or_default();
+                match crate::worktrees::create_worktree(&repo_root, &name) {
+                    Ok(info) => {
+                        tracing::info!(
+                            target: "jfc::stream",
+                            worktree = %info.path,
+                            "task tool: created worktree for isolated agent"
+                        );
+                        Some(info)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "jfc::stream",
+                            error = %e,
+                            "task tool: failed to create worktree, running in cwd"
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
             tracing::info!(
                 target: "jfc::stream",
                 task_id = %task_id,
@@ -457,6 +648,15 @@ pub fn dispatch_tools_batched(
             // rather than showing "No messages yet" until the agent
             // finishes. tx + task_id are passed through; the producer
             // (`execute_task`) emits one event per `TextDelta`.
+            //
+            // When isolation requested a worktree, hand its path to the
+            // subagent as `cwd_override` so any tools it calls (Read,
+            // Bash, Edit, etc.) operate inside the isolated checkout.
+            // Without this, "isolation" was a name only — the worktree
+            // existed on disk but the agent ran against the parent cwd.
+            let cwd_override = worktree_info
+                .as_ref()
+                .map(|info| std::path::PathBuf::from(&info.path));
             let result = crate::tools::execute_task(
                 &task_input,
                 provider_task.as_ref(),
@@ -464,6 +664,7 @@ pub fn dispatch_tools_batched(
                 Some(&tx_task),
                 Some(&task_id),
                 agent_def.as_ref(),
+                cwd_override,
             )
             .await;
             let elapsed_ms = started.elapsed().as_millis() as u64;
@@ -495,9 +696,95 @@ pub fn dispatch_tools_batched(
                 });
             }
 
+            // Decide the worktree's fate BEFORE sending the ToolResult so the
+            // user-visible message can mention the preserved branch
+            // when there are uncommitted changes. Mirrors the Claude
+            // Code Agent docs: "the worktree is automatically cleaned
+            // up if the agent makes no changes; otherwise the path and
+            // branch are returned in the result." `git status
+            // --porcelain` is the standard "is the working tree clean"
+            // signal — quiet, scriptable, exit-code aware.
+            let worktree_outcome: Option<(crate::worktrees::WorktreeInfo, bool)> =
+                if let Some(wt) = worktree_info {
+                    let dirty = match tokio::process::Command::new("git")
+                        .arg("-C")
+                        .arg(&wt.path)
+                        .arg("status")
+                        .arg("--porcelain")
+                        .output()
+                        .await
+                    {
+                        Ok(out) if out.status.success() => !out.stdout.is_empty(),
+                        Ok(out) => {
+                            tracing::warn!(
+                                target: "jfc::stream",
+                                worktree = %wt.path,
+                                stderr = %String::from_utf8_lossy(&out.stderr),
+                                "git status in worktree returned non-zero — keeping worktree to be safe"
+                            );
+                            true
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                target: "jfc::stream",
+                                worktree = %wt.path,
+                                error = %e,
+                                "git status spawn failed — keeping worktree"
+                            );
+                            true
+                        }
+                    };
+                    if !dirty {
+                        let repo_root = std::env::current_dir().unwrap_or_default();
+                        let wt_name = std::path::Path::new(&wt.path)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("");
+                        match crate::worktrees::remove_worktree(&repo_root, wt_name) {
+                            Ok(_) => tracing::info!(
+                                target: "jfc::stream",
+                                worktree = %wt.path,
+                                "worktree had no changes — removed"
+                            ),
+                            Err(e) => tracing::warn!(
+                                target: "jfc::stream",
+                                worktree = %wt.path,
+                                error = %e,
+                                "worktree cleanup failed"
+                            ),
+                        }
+                        Some((wt, false))
+                    } else {
+                        tracing::info!(
+                            target: "jfc::stream",
+                            worktree = %wt.path,
+                            "worktree has uncommitted changes — preserving"
+                        );
+                        Some((wt, true))
+                    }
+                } else {
+                    None
+                };
+
             let _ = tx_task.send(AppEvent::ToolResult {
                 tool_id: task_id,
-                result,
+                result: match &worktree_outcome {
+                    Some((wt, true)) => crate::tools::ExecutionResult::success(format!(
+                        "{}\n\n[worktree preserved with uncommitted changes]\n\
+                         path: {}\nbranch: {}\n\
+                         To inspect: cd {} && git diff\n\
+                         To merge:   git merge {}\n\
+                         To discard: git worktree remove {} && git branch -D {}",
+                        result.output,
+                        wt.path,
+                        wt.branch,
+                        wt.path,
+                        wt.branch,
+                        wt.path,
+                        wt.branch,
+                    )),
+                    Some((_, false)) | None => result,
+                },
             });
 
             done();
@@ -514,7 +801,7 @@ pub fn dispatch_tools_batched(
         let tx_clone = tx.clone();
         let done = send_all_complete.clone();
         tokio::spawn(async move {
-            scheduler::execute_batches(batches, &tx_clone, cwd, dedup, task_store).await;
+            scheduler::execute_batches(batches, &tx_clone, cwd, dedup, task_store, None).await;
             done();
         });
     }
@@ -579,9 +866,10 @@ pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::UnboundedSender<App
     let messages = build_provider_messages_with_tool_results(&app.messages[..assistant_idx]);
     let model = app.model.clone();
     let tx = tx.clone();
+    let interrupt = app.interrupt_flag.clone();
 
     tokio::spawn(async move {
-        stream_response(provider, messages, model, tx).await;
+        stream_response(provider, messages, model, tx, interrupt).await;
     });
 }
 
