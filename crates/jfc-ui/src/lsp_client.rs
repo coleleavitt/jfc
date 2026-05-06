@@ -46,6 +46,8 @@
 
 #![allow(dead_code)]
 
+use std::collections::HashMap;
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -53,30 +55,97 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
+use tokio::sync::Mutex;
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio::sync::oneshot;
 
 use crate::app::AppEvent;
 use crate::lsp_rpc;
 
-/// Handle to a running LSP server. Cheap to clone the inner sender via
-/// methods; the struct itself is intentionally non-Clone so ownership
-/// of the spawned child + writer stays in one place.
+/// Re-export from jfc-graph for convenience.
+pub use jfc_graph::enrichment::LspLocation;
+
+type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>;
+
 pub struct LspClient {
-    /// Producer side of the stdin-writer channel. Each `Vec<u8>` is a
-    /// fully-framed LSP message (header + body) ready to write to the
-    /// child's stdin.
     stdin_tx: UnboundedSender<Vec<u8>>,
-    /// Monotonic request-id source. `Ordering::Relaxed` is sufficient
-    /// because the JSON-RPC id only needs uniqueness, not happens-before
-    /// with anything else.
     next_id: AtomicU64,
+    pending: PendingRequests,
 }
 
 impl LspClient {
-    /// Mint a fresh JSON-RPC request id. Thread-safe and lock-free.
     pub fn next_id(&self) -> u64 {
         self.next_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Send a JSON-RPC request and await the response (5s timeout).
+    /// Returns `None` on timeout or channel failure.
+    pub async fn send_request(&self, method: &str, params: Value) -> Option<Value> {
+        let id = self.next_id();
+        let msg = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        });
+
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut pending = self.pending.lock().await;
+            pending.insert(id, tx);
+        }
+
+        if self.stdin_tx.send(lsp_rpc::encode(&msg)).is_err() {
+            let mut pending = self.pending.lock().await;
+            pending.remove(&id);
+            return None;
+        }
+
+        match tokio::time::timeout(tokio::time::Duration::from_secs(5), rx).await {
+            Ok(Ok(val)) => Some(val),
+            _ => {
+                let mut pending = self.pending.lock().await;
+                pending.remove(&id);
+                None
+            }
+        }
+    }
+
+    /// Request `textDocument/definition`. Returns the first location if any.
+    pub async fn goto_definition_async(
+        &self,
+        file: &Path,
+        line: u32,
+        col: u32,
+    ) -> Option<LspLocation> {
+        let uri = format!("file://{}", file.display());
+        let params = json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line.saturating_sub(1), "character": col.saturating_sub(1) }
+        });
+
+        let result = self.send_request("textDocument/definition", params).await?;
+        parse_location_response(&result)
+    }
+
+    /// Request `textDocument/references`. Returns all locations.
+    pub async fn find_references_async(
+        &self,
+        file: &Path,
+        line: u32,
+        col: u32,
+    ) -> Vec<LspLocation> {
+        let uri = format!("file://{}", file.display());
+        let params = json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line.saturating_sub(1), "character": col.saturating_sub(1) },
+            "context": { "includeDeclaration": true }
+        });
+
+        let Some(result) = self.send_request("textDocument/references", params).await else {
+            return Vec::new();
+        };
+        parse_locations_response(&result)
     }
 
     /// Spawn the language server and run the initialize/initialized
@@ -162,9 +231,11 @@ impl LspClient {
         // 3. Stdout reader. Set up a oneshot the reader can signal when
         // it sees the initialize response, so this function can block
         // on the handshake before returning.
+        let pending: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
         let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
         let init_done_tx = Arc::new(tokio::sync::Mutex::new(Some(init_done_tx)));
         let app_tx_for_reader = app_tx.clone();
+        let pending_for_reader = Arc::clone(&pending);
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout);
             let mut buf: Vec<u8> = Vec::with_capacity(8 * 1024);
@@ -187,15 +258,17 @@ impl LspClient {
                 };
                 buf.extend_from_slice(&chunk[..n]);
 
-                // Drain every complete frame in the buffer before going
-                // back to read. A single read() call can deliver
-                // multiple back-to-back messages, especially during
-                // server-side bursts (rust-analyzer batches diagnostics).
                 loop {
                     match lsp_rpc::try_parse(&buf) {
                         Ok(Some((msg, consumed))) => {
                             buf.drain(..consumed);
-                            handle_inbound(&msg, &app_tx_for_reader, &init_done_tx).await;
+                            handle_inbound(
+                                &msg,
+                                &app_tx_for_reader,
+                                &init_done_tx,
+                                &pending_for_reader,
+                            )
+                            .await;
                         }
                         Ok(None) => break,
                         Err(e) => {
@@ -215,6 +288,7 @@ impl LspClient {
         let client = Self {
             stdin_tx,
             next_id: AtomicU64::new(1),
+            pending,
         };
 
         // Send `initialize` (id=1) then wait for the response, then
@@ -306,29 +380,37 @@ impl LspClient {
     }
 }
 
-/// Inbound-message dispatcher. Distinguishes responses (have an `id` +
-/// `result`/`error`) from notifications (have a `method` + no `id`).
 async fn handle_inbound(
     msg: &Value,
     app_tx: &UnboundedSender<AppEvent>,
     init_done_tx: &Arc<tokio::sync::Mutex<Option<oneshot::Sender<()>>>>,
+    pending: &PendingRequests,
 ) {
-    // Response to a request: only one we care about right now is the
-    // initialize response. We just need to know it arrived; the
-    // server's reported capabilities don't drive any behavior yet.
+    // Response to a request (has `id`, no `method`).
     if msg.get("id").is_some() && msg.get("method").is_none() {
-        if msg.get("id").and_then(|v| v.as_u64()) == Some(1) {
+        let id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+
+        // Special-case: initialize response (id=1) signals the handshake oneshot.
+        if id == 1 {
             let mut guard = init_done_tx.lock().await;
             if let Some(tx) = guard.take() {
                 let _ = tx.send(());
             }
         }
+
+        // Route to pending request map.
+        let mut guard = pending.lock().await;
+        if let Some(tx) = guard.remove(&id) {
+            let result = msg
+                .get("result")
+                .cloned()
+                .unwrap_or(Value::Null);
+            let _ = tx.send(result);
+        }
         return;
     }
 
-    // Notification. Server-initiated requests we don't act on yet
-    // (window/workDoneProgress/create, window/showMessage, etc.) just
-    // fall through — they don't affect diagnostics.
+    // Notification dispatch.
     let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
     if method == "textDocument/publishDiagnostics" {
         let Some(params) = msg.get("params") else {
@@ -341,8 +423,89 @@ async fn handle_inbound(
     }
 }
 
-/// Build a `textDocument/didOpen` notification. Pure function so the
-/// shape can be asserted in unit tests without spawning anything.
+/// Parse a single Location from an LSP definition/declaration response.
+/// LSP returns either a single Location, an array of Locations, or a
+/// LocationLink array. We handle the common cases.
+fn parse_location_response(value: &Value) -> Option<LspLocation> {
+    // Single location object: { uri, range }
+    if let Some(loc) = try_parse_location(value) {
+        return Some(loc);
+    }
+    // Array of locations: take the first
+    if let Some(arr) = value.as_array() {
+        for item in arr {
+            if let Some(loc) = try_parse_location(item) {
+                return Some(loc);
+            }
+            // LocationLink: { targetUri, targetRange }
+            if let Some(loc) = try_parse_location_link(item) {
+                return Some(loc);
+            }
+        }
+    }
+    None
+}
+
+fn parse_locations_response(value: &Value) -> Vec<LspLocation> {
+    let mut out = Vec::new();
+    if let Some(arr) = value.as_array() {
+        for item in arr {
+            if let Some(loc) = try_parse_location(item) {
+                out.push(loc);
+            }
+        }
+    } else if let Some(loc) = try_parse_location(value) {
+        out.push(loc);
+    }
+    out
+}
+
+fn try_parse_location(value: &Value) -> Option<LspLocation> {
+    let uri = value.get("uri")?.as_str()?;
+    let range = value.get("range")?;
+    let start = range.get("start")?;
+    let line = start.get("line")?.as_u64()? as u32 + 1;
+    let col = start.get("character")?.as_u64()? as u32 + 1;
+    let file = uri.strip_prefix("file://").unwrap_or(uri);
+    Some(LspLocation {
+        file: std::path::PathBuf::from(file),
+        line,
+        col,
+    })
+}
+
+fn try_parse_location_link(value: &Value) -> Option<LspLocation> {
+    let uri = value.get("targetUri")?.as_str()?;
+    let range = value.get("targetRange")?;
+    let start = range.get("start")?;
+    let line = start.get("line")?.as_u64()? as u32 + 1;
+    let col = start.get("character")?.as_u64()? as u32 + 1;
+    let file = uri.strip_prefix("file://").unwrap_or(uri);
+    Some(LspLocation {
+        file: std::path::PathBuf::from(file),
+        line,
+        col,
+    })
+}
+
+/// Synchronous `LspDataProvider` implementation. Since the trait is sync but
+/// the LSP client is async, these stubs return None/empty. Full implementation
+/// requires a dedicated blocking thread with `tokio::runtime::Handle::block_on`
+/// or converting the trait to async.
+impl jfc_graph::enrichment::LspDataProvider for LspClient {
+    fn goto_definition(&self, _file: &Path, _line: u32, _col: u32) -> Option<LspLocation> {
+        // The async version (`goto_definition_async`) is fully functional.
+        // Bridging async→sync here would require either:
+        //   1. A dedicated OS thread running a tokio runtime for blocking calls
+        //   2. Converting LspDataProvider to an async trait
+        // For now, the graph engine works without LSP enrichment (tree-sitter only).
+        None
+    }
+
+    fn find_references(&self, _file: &Path, _line: u32, _col: u32) -> Vec<LspLocation> {
+        Vec::new()
+    }
+}
 pub fn build_did_open(uri: &str, language_id: &str, version: i32, text: &str) -> Value {
     json!({
         "jsonrpc": "2.0",
@@ -469,6 +632,7 @@ mod tests {
         LspClient {
             stdin_tx: tx,
             next_id: AtomicU64::new(1),
+            pending: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 

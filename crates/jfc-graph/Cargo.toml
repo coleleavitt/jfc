@@ -1,0 +1,23 @@
+[package]
+name = "jfc-graph"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Graph-based context engine for semantic code analysis"
+
+[dependencies]
+petgraph = { version = "0.8", features = ["serde-1"] }
+tree-sitter = "0.25"
+tree-sitter-rust = "0.24"
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = "2"
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

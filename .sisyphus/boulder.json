@@ -1,0 +1,12 @@
+{
+  "active_plan": "/home/cole/RustProjects/active/jfc/.sisyphus/plans/graph-context-engine.md",
+  "started_at": "2026-05-06T16:33:01.326Z",
+  "session_ids": [
+    "ses_202100077ffe4QBCSa4oQmvP7s"
+  ],
+  "session_origins": {
+    "ses_202100077ffe4QBCSa4oQmvP7s": "direct"
+  },
+  "plan_name": "graph-context-engine",
+  "agent": "atlas"
+}

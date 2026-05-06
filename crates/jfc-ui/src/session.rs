@@ -972,6 +972,12 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::TeamMemberMode { member_name, mode } => SerializedToolInput::Generic {
             summary: format!("TeamMemberMode {member_name}: {mode}"),
         },
+        ToolInput::GraphQuery { query, max_tokens } => SerializedToolInput::Generic {
+            summary: format!("GraphQuery(budget={}): {}", max_tokens.unwrap_or(4000), query),
+        },
+        ToolInput::SymbolEdit { handle, .. } => SerializedToolInput::Generic {
+            summary: format!("SymbolEdit: {handle}"),
+        },
         ToolInput::Generic { summary } => SerializedToolInput::Generic {
             summary: summary.clone(),
         },

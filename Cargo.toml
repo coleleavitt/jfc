@@ -3,10 +3,6 @@ resolver = "2"
 members = [
     "crates/*",
 ]
-# `crates/jfc-graph` is a scratch directory holding draft notes for a
-# future graph-context-engine crate — no Cargo.toml yet. Exclude it
-# from the workspace glob until it gets initialized properly.
-exclude = ["crates/jfc-graph"]
 default-members = ["crates/*"]
 
 [workspace.package]

@@ -1204,6 +1204,7 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         | ToolKind::SendMessage
         | ToolKind::TeamMemberMode => Color::Rgb(255, 150, 130), // coral
         ToolKind::Skill => Color::Rgb(180, 220, 255),       // ice
+        ToolKind::GraphQuery | ToolKind::SymbolEdit => Color::Rgb(130, 200, 180), // sage
         ToolKind::Generic(_) => t.text_secondary,
     }
 }
