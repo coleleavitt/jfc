@@ -1683,10 +1683,10 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         // Reserve a 1-col gutter on the right for the scrollbar
         // ALWAYS (not just when scrollbar is visible). The total-
-        // lines computation above uses width-3 (border + scrollbar)
-        // so the rendering must use the same width or the scroll
-        // math gets off-by-N when the gutter goes from "absent" to
-        // "present" mid-stream.
+        // lines computation above uses width-5 (border + padding +
+        // scrollbar) so the rendering must use the same width or the
+        // scroll math gets off-by-N when the gutter goes from
+        // "absent" to "present" mid-stream.
         let scrollbar_visible = total_lines > visible && visible > 0;
         let content_inner = Rect {
             width: inner.width.saturating_sub(1),

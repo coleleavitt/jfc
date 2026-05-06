@@ -753,10 +753,28 @@ fn tool_block_height(tool: &ToolCall, inner_w: usize) -> usize {
     // line bash command — the title only fits the first line — so the
     // user sees the heredoc body, not just `cat > file <<'EOF'`.
     let cont = bash_continuation_lines(tool).len();
+    let content_w = inner_w.saturating_sub(2);
+    // When the renderer will route ToolOutput::Text through the
+    // highlighted-with-line-numbers path, the effective wrap width
+    // is narrower (gutter eats columns). Approximate the gutter
+    // width so wrapped_line_count uses the same width the renderer
+    // will. Without this, long lines in Read output undercount their
+    // wrapped height and get clipped offscreen.
+    let effective_content_w = if matches!(&tool.output, ToolOutput::Text(s) if !s.is_empty())
+        && infer_lang_from_tool(tool).is_some()
+    {
+        // Estimate gutter: max line-number width + separator.
+        // split_line_numbers would be exact but expensive; approximate
+        // from line count of the text. 4-digit line numbers + ` │ ` = 7,
+        // 5-digit = 8. Use 8 as conservative default.
+        content_w.saturating_sub(8)
+    } else {
+        content_w
+    };
     1 + cont
         + tool_content_height_with(
             &tool.output,
-            inner_w.saturating_sub(2),
+            effective_content_w,
             tool.expanded,
         )
 }
@@ -808,8 +826,14 @@ fn tool_content_height_with(output: &ToolOutput, content_w: usize, expanded: boo
             } else {
                 wrapped_line_count(stderr, content_w)
             };
+            // +1 for exit code row. When both stdout and stderr are
+            // non-empty the renderer also emits a `↳ stderr` divider
+            // row between them — account for it so the height doesn't
+            // undercount and clip the last stderr line.
+            let stderr_divider = if !stdout.is_empty() && !stderr.is_empty() { 1 } else { 0 };
             1 + stdout_total.min(cap)
                 + footer_if(stdout_total)
+                + stderr_divider
                 + stderr_total.min(cap)
                 + footer_if(stderr_total)
         }
@@ -833,7 +857,10 @@ fn tool_content_height_with(output: &ToolOutput, content_w: usize, expanded: boo
         }
 
         ToolOutput::FileContent { content, .. } => {
-            let total = wrapped_line_count(content, content_w);
+            // The renderer wraps at area.width - 2 (gutter `│ ` prefix),
+            // so subtract 2 here to match the effective wrap width.
+            let effective_w = content_w.saturating_sub(2);
+            let total = wrapped_line_count(content, effective_w);
             total.min(cap) + footer_if(total)
         }
 
@@ -1489,7 +1516,7 @@ fn render_tool_content_with_skip(
                 }
             }
         }
-        ToolOutput::Diff(diff) => render_diff_skip(diff, area, t, buf, skip),
+        ToolOutput::Diff(diff) => render_diff_skip(diff, area, t, buf, skip, tool.expanded),
         ToolOutput::FileContent {
             content, language, ..
         } => {
@@ -2919,7 +2946,7 @@ pub fn diff_lang(diff: &DiffView) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, skip: usize) {
+fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, skip: usize, expanded: bool) {
     let bottom = area.y + area.height;
     let mut virtual_row: usize = 0;
     let lang = diff_lang(diff);
@@ -2990,7 +3017,8 @@ fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, ski
         }
         virtual_row += 1;
 
-        let max_dl = hunk.lines.len().min(50);
+        let hunk_cap = if expanded { 500 } else { 50 };
+        let max_dl = hunk.lines.len().min(hunk_cap);
 
         // Per-hunk syntax highlighting. Build a single string containing all
         // line bodies (sigils stripped) joined by `\n`, then run syntect over
@@ -3098,7 +3126,7 @@ fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, ski
             virtual_row += 1;
         }
 
-        if hunk.lines.len() > 50 {
+        if hunk.lines.len() > hunk_cap {
             if virtual_row >= skip {
                 let screen_y = area.y + (virtual_row - skip) as u16;
                 if screen_y < bottom {
@@ -3109,7 +3137,7 @@ fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, ski
                         height: 1,
                     };
                     Paragraph::new(Line::from(Span::styled(
-                        format!("… {} more lines", hunk.lines.len() - 50),
+                        format!("… {} more lines", hunk.lines.len() - hunk_cap),
                         Style::default().fg(t.text_muted),
                     )))
                     .style(Style::default().bg(t.bg))
