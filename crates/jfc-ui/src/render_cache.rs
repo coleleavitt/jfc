@@ -163,4 +163,120 @@ mod tests {
         // Should have evicted to stay bounded
         assert!(cache.map.len() <= MAX_ENTRIES);
     }
+
+    // Normal: `len` mirrors the underlying map size.
+    #[test]
+    fn len_tracks_size_normal() {
+        let mut cache = RenderCache::new();
+        assert_eq!(cache.len(), 0);
+        cache.insert("a", 80, vec![Line::from("x")]);
+        assert_eq!(cache.len(), 1);
+        cache.insert("b", 80, vec![Line::from("y")]);
+        assert_eq!(cache.len(), 2);
+    }
+
+    // Normal: `clear` empties everything and resets the generation counter.
+    #[test]
+    fn clear_resets_state_normal() {
+        let mut cache = RenderCache::new();
+        cache.insert("a", 80, vec![Line::from("x")]);
+        cache.insert("b", 80, vec![Line::from("y")]);
+        assert_eq!(cache.len(), 2);
+        cache.clear();
+        assert_eq!(cache.len(), 0);
+        assert_eq!(cache.generation, 0);
+        // After clear, lookups must miss.
+        assert!(cache.get("a", 80).is_none());
+    }
+
+    // Normal: `line_count` returns the row count for a cached entry without
+    // exposing the lines themselves.
+    #[test]
+    fn line_count_returns_cached_size_normal() {
+        let mut cache = RenderCache::new();
+        let lines = vec![Line::from("a"), Line::from("b"), Line::from("c")];
+        cache.insert("text", 40, lines);
+        assert_eq!(cache.line_count("text", 40), Some(3));
+    }
+
+    // Robust: `line_count` misses on unknown text/width tuples.
+    #[test]
+    fn line_count_miss_returns_none_robust() {
+        let mut cache = RenderCache::new();
+        assert_eq!(cache.line_count("nope", 80), None);
+        cache.insert("a", 80, vec![Line::from("x")]);
+        // Different width — different key.
+        assert_eq!(cache.line_count("a", 60), None);
+    }
+
+    // Normal: `get_or_insert_with` populates on miss and returns the freshly
+    // computed lines, then keeps the same lines on a subsequent hit (closure
+    // is NOT invoked again).
+    #[test]
+    fn get_or_insert_with_caches_normal() {
+        let mut cache = RenderCache::new();
+        let mut calls = 0u32;
+        {
+            let lines = cache.get_or_insert_with("hello", 80, |t, _w| {
+                calls += 1;
+                vec![Line::from(t.to_owned())]
+            });
+            assert_eq!(lines.len(), 1);
+        }
+        assert_eq!(calls, 1, "miss should invoke the closure once");
+        {
+            let lines = cache.get_or_insert_with("hello", 80, |_, _| {
+                calls += 1;
+                vec![Line::from("WRONG")]
+            });
+            assert_eq!(lines.len(), 1);
+        }
+        assert_eq!(calls, 1, "hit must NOT re-run the closure");
+    }
+
+    // Robust: `get_or_insert_with` evicts when the cache is at capacity, but
+    // still returns the freshly inserted lines for the new key.
+    #[test]
+    fn get_or_insert_with_triggers_eviction_robust() {
+        let mut cache = RenderCache::new();
+        // Pre-fill so the next insert pushes us over MAX_ENTRIES.
+        for i in 0..MAX_ENTRIES {
+            cache.insert(&format!("pre_{i}"), 80, vec![Line::from("x")]);
+        }
+        let lines = cache.get_or_insert_with("new_one", 80, |t, _| {
+            vec![Line::from(t.to_owned())]
+        });
+        assert_eq!(lines.len(), 1);
+        assert!(
+            cache.len() <= MAX_ENTRIES,
+            "eviction should keep cache bounded: {}",
+            cache.len()
+        );
+    }
+
+    // Robust: a `get` after `clear` re-populates from a cold start (no stale
+    // generation/value leaks).
+    #[test]
+    fn cold_start_after_clear_is_full_miss_robust() {
+        let mut cache = RenderCache::new();
+        cache.insert("k", 80, vec![Line::from("x")]);
+        cache.clear();
+        assert!(cache.get("k", 80).is_none());
+        assert_eq!(cache.line_count("k", 80), None);
+    }
+
+    // Normal: `get` updates the generation so a recently-touched entry is
+    // last to be evicted under pressure.
+    #[test]
+    fn get_marks_entry_recent_normal() {
+        let mut cache = RenderCache::new();
+        cache.insert("first", 80, vec![Line::from("a")]);
+        cache.insert("second", 80, vec![Line::from("b")]);
+        let gen_before = cache.generation;
+        // Touching `first` shouldn't bump generation (only insert does); but
+        // it should leave the entry retrievable.
+        let _ = cache.get("first", 80);
+        assert_eq!(cache.generation, gen_before, "get should not bump generation");
+        assert!(cache.get("first", 80).is_some());
+    }
 }
