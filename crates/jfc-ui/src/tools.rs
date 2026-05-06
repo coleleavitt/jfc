@@ -597,10 +597,15 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                 limits traversal (use 1-3 for narrow context, 5+ for full reach); \
                 `filter kind=Function|Struct|Enum|Module|Trait` filters; \
                 `show fields|signature|body` controls projection; `taint \"var\"` \
-                traces a parameter through call chains. Examples: \
+                traces a parameter through call chains; `preconditions` \
+                walks callers backward and surfaces the enclosing \
+                if/match/while predicate at each call site (use this \
+                to answer \"what must have been true to reach X?\"). \
+                Examples: \
                 `fn(\"execute_tool\") | callees | depth 2`, \
                 `type(\"Config\") | callers`, \
-                `fn(\"parse\") | taint \"input\" | depth 5`. \
+                `fn(\"parse\") | taint \"input\" | depth 5`, \
+                `fn(\"unwrap_unchecked\") | preconditions`. \
                 Cycles are auto-detected (mutual recursion terminates). Output is \
                 token-budgeted; truncated results report \"Showing N/M nodes\".".into(),
             input_schema: serde_json::json!({
@@ -977,18 +982,60 @@ pub async fn execute_tool(
             // skips the formatting pass — and the alternative
             // (changing format_query_result to also expose the
             // QueryResult) would touch the jfc-graph public API.
-            if let Ok(raw) = session.query_raw(&query) {
-                record_graph_query(&query, &raw);
+            let raw_for_predicates = session.query_raw(&query).ok();
+            if let Some(ref raw) = raw_for_predicates {
+                record_graph_query(&query, raw);
             }
             match session.query(&query, budget) {
                 Ok(output) => {
+                    let mut text = output.text.clone();
+                    // Magic's path-dependent analysis: when the
+                    // query asked for `preconditions`, append the
+                    // enclosing if/match/while predicate at every
+                    // outgoing call site of each caller. The model
+                    // sees "to call X you must have passed (a > 0)"
+                    // without having to grep for callers manually.
+                    if query.contains("preconditions")
+                        && let Some(raw) = raw_for_predicates
+                    {
+                        let mut preds_block = String::new();
+                        for node_id in raw.nodes.iter().take(10) {
+                            let preds = jfc_graph::predicates::outgoing_call_predicates(
+                                &session.graph,
+                                node_id,
+                            );
+                            if preds.is_empty() {
+                                continue;
+                            }
+                            if let Some(node) = session.graph.get_node(node_id) {
+                                preds_block.push_str(&format!(
+                                    "\n  • {} ({}):\n",
+                                    node.name,
+                                    node.file_path.display()
+                                ));
+                            }
+                            for (target, ps) in preds.iter().take(3) {
+                                let chain = ps
+                                    .iter()
+                                    .map(|p| p.text.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(" → ");
+                                preds_block
+                                    .push_str(&format!("      → {target}: {chain}\n"));
+                            }
+                        }
+                        if !preds_block.is_empty() {
+                            text.push_str("\n\n--- preconditions ---");
+                            text.push_str(&preds_block);
+                        }
+                    }
                     if output.was_truncated {
                         ExecutionResult::success(format!(
-                            "{}\n\n[Showing {}/{} nodes]",
-                            output.text, output.nodes_shown, output.nodes_total
+                            "{text}\n\n[Showing {}/{} nodes]",
+                            output.nodes_shown, output.nodes_total
                         ))
                     } else {
-                        ExecutionResult::success(output.text)
+                        ExecutionResult::success(text)
                     }
                 }
                 Err(e) => ExecutionResult::failure(format!("Graph query error: {e}")),
@@ -2835,6 +2882,69 @@ mod tests {
             "test cascade for leaf",
         );
         assert!(tasks.is_empty(), "leaf must yield empty cascade");
+    }
+
+    // ─── outgoing call predicates (preconditions analysis) ────────────
+
+    // Normal: outgoing_call_predicates from a function whose body
+    // calls another function inside an `if` returns the predicate
+    // text on that call edge.
+    #[test]
+    fn outgoing_call_predicates_picks_up_if_normal() {
+        // We need a graph + source where a function calls another
+        // inside an if. The deep_call_chain.rs fixture is straight-
+        // line, so write a temp fixture with a branch.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src_path = dir.path().join("branch.rs");
+        std::fs::write(
+            &src_path,
+            "pub fn caller(x: i32) {\n    if x > 0 {\n        callee();\n    }\n}\nfn callee() {}\n",
+        )
+        .expect("write fixture");
+        let session = jfc_graph::session::GraphSession::from_directory(dir.path());
+        let caller = session
+            .graph
+            .nodes_by_kind(jfc_graph::nodes::NodeKind::Function)
+            .into_iter()
+            .find(|n| n.name == "caller")
+            .expect("caller fn parsed");
+        let preds = jfc_graph::predicates::outgoing_call_predicates(
+            &session.graph,
+            &caller.id,
+        );
+        // At least one outgoing call edge should yield an if predicate.
+        let has_if_pred = preds.iter().any(|(_target, ps)| {
+            ps.iter().any(|p| p.kind == "if_expression" && p.text == "x > 0")
+        });
+        assert!(has_if_pred, "expected `if x > 0` predicate, got: {preds:?}");
+    }
+
+    // Robust: a function with no outgoing calls returns an empty
+    // Vec — outgoing_call_predicates must not panic on leaf nodes.
+    #[test]
+    fn outgoing_call_predicates_empty_for_leaf_robust() {
+        let fixtures = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../jfc-graph/tests/fixtures"
+        ));
+        let session = get_or_build_graph_session(fixtures);
+        let baz = session
+            .graph
+            .nodes_by_kind(jfc_graph::nodes::NodeKind::Function)
+            .into_iter()
+            .find(|n| n.name == "baz")
+            .expect("baz fixture node");
+        let preds = jfc_graph::predicates::outgoing_call_predicates(
+            &session.graph,
+            &baz.id,
+        );
+        // baz() in the fixture is a leaf — no outgoing calls with
+        // enclosing predicates. (May have outgoing calls but they
+        // shouldn't be inside if/match/while.)
+        assert!(
+            preds.iter().all(|(_, ps)| ps.is_empty()),
+            "leaf shouldn't surface predicates, got: {preds:?}"
+        );
     }
 
     // ─── graph history (task 27) ─────────────────────────────────────────
