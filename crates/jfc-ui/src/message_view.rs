@@ -175,10 +175,82 @@ impl Widget for MessageView<'_> {
         let mut y = area.y;
         let bottom = area.y + area.height;
 
+        // Active message scope. Used only to know when to drop a
+        // pulsing typing cursor `▋` after the most-recent streamed
+        // text row (see MessageEnd handling below). The earlier
+        // full-height gutter + bg tint painting have been removed —
+        // color + bold on the role label is the entire visual
+        // differentiation, no per-row decoration.
+        struct Scope {
+            is_streaming_placeholder: bool,
+        }
+        let mut scope: Option<Scope> = None;
+        // Track the last row + content end-column drawn inside a
+        // streaming-placeholder scope so we can drop a pulsing typing
+        // cursor `▋` there at MessageEnd. Without this, the
+        // streaming text just stops dead at the right edge of the
+        // last char — the user has no inline cue that more text is
+        // coming. The cursor pulses on the same 1.2s clock as the
+        // gutter so the two signals reinforce each other.
+        let mut last_streaming_cursor: Option<(u16, u16, u16)> = None;
+
         for item in &items {
             if y >= bottom {
                 break;
             }
+
+            // Scope markers update the active draw context but emit
+            // no rows. Process them inline so the actual draw stays
+            // simple.
+            match item {
+                RenderItem::MessageStart {
+                    role: _,
+                    is_streaming_placeholder,
+                } => {
+                    scope = Some(Scope {
+                        is_streaming_placeholder: *is_streaming_placeholder,
+                    });
+                    last_streaming_cursor = None;
+                    continue;
+                }
+                RenderItem::MessageEnd => {
+                    // If we were rendering a streaming placeholder
+                    // and tracked a "last drawn row", drop a pulsing
+                    // typing cursor there now. Reduced-motion skips
+                    // the cursor entirely — the gutter already gives
+                    // a static "this message is in flight" signal.
+                    if let Some((cx, cy, _w)) = last_streaming_cursor.take() {
+                        if !crate::spinner::reduced_motion()
+                            && cx < buf.area().right()
+                            && cy < buf.area().bottom()
+                        {
+                            let phase = (std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis())
+                                .unwrap_or(0)
+                                % 1200) as f32
+                                / 1200.0;
+                            let intensity = if phase < 0.5 {
+                                phase * 2.0
+                            } else {
+                                (1.0 - phase) * 2.0
+                            };
+                            let cursor_color = crate::render::pulse_color_pub(
+                                t.text_muted, t.accent, intensity,
+                            );
+                            let cell = &mut buf[(cx, cy)];
+                            cell.set_symbol("▋");
+                            cell.set_style(
+                                Style::default().fg(cursor_color),
+                            );
+                        }
+                    }
+                    scope = None;
+                    continue;
+                }
+                _ => {}
+            }
+
             let h = item.height(inner_w);
             if lines_skipped + h <= scroll {
                 lines_skipped += h;
@@ -192,17 +264,15 @@ impl Widget for MessageView<'_> {
                 continue;
             }
 
+            // No left-side inset: items render at full width. The
+            // earlier 2-column gutter strip is gone — color + bold
+            // on the role label carries the message-block identity.
             let item_area = Rect {
                 x: area.x,
                 y,
                 width,
                 height: render_h,
             };
-            // Record screen rect for any tool block we're about to paint so
-            // the mouse handler can hit-test left clicks against the
-            // currently-visible tools. Tools partially clipped by scroll
-            // still get a hit region for the visible portion — clicking
-            // any visible row of a tool toggles its `expanded` state.
             // Hit-region: each clickable item registers its area so
             // mouse handler can hit-test. Both individual tool blocks
             // and collapsed groups participate. Group keys are
@@ -224,6 +294,46 @@ impl Widget for MessageView<'_> {
                 _ => {}
             }
             item.render_with_skip(item_area, buf, t, item_scroll_skip);
+
+            // For streaming-placeholder scopes, remember the bottom
+            // row's last-content column so MessageEnd can drop a
+            // typing cursor right after the most-recent char. We scan
+            // the bottom row of the just-rendered area for the
+            // rightmost non-space cell, then bump x by 1 so the
+            // cursor sits in the cell immediately after the text.
+            if let Some(s) = &scope {
+                if s.is_streaming_placeholder {
+                    let last_y = y + render_h.saturating_sub(1);
+                    if last_y < buf.area().bottom() {
+                        let row_left = item_area.x;
+                        let row_right = (item_area.x + item_area.width)
+                            .min(buf.area().right());
+                        let mut last_content_x: Option<u16> = None;
+                        let mut x_pos = row_left;
+                        while x_pos < row_right {
+                            let cell = &buf[(x_pos, last_y)];
+                            if cell.symbol() != " " && !cell.symbol().is_empty() {
+                                last_content_x = Some(x_pos);
+                            }
+                            x_pos += 1;
+                        }
+                        if let Some(lx) = last_content_x {
+                            let cursor_x = (lx + 1).min(row_right.saturating_sub(1));
+                            last_streaming_cursor = Some((
+                                cursor_x,
+                                last_y,
+                                render_h,
+                            ));
+                        }
+                    }
+                }
+            }
+
+            // No per-row decoration — the role-label color + bold
+            // is the entire message-block identity. (Gutter +
+            // bg-tint painting used to live here; both removed per
+            // the user's "those blue lines look dumb" feedback.)
+
             y += render_h;
             lines_skipped += h;
         }
@@ -249,6 +359,17 @@ enum RenderItem<'a> {
         kind_color: ratatui::style::Color,
     },
     Blank,
+    /// Zero-height scope markers: bracket all the items belonging to
+    /// a single chat message so the renderer can paint a full-height
+    /// gutter glyph and (for assistant messages) a subtle bg tint
+    /// down the entire range. Without these markers the renderer
+    /// has no idea where one message ends and the next begins; it
+    /// just sees a flat stream of TextLine / ToolBlock / Blank.
+    MessageStart {
+        role: Role,
+        is_streaming_placeholder: bool,
+    },
+    MessageEnd,
 }
 
 impl<'a> RenderItem<'a> {
@@ -265,11 +386,15 @@ impl<'a> RenderItem<'a> {
             }
             RenderItem::ToolBlock(_, tool) => tool_block_height(tool, width),
             RenderItem::ToolGroup { .. } => 1,
+            // Scope markers occupy no rows — they only affect the
+            // surrounding draw context (gutter color, bg tint).
+            RenderItem::MessageStart { .. } | RenderItem::MessageEnd => 0,
         }
     }
 
     fn render_with_skip(&self, area: Rect, buf: &mut Buffer, t: Theme, skip: usize) {
         match self {
+            RenderItem::MessageStart { .. } | RenderItem::MessageEnd => {}
             RenderItem::Blank => {}
             RenderItem::TextLine(line) => {
                 Paragraph::new(line.clone())
@@ -417,9 +542,54 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
             }
         }
 
+        // Role label gets a colored gutter glyph (`▎`) prefix so the
+        // start of each message is anchored visually instead of being
+        // an unframed text fragment. While the assistant is streaming,
+        // the gutter pulses accent ↔ border on the same 1.2s clock as
+        // the main spinner so the in-flight message reads as alive
+        // even if no chars have arrived yet.
+        // MessageStart/MessageEnd still bracket the scope so the
+        // render loop can drop the typing-cursor `▋` after the last
+        // text row of a streaming placeholder. The gutter painting
+        // and bg tint that used to ride along with this scope have
+        // been removed — the role label's color + bold is the only
+        // visual differentiation now (matches the sidebar's bare
+        // colored-bold-headers convention the user wanted).
+        items.push(RenderItem::MessageStart {
+            role: msg.role,
+            is_streaming_placeholder,
+        });
         let label_line = match msg.role {
             Role::User => Line::from(Span::styled("you", t.user_label())),
-            Role::Assistant => Line::from(Span::styled("assistant", t.asst_label())),
+            Role::Assistant => {
+                let mut spans = Vec::new();
+                if is_streaming_placeholder
+                    && !crate::spinner::reduced_motion()
+                {
+                    let phase = (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis())
+                        .unwrap_or(0)
+                        % 1200) as f32
+                        / 1200.0;
+                    let intensity = if phase < 0.5 {
+                        phase * 2.0
+                    } else {
+                        (1.0 - phase) * 2.0
+                    };
+                    let dot_color = crate::render::pulse_color_pub(
+                        t.text_muted,
+                        t.accent,
+                        intensity,
+                    );
+                    spans.push(Span::styled(
+                        "● ",
+                        Style::default().fg(dot_color),
+                    ));
+                }
+                spans.push(Span::styled("assistant", t.asst_label()));
+                Line::from(spans)
+            }
         };
         items.push(RenderItem::TextLine(label_line));
 
@@ -522,15 +692,24 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
         // duration string written at StreamDone time.
         if msg.role == Role::Assistant && !is_streaming_placeholder {
             if let Some(elapsed) = &msg.elapsed {
+                // Dim italic, no leading glyph. The earlier `▎`
+                // prefix bracketed the message visually with the
+                // role-header gutter; with the gutter gone, the
+                // bracket is gone too. The elapsed line just sits
+                // muted under the body, which reads cleaner.
                 items.push(RenderItem::TextLine(Line::from(Span::styled(
-                    format!("  {elapsed}"),
+                    elapsed.clone(),
                     Style::default()
                         .fg(t.text_muted)
                         .add_modifier(Modifier::DIM),
                 ))));
             }
         }
-
+        // Close the message scope BEFORE the Blank separator so the
+        // gutter doesn't bleed into the empty row between messages.
+        // Reads as: each message is a contained band, separated by a
+        // narrow gap.
+        items.push(RenderItem::MessageEnd);
         items.push(RenderItem::Blank);
     }
 
@@ -736,6 +915,36 @@ fn render_tool_block(app: &App, tool: &ToolCall, area: Rect, t: Theme, buf: &mut
         let cell = &mut buf[(area.x, area.y + row)];
         cell.set_symbol("▌");
         cell.set_style(gutter_style);
+    }
+
+    // Sparkle on tool complete: when this tool just finished
+    // successfully, flash a `✦` to the *left* of the gutter for
+    // 600ms with a fade. Reduced-motion skips it. Skip when skip>0
+    // (we're scrolled past the tool head and the sparkle is offscreen).
+    if skip == 0
+        && matches!(tool.status, crate::types::ToolStatus::Complete)
+        && !crate::spinner::reduced_motion()
+    {
+        if let Some((id, when)) = &app.recent_tool_completion {
+            if id == &tool.id {
+                let age = when.elapsed();
+                if age < std::time::Duration::from_millis(600) {
+                    let intensity =
+                        1.0 - (age.as_millis() as f32 / 600.0);
+                    if area.x > 0 {
+                        let cell = &mut buf[(area.x - 1, area.y)];
+                        cell.set_symbol("✦");
+                        // Fade from accent → bg as the sparkle
+                        // expires. The bg stop produces a clean
+                        // disappearance instead of a hard cut.
+                        let blended = crate::render::pulse_color_pub(
+                            t.bg, t.accent, intensity,
+                        );
+                        cell.set_style(Style::default().fg(blended));
+                    }
+                }
+            }
+        }
     }
 
     let title_spans = build_title_spans(
@@ -1209,16 +1418,43 @@ fn render_tool_content_with_skip(
             stdout,
             stderr,
             exit_code,
-        } => render_command_output_skip(
-            stdout,
-            stderr,
-            *exit_code,
-            area,
-            t,
-            buf,
-            skip,
-            tool.expanded,
-        ),
+        } => {
+            // When a Bash command is a plain `cat <file.ext>` / `head`
+            // / `tail`, route stdout through syntect highlighting so
+            // the user sees real Rust/Python/etc. coloring instead
+            // of monochrome. The fallback path (no recognised file)
+            // keeps the existing ANSI-aware rendering for arbitrary
+            // commands. Stderr always renders red; exit-code line
+            // stays as before.
+            let lang_hint = infer_lang_from_tool(tool);
+            if let Some(lang) = lang_hint
+                .as_deref()
+                .filter(|_| !stdout.is_empty() && exit_code.unwrap_or(-1) == 0)
+            {
+                render_cat_output_skip(
+                    lang,
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    area,
+                    t,
+                    buf,
+                    skip,
+                    tool.expanded,
+                );
+            } else {
+                render_command_output_skip(
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    area,
+                    t,
+                    buf,
+                    skip,
+                    tool.expanded,
+                );
+            }
+        }
         ToolOutput::Diff(diff) => render_diff_skip(diff, area, t, buf, skip),
         ToolOutput::FileContent {
             content, language, ..
@@ -1264,8 +1500,15 @@ fn render_markdown_block_skip(
             Style::default().fg(t.text_muted),
         )));
     }
+    // Wrap{trim:false} word-wraps long lines instead of clipping them
+    // at the right edge. Without this a Task-tool result whose JSON
+    // contains a long string value (e.g. "message": "Spawned successfully…")
+    // got cut to "message": "Spawned su" with no continuation. Markdown
+    // is the right rendering for the JSON pretty-print body — we just
+    // need it to wrap rather than chop.
     Paragraph::new(lines)
         .style(Style::default().bg(t.bg))
+        .wrap(ratatui::widgets::Wrap { trim: false })
         .scroll((skip as u16, 0))
         .render(area, buf);
 }
@@ -1493,12 +1736,24 @@ fn split_line_numbers(text: &str) -> (Option<Vec<String>>, Option<String>) {
 }
 
 fn infer_lang_from_tool(tool: &ToolCall) -> Option<String> {
-    let path = match &tool.input {
+    let path: &str = match &tool.input {
         ToolInput::Read { file_path, .. } => file_path.as_str(),
         ToolInput::Edit { file_path, .. } => file_path.as_str(),
         ToolInput::Write { file_path, .. } => file_path.as_str(),
+        // Bash: when the user runs `cat path/file.ext`, `head -N file`,
+        // or `tail file`, the stdout *is* the file content. Sniff
+        // the command for one of those shapes and pull out the path
+        // so the output gets the same language treatment as a Read.
+        // Mirrors v126's bash → file-content highlighting heuristic.
+        ToolInput::Bash { command, .. } => {
+            return infer_lang_from_bash(command);
+        }
         _ => return None,
     };
+    lang_from_path(path)
+}
+
+fn lang_from_path(path: &str) -> Option<String> {
     let p = std::path::Path::new(path);
     p.extension()
         .and_then(|e| e.to_str())
@@ -1508,6 +1763,46 @@ fn infer_lang_from_tool(tool: &ToolCall) -> Option<String> {
                 .and_then(|f| f.to_str())
                 .map(|f| f.to_string())
         })
+}
+
+/// Recognise `cat <file>` / `head <file>` / `tail <file>` commands
+/// (with or without flags) and return the inferred language. Skips
+/// when the command does anything fancier (pipes, redirects, multi-
+/// file cats) — those need their own treatment, and over-applying
+/// syntax highlighting to e.g. piped output breaks readability.
+fn infer_lang_from_bash(command: &str) -> Option<String> {
+    let trimmed = command.trim();
+    // First-token sniff: only single-command lines are eligible.
+    // Anything piped/&-chained/$()-ed gets plain-text rendering.
+    if trimmed.contains('|')
+        || trimmed.contains('&')
+        || trimmed.contains(';')
+        || trimmed.contains('$')
+        || trimmed.contains('`')
+        || trimmed.contains('>')
+    {
+        return None;
+    }
+    let mut it = trimmed.split_whitespace();
+    let verb = it.next()?;
+    if !matches!(verb, "cat" | "head" | "tail" | "bat" | "less" | "more") {
+        return None;
+    }
+    // Pick the first non-flag, non-numeric arg as the file path.
+    // Handles `head -50 file.rs`, `tail -n 100 file.py`, etc.
+    let mut file: Option<&str> = None;
+    while let Some(arg) = it.next() {
+        if arg.starts_with('-') {
+            continue;
+        }
+        if arg.parse::<i64>().is_ok() {
+            continue;
+        }
+        file = Some(arg);
+        break;
+    }
+    let path = file?;
+    lang_from_path(path)
 }
 
 fn render_highlighted_block_skip(
@@ -1535,6 +1830,72 @@ fn render_highlighted_block_skip(
                 .add_modifier(Modifier::ITALIC),
         )));
     }
+    Paragraph::new(lines)
+        .style(Style::default().bg(t.bg))
+        .scroll((skip as u16, 0))
+        .render(area, buf);
+}
+
+/// Render Bash output where stdout is the contents of a single
+/// file (cat / head / tail). Top row is the exit-code badge, then
+/// stdout flows through syntect highlighting (no line numbers — the
+/// `cat` user opted out of those), then any stderr in red.
+#[allow(clippy::too_many_arguments)]
+fn render_cat_output_skip(
+    lang: &str,
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    area: Rect,
+    t: Theme,
+    buf: &mut Buffer,
+    skip: usize,
+    expanded: bool,
+) {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let (code_str, code_style) = match exit_code {
+        Some(0) => ("exit 0".to_owned(), Style::default().fg(t.success)),
+        Some(n) => (format!("exit {n}"), Style::default().fg(t.error)),
+        None => ("running…".to_owned(), Style::default().fg(t.text_muted)),
+    };
+    lines.push(Line::from(Span::styled(code_str, code_style)));
+
+    let max_lines = if expanded { 500usize } else { 80usize };
+    let inner_w = area.width as usize;
+    let mut highlighted = markdown::highlight_code_raw(lang, stdout, inner_w, &t);
+    let total = highlighted.len();
+    let truncated = total > max_lines;
+    if truncated {
+        highlighted.truncate(max_lines);
+    }
+    lines.extend(highlighted);
+    if truncated {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "… {} more lines · click or press o to expand",
+                total - max_lines
+            ),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
+        )));
+    }
+
+    if !stderr.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "↳ stderr",
+            Style::default()
+                .fg(t.error)
+                .add_modifier(Modifier::ITALIC | Modifier::BOLD),
+        )));
+        for line in stderr.lines().take(40) {
+            lines.push(Line::from(Span::styled(
+                line.to_owned(),
+                Style::default().fg(t.error),
+            )));
+        }
+    }
+
     Paragraph::new(lines)
         .style(Style::default().bg(t.bg))
         .scroll((skip as u16, 0))
@@ -2085,9 +2446,18 @@ fn push_reasoning_lines<'a>(
                 Style::default().fg(t.text_muted),
             ),
         ])));
+        // Reasoning ribbon: each thinking line gets a `┃` prefix in
+        // `t.reasoning_fg` so the block visually nests inside the
+        // assistant message. The ribbon's own color is the same as
+        // the reasoning text, so the indent reads as a soft "this is
+        // a thought" guide rather than a competing structural
+        // element. Mirrors how Discord / Slack indent quoted blocks.
         for l in text.lines() {
             items.push(RenderItem::TextLine(Line::from(vec![
-                Span::styled("  ", Style::default()),
+                Span::styled(
+                    "┃ ",
+                    Style::default().fg(t.reasoning_fg),
+                ),
                 Span::styled(l.to_string(), t.reasoning()),
             ])));
         }
@@ -2240,6 +2610,7 @@ fn push_task_status_lines<'a>(items: &mut Vec<RenderItem<'a>>, ts: &'a TaskStatu
     let (icon, style) = match ts.status {
         TaskLifecycle::Pending => ("◌", Style::default().fg(t.text_muted)),
         TaskLifecycle::Running => ("◎", Style::default().fg(t.text_primary)),
+        TaskLifecycle::Idle => ("⏸", Style::default().fg(t.text_muted)),
         TaskLifecycle::Completed => ("●", Style::default().fg(t.success)),
         TaskLifecycle::Failed => ("✗", Style::default().fg(t.error)),
         TaskLifecycle::Cancelled => ("○", Style::default().fg(t.text_muted)),

@@ -157,6 +157,20 @@ pub enum AppEvent {
     Tick,
     /// Event from an in-process teammate runner (idle, progress, completion, message).
     TeammateEvent(crate::swarm::runner::TeammateEvent),
+    /// A teammate has been spawned (Task tool with name+team_name set). Carries
+    /// the data the leader needs to populate `app.team_context.team_name` and
+    /// `app.team_context.teammates`. Without this event, both fields stayed
+    /// empty regardless of how many teammates were spawned, so the team-mode
+    /// teammate tree never activated and `team_context.is_active()` lied
+    /// about whether a team was in flight.
+    TeammateSpawned {
+        name: String,
+        team_name: String,
+        agent_id: String,
+        color: Option<String>,
+        agent_type: Option<String>,
+        cwd: String,
+    },
 }
 
 /// Permission modes matching v126 claude-code. Controls how tool execution
@@ -453,6 +467,22 @@ pub struct App {
     /// user is typing a command and the popup is open. None when the
     /// popup is dismissed.
     pub slash_popup_selected: Option<usize>,
+    /// Wall-clock instant of the last successful session save. The
+    /// status-bar render shows "✓ saved" briefly after this fires,
+    /// fading after `SAVED_BADGE_TTL_MS` so the indicator doesn't
+    /// linger on every render.
+    pub last_session_save_at: Option<std::time::Instant>,
+    /// Cycle index for `Ctrl+L`. Each press copies the next-oldest
+    /// `path:line` reference detected in the most recent tool
+    /// output. Reset whenever a fresh ToolResult lands so the user
+    /// always starts from the most recent.
+    pub path_yank_cursor: usize,
+    /// Index into `messages` of the user message currently being
+    /// edited. None when not editing. Submission while this is Some
+    /// rewrites the message at this index and drops everything
+    /// after it before re-firing the turn — `Ctrl+E` to enter,
+    /// Esc to cancel.
+    pub editing_message_idx: Option<usize>,
     /// Set to true on double-ESC. Streaming, agentic-loop continuation,
     /// and the subagent runner all sample this between iterations and
     /// bail when it flips. Wrapped in `Arc` so spawned tasks can clone
@@ -639,6 +669,26 @@ pub struct App {
     /// file and lists each as `<symbol> [Line A:B] <message>` matching
     /// cli.js:338053. Esc closes.
     pub show_diagnostic_panel: bool,
+    /// Scroll offset (in lines) for the diagnostic panel body. Reset
+    /// to 0 each time the panel is opened so the user always lands at
+    /// the top of the list regardless of where they were before.
+    pub diagnostic_panel_scroll: usize,
+    /// Most recently completed tool — drives the sparkle (✦) flash
+    /// next to its gutter for ~600ms after the result lands. `None`
+    /// after the sparkle's TTL elapses or when no tool has completed
+    /// this session.
+    pub recent_tool_completion: Option<(String, std::time::Instant)>,
+    /// Last token-arrival timestamp — drives the right-edge token
+    /// rain animation. Each `StreamChunk` stamps it; the renderer
+    /// reads it to highlight one cell in the rain column with a
+    /// fading intensity proportional to age.
+    pub last_token_arrival: Option<std::time::Instant>,
+    /// First-launch timestamp for the boot sweep animation. Set in
+    /// `App::new`; the placeholder renderer uses it to drive a brief
+    /// star cascade across "What can I help you with?" on session
+    /// start. After ~1.2s the cascade settles into the static
+    /// placeholder.
+    pub launched_at: std::time::Instant,
     /// Stable keys for diagnostics already shown to the user, so the
     /// summary row doesn't keep popping for the same set on every
     /// re-publish. Mirrors v126 cli.js:231025-231036's per-URI
@@ -761,6 +811,9 @@ impl App {
             tool_group_expanded: std::collections::HashSet::new(),
             transcript_search: None,
             slash_popup_selected: None,
+            last_session_save_at: None,
+            path_yank_cursor: 0,
+            editing_message_idx: None,
             show_help: false,
             jump_armed: false,
             jump_armed_at: None,
@@ -826,6 +879,10 @@ impl App {
             mention_all_files: Vec::new(),
             diagnostics: Vec::new(),
             show_diagnostic_panel: false,
+            diagnostic_panel_scroll: 0,
+            recent_tool_completion: None,
+            last_token_arrival: None,
+            launched_at: std::time::Instant::now(),
             delivered_diagnostics: std::collections::HashSet::new(),
             usage_apply_baseline: (0, 0, 0, 0),
             background_tasks: HashMap::new(),

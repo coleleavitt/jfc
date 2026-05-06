@@ -3,7 +3,9 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Clear, LineGauge, List, ListItem, Paragraph, Row, Table},
+    widgets::{
+        Block, Borders, Cell, Clear, LineGauge, List, ListItem, Padding, Paragraph, Row, Table,
+    },
 };
 
 #[allow(unused_imports)]
@@ -60,9 +62,12 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         0
     };
     let active_subagent_count = if !app.team_context.is_active() {
+        // Count both Running and Idle teammates: Idle ones still belong
+        // on the fan (the user can SendMessage to wake them) so the
+        // tree row needs to be reserved for them.
         app.background_tasks
             .values()
-            .filter(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running))
+            .filter(|bt| bt.status.is_alive())
             .count()
     } else {
         0
@@ -222,12 +227,26 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     let mut lines: Vec<Line> = Vec::new();
 
-    lines.push(Line::from(vec![Span::styled(
-        "Session",
-        Style::default()
-            .fg(t.text_primary)
-            .add_modifier(Modifier::BOLD),
-    )]));
+    // Helper: section header. Bold + text_primary (white). Earlier
+    // I had this as bold + accent (cyan), but every section header
+    // pulling the same accent color flattened the hierarchy — your
+    // eye couldn't tell a structural section title from a value
+    // that *also* used accent (e.g. the model-name sub-header). The
+    // three-tier rule wins: primary white bold for sections, accent
+    // for sub-headings/values, muted for body. Mirrors how Claude
+    // Code's actual sidebar treats its section labels (cli.js'
+    // panel renderers use `text` color + bold for the header line,
+    // reserving accent for interactive or live elements).
+    let section = |label: &'static str| -> Line<'static> {
+        Line::from(vec![Span::styled(
+            label,
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        )])
+    };
+
+    lines.push(section("Session"));
 
     let title = app
         .current_session_id
@@ -241,12 +260,7 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     lines.push(Line::from(""));
 
-    lines.push(Line::from(vec![Span::styled(
-        "Context",
-        Style::default()
-            .fg(t.text_primary)
-            .add_modifier(Modifier::BOLD),
-    )]));
+    lines.push(section("Context"));
 
     let total_tokens = (app.last_usage_input as u64).max(app.tool_ctx.approx_tokens as u64);
     let ctx_max = app.selected_context_window_tokens().max(1) as u64;
@@ -284,18 +298,32 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         )]));
     }
 
-    // Per-turn token sparkline. Renders nothing until at least 2
-    // turns have completed (a single bar isn't a "trend"). Uses
-    // ratatui's `Sparkline` which natively renders unicode block
-    // chars `▁▂▃▄▅▆▇█` proportional to bar height.
+    // Per-turn token sparkline rendered inline under the Context
+    // section so it reads as part of *that* group instead of a
+    // disconnected widget glued to the bottom of the panel. Uses
+    // the unicode block-element scale `▁▂▃▄▅▆▇█` so we can render
+    // it as a styled span rather than a separate Sparkline widget.
     if app.token_history.len() >= 2 {
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![Span::styled(
-            "Tokens / turn",
-            Style::default()
-                .fg(t.text_primary)
-                .add_modifier(Modifier::BOLD),
-        )]));
+        const BARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+        let max_val = app.token_history.iter().copied().max().unwrap_or(1).max(1);
+        let bar_width = (inner.width as usize).min(app.token_history.len());
+        // Take the most recent N values so a long history doesn't
+        // squish the recent samples into single-cell averages.
+        let start = app.token_history.len().saturating_sub(bar_width);
+        let bars: String = app
+            .token_history
+            .iter()
+            .skip(start)
+            .map(|v| {
+                let idx = (((*v as f64) / max_val as f64) * (BARS.len() - 1) as f64).round()
+                    as usize;
+                BARS[idx.min(BARS.len() - 1)]
+            })
+            .collect();
+        lines.push(Line::from(vec![
+            Span::styled("tok/turn ", Style::default().fg(t.text_muted)),
+            Span::styled(bars, Style::default().fg(t.accent)),
+        ]));
     }
 
     let total_cache_read: u64 = app
@@ -318,24 +346,23 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     lines.push(Line::from(""));
 
     if !app.usage_by_model.is_empty() {
-        lines.push(Line::from(vec![Span::styled(
-            "Usage by model",
-            Style::default()
-                .fg(t.text_primary)
-                .add_modifier(Modifier::BOLD),
-        )]));
+        lines.push(section("Usage by model"));
 
         let mut model_entries: Vec<(&String, &crate::types::ModelUsage)> =
             app.usage_by_model.iter().collect();
         model_entries.sort_by_key(|(k, _)| k.as_str());
 
         for (model_name, usage) in &model_entries {
+            // Model name is a sub-heading: accent color (cyan) but
+            // NOT bold, so it visibly demotes below the section
+            // header (`Usage by model` in white bold). Three weights
+            // — section / sub / body — read as a clear ladder.
             lines.push(Line::from(vec![Span::styled(
                 format!(
                     " {}:",
                     truncate_str(model_name, inner.width.saturating_sub(2) as usize)
                 ),
-                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+                Style::default().fg(t.accent),
             )]));
 
             lines.push(Line::from(vec![Span::styled(
@@ -375,26 +402,37 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         }
 
         let total = crate::cost::total_cost(&app.usage_by_model);
-        lines.push(Line::from(vec![Span::styled(
-            format!("Total cost: {}", crate::cost::fmt_cost(total)),
-            Style::default().fg(t.text_muted),
-        )]));
+        // Hide the cost line on free / unauthenticated runs (matches
+        // the status bar's gate at >$0.001). Showing `Total cost:
+        // $0.00` on every fresh session was visual noise — the line
+        // only earns its row once there's a cost to talk about.
+        if total > 0.001 {
+            lines.push(Line::from(vec![Span::styled(
+                format!("Total cost: {}", crate::cost::fmt_cost(total)),
+                Style::default().fg(t.text_muted),
+            )]));
+        }
 
         lines.push(Line::from(""));
     }
 
-    lines.push(Line::from(vec![Span::styled(
-        "LSP",
-        Style::default()
-            .fg(t.text_primary)
-            .add_modifier(Modifier::BOLD),
-    )]));
+    lines.push(section("LSP"));
 
     if app.lsp_servers.is_empty() {
-        lines.push(Line::from(vec![Span::styled(
+        // Wrap the placeholder line manually based on the inner
+        // sidebar width — the parent Paragraph doesn't wrap, so a
+        // verbose hint like "LSPs will activate as files are read"
+        // got hard-clipped at the column boundary as `… are rea`.
+        // Word-wrap into one or more rows so the message is readable.
+        for row in wrap_text_to_width(
             "LSPs will activate as files are read",
-            Style::default().fg(t.text_muted),
-        )]));
+            inner.width as usize,
+        ) {
+            lines.push(Line::from(vec![Span::styled(
+                row,
+                Style::default().fg(t.text_muted),
+            )]));
+        }
     } else {
         for srv in &app.lsp_servers {
             let (dot_color, label) = match srv.status {
@@ -418,18 +456,18 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     // MCP section — v126 cli.js renders MCP server status alongside LSP.
     // Layout mirrors the LSP block above: bold header, one row per server
     // formatted as `<dot> <name>`, blank separator below.
-    lines.push(Line::from(vec![Span::styled(
-        "MCP",
-        Style::default()
-            .fg(t.text_primary)
-            .add_modifier(Modifier::BOLD),
-    )]));
+    lines.push(section("MCP"));
 
     if app.mcp_servers.is_empty() {
-        lines.push(Line::from(vec![Span::styled(
+        for row in wrap_text_to_width(
             "No MCP servers configured",
-            Style::default().fg(t.text_muted),
-        )]));
+            inner.width as usize,
+        ) {
+            lines.push(Line::from(vec![Span::styled(
+                row,
+                Style::default().fg(t.text_muted),
+            )]));
+        }
     } else {
         for srv in &app.mcp_servers {
             lines.push(Line::from(vec![
@@ -444,15 +482,11 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     lines.push(Line::from(""));
 
-    // Team section - show active teammates
+    // Team section - show active teammates. Single-blank separator
+    // is enough; the section() helper's gutter glyph already gives
+    // the eye an anchor, no need for a double-row break.
     if app.team_context.is_active() {
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![Span::styled(
-            "Team",
-            Style::default()
-                .fg(t.text_primary)
-                .add_modifier(Modifier::BOLD),
-        )]));
+        lines.push(section("Team"));
 
         if let Some(ref team_name) = app.team_context.team_name {
             lines.push(Line::from(vec![Span::styled(
@@ -461,17 +495,17 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
             )]));
         }
 
+        // Surface each teammate as one row. Color the active-marker
+        // dot with the teammate's assigned palette color (mirrors the
+        // teammate-tree below) so the team panel and the spinner-row
+        // tree read the same way.
         for (_, info) in &app.team_context.teammates {
             if info.name == crate::swarm::TEAM_LEAD_NAME {
                 continue;
             }
-            let color_dot = info.color.as_deref().unwrap_or("○");
-            let status_icon = "●"; // active indicator
+            let dot_color = crate::swarm::types::teammate_color(info.color.as_deref());
             lines.push(Line::from(vec![
-                Span::styled(
-                    format!("  {status_icon} "),
-                    Style::default().fg(ratatui::style::Color::Green),
-                ),
+                Span::styled("  ● ", Style::default().fg(dot_color)),
                 Span::styled(
                     &info.name,
                     Style::default().fg(t.text_secondary),
@@ -504,6 +538,9 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     let task_total = pending.len() + in_progress.len() + completed.len();
     if task_total > 0 {
+        // Match the rest of the sidebar: white bold for the section
+        // header, accent reserved for sub-elements like the in-progress
+        // task indicator below.
         lines.push(Line::from(vec![Span::styled(
             format!("Tasks ({}/{} done)", completed.len(), task_total),
             Style::default()
@@ -627,15 +664,16 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(Line::from(""));
     }
 
-    let used = lines.len() as u16;
-    let available = inner.height.saturating_sub(3);
-    if used < available {
-        for _ in used..available {
-            lines.push(Line::from(""));
-        }
-    }
-
-    lines.push(Line::from(vec![Span::styled(
+    // Footer rows (divider + cwd + provider) build separately and
+    // render in a fixed bottom strip. Earlier we padded the body
+    // with blank rows to push the footer down — that worked when
+    // content was short but wasted vertical space and looked like a
+    // gap. Now we use a Layout split: body gets `Min(0)` so it
+    // takes whatever's left, footer is a `Length(3)` strip pinned
+    // to the bottom. Naturally collapses on a tall panel without
+    // manual padding.
+    let mut footer_lines: Vec<Line> = Vec::new();
+    footer_lines.push(Line::from(vec![Span::styled(
         "─".repeat(inner.width as usize),
         Style::default().fg(t.border),
     )]));
@@ -651,14 +689,15 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
             }
         })
         .unwrap_or_else(|_| "?".into());
-    lines.push(Line::from(vec![Span::styled(
-        truncate_str(&cwd_str, inner.width as usize),
-        Style::default().fg(t.text_muted),
-    )]));
+    let cwd_display = tail_truncate(&cwd_str, inner.width.saturating_sub(2) as usize);
+    footer_lines.push(Line::from(vec![
+        Span::styled("⌂ ", Style::default().fg(t.text_muted)),
+        Span::styled(cwd_display, Style::default().fg(t.text_muted)),
+    ]));
 
     let provider_name = app.provider.name();
-    lines.push(Line::from(vec![
-        Span::styled("• ", Style::default().fg(t.success)),
+    footer_lines.push(Line::from(vec![
+        Span::styled("● ", Style::default().fg(t.success)),
         Span::styled(
             truncate_str(provider_name, inner.width.saturating_sub(10) as usize),
             Style::default()
@@ -669,32 +708,147 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         Span::styled("local", Style::default().fg(t.text_muted)),
     ]));
 
-    // The lines paragraph renders into the top of the inner area. If
-    // we have token history, reserve a single row at the bottom of
-    // the inner block for the sparkline so it doesn't get pushed
-    // off-screen by long content.
-    let sparkline_h: u16 = if app.token_history.len() >= 2 { 1 } else { 0 };
-    let lines_area = Rect {
-        height: inner.height.saturating_sub(sparkline_h),
-        ..inner
+    let footer_h: u16 = 3;
+    let footer_h = footer_h.min(inner.height);
+    let body_h = inner.height.saturating_sub(footer_h);
+    let body_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: body_h,
     };
-    let para = Paragraph::new(lines).style(Style::default().bg(t.bg));
-    f.render_widget(para, lines_area);
+    let footer_area = Rect {
+        x: inner.x,
+        y: inner.y + body_h,
+        width: inner.width,
+        height: footer_h,
+    };
+    f.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(t.bg)),
+        body_area,
+    );
+    f.render_widget(
+        Paragraph::new(footer_lines).style(Style::default().bg(t.bg)),
+        footer_area,
+    );
+}
 
-    if sparkline_h > 0 {
-        use ratatui::widgets::Sparkline;
-        let data: Vec<u64> = app.token_history.iter().copied().collect();
-        let sparkline = Sparkline::default()
-            .data(&data)
-            .style(Style::default().fg(t.accent));
-        let spark_area = Rect {
-            x: inner.x,
-            y: inner.y + lines_area.height,
-            width: inner.width,
-            height: 1,
-        };
-        f.render_widget(sparkline, spark_area);
+/// Apply rainbow-gradient highlighting to slash-command and @mention
+/// tokens in an input line. Plain prose stays in `text_primary`; only
+/// the special-routing tokens light up. Conservative on what counts:
+/// only the *first* slash-command at the line start, plus `@` tokens
+/// (file mentions), avoid coloring inline `/` chars in URLs etc.
+fn input_line_to_spans(line: &str, t: Theme, phase: f32) -> Vec<Span<'static>> {
+    if line.is_empty() {
+        return vec![Span::raw("")];
     }
+    let trimmed_start = line.trim_start();
+    let leading_ws = line.len() - trimmed_start.len();
+    let starts_with_slash = trimmed_start.starts_with('/');
+    let mut spans: Vec<Span<'static>> = Vec::new();
+
+    if leading_ws > 0 {
+        spans.push(Span::raw(line[..leading_ws].to_string()));
+    }
+
+    if starts_with_slash {
+        // Find end of the slash-command token (next whitespace).
+        let token_end = trimmed_start
+            .find(char::is_whitespace)
+            .unwrap_or(trimmed_start.len());
+        let token = &trimmed_start[..token_end];
+        for (i, ch) in token.chars().enumerate() {
+            let hue = (phase + i as f32 * 18.0) % 360.0;
+            let (r, g, b) = crate::spinner::hue_to_rgb(hue);
+            spans.push(Span::styled(
+                ch.to_string(),
+                Style::default()
+                    .fg(Color::Rgb(r, g, b))
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        let rest = &trimmed_start[token_end..];
+        if !rest.is_empty() {
+            spans.extend(highlight_mentions_in(rest, t, phase));
+        }
+    } else {
+        spans.extend(highlight_mentions_in(trimmed_start, t, phase));
+    }
+    spans
+}
+
+/// Tokenize prose, color any `@token` (mention) with the same rainbow
+/// gradient as the leading slash command, but with a phase offset so
+/// each mention reads as its own colored token rather than blending
+/// in with the slash prefix.
+fn highlight_mentions_in(s: &str, t: Theme, phase: f32) -> Vec<Span<'static>> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut buf = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '@' && (i == 0 || chars[i - 1].is_whitespace()) {
+            if !buf.is_empty() {
+                spans.push(Span::styled(
+                    std::mem::take(&mut buf),
+                    Style::default().fg(t.text_primary),
+                ));
+            }
+            // Consume the `@` and the following non-whitespace token.
+            let mut token = String::from('@');
+            i += 1;
+            while i < chars.len() && !chars[i].is_whitespace() {
+                token.push(chars[i]);
+                i += 1;
+            }
+            for (j, ch) in token.chars().enumerate() {
+                let hue = (phase + 60.0 + j as f32 * 18.0) % 360.0;
+                let (r, g, b) = crate::spinner::hue_to_rgb(hue);
+                spans.push(Span::styled(
+                    ch.to_string(),
+                    Style::default()
+                        .fg(Color::Rgb(r, g, b))
+                        .add_modifier(Modifier::BOLD),
+                ));
+            }
+        } else {
+            buf.push(c);
+            i += 1;
+        }
+    }
+    if !buf.is_empty() {
+        spans.push(Span::styled(
+            buf,
+            Style::default().fg(t.text_primary),
+        ));
+    }
+    spans
+}
+
+/// Public form for cross-module callers (sparkle in message_view, etc.)
+/// — the private `pulse_color` is preferred inside this file for
+/// brevity.
+pub fn pulse_color_pub(c1: Color, c2: Color, t: f32) -> Color {
+    pulse_color(c1, c2, t)
+}
+
+/// Linear-interpolate between two ratatui Colors at `t ∈ [0, 1]`.
+/// Falls back to the start color when either endpoint isn't an RGB
+/// triple (named ANSI colors don't have a useful midpoint). Used by
+/// the spinner pulse to blend the lead glyph between accent and
+/// warning across each animation cycle.
+fn pulse_color(c1: Color, c2: Color, t: f32) -> Color {
+    let (r1, g1, b1) = match c1 {
+        Color::Rgb(r, g, b) => (r, g, b),
+        _ => return c1,
+    };
+    let (r2, g2, b2) = match c2 {
+        Color::Rgb(r, g, b) => (r, g, b),
+        _ => return c1,
+    };
+    let (r, g, b) = crate::spinner::interpolate_rgb((r1, g1, b1), (r2, g2, b2), t);
+    Color::Rgb(r, g, b)
 }
 
 fn gauge_color(pct: f64, t: crate::theme::Theme) -> Color {
@@ -788,6 +942,78 @@ fn truncate_str(s: &str, max: usize) -> String {
         let trunc: String = chars[..max.saturating_sub(1)].iter().collect();
         format!("{}…", trunc)
     }
+}
+
+/// Like `truncate_str` but clips from the *front*, prepending `…/`
+/// so the meaningful tail (project name in a path, identifier in a
+/// long namespace) survives. Used by the sidebar's cwd display so
+/// the user sees `…/active/jfc` on a narrow column rather than the
+/// useless `~/RustProjec…` head.
+fn tail_truncate(s: &str, max: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max {
+        return s.to_owned();
+    }
+    // Reserve 2 cells for the leading "…/" indicator. If the column
+    // is too narrow even for that, fall back to head truncation.
+    if max < 4 {
+        return truncate_str(s, max);
+    }
+    let tail_len = max.saturating_sub(2);
+    let start = chars.len() - tail_len;
+    let tail: String = chars[start..].iter().collect();
+    format!("…/{}", tail.trim_start_matches('/'))
+}
+
+/// Word-wrap a short prose string to a column-width. Used by the
+/// info-sidebar's empty-state hints (e.g. "LSPs will activate as
+/// files are read") that the parent Paragraph doesn't auto-wrap. A
+/// hard ratatui clip would chop mid-word at the right edge; this
+/// breaks on whitespace so each row is a complete fragment. Returns
+/// at least one row even for empty input so callers can always
+/// `.push(Line::from(row))`.
+fn wrap_text_to_width(s: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![String::new()];
+    }
+    let mut out: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for word in s.split_whitespace() {
+        let word_len = word.chars().count();
+        if word_len >= width {
+            // Single-word overflow: hard-truncate that word with an
+            // ellipsis. Better than letting it bleed off the edge.
+            if !current.is_empty() {
+                out.push(std::mem::take(&mut current));
+            }
+            out.push(truncate_str(word, width));
+            continue;
+        }
+        let projected = if current.is_empty() {
+            word_len
+        } else {
+            current.chars().count() + 1 + word_len
+        };
+        if projected > width {
+            out.push(std::mem::take(&mut current));
+            current.push_str(word);
+        } else {
+            if !current.is_empty() {
+                current.push(' ');
+            }
+            current.push_str(word);
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
 }
 
 /// Sessions sidebar — toggled with Ctrl+B. Renders the saved-session metadata
@@ -996,13 +1222,46 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
         String::new()
     };
 
+    // No left-side title. The frame is just a rounded border with
+    // 1-cell horizontal padding so prose doesn't kiss the border. The
+    // right-side overflow indicator (`↓ N more`) still surfaces when
+    // the user has scrolled up — that's information the user actually
+    // needs visible. The "jfc" brand label was redundant: the user
+    // already knows they're in jfc.
+    //
+    // Border breathing: while streaming or compacting, the border
+    // color cycles between `t.border` (resting) and `t.accent` (lit)
+    // on a ~1.5s loop. Reads as a soft heartbeat — the whole frame
+    // feels alive without the user having to track a 1-cell glyph.
+    // Resting state is plain `t.border` so an idle session looks
+    // calm.
+    let breathing_active = (app.is_streaming || app.compacting_started_at.is_some())
+        && !crate::spinner::reduced_motion();
+    let border_color = if breathing_active {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let phase = (now.as_millis() % 1500) as f32 / 1500.0;
+        // Ease-in-out triangle so the brightest moment lingers
+        // briefly rather than spiking instantly through.
+        let intensity = if phase < 0.5 {
+            phase * 2.0
+        } else {
+            (1.0 - phase) * 2.0
+        };
+        // Cap the blend so the resting state stays the dominant
+        // color — a full-brightness border every cycle reads as
+        // strobing. 0.6 keeps the lit state distinctly the accent
+        // color while still feeling like a pulse, not a flash.
+        pulse_color(t.border, t.accent, intensity * 0.6)
+    } else {
+        t.border
+    };
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(t.border))
-        .title(Span::styled(
-            " jfc ",
-            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
-        ))
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(border_color))
+        .padding(Padding::horizontal(1))
         .title_top(
             Line::from(Span::styled(title_right, Style::default().fg(t.text_muted)))
                 .right_aligned(),
@@ -1013,12 +1272,44 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(block, area);
 
     if app.messages.is_empty() && app.streaming_text.is_empty() {
+        // Boot sweep: for the first ~1.4s after launch, ripple a star
+        // cascade across the placeholder so the empty session has a
+        // moment of life. After the sweep settles, the placeholder
+        // reads as a calm muted prompt. Reduced-motion skips
+        // straight to the settled state.
+        let boot_age = app.launched_at.elapsed();
+        let boot_active = boot_age < std::time::Duration::from_millis(1400)
+            && !crate::spinner::reduced_motion();
+        const HEADLINE: &str = "What can I help you with?";
+        let headline_spans: Vec<Span<'static>> = if boot_active {
+            // Sweep one bright cell across the headline. Cell width
+            // sweeps left-to-right in 1100ms, then a 300ms tail
+            // settles. Lit cell uses accent + bold; the rest stays
+            // text_muted.
+            let sweep_progress = (boot_age.as_millis() as f32 / 1100.0).min(1.0);
+            let cursor = (sweep_progress * HEADLINE.chars().count() as f32) as i32;
+            HEADLINE
+                .chars()
+                .enumerate()
+                .map(|(i, ch)| {
+                    let dist = (i as i32 - cursor).abs();
+                    let style = if dist <= 1 {
+                        Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(t.text_muted)
+                    };
+                    Span::styled(ch.to_string(), style)
+                })
+                .collect()
+        } else {
+            vec![Span::styled(
+                HEADLINE.to_string(),
+                Style::default().fg(t.text_muted),
+            )]
+        };
         let placeholder = Paragraph::new(vec![
             Line::from(""),
-            Line::from(Span::styled(
-                "What can I help you with?",
-                Style::default().fg(t.text_muted),
-            )),
+            Line::from(headline_spans),
             Line::from(""),
             Line::from(Span::styled(
                 "  ?    keybindings",
@@ -1067,6 +1358,36 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
                 .style(Style::default().fg(t.text_muted))
                 .thumb_style(Style::default().fg(t.accent));
             scrollbar.render(area, f.buffer_mut(), &mut state);
+        }
+
+        // Token rain: a single cell at the bottom-right of the
+        // border that lights up briefly each time a token arrives.
+        // Reads as a tiny pulse counter — the user can see *that
+        // tokens are flowing* without staring at the verb. Renders
+        // only while streaming (idle = dark cell so it doesn't add
+        // visual noise to a settled session). Reduced-motion skips
+        // entirely so the cell stays at the static border glyph.
+        if app.is_streaming
+            && !crate::spinner::reduced_motion()
+            && area.height >= 2
+            && area.width >= 2
+        {
+            if let Some(when) = app.last_token_arrival {
+                let age_ms = when.elapsed().as_millis() as f32;
+                if age_ms < 800.0 {
+                    let intensity = 1.0 - (age_ms / 800.0);
+                    let cx = area.x + area.width.saturating_sub(1);
+                    let cy = area.y + area.height.saturating_sub(2);
+                    if cx < f.buffer_mut().area().right()
+                        && cy < f.buffer_mut().area().bottom()
+                    {
+                        let cell = &mut f.buffer_mut()[(cx, cy)];
+                        cell.set_symbol("●");
+                        let blended = pulse_color(t.border, t.accent, intensity);
+                        cell.set_style(Style::default().fg(blended));
+                    }
+                }
+            }
         }
     }
 }
@@ -1198,17 +1519,23 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let task_is_running = app
+    let task_status = app
         .background_tasks
         .get(task_id)
-        .map(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running))
-        .unwrap_or(false);
+        .map(|bt| bt.status);
+    let task_is_running = matches!(task_status, Some(crate::types::TaskLifecycle::Running));
+    let task_is_idle = matches!(task_status, Some(crate::types::TaskLifecycle::Idle));
 
     // While the task is still running, append a spinner+"Receiving…"
     // row so the user can tell at a glance that more output is on
     // the way (vs. a frozen panel). The frame index pulls from the
     // same wall-clock source as `tool_status_icon_animated` so the
     // glyph rotates in lockstep with the running-tool bullet.
+    //
+    // For Idle teammates, swap the live spinner for a static "⏸ idle"
+    // hint so the user can tell the difference between "still
+    // streaming" and "agent finished its turn, waiting for next ping"
+    // without staring at the panel for a few seconds.
     let mut body_lines = body_lines;
     if task_is_running {
         let frame = std::time::SystemTime::now()
@@ -1228,6 +1555,17 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
             Span::styled(
                 "Receiving output…",
                 Style::default().fg(t.text_muted),
+            ),
+        ]));
+    } else if task_is_idle {
+        if !body_lines.is_empty() {
+            body_lines.push(Line::from(""));
+        }
+        body_lines.push(Line::from(vec![
+            Span::styled("⏸  ", Style::default().fg(t.text_muted)),
+            Span::styled(
+                "idle — waiting for next message",
+                Style::default().fg(t.text_muted).add_modifier(Modifier::ITALIC),
             ),
         ]));
     }
@@ -1534,7 +1872,17 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
     // that window the spinner should read `Compacting…`, not a stale
     // `Fermenting…` from the previous turn.
     let row1_elapsed: std::time::Duration;
-    let body = if let Some(started) = app.compacting_started_at {
+    // `verb_spans` is the verb portion of the spinner row, with the
+    // shimmer-sweep highlight applied per-character. The renderer
+    // assembles the final line as `glyph + verb_spans + body` so the
+    // shimmer animates only the active verb (mirroring v126's
+    // `<GlimmerMessage>`). For the compact path we keep the old
+    // single-string body since compaction has its own status format.
+    let mut verb_spans: Vec<Span<'static>> = Vec::new();
+    let mut compact_body: Option<String> = None;
+    let mut tail_body: String = String::new();
+    let mut head_glyph: &'static str = "";
+    if let Some(started) = app.compacting_started_at {
         let elapsed = now.duration_since(started);
         row1_elapsed = elapsed;
         // Pass the pre-compact token count so the spinner shows
@@ -1543,12 +1891,12 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // only updated to the post-compact value when CompactionDone
         // fires), so it's the right source.
         let pre = app.tool_ctx.approx_tokens as u64;
-        crate::spinner::format_compact_status(
+        compact_body = Some(crate::spinner::format_compact_status(
             app.spinner_frame,
             elapsed,
             pre,
             app.compacting_output_chars,
-        )
+        ));
     } else {
         // Prefer the user-turn clock so a multi-step agentic loop reads
         // cumulative time, not just the current sub-stream's age. Fall back
@@ -1583,19 +1931,137 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             _ => None,
         };
         row1_elapsed = elapsed;
-        crate::spinner::format_status(app.spinner_frame, elapsed, live_tokens, stall, thinking)
+        let segs = crate::spinner::status_segments(
+            app.spinner_frame, elapsed, live_tokens, stall, thinking,
+        );
+        head_glyph = segs.glyph;
+        let verb_width = segs.verb.chars().count();
+        let reduced = crate::spinner::reduced_motion();
+
+        // Stalled intensity: blends 0 → 1 over 30s..120s of token
+        // silence. Mirrors v126's `stalledIntensity` prop on
+        // <GlimmerMessage>. Drives a base-color fade from
+        // text_secondary toward error so the verb visibly "rusts" as
+        // the wait grows. Capped at 1.0; clamped to 0 below 30s so
+        // routine pauses don't tint the verb.
+        let stall_secs = stall.as_secs_f32();
+        let stalled_intensity = ((stall_secs - 30.0) / 90.0).clamp(0.0, 1.0);
+        let base_color = if stalled_intensity > 0.0 {
+            pulse_color(t.text_secondary, t.error, stalled_intensity)
+        } else {
+            t.text_secondary
+        };
+
+        if reduced {
+            // Reduced-motion: single static span at base color. No
+            // sweep, no per-cell coloring. Still respects the stalled
+            // fade because that's information, not decoration.
+            verb_spans.push(Span::styled(
+                segs.verb.to_string(),
+                Style::default().fg(base_color),
+            ));
+        } else {
+            // Multi-cell wave: instead of a hard ±1 cell sweep, use a
+            // 5-cell falloff window so the highlight reads as a soft
+            // pulse rolling through the verb. Each cell's blend
+            // intensity drops by distance-from-index so the center is
+            // brightest and edges fade smoothly into the base color.
+            let g_idx = crate::spinner::glimmer_index(elapsed, verb_width, 50);
+            const HALF: i32 = 2; // ±2 cells = 5-cell wave width
+            for (i, ch) in segs.verb.chars().enumerate() {
+                let dist = (i as i32 - g_idx).abs();
+                let intensity = if dist > HALF {
+                    0.0
+                } else {
+                    // Cosine falloff: 1 at center, 0 at HALF + 1.
+                    // Smoother than linear (no edge kink).
+                    let pct = dist as f32 / (HALF as f32 + 0.5);
+                    0.5 + 0.5 * (1.0 - pct).max(0.0)
+                };
+                let mut style = if intensity > 0.05 {
+                    let blended = pulse_color(base_color, t.accent, intensity);
+                    let mut s = Style::default().fg(blended);
+                    if intensity > 0.7 {
+                        s = s.add_modifier(Modifier::BOLD);
+                    }
+                    s
+                } else {
+                    Style::default().fg(base_color)
+                };
+                // When stalled, suppress the bold so the verb reads
+                // as quiet/dim rather than still active. Important
+                // because BOLD on a red-tinted base reads as alarm.
+                if stalled_intensity > 0.5 {
+                    style = style.remove_modifier(Modifier::BOLD);
+                }
+                verb_spans.push(Span::styled(ch.to_string(), style));
+            }
+        }
+
+        // Marching dots: replace the static "…" with a 4-frame
+        // rotation `   ` → `.  ` → `.. ` → `...` so the user reads
+        // motion even on a frozen verb. 250ms per step keeps the
+        // tempo unhurried; reduced-motion collapses to a steady "…".
+        let dots_str = if reduced {
+            "…".to_string()
+        } else {
+            const PATTERNS: &[&str] = &["   ", ".  ", ".. ", "..."];
+            let phase = (elapsed.as_millis() / 250) as usize;
+            PATTERNS[phase % PATTERNS.len()].to_string()
+        };
+        tail_body = format!("{dots_str} {}", segs.body);
     };
     // Multi-agent fanout: when one or more background subagents are
     // running concurrently, append `· N agents…` to the spinner so the
     // user knows there's parallel work happening. Mirrors v126's
     // `3 agents…` indicator from cli.js (line 161622, task:background).
+    // Counts Running + Idle so a teammate that finished its turn but
+    // is still alive doesn't disappear from the spinner badge — the
+    // user might still SendMessage to it.
     let active_agents = app
         .background_tasks
         .values()
-        .filter(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running))
+        .filter(|bt| bt.status.is_alive())
         .count();
-    let mut spans: Vec<Span<'static>> =
-        vec![Span::styled(body, Style::default().fg(t.text_secondary))];
+    let mut spans: Vec<Span<'static>> = if let Some(body) = compact_body {
+        // Compact path: keep the legacy single-string format. Compaction
+        // has its own status line ("Compacting…", different shape) and
+        // animating the shimmer there would be misleading — the verb
+        // isn't a free-rotating spinner during compact.
+        vec![Span::styled(body, Style::default().fg(t.text_secondary))]
+    } else {
+        // Star glyph color pulses between accent and warning so the
+        // sphincter reads as a *living* element instead of a flat
+        // bullet. Phase derives from elapsed milliseconds (~1Hz cycle)
+        // so the pulse stays smooth even when the spinner_frame ticks
+        // at a different rate than the wallclock — running the pulse
+        // off the spinner_frame would jitter on slow-redraw frames.
+        // Reduced-motion: hold the glyph at full accent color so
+        // there's still a visual focal point but no animation.
+        let glyph_color = if crate::spinner::reduced_motion() {
+            t.accent
+        } else {
+            let phase_ms = (row1_elapsed.as_millis() % 1200) as f32 / 1200.0;
+            // Triangle wave: 0 → 1 → 0 over the cycle. Smoother than
+            // a sawtooth, no need for sine's f32::sin pulled in here.
+            let intensity = if phase_ms < 0.5 {
+                phase_ms * 2.0
+            } else {
+                (1.0 - phase_ms) * 2.0
+            };
+            pulse_color(t.accent, t.warning, intensity)
+        };
+        let mut s = vec![Span::styled(
+            format!("{} ", head_glyph),
+            Style::default().fg(glyph_color).add_modifier(Modifier::BOLD),
+        )];
+        s.extend(verb_spans);
+        s.push(Span::styled(
+            tail_body,
+            Style::default().fg(t.text_muted),
+        ));
+        s
+    };
     if active_agents > 0 {
         let plural = if active_agents == 1 {
             "agent"
@@ -1625,12 +2091,21 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // v126 cli.js:323851 picks `Next: m.subject ?? Tip: WH` —
         // task wins if there is one, else show a rotating tip so the
         // user has something useful to read while the model thinks.
+        // The "dismiss popups" hint is filtered when nothing's open so
+        // it doesn't read as a misleading instruction (the user looked
+        // for the popup it was talking about and there wasn't one).
+        let any_popup_open = app.show_help
+            || app.show_model_picker
+            || app.show_sidebar
+            || app.transcript_search.is_some()
+            || app.slash_popup_selected.is_some()
+            || app.pending_approval.is_some();
         let (prefix, body) = if let Some(subj) = next_open_task_subject(app) {
             ("  □ Next: ".to_string(), subj)
         } else {
             (
                 "  □ Tip: ".to_string(),
-                crate::spinner::tip_for(row1_elapsed).to_string(),
+                crate::spinner::tip_for_with_state(row1_elapsed, any_popup_open).to_string(),
             )
         };
         let max_body = (area.width as usize).saturating_sub(prefix.chars().count() + 1);
@@ -1691,10 +2166,15 @@ fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     // doesn't deserve a tree row — its result is already in the
     // transcript. `viewing_task_id` short-circuits this entire branch
     // because the task-view UI takes over the whole region.
+    //
+    // Both Running and Idle teammates belong on the fan: Idle is "alive
+    // but between turns" — the user still wants to see them and may
+    // SendMessage to wake them. Running is rendered with the kind color,
+    // Idle is dimmed so the user can tell them apart at a glance.
     let mut active: Vec<&crate::app::BackgroundTask> = app
         .background_tasks
         .values()
-        .filter(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running))
+        .filter(|bt| bt.status.is_alive())
         .collect();
     if active.is_empty() {
         return;
@@ -1729,14 +2209,21 @@ fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
         } else {
             desc.to_owned()
         };
-        let activity = match &bt.last_tool {
-            Some(tool) => format!("  · {tool}"),
-            None => String::new(),
+        let is_idle = matches!(bt.status, crate::types::TaskLifecycle::Idle);
+        let activity = if is_idle {
+            "  · idle".to_string()
+        } else {
+            match &bt.last_tool {
+                Some(tool) => format!("  · {tool}"),
+                None => String::new(),
+            }
         };
         // Emphasize whichever agent emitted the most-recent chunk or
         // tool-progress event so the user can spot which one is
-        // currently moving in a fan of N parallel agents.
-        let is_active = app
+        // currently moving in a fan of N parallel agents. Idle agents
+        // never get the bold-active treatment — they're not the
+        // currently-moving one.
+        let is_active = !is_idle && app
             .last_active_agent_task
             .as_deref()
             .map(|id| id == bt.task_id.as_str())
@@ -1746,6 +2233,8 @@ fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
                 .fg(t.accent)
                 .bg(t.surface_raised)
                 .add_modifier(Modifier::BOLD)
+        } else if is_idle {
+            Style::default().fg(t.text_muted)
         } else {
             Style::default().fg(t.accent)
         };
@@ -1816,23 +2305,29 @@ fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
 
         let color = teammate_color(info.color.as_deref());
 
-        // Look up activity from background tasks
-        let task_key = format!("teammate-{}@{}", info.name,
-            app.team_context.team_name.as_deref().unwrap_or(""));
-        let activity = app.background_tasks
+        // Look up activity from background tasks. Match by name suffix
+        // so a teammate "ui-explorer" finds its task whose id is
+        // "teammate-ui-explorer@<team>".
+        let bt = app.background_tasks
             .values()
-            .find(|bt| bt.task_id.contains(&info.name))
-            .and_then(|bt| bt.last_tool.clone());
+            .find(|bt| bt.task_id.contains(&info.name));
+        let bt_status = bt.map(|bt| bt.status);
+        let activity = bt.and_then(|bt| bt.last_tool.clone());
 
-        let status_text = match &activity {
-            Some(tool) => format!(": {}…", tool),
-            None => {
-                let elapsed = info.spawned_at.elapsed();
-                if elapsed.as_secs() > 5 {
-                    format!(": Idle for {}s", elapsed.as_secs())
-                } else {
-                    ": Working…".to_owned()
-                }
+        let status_text = if matches!(bt_status, Some(crate::types::TaskLifecycle::Idle)) {
+            // Source-of-truth: the runner has emitted TeammateEvent::Idle.
+            // Don't fall back to elapsed-since-spawn timing — that
+            // misreported "Idle for 30s" while the agent was actively
+            // streaming for 30s.
+            ": Idle".to_owned()
+        } else if matches!(bt_status, Some(crate::types::TaskLifecycle::Completed)) {
+            ": Done".to_owned()
+        } else if matches!(bt_status, Some(crate::types::TaskLifecycle::Failed)) {
+            ": Failed".to_owned()
+        } else {
+            match &activity {
+                Some(tool) => format!(": {}…", tool),
+                None => ": Working…".to_owned(),
             }
         };
 
@@ -1860,13 +2355,31 @@ fn input(f: &mut Frame, app: &mut App, area: Rect) {
     // Border + title stay constant whether or not we're streaming. v126
     // never repaints the input bar mid-turn — the typing surface is the
     // user's surface, the spinner is a separate row above it.
-    let border_style = Style::default().fg(t.border);
-    let title = " message ".to_string();
+    // Edit mode swaps the input title to "editing message N" and
+    // borders the input in warning-orange so the visual state is
+    // unambiguous — the user shouldn't fire-and-forget what was
+    // supposed to be a rewrite.
+    let in_edit_mode = app.editing_message_idx.is_some();
+    let border_style = if in_edit_mode {
+        Style::default().fg(t.warning)
+    } else {
+        Style::default().fg(t.border)
+    };
+    let title = if let Some(idx) = app.editing_message_idx {
+        format!(" editing message #{} · Esc cancels ", idx)
+    } else {
+        " message ".to_string()
+    };
+    let title_style = if in_edit_mode {
+        Style::default().fg(t.warning).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(t.text_muted)
+    };
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
-        .title(Span::styled(title, Style::default().fg(t.text_muted)))
+        .title(Span::styled(title, title_style))
         .style(Style::default().bg(t.surface));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -1876,22 +2389,77 @@ fn input(f: &mut Frame, app: &mut App, area: Rect) {
     let (lines, cursor_row, cursor_col) = input_soft_wrapped_lines(app, content_width);
     let visible_rows = inner.height.max(1) as usize;
     let start = cursor_row.saturating_add(1).saturating_sub(visible_rows);
+    // Rainbow gradient for slash-command and @mention prefixes — gives
+    // those tokens a visible "specialness" so the user sees that
+    // they'll route somewhere distinct (a slash command, a file
+    // mention) rather than be sent as plain text. Phase rotates with
+    // wallclock so the gradient gently flows through the chars on
+    // each redraw. Reduced-motion holds the phase at 0 so the colors
+    // stay still but the gradient is still applied — readable, just
+    // not animated.
+    let rainbow_phase = if crate::spinner::reduced_motion() {
+        0.0_f32
+    } else {
+        (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0) as f32
+            / 25.0)
+            % 360.0
+    };
     let visible = lines
         .iter()
         .skip(start)
         .take(visible_rows)
-        .map(|line| {
-            Line::from(Span::styled(
-                line.clone(),
-                Style::default().fg(t.text_primary),
-            ))
-        })
+        .map(|line| Line::from(input_line_to_spans(line, t, rainbow_phase)))
         .collect::<Vec<_>>();
 
     f.render_widget(
         Paragraph::new(visible).style(Style::default().bg(t.surface)),
         inner,
     );
+
+    // Ghost cursor pulse: tint the cursor cell's background between
+    // surface_raised and accent on a 1.2s clock so the typing surface
+    // feels "ready" even when nothing's moving. Only visible when
+    // not streaming (the spinner takes over the visual focus during
+    // streaming) and not in edit mode (the orange edit border is
+    // already a strong signal). Reduced-motion skips the pulse.
+    if !app.is_streaming
+        && !in_edit_mode
+        && !crate::spinner::reduced_motion()
+        && area.height > 2
+        && area.width > 2
+    {
+        let cursor_x = inner
+            .x
+            .saturating_add(cursor_col as u16)
+            .min(inner.right().saturating_sub(1));
+        let cursor_y = inner
+            .y
+            .saturating_add(cursor_row.saturating_sub(start) as u16)
+            .min(inner.bottom().saturating_sub(1));
+        let buf = f.buffer_mut();
+        if cursor_x < buf.area().right() && cursor_y < buf.area().bottom() {
+            let phase = (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0)
+                % 1200) as f32
+                / 1200.0;
+            let intensity = if phase < 0.5 {
+                phase * 2.0
+            } else {
+                (1.0 - phase) * 2.0
+            };
+            // Subtle: cap at 0.35 blend so the typing area doesn't
+            // throb. Just a soft glow that says "the input is alive
+            // and waiting for you".
+            let bg = pulse_color(t.surface_raised, t.accent, intensity * 0.35);
+            let cell = &mut buf[(cursor_x, cursor_y)];
+            cell.set_style(cell.style().bg(bg));
+        }
+    }
 
     if area.height > 2 && area.width > 2 {
         f.set_cursor_position(Position::new(
@@ -2009,7 +2577,7 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
     let active_subagents = app
         .background_tasks
         .values()
-        .filter(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running))
+        .filter(|bt| bt.status.is_alive())
         .count();
     let agents_badge = if active_subagents > 0 {
         format!("  ⏵ {active_subagents}")
@@ -2027,6 +2595,15 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
         format!("  ⏸ {approval_count}")
     } else {
         String::new()
+    };
+
+    // Auto-save badge — flashes briefly each time the session is
+    // written. Tells the user their work is being persisted without
+    // them having to check a file manager. Fades after 2s so the
+    // status bar isn't permanently cluttered.
+    let saved_badge = match app.last_session_save_at {
+        Some(t) if t.elapsed().as_millis() < 2000 => "  ✓ saved".to_string(),
+        _ => String::new(),
     };
 
     let cost_total = crate::cost::total_cost(&app.usage_by_model);
@@ -2056,7 +2633,7 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let left = format!(
-        " {}{}{}{}{}{}{}{}{}{}  {}  {} msgs ",
+        " {}{}{}{}{}{}{}{}{}{}{}  {}  {} msgs ",
         app.model,
         profile_badge,
         mode_badge,
@@ -2067,6 +2644,7 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
         approvals_badge,
         git_badge,
         cost_badge,
+        saved_badge,
         cwd_display,
         msg_count
     );
@@ -2139,30 +2717,102 @@ fn toast_overlay(f: &mut Frame, app: &App) {
         return;
     }
     const MAX_W: u16 = 60;
+    // Reserve room for a 1-cell border on each side so the strip
+    // reads as a contained unit rather than text bleeding into the
+    // transcript below it.
     let w = MAX_W.min(frame_area.width.saturating_sub(2));
     let count = app.toasts.len() as u16;
-    let h = count.min(5); // MAX_TOASTS, but bound to layout
-    if h == 0 {
+    let body_h = count.min(5); // MAX_TOASTS, but bound to layout
+    if body_h == 0 {
         *app.toasts_rect.borrow_mut() = None;
         return;
     }
-    let area = Rect {
-        x: frame_area.x + frame_area.width.saturating_sub(w + 1),
-        y: frame_area.y + 1,
-        width: w,
-        height: h,
+    let h = body_h + 2; // borders top/bottom
+    // Slide-in: the strip enters from off-screen-right and eases in
+    // over the freshest toast's first 200ms. Ease-out cubic so it
+    // settles softly rather than overshooting. Reduced-motion skips
+    // the slide and the strip pops in at its final position.
+    let slide_offset: u16 = if crate::spinner::reduced_motion() {
+        0
+    } else {
+        let freshest_age = app
+            .toasts
+            .iter()
+            .map(|tt| tt.created_at.elapsed())
+            .min()
+            .unwrap_or_default();
+        let progress = (freshest_age.as_millis() as f32 / 200.0).min(1.0);
+        // Ease-out cubic: 1 - (1 - t)^3
+        let eased = 1.0 - (1.0 - progress).powi(3);
+        // Off-screen distance is the strip width — at progress=0 the
+        // strip is fully off the right edge; at progress=1 it sits
+        // flush with its target.
+        ((1.0 - eased) * (w as f32 + 4.0)).round() as u16
     };
+    let target_x = frame_area.x + frame_area.width.saturating_sub(w + 1);
+    let frame_right = frame_area.x + frame_area.width;
+    // Resting x of the strip + the slide offset. Capped to the
+    // frame's right edge so we never go past the buffer.
+    let actual_x = target_x.saturating_add(slide_offset).min(
+        frame_area.x + frame_area.width.saturating_sub(1),
+    );
+    // Width *must* be derived from `actual_x` so `actual_x + width`
+    // never exceeds `frame_right`. Earlier this was computed
+    // independently (`w.saturating_sub(slide_offset)`), which clamped
+    // the x within bounds but left a width that walked off the right
+    // edge — a 60-cell-wide strip starting at column 207 of a
+    // 208-cell-wide buffer panicked the ratatui Clear widget at
+    // `index_of((208, 1))`. The bug surfaced on slide-in's first
+    // frame (offset=full strip width).
+    let actual_w = w.min(frame_right.saturating_sub(actual_x));
+    let area = Rect {
+        x: actual_x,
+        y: frame_area.y + 1,
+        width: actual_w,
+        height: h.min(frame_area.height.saturating_sub(2)),
+    };
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
     *app.toasts_rect.borrow_mut() = Some(area);
     f.render_widget(Clear, area);
+    // Border color tracks the highest-severity toast in the strip so
+    // an Error toast pulls a red border even when surrounded by Info
+    // entries. The user's eye finds the strip faster than reading
+    // each row.
+    let border_color = app
+        .toasts
+        .iter()
+        .map(|tt| match tt.kind {
+            ToastKind::Error => 3,
+            ToastKind::Warning => 2,
+            ToastKind::Success => 1,
+            ToastKind::Info => 0,
+        })
+        .max()
+        .map(|rank| match rank {
+            3 => t.error,
+            2 => t.warning,
+            1 => t.success,
+            _ => t.border,
+        })
+        .unwrap_or(t.border);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(t.surface));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
     let mut lines: Vec<Line> = Vec::new();
-    for toast in app.toasts.iter().rev().take(h as usize).collect::<Vec<_>>() {
+    for toast in app.toasts.iter().rev().take(inner.height as usize).collect::<Vec<_>>() {
         let (icon, color) = match toast.kind {
             ToastKind::Info => ("ℹ", t.text_secondary),
             ToastKind::Success => ("✓", t.success),
             ToastKind::Warning => ("⚠", t.warning),
             ToastKind::Error => ("✘", t.error),
         };
-        let max_text = (w as usize).saturating_sub(4);
+        let max_text = (inner.width as usize).saturating_sub(4);
         let text: String = if toast.text.chars().count() > max_text {
             let mut out: String = toast
                 .text
@@ -2181,7 +2831,7 @@ fn toast_overlay(f: &mut Frame, app: &App) {
     }
     f.render_widget(
         Paragraph::new(lines).style(Style::default().bg(t.surface)),
-        area,
+        inner,
     );
 }
 
@@ -2245,6 +2895,8 @@ const SLASH_COMMANDS: &[(&str, &str)] = &[
     ("/compact", "summarize earlier messages to free context"),
     ("/help", "show jfc help"),
     ("/export", "save the transcript as markdown"),
+    ("/theme", "switch theme: dark / light / solarized / catppuccin"),
+    ("/dump-context", "show what the model sees: memories, skills, tools"),
     ("/worktree", "create / list / remove a git worktree"),
     ("/swarm-approve", "approve a pending swarm tool request"),
     ("/swarm-deny", "deny a pending swarm tool request"),
@@ -2448,7 +3100,11 @@ fn help_overlay(f: &mut Frame, app: &App) {
             ("Ctrl+Shift+Z", "redo"),
             ("Ctrl+F", "search inside the textarea"),
             ("Ctrl+R", "retry last prompt"),
+            ("Ctrl+E", "edit + resubmit previous user message"),
+            ("Ctrl+L", "yank file:line ref to clipboard"),
             ("/export", "save transcript as markdown"),
+            ("/theme", "switch theme"),
+            ("/dump-context", "show what the model sees"),
         ]),
         ("Transcript", &[
             ("Ctrl+P", "command palette"),
@@ -2459,6 +3115,9 @@ fn help_overlay(f: &mut Frame, app: &App) {
             ("Ctrl+O", "expand diagnostic row / large tool block"),
             ("o", "toggle expand on most recent collapsible block"),
             ("Ctrl+Y", "yank last assistant response"),
+            ("Ctrl+L", "yank file:line ref from recent output"),
+            ("j / k", "vim scroll down / up (empty input)"),
+            ("g / G", "vim jump to top / bottom (empty input)"),
             ("Shift+Tab", "cycle permission modes"),
             ("PgUp/PgDn", "scroll a page"),
             ("Ctrl+Home/End", "jump to top/bottom"),
@@ -2536,22 +3195,6 @@ fn diagnostic_panel(f: &mut Frame, app: &App) {
     f.render_widget(Clear, rect);
     let issues = app.diagnostics.len();
     let files = crate::diagnostics::count_files(&app.diagnostics);
-    let title = format!(
-        " Diagnostics — {issues} {} in {files} {} (Esc to close) ",
-        if issues == 1 { "issue" } else { "issues" },
-        if files == 1 { "file" } else { "files" },
-    );
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::Rounded)
-        .border_style(Style::default().fg(t.error))
-        .title(Span::styled(
-            title,
-            Style::default().fg(t.error).add_modifier(Modifier::BOLD),
-        ))
-        .style(Style::default().bg(t.surface));
-    let inner = block.inner(rect);
-    f.render_widget(block, rect);
 
     // Group entries by file in first-seen order. Avoid HashMap iteration
     // for ordering stability — use a Vec of (file, Vec<&entry>).
@@ -2585,10 +3228,47 @@ fn diagnostic_panel(f: &mut Frame, app: &App) {
         }
         lines.push(Line::from(""));
     }
+
+    // Title now embeds a scroll position when the body overflows the
+    // panel — the user can see at a glance how much more there is to
+    // scroll through, and the key hints are visible on the title bar
+    // instead of being hidden in the help overlay.
+    let total_lines = lines.len();
+    let inner_h = rect.height.saturating_sub(2) as usize; // borders
+    let scroll = app
+        .diagnostic_panel_scroll
+        .min(total_lines.saturating_sub(inner_h.max(1)));
+    let scroll_pos = if total_lines > inner_h && inner_h > 0 {
+        format!(
+            " · {}/{}",
+            scroll + 1,
+            total_lines.saturating_sub(inner_h.max(1)) + 1
+        )
+    } else {
+        String::new()
+    };
+    let title = format!(
+        " Diagnostics — {issues} {} in {files} {}{scroll_pos} · ↑↓/PgUp/PgDn scroll · Esc close ",
+        if issues == 1 { "issue" } else { "issues" },
+        if files == 1 { "file" } else { "files" },
+    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(t.error))
+        .title(Span::styled(
+            title,
+            Style::default().fg(t.error).add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().bg(t.surface));
+    let inner = block.inner(rect);
+    f.render_widget(block, rect);
+
     f.render_widget(
         Paragraph::new(lines)
             .style(Style::default().bg(t.surface))
-            .wrap(ratatui::widgets::Wrap { trim: false }),
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .scroll((scroll as u16, 0)),
         inner,
     );
 }

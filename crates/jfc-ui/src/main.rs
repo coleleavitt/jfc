@@ -1108,10 +1108,23 @@ async fn run(
             AppEvent::TeammateEvent(teammate_ev) => {
                 use crate::swarm::runner::TeammateEvent;
                 match teammate_ev {
-                    TeammateEvent::Idle { task_id: _, agent_id: _, agent_name, reason, summary } => {
+                    TeammateEvent::Idle { task_id, agent_id: _, agent_name, reason, summary } => {
                         tracing::info!(
                             "[Swarm] Teammate {agent_name} went idle (reason: {reason:?})"
                         );
+                        // Mark the BackgroundTask Idle so the task
+                        // panel stops showing "Receiving output…" forever
+                        // and the subagent tree can render the agent
+                        // dimmer. Without this transition the panel
+                        // pinned to the bottom looking alive even
+                        // though the teammate had already sent its
+                        // message and stopped producing chunks.
+                        if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                            if matches!(bt.status, crate::types::TaskLifecycle::Running) {
+                                bt.status = crate::types::TaskLifecycle::Idle;
+                            }
+                            bt.last_tool = None;
+                        }
                         // Surface to the user as a toast — without this
                         // the user has no way to tell that a teammate
                         // finished its turn and is waiting. Summary
@@ -1132,8 +1145,14 @@ async fn run(
                         );
                     }
                     TeammateEvent::Progress { task_id, agent_id: _, token_count: _, tool_use_count: _, last_tool } => {
-                        // Update background task state for UI display
+                        // Update background task state for UI display.
+                        // Revive an Idle task back to Running — the agent
+                        // is producing tool-progress events again, so it
+                        // is no longer idle.
                         if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                            if matches!(bt.status, crate::types::TaskLifecycle::Idle) {
+                                bt.status = crate::types::TaskLifecycle::Running;
+                            }
                             bt.last_tool = last_tool;
                         }
                         // Mark this teammate as the live one for the
@@ -1141,6 +1160,14 @@ async fn run(
                         app.last_active_agent_task = Some(task_id);
                     }
                     TeammateEvent::TextDelta { task_id, agent_id: _, delta } => {
+                        // A new text delta means the teammate is producing
+                        // output again — revive Idle → Running so the
+                        // task panel resumes its "Receiving output…" spinner.
+                        if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                            if matches!(bt.status, crate::types::TaskLifecycle::Idle) {
+                                bt.status = crate::types::TaskLifecycle::Running;
+                            }
+                        }
                         // Translate to AgentChunk so the existing
                         // chunk handler (with coalescing rules and
                         // BackgroundTask.messages append) handles it
@@ -1430,6 +1457,11 @@ async fn run(
                 // reflects time-since-last-byte, not time-since-stream-start.
                 let now = std::time::Instant::now();
                 app.streaming_last_token_at = Some(now);
+                // Stamp for the right-edge token-rain animation. The
+                // renderer reads this each frame and lights one cell
+                // in the rain column with intensity proportional to
+                // recency (full at 0ms, dark at 800ms+).
+                app.last_token_arrival = Some(now);
                 // v126 responseLengthRef: accumulate ALL content bytes for the
                 // spinner's chars/4 token estimate.
                 if let Some(ref t) = text {
@@ -1734,6 +1766,7 @@ async fn run(
                 // Auto-save session after each assistant turn completes
                 if let Some(ref session_id) = app.current_session_id {
                     session::save_session(session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str()));
+                    app.last_session_save_at = Some(std::time::Instant::now());
                 }
                 // v126 queued-prompt drain on plain end_turn: model finished
                 // without tools to call → if anything's queued, fire it now.
@@ -1906,36 +1939,23 @@ async fn run(
                 app.lsp_servers = servers;
             }
             AppEvent::DiagnosticsUpdated { entries } => {
-                // Toast on transitions: empty → non-empty fires a warning
-                // (or error if any entry is severity Error). Non-empty →
-                // empty fires a success ("All diagnostics cleared"). The
-                // user notices state changes without having to read the
-                // dim row above the spinner.
-                let was_empty = app.diagnostics.is_empty();
-                let is_empty = entries.is_empty();
-                let had_errors = entries
-                    .iter()
-                    .any(|e| matches!(e.severity, crate::diagnostics::Severity::Error));
+                // Mirror the snapshot into the global so `stream_response`
+                // can inject diagnostics into the system prompt without
+                // having to touch every call site to thread through an
+                // `&[DiagnosticEntry]` parameter.
+                crate::diagnostics::set_global_snapshot(entries.clone());
                 app.diagnostics = entries;
-                if was_empty && !is_empty {
-                    let kind = if had_errors {
-                        toast::ToastKind::Error
-                    } else {
-                        toast::ToastKind::Warning
-                    };
-                    let summary = crate::diagnostics::format_summary(
-                        app.diagnostics.len(),
-                        crate::diagnostics::count_files(&app.diagnostics),
-                    );
-                    if let Some(s) = summary {
-                        toast::push_with_cap(&mut app.toasts, toast::Toast::new(kind, s));
-                    }
-                } else if !was_empty && is_empty {
-                    toast::push_with_cap(
-                        &mut app.toasts,
-                        toast::Toast::new(toast::ToastKind::Success, "All diagnostics cleared"),
-                    );
-                }
+                // Toast-on-transition was disabled by user request — the
+                // dim summary row above the spinner already surfaces the
+                // count, and Ctrl+O opens the full panel. Spawning a
+                // separate toast on launch (when cargo-check produced
+                // its initial set) doubled the noise. The transition
+                // toast is intentionally left commented out rather than
+                // deleted so it can be reinstated behind a setting if
+                // wanted later.
+                // let was_empty = app.diagnostics.is_empty();
+                // let is_empty = entries.is_empty();
+                // ...
             }
             AppEvent::ToolResult { tool_id, result } => {
                 tracing::info!(
@@ -1975,17 +1995,35 @@ async fn run(
                                 if matches!(tc.output, ToolOutput::LargeText(_)) {
                                     tc.is_collapsed = true;
                                 }
+                                // Fresh tool output → reset the
+                                // path-yank cursor so the next
+                                // `Ctrl+L` starts from the newest
+                                // file:line ref.
+                                app.path_yank_cursor = 0;
                                 if result.is_error() {
                                     notifications::notify_tool_failed(
                                         tc.kind.label(),
                                         &result.output,
                                     );
                                 }
-                                tc.status = if result.is_error() {
+                                let new_status = if result.is_error() {
                                     ToolStatus::Failed
                                 } else {
                                     ToolStatus::Complete
                                 };
+                                tc.status = new_status;
+                                // Sparkle on success: stamp the tool
+                                // id so the renderer can flash a `✦`
+                                // for ~600ms next to its gutter, then
+                                // fade. Failures intentionally don't
+                                // sparkle — celebration on red would
+                                // be confusing.
+                                if matches!(new_status, ToolStatus::Complete) {
+                                    app.recent_tool_completion = Some((
+                                        tc.id.clone(),
+                                        std::time::Instant::now(),
+                                    ));
+                                }
                                 found = true;
                                 break;
                             }
@@ -2550,6 +2588,46 @@ async fn run(
                         }
                     }
                 }
+            }
+            AppEvent::TeammateSpawned {
+                name,
+                team_name,
+                agent_id,
+                color,
+                agent_type,
+                cwd,
+            } => {
+                // Activate the team if this is the first teammate to
+                // join — switches the leader from "no team" to "running
+                // a team" so the teammate tree, send-message routing,
+                // and per-team context all light up.
+                if app.team_context.team_name.is_none() {
+                    app.team_context.team_name = Some(team_name.clone());
+                    app.team_context.team_file_path = Some(
+                        crate::swarm::team_helpers::team_file_path(&team_name),
+                    );
+                    app.team_context.lead_agent_id = Some(
+                        crate::swarm::types::make_agent_id(
+                            crate::swarm::TEAM_LEAD_NAME,
+                            &team_name,
+                        ),
+                    );
+                }
+                // Register the teammate in the in-memory roster. The
+                // render code reads this to draw the teammate tree and
+                // power per-name lookups; previously the HashMap stayed
+                // empty regardless of how many teammates spawned.
+                app.team_context.teammates.insert(
+                    agent_id.clone(),
+                    crate::swarm::types::TeammateInfo {
+                        name: name.clone(),
+                        agent_type,
+                        color,
+                        cwd,
+                        spawned_at: std::time::Instant::now(),
+                        backend: crate::swarm::types::BackendType::InProcess,
+                    },
+                );
             }
         }
 

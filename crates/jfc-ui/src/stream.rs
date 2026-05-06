@@ -180,6 +180,16 @@ pub async fn stream_response(
         if let Some(memories_section) = crate::memory::render_memories_section(&memories) {
             system_prompt.push_str(&memories_section);
         }
+
+        // Inject the most recent diagnostics snapshot so the model can
+        // act on cargo errors / lints without the user pasting them in.
+        // Read from the global the `DiagnosticsUpdated` handler keeps in
+        // sync — passing the slice through every call site would have
+        // forced a wide signature change.
+        let diags = crate::diagnostics::global_snapshot();
+        if let Some(block) = crate::diagnostics::render_for_prompt(&diags) {
+            system_prompt.push_str(&block);
+        }
     }
     // Thinking is a 3-way choice: adaptive (4.6+ Anthropic-native),
     // legacy budget_tokens (older Anthropic-native + select deployments),
@@ -548,6 +558,23 @@ pub fn dispatch_tools_batched(
             // the task panel reads "No messages yet" forever even
             // though the runner is streaming.
             let runner_task_id = crate::swarm::runner::teammate_task_id(&agent_id);
+            // Notify the leader's main loop that a teammate exists so
+            // `app.team_context.team_name` and `app.team_context.teammates`
+            // get populated. Previously these stayed empty for the
+            // entire session, so the team-mode tree (`team-lead` leader,
+            // teammate rows) never activated and we fell through to
+            // the generic subagent tree even though we were in a team.
+            let _ = tx_task.send(AppEvent::TeammateSpawned {
+                name: name.clone(),
+                team_name: team_name.clone(),
+                agent_id: agent_id.clone(),
+                color: Some(color.clone()),
+                agent_type: task_input.subagent_type.clone(),
+                cwd: std::env::current_dir()
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            });
             let _ = tx_task.send(AppEvent::TaskStarted {
                 task_id: runner_task_id.clone(),
                 description: format!("spawn teammate: {name}"),
@@ -964,6 +991,17 @@ fn model_supports_thinking(model: &str) -> bool {
         return false;
     }
     let m = model.to_lowercase();
+    // Opus 4.5 returns 400 "adaptive thinking is not supported on this
+    // model" for both adaptive AND legacy budget_tokens — the API
+    // rejects the entire `thinking` field for that release. Other Opus
+    // versions (4.6+) need adaptive thinking and are routed by the
+    // `model_supports_adaptive_thinking` predicate first, so reaching
+    // this branch with `opus-4-5` means we'd otherwise send the legacy
+    // form and get a 400. Mark it as no-thinking so the request goes
+    // through cleanly.
+    if m.contains("opus-4-5") {
+        return false;
+    }
     // Known thinking-capable Anthropic-native families
     let supports = m.contains("opus")
         || m.contains("sonnet-4-5")
@@ -1366,7 +1404,11 @@ mod thinking_gate_tests {
         assert!(model_supports_adaptive_thinking("claude-opus-4-6"));
         assert!(model_supports_adaptive_thinking("claude-opus-4-7"));
         assert!(model_supports_adaptive_thinking("claude-sonnet-4-6"));
-        assert!(model_supports_thinking("claude-opus-4-5"));
+        // Opus 4.5 rejects the entire `thinking` field — see
+        // `model_supports_thinking` for context. Excluded explicitly so
+        // a regression doesn't silently put the request back into the
+        // 400-loop.
+        assert!(!model_supports_thinking("claude-opus-4-5"));
         assert!(model_supports_thinking("claude-opus-4-6"));
     }
 

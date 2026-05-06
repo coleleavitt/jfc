@@ -91,6 +91,135 @@ fn input_has_text(app: &App) -> bool {
     app.textarea.lines().iter().any(|line| !line.is_empty())
 }
 
+/// Walk back through `messages` collecting `path:line(:col)?`
+/// references from the most recent tool output (Bash stdout/stderr,
+/// Read content, command-output blocks). Stops at the most recent
+/// turn — once we find references, we don't keep scanning older
+/// turns. Returns most-recent-first, deduplicated.
+///
+/// Pattern: at least one slash OR a recognised file extension,
+/// followed by `:<digits>` and optionally `:<digits>`. Matches:
+///   - `src/lib.rs:42:5`
+///   - `crates/jfc-ui/src/main.rs:1234`
+///   - `Cargo.toml:7`
+/// Doesn't match:
+///   - `12:34` (no path component)
+///   - `https://...` (the colon-port pattern)
+fn collect_recent_paths(messages: &[crate::types::ChatMessage]) -> Vec<String> {
+    use crate::types::{MessagePart, ToolOutput};
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    for msg in messages.iter().rev() {
+        let mut found_in_this_msg = false;
+        for part in msg.parts.iter().rev() {
+            let text: String = match part {
+                MessagePart::Text(s) | MessagePart::Reasoning(s) => s.clone(),
+                MessagePart::Tool(tc) => match &tc.output {
+                    ToolOutput::Text(s) => s.clone(),
+                    ToolOutput::LargeText(lt) => lt.content.clone(),
+                    ToolOutput::Command { stdout, stderr, .. } => {
+                        format!("{stdout}\n{stderr}")
+                    }
+                    ToolOutput::FileContent { content, path, .. } => {
+                        format!("{path}\n{content}")
+                    }
+                    _ => continue,
+                },
+                _ => continue,
+            };
+            for matched in scan_path_refs(&text) {
+                if seen.insert(matched.clone()) {
+                    out.push(matched);
+                    found_in_this_msg = true;
+                }
+            }
+        }
+        if found_in_this_msg {
+            // First-hit message wins — older turns aren't relevant
+            // for "what error did I just see?"
+            break;
+        }
+    }
+    out
+}
+
+/// Pure scanner: finds `path:line(:col)?` substrings. Implementation
+/// is character-walking instead of regex to avoid pulling another
+/// dep — the codebase is regex-free elsewhere.
+fn scan_path_refs(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let bytes = text.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        // Path char: alnum, /, ., _, -, +
+        if b.is_ascii_alphanumeric()
+            || b == b'/'
+            || b == b'.'
+            || b == b'_'
+            || b == b'-'
+            || b == b'+'
+        {
+            let start = i;
+            while i < bytes.len() {
+                let c = bytes[i];
+                if c.is_ascii_alphanumeric()
+                    || c == b'/'
+                    || c == b'.'
+                    || c == b'_'
+                    || c == b'-'
+                    || c == b'+'
+                {
+                    i += 1;
+                } else {
+                    break;
+                }
+            }
+            let path_end = i;
+            // Need a `:digit` after.
+            if i + 1 < bytes.len() && bytes[i] == b':' && bytes[i + 1].is_ascii_digit() {
+                let after_colon = i + 1;
+                let mut j = after_colon;
+                while j < bytes.len() && bytes[j].is_ascii_digit() {
+                    j += 1;
+                }
+                let line_end = j;
+                // Optional `:digit` for col.
+                let col_end = if j + 1 < bytes.len()
+                    && bytes[j] == b':'
+                    && bytes[j + 1].is_ascii_digit()
+                {
+                    let mut k = j + 1;
+                    while k < bytes.len() && bytes[k].is_ascii_digit() {
+                        k += 1;
+                    }
+                    k
+                } else {
+                    line_end
+                };
+                let path_slice = &text[start..path_end];
+                // Reject candidates that look like `12:34` (no path)
+                // or `http://...` (URL-port).
+                let is_url = path_slice.starts_with("http://")
+                    || path_slice.starts_with("https://")
+                    || path_slice.starts_with("file://");
+                let is_pure_number = path_slice.bytes().all(|c| c.is_ascii_digit());
+                let has_path_char =
+                    path_slice.contains('/') || path_slice.contains('.');
+                if !is_url && !is_pure_number && has_path_char && path_end > start {
+                    let captured = &text[start..col_end];
+                    out.push(captured.to_owned());
+                }
+                i = col_end;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
 /// Recompute `app.transcript_search.matches` from a fresh query.
 /// Case-insensitive substring match against each message's text /
 /// reasoning content. Updates `cursor` to 0 and scrolls to the first
@@ -1050,6 +1179,115 @@ pub async fn handle_key(
             app.transcript_search = Some(crate::app::TranscriptSearch::default());
             return Ok(false);
         }
+        (KeyModifiers::CONTROL, KeyCode::Char('e')) if !input_has_text(app) => {
+            // Edit the most recent user message. Pre-fills the
+            // textarea with its body and flags edit mode; submit
+            // replaces that message and drops subsequent turns.
+            // Esc cancels. Useful when the previous prompt was
+            // ambiguous and the user wants a clean re-roll without
+            // re-typing.
+            if app.is_streaming
+                || !app.pending_tool_calls.is_empty()
+                || app.pending_approval.is_some()
+            {
+                crate::toast::push_with_cap(
+                    &mut app.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Warning,
+                        "edit: still in flight, finish or interrupt first".to_string(),
+                    ),
+                );
+                return Ok(false);
+            }
+            let last_user: Option<(usize, String)> =
+                app.messages.iter().enumerate().rev().find_map(|(i, m)| {
+                    if m.role_is_user() && !m.is_compact_boundary() {
+                        m.parts.iter().find_map(|p| match p {
+                            MessagePart::Text(s)
+                                if !s.is_empty() && !s.starts_with('/') =>
+                            {
+                                Some((i, s.clone()))
+                            }
+                            _ => None,
+                        })
+                    } else {
+                        None
+                    }
+                });
+            if let Some((idx, text)) = last_user {
+                app.textarea.select_all();
+                app.textarea.cut();
+                app.textarea.insert_str(&text);
+                app.editing_message_idx = Some(idx);
+                crate::toast::push_with_cap(
+                    &mut app.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Info,
+                        "editing previous message — Esc cancels, Enter resubmits"
+                            .to_string(),
+                    ),
+                );
+            } else {
+                crate::toast::push_with_cap(
+                    &mut app.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Info,
+                        "no previous user message to edit".to_string(),
+                    ),
+                );
+            }
+            return Ok(false);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('l')) => {
+            // Yank a `path:line(:col)?` reference out of recent tool
+            // output to the clipboard. First press copies the most
+            // recent match; subsequent presses cycle through older
+            // matches in the same transcript scan, so a multi-error
+            // cargo run becomes "Ctrl+L Ctrl+L Ctrl+L" through each
+            // file:line pair.
+            let paths = collect_recent_paths(&app.messages);
+            if paths.is_empty() {
+                crate::toast::push_with_cap(
+                    &mut app.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Info,
+                        "no path:line refs found in recent output".to_string(),
+                    ),
+                );
+                return Ok(false);
+            }
+            let idx = app.path_yank_cursor % paths.len();
+            let target = &paths[idx];
+            match arboard::Clipboard::new()
+                .and_then(|mut c| c.set_text(target.clone()))
+            {
+                Ok(_) => {
+                    crate::toast::push_with_cap(
+                        &mut app.toasts,
+                        crate::toast::Toast::new(
+                            crate::toast::ToastKind::Success,
+                            format!(
+                                "📋 {} ({}/{})",
+                                target,
+                                idx + 1,
+                                paths.len()
+                            ),
+                        ),
+                    );
+                }
+                Err(e) => {
+                    crate::toast::push_with_cap(
+                        &mut app.toasts,
+                        crate::toast::Toast::new(
+                            crate::toast::ToastKind::Warning,
+                            format!("clipboard failed: {e}"),
+                        ),
+                    );
+                }
+            }
+            app.path_yank_cursor = app.path_yank_cursor.wrapping_add(1);
+            return Ok(false);
+        }
         (KeyModifiers::CONTROL, KeyCode::Char('r')) => {
             // Retry: re-submit the most recent user prompt as a fresh
             // turn. Useful after a stream error or when the model's
@@ -1224,6 +1462,10 @@ pub async fn handle_key(
                 app.show_diagnostic_panel = false;
             } else if !app.diagnostics.is_empty() {
                 app.show_diagnostic_panel = true;
+                // Reset scroll on open so the user always lands at the
+                // top of the list — the panel is more useful when
+                // freshly-arrived errors are visible first.
+                app.diagnostic_panel_scroll = 0;
                 // Opening the panel = acknowledgment. Mark every current
                 // entry as "delivered" so the summary row stops surfacing
                 // them. v126 cli.js:231025-231036 does the same — once a
@@ -1243,10 +1485,75 @@ pub async fn handle_key(
             }
             return Ok(false);
         }
+        // ─── Diagnostic panel scroll ───────────────────────────────────────
+        // Up/Down/PgUp/PgDn/Home/End/j/k/g/G all move the cursor inside
+        // the panel rather than the underlying transcript. The panel is
+        // a modal so other transcript-scroll bindings should NOT fire
+        // while it's open — gating each arm on `app.show_diagnostic_panel`
+        // keeps the behavior local. Saturating arithmetic prevents
+        // underflow at 0 and the renderer clamps to (total - viewport)
+        // each frame, so over-scrolling at the bottom stays in range.
+        (KeyModifiers::NONE, KeyCode::Down | KeyCode::Char('j')) if app.show_diagnostic_panel => {
+            app.diagnostic_panel_scroll = app.diagnostic_panel_scroll.saturating_add(1);
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::Up | KeyCode::Char('k')) if app.show_diagnostic_panel => {
+            app.diagnostic_panel_scroll = app.diagnostic_panel_scroll.saturating_sub(1);
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::PageDown) if app.show_diagnostic_panel => {
+            app.diagnostic_panel_scroll = app.diagnostic_panel_scroll.saturating_add(10);
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::PageUp) if app.show_diagnostic_panel => {
+            app.diagnostic_panel_scroll = app.diagnostic_panel_scroll.saturating_sub(10);
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::Home | KeyCode::Char('g'))
+            if app.show_diagnostic_panel =>
+        {
+            app.diagnostic_panel_scroll = 0;
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::End | KeyCode::Char('G'))
+            if app.show_diagnostic_panel =>
+        {
+            // The renderer clamps overflow each frame, so passing a
+            // large value lands at the bottom regardless of the
+            // current diagnostic-set size.
+            app.diagnostic_panel_scroll = usize::MAX / 2;
+            return Ok(false);
+        }
         (KeyModifiers::NONE, KeyCode::Esc) if app.show_diagnostic_panel => {
             app.show_diagnostic_panel = false;
             return Ok(false);
         }
+        // ─── Vim-style transcript navigation (input empty) ────────────────
+        // h/j/k/l for scroll, g/G for top/bottom. Only fire when the
+        // input bar is empty — typing actual prose with `j` shouldn't
+        // jump the transcript.
+        (KeyModifiers::NONE, KeyCode::Char('j')) if !input_has_text(app) => {
+            app.scroll_down(1);
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::Char('k')) if !input_has_text(app) => {
+            app.scroll_up(1);
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::Char('G')) if !input_has_text(app) => {
+            app.scroll_to_bottom();
+            app.follow_bottom = true;
+            return Ok(false);
+        }
+        (KeyModifiers::NONE, KeyCode::Char('g')) if !input_has_text(app) => {
+            // Lone `g` jumps to top. v126 / Vim use `gg` (double-g)
+            // for safety, but the input-empty gate already prevents
+            // typos here so a single `g` is fine.
+            app.scroll_offset = 0;
+            app.follow_bottom = false;
+            return Ok(false);
+        }
+
         (KeyModifiers::NONE, KeyCode::Char('?')) if !input_has_text(app) => {
             // `?` toggles the help overlay. Gated on empty input so
             // the user can still type a literal `?` mid-message.
@@ -1384,6 +1691,21 @@ pub async fn handle_key(
         (KeyModifiers::NONE, KeyCode::Esc) => {
             if app.show_help {
                 app.show_help = false;
+                return Ok(false);
+            }
+            // Cancel edit mode if armed; clear input so the user
+            // doesn't accidentally re-submit the prefilled text.
+            if app.editing_message_idx.is_some() {
+                app.editing_message_idx = None;
+                app.textarea.select_all();
+                app.textarea.cut();
+                crate::toast::push_with_cap(
+                    &mut app.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Info,
+                        "edit cancelled".to_string(),
+                    ),
+                );
                 return Ok(false);
             }
             if app.viewing_task_id.is_some() {
@@ -1687,8 +2009,32 @@ async fn handle_submit(
         text_preview = %&text[..text.len().min(80)],
         model = %app.model,
         message_count = app.messages.len(),
+        editing_idx = ?app.editing_message_idx,
         "handle_submit"
     );
+    // Edit mode: if the user is editing an earlier message, rewrite
+    // history at that index and drop everything after before
+    // continuing as a fresh submit. The new turn arrives as if the
+    // user had typed it just now — agentic loop, tool calls, and
+    // streaming all flow normally.
+    if let Some(edit_idx) = app.editing_message_idx.take() {
+        if edit_idx < app.messages.len() {
+            tracing::info!(
+                target: "jfc::input",
+                edit_idx,
+                kept = edit_idx,
+                dropped = app.messages.len() - edit_idx,
+                "edit-resubmit: rewriting history"
+            );
+            app.messages.truncate(edit_idx);
+        }
+        // Clear streaming-related state that might be tied to the
+        // dropped messages (assistant placeholder index, etc.).
+        app.streaming_text.clear();
+        app.streaming_reasoning.clear();
+        app.streaming_response_bytes = 0;
+        app.streaming_assistant_idx = None;
+    }
     if text.starts_with('/') {
         // `/check` re-runs the cargo-check producer. Handled here (not in
         // `handle_slash_command`) because it needs the tx channel to emit
@@ -1713,11 +2059,23 @@ async fn handle_submit(
     // result before queryDirect ever fires.
     let est = crate::compact::estimate_tokens(&app.messages);
     let level = crate::compact::compact_level(est, app.max_context_tokens);
-    if matches!(
+    let want_compact = matches!(
         level,
         crate::compact::CompactLevel::Compact | crate::compact::CompactLevel::Blocked
-    ) || app.force_compact_pending
-    {
+    ) || app.force_compact_pending;
+    // Respect the suppression flag set by the post-response compact
+    // path. Once compaction has permanently failed (provider doesn't
+    // support it, breaker latched, retries exhausted), retrying on
+    // every user message just re-fires the failing API call and
+    // re-warns. The user clears it manually via /compact, which sets
+    // `force_compact_pending` and bypasses this guard.
+    if want_compact && app.compact_suppressed && !app.force_compact_pending {
+        tracing::debug!(
+            target: "jfc::compact",
+            est, level = ?level,
+            "pre-submit compact skipped — compact_suppressed latched"
+        );
+    } else if want_compact {
         let manual = std::mem::take(&mut app.force_compact_pending);
         tracing::info!(
             target: "jfc::compact",
@@ -2178,6 +2536,10 @@ fn handle_slash_command(
             }
         }
         "/help" => {
+            // Also flip the visual overlay so users get the same
+            // keybindings table they'd see from `?`. The text dump
+            // below is kept for searchability + transcript export.
+            app.show_help = true;
             app.messages.push(ChatMessage::user("/help".into()));
             app.messages.push(ChatMessage::assistant(
                 "**Available commands:**\n\
@@ -2503,6 +2865,12 @@ fn handle_slash_command(
         "/export" => {
             handle_export_command(app);
         }
+        "/theme" => {
+            handle_theme_command(app, parts.get(1).copied().unwrap_or("").trim());
+        }
+        "/dump-context" | "/debug-context" => {
+            handle_dump_context_command(app);
+        }
         "/swarm-approve" | "/swarm-deny" => {
             // Resolve a pending swarm permission request from the user's
             // input bar. Toasts surface the request id when it lands;
@@ -2670,6 +3038,158 @@ fn handle_slash_command(
 /// `"remove <name>"` removes, `"switch <name>"` prints the manual cd hint.
 ///
 /// The runtime cwd of `App` is fixed at startup (see `App::new` in app.rs), so
+/// `/dump-context` — print everything jfc would inject into the
+/// system prompt (CLAUDE.md hierarchy, skills, memories, tool list,
+/// model info) into the transcript. The exact bytes the model sees
+/// on its next turn — useful when debugging "why did the model
+/// hallucinate that I had a Python project / why doesn't it know
+/// about this skill".
+fn handle_dump_context_command(app: &mut App) {
+    let mut report = String::new();
+    let cwd = std::path::PathBuf::from(&app.cwd);
+
+    report.push_str("**Model context dump**\n\n");
+    report.push_str(&format!("- Model: `{}`\n", app.model));
+    report.push_str(&format!("- Cwd: `{}`\n", app.cwd));
+    report.push_str(&format!(
+        "- Provider: `{}`\n",
+        app.provider.name()
+    ));
+    report.push_str(&format!(
+        "- Permission mode: `{:?}`\n",
+        app.permission_mode
+    ));
+    if let Some(ref branch) = app.git_branch {
+        report.push_str(&format!("- Git branch: `{branch}`\n"));
+    }
+    report.push('\n');
+
+    // CLAUDE.md hierarchy
+    let hierarchy = crate::context::ClaudeMdHierarchy::load(&cwd);
+    if let Some(rendered) = hierarchy.render() {
+        report.push_str("### CLAUDE.md hierarchy\n\n```\n");
+        report.push_str(&rendered);
+        report.push_str("\n```\n\n");
+    } else {
+        report.push_str("### CLAUDE.md hierarchy\n\n_(none — no managed/user/project files found)_\n\n");
+    }
+
+    // Skills
+    let skills = crate::agents::load_skills(&cwd);
+    report.push_str(&format!(
+        "### Skills ({})\n\n",
+        skills.len()
+    ));
+    for skill in &skills {
+        report.push_str(&format!("- `{}`\n", skill.name));
+    }
+    if skills.is_empty() {
+        report.push_str("_(none)_\n");
+    }
+    report.push('\n');
+
+    // Memories
+    let memories = crate::memory::load_all_memories(&cwd);
+    report.push_str(&format!(
+        "### Memories ({})\n\n",
+        memories.len()
+    ));
+    for mem in &memories {
+        let name = mem
+            .path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("(unknown)");
+        report.push_str(&format!(
+            "- **{}** ({:?}, {:?}/{:?})\n",
+            name,
+            mem.level,
+            mem.frontmatter.memory_type,
+            mem.frontmatter.scope,
+        ));
+    }
+    if memories.is_empty() {
+        report.push_str("_(none)_\n");
+    }
+    report.push('\n');
+
+    // Tools
+    let tools = crate::tools::all_tool_defs();
+    report.push_str(&format!(
+        "### Tool definitions sent to API ({})\n\n",
+        tools.len()
+    ));
+    for tool in &tools {
+        report.push_str(&format!("- `{}`\n", tool.name));
+    }
+    report.push('\n');
+
+    // Agents
+    let agents = crate::agents::load_agents(&cwd);
+    report.push_str(&format!("### Agents ({})\n\n", agents.len()));
+    for a in &agents {
+        report.push_str(&format!(
+            "- **{}** (model: `{}`, isolation: {:?})\n",
+            a.name,
+            a.model.as_deref().unwrap_or("inherit"),
+            a.isolation
+        ));
+    }
+    if agents.is_empty() {
+        report.push_str("_(none)_\n");
+    }
+    report.push('\n');
+
+    app.messages.push(crate::types::ChatMessage::user(
+        "/dump-context".to_string(),
+    ));
+    app.messages
+        .push(crate::types::ChatMessage::assistant(report));
+}
+
+/// `/theme [name]` — switch the live UI theme. With no argument,
+/// lists the available built-ins. Apply to `app.theme` so all
+/// subsequent renders pick it up. Doesn't persist (the user can
+/// add `theme` to their config.toml later if we ever wire one).
+fn handle_theme_command(app: &mut App, args: &str) {
+    let name = args.trim();
+    if name.is_empty() {
+        let list = crate::theme::Theme::available_names()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>()
+            .join(", ");
+        app.messages.push(crate::types::ChatMessage::assistant(
+            format!("Available themes: {list}.\n\nUse `/theme <name>` to switch."),
+        ));
+        return;
+    }
+    match crate::theme::Theme::by_name(name) {
+        Some(theme) => {
+            app.theme = theme;
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Success,
+                    format!("theme: {name}"),
+                ),
+            );
+        }
+        None => {
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Warning,
+                    format!(
+                        "unknown theme '{name}' — try one of: {}",
+                        crate::theme::Theme::available_names().join(", ")
+                    ),
+                ),
+            );
+        }
+    }
+}
+
 /// `/export` — serialize the current transcript as markdown and write
 /// it to `~/.config/jfc/exports/{session-id}_{timestamp}.md`. Useful
 /// for sharing a session, archiving long-running work, or feeding
