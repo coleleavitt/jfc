@@ -86,6 +86,10 @@ impl GraphBuilder {
                 | ".tox"
                 | "venv"
                 | ".venv"
+                | "research"
+                | ".sisyphus"
+                | "testdata"
+                | "fixtures"
         )
     }
 
