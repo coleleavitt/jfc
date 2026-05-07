@@ -32,3 +32,8 @@
 
 - `permissions::check_tool_permission` is a thin public wrapper around `RuleSet::evaluate`, intended for per-invocation hot-reload checks before tool execution.
 - `tools::execute_tool` now performs a cfg-gated permission check under `permission-automation`, loading `.jfc/features.toml` from the current working directory each invocation and returning a failed `ExecutionResult` for denied tools before dispatch.
+
+## Phase 2 hook dispatch marker
+
+- `HookHandler::IntentEnricher` remains non-mutating and returns `HookAction::Continue`; under `intent-gate` it now logs that enrichment was requested.
+- `tools::execute_tool` has the cfg-gated `hooks` marker for `BeforeToolDispatch` before permission checks and actual tool execution, but still does not execute hooks in the hot path.
