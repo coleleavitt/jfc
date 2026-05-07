@@ -1718,6 +1718,19 @@ pub(crate) fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -
         body["stream_options"] = json!({ "include_usage": true });
     }
 
+    if let Some(temp) = opts.temperature {
+        body["temperature"] = Value::from(temp);
+    }
+    if let Some(top_p) = opts.top_p {
+        body["top_p"] = Value::from(top_p);
+    }
+    if let Some(ref effort) = opts.reasoning_effort {
+        body["reasoning_effort"] = Value::from(effort.as_str());
+    }
+    for (key, value) in &opts.provider_options {
+        body[key] = value.clone();
+    }
+
     body
 }
 

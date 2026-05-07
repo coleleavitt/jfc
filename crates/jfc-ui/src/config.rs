@@ -41,6 +41,126 @@ pub struct Config {
     pub default: AgentConfig,
     #[serde(default)]
     pub agents: HashMap<String, AgentConfig>,
+    /// Domain-based model routing (e.g. "visual-engineering" → specific model).
+    #[serde(default)]
+    pub categories: HashMap<String, CategoryConfig>,
+    /// Permission automation rules (auto-approve/deny tool calls by pattern).
+    #[serde(default)]
+    pub permission_automation: Option<PermissionAutomationConfig>,
+    /// Background task concurrency limits.
+    #[serde(default)]
+    pub background_task: Option<BackgroundTaskConfig>,
+    /// Argus auto-review configuration.
+    #[serde(default)]
+    pub argus_auto_review: Option<ArgusAutoReviewConfig>,
+    /// MCP (Model Context Protocol) server definitions.
+    #[serde(default)]
+    pub mcp: HashMap<String, McpServerConfig>,
+    /// Agents to disable (by name).
+    #[serde(default)]
+    pub disabled_agents: Vec<String>,
+    /// Tools to disable globally (by name).
+    #[serde(default)]
+    pub disabled_tools: Vec<String>,
+    /// Experimental feature flags.
+    #[serde(default)]
+    pub experimental: Option<ExperimentalConfig>,
+}
+
+/// Category-based model routing.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct CategoryConfig {
+    pub model: Option<String>,
+    #[serde(default)]
+    pub prompt_append: Option<String>,
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+}
+
+/// Permission automation rules in main config.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PermissionAutomationConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub rules: Vec<PermissionRuleEntry>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PermissionRuleEntry {
+    pub action: String,
+    pub tool: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// Background task concurrency limits.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BackgroundTaskConfig {
+    #[serde(default = "default_provider_concurrency")]
+    pub provider_concurrency: usize,
+    #[serde(default = "default_model_concurrency")]
+    pub model_concurrency: usize,
+}
+
+fn default_provider_concurrency() -> usize {
+    3
+}
+
+fn default_model_concurrency() -> usize {
+    5
+}
+
+impl Default for BackgroundTaskConfig {
+    fn default() -> Self {
+        Self {
+            provider_concurrency: 3,
+            model_concurrency: 5,
+        }
+    }
+}
+
+/// Argus auto-review configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ArgusAutoReviewConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub threshold: Option<u32>,
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+/// MCP server definition.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct McpServerConfig {
+    #[serde(rename = "type", default)]
+    pub server_type: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
+/// Experimental feature flags.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ExperimentalConfig {
+    #[serde(default)]
+    pub fork_agent_enabled: bool,
+    #[serde(default)]
+    pub hashline_edit: bool,
+    #[serde(default)]
+    pub model_fallback: bool,
 }
 
 /// Feature configuration loaded from `.jfc/features.toml`.
@@ -242,7 +362,7 @@ pub struct AgentConfig {
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
-    pub fallback_models: Vec<String>,
+    pub fallback_models: Vec<FallbackModel>,
     #[serde(default)]
     pub temperature: Option<f64>,
     #[serde(default)]
@@ -255,6 +375,66 @@ pub struct AgentConfig {
     pub max_tokens: Option<u32>,
     #[serde(default)]
     pub thinking_budget: Option<u32>,
+    /// Per-tool permission overrides: { "Bash": "allow", "Edit": "deny", "Write": "ask" }
+    #[serde(default)]
+    pub permission: HashMap<String, String>,
+    /// Text appended to the system prompt for this agent.
+    #[serde(default)]
+    pub prompt_append: Option<String>,
+    /// Complete replacement system prompt (overrides default).
+    #[serde(default)]
+    pub prompt: Option<String>,
+    /// OpenAI reasoning effort: "low", "medium", "high".
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    /// Sampling parameter (0.0 - 1.0).
+    #[serde(default)]
+    pub top_p: Option<f64>,
+    /// Model variant (e.g. "max").
+    #[serde(default)]
+    pub variant: Option<String>,
+    /// TUI color for this agent (hex like "#FF0000" or named like "blue").
+    #[serde(default)]
+    pub color: Option<String>,
+    /// Provider-specific options passed through to the API.
+    #[serde(default)]
+    pub provider_options: HashMap<String, serde_json::Value>,
+    /// Model to use for context compaction.
+    #[serde(default)]
+    pub compaction_model: Option<String>,
+    /// Model to use for ultrawork mode.
+    #[serde(default)]
+    pub ultrawork_model: Option<String>,
+    /// Text verbosity level: "concise", "normal", "verbose".
+    #[serde(default)]
+    pub text_verbosity: Option<String>,
+}
+
+/// A fallback model entry — either a plain string or an object with settings.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum FallbackModel {
+    /// Just a model ID string.
+    Simple(String),
+    /// Model with per-fallback settings.
+    Detailed {
+        model: String,
+        #[serde(default)]
+        variant: Option<String>,
+        #[serde(default)]
+        temperature: Option<f64>,
+        #[serde(default)]
+        reasoning_effort: Option<String>,
+    },
+}
+
+impl FallbackModel {
+    pub fn model_id(&self) -> &str {
+        match self {
+            Self::Simple(s) => s,
+            Self::Detailed { model, .. } => model,
+        }
+    }
 }
 
 /// Canonical path to the config file. Always returned (even if the file
@@ -324,6 +504,33 @@ pub fn load() -> Config {
     }
 }
 
+/// Resolve a prompt value that may be a `file://` URI.
+/// If it starts with `file://`, read the file contents.
+/// Otherwise return the string as-is.
+pub fn resolve_prompt(value: &str, base_dir: Option<&std::path::Path>) -> String {
+    if let Some(path_str) = value.strip_prefix("file://") {
+        let path = if let Some(base) = base_dir {
+            base.join(path_str)
+        } else {
+            PathBuf::from(path_str)
+        };
+        match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) => {
+                tracing::warn!(
+                    target: "jfc::config",
+                    path = %path.display(),
+                    error = %e,
+                    "failed to read prompt file, using raw value"
+                );
+                value.to_owned()
+            }
+        }
+    } else {
+        value.to_owned()
+    }
+}
+
 /// Resolve which model id should be used for a given agent, with a four-step
 /// cascade:
 ///
@@ -342,7 +549,7 @@ pub fn resolve_model(cfg: &Config, agent_name: Option<&str>) -> Option<String> {
             if let Some(m) = agent.model.as_ref().filter(|s| !s.is_empty()) {
                 Some(m.clone())
             } else if let Some(m) = agent.fallback_models.first() {
-                Some(m.clone())
+                Some(m.model_id().to_owned())
             } else {
                 cfg.default.model.clone().filter(|s| !s.is_empty())
             }
@@ -419,7 +626,7 @@ mode = "subagent"
             cfg.default.model.as_deref(),
             Some("anthropic/claude-opus-4-7")
         );
-        assert_eq!(cfg.default.fallback_models, vec!["openai/gpt-5"]);
+        assert_eq!(cfg.default.fallback_models[0].model_id(), "openai/gpt-5");
         assert_eq!(cfg.default.temperature, Some(0.7));
 
         // [agents.code-reviewer]
@@ -431,7 +638,10 @@ mode = "subagent"
             reviewer.model.as_deref(),
             Some("anthropic/claude-sonnet-4-6")
         );
-        assert_eq!(reviewer.fallback_models, vec!["anthropic/claude-haiku-4-5"]);
+        assert_eq!(
+            reviewer.fallback_models[0].model_id(),
+            "anthropic/claude-haiku-4-5"
+        );
         assert_eq!(reviewer.temperature, Some(0.1));
         assert_eq!(reviewer.disallowed_tools, vec!["Bash", "Write"]);
         assert_eq!(
@@ -546,6 +756,197 @@ model = "x"
 "#,
         );
         assert!(agent_disallowed(&cfg2, "formatter").is_empty());
+    }
+
+    #[test]
+    fn parse_categories_normal() {
+        let cfg = parse(
+            r#"
+[categories.visual-engineering]
+model = "anthropic/claude-sonnet-4-6"
+temperature = 0.3
+
+[categories.writing]
+model = "anthropic/claude-opus-4-7"
+prompt_append = "Focus on clarity and conciseness."
+"#,
+        );
+        assert_eq!(cfg.categories.len(), 2);
+        let visual = cfg.categories.get("visual-engineering").unwrap();
+        assert_eq!(visual.model.as_deref(), Some("anthropic/claude-sonnet-4-6"));
+        assert_eq!(visual.temperature, Some(0.3));
+    }
+
+    #[test]
+    fn parse_agent_permissions_normal() {
+        let cfg = parse(
+            r#"
+[agents.reviewer]
+model = "x"
+
+[agents.reviewer.permission]
+Bash = "deny"
+Edit = "allow"
+Write = "ask"
+"#,
+        );
+        let reviewer = cfg.agents.get("reviewer").unwrap();
+        assert_eq!(
+            reviewer.permission.get("Bash").map(|s| s.as_str()),
+            Some("deny")
+        );
+        assert_eq!(
+            reviewer.permission.get("Edit").map(|s| s.as_str()),
+            Some("allow")
+        );
+    }
+
+    #[test]
+    fn parse_prompt_append_normal() {
+        let cfg = parse(
+            r#"
+[agents.coder]
+model = "x"
+prompt_append = "Always write tests."
+"#,
+        );
+        let coder = cfg.agents.get("coder").unwrap();
+        assert_eq!(coder.prompt_append.as_deref(), Some("Always write tests."));
+    }
+
+    #[test]
+    fn parse_reasoning_effort_normal() {
+        let cfg = parse(
+            r#"
+[agents.thinker]
+model = "openai/o3"
+reasoning_effort = "high"
+top_p = 0.95
+variant = "max"
+"#,
+        );
+        let thinker = cfg.agents.get("thinker").unwrap();
+        assert_eq!(thinker.reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(thinker.top_p, Some(0.95));
+        assert_eq!(thinker.variant.as_deref(), Some("max"));
+    }
+
+    #[test]
+    fn parse_disabled_lists_normal() {
+        let cfg = parse(
+            r#"
+disabled_agents = ["formatter", "linter"]
+disabled_tools = ["Bash"]
+"#,
+        );
+        assert_eq!(cfg.disabled_agents, vec!["formatter", "linter"]);
+        assert_eq!(cfg.disabled_tools, vec!["Bash"]);
+    }
+
+    #[test]
+    fn parse_mcp_config_normal() {
+        let cfg = parse(
+            r#"
+[mcp.filesystem]
+type = "stdio"
+command = "npx"
+args = ["-y", "@anthropic/mcp-filesystem"]
+
+[mcp.filesystem.env]
+HOME = "/home/user"
+"#,
+        );
+        let fs = cfg.mcp.get("filesystem").unwrap();
+        assert_eq!(fs.command.as_deref(), Some("npx"));
+        assert_eq!(fs.args, vec!["-y", "@anthropic/mcp-filesystem"]);
+        assert_eq!(fs.env.get("HOME").map(|s| s.as_str()), Some("/home/user"));
+    }
+
+    #[test]
+    fn parse_fallback_models_mixed_normal() {
+        let cfg = parse(
+            r#"
+[default]
+model = "primary"
+fallback_models = [
+    "simple-fallback",
+    { model = "detailed-fallback", variant = "max", temperature = 0.5 }
+]
+"#,
+        );
+        assert_eq!(cfg.default.fallback_models.len(), 2);
+        assert_eq!(cfg.default.fallback_models[0].model_id(), "simple-fallback");
+        assert_eq!(
+            cfg.default.fallback_models[1].model_id(),
+            "detailed-fallback"
+        );
+        if let FallbackModel::Detailed {
+            variant,
+            temperature,
+            ..
+        } = &cfg.default.fallback_models[1]
+        {
+            assert_eq!(variant.as_deref(), Some("max"));
+            assert_eq!(*temperature, Some(0.5));
+        } else {
+            panic!("expected Detailed variant");
+        }
+    }
+
+    #[test]
+    fn parse_experimental_flags_normal() {
+        let cfg = parse(
+            r#"
+[experimental]
+hashline_edit = true
+model_fallback = true
+fork_agent_enabled = false
+"#,
+        );
+        let exp = cfg.experimental.unwrap();
+        assert!(exp.hashline_edit);
+        assert!(exp.model_fallback);
+        assert!(!exp.fork_agent_enabled);
+    }
+
+    #[test]
+    fn parse_permission_automation_normal() {
+        let cfg = parse(
+            r#"
+[permission_automation]
+enabled = true
+
+[[permission_automation.rules]]
+action = "allow"
+tool = "Edit"
+path = "src/**"
+
+[[permission_automation.rules]]
+action = "deny"
+tool = "Bash"
+reason = "no shell access"
+"#,
+        );
+        let pa = cfg.permission_automation.unwrap();
+        assert!(pa.enabled);
+        assert_eq!(pa.rules.len(), 2);
+        assert_eq!(pa.rules[0].action, "allow");
+        assert_eq!(pa.rules[1].tool, "Bash");
+    }
+
+    #[test]
+    fn resolve_prompt_file_uri_normal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prompt_file = tmp.path().join("system.md");
+        std::fs::write(&prompt_file, "You are a helpful assistant.").unwrap();
+        let resolved = resolve_prompt("file://system.md", Some(tmp.path()));
+        assert_eq!(resolved, "You are a helpful assistant.");
+    }
+
+    #[test]
+    fn resolve_prompt_plain_string_normal() {
+        let resolved = resolve_prompt("Just a plain prompt", None);
+        assert_eq!(resolved, "Just a plain prompt");
     }
 
     #[test]

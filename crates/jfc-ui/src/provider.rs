@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{borrow::Borrow, fmt, ops::Deref, pin::Pin};
+use std::{borrow::Borrow, collections::HashMap, fmt, ops::Deref, pin::Pin};
 
 use async_trait::async_trait;
 use futures::Stream;
@@ -349,6 +349,14 @@ pub struct StreamOptions {
     /// When true, use `{"type": "adaptive"}` instead of budget_tokens.
     /// Required for Opus 4.6+ and Sonnet 4.6+ which reject budget_tokens.
     pub adaptive_thinking: bool,
+    /// Sampling temperature (0.0 - 2.0).
+    pub temperature: Option<f64>,
+    /// Nucleus sampling parameter (0.0 - 1.0).
+    pub top_p: Option<f64>,
+    /// OpenAI reasoning effort: "low", "medium", "high".
+    pub reasoning_effort: Option<String>,
+    /// Provider-specific options merged into the request body.
+    pub provider_options: HashMap<String, serde_json::Value>,
 }
 
 impl StreamOptions {
@@ -360,6 +368,10 @@ impl StreamOptions {
             tools: Vec::new(),
             thinking_budget: None,
             adaptive_thinking: false,
+            temperature: None,
+            top_p: None,
+            reasoning_effort: None,
+            provider_options: HashMap::new(),
         }
     }
 
@@ -381,6 +393,21 @@ impl StreamOptions {
     /// Use adaptive thinking (Opus 4.6+, Sonnet 4.6+). Ignores budget_tokens.
     pub fn adaptive(mut self) -> Self {
         self.adaptive_thinking = true;
+        self
+    }
+
+    pub fn temperature(mut self, t: f64) -> Self {
+        self.temperature = Some(t);
+        self
+    }
+
+    pub fn top_p(mut self, p: f64) -> Self {
+        self.top_p = Some(p);
+        self
+    }
+
+    pub fn reasoning_effort(mut self, effort: impl Into<String>) -> Self {
+        self.reasoning_effort = Some(effort.into());
         self
     }
 
