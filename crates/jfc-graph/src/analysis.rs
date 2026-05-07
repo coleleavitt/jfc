@@ -447,8 +447,15 @@ pub fn component_groups(graph: &CodeGraph) -> Vec<Vec<NodeId>> {
 /// code graphs which are typically <10K nodes.
 pub fn critical_nodes(graph: &CodeGraph) -> Vec<NodeId> {
     let inner = graph.inner();
-    if inner.node_count() == 0 {
+    let node_count = inner.node_count();
+    if node_count == 0 {
         return vec![];
+    }
+
+    // O(V × (V + E)) — same stack overflow risk as bridge_edges on large graphs.
+    if node_count > 500 {
+        tracing::debug!(node_count, "critical_nodes: graph too large for brute-force, skipping");
+        return Vec::new();
     }
 
     let base_components = count_components(graph);
@@ -507,8 +514,24 @@ pub struct BridgeEdge {
 ///
 /// Uses brute-force edge removal + component recount. O(E * (V + E)).
 pub fn bridge_edges(graph: &CodeGraph) -> Vec<BridgeEdge> {
-    let base = count_components(graph);
     let inner = graph.inner();
+    let node_count = inner.node_count();
+    let edge_count = inner.edge_count();
+
+    // Guard: this is O(E × (V + E)). On graphs with >500 nodes the brute-force
+    // approach risks stack overflow on tokio's 8MB worker threads. Return empty
+    // rather than crash — callers should check graph size or use a different
+    // algorithm for large graphs.
+    if node_count > 500 || edge_count > 2000 {
+        tracing::debug!(
+            node_count,
+            edge_count,
+            "bridge_edges: graph too large for brute-force, skipping"
+        );
+        return Vec::new();
+    }
+
+    let base = count_components(graph);
     let mut bridges = Vec::new();
 
     for edge in inner.edge_references() {
@@ -691,6 +714,619 @@ pub fn weighted_shortest_path(
     }
 
     None
+}
+
+// ─── Transitive Reduction ────────────────────────────────────────────────────
+
+/// An edge that is transitively redundant — removing it does not change
+/// reachability in the graph. Only meaningful for acyclic graphs.
+#[derive(Debug, Clone)]
+pub struct RedundantEdge {
+    pub from: NodeId,
+    pub to: NodeId,
+}
+
+/// Compute the transitive reduction of the call graph: identify edges that are
+/// redundant because an alternative path exists.
+///
+/// Only operates on the DAG portion of the graph (edges within SCCs are skipped).
+/// Returns the list of edges that can be removed without affecting reachability.
+///
+/// Use case: cleaning up visual call-graph displays to show only essential edges.
+pub fn transitive_reduction(graph: &CodeGraph) -> Vec<RedundantEdge> {
+    let inner = graph.inner();
+    let mut redundant = Vec::new();
+
+    // For each edge (u, v), check if there is an alternative path u → ... → v
+    // of length ≥ 2 (i.e., going through at least one intermediate node).
+    for edge in inner.edge_references() {
+        let from = edge.source();
+        let to = edge.target();
+
+        // BFS/DFS from `from` to `to` avoiding the direct edge
+        let has_alt_path = {
+            let mut visited: HashSet<NodeIndex> = HashSet::new();
+            visited.insert(from);
+            let mut stack: Vec<NodeIndex> = Vec::new();
+
+            // Seed with neighbors of `from` OTHER than `to` via this edge
+            for e in inner.edges_directed(from, Direction::Outgoing) {
+                if e.target() != to || e.id() != edge.id() {
+                    if e.target() == to {
+                        // Found alternative direct edge — still counts as alt path
+                        // but we want length ≥ 2, so continue
+                    }
+                    if visited.insert(e.target()) {
+                        stack.push(e.target());
+                    }
+                }
+            }
+
+            let mut found = false;
+            while let Some(current) = stack.pop() {
+                if current == to {
+                    found = true;
+                    break;
+                }
+                for neighbor in inner.neighbors_directed(current, Direction::Outgoing) {
+                    if visited.insert(neighbor) {
+                        stack.push(neighbor);
+                    }
+                }
+            }
+            found
+        };
+
+        if has_alt_path {
+            if let (Some(from_id), Some(to_id)) = (graph.node_id_for(from), graph.node_id_for(to)) {
+                redundant.push(RedundantEdge {
+                    from: from_id.clone(),
+                    to: to_id.clone(),
+                });
+            }
+        }
+    }
+
+    redundant
+}
+
+/// Return the essential edges — the graph with transitive-redundant edges removed.
+/// This is the minimal edge set that preserves reachability.
+pub fn essential_edges(graph: &CodeGraph) -> Vec<(NodeId, NodeId)> {
+    let redundant: HashSet<(NodeId, NodeId)> = transitive_reduction(graph)
+        .into_iter()
+        .map(|r| (r.from, r.to))
+        .collect();
+
+    let inner = graph.inner();
+    inner
+        .edge_references()
+        .filter_map(|e| {
+            let from = graph.node_id_for(e.source())?.clone();
+            let to = graph.node_id_for(e.target())?.clone();
+            if redundant.contains(&(from.clone(), to.clone())) {
+                None
+            } else {
+                Some((from, to))
+            }
+        })
+        .collect()
+}
+
+// ─── Graph Coloring (Parallelism Analysis) ───────────────────────────────────
+
+/// Result of graph coloring — nodes with the same color can be edited in parallel.
+#[derive(Debug, Clone)]
+pub struct ColorAssignment {
+    pub node: NodeId,
+    pub color: usize,
+}
+
+/// Color group — all nodes in this group can be edited simultaneously without conflicts.
+#[derive(Debug, Clone)]
+pub struct ParallelGroup {
+    pub color: usize,
+    pub members: Vec<NodeId>,
+}
+
+/// Compute a graph coloring that determines which functions can be edited simultaneously.
+///
+/// Two nodes that share an edge (caller/callee relationship) get different colors.
+/// Nodes with the same color are independent and can be edited in parallel.
+///
+/// Uses a greedy DSatur-style heuristic. Returns groups sorted by size (largest first).
+pub fn parallel_edit_groups(graph: &CodeGraph) -> Vec<ParallelGroup> {
+    let inner = graph.inner();
+    if inner.node_count() == 0 {
+        return vec![];
+    }
+
+    // Build adjacency treating the directed graph as undirected
+    let mut adj: HashMap<NodeIndex, HashSet<NodeIndex>> = HashMap::new();
+    for idx in inner.node_indices() {
+        adj.entry(idx).or_default();
+        for neighbor in inner.neighbors_directed(idx, Direction::Outgoing) {
+            adj.entry(idx).or_default().insert(neighbor);
+            adj.entry(neighbor).or_default().insert(idx);
+        }
+        for neighbor in inner.neighbors_directed(idx, Direction::Incoming) {
+            adj.entry(idx).or_default().insert(neighbor);
+            adj.entry(neighbor).or_default().insert(idx);
+        }
+    }
+
+    // Greedy coloring: assign each node the smallest color not used by neighbors
+    let mut colors: HashMap<NodeIndex, usize> = HashMap::new();
+
+    // Process nodes in order of decreasing degree (saturation heuristic)
+    let mut nodes: Vec<NodeIndex> = inner.node_indices().collect();
+    nodes.sort_by(|a, b| {
+        let deg_a = adj.get(a).map(|s| s.len()).unwrap_or(0);
+        let deg_b = adj.get(b).map(|s| s.len()).unwrap_or(0);
+        deg_b.cmp(&deg_a)
+    });
+
+    for node in &nodes {
+        let neighbor_colors: HashSet<usize> = adj
+            .get(node)
+            .map(|neighbors| {
+                neighbors
+                    .iter()
+                    .filter_map(|n| colors.get(n).copied())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Find smallest unused color
+        let mut color = 0;
+        while neighbor_colors.contains(&color) {
+            color += 1;
+        }
+        colors.insert(*node, color);
+    }
+
+    // Group by color
+    let mut groups: HashMap<usize, Vec<NodeId>> = HashMap::new();
+    for (idx, color) in &colors {
+        if let Some(id) = graph.node_id_for(*idx) {
+            groups.entry(*color).or_default().push(id.clone());
+        }
+    }
+
+    let mut result: Vec<ParallelGroup> = groups
+        .into_iter()
+        .map(|(color, members)| ParallelGroup { color, members })
+        .collect();
+    result.sort_by(|a, b| b.members.len().cmp(&a.members.len()));
+    result
+}
+
+/// Returns the chromatic number (minimum colors needed) — a measure of how
+/// interdependent the codebase is.
+pub fn chromatic_number(graph: &CodeGraph) -> usize {
+    let groups = parallel_edit_groups(graph);
+    groups.len()
+}
+
+// ─── Maximal Cliques (Module Clustering) ─────────────────────────────────────
+
+/// A clique — a set of nodes that are all mutually connected.
+#[derive(Debug, Clone)]
+pub struct Clique {
+    pub members: Vec<NodeId>,
+}
+
+/// Find all maximal cliques in the code graph (treated as undirected).
+///
+/// A clique is a set of functions that ALL call each other. These represent
+/// tightly-coupled clusters that should probably live in the same module.
+///
+/// Uses the Bron-Kerbosch algorithm with pivoting. Only returns cliques
+/// with 2+ members.
+pub fn maximal_cliques(graph: &CodeGraph) -> Vec<Clique> {
+    let inner = graph.inner();
+    if inner.node_count() == 0 {
+        return vec![];
+    }
+
+    // Build undirected adjacency
+    let mut adj: HashMap<NodeIndex, HashSet<NodeIndex>> = HashMap::new();
+    for idx in inner.node_indices() {
+        adj.entry(idx).or_default();
+    }
+    for edge in inner.edge_references() {
+        adj.entry(edge.source()).or_default().insert(edge.target());
+        adj.entry(edge.target()).or_default().insert(edge.source());
+    }
+
+    let all_nodes: HashSet<NodeIndex> = inner.node_indices().collect();
+    let mut cliques: Vec<Vec<NodeIndex>> = Vec::new();
+
+    bron_kerbosch(
+        &adj,
+        HashSet::new(),
+        all_nodes,
+        HashSet::new(),
+        &mut cliques,
+    );
+
+    cliques
+        .into_iter()
+        .filter(|c| c.len() >= 2)
+        .map(|c| Clique {
+            members: c
+                .into_iter()
+                .filter_map(|idx| graph.node_id_for(idx).cloned())
+                .collect(),
+        })
+        .collect()
+}
+
+/// Bron-Kerbosch algorithm with pivoting.
+fn bron_kerbosch(
+    adj: &HashMap<NodeIndex, HashSet<NodeIndex>>,
+    r: HashSet<NodeIndex>,
+    mut p: HashSet<NodeIndex>,
+    mut x: HashSet<NodeIndex>,
+    cliques: &mut Vec<Vec<NodeIndex>>,
+) {
+    if p.is_empty() && x.is_empty() {
+        if r.len() >= 2 {
+            cliques.push(r.into_iter().collect());
+        }
+        return;
+    }
+
+    // Pick pivot with max degree in P ∪ X
+    let pivot = p
+        .union(&x)
+        .max_by_key(|&&v| {
+            adj.get(&v)
+                .map(|n| n.intersection(&p).count())
+                .unwrap_or(0)
+        })
+        .copied();
+
+    let pivot_neighbors: HashSet<NodeIndex> = pivot
+        .and_then(|pv| adj.get(&pv))
+        .cloned()
+        .unwrap_or_default();
+
+    let candidates: Vec<NodeIndex> = p.difference(&pivot_neighbors).copied().collect();
+
+    for v in candidates {
+        let v_neighbors = adj.get(&v).cloned().unwrap_or_default();
+
+        let mut new_r = r.clone();
+        new_r.insert(v);
+
+        let new_p: HashSet<NodeIndex> = p.intersection(&v_neighbors).copied().collect();
+        let new_x: HashSet<NodeIndex> = x.intersection(&v_neighbors).copied().collect();
+
+        bron_kerbosch(adj, new_r, new_p, new_x, cliques);
+
+        p.remove(&v);
+        x.insert(v);
+    }
+}
+
+// ─── Floyd-Warshall All-Pairs Shortest Paths ─────────────────────────────────
+
+/// Distance between two nodes.
+#[derive(Debug, Clone)]
+pub struct NodeDistance {
+    pub from: NodeId,
+    pub to: NodeId,
+    pub distance: f32,
+}
+
+/// Compute all-pairs shortest paths using Floyd-Warshall.
+///
+/// Returns a distance matrix (as a HashMap for sparse access).
+/// Only suitable for graphs with <2K nodes due to O(V³) complexity.
+///
+/// Use case: pre-compute distances for fast "how far is X from Y?" queries.
+pub fn all_pairs_distances(graph: &CodeGraph) -> HashMap<(NodeId, NodeId), f32> {
+    let inner = graph.inner();
+    let indices: Vec<NodeIndex> = inner.node_indices().collect();
+    let n = indices.len();
+
+    if n == 0 || n > 2000 {
+        return HashMap::new();
+    }
+
+    // Map NodeIndex → sequential index for the matrix
+    let idx_to_seq: HashMap<NodeIndex, usize> =
+        indices.iter().enumerate().map(|(i, &idx)| (idx, i)).collect();
+
+    // Initialize distance matrix
+    let mut dist = vec![vec![f32::INFINITY; n]; n];
+    for i in 0..n {
+        dist[i][i] = 0.0;
+    }
+
+    // Fill from edges
+    for edge in inner.edge_references() {
+        if let (Some(&from_seq), Some(&to_seq)) = (
+            idx_to_seq.get(&edge.source()),
+            idx_to_seq.get(&edge.target()),
+        ) {
+            let w = edge.weight().weight;
+            if w < dist[from_seq][to_seq] {
+                dist[from_seq][to_seq] = w;
+            }
+        }
+    }
+
+    // Floyd-Warshall relaxation
+    for k in 0..n {
+        for i in 0..n {
+            for j in 0..n {
+                let through_k = dist[i][k] + dist[k][j];
+                if through_k < dist[i][j] {
+                    dist[i][j] = through_k;
+                }
+            }
+        }
+    }
+
+    // Convert back to NodeId pairs
+    let mut result = HashMap::new();
+    for i in 0..n {
+        for j in 0..n {
+            if i != j && dist[i][j] < f32::INFINITY {
+                if let (Some(from_id), Some(to_id)) = (
+                    graph.node_id_for(indices[i]),
+                    graph.node_id_for(indices[j]),
+                ) {
+                    result.insert((from_id.clone(), to_id.clone()), dist[i][j]);
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Find the N closest nodes to a given node (by weighted path distance).
+pub fn nearest_neighbors(graph: &CodeGraph, node: &NodeId, n: usize) -> Vec<(NodeId, f32)> {
+    let Some(node_idx) = graph.resolve(node) else {
+        return vec![];
+    };
+    let inner = graph.inner();
+
+    // Use Dijkstra from this single node (more efficient than full Floyd-Warshall)
+    use std::cmp::Ordering;
+    use std::collections::BinaryHeap;
+
+    #[derive(Clone, PartialEq)]
+    struct State {
+        cost: f32,
+        node: NodeIndex,
+    }
+    impl Eq for State {}
+    impl PartialOrd for State {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+    impl Ord for State {
+        fn cmp(&self, other: &Self) -> Ordering {
+            other
+                .cost
+                .partial_cmp(&self.cost)
+                .unwrap_or(Ordering::Equal)
+        }
+    }
+
+    let mut dist: HashMap<NodeIndex, f32> = HashMap::new();
+    let mut heap = BinaryHeap::new();
+    dist.insert(node_idx, 0.0);
+    heap.push(State { cost: 0.0, node: node_idx });
+
+    while let Some(State { cost, node: current }) = heap.pop() {
+        if cost > *dist.get(&current).unwrap_or(&f32::INFINITY) {
+            continue;
+        }
+        for edge in inner.edges_directed(current, Direction::Outgoing) {
+            let next = edge.target();
+            let next_cost = cost + edge.weight().weight;
+            if next_cost < *dist.get(&next).unwrap_or(&f32::INFINITY) {
+                dist.insert(next, next_cost);
+                heap.push(State { cost: next_cost, node: next });
+            }
+        }
+    }
+
+    let mut neighbors: Vec<(NodeId, f32)> = dist
+        .iter()
+        .filter(|(idx, _)| **idx != node_idx)
+        .filter_map(|(idx, &cost)| graph.node_id_for(*idx).map(|id| (id.clone(), cost)))
+        .collect();
+    neighbors.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+    neighbors.truncate(n);
+    neighbors
+}
+
+// ─── Dot/Graphviz Export ─────────────────────────────────────────────────────
+
+/// Generate a Graphviz DOT representation of the code graph.
+///
+/// Nodes are labeled with their name and kind; edges with their kind.
+/// The output can be piped to `dot -Tsvg` for visualization.
+pub fn to_dot(graph: &CodeGraph) -> String {
+    let inner = graph.inner();
+    let mut out = String::from("digraph CodeGraph {\n");
+    out.push_str("    rankdir=LR;\n");
+    out.push_str("    node [shape=box, fontname=\"monospace\", fontsize=10];\n");
+    out.push_str("    edge [fontname=\"monospace\", fontsize=8];\n\n");
+
+    // Nodes
+    for idx in inner.node_indices() {
+        if let Some(data) = inner.node_weight(idx) {
+            let shape = match data.kind {
+                crate::nodes::NodeKind::Function => "box",
+                crate::nodes::NodeKind::Struct => "record",
+                crate::nodes::NodeKind::Enum => "diamond",
+                crate::nodes::NodeKind::Module => "folder",
+                crate::nodes::NodeKind::Trait => "ellipse",
+            };
+            let label = format!("{}\\n({:?})", data.name, data.kind);
+            out.push_str(&format!(
+                "    n{} [label=\"{}\", shape={}];\n",
+                idx.index(),
+                label,
+                shape
+            ));
+        }
+    }
+
+    out.push('\n');
+
+    // Edges
+    for edge in inner.edge_references() {
+        let label = match &edge.weight().kind {
+            EdgeKind::Calls => "calls",
+            EdgeKind::UnresolvedCall(name) => name.as_str(),
+            EdgeKind::UsesType => "uses_type",
+            EdgeKind::References => "refs",
+            EdgeKind::Contains => "contains",
+            EdgeKind::Implements => "implements",
+            EdgeKind::ExternalCall(crate_name, _) => crate_name.as_str(),
+        };
+        let style = match &edge.weight().kind {
+            EdgeKind::Calls => "",
+            EdgeKind::UnresolvedCall(_) => ", style=dashed",
+            EdgeKind::Contains => ", style=dotted",
+            _ => ", style=bold",
+        };
+        out.push_str(&format!(
+            "    n{} -> n{} [label=\"{}\"{}];\n",
+            edge.source().index(),
+            edge.target().index(),
+            label,
+            style
+        ));
+    }
+
+    out.push_str("}\n");
+    out
+}
+
+/// Generate a DOT representation of only a subset of nodes (e.g., query results).
+pub fn to_dot_subgraph(graph: &CodeGraph, nodes: &[NodeId]) -> String {
+    let node_set: HashSet<&NodeId> = nodes.iter().collect();
+    let inner = graph.inner();
+    let mut out = String::from("digraph QueryResult {\n");
+    out.push_str("    rankdir=LR;\n");
+    out.push_str("    node [shape=box, fontname=\"monospace\", fontsize=10];\n");
+    out.push_str("    edge [fontname=\"monospace\", fontsize=8];\n\n");
+
+    // Only nodes in the result set
+    for node_id in nodes {
+        if let Some(idx) = graph.resolve(node_id) {
+            if let Some(data) = inner.node_weight(idx) {
+                let shape = match data.kind {
+                    crate::nodes::NodeKind::Function => "box",
+                    crate::nodes::NodeKind::Struct => "record",
+                    crate::nodes::NodeKind::Enum => "diamond",
+                    crate::nodes::NodeKind::Module => "folder",
+                    crate::nodes::NodeKind::Trait => "ellipse",
+                };
+                out.push_str(&format!(
+                    "    n{} [label=\"{}\", shape={}];\n",
+                    idx.index(),
+                    data.name,
+                    shape
+                ));
+            }
+        }
+    }
+
+    out.push('\n');
+
+    // Only edges between result nodes
+    for edge in inner.edge_references() {
+        let from_id = graph.node_id_for(edge.source());
+        let to_id = graph.node_id_for(edge.target());
+        if let (Some(from), Some(to)) = (from_id, to_id) {
+            if node_set.contains(from) && node_set.contains(to) {
+                let label = match &edge.weight().kind {
+                    EdgeKind::Calls => "calls",
+                    EdgeKind::UnresolvedCall(name) => name.as_str(),
+                    EdgeKind::UsesType => "uses_type",
+                    EdgeKind::References => "refs",
+                    EdgeKind::Contains => "contains",
+                    EdgeKind::Implements => "implements",
+                    EdgeKind::ExternalCall(crate_name, _) => crate_name.as_str(),
+                };
+                out.push_str(&format!(
+                    "    n{} -> n{} [label=\"{}\"];\n",
+                    edge.source().index(),
+                    edge.target().index(),
+                    label
+                ));
+            }
+        }
+    }
+
+    out.push_str("}\n");
+    out
+}
+
+// ─── Filtered Graph Views ────────────────────────────────────────────────────
+
+/// Return only call-graph edges (filtering out Contains, UsesType, etc.)
+/// as a lightweight view for analysis that only cares about call relationships.
+pub fn call_only_edges(graph: &CodeGraph) -> Vec<(NodeId, NodeId, f32)> {
+    let inner = graph.inner();
+    inner
+        .edge_references()
+        .filter(|e| matches!(e.weight().kind, EdgeKind::Calls | EdgeKind::UnresolvedCall(_)))
+        .filter_map(|e| {
+            let from = graph.node_id_for(e.source())?.clone();
+            let to = graph.node_id_for(e.target())?.clone();
+            Some((from, to, e.weight().weight))
+        })
+        .collect()
+}
+
+/// Return edges filtered by a specific kind.
+pub fn edges_by_kind(graph: &CodeGraph, kind: &EdgeKind) -> Vec<(NodeId, NodeId)> {
+    let inner = graph.inner();
+    inner
+        .edge_references()
+        .filter(|e| &e.weight().kind == kind)
+        .filter_map(|e| {
+            let from = graph.node_id_for(e.source())?.clone();
+            let to = graph.node_id_for(e.target())?.clone();
+            Some((from, to))
+        })
+        .collect()
+}
+
+/// Compute a subgraph containing only nodes of a specific kind and edges between them.
+pub fn subgraph_by_kind(graph: &CodeGraph, kind: crate::nodes::NodeKind) -> Vec<(NodeId, NodeId)> {
+    let inner = graph.inner();
+    let kind_nodes: HashSet<NodeIndex> = inner
+        .node_indices()
+        .filter(|&idx| {
+            inner
+                .node_weight(idx)
+                .map(|n| n.kind == kind)
+                .unwrap_or(false)
+        })
+        .collect();
+
+    inner
+        .edge_references()
+        .filter(|e| kind_nodes.contains(&e.source()) && kind_nodes.contains(&e.target()))
+        .filter_map(|e| {
+            let from = graph.node_id_for(e.source())?.clone();
+            let to = graph.node_id_for(e.target())?.clone();
+            Some((from, to))
+        })
+        .collect()
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
