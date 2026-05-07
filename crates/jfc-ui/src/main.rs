@@ -2150,6 +2150,30 @@ async fn run(
                     // let is_empty = entries.is_empty();
                     // ...
                 }
+                AppEvent::ToolOutputChunk { tool_id, chunk } => {
+                    // Append streaming output to the tool's live preview.
+                    // This fires line-by-line for bash commands, giving
+                    // real-time visibility into long-running processes.
+                    for msg in &mut app.messages {
+                        for part in &mut msg.parts {
+                            if let MessagePart::Tool(tc) = part {
+                                if tc.id == tool_id {
+                                    // Append to existing output or create new
+                                    match &mut tc.output {
+                                        ToolOutput::Text(s) => {
+                                            s.push_str(&chunk);
+                                            s.push('\n');
+                                        }
+                                        _ => {
+                                            tc.output = ToolOutput::Text(format!("{chunk}\n"));
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
                 AppEvent::ToolResult { tool_id, result } => {
                     tracing::info!(
                         target: "jfc::stream",

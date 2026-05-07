@@ -43,6 +43,12 @@ pub enum AppEvent {
         tool_id: String,
         result: ExecutionResult,
     },
+    /// Incremental output from a running tool (e.g. bash stdout line-by-line).
+    /// The UI appends this to the tool's live output preview.
+    ToolOutputChunk {
+        tool_id: String,
+        chunk: String,
+    },
     AllToolsComplete,
     CompactionStarted,
     /// Streaming compact has emitted more text. `output_chars` is the

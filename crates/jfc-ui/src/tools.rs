@@ -2749,6 +2749,22 @@ async fn execute_team_member_mode(
 }
 
 async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> ExecutionResult {
+    execute_bash_inner(command, timeout_ms, cwd, None).await
+}
+
+/// Execute bash with optional streaming progress. When `progress_tx` is
+/// provided, stdout lines are streamed to the UI in real-time via
+/// `ToolOutputChunk` events.
+async fn execute_bash_inner(
+    command: &str,
+    timeout_ms: Option<u64>,
+    cwd: &Path,
+    progress: Option<(String, tokio::sync::mpsc::Sender<crate::app::AppEvent>)>,
+) -> ExecutionResult {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command;
+    use std::process::Stdio;
+
     let timeout = timeout_ms.unwrap_or(120_000);
     let command = non_interactive_shell_command(command);
 
@@ -2781,10 +2797,73 @@ async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> Exe
         .env_remove("GREP_COLORS")
         .env_remove("LS_COLORS");
     configure_tool_command(&mut cmd);
-    let result =
-        tokio::time::timeout(std::time::Duration::from_millis(timeout), cmd.output()).await;
 
-    match result {
+    // If streaming, pipe stdout and read line-by-line
+    if let Some((ref tool_id, ref tx)) = progress {
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let spawn_result = cmd.spawn();
+        match spawn_result {
+            Ok(mut child) => {
+                let stdout = child.stdout.take();
+                let stderr = child.stderr.take();
+                let mut stdout_buf = String::new();
+                let mut stderr_buf = String::new();
+
+                // Stream stdout line-by-line
+                if let Some(stdout) = stdout {
+                    let mut reader = BufReader::new(stdout).lines();
+                    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(timeout);
+                    loop {
+                        let line = tokio::time::timeout_at(deadline, reader.next_line()).await;
+                        match line {
+                            Ok(Ok(Some(l))) => {
+                                stdout_buf.push_str(&l);
+                                stdout_buf.push('\n');
+                                // Send chunk to UI (non-blocking)
+                                let _ = tx.try_send(crate::app::AppEvent::ToolOutputChunk {
+                                    tool_id: tool_id.clone(),
+                                    chunk: l,
+                                });
+                            }
+                            Ok(Ok(None)) => break, // EOF
+                            Ok(Err(_)) => break,   // read error
+                            Err(_) => {
+                                // Timeout — kill the process
+                                let _ = child.kill().await;
+                                return ExecutionResult::failure(format!("Command timed out (streaming)"));
+                            }
+                        }
+                    }
+                }
+
+                // Collect stderr (not streamed — shown at end)
+                if let Some(mut stderr) = stderr {
+                    use tokio::io::AsyncReadExt;
+                    let _ = stderr.read_to_string(&mut stderr_buf).await;
+                }
+
+                let status = child.wait().await;
+                let exit = status.map(|s| s.code().unwrap_or(-1)).unwrap_or(-1);
+                debug!(target: "jfc::tools", exit_code = exit, stdout_len = stdout_buf.len(), stderr_len = stderr_buf.len(), "bash: completed (streamed)");
+
+                let header = if exit == 0 { String::new() } else { format!("[exit {exit}]\n") };
+                let body = if stderr_buf.is_empty() {
+                    stdout_buf
+                } else if stdout_buf.is_empty() {
+                    stderr_buf
+                } else {
+                    format!("{stdout_buf}\n---stderr---\n{stderr_buf}")
+                };
+                ExecutionResult::success(format!("{header}{body}"))
+            }
+            Err(e) => ExecutionResult::failure(format!("Failed to spawn: {e}")),
+        }
+    } else {
+        // Non-streaming path (original behavior)
+        let result =
+            tokio::time::timeout(std::time::Duration::from_millis(timeout), cmd.output()).await;
+
+        match result {
         Ok(Ok(out)) => {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let stderr = String::from_utf8_lossy(&out.stderr);
@@ -2823,6 +2902,7 @@ async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> Exe
         Err(_) => {
             warn!(target: "jfc::tools", timeout_ms = timeout, "bash: command timed out");
             ExecutionResult::failure(format!("Command timed out after {timeout}ms"))
+        }
         }
     }
 }
