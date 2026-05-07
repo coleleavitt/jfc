@@ -956,6 +956,50 @@ pub async fn stream_response(
         .ok()
         .and_then(|p| p.to_str().map(str::to_owned))
         .unwrap_or_default();
+
+    // Build prompt sections (matching Claude Code's structure)
+    let skills_listing = if let Ok(cwd_path) = std::env::current_dir() {
+        let skills = crate::agents::load_skills(&cwd_path);
+        let block = crate::agents::render_skills_section(&skills);
+        if block.is_empty() { String::new() } else { block }
+    } else {
+        String::new()
+    };
+
+    let diagnostics_block = {
+        let diags = crate::diagnostics::global_snapshot();
+        crate::diagnostics::render_for_prompt(&diags).unwrap_or_default()
+    };
+
+    let tool_guidance = "\
+## Using your tools\n\
+Prefer dedicated tools over Bash when one fits (Read, Write, Edit, Glob, Grep) — reserve Bash for shell-only operations.\n\
+You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between the calls, make all of the independent calls in the same block, otherwise you MUST wait for previous calls to finish first to determine the dependent values (do NOT use placeholders or guess missing parameters).\n\
+If the user provides a specific value for a parameter (for example provided in quotes), make sure to use that value EXACTLY. DO NOT make up values for or ask about optional parameters.";
+
+    let coding_instructions = "\
+## Doing tasks\n\
+The user will primarily request software engineering tasks. When given an unclear or generic instruction, consider it in the context of software engineering and the current working directory.\n\
+You are highly capable and often allow users to complete ambitious tasks that would otherwise be too complex or take too long. Defer to user judgement about whether a task is too large.\n\
+For exploratory questions, respond in 2-3 sentences with a recommendation and the main tradeoff. Don't implement until the user agrees.\n\
+Prefer editing existing files to creating new ones.\n\
+Be careful not to introduce security vulnerabilities (command injection, XSS, SQL injection). Prioritize writing safe, secure, and correct code.\n\
+Don't add features, refactor, or introduce abstractions beyond what the task requires. Three similar lines is better than a premature abstraction.\n\
+Don't add error handling or validation for scenarios that can't happen. Trust internal code and framework guarantees. Only validate at system boundaries.\n\
+Default to writing no comments. Only add one when the WHY is non-obvious: a hidden constraint, a subtle invariant, a workaround for a specific bug.\n\
+When reporting results, be accurate about what you verified vs. what you assumed. Distinguish between what you confirmed (ran a command, read a file) and what you believe but did not check.";
+
+    let safety_instructions = "\
+## Executing actions with care\n\
+Read, search, and investigate freely — looking is not acting. For actions that are hard to reverse, affect shared systems, or are otherwise risky (deleting data, force-pushing, sending messages, modifying shared infrastructure), confirm with the user before proceeding unless durably authorized. Approval in one context doesn't extend to the next.\n\
+When you encounter an obstacle, do not use destructive actions as a shortcut. Try to identify root causes rather than bypassing safety checks. If you discover unexpected state like unfamiliar files or branches, investigate before deleting or overwriting — it may represent in-progress work.";
+
+    let tone_style = "\
+## Tone and style\n\
+Only use emojis if the user explicitly requests it.\n\
+Your responses should be short and concise.\n\
+When referencing specific functions or pieces of code include the pattern file_path:line_number to allow the user to easily navigate to the source.\n\
+Do not use a colon before tool calls.";
     let mut system_prompt = format!(
         "You are jfc, a coding assistant running as a CLI in the user's terminal. \
          You have direct access to the user's filesystem and shell via tools \
@@ -970,7 +1014,15 @@ pub async fn stream_response(
          never batch completions. Update a step's description mid-work with \
          TaskUpdate if scope changes. TaskList shows the user your current plan \
          in the sidebar. This is the primary way users track your progress, so \
-         use it consistently on all non-trivial work."
+         use it consistently on all non-trivial work.\n\n\
+         ## Available skills\n\n\
+         {skills_listing}\n\n\
+         ## Current diagnostics\n\n\
+         {diagnostics_block}\n\n\
+         {tool_guidance}\n\n\
+         {coding_instructions}\n\n\
+         {safety_instructions}\n\n\
+         {tone_style}"
     );
 
     // v126 CLAUDE.md hierarchy — managed → user → project → .claude/ → local
@@ -984,16 +1036,6 @@ pub async fn stream_response(
             system_prompt.push_str(&layered);
         }
 
-        // v126 skills listing — discovery surface for the model. Loaded on
-        // every stream call so newly-added skills (or edited descriptions)
-        // take effect on the next turn, matching cli.js:151-160's per-stream
-        // re-read pattern.
-        let skills = crate::agents::load_skills(&cwd_path);
-        let block = crate::agents::render_skills_section(&skills);
-        if !block.is_empty() {
-            system_prompt.push_str(&block);
-        }
-
         // Memory system — load persistent memories from both user-level
         // (~/.config/jfc/memory/) and project-level (.jfc/memory/) and
         // inject them into the system prompt. Re-loaded on every stream
@@ -1001,16 +1043,6 @@ pub async fn stream_response(
         let memories = crate::memory::load_all_memories(&cwd_path);
         if let Some(memories_section) = crate::memory::render_memories_section(&memories) {
             system_prompt.push_str(&memories_section);
-        }
-
-        // Inject the most recent diagnostics snapshot so the model can
-        // act on cargo errors / lints without the user pasting them in.
-        // Read from the global the `DiagnosticsUpdated` handler keeps in
-        // sync — passing the slice through every call site would have
-        // forced a wide signature change.
-        let diags = crate::diagnostics::global_snapshot();
-        if let Some(block) = crate::diagnostics::render_for_prompt(&diags) {
-            system_prompt.push_str(&block);
         }
 
         // Auto-context: when the previous turn(s) edited files via
