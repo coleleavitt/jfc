@@ -451,7 +451,7 @@ pub fn recall_next_prompt(app: &mut App) -> Option<String> {
     prompts.get(next).cloned()
 }
 
-fn dispatch_approved_tool(app: &App, tool: ToolCall, tx: &mpsc::UnboundedSender<AppEvent>) {
+fn dispatch_approved_tool(app: &App, tool: ToolCall, tx: &mpsc::Sender<AppEvent>) {
     tracing::info!(
         target: "jfc::ui::approval",
         tool_kind = tool.kind.label(),
@@ -483,7 +483,7 @@ fn dispatch_approved_tool(app: &App, tool: ToolCall, tx: &mpsc::UnboundedSender<
 /// "Yes for session" / "Always" picks were the trigger: choosing those would
 /// auto-pass the remaining 7 tools, none would execute, and the conversation
 /// would stall with no error log.
-fn advance_approval_queue(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent>) {
+fn advance_approval_queue(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     let mut auto_approved: Vec<ToolCall> = Vec::new();
     while let Some(next) = app.approval_queue.pop_front() {
         if !app.tool_needs_approval(&next) {
@@ -542,7 +542,7 @@ fn deny_tool(app: &mut App, tool: ToolCall) {
 pub async fn handle_key(
     app: &mut App,
     key: event::KeyEvent,
-    tx: &mpsc::UnboundedSender<crate::app::AppEvent>,
+    tx: &mpsc::Sender<crate::app::AppEvent>,
 ) -> anyhow::Result<bool> {
     if let Some(ref mut approval) = app.pending_approval {
         match key.code {
@@ -668,7 +668,7 @@ pub async fn handle_key(
             }
             KeyCode::Enter => {
                 if let Some(id) = ordered.get(app.session_selected).cloned() {
-                    if let Some(messages) = crate::session::load_session(&id) {
+                    if let Some(messages) = crate::session::load_session(&id).await {
                         app.messages = messages;
                         app.switch_session(Some(id));
                         app.streaming_text.clear();
@@ -698,7 +698,7 @@ pub async fn handle_key(
                     app.show_palette = false;
                     app.palette_input.clear();
                     app.palette_selected = 0;
-                    execute_palette_action(app, &label);
+                    execute_palette_action(app, &label).await;
                 }
             }
             KeyCode::Up if app.palette_selected > 0 => {
@@ -1330,7 +1330,7 @@ pub async fn handle_key(
                 });
             match last_prompt {
                 Some(text) => {
-                    let _ = tx.send(crate::app::AppEvent::Submit(text));
+                    let _ = tx.send(crate::app::AppEvent::Submit(text)).await;
                 }
                 None => {
                     crate::toast::push_with_cap(
@@ -1380,7 +1380,7 @@ pub async fn handle_key(
         (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
             app.show_sidebar = !app.show_sidebar;
             if app.show_sidebar {
-                app.session_meta = crate::session::list_sessions_with_metadata();
+                app.session_meta = crate::session::list_sessions_with_metadata().await;
                 app.session_selected = 0;
                 app.session_list_state.select(Some(0));
             }
@@ -1432,13 +1432,13 @@ pub async fn handle_key(
                             let _ = tx.send(crate::app::AppEvent::Toast {
                                 kind: crate::toast::ToastKind::Success,
                                 text: format!("Copied: {preview}{suffix}"),
-                            });
+                            }).await;
                         }
                         Err(e) => {
                             let _ = tx.send(crate::app::AppEvent::Toast {
                                 kind: crate::toast::ToastKind::Error,
                                 text: format!("Clipboard error: {e}"),
-                            });
+                            }).await;
                         }
                     }
                 }
@@ -1446,7 +1446,7 @@ pub async fn handle_key(
                     let _ = tx.send(crate::app::AppEvent::Toast {
                         kind: crate::toast::ToastKind::Warning,
                         text: "No assistant message to yank".into(),
-                    });
+                    }).await;
                 }
             }
             return Ok(false);
@@ -1993,7 +1993,7 @@ fn update_mention_state_after_input(app: &mut App) {
 pub async fn handle_submit_text(
     app: &mut App,
     text: String,
-    tx: &mpsc::UnboundedSender<crate::app::AppEvent>,
+    tx: &mpsc::Sender<crate::app::AppEvent>,
 ) -> anyhow::Result<()> {
     handle_submit(app, text, tx).await
 }
@@ -2001,7 +2001,7 @@ pub async fn handle_submit_text(
 async fn handle_submit(
     app: &mut App,
     text: String,
-    tx: &mpsc::UnboundedSender<crate::app::AppEvent>,
+    tx: &mpsc::Sender<crate::app::AppEvent>,
 ) -> anyhow::Result<()> {
     tracing::info!(
         target: "jfc::input",
@@ -2046,7 +2046,7 @@ async fn handle_submit(
                 crate::diagnostics_producer::run_once(cwd, tx_diag).await;
             });
         }
-        handle_slash_command(app, &text, Some(tx));
+        handle_slash_command(app, &text, Some(tx)).await;
         return Ok(());
     }
 
@@ -2094,15 +2094,16 @@ async fn handle_submit(
         let tx_pre = tx.clone();
         let user_text = text.clone();
         let is_blocked = matches!(level, crate::compact::CompactLevel::Blocked);
-        let _ = tx_pre.send(crate::app::AppEvent::CompactionStarted);
+        let _ = tx_pre.send(crate::app::AppEvent::CompactionStarted).await;
         // Progress callback fires on every text_delta from the streaming
         // compact, forwards the cumulative output length as a
         // CompactionProgress event so the spinner shows live token
         // count. Mirrors v126's `addResponseLength` callback in PB7.
         let progress_tx = tx_pre.clone();
         let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
+            // CompactionProgress is non-critical; next progress update supersedes.
             let _ =
-                progress_tx.send(crate::app::AppEvent::CompactionProgress { output_chars: chars });
+                progress_tx.try_send(crate::app::AppEvent::CompactionProgress { output_chars: chars });
         });
         tokio::spawn(async move {
             let options = crate::provider::StreamOptions::new(model.clone());
@@ -2138,10 +2139,10 @@ async fn handle_submit(
                         tool_ctx,
                         pre_tokens,
                         post_tokens,
-                    });
+                    }).await;
                     // Re-queue the user's message — it didn't make it into
                     // the conversation before compaction ran.
-                    let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text));
+                    let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text)).await;
                 }
                 crate::compact::CompactResult::CircuitBreakerTripped => {
                     tracing::warn!(
@@ -2152,7 +2153,7 @@ async fn handle_submit(
                         "Circuit breaker tripped — submit again with `/compact` if needed".into(),
                         None,
                         false,
-                    ));
+                    )).await;
                 }
                 crate::compact::CompactResult::Exhausted { attempts } => {
                     tracing::warn!(
@@ -2162,7 +2163,7 @@ async fn handle_submit(
                     );
                     let _ = tx_pre.send(crate::app::AppEvent::CompactionFailed(format!(
                         "Exhausted {attempts} compaction attempts — request is too large"
-                    ), Some(tool_ctx.approx_tokens), false));
+                    ), Some(tool_ctx.approx_tokens), false)).await;
                 }
                 _ => {
                     // Unsupported / TooFewGroups: provider can't compact.
@@ -2181,13 +2182,13 @@ async fn handle_submit(
                                 .into(),
                             Some(tool_ctx.approx_tokens),
                             false,
-                        ));
+                        )).await;
                     } else {
                         tracing::debug!(
                             target: "jfc::compact",
                             "pre-submit compaction skipped (unsupported/too few groups) — submitting anyway"
                         );
-                        let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text));
+                        let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text)).await;
                     }
                 }
             }
@@ -2223,7 +2224,7 @@ async fn handle_submit(
         .current_session_id
         .clone()
         .unwrap_or_else(crate::session::generate_session_id);
-    crate::session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str()));
+    crate::session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str())).await;
     app.current_session_id = Some(session_id.clone());
 
     let provider = app.provider.clone();
@@ -2257,14 +2258,14 @@ async fn handle_submit(
 /// `handle_submit`. No `tx` is wired through this path because queued-prompt
 /// dispatch runs synchronously between turns; commands that need to spawn a
 /// stream (e.g. skill invocation) silently no-op the streaming step here.
-pub fn run_slash_command(app: &mut App, text: &str) {
-    handle_slash_command(app, text, None)
+pub async fn run_slash_command(app: &mut App, text: &str) {
+    handle_slash_command(app, text, None).await
 }
 
-fn handle_slash_command(
+async fn handle_slash_command(
     app: &mut App,
     text: &str,
-    tx: Option<&mpsc::UnboundedSender<AppEvent>>,
+    tx: Option<&mpsc::Sender<AppEvent>>,
 ) {
     let parts: Vec<&str> = text.splitn(2, ' ').collect();
     match parts[0] {
@@ -2287,7 +2288,7 @@ fn handle_slash_command(
                     ));
                 }
                 (Some(id), false) => {
-                    crate::session::set_session_title(id, &new_title);
+                    crate::session::set_session_title(id, &new_title).await;
                     app.messages.push(ChatMessage::assistant(format!(
                         "Session `{id}` renamed to **{new_title}**.",
                     )));
@@ -2386,15 +2387,15 @@ fn handle_slash_command(
             // confusion the user reported.
             let want_global = parts.get(1).copied().map(str::trim) == Some("all");
             let session_id = if want_global {
-                crate::session::most_recent_session()
+                crate::session::most_recent_session().await
             } else {
                 let cwd_str = std::env::current_dir()
                     .ok()
                     .map(|p| p.display().to_string());
-                crate::session::most_recent_session_for_cwd(cwd_str.as_deref())
+                crate::session::most_recent_session_for_cwd(cwd_str.as_deref()).await
             };
             if let Some(session_id) = session_id {
-                if let Some(messages) = crate::session::load_session(&session_id) {
+                if let Some(messages) = crate::session::load_session(&session_id).await {
                     app.messages = messages;
                     app.switch_session(Some(session_id.clone()));
                     app.streaming_text.clear();
@@ -2439,7 +2440,7 @@ fn handle_slash_command(
             }
             if session_id.is_empty() {
                 // List available sessions
-                let sessions = crate::session::list_sessions();
+                let sessions = crate::session::list_sessions().await;
                 if sessions.is_empty() {
                     app.messages.push(ChatMessage::assistant(
                         "No sessions found. Usage: `/resume <session_id>`".into(),
@@ -2460,7 +2461,7 @@ fn handle_slash_command(
                         "**Usage:** `/resume <session_id>`\n\n**Available sessions:**\n{list}{more}"
                     )));
                 }
-            } else if let Some(messages) = crate::session::load_session(session_id) {
+            } else if let Some(messages) = crate::session::load_session(session_id).await {
                 let msg_count = messages.len();
                 // Compare the loaded session's recorded cwd against the
                 // current process cwd before mutating app state. The
@@ -2469,6 +2470,7 @@ fn handle_slash_command(
                 // pointing at the wrong project.
                 if !force {
                     let session_cwd = crate::session::load_session_metadata(session_id)
+                        .await
                         .and_then(|m| m.cwd);
                     let current_cwd = std::env::current_dir()
                         .map(|p| p.to_string_lossy().into_owned())
@@ -2501,7 +2503,7 @@ fn handle_slash_command(
         }
         "/sessions" => {
             // List all sessions with metadata
-            let sessions = crate::session::list_sessions_with_metadata();
+            let sessions = crate::session::list_sessions_with_metadata().await;
             if sessions.is_empty() {
                 app.messages
                     .push(ChatMessage::assistant("No sessions found.".into()));
@@ -2640,7 +2642,7 @@ fn handle_slash_command(
             // Surface the agent-economy snapshot — same data the
             // `market_status` tool returns, but framed for the user
             // rather than the model. No bounty_id filter for now.
-            let report_str = match crate::tools::market_report_string() {
+            let report_str = match crate::tools::market_report_string().await {
                 Ok(s) => s,
                 Err(e) => format!("Market unavailable: {e}"),
             };
@@ -2966,16 +2968,16 @@ fn handle_slash_command(
             }
         }
         "/worktree" => {
-            handle_worktree_command(app, parts.get(1).copied().unwrap_or("").trim());
+            handle_worktree_command(app, parts.get(1).copied().unwrap_or("").trim()).await;
         }
         "/export" => {
-            handle_export_command(app);
+            handle_export_command(app).await;
         }
         "/theme" => {
             handle_theme_command(app, parts.get(1).copied().unwrap_or("").trim());
         }
         "/dump-context" | "/debug-context" => {
-            handle_dump_context_command(app);
+            handle_dump_context_command(app).await;
         }
         "/swarm-approve" | "/swarm-deny" => {
             // Resolve a pending swarm permission request from the user's
@@ -3114,7 +3116,7 @@ fn handle_slash_command(
                     .current_session_id
                     .clone()
                     .unwrap_or_else(crate::session::generate_session_id);
-                crate::session::save_session(&session_id, &app.messages, None, Some(app.model.as_str()));
+                crate::session::save_session(&session_id, &app.messages, None, Some(app.model.as_str())).await;
                 app.current_session_id = Some(session_id);
 
                 let provider = app.provider.clone();
@@ -3150,7 +3152,7 @@ fn handle_slash_command(
 /// on its next turn — useful when debugging "why did the model
 /// hallucinate that I had a Python project / why doesn't it know
 /// about this skill".
-fn handle_dump_context_command(app: &mut App) {
+async fn handle_dump_context_command(app: &mut App) {
     let mut report = String::new();
     let cwd = std::path::PathBuf::from(&app.cwd);
 
@@ -3302,13 +3304,13 @@ fn handle_theme_command(app: &mut App, args: &str) {
 /// the transcript into other tooling. Tool calls render as fenced
 /// code blocks with their kind in the language slot. Tool results
 /// are nested under their tool. Mirrors v126's `/export` command.
-fn handle_export_command(app: &mut App) {
+async fn handle_export_command(app: &mut App) {
     use crate::types::{MessagePart, Role, ToolOutput};
     let dir = dirs::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("jfc")
         .join("exports");
-    if let Err(e) = std::fs::create_dir_all(&dir) {
+    if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         crate::toast::push_with_cap(
             &mut app.toasts,
             crate::toast::Toast::new(
@@ -3407,7 +3409,7 @@ fn handle_export_command(app: &mut App) {
         out.push_str("\n");
     }
 
-    match std::fs::write(&path, out) {
+    match tokio::fs::write(&path, out).await {
         Ok(_) => {
             crate::toast::push_with_cap(
                 &mut app.toasts,
@@ -3436,19 +3438,19 @@ fn handle_export_command(app: &mut App) {
 /// `switch` cannot teleport the running session into a different checkout —
 /// it tells the user how to do it manually. Once App.cwd becomes mutable we
 /// can revisit.
-fn handle_worktree_command(app: &mut App, args: &str) {
+async fn handle_worktree_command(app: &mut App, args: &str) {
     let mut it = args.split_whitespace();
     let sub = it.next().unwrap_or("");
     let arg = it.next().unwrap_or("");
     let repo_root = std::path::PathBuf::from(&app.cwd);
 
-    let echo = |app: &mut App, raw: String, body: String| {
+    fn echo(app: &mut App, raw: String, body: String) {
         app.messages.push(ChatMessage::user(raw));
         app.messages.push(ChatMessage::assistant(body));
-    };
+    }
 
-    let list_body = |app: &App| -> String {
-        match crate::worktrees::list_worktrees(&std::path::PathBuf::from(&app.cwd)) {
+    async fn list_body(cwd: &str) -> String {
+        match crate::worktrees::list_worktrees_async(&std::path::PathBuf::from(cwd)).await {
             Ok(rows) if rows.is_empty() => "No worktrees registered.".to_owned(),
             Ok(rows) => {
                 let mut s = format!("**{} worktree(s):**\n\n", rows.len());
@@ -3464,11 +3466,11 @@ fn handle_worktree_command(app: &mut App, args: &str) {
             }
             Err(e) => format!("**Error:** {e}"),
         }
-    };
+    }
 
     match sub {
         "" | "list" => {
-            let body = list_body(app);
+            let body = list_body(&app.cwd).await;
             echo(app, "/worktree list".to_owned(), body);
         }
         "create" => {
@@ -3488,7 +3490,7 @@ fn handle_worktree_command(app: &mut App, args: &str) {
                 );
                 return;
             }
-            let body = match crate::worktrees::create_worktree(&repo_root, arg) {
+            let body = match crate::worktrees::create_worktree_async(&repo_root, arg).await {
                 Ok(w) => format!(
                     "Created worktree `{}` on branch `{}`.\n\n\
                      Switch into it with:\n```\ncd {}\n```\nthen re-run `jfc`.",
@@ -3516,7 +3518,7 @@ fn handle_worktree_command(app: &mut App, args: &str) {
                 );
                 return;
             }
-            let body = match crate::worktrees::remove_worktree(&repo_root, arg) {
+            let body = match crate::worktrees::remove_worktree_async(&repo_root, arg).await {
                 Ok(()) => format!(
                     "Removed worktree `.jfc-worktrees/{arg}`. The branch `jfc/{arg}` is preserved \
                      — recover with `git switch jfc/{arg}` from any checkout."
@@ -3567,7 +3569,7 @@ fn handle_worktree_command(app: &mut App, args: &str) {
     }
 }
 
-fn execute_palette_action(app: &mut App, label: &str) {
+async fn execute_palette_action(app: &mut App, label: &str) {
     // Each palette entry is paired with the keybinding it replaces — the
     // status row used to advertise these explicitly, but they're now lifted
     // into the palette to free vertical space for the context gauge. The
@@ -3598,7 +3600,7 @@ fn execute_palette_action(app: &mut App, label: &str) {
         "Toggle Sessions Sidebar (Ctrl+B)" => {
             app.show_sidebar = !app.show_sidebar;
             if app.show_sidebar {
-                app.session_meta = crate::session::list_sessions_with_metadata();
+                app.session_meta = crate::session::list_sessions_with_metadata().await;
             }
         }
         "Toggle Info Sidebar (Ctrl+S)" => {
@@ -3619,13 +3621,13 @@ fn execute_palette_action(app: &mut App, label: &str) {
             }
         }
         "Continue Most Recent Session (/continue)" => {
-            run_slash_command(app, "/continue");
+            run_slash_command(app, "/continue").await;
         }
         "Show Tasks (/tasks)" => {
-            run_slash_command(app, "/tasks");
+            run_slash_command(app, "/tasks").await;
         }
         "Show Help (/help)" => {
-            run_slash_command(app, "/help");
+            run_slash_command(app, "/help").await;
         }
         _ => {}
     }
@@ -3785,10 +3787,10 @@ mod tests {
     }
 
     fn channel() -> (
-        tokio::sync::mpsc::UnboundedSender<AppEvent>,
-        tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+        tokio::sync::mpsc::Sender<AppEvent>,
+        tokio::sync::mpsc::Receiver<AppEvent>,
     ) {
-        tokio::sync::mpsc::unbounded_channel()
+        tokio::sync::mpsc::channel(1024)
     }
 
     /// Build a minimal `ToolCall` of the requested kind. The status defaults
@@ -5205,309 +5207,309 @@ mod tests {
     // Slash command dispatch via run_slash_command
     // ─────────────────────────────────────────────────────────────────────
 
-    #[test]
-    fn slash_clear_wipes_messages_normal() {
+    #[tokio::test]
+    async fn slash_clear_wipes_messages_normal() {
         let mut app = test_app();
         app.messages.push(ChatMessage::user("hi".into()));
-        run_slash_command(&mut app, "/clear");
+        run_slash_command(&mut app, "/clear").await;
         assert!(app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_help_sets_show_help_normal() {
+    #[tokio::test]
+    async fn slash_help_sets_show_help_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/help");
+        run_slash_command(&mut app, "/help").await;
         assert!(app.show_help);
     }
 
-    #[test]
-    fn slash_compact_sets_pending_robust() {
+    #[tokio::test]
+    async fn slash_compact_sets_pending_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/compact");
+        run_slash_command(&mut app, "/compact").await;
         assert!(app.force_compact_pending);
     }
 
-    #[test]
-    fn slash_unknown_emits_assistant_message_robust() {
+    #[tokio::test]
+    async fn slash_unknown_emits_assistant_message_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/no-such-thing");
+        run_slash_command(&mut app, "/no-such-thing").await;
         let last = app.messages.last().expect("message added");
         assert_eq!(last.role, Role::Assistant);
     }
 
-    #[test]
-    fn slash_mode_sets_permission_mode_normal() {
+    #[tokio::test]
+    async fn slash_mode_sets_permission_mode_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/mode plan");
+        run_slash_command(&mut app, "/mode plan").await;
         assert_eq!(app.permission_mode, crate::app::PermissionMode::Plan);
     }
 
-    #[test]
-    fn slash_mode_default_robust() {
+    #[tokio::test]
+    async fn slash_mode_default_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/mode default");
+        run_slash_command(&mut app, "/mode default").await;
         assert_eq!(app.permission_mode, crate::app::PermissionMode::Default);
     }
 
-    #[test]
-    fn slash_mode_unknown_robust() {
+    #[tokio::test]
+    async fn slash_mode_unknown_robust() {
         let mut app = test_app();
         let initial = app.permission_mode;
-        run_slash_command(&mut app, "/mode wat");
+        run_slash_command(&mut app, "/mode wat").await;
         assert_eq!(app.permission_mode, initial);
     }
 
-    #[test]
-    fn slash_mode_status_only_robust() {
+    #[tokio::test]
+    async fn slash_mode_status_only_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/mode");
+        run_slash_command(&mut app, "/mode").await;
         // Just ensure no panic & assistant message added.
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_auto_mode_on_robust() {
+    #[tokio::test]
+    async fn slash_auto_mode_on_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/auto-mode on");
+        run_slash_command(&mut app, "/auto-mode on").await;
         assert!(app.auto_mode.enabled);
     }
 
-    #[test]
-    fn slash_auto_mode_off_robust() {
+    #[tokio::test]
+    async fn slash_auto_mode_off_robust() {
         let mut app = test_app();
         app.auto_mode.enabled = true;
-        run_slash_command(&mut app, "/auto-mode off");
+        run_slash_command(&mut app, "/auto-mode off").await;
         assert!(!app.auto_mode.enabled);
     }
 
-    #[test]
-    fn slash_auto_mode_status_robust() {
+    #[tokio::test]
+    async fn slash_auto_mode_status_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/auto-mode");
+        run_slash_command(&mut app, "/auto-mode").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_task_add_creates_task_normal() {
+    #[tokio::test]
+    async fn slash_task_add_creates_task_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/task-add make tests pass");
+        run_slash_command(&mut app, "/task-add make tests pass").await;
         let tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
         assert_eq!(tasks.len(), 1);
     }
 
-    #[test]
-    fn slash_task_add_robust_no_args() {
+    #[tokio::test]
+    async fn slash_task_add_robust_no_args() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/task-add");
+        run_slash_command(&mut app, "/task-add").await;
         let tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
         assert!(tasks.is_empty());
     }
 
-    #[test]
-    fn slash_tasks_list_normal() {
+    #[tokio::test]
+    async fn slash_tasks_list_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/tasks");
+        run_slash_command(&mut app, "/tasks").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_task_done_robust_no_args() {
+    #[tokio::test]
+    async fn slash_task_done_robust_no_args() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/task-done");
+        run_slash_command(&mut app, "/task-done").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_task_rm_robust_no_args() {
+    #[tokio::test]
+    async fn slash_task_rm_robust_no_args() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/task-rm");
+        run_slash_command(&mut app, "/task-rm").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_check_emits_assistant_robust() {
+    #[tokio::test]
+    async fn slash_check_emits_assistant_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/check");
+        run_slash_command(&mut app, "/check").await;
         assert!(app
             .messages
             .iter()
             .any(|m| m.role == Role::Assistant));
     }
 
-    #[test]
-    fn slash_config_reports_path_normal() {
+    #[tokio::test]
+    async fn slash_config_reports_path_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/config path");
+        run_slash_command(&mut app, "/config path").await;
         assert!(app
             .messages
             .iter()
             .any(|m| matches!(&m.parts[0], MessagePart::Text(s) if s.contains("Config path"))));
     }
 
-    #[test]
-    fn slash_config_dumps_toml_robust() {
+    #[tokio::test]
+    async fn slash_config_dumps_toml_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/config");
+        run_slash_command(&mut app, "/config").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_skills_lists_normal() {
+    #[tokio::test]
+    async fn slash_skills_lists_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/skills");
+        run_slash_command(&mut app, "/skills").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_agents_lists_robust() {
+    #[tokio::test]
+    async fn slash_agents_lists_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/agents");
+        run_slash_command(&mut app, "/agents").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_claude_md_lists_normal() {
+    #[tokio::test]
+    async fn slash_claude_md_lists_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/claude-md");
+        run_slash_command(&mut app, "/claude-md").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_dump_context_normal() {
+    #[tokio::test]
+    async fn slash_dump_context_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/dump-context");
+        run_slash_command(&mut app, "/dump-context").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_theme_lists_when_no_arg_robust() {
+    #[tokio::test]
+    async fn slash_theme_lists_when_no_arg_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/theme");
+        run_slash_command(&mut app, "/theme").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_theme_unknown_pushes_warning_robust() {
+    #[tokio::test]
+    async fn slash_theme_unknown_pushes_warning_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/theme nonexistent");
+        run_slash_command(&mut app, "/theme nonexistent").await;
         // No theme change. Toast added.
         assert!(!app.toasts.is_empty());
     }
 
-    #[test]
-    fn slash_export_creates_file_robust() {
+    #[tokio::test]
+    async fn slash_export_creates_file_robust() {
         let mut app = test_app();
         app.messages.push(ChatMessage::user("hi".into()));
-        run_slash_command(&mut app, "/export");
+        run_slash_command(&mut app, "/export").await;
         // Either a success or error toast was emitted.
         assert!(!app.toasts.is_empty());
     }
 
-    #[test]
-    fn slash_rename_robust_no_session() {
+    #[tokio::test]
+    async fn slash_rename_robust_no_session() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/rename my-title");
+        run_slash_command(&mut app, "/rename my-title").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_rename_robust_no_args_with_session() {
+    #[tokio::test]
+    async fn slash_rename_robust_no_args_with_session() {
         let mut app = test_app();
         app.current_session_id = Some("ses_test".into());
-        run_slash_command(&mut app, "/rename");
+        run_slash_command(&mut app, "/rename").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_resume_lists_when_no_arg_robust() {
+    #[tokio::test]
+    async fn slash_resume_lists_when_no_arg_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/resume");
+        run_slash_command(&mut app, "/resume").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_resume_unknown_id_robust() {
+    #[tokio::test]
+    async fn slash_resume_unknown_id_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/resume ses_does_not_exist");
+        run_slash_command(&mut app, "/resume ses_does_not_exist").await;
         assert!(app
             .messages
             .iter()
             .any(|m| matches!(&m.parts[0], MessagePart::Text(s) if s.contains("not found"))));
     }
 
-    #[test]
-    fn slash_continue_robust_no_sessions() {
+    #[tokio::test]
+    async fn slash_continue_robust_no_sessions() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/continue");
+        run_slash_command(&mut app, "/continue").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_sessions_list_robust() {
+    #[tokio::test]
+    async fn slash_sessions_list_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/sessions");
+        run_slash_command(&mut app, "/sessions").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_worktree_list_normal() {
+    #[tokio::test]
+    async fn slash_worktree_list_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/worktree list");
+        run_slash_command(&mut app, "/worktree list").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_worktree_create_no_arg_robust() {
+    #[tokio::test]
+    async fn slash_worktree_create_no_arg_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/worktree create");
+        run_slash_command(&mut app, "/worktree create").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_worktree_remove_no_arg_robust() {
+    #[tokio::test]
+    async fn slash_worktree_remove_no_arg_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/worktree remove");
+        run_slash_command(&mut app, "/worktree remove").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_worktree_switch_no_arg_robust() {
+    #[tokio::test]
+    async fn slash_worktree_switch_no_arg_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/worktree switch");
+        run_slash_command(&mut app, "/worktree switch").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_worktree_unknown_subcommand_robust() {
+    #[tokio::test]
+    async fn slash_worktree_unknown_subcommand_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/worktree foobar");
+        run_slash_command(&mut app, "/worktree foobar").await;
         assert!(app
             .messages
             .iter()
             .any(|m| matches!(&m.parts[0], MessagePart::Text(s) if s.contains("Unknown subcommand"))));
     }
 
-    #[test]
-    fn slash_swarm_approve_no_args_robust() {
+    #[tokio::test]
+    async fn slash_swarm_approve_no_args_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/swarm-approve");
+        run_slash_command(&mut app, "/swarm-approve").await;
         assert!(!app.messages.is_empty());
     }
 
-    #[test]
-    fn slash_swarm_deny_no_team_robust() {
+    #[tokio::test]
+    async fn slash_swarm_deny_no_team_robust() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/swarm-deny abc-123");
+        run_slash_command(&mut app, "/swarm-deny abc-123").await;
         assert!(!app.messages.is_empty());
     }
 
     // Normal: /market renders the agent-economy snapshot via the
     // shared market_report_string helper. Even with no bounties
     // posted, the report has the standard headers.
-    #[test]
-    fn slash_market_renders_snapshot_normal() {
+    #[tokio::test]
+    async fn slash_market_renders_snapshot_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/market");
+        run_slash_command(&mut app, "/market").await;
         assert!(!app.messages.is_empty());
         let body: String = app
             .messages
@@ -5528,10 +5530,10 @@ mod tests {
 
     // Normal: /cascade with no cascade-tagged tasks shows the empty-
     // state hint, not an error or crash.
-    #[test]
-    fn slash_cascade_empty_state_normal() {
+    #[tokio::test]
+    async fn slash_cascade_empty_state_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/cascade");
+        run_slash_command(&mut app, "/cascade").await;
         assert!(!app.messages.is_empty());
         let last = app.messages.last().unwrap();
         let body: String = last
@@ -5551,8 +5553,8 @@ mod tests {
     // Normal: /cascade only surfaces tasks whose metadata.kind is
     // "cascade" — non-cascade tasks must not pollute the listing.
     // Confirms the metadata filter actually filters.
-    #[test]
-    fn slash_cascade_filters_by_metadata_normal() {
+    #[tokio::test]
+    async fn slash_cascade_filters_by_metadata_normal() {
         let mut app = test_app();
         // A regular (non-cascade) task — should NOT appear.
         let regular = app
@@ -5585,7 +5587,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        run_slash_command(&mut app, "/cascade");
+        run_slash_command(&mut app, "/cascade").await;
         let body: String = app
             .messages
             .last()
@@ -5615,10 +5617,10 @@ mod tests {
     // Normal: /graph-history with no recorded queries shows the empty-
     // state hint instead of erroring (some users will run it before
     // they've ever invoked graph_query).
-    #[test]
-    fn slash_graph_history_empty_state_normal() {
+    #[tokio::test]
+    async fn slash_graph_history_empty_state_normal() {
         let mut app = test_app();
-        run_slash_command(&mut app, "/graph-history");
+        run_slash_command(&mut app, "/graph-history").await;
         assert!(!app.messages.is_empty());
         let last = app.messages.last().unwrap();
         let body: String = last

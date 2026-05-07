@@ -24,6 +24,13 @@ const MAX_ENTRIES: usize = 512;
 #[derive(Clone)]
 struct CacheEntry {
     lines: Vec<Line<'static>>,
+    /// Total number of *visual* rows after word-wrapping at the entry's
+    /// stored `width`. Computing this requires instantiating a `Paragraph`
+    /// + `WordWrapper` per line which is itself the second-largest hot
+    /// spot in the renderer (see `crates/jfc-ui/src/message_view.rs:64-74`
+    /// pre-cache). Caching it here turns an O(lines × graphemes) per-frame
+    /// computation into a single hash lookup.
+    wrapped_line_count: usize,
     /// Insertion order counter for LRU eviction.
     generation: u64,
 }
@@ -32,6 +39,20 @@ struct CacheEntry {
 pub struct RenderCache {
     map: HashMap<(u64, u16), CacheEntry>,
     generation: u64,
+    /// Dedicated single-slot cache for the actively-streaming message. Keyed on
+    /// `(message_index, width)` rather than content hash, so it doesn't thrash
+    /// the LRU as text grows each frame. Replaced in-place on every streaming
+    /// render; cleared on `StreamDone` so the next render populates the main
+    /// content-addressed cache via the full syntect pipeline.
+    streaming_slot: Option<StreamingEntry>,
+}
+
+/// Single-slot storage for the streaming message's rendered lines.
+struct StreamingEntry {
+    message_idx: usize,
+    width: u16,
+    lines: Vec<Line<'static>>,
+    wrapped_line_count: usize,
 }
 
 impl RenderCache {
@@ -39,6 +60,7 @@ impl RenderCache {
         Self {
             map: HashMap::with_capacity(128),
             generation: 0,
+            streaming_slot: None,
         }
     }
 
@@ -60,10 +82,12 @@ impl RenderCache {
         }
         let key = (hash_text(text), width);
         self.generation += 1;
+        let wrapped_line_count = compute_wrapped_line_count(&lines, width);
         self.map.insert(
             key,
             CacheEntry {
                 lines,
+                wrapped_line_count,
                 generation: self.generation,
             },
         );
@@ -84,13 +108,28 @@ impl RenderCache {
             return &entry.lines;
         }
 
-        // Miss — compute and store
         let lines = f(text, width);
         if self.map.len() >= MAX_ENTRIES {
             self.evict_oldest();
         }
-        self.map.insert(key, CacheEntry { lines, generation: current_gen });
+        let wrapped_line_count = compute_wrapped_line_count(&lines, width);
+        self.map.insert(
+            key,
+            CacheEntry {
+                lines,
+                wrapped_line_count,
+                generation: current_gen,
+            },
+        );
         &self.map.get(&key).unwrap().lines
+    }
+
+    /// Total visual rows for this entry after word-wrapping at the cached
+    /// width. Returns `None` on miss; callers should compute and `insert` to
+    /// populate. This is the per-frame hot path for scroll-bottom math.
+    pub fn wrapped_line_count(&self, text: &str, width: u16) -> Option<usize> {
+        let key = (hash_text(text), width);
+        self.map.get(&key).map(|e| e.wrapped_line_count)
     }
 
     /// Return the line count without cloning the full vec.
@@ -123,7 +162,51 @@ impl RenderCache {
     /// Invalidate the entire cache (e.g. on terminal resize / theme change).
     pub fn clear(&mut self) {
         self.map.clear();
+        self.streaming_slot = None;
         self.generation = 0;
+    }
+
+    /// Store rendered lines for the actively-streaming message. Replaces any
+    /// previous streaming content in-place without touching the main LRU map.
+    pub fn set_streaming(
+        &mut self,
+        message_idx: usize,
+        width: u16,
+        lines: Vec<Line<'static>>,
+    ) {
+        let wrapped_line_count = compute_wrapped_line_count(&lines, width);
+        self.streaming_slot = Some(StreamingEntry {
+            message_idx,
+            width,
+            lines,
+            wrapped_line_count,
+        });
+    }
+
+    /// Retrieve the streaming slot if it matches the given message index and width.
+    pub fn get_streaming(&self, message_idx: usize, width: u16) -> Option<&[Line<'static>]> {
+        self.streaming_slot.as_ref().and_then(|entry| {
+            if entry.message_idx == message_idx && entry.width == width {
+                Some(entry.lines.as_slice())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Wrapped line count for the streaming slot (mirrors `wrapped_line_count`
+    /// for the main cache). Returns 0 if no streaming entry matches.
+    pub fn streaming_wrapped_line_count(&self, message_idx: usize, width: u16) -> usize {
+        self.streaming_slot
+            .as_ref()
+            .filter(|e| e.message_idx == message_idx && e.width == width)
+            .map_or(0, |e| e.wrapped_line_count)
+    }
+
+    /// Clear the streaming slot. Called on `StreamDone` so the next render of
+    /// that message falls through to the full `to_lines` + main cache path.
+    pub fn clear_streaming(&mut self) {
+        self.streaming_slot = None;
     }
 
     /// Number of cached entries (for diagnostics).
@@ -137,6 +220,28 @@ fn hash_text(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     hasher.finish()
+}
+
+/// Mirror of the per-line wrap calculation in `message_view::message_view_total_lines`,
+/// hoisted from per-frame to per-cache-insert. Uses the same `Paragraph + Wrap{trim:false}`
+/// path so the count matches what ratatui will actually render.
+fn compute_wrapped_line_count(lines: &[Line<'static>], width: u16) -> usize {
+    use ratatui::widgets::{Paragraph, Wrap};
+    if width == 0 {
+        return lines.len();
+    }
+    let mut total = 0usize;
+    for line in lines {
+        if line.width() == 0 {
+            total += 1;
+        } else {
+            total += Paragraph::new(line.clone())
+                .wrap(Wrap { trim: false })
+                .line_count(width)
+                .max(1);
+        }
+    }
+    total
 }
 
 #[cfg(test)]

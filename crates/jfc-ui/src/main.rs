@@ -291,7 +291,7 @@ fn yank_last_assistant(app: &App) {
 /// The placeholder `⏳ <text>` user message we inserted at queue time gets
 /// replaced by a clean `<text>` message when we drain — so the transcript
 /// stays consistent with what the model actually sees.
-async fn drain_queued_prompts(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent>) {
+async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     let Some(prompt) = app.queued_prompts.pop_front() else {
         return;
     };
@@ -327,7 +327,7 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent
         // We don't even hit the API — just dispatch through the existing
         // slash command handler. Subsequent queued prompts surface
         // immediately because no new stream starts.
-        input::run_slash_command(app, &text);
+        input::run_slash_command(app, &text).await;
         // Recurse: another queued prompt may be ready right now.
         Box::pin(drain_queued_prompts(app, tx)).await;
         return;
@@ -606,7 +606,11 @@ async fn run(
     startup_session: StartupSession,
     initial_prompt: Option<String>,
 ) -> anyhow::Result<()> {
-    let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+    // Bounded channel capacity for the main AppEvent loop. 1024 accommodates
+    // typical streaming bursts (50-200 chunks) with headroom for concurrent tool
+    // result floods, while bounding memory at ~1024 × sizeof(AppEvent).
+    const APP_EVENT_BUFFER: usize = 1024;
+    let (tx, mut rx) = mpsc::channel::<AppEvent>(APP_EVENT_BUFFER);
     // Make the channel reachable from non-Task code paths (bounty
     // solver/validator agents, future cron-triggered work) so they
     // emit the same TaskStarted/AgentChunk/TaskCompleted events the
@@ -626,10 +630,12 @@ async fn run(
             let cwd_str = std::env::current_dir()
                 .ok()
                 .map(|p| p.display().to_string());
-            let id = session::most_recent_session_for_cwd(cwd_str.as_deref())
-                .or_else(session::most_recent_session); // legacy fallback
+            let id = match session::most_recent_session_for_cwd(cwd_str.as_deref()).await {
+                Some(id) => Some(id),
+                None => session::most_recent_session().await, // legacy fallback
+            };
             if let Some(session_id) = id {
-                if let Some((messages, saved_model)) = session::load_session_with_model(&session_id) {
+                if let Some((messages, saved_model)) = session::load_session_with_model(&session_id).await {
                     tracing::info!(
                         target: "jfc::session",
                         session_id = %session_id,
@@ -659,7 +665,7 @@ async fn run(
             }
         }
         StartupSession::Resume(session_id) => {
-            if let Some((messages, saved_model)) = session::load_session_with_model(&session_id) {
+            if let Some((messages, saved_model)) = session::load_session_with_model(&session_id).await {
                 tracing::info!(
                     target: "jfc::session",
                     session_id = %session_id,
@@ -668,6 +674,7 @@ async fn run(
                     "resuming specific session"
                 );
                 let session_cwd = session::load_session_metadata(&session_id)
+                    .await
                     .and_then(|m| m.cwd);
                 let current_cwd = std::env::current_dir()
                     .map(|p| p.to_string_lossy().into_owned())
@@ -724,7 +731,7 @@ async fn run(
             let _ = tx.send(AppEvent::ModelsLoaded {
                 provider: name,
                 models,
-            });
+            }).await;
         });
     }
 
@@ -739,7 +746,7 @@ async fn run(
                     seat_tier: profile.seat_tier,
                     subscription_type: profile.subscription_type,
                     email: profile.email,
-                });
+                }).await;
             }
         });
     }
@@ -749,7 +756,7 @@ async fn run(
         tokio::spawn(async move {
             let mut reader = event::EventStream::new();
             while let Some(Ok(ev)) = reader.next().await {
-                let _ = tx.send(AppEvent::Term(ev));
+                let _ = tx.send(AppEvent::Term(ev)).await;
             }
         });
     }
@@ -759,7 +766,8 @@ async fn run(
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_millis(TICK_MS)).await;
-                let _ = tx.send(AppEvent::Tick);
+                // Tick is non-critical; safe to drop — next tick arrives shortly.
+                let _ = tx.try_send(AppEvent::Tick);
             }
         });
     }
@@ -770,7 +778,7 @@ async fn run(
         let mut teammate_rx = app.teammate_event_rx.take().unwrap();
         tokio::spawn(async move {
             while let Some(ev) = teammate_rx.recv().await {
-                let _ = tx.send(AppEvent::TeammateEvent(ev));
+                let _ = tx.send(AppEvent::TeammateEvent(ev)).await;
             }
         });
     }
@@ -830,7 +838,7 @@ async fn run(
             .current_session_id
             .clone()
             .unwrap_or_else(session::generate_session_id);
-        session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str()));
+        session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str())).await;
         app.current_session_id = Some(session_id);
 
         let provider = app.provider.clone();
@@ -843,13 +851,45 @@ async fn run(
         });
     }
 
-    loop {
-        let ev = match rx.recv().await {
-            Some(e) => e,
+    // Track when we last drew to implement frame-rate limiting.
+    // The UI only redraws at most once per TICK_MS (80ms = 12.5 FPS idle,
+    // but input events always get a draw). This prevents the render loop
+    // from starving input processing when 100s of StreamChunk events/sec
+    // flood the channel during fast streaming.
+    // Frame-rate cap: ~120 FPS upper bound (8ms minimum between draws). Bursts
+    // of events from streaming (StreamChunk fires per token) coalesce into one
+    // draw — the user's terminal can't keep up with 1000+ FPS anyway and each
+    // unnecessary `Backend::flush` is a synchronous stdout write.
+    const FRAME_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
+    let mut last_draw = std::time::Instant::now();
+
+    'main_loop: loop {
+        // Burst-recv: block on the first event, then drain everything currently
+        // queued without re-awaiting. Process them all, draw once at the end.
+        // This collapses N rapid stream chunks into 1 frame instead of N frames.
+        let mut events: Vec<AppEvent> = match rx.recv().await {
+            Some(e) => vec![e],
             None => break,
         };
+        while let Ok(extra) = rx.try_recv() {
+            events.push(extra);
+        }
 
-        match ev {
+        // Track whether any event in this burst dirties the screen. Pure Tick
+        // events with no streaming/animation skip the draw entirely — eliminates
+        // ~12.5 idle redraws per second.
+        let mut needs_draw = false;
+        let mut should_quit = false;
+
+        for ev in events {
+            // Tick alone doesn't dirty the screen; everything else does. The
+            // streaming-animation guard below re-enables Tick-driven redraws
+            // when there's actually motion to show.
+            if !matches!(ev, AppEvent::Tick) {
+                needs_draw = true;
+            }
+
+            match ev {
             // Accept Press *and* Repeat so holding ↑/↓ keeps moving in the picker.
             // The kitty keyboard protocol (enabled via REPORT_EVENT_TYPES at startup)
             // delivers separate Repeat events while a key is held — without this filter
@@ -858,6 +898,7 @@ async fn run(
                 if matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat) =>
             {
                 if input::handle_key(&mut app, k, &tx).await? {
+                    should_quit = true;
                     break;
                 }
             }
@@ -1035,7 +1076,7 @@ async fn run(
                                         .collect();
                                     if let Some(id) = ordered.get(idx).cloned() {
                                         if let Some(messages) =
-                                            crate::session::load_session(&id)
+                                            crate::session::load_session(&id).await
                                         {
                                             app.messages = messages;
                                             app.switch_session(Some(id));
@@ -1196,7 +1237,7 @@ async fn run(
                         let _ = tx.send(AppEvent::AgentChunk {
                             task_id,
                             text: delta,
-                        });
+                        }).await;
                     }
                     TeammateEvent::Completed { task_id, agent_id } => {
                         tracing::info!("[Swarm] Teammate {agent_id} completed");
@@ -1309,7 +1350,7 @@ async fn run(
                     .unwrap_or(true);
                 if due {
                     let cwd = std::env::current_dir().unwrap_or_default();
-                    app.worktree_count = match worktrees::list_worktrees(&cwd) {
+                    app.worktree_count = match worktrees::list_worktrees_async(&cwd).await {
                         // Entry 0 is the primary checkout — subtract it
                         // so the badge counts agent-isolated trees only.
                         Ok(list) => list.len().saturating_sub(1),
@@ -1329,7 +1370,7 @@ async fn run(
                     .unwrap_or(true);
                 if git_due {
                     let cwd = std::env::current_dir().unwrap_or_default();
-                    app.git_branch = read_git_branch(&cwd);
+                    app.git_branch = read_git_branch(&cwd).await;
                     app.git_branch_last_refresh = Some(now);
                 }
 
@@ -1439,7 +1480,7 @@ async fn run(
                                         let _ = tx_swarm.send(AppEvent::Toast {
                                             kind: crate::toast::ToastKind::Warning,
                                             text: toast_text,
-                                        });
+                                        }).await;
                                     }
                                 }
                             }
@@ -1466,7 +1507,7 @@ async fn run(
                                     from: msg.from,
                                     text: msg.text,
                                     summary: msg.summary,
-                                });
+                                }).await;
                             }
                         });
                     }
@@ -1603,7 +1644,7 @@ async fn run(
                             tool: tool_for_task,
                             blocked: decision.should_block(),
                             reason: decision.reason,
-                        });
+                        }).await;
                     });
                 } else if app.tool_needs_approval(&tool) {
                     // Insert the tool into the assistant message *immediately*
@@ -1786,7 +1827,7 @@ async fn run(
 
                 // Auto-save session after each assistant turn completes
                 if let Some(ref session_id) = app.current_session_id {
-                    session::save_session(session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str()));
+                    session::save_session(session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str())).await;
                     app.last_session_save_at = Some(std::time::Instant::now());
                 }
                 // v126 queued-prompt drain on plain end_turn: model finished
@@ -2072,7 +2113,7 @@ async fn run(
                 // saves on every state mutation; jfc previously only saved
                 // at submit + StreamDone, missing the post-tool state.
                 if let Some(ref session_id) = app.current_session_id {
-                    session::save_session(session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str()));
+                    session::save_session(session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str())).await;
                 }
             }
             AppEvent::AllToolsComplete => {
@@ -2134,7 +2175,7 @@ async fn run(
                         rapid_refill_count = app.tool_ctx.rapid_refill_count,
                         "post-response compaction triggered"
                     );
-                    let _ = tx.send(AppEvent::CompactionStarted);
+                    let _ = tx.send(AppEvent::CompactionStarted).await;
                     let messages = app.messages.clone();
                     let provider = Arc::clone(&app.provider);
                     let model = app.model.clone();
@@ -2144,8 +2185,9 @@ async fn run(
                     let progress_tx = tx_compact.clone();
                     let on_progress: crate::compact::CompactProgressCb =
                         Box::new(move |chars| {
+                            // CompactionProgress is non-critical; next progress update supersedes.
                             let _ = progress_tx
-                                .send(AppEvent::CompactionProgress { output_chars: chars });
+                                .try_send(AppEvent::CompactionProgress { output_chars: chars });
                         });
                     tokio::spawn(async move {
                         let options = provider::StreamOptions::new(model.clone());
@@ -2181,7 +2223,7 @@ async fn run(
                                     tool_ctx,
                                     pre_tokens,
                                     post_tokens,
-                                });
+                                }).await;
                             }
                             compact::CompactResult::Unsupported => {
                                 tracing::info!(
@@ -2194,7 +2236,7 @@ async fn run(
                                         .into(),
                                     None,
                                     false, // permanent: provider mismatch won't fix itself
-                                ));
+                                )).await;
                             }
                             compact::CompactResult::TooFewGroups => {
                                 tracing::info!(
@@ -2213,7 +2255,7 @@ async fn run(
                                         .into(),
                                     None,
                                     true, // transient: more user turns will unblock it
-                                ));
+                                )).await;
                             }
                             compact::CompactResult::CircuitBreakerTripped => {
                                 tracing::warn!(
@@ -2224,7 +2266,7 @@ async fn run(
                                     "Circuit breaker tripped — compaction keeps refilling".into(),
                                     None,
                                     false,
-                                ));
+                                )).await;
                             }
                             compact::CompactResult::Exhausted { attempts } => {
                                 tracing::warn!(
@@ -2234,7 +2276,7 @@ async fn run(
                                 );
                                 let _ = tx_compact.send(AppEvent::CompactionFailed(format!(
                                     "Exhausted {attempts} compaction attempts"
-                                ), None, false));
+                                ), None, false)).await;
                             }
                         }
                     });
@@ -2449,7 +2491,7 @@ async fn run(
                         &app.messages,
                         Some(app.cwd.as_str()),
                         Some(app.model.as_str()),
-                    );
+                    ).await;
                 }
             }
             AppEvent::AgentChunk { task_id, text } => {
@@ -2671,34 +2713,50 @@ async fn run(
                     agent_id.clone(),
                     crate::swarm::types::TeammateInfo {
                         name: name.clone(),
-                        agent_type,
-                        color,
-                        cwd,
-                        spawned_at: std::time::Instant::now(),
-                        backend: crate::swarm::types::BackendType::InProcess,
-                    },
-                );
+                            agent_type,
+                            color,
+                            cwd,
+                            spawned_at: std::time::Instant::now(),
+                            backend: crate::swarm::types::BackendType::InProcess,
+                        },
+                    );
+                }
             }
         }
 
-        app.sync_task_completions();
-        draw_synchronized(terminal, &mut app)?;
-        // Cheap on every loop tick: only sends the SetTitle escape if
-        // the model or session id changed since the last render.
-        set_terminal_title(&app);
-        // Mode-aware cursor: BlinkingUnderScore in input mode reads
-        // as "type here", SteadyBlock during active streaming reads
-        // as "Claude is talking, hold on". Crossterm guards make this
-        // a no-op on terminals that don't support DECSCUSR.
+        if should_quit {
+            break 'main_loop;
+        }
+
+        // Streaming/compaction needs continuous redraws to show progress
+        // (border-comet animation, spinner). Re-arm the dirty flag so a
+        // bare Tick can drive the next frame.
         let want_streaming_cursor = app.is_streaming || app.compacting_started_at.is_some();
-        let _ = execute!(
-            io::stdout(),
-            if want_streaming_cursor {
-                SetCursorStyle::SteadyBlock
-            } else {
-                SetCursorStyle::BlinkingUnderScore
-            }
-        );
+        if want_streaming_cursor {
+            needs_draw = true;
+        }
+
+        let elapsed_since_draw = last_draw.elapsed();
+        if needs_draw && elapsed_since_draw >= FRAME_BUDGET {
+            // `terminal.draw` flushes stdout synchronously; `block_in_place`
+            // tells the multi-threaded runtime to migrate other tasks off this
+            // worker so they keep running while we hold the I/O.
+            tokio::task::block_in_place(|| -> io::Result<()> {
+                app.sync_task_completions();
+                draw_synchronized(terminal, &mut app)?;
+                set_terminal_title(&app);
+                let _ = execute!(
+                    io::stdout(),
+                    if want_streaming_cursor {
+                        SetCursorStyle::SteadyBlock
+                    } else {
+                        SetCursorStyle::BlinkingUnderScore
+                    }
+                );
+                Ok(())
+            })?;
+            last_draw = std::time::Instant::now();
+        }
     }
 
     Ok(())
@@ -2722,14 +2780,15 @@ fn draw_synchronized(
 
 /// Walk up from `cwd` looking for a `.git/HEAD` file. When found,
 /// returns the current branch (or "(detached)" for a detached HEAD).
-/// Returns `None` outside any git repo. Pure file I/O — no subprocess
-/// spawn — so it's cheap enough to call every Tick refresh window.
-fn read_git_branch(cwd: &std::path::Path) -> Option<String> {
+/// Returns `None` outside any git repo. Async file I/O via `tokio::fs`
+/// so the Tick refresh never stalls the runtime.
+async fn read_git_branch(cwd: &std::path::Path) -> Option<String> {
     let mut dir = cwd.to_path_buf();
     loop {
         let head = dir.join(".git/HEAD");
-        if head.exists() {
-            let content = std::fs::read_to_string(&head).ok()?;
+        // Try the read directly; `read_to_string` returns Err if missing,
+        // which is cheaper than a separate `metadata` probe + read.
+        if let Ok(content) = tokio::fs::read_to_string(&head).await {
             let trimmed = content.trim();
             if let Some(rest) = trimmed.strip_prefix("ref: refs/heads/") {
                 return Some(rest.to_owned());

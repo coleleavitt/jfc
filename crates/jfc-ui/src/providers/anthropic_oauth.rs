@@ -53,6 +53,7 @@ const VERSION_URL: &str = "https://registry.npmjs.org/@anthropic-ai/claude-code/
 const VERSION_FALLBACK: &str = "2.1.36";
 const VERSION_CACHE_TTL: Duration = Duration::from_secs(3600);
 const VERSION_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
+const TOKEN_REFRESH_TIMEOUT: Duration = Duration::from_secs(15);
 
 const CCH_PLACEHOLDER: &str = "cch=00000";
 
@@ -68,43 +69,63 @@ fn version_cache_mutex() -> &'static Mutex<Option<VersionCache>> {
 }
 
 async fn fetch_cli_version(client: &reqwest::Client) -> String {
-    let mut guard = version_cache_mutex().lock().await;
-    if let Some(ref cache) = *guard {
-        if cache.fetched_at.elapsed().unwrap_or(Duration::MAX) < VERSION_CACHE_TTL {
-            tracing::debug!(
-                target: "jfc::provider::anthropic_oauth",
-                version = %cache.version,
-                "using cached CLI version"
-            );
-            return cache.version.clone();
+    {
+        let guard = version_cache_mutex().lock().await;
+        if let Some(ref cache) = *guard {
+            if cache.fetched_at.elapsed().unwrap_or(Duration::MAX) < VERSION_CACHE_TTL {
+                tracing::debug!(
+                    target: "jfc::provider::anthropic_oauth",
+                    version = %cache.version,
+                    "using cached CLI version"
+                );
+                return cache.version.clone();
+            }
         }
     }
-    let version = client
+
+    let version = match client
         .get(VERSION_URL)
         .timeout(VERSION_FETCH_TIMEOUT)
         .send()
         .await
-        .ok()
-        .and_then(|r| {
-            if r.status().is_success() {
-                Some(r)
-            } else {
-                None
+    {
+        Ok(resp) if resp.status().is_success() => match resp.json::<Value>().await {
+            Ok(value) => value["version"]
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| VERSION_FALLBACK.to_owned()),
+            Err(e) => {
+                tracing::debug!(
+                    target: "jfc::provider::anthropic_oauth",
+                    error = %e,
+                    "failed to decode CLI version response; using fallback"
+                );
+                VERSION_FALLBACK.to_owned()
             }
-        })
-        .and_then(|r| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(r.json::<Value>())
-            })
-            .ok()
-        })
-        .and_then(|v| v["version"].as_str().map(str::to_owned))
-        .unwrap_or_else(|| VERSION_FALLBACK.to_owned());
+        },
+        Ok(resp) => {
+            tracing::debug!(
+                target: "jfc::provider::anthropic_oauth",
+                status = %resp.status(),
+                "CLI version fetch returned non-success; using fallback"
+            );
+            VERSION_FALLBACK.to_owned()
+        }
+        Err(e) => {
+            tracing::debug!(
+                target: "jfc::provider::anthropic_oauth",
+                error = %e,
+                "CLI version fetch failed; using fallback"
+            );
+            VERSION_FALLBACK.to_owned()
+        }
+    };
     tracing::debug!(
         target: "jfc::provider::anthropic_oauth",
         version = %version,
         "fetched CLI version from registry"
     );
+    let mut guard = version_cache_mutex().lock().await;
     *guard = Some(VersionCache {
         version: version.clone(),
         fetched_at: std::time::SystemTime::now(),
@@ -201,6 +222,7 @@ async fn refresh_access_token(
     let resp = client
         .post(TOKEN_URL)
         .header("content-type", "application/json")
+        .timeout(TOKEN_REFRESH_TIMEOUT)
         .json(&body)
         .send()
         .await?;
@@ -355,7 +377,7 @@ impl AnthropicOAuthProvider {
             "AnthropicOAuthProvider::new"
         );
         Self {
-            client: reqwest::Client::new(),
+            client: super::http::streaming_client(),
             store_path,
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
@@ -1029,7 +1051,10 @@ mod tests {
         let out = sanitize_system_prompt(s);
         assert!(out.contains("Welcome."));
         assert!(out.contains("Real instructions."));
-        assert!(!out.contains("opencode.ai"), "branded paragraph not stripped: {out}");
+        assert!(
+            !out.contains("opencode.ai"),
+            "branded paragraph not stripped: {out}"
+        );
     }
 
     // sanitize: rewrites jfc-identity phrases so the prompt presents as
@@ -1550,9 +1575,8 @@ mod tests {
     // just doesn't find a match). The file must still be valid JSON afterward.
     #[test]
     fn write_back_tokens_unknown_account_is_noop_robust() {
-        let (_tmp, path) = temp_store(
-            r#"{"accounts":[{"name":"only","refreshToken":"rt"}],"activeIndex":0}"#,
-        );
+        let (_tmp, path) =
+            temp_store(r#"{"accounts":[{"name":"only","refreshToken":"rt"}],"activeIndex":0}"#);
         // Should not error even though the account doesn't exist — we don't
         // want a stale local cache to break the whole token rotation flow.
         write_back_tokens(&path, "ghost", "AT", "RT", 1).unwrap();
@@ -1579,9 +1603,8 @@ mod tests {
     // has_usable_config returns true so main.rs registers the provider.
     #[test]
     fn has_usable_config_true_when_enabled_account_present_normal() {
-        let (_tmp, path) = temp_store(
-            r#"{"accounts":[{"name":"primary","refreshToken":"rt"}],"activeIndex":0}"#,
-        );
+        let (_tmp, path) =
+            temp_store(r#"{"accounts":[{"name":"primary","refreshToken":"rt"}],"activeIndex":0}"#);
         let p = AnthropicOAuthProvider {
             client: reqwest::Client::new(),
             store_path: path,

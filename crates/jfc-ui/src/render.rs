@@ -877,27 +877,47 @@ fn highlight_mentions_in(s: &str, t: Theme, phase: f32) -> Vec<Span<'static>> {
 /// painter to walk the perimeter at a steady speed regardless of
 /// rect aspect ratio.
 fn perimeter_cells(area: Rect) -> Vec<(u16, u16)> {
+    // Per-frame cache: the input dock + status bar reuse the same Rect on
+    // back-to-back frames. Without this, every frame allocated and filled a
+    // ~2 × (w + h) Vec just to walk the same perimeter — pure waste during
+    // idle/streaming where geometry is fixed. Invalidate on Rect change
+    // (resize, layout shift); LRU-of-1 is enough since paint_border_comets
+    // is the only non-test caller.
+    thread_local! {
+        static LAST: std::cell::RefCell<Option<(Rect, Vec<(u16, u16)>)>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    LAST.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if let Some((cached_area, cached_cells)) = slot.as_ref()
+            && *cached_area == area
+        {
+            return cached_cells.clone();
+        }
+        let cells = compute_perimeter_cells(area);
+        *slot = Some((area, cells.clone()));
+        cells
+    })
+}
+
+fn compute_perimeter_cells(area: Rect) -> Vec<(u16, u16)> {
     let mut cells: Vec<(u16, u16)> = Vec::new();
     if area.width < 2 || area.height < 2 {
         return cells;
     }
     let right = area.x + area.width - 1;
     let bottom = area.y + area.height - 1;
-    // Top edge: left-to-right, including both corners.
     for x in area.x..=right {
         cells.push((x, area.y));
     }
-    // Right edge: top-to-bottom, skip the top-right (already added).
     for y in (area.y + 1)..=bottom {
         cells.push((right, y));
     }
-    // Bottom edge: right-to-left, skip the bottom-right (already added).
     if right > area.x {
         for x in (area.x..right).rev() {
             cells.push((x, bottom));
         }
     }
-    // Left edge: bottom-to-top, skip the bottom-left and top-left.
     if bottom > area.y + 1 {
         for y in ((area.y + 1)..bottom).rev() {
             cells.push((area.x, y));
@@ -936,8 +956,15 @@ struct CometConfig {
 /// at a steady speed. Each comet is a `trail_len`-cell trail (head
 /// at brightest blend toward `head` color, tail fading to `base`).
 fn paint_border_comets(f: &mut Frame, area: Rect, cfg: &CometConfig) {
+    // O(1) early exit: skip perimeter computation and buffer writes when
+    // there is no animation to show (no comets configured, or zero-length
+    // trail). Callers pass count=0 when neither streaming nor compaction
+    // is active, so this is the common idle-frame path.
+    if cfg.count == 0 || cfg.trail_len == 0 {
+        return;
+    }
     let perim = perimeter_cells(area);
-    if perim.is_empty() || cfg.count == 0 {
+    if perim.is_empty() {
         return;
     }
     let total = perim.len();
@@ -1249,14 +1276,43 @@ fn fmt_number(n: u64) -> String {
 /// and de-duplicates files by their last-seen entry so the most recent
 /// edit wins. Files appear in *most-recent-first* order to match how the
 /// chat scrolls.
-struct DiffStats {
+#[derive(Clone)]
+pub(crate) struct DiffStats {
     total_files: usize,
     additions: usize,
     deletions: usize,
     files: Vec<String>,
 }
 
+/// Cached wrapper around the full diff-stats walk.
+///
+/// Complexity reduction: O(N_messages × N_parts) → O(1) cache hit on
+/// unchanged state. Invalidates when `messages.len()` or the total
+/// number of message parts changes (new message appended, or a tool
+/// result added to an in-flight assistant message). The key computation
+/// is O(N_messages) but touches only `.parts.len()` — no content
+/// inspection — so it's negligible compared to the full HashMap walk.
 fn collect_diff_stats(app: &App) -> DiffStats {
+    let msg_count = app.messages.len();
+    let total_parts: usize = app.messages.iter().map(|m| m.parts.len()).sum();
+
+    {
+        let cache = app.diff_stats_cache.borrow();
+        if let Some((cached_msgs, cached_parts, ref stats)) = *cache {
+            if cached_msgs == msg_count && cached_parts == total_parts {
+                return stats.clone();
+            }
+        }
+    }
+
+    let stats = compute_diff_stats(app);
+    *app.diff_stats_cache.borrow_mut() = Some((msg_count, total_parts, stats.clone()));
+    stats
+}
+
+/// Inner computation for `collect_diff_stats`. Walks all messages and
+/// parts to build the de-duplicated diff summary.
+fn compute_diff_stats(app: &App) -> DiffStats {
     let mut by_file: std::collections::HashMap<String, (usize, usize)> =
         std::collections::HashMap::new();
     let mut order: Vec<String> = Vec::new();

@@ -87,8 +87,7 @@ impl FileLock {
                     }
 
                     // Exponential backoff with jitter
-                    let elapsed_hundredths =
-                        (start.elapsed().as_millis() / 100) as u32;
+                    let elapsed_hundredths = (start.elapsed().as_millis() / 100) as u32;
                     let backoff_ms = LOCK_INITIAL_RETRY_MS
                         .saturating_mul(2u64.saturating_pow(elapsed_hundredths))
                         .min(LOCK_MAX_RETRY_MS);
@@ -110,8 +109,7 @@ impl FileLock {
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;
-                            let _ =
-                                fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+                            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
                         }
                     }
                     continue;
@@ -154,8 +152,7 @@ impl FileLock {
             match fs::rename(lock_path, &stale_path) {
                 Ok(()) => {
                     // Verify it's still the same stale content
-                    let stale_content =
-                        fs::read_to_string(&stale_path).unwrap_or_default();
+                    let stale_content = fs::read_to_string(&stale_path).unwrap_or_default();
                     let stale_pid: u32 = stale_content
                         .split(':')
                         .next()
@@ -165,10 +162,7 @@ impl FileLock {
                     if stale_pid == 0 || !is_process_alive(stale_pid) {
                         // Confirmed stale — delete temp
                         let _ = fs::remove_file(&stale_path);
-                        debug!(
-                            lock_pid,
-                            "cleared stale lock (process dead)"
-                        );
+                        debug!(lock_pid, "cleared stale lock (process dead)");
                         return Some(true);
                     } else {
                         // Process came alive between checks — restore via hard link
@@ -498,11 +492,7 @@ mod tests {
 
         // First call creates the file
         read_modify_write(&accounts, &lock, |data| {
-            let arr = data
-                .get_mut("accounts")
-                .unwrap()
-                .as_array_mut()
-                .unwrap();
+            let arr = data.get_mut("accounts").unwrap().as_array_mut().unwrap();
             arr.push(serde_json::json!({"name": "test", "token": "abc"}));
             Ok(())
         })
@@ -515,11 +505,7 @@ mod tests {
 
         // Second call modifies
         read_modify_write(&accounts, &lock, |data| {
-            let arr = data
-                .get_mut("accounts")
-                .unwrap()
-                .as_array_mut()
-                .unwrap();
+            let arr = data.get_mut("accounts").unwrap().as_array_mut().unwrap();
             arr.push(serde_json::json!({"name": "test2", "token": "def"}));
             Ok(())
         })
@@ -538,11 +524,7 @@ mod tests {
         let lock = dir.path().join("accounts.lock");
 
         // Create with one account
-        fs::write(
-            &accounts,
-            r#"{"version":1,"accounts":[{"name":"a"}]}"#,
-        )
-        .unwrap();
+        fs::write(&accounts, r#"{"version":1,"accounts":[{"name":"a"}]}"#).unwrap();
 
         // Try to wipe all accounts — should fail
         let result = read_modify_write(&accounts, &lock, |data| {

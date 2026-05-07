@@ -39,14 +39,14 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 
 /// Spawn `cargo check --message-format=json` from `cwd`. Streams each
 /// line through `parse_cargo_message`; on process exit, sends one
 /// `AppEvent::DiagnosticsUpdated` carrying the accumulated set. Errors
 /// (cargo missing, non-cargo project) silently no-op — better to leave
 /// the row blank than spam the user.
-pub async fn run_once(cwd: PathBuf, tx: UnboundedSender<AppEvent>) {
+pub async fn run_once(cwd: PathBuf, tx: Sender<AppEvent>) {
     tracing::info!(
         target: "jfc::diagnostics",
         ?cwd,
@@ -85,7 +85,7 @@ pub async fn run_once(cwd: PathBuf, tx: UnboundedSender<AppEvent>) {
         count = entries.len(),
         "cargo check complete"
     );
-    let _ = tx.send(AppEvent::DiagnosticsUpdated { entries });
+    let _ = tx.send(AppEvent::DiagnosticsUpdated { entries }).await;
 }
 
 #[derive(Deserialize)]

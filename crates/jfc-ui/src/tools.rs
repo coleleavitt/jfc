@@ -15,8 +15,14 @@ use std::sync::OnceLock;
 /// change. Uses `std::sync::Mutex` (NOT tokio's) because the critical
 /// section is purely synchronous map insert/get — fully-qualified path
 /// avoids colliding with `tokio::sync::Mutex` elsewhere in the file.
-fn graph_session_cache() -> &'static std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, Arc<jfc_graph::session::GraphSession>>> {
-    static CACHE: OnceLock<std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, Arc<jfc_graph::session::GraphSession>>>> = OnceLock::new();
+fn graph_session_cache() -> &'static std::sync::Mutex<
+    std::collections::HashMap<std::path::PathBuf, Arc<jfc_graph::session::GraphSession>>,
+> {
+    static CACHE: OnceLock<
+        std::sync::Mutex<
+            std::collections::HashMap<std::path::PathBuf, Arc<jfc_graph::session::GraphSession>>,
+        >,
+    > = OnceLock::new();
     CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
@@ -25,7 +31,9 @@ fn graph_session_cache() -> &'static std::sync::Mutex<std::collections::HashMap<
 /// tree-sitter parse cost.
 fn get_or_build_graph_session(cwd: &std::path::Path) -> Arc<jfc_graph::session::GraphSession> {
     let key = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-    let mut cache = graph_session_cache().lock().expect("graph cache mutex poisoned");
+    let mut cache = graph_session_cache()
+        .lock()
+        .expect("graph cache mutex poisoned");
     if let Some(existing) = cache.get(&key) {
         return Arc::clone(existing);
     }
@@ -41,27 +49,30 @@ fn get_or_build_graph_session(cwd: &std::path::Path) -> Arc<jfc_graph::session::
 /// trust accumulates across bounties. Initialized lazily with the
 /// charter's defaults; user-tunable via `JFC_MARKET_BUDGET` env var
 /// (defaults to 100_000 tokens — the v131 auto-compact threshold).
-fn market_orchestrator() -> &'static tokio::sync::Mutex<jfc_economy::orchestrator::MarketOrchestrator> {
+fn market_orchestrator()
+-> &'static tokio::sync::Mutex<jfc_economy::orchestrator::MarketOrchestrator> {
     // tokio::sync::Mutex (not std::sync::Mutex) so guards are Send
     // across .await — required because run_bounty_cycle holds the
     // lock across LLM calls.
-    static M: OnceLock<tokio::sync::Mutex<jfc_economy::orchestrator::MarketOrchestrator>> = OnceLock::new();
+    static M: OnceLock<tokio::sync::Mutex<jfc_economy::orchestrator::MarketOrchestrator>> =
+        OnceLock::new();
     M.get_or_init(|| {
         let charter = jfc_economy::charter::Charter::default();
         let budget = std::env::var("JFC_MARKET_BUDGET")
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(100_000);
-        tokio::sync::Mutex::new(
-            jfc_economy::orchestrator::MarketOrchestrator::with_budget(charter, budget)
-        )
+        tokio::sync::Mutex::new(jfc_economy::orchestrator::MarketOrchestrator::with_budget(
+            charter, budget,
+        ))
     })
 }
 
 /// Companion collusion detector for the orchestrator. Kept separate
 /// because `MarketReport::generate` takes them as distinct args.
 fn collusion_detector() -> &'static std::sync::Mutex<jfc_economy::collusion::CollusionDetector> {
-    static C: OnceLock<std::sync::Mutex<jfc_economy::collusion::CollusionDetector>> = OnceLock::new();
+    static C: OnceLock<std::sync::Mutex<jfc_economy::collusion::CollusionDetector>> =
+        OnceLock::new();
     C.get_or_init(|| std::sync::Mutex::new(jfc_economy::collusion::CollusionDetector::default()))
 }
 
@@ -107,10 +118,10 @@ pub(crate) fn snapshot_active_provider() -> Option<(
     std::sync::Arc<dyn crate::provider::Provider>,
     crate::provider::ModelId,
 )> {
-    active_provider_handle()
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|(p, m)| (std::sync::Arc::clone(p), m.clone())))
+    active_provider_handle().read().ok().and_then(|g| {
+        g.as_ref()
+            .map(|(p, m)| (std::sync::Arc::clone(p), m.clone()))
+    })
 }
 
 /// Process-global handle to the AppEvent channel. Set by main.rs
@@ -118,29 +129,24 @@ pub(crate) fn snapshot_active_provider() -> Option<(
 /// the same `TaskStarted` / `AgentChunk` / `TaskCompleted` events
 /// the regular Task tool's swarm does — without that, the fan UI
 /// and ctrl+X subagent panel show nothing while a cycle is running.
-fn active_event_sender_handle() -> &'static std::sync::RwLock<
-    Option<tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
-> {
-    static H: OnceLock<
-        std::sync::RwLock<
-            Option<tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
-        >,
-    > = OnceLock::new();
+fn active_event_sender_handle()
+-> &'static std::sync::RwLock<Option<tokio::sync::mpsc::Sender<crate::app::AppEvent>>> {
+    static H: OnceLock<std::sync::RwLock<Option<tokio::sync::mpsc::Sender<crate::app::AppEvent>>>> =
+        OnceLock::new();
     H.get_or_init(|| std::sync::RwLock::new(None))
 }
 
-pub fn register_event_sender(
-    tx: tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>,
-) {
+pub fn register_event_sender(tx: tokio::sync::mpsc::Sender<crate::app::AppEvent>) {
     if let Ok(mut g) = active_event_sender_handle().write() {
         *g = Some(tx);
     }
 }
 
-pub(crate) fn snapshot_event_sender() -> Option<
-    tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>,
-> {
-    active_event_sender_handle().read().ok().and_then(|g| g.clone())
+pub(crate) fn snapshot_event_sender() -> Option<tokio::sync::mpsc::Sender<crate::app::AppEvent>> {
+    active_event_sender_handle()
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
 }
 
 /// SwarmProvider impl for jfc-ui — delegates to the existing
@@ -158,23 +164,36 @@ impl EconomySwarmProvider {
     }
 }
 
+#[async_trait::async_trait]
 impl jfc_economy::reporting::SwarmProvider for EconomySwarmProvider {
-    fn create_worktree(
+    async fn create_worktree(
         &self,
         bounty_id: &str,
         agent_id: &jfc_economy::types::AgentId,
     ) -> Option<std::path::PathBuf> {
         let safe_bounty: String = bounty_id
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '-'
+                }
+            })
             .collect();
         let safe_agent: String = agent_id
             .0
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '-'
+                }
+            })
             .collect();
         let name = format!("economy-{safe_bounty}-{safe_agent}");
-        match crate::worktrees::create_worktree(&self.repo_root, &name) {
+        match crate::worktrees::create_worktree_async(&self.repo_root, &name).await {
             Ok(info) => Some(std::path::PathBuf::from(info.path)),
             Err(e) => {
                 tracing::warn!(
@@ -189,7 +208,7 @@ impl jfc_economy::reporting::SwarmProvider for EconomySwarmProvider {
         }
     }
 
-    fn remove_worktree(&self, path: &std::path::Path) {
+    async fn remove_worktree(&self, path: &std::path::Path) {
         // The underlying `worktrees::remove_worktree` takes the
         // worktree *name* (the branch / dir leaf), not a full path.
         // We named worktrees `economy-<bounty>-<agent>` in
@@ -242,7 +261,7 @@ pub(crate) struct EconomyAgentInvoker {
     /// each text delta, and TaskCompleted/Failed at the end. This is
     /// what makes bounty subagents show up in the same fan UI / ctrl+X
     /// panel as regular Task-tool subagents. None is fine for tests.
-    event_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
+    event_tx: Option<tokio::sync::mpsc::Sender<crate::app::AppEvent>>,
 }
 
 impl EconomyAgentInvoker {
@@ -291,10 +310,12 @@ impl EconomyAgentInvoker {
             match ev {
                 Ok(StreamEvent::TextDelta { delta, .. }) => {
                     if let (Some(tx), Some(id)) = (&self.event_tx, task_id) {
-                        let _ = tx.send(crate::app::AppEvent::AgentChunk {
-                            task_id: id.to_owned(),
-                            text: delta.clone(),
-                        });
+                        let _ = tx
+                            .send(crate::app::AppEvent::AgentChunk {
+                                task_id: id.to_owned(),
+                                text: delta.clone(),
+                            })
+                            .await;
                     }
                     text.push_str(&delta);
                 }
@@ -311,7 +332,8 @@ impl EconomyAgentInvoker {
                     input_tokens = i as u64;
                     output_tokens = o as u64;
                     if let (Some(tx), Some(id)) = (&self.event_tx, task_id) {
-                        let _ = tx.send(crate::app::AppEvent::TaskProgress {
+                        // TaskProgress is non-critical; next progress update supersedes.
+                        let _ = tx.try_send(crate::app::AppEvent::TaskProgress {
                             task_id: id.to_owned(),
                             last_tool: None,
                             elapsed_ms: 0,
@@ -343,29 +365,38 @@ impl EconomyAgentInvoker {
     /// or `emit_failed` after.
     fn emit_started(&self, task_id: &str, description: &str) {
         if let Some(tx) = &self.event_tx {
-            let _ = tx.send(crate::app::AppEvent::TaskStarted {
+            // try_send: lifecycle events are critical but rare (one per task
+            // start), so a full buffer indicates the UI is genuinely overwhelmed
+            // — log and continue rather than block this sync path.
+            if let Err(e) = tx.try_send(crate::app::AppEvent::TaskStarted {
                 task_id: task_id.to_owned(),
                 description: description.to_owned(),
-            });
+            }) {
+                tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskStarted dropped: channel full");
+            }
         }
     }
 
     fn emit_completed(&self, task_id: &str, summary: &str, elapsed_ms: u64) {
         if let Some(tx) = &self.event_tx {
-            let _ = tx.send(crate::app::AppEvent::TaskCompleted {
+            if let Err(e) = tx.try_send(crate::app::AppEvent::TaskCompleted {
                 task_id: task_id.to_owned(),
                 summary: summary.to_owned(),
                 elapsed_ms,
-            });
+            }) {
+                tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskCompleted dropped: channel full");
+            }
         }
     }
 
     fn emit_failed(&self, task_id: &str, error: &str) {
         if let Some(tx) = &self.event_tx {
-            let _ = tx.send(crate::app::AppEvent::TaskFailed {
+            if let Err(e) = tx.try_send(crate::app::AppEvent::TaskFailed {
                 task_id: task_id.to_owned(),
                 error: error.to_owned(),
-            });
+            }) {
+                tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskFailed dropped: channel full");
+            }
         }
     }
 }
@@ -421,14 +452,13 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
             max_tokens = prompt.max_tokens,
             "invoke_solver: streaming"
         );
-        match self.one_shot(system, user, prompt.max_tokens, Some(&task_id)).await {
+        match self
+            .one_shot(system, user, prompt.max_tokens, Some(&task_id))
+            .await
+        {
             Ok((text, tokens)) => {
                 let (patch, explanation) = split_patch_and_explanation(&text);
-                let summary = format!(
-                    "{} bytes patch, {} tokens",
-                    patch.len(),
-                    tokens
-                );
+                let summary = format!("{} bytes patch, {} tokens", patch.len(), tokens);
                 self.emit_completed(&task_id, &summary, started_at.elapsed().as_millis() as u64);
                 Ok(jfc_economy::types::Solution {
                     agent_id: prompt.agent_id,
@@ -494,10 +524,23 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
              Solver's explanation: {}",
             prompt.bounty_id,
             prompt.bounty_description,
-            prompt.solution.patch.chars().take(4_000).collect::<String>(),
-            prompt.solution.explanation.chars().take(500).collect::<String>(),
+            prompt
+                .solution
+                .patch
+                .chars()
+                .take(4_000)
+                .collect::<String>(),
+            prompt
+                .solution
+                .explanation
+                .chars()
+                .take(500)
+                .collect::<String>(),
         );
-        match self.one_shot(system, user, prompt.max_tokens, Some(&task_id)).await {
+        match self
+            .one_shot(system, user, prompt.max_tokens, Some(&task_id))
+            .await
+        {
             Ok((text, tokens)) => {
                 let (flaw, confidence, test_code) = parse_validator_output(&text);
                 let summary = match (&flaw, &test_code) {
@@ -767,7 +810,8 @@ pub(crate) fn parse_file_blocks(text: &str) -> Vec<(std::path::PathBuf, String)>
 }
 
 fn looks_like_unified_diff(text: &str) -> bool {
-    text.lines().any(|l| l.starts_with("diff --git ") || l.starts_with("--- "))
+    text.lines()
+        .any(|l| l.starts_with("diff --git ") || l.starts_with("--- "))
         && text.lines().any(|l| l.starts_with("+++ "))
         && text.lines().any(|l| l.starts_with("@@"))
 }
@@ -782,7 +826,8 @@ pub(crate) fn parse_validator_output(text: &str) -> (Option<String>, f32, Option
     let mut test_code: Option<String> = None;
     let mut current: Option<&str> = None;
     let mut buf = String::new();
-    let flush = |k: Option<&str>, buf: &mut String,
+    let flush = |k: Option<&str>,
+                 buf: &mut String,
                  flaw: &mut Option<String>,
                  conf: &mut f32,
                  test: &mut Option<String>| {
@@ -814,7 +859,13 @@ pub(crate) fn parse_validator_output(text: &str) -> (Option<String>, f32, Option
             .find(|k| t.to_uppercase().starts_with(&format!("{k}:")))
             .copied();
         if let Some(k) = key {
-            flush(current, &mut buf, &mut flaw, &mut confidence, &mut test_code);
+            flush(
+                current,
+                &mut buf,
+                &mut flaw,
+                &mut confidence,
+                &mut test_code,
+            );
             current = Some(k);
             if let Some(rest) = t.split_once(':') {
                 buf.push_str(rest.1.trim());
@@ -826,7 +877,13 @@ pub(crate) fn parse_validator_output(text: &str) -> (Option<String>, f32, Option
             buf.push_str(line);
         }
     }
-    flush(current, &mut buf, &mut flaw, &mut confidence, &mut test_code);
+    flush(
+        current,
+        &mut buf,
+        &mut flaw,
+        &mut confidence,
+        &mut test_code,
+    );
     (flaw, confidence, test_code)
 }
 
@@ -834,13 +891,8 @@ pub(crate) fn parse_validator_output(text: &str) -> (Option<String>, f32, Option
 /// by both the `market_status` tool and the `/market` slash command.
 /// Pulled out so the slash command and the tool stay in sync — any
 /// future field added to the report appears in both surfaces.
-pub fn market_report_string() -> Result<String, String> {
-    // Slash commands run from the synchronous render path. tokio's
-    // Mutex offers `blocking_lock` for exactly this case — block
-    // the calling thread until the lock is free. Safe because
-    // slash commands aren't called from inside the tokio runtime
-    // worker pool (they fire on the keyboard event loop).
-    let orch = market_orchestrator().blocking_lock();
+pub async fn market_report_string() -> Result<String, String> {
+    let orch = market_orchestrator().lock().await;
     let detector = collusion_detector()
         .lock()
         .map_err(|e| format!("collusion detector mutex poisoned: {e}"))?;
@@ -856,7 +908,11 @@ pub fn market_report_string() -> Result<String, String> {
         report.total_spent,
         report.remaining_budget,
         report.health.composite,
-        if report.health.is_critical() { " **[CRITICAL]**" } else { "" },
+        if report.health.is_critical() {
+            " **[CRITICAL]**"
+        } else {
+            ""
+        },
         report.health.efficiency,
         report.health.fairness,
         report.health.trust,
@@ -875,7 +931,9 @@ pub fn market_report_string() -> Result<String, String> {
 /// `None`). Called after writes so the next graph query re-parses the
 /// affected file. Cheap — actual rebuild only happens on the next query.
 pub fn invalidate_graph_session_cache(cwd: Option<&std::path::Path>) {
-    let mut cache = graph_session_cache().lock().expect("graph cache mutex poisoned");
+    let mut cache = graph_session_cache()
+        .lock()
+        .expect("graph cache mutex poisoned");
     match cwd {
         Some(c) => {
             let key = c.canonicalize().unwrap_or_else(|_| c.to_path_buf());
@@ -958,8 +1016,10 @@ pub fn render_pending_auto_context(cwd: &std::path::Path) -> Option<String> {
     let session = get_or_build_graph_session(cwd);
 
     let mut out = String::new();
-    out.push_str("\n\n## Graph Context\nCallers of recently-edited functions \
-        (auto-generated; ignore if unrelated to your next move):\n");
+    out.push_str(
+        "\n\n## Graph Context\nCallers of recently-edited functions \
+        (auto-generated; ignore if unrelated to your next move):\n",
+    );
     let mut any_callers = false;
     'outer: for file in &edited {
         // Function nodes whose `file_path` matches the edited file.
@@ -1880,18 +1940,25 @@ pub async fn execute_tool(
                 body,
             },
         ) => execute_memory_create(&level, &memory_type, &scope, &body, &cwd),
-        (ToolKind::MemoryDelete, ToolInput::MemoryDelete { path }) => {
-            execute_memory_delete(&path)
-        }
-        (ToolKind::TeamCreate, ToolInput::TeamCreate { team_name, description }) => {
-            execute_team_create(&team_name, description.as_deref(), &cwd).await
-        }
+        (ToolKind::MemoryDelete, ToolInput::MemoryDelete { path }) => execute_memory_delete(&path),
+        (
+            ToolKind::TeamCreate,
+            ToolInput::TeamCreate {
+                team_name,
+                description,
+            },
+        ) => execute_team_create(&team_name, description.as_deref(), &cwd).await,
         (ToolKind::TeamDelete, ToolInput::TeamDelete) => {
             execute_team_delete(active_team_name).await
         }
-        (ToolKind::SendMessage, ToolInput::SendMessage { to, message, summary }) => {
-            execute_send_message(&to, &message, summary.as_deref(), active_team_name).await
-        }
+        (
+            ToolKind::SendMessage,
+            ToolInput::SendMessage {
+                to,
+                message,
+                summary,
+            },
+        ) => execute_send_message(&to, &message, summary.as_deref(), active_team_name).await,
         (ToolKind::TeamMemberMode, ToolInput::TeamMemberMode { member_name, mode }) => {
             execute_team_member_mode(&member_name, &mode, active_team_name).await
         }
@@ -1942,8 +2009,7 @@ pub async fn execute_tool(
                                     .map(|p| p.text.as_str())
                                     .collect::<Vec<_>>()
                                     .join(" → ");
-                                preds_block
-                                    .push_str(&format!("      → {target}: {chain}\n"));
+                                preds_block.push_str(&format!("      → {target}: {chain}\n"));
                             }
                         }
                         if !preds_block.is_empty() {
@@ -1963,7 +2029,15 @@ pub async fn execute_tool(
                 Err(e) => ExecutionResult::failure(format!("Graph query error: {e}")),
             }
         }
-        (ToolKind::SymbolEdit, ToolInput::SymbolEdit { handle, new_content, validate, dispatch_cascade }) => {
+        (
+            ToolKind::SymbolEdit,
+            ToolInput::SymbolEdit {
+                handle,
+                new_content,
+                validate,
+                dispatch_cascade,
+            },
+        ) => {
             let session = get_or_build_graph_session(&cwd);
             let entry = match session.symbols().resolve(&handle) {
                 Some(e) => e.clone(),
@@ -1971,13 +2045,19 @@ pub async fn execute_tool(
                     let fuzzy = session.symbols().resolve_fuzzy(&handle);
                     if fuzzy.is_empty() {
                         return ExecutionResult::failure(format!(
-                            "Symbol not found: '{}'. Use graph_query to discover handles.", handle
+                            "Symbol not found: '{}'. Use graph_query to discover handles.",
+                            handle
                         ));
                     }
                     return ExecutionResult::failure(format!(
                         "Symbol '{}' not found. Did you mean: {}?",
                         handle,
-                        fuzzy.iter().take(5).map(|e| e.handle.as_str()).collect::<Vec<_>>().join(", ")
+                        fuzzy
+                            .iter()
+                            .take(5)
+                            .map(|e| e.handle.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     ));
                 }
             };
@@ -2022,7 +2102,8 @@ pub async fn execute_tool(
                                 .join(", ")
                         ));
                     }
-                    summary.push_str("\nDispatch the Task tool per file to update them in parallel.");
+                    summary
+                        .push_str("\nDispatch the Task tool per file to update them in parallel.");
                     cascade_summary = summary;
                     tracing::info!(
                         target: "jfc::tools",
@@ -2109,10 +2190,17 @@ pub async fn execute_tool(
             let start = entry.span.byte_range.start;
             let end = entry.span.byte_range.end;
             if end > file_content.len() {
-                return ExecutionResult::failure("Span out of bounds — file changed since graph was built");
+                return ExecutionResult::failure(
+                    "Span out of bounds — file changed since graph was built",
+                );
             }
 
-            let new_file = format!("{}{}{}", &file_content[..start], new_content, &file_content[end..]);
+            let new_file = format!(
+                "{}{}{}",
+                &file_content[..start],
+                new_content,
+                &file_content[end..]
+            );
             if let Err(e) = std::fs::write(&entry.file_path, &new_file) {
                 return ExecutionResult::failure(format!("Write failed: {e}"));
             }
@@ -2153,12 +2241,7 @@ pub async fn execute_tool(
             // would block /market and concurrent post_bounty calls.
             let bounty_id = {
                 let mut orch = market_orchestrator().lock().await;
-                match orch.post_bounty(
-                    description,
-                    budget,
-                    acceptance_criteria,
-                    max_solvers,
-                ) {
+                match orch.post_bounty(description, budget, acceptance_criteria, max_solvers) {
                     Ok(id) => id,
                     Err(e) => {
                         return ExecutionResult::failure(format!("post_bounty failed: {e}"));
@@ -2219,7 +2302,8 @@ pub async fn execute_tool(
             };
             match cycle_result {
                 Ok(outcome) => {
-                    let written = apply_winning_solution(&cwd, &bounty_id, outcome.winning_solution.as_ref());
+                    let written =
+                        apply_winning_solution(&cwd, &bounty_id, outcome.winning_solution.as_ref());
                     tracing::info!(
                         target: "jfc::ui::bounty",
                         bounty_id = %bounty_id,
@@ -2235,7 +2319,8 @@ pub async fn execute_tool(
                          Trust updates: {}\n\
                          {}\n\
                          Run /market to see updated trust + budget.",
-                        outcome.settlement
+                        outcome
+                            .settlement
                             .winner
                             .as_ref()
                             .map(|a| a.0.as_str())
@@ -2253,7 +2338,10 @@ pub async fn execute_tool(
         }
         (
             ToolKind::RunBounty,
-            ToolInput::RunBounty { bounty_id, max_solvers },
+            ToolInput::RunBounty {
+                bounty_id,
+                max_solvers,
+            },
         ) => {
             // Drive an already-posted Open bounty through the full
             // Solve→Validate→Settle cycle. Same code path as
@@ -2301,7 +2389,8 @@ pub async fn execute_tool(
             };
             match cycle_result {
                 Ok(outcome) => {
-                    let written = apply_winning_solution(&cwd, &bounty_id, outcome.winning_solution.as_ref());
+                    let written =
+                        apply_winning_solution(&cwd, &bounty_id, outcome.winning_solution.as_ref());
                     tracing::info!(
                         target: "jfc::ui::bounty",
                         bounty_id = %bounty_id,
@@ -2317,7 +2406,8 @@ pub async fn execute_tool(
                          Trust updates: {}\n\
                          {}\n\
                          Run /market or market_status to see updated trust + budget.",
-                        outcome.settlement
+                        outcome
+                            .settlement
                             .winner
                             .as_ref()
                             .map(|a| a.0.as_str())
@@ -2372,9 +2462,7 @@ pub async fn execute_tool(
             {
                 body.push_str(&format!("\nBounty `{id}` state: {state:?}"));
                 if matches!(state, jfc_economy::types::MarketState::Open) {
-                    body.push_str(
-                        " — call run_bounty to drive Solve→Validate→Settle.",
-                    );
+                    body.push_str(" — call run_bounty to drive Solve→Validate→Settle.");
                 }
             }
             ExecutionResult::success(body)
@@ -2391,8 +2479,7 @@ async fn execute_team_member_mode(
     // Validate the mode string against the same vocabulary the leader's
     // `PermissionMode` understands. Reject anything else so a typo
     // doesn't silently leave the teammate in an undefined state.
-    const VALID_MODES: &[&str] =
-        &["plan", "default", "acceptEdits", "bypassPermissions"];
+    const VALID_MODES: &[&str] = &["plan", "default", "acceptEdits", "bypassPermissions"];
     if !VALID_MODES.iter().any(|v| v.eq_ignore_ascii_case(mode)) {
         return ExecutionResult::failure(format!(
             "Invalid mode '{mode}'. Must be one of: plan | default | acceptEdits | bypassPermissions"
@@ -2407,12 +2494,8 @@ async fn execute_team_member_mode(
         }
     };
     match crate::swarm::team_helpers::set_member_mode(team_name, member_name, mode).await {
-        Ok(_) => ExecutionResult::success(format!(
-            "{member_name} mode set to {mode}"
-        )),
-        Err(e) => ExecutionResult::failure(format!(
-            "Failed to update {member_name}'s mode: {e}"
-        )),
+        Ok(_) => ExecutionResult::success(format!("{member_name} mode set to {mode}")),
+        Err(e) => ExecutionResult::failure(format!("Failed to update {member_name}'s mode: {e}")),
     }
 }
 
@@ -2697,15 +2780,9 @@ async fn execute_edit(
                     // string told the user nothing about WHAT changed
                     // — they had to open the file to verify. Mirrors
                     // v126's Edit-tool diff display.
-                    let diff = build_edit_diff_view(
-                        file_path,
-                        &content,
-                        &new_content,
-                    );
+                    let diff = build_edit_diff_view(file_path, &content, &new_content);
                     let header = if replacement.replace_all() && count > 1 {
-                        format!(
-                            "{file_path} updated ({line_summary}, {count} occurrences)"
-                        )
+                        format!("{file_path} updated ({line_summary}, {count} occurrences)")
                     } else {
                         format!("{file_path} updated ({line_summary})")
                     };
@@ -2741,11 +2818,7 @@ async fn execute_edit(
 /// localized old_string→new_string replacement. Mirrors what unified
 /// diff renders look like, fed straight into the existing
 /// `ToolOutput::Diff` renderer.
-fn build_edit_diff_view(
-    file_path: &str,
-    old: &str,
-    new: &str,
-) -> crate::types::DiffView {
+fn build_edit_diff_view(file_path: &str, old: &str, new: &str) -> crate::types::DiffView {
     use crate::types::{DiffHunk, DiffLine, DiffLineKind, DiffView};
     const CONTEXT: usize = 3;
     let old_lines: Vec<&str> = old.lines().collect();
@@ -2755,17 +2828,13 @@ fn build_edit_diff_view(
     // unchanged, this yields an empty hunk list and the renderer just
     // shows the title — matches v126's "no-op edit" rendering.
     let mut first = 0;
-    while first < old_lines.len()
-        && first < new_lines.len()
-        && old_lines[first] == new_lines[first]
+    while first < old_lines.len() && first < new_lines.len() && old_lines[first] == new_lines[first]
     {
         first += 1;
     }
     let mut last_old = old_lines.len();
     let mut last_new = new_lines.len();
-    while last_old > first
-        && last_new > first
-        && old_lines[last_old - 1] == new_lines[last_new - 1]
+    while last_old > first && last_new > first && old_lines[last_old - 1] == new_lines[last_new - 1]
     {
         last_old -= 1;
         last_new -= 1;
@@ -2830,9 +2899,7 @@ fn build_edit_diff_view(
             old_start = ctx_start + 1,
             old_count = ctx_end_old - ctx_start,
             new_start = ctx_start + 1,
-            new_count = (ctx_end_old - ctx_start)
-                + new_lines.len()
-                - old_lines.len(),
+            new_count = (ctx_end_old - ctx_start) + new_lines.len() - old_lines.len(),
         );
         hunks.push(DiffHunk {
             old_start: ctx_start + 1,
@@ -3153,7 +3220,7 @@ pub async fn execute_task(
     task_input: &crate::types::TaskInput,
     provider: &dyn crate::provider::Provider,
     model_id: crate::provider::ModelId,
-    tx: Option<&tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
+    tx: Option<&tokio::sync::mpsc::Sender<crate::app::AppEvent>>,
     task_id: Option<&str>,
     agent_def: Option<&crate::agents::AgentDef>,
     cwd_override: Option<PathBuf>,
@@ -3221,14 +3288,15 @@ pub async fn execute_task(
     // Claude Code's `toolUseCount` / `cumulativeOutputTokens` fields.
     let mut total_tool_uses: u32 = 0;
     let started_at = std::time::Instant::now();
-    let emit_progress = |tx: Option<&tokio::sync::mpsc::UnboundedSender<crate::app::AppEvent>>,
+    let emit_progress = |tx: Option<&tokio::sync::mpsc::Sender<crate::app::AppEvent>>,
                          id: Option<&str>,
                          last_tool: Option<String>,
                          tool_use_count: Option<u32>,
                          input_tokens: Option<u64>,
                          output_tokens: Option<u64>| {
         if let (Some(tx), Some(id)) = (tx, id) {
-            let _ = tx.send(crate::app::AppEvent::TaskProgress {
+            // TaskProgress is non-critical; the next progress update supersedes this one.
+            let _ = tx.try_send(crate::app::AppEvent::TaskProgress {
                 task_id: id.to_owned(),
                 last_tool,
                 elapsed_ms: started_at.elapsed().as_millis() as u64,
@@ -3316,10 +3384,12 @@ pub async fn execute_task(
                     // Pipe deltas through to the task panel so the user
                     // sees the subagent's prose stream live.
                     if let (Some(tx), Some(id)) = (tx, task_id) {
-                        let _ = tx.send(crate::app::AppEvent::AgentChunk {
-                            task_id: id.to_owned(),
-                            text: delta.clone(),
-                        });
+                        let _ = tx
+                            .send(crate::app::AppEvent::AgentChunk {
+                                task_id: id.to_owned(),
+                                text: delta.clone(),
+                            })
+                            .await;
                     }
                     turn_text.push_str(&delta);
                 }
@@ -3420,9 +3490,7 @@ pub async fn execute_task(
             // upstream, re-check here in case the model hallucinated a
             // disallowed name. Provider-side filtering should already
             // make this unreachable for compliant models.
-            if !disallowed.is_empty()
-                && disallowed.iter().any(|d| d.eq_ignore_ascii_case(&name))
-            {
+            if !disallowed.is_empty() && disallowed.iter().any(|d| d.eq_ignore_ascii_case(&name)) {
                 tool_results.push(ProviderContent::ToolResult {
                     tool_use_id: id.clone(),
                     content: format!("Tool '{name}' is not allowed for this agent."),
@@ -3489,7 +3557,7 @@ fn execute_memory_create(
         other => {
             return ExecutionResult::failure(format!(
                 "Invalid level '{other}'. Use 'user' or 'project'."
-            ))
+            ));
         }
     };
 
@@ -3722,8 +3790,7 @@ mod tests {
         };
         // Use a very unlikely name so a stray user-level skill at
         // ~/.claude/skills cannot satisfy the lookup.
-        let result =
-            execute_skill_in(&root, "definitely-not-a-real-skill-xyz-9831", None).await;
+        let result = execute_skill_in(&root, "definitely-not-a-real-skill-xyz-9831", None).await;
         assert!(result.is_error(), "unknown skill must report failure");
         assert!(
             result.output.contains("Unknown skill"),
@@ -3755,8 +3822,7 @@ mod tests {
         };
         write_skill(&root, "jfc-test-args", "Body content.");
 
-        let result =
-            execute_skill_in(&root, "jfc-test-args", Some("focus on auth")).await;
+        let result = execute_skill_in(&root, "jfc-test-args", Some("focus on auth")).await;
         assert!(!result.is_error(), "skill with args must succeed");
         assert!(result.output.contains("Body content."));
         assert!(
@@ -3894,7 +3960,9 @@ mod tests {
     // Normal: empty queue means no block to inject. Render returns None.
     #[test]
     fn auto_context_empty_queue_returns_none_normal() {
-        let _g = auto_context_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        let _g = auto_context_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         drain_auto_context_queue();
         let fixtures = std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -3908,7 +3976,9 @@ mod tests {
     // file in three consecutive turns).
     #[test]
     fn record_edited_file_dedupes_robust() {
-        let _g = auto_context_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        let _g = auto_context_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         drain_auto_context_queue();
         let p = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"));
         record_edited_file(p);
@@ -3923,7 +3993,9 @@ mod tests {
     // don't want the same file's callers re-injected on every turn).
     #[test]
     fn render_auto_context_drains_queue_normal() {
-        let _g = auto_context_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        let _g = auto_context_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         drain_auto_context_queue();
         let p = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"));
         record_edited_file(p);
@@ -3946,7 +4018,9 @@ mod tests {
     // catch a regression where the query runs but produces no rows.
     #[test]
     fn render_auto_context_emits_rows_when_callers_exist_normal() {
-        let _g = auto_context_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        let _g = auto_context_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         drain_auto_context_queue();
         let fixtures = std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -3980,7 +4054,9 @@ mod tests {
     // grow without bound.
     #[test]
     fn render_auto_context_respects_size_cap_robust() {
-        let _g = auto_context_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        let _g = auto_context_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         drain_auto_context_queue();
         let fixtures = std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -4030,7 +4106,9 @@ mod tests {
         );
         assert!(!tasks.is_empty(), "expected ≥1 cascade task for bar()");
         assert!(
-            tasks.iter().any(|t| t.call_sites.iter().any(|s| s.caller_name == "foo")),
+            tasks
+                .iter()
+                .any(|t| t.call_sites.iter().any(|s| s.caller_name == "foo")),
             "expected foo as caller of bar in cascade output"
         );
     }
@@ -4097,10 +4175,12 @@ mod tests {
     // string with the expected section headers — this is the same
     // string the /market slash command surfaces, so a regression here
     // breaks both the tool and the slash command.
-    #[test]
-    fn market_report_string_has_expected_sections_normal() {
+    #[tokio::test]
+    async fn market_report_string_has_expected_sections_normal() {
         let _g = market_test_lock().lock().unwrap_or_else(|p| p.into_inner());
-        let body = market_report_string().expect("market report must render");
+        let body = market_report_string()
+            .await
+            .expect("market report must render");
         assert!(body.contains("Agent economy snapshot"));
         assert!(body.contains("Bounties:"));
         assert!(body.contains("Spend:"));
@@ -4134,15 +4214,16 @@ mod tests {
             None,
         )
         .await;
-        assert!(!res.is_error(), "post_bounty should succeed: {}", res.output);
+        assert!(
+            !res.is_error(),
+            "post_bounty should succeed: {}",
+            res.output
+        );
         let after = {
             let orch = market_orchestrator().lock().await;
             orch.bounties.audit_log().len()
         };
-        assert!(
-            after > before,
-            "audit log should grow ({before} → {after})"
-        );
+        assert!(after > before, "audit log should grow ({before} → {after})");
     }
 
     // Normal: run_bounty is in the canonical tool list and the
@@ -4157,8 +4238,12 @@ mod tests {
         struct NoopProvider;
         #[async_trait::async_trait]
         impl crate::provider::Provider for NoopProvider {
-            fn name(&self) -> &str { "noop" }
-            fn available_models(&self) -> Vec<crate::provider::ModelInfo> { vec![] }
+            fn name(&self) -> &str {
+                "noop"
+            }
+            fn available_models(&self) -> Vec<crate::provider::ModelInfo> {
+                vec![]
+            }
             async fn stream(
                 &self,
                 _: Vec<crate::provider::ProviderMessage>,
@@ -4301,8 +4386,9 @@ mod tests {
     /// SwarmProvider stub that doesn't touch git. Worktree paths
     /// are made up; remove is a no-op.
     struct StubSwarm;
+    #[async_trait::async_trait]
     impl jfc_economy::reporting::SwarmProvider for StubSwarm {
-        fn create_worktree(
+        async fn create_worktree(
             &self,
             bounty_id: &str,
             agent_id: &jfc_economy::types::AgentId,
@@ -4312,7 +4398,7 @@ mod tests {
                 agent_id.0
             )))
         }
-        fn remove_worktree(&self, _path: &std::path::Path) {}
+        async fn remove_worktree(&self, _path: &std::path::Path) {}
         fn send_message(&self, _agent_id: &jfc_economy::types::AgentId, _msg: &str) {}
     }
 
@@ -4338,7 +4424,10 @@ mod tests {
         // Sealed validation: one validator per surviving solution.
         assert_eq!(*invoker.validator_calls.lock().unwrap(), 2);
         // A winner was selected (compiles=true, tests=true on both).
-        assert!(outcome.settlement.winner.is_some(), "expected a winning solver");
+        assert!(
+            outcome.settlement.winner.is_some(),
+            "expected a winning solver"
+        );
         // Cycle outcome carries the winning solution so the dispatcher
         // can apply its patch to disk — without this, run_bounty would
         // claim success but write nothing (the 2026-05-06 HMAC bug).
@@ -4394,8 +4483,12 @@ mod tests {
         struct NoopProvider;
         #[async_trait::async_trait]
         impl crate::provider::Provider for NoopProvider {
-            fn name(&self) -> &str { "noop" }
-            fn available_models(&self) -> Vec<crate::provider::ModelInfo> { vec![] }
+            fn name(&self) -> &str {
+                "noop"
+            }
+            fn available_models(&self) -> Vec<crate::provider::ModelInfo> {
+                vec![]
+            }
             async fn stream(
                 &self,
                 _: Vec<crate::provider::ProviderMessage>,
@@ -4404,8 +4497,7 @@ mod tests {
                 Err(anyhow::anyhow!("noop"))
             }
         }
-        let p: std::sync::Arc<dyn crate::provider::Provider> =
-            std::sync::Arc::new(NoopProvider);
+        let p: std::sync::Arc<dyn crate::provider::Provider> = std::sync::Arc::new(NoopProvider);
         let m = crate::provider::ModelId::new("noop-model");
         register_active_provider(p, m.clone());
         let snap = snapshot_active_provider().expect("provider should be registered");
@@ -4485,13 +4577,11 @@ mod tests {
             .into_iter()
             .find(|n| n.name == "caller")
             .expect("caller fn parsed");
-        let preds = jfc_graph::predicates::outgoing_call_predicates(
-            &session.graph,
-            &caller.id,
-        );
+        let preds = jfc_graph::predicates::outgoing_call_predicates(&session.graph, &caller.id);
         // At least one outgoing call edge should yield an if predicate.
         let has_if_pred = preds.iter().any(|(_target, ps)| {
-            ps.iter().any(|p| p.kind == "if_expression" && p.text == "x > 0")
+            ps.iter()
+                .any(|p| p.kind == "if_expression" && p.text == "x > 0")
         });
         assert!(has_if_pred, "expected `if x > 0` predicate, got: {preds:?}");
     }
@@ -4511,10 +4601,7 @@ mod tests {
             .into_iter()
             .find(|n| n.name == "baz")
             .expect("baz fixture node");
-        let preds = jfc_graph::predicates::outgoing_call_predicates(
-            &session.graph,
-            &baz.id,
-        );
+        let preds = jfc_graph::predicates::outgoing_call_predicates(&session.graph, &baz.id);
         // baz() in the fixture is a leaf — no outgoing calls with
         // enclosing predicates. (May have outgoing calls but they
         // shouldn't be inside if/match/while.)
@@ -4641,7 +4728,9 @@ mod tests {
     // the suite may have produced entries — just that ours appears.
     #[test]
     fn graph_history_records_query_normal() {
-        let _guard = graph_history_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        let _guard = graph_history_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         clear_graph_history();
         let fixtures = std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -4660,20 +4749,24 @@ mod tests {
     // Push 60 distinct queries; only the most recent 50 survive.
     #[test]
     fn graph_history_caps_at_max_robust() {
-        let _guard = graph_history_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        let _guard = graph_history_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         clear_graph_history();
         let fixtures = std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../jfc-graph/tests/fixtures"
         ));
         let session = get_or_build_graph_session(fixtures);
-        let raw = session.query_raw("fn(\"unused\")").unwrap_or(jfc_graph::dsl::QueryResult {
-            nodes: vec![],
-            edges: vec![],
-            was_truncated: false,
-            total_before_truncation: 0,
-            cycles_detected: vec![],
-        });
+        let raw = session
+            .query_raw("fn(\"unused\")")
+            .unwrap_or(jfc_graph::dsl::QueryResult {
+                nodes: vec![],
+                edges: vec![],
+                was_truncated: false,
+                total_before_truncation: 0,
+                cycles_detected: vec![],
+            });
         for i in 0..60 {
             record_graph_query(&format!("query_{i}"), &raw);
         }
@@ -4740,8 +4833,7 @@ mod tests {
             make_tool_def("Read"),
             make_tool_def("Write"),
         ];
-        let filtered =
-            filter_tools_for_agent(all, &["Read".into(), "Write".into()], &[]);
+        let filtered = filter_tools_for_agent(all, &["Read".into(), "Write".into()], &[]);
         assert_eq!(filtered.len(), 2);
         assert!(filtered.iter().any(|t| t.name == "Read"));
         assert!(filtered.iter().any(|t| t.name == "Write"));
@@ -4773,8 +4865,7 @@ mod tests {
     fn filter_tools_disallow_overrides_allow_robust() {
         let all = vec![make_tool_def("Bash"), make_tool_def("Read")];
         // Same tool both allow- and disallow-listed: disallow wins.
-        let filtered =
-            filter_tools_for_agent(all, &["Bash".into()], &["Bash".into()]);
+        let filtered = filter_tools_for_agent(all, &["Bash".into()], &["Bash".into()]);
         assert_eq!(filtered.len(), 0);
     }
 
@@ -4891,10 +4982,7 @@ mod tests {
 
     #[test]
     fn execution_result_with_diff_attaches_normal() {
-        let view = crate::types::parse_unified_diff(
-            "x.rs",
-            "@@ -1,1 +1,1 @@\n-a\n+b\n",
-        );
+        let view = crate::types::parse_unified_diff("x.rs", "@@ -1,1 +1,1 @@\n-a\n+b\n");
         let r = ExecutionResult::success("ok").with_diff(view);
         assert!(r.diff.is_some());
     }
@@ -4908,10 +4996,7 @@ mod tests {
         assert!(result.output.contains("hello"), "{}", result.output);
         // Successful bash should attach provenance pointing at the cwd.
         assert!(result.provenance.is_some(), "bash success must carry cwd");
-        assert_eq!(
-            result.provenance.unwrap().source,
-            ToolSource::LocalExecutor
-        );
+        assert_eq!(result.provenance.unwrap().source, ToolSource::LocalExecutor);
     }
 
     #[tokio::test]
@@ -4919,8 +5004,7 @@ mod tests {
         // Per Anthropic semantics, a non-zero exit code is *output*, not
         // a tool failure. The result is still Success and includes
         // `[exit N]` at the top so the model can read the code.
-        let result =
-            execute_bash("false", Some(5_000), Path::new(".")).await;
+        let result = execute_bash("false", Some(5_000), Path::new(".")).await;
         assert!(!result.is_error(), "exit-1 must be Success: {:?}", result);
         assert!(result.output.contains("[exit 1]"), "{}", result.output);
     }
@@ -4928,20 +5012,14 @@ mod tests {
     #[tokio::test]
     async fn execute_bash_timeout_returns_failure_robust() {
         // sleep longer than the timeout — must time out cleanly.
-        let result =
-            execute_bash("sleep 5", Some(100), Path::new(".")).await;
+        let result = execute_bash("sleep 5", Some(100), Path::new(".")).await;
         assert!(result.is_error());
         assert!(result.output.contains("timed out"), "{}", result.output);
     }
 
     #[tokio::test]
     async fn execute_bash_combines_stdout_and_stderr_normal() {
-        let result = execute_bash(
-            "echo out; echo err >&2",
-            Some(5_000),
-            Path::new("."),
-        )
-        .await;
+        let result = execute_bash("echo out; echo err >&2", Some(5_000), Path::new(".")).await;
         assert!(!result.is_error());
         assert!(result.output.contains("out"), "{}", result.output);
         assert!(result.output.contains("err"), "{}", result.output);
@@ -4955,14 +5033,14 @@ mod tests {
     #[tokio::test]
     async fn execute_bash_strips_ansi_escape_codes_normal() {
         // bash subprocess emits ANSI red — terminal_safe_text strips it.
-        let result = execute_bash(
-            "printf '\\033[31mred\\033[0m'",
-            Some(5_000),
-            Path::new("."),
-        )
-        .await;
+        let result =
+            execute_bash("printf '\\033[31mred\\033[0m'", Some(5_000), Path::new(".")).await;
         assert!(!result.is_error());
-        assert!(!result.output.contains('\u{1b}'), "ANSI leaked: {:?}", result.output);
+        assert!(
+            !result.output.contains('\u{1b}'),
+            "ANSI leaked: {:?}",
+            result.output
+        );
         assert!(result.output.contains("red"), "{}", result.output);
     }
 
@@ -4972,10 +5050,11 @@ mod tests {
     async fn execute_read_returns_numbered_lines_normal() {
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("hello.txt");
-        tokio::fs::write(&path, "alpha\nbravo\ncharlie\n").await.unwrap();
+        tokio::fs::write(&path, "alpha\nbravo\ncharlie\n")
+            .await
+            .unwrap();
 
-        let result =
-            execute_read(path.to_str().unwrap(), None, None, None).await;
+        let result = execute_read(path.to_str().unwrap(), None, None, None).await;
         assert!(!result.is_error());
         assert!(result.output.contains("1: alpha"), "{}", result.output);
         assert!(result.output.contains("2: bravo"), "{}", result.output);
@@ -4985,14 +5064,21 @@ mod tests {
     #[tokio::test]
     async fn execute_read_directory_lists_entries_with_slash_suffix_normal() {
         let dir = tempfile::tempdir().expect("temp dir");
-        tokio::fs::write(dir.path().join("a.txt"), "x").await.unwrap();
-        tokio::fs::create_dir(dir.path().join("subdir")).await.unwrap();
+        tokio::fs::write(dir.path().join("a.txt"), "x")
+            .await
+            .unwrap();
+        tokio::fs::create_dir(dir.path().join("subdir"))
+            .await
+            .unwrap();
 
-        let result =
-            execute_read(dir.path().to_str().unwrap(), None, None, None).await;
+        let result = execute_read(dir.path().to_str().unwrap(), None, None, None).await;
         assert!(!result.is_error());
         assert!(result.output.contains("a.txt"), "{}", result.output);
-        assert!(result.output.contains("subdir/"), "dir suffix missing: {}", result.output);
+        assert!(
+            result.output.contains("subdir/"),
+            "dir suffix missing: {}",
+            result.output
+        );
     }
 
     #[tokio::test]
@@ -5002,8 +5088,7 @@ mod tests {
         let body: String = (1..=20).map(|i| format!("line{i}\n")).collect();
         tokio::fs::write(&path, body).await.unwrap();
 
-        let result =
-            execute_read(path.to_str().unwrap(), Some(5), Some(3), None).await;
+        let result = execute_read(path.to_str().unwrap(), Some(5), Some(3), None).await;
         assert!(!result.is_error());
         // Should show lines 5, 6, 7 only.
         assert!(result.output.contains("5: line5"), "{}", result.output);
@@ -5014,13 +5099,8 @@ mod tests {
 
     #[tokio::test]
     async fn execute_read_missing_file_returns_failure_robust() {
-        let result = execute_read(
-            "/tmp/jfc-definitely-not-here-9999/x.txt",
-            None,
-            None,
-            None,
-        )
-        .await;
+        let result =
+            execute_read("/tmp/jfc-definitely-not-here-9999/x.txt", None, None, None).await;
         assert!(result.is_error());
         assert!(result.output.contains("Cannot read"), "{}", result.output);
     }
@@ -5035,23 +5115,11 @@ mod tests {
 
         let cache = Arc::new(Mutex::new(ReadDedupCache::new()));
         // First full read: populates the cache.
-        let r1 = execute_read(
-            path.to_str().unwrap(),
-            None,
-            None,
-            Some(&cache),
-        )
-        .await;
+        let r1 = execute_read(path.to_str().unwrap(), None, None, Some(&cache)).await;
         assert!(!r1.is_error());
 
         // Second full read on the unchanged file returns the dedup marker.
-        let r2 = execute_read(
-            path.to_str().unwrap(),
-            None,
-            None,
-            Some(&cache),
-        )
-        .await;
+        let r2 = execute_read(path.to_str().unwrap(), None, None, Some(&cache)).await;
         assert!(!r2.is_error());
         assert!(
             r2.output.contains("File unchanged since last full read"),
@@ -5071,21 +5139,9 @@ mod tests {
 
         let cache = Arc::new(Mutex::new(ReadDedupCache::new()));
         // Full read populates cache.
-        let _ = execute_read(
-            path.to_str().unwrap(),
-            None,
-            None,
-            Some(&cache),
-        )
-        .await;
+        let _ = execute_read(path.to_str().unwrap(), None, None, Some(&cache)).await;
         // Paginated read on the same path: dedup must NOT short-circuit.
-        let r = execute_read(
-            path.to_str().unwrap(),
-            Some(2),
-            Some(3),
-            Some(&cache),
-        )
-        .await;
+        let r = execute_read(path.to_str().unwrap(), Some(2), Some(3), Some(&cache)).await;
         assert!(!r.is_error());
         assert!(!r.output.contains("File unchanged"), "{}", r.output);
         assert!(r.output.contains("2: L2"), "{}", r.output);
@@ -5098,8 +5154,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("new.txt");
 
-        let result =
-            execute_write(path.to_str().unwrap(), "hello\nworld\n").await;
+        let result = execute_write(path.to_str().unwrap(), "hello\nworld\n").await;
         assert!(!result.is_error());
         assert!(path.exists(), "file should exist after write");
         let on_disk = tokio::fs::read_to_string(&path).await.unwrap();
@@ -5113,8 +5168,7 @@ mod tests {
         let path = dir.path().join("ow.txt");
         tokio::fs::write(&path, "original").await.unwrap();
 
-        let result =
-            execute_write(path.to_str().unwrap(), "replaced").await;
+        let result = execute_write(path.to_str().unwrap(), "replaced").await;
         assert!(!result.is_error());
         assert!(result.output.starts_with("Updated "), "{}", result.output);
     }
@@ -5124,8 +5178,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("nested/two/three/file.txt");
 
-        let result =
-            execute_write(path.to_str().unwrap(), "x").await;
+        let result = execute_write(path.to_str().unwrap(), "x").await;
         assert!(!result.is_error(), "{}", result.output);
         assert!(path.exists());
     }
@@ -5136,8 +5189,7 @@ mod tests {
         let path = dir.path().join("long.txt");
         let body: String = (1..=100).map(|i| format!("line{i}\n")).collect();
 
-        let result =
-            execute_write(path.to_str().unwrap(), &body).await;
+        let result = execute_write(path.to_str().unwrap(), &body).await;
         assert!(!result.is_error());
         assert!(
             result.output.contains("more lines"),
@@ -5157,13 +5209,7 @@ mod tests {
         let path = dir.path().join("e.txt");
         tokio::fs::write(&path, "foo bar foo").await.unwrap();
 
-        let result = execute_edit(
-            path.to_str().unwrap(),
-            "foo",
-            "BAZ",
-            ReplacementMode::All,
-        )
-        .await;
+        let result = execute_edit(path.to_str().unwrap(), "foo", "BAZ", ReplacementMode::All).await;
         assert!(!result.is_error(), "{}", result.output);
         let after = tokio::fs::read_to_string(&path).await.unwrap();
         assert_eq!(after, "BAZ bar BAZ");
@@ -5176,13 +5222,8 @@ mod tests {
         let path = dir.path().join("m.txt");
         tokio::fs::write(&path, "a a a").await.unwrap();
 
-        let result = execute_edit(
-            path.to_str().unwrap(),
-            "a",
-            "b",
-            ReplacementMode::FirstOnly,
-        )
-        .await;
+        let result =
+            execute_edit(path.to_str().unwrap(), "a", "b", ReplacementMode::FirstOnly).await;
         assert!(result.is_error());
         assert!(
             result.output.contains("matches"),
@@ -5225,7 +5266,11 @@ mod tests {
         )
         .await;
         assert!(result.is_error());
-        assert!(result.output.contains("old_string is empty"), "{}", result.output);
+        assert!(
+            result.output.contains("old_string is empty"),
+            "{}",
+            result.output
+        );
     }
 
     #[tokio::test]
@@ -5243,7 +5288,11 @@ mod tests {
         assert!(!result.is_error(), "{}", result.output);
         let body = tokio::fs::read_to_string(&path).await.unwrap();
         assert_eq!(body, "fresh content");
-        assert!(result.output.contains("Created new file"), "{}", result.output);
+        assert!(
+            result.output.contains("Created new file"),
+            "{}",
+            result.output
+        );
     }
 
     #[tokio::test]
@@ -5252,19 +5301,9 @@ mod tests {
         let path = dir.path().join("r.txt");
         tokio::fs::write(&path, "x x x x").await.unwrap();
 
-        let result = execute_edit(
-            path.to_str().unwrap(),
-            "x",
-            "Y",
-            ReplacementMode::All,
-        )
-        .await;
+        let result = execute_edit(path.to_str().unwrap(), "x", "Y", ReplacementMode::All).await;
         assert!(!result.is_error());
-        assert!(
-            result.output.contains("4 occurrences"),
-            "{}",
-            result.output
-        );
+        assert!(result.output.contains("4 occurrences"), "{}", result.output);
     }
 
     // ─── build_edit_diff_view ────────────────────────────────────────────
@@ -5279,11 +5318,7 @@ mod tests {
 
     #[test]
     fn build_edit_diff_view_counts_added_removed_normal() {
-        let view = build_edit_diff_view(
-            "x.rs",
-            "a\nb\nc\n",
-            "a\nB\nc\n",
-        );
+        let view = build_edit_diff_view("x.rs", "a\nb\nc\n", "a\nB\nc\n");
         assert_eq!(view.additions, 1);
         assert_eq!(view.deletions, 1);
         assert_eq!(view.hunks.len(), 1);
@@ -5292,11 +5327,7 @@ mod tests {
 
     #[test]
     fn build_edit_diff_view_pure_addition_robust() {
-        let view = build_edit_diff_view(
-            "x.rs",
-            "a\nb\n",
-            "a\nb\nc\n",
-        );
+        let view = build_edit_diff_view("x.rs", "a\nb\n", "a\nb\nc\n");
         assert_eq!(view.additions, 1);
         assert_eq!(view.deletions, 0);
     }
@@ -5308,7 +5339,9 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         tokio::fs::write(dir.path().join("a.rs"), "").await.unwrap();
         tokio::fs::write(dir.path().join("b.rs"), "").await.unwrap();
-        tokio::fs::write(dir.path().join("c.txt"), "").await.unwrap();
+        tokio::fs::write(dir.path().join("c.txt"), "")
+            .await
+            .unwrap();
 
         let result = execute_glob("*.rs", None, dir.path()).await;
         assert!(!result.is_error(), "{}", result.output);
@@ -5341,19 +5374,23 @@ mod tests {
         .await
         .unwrap();
 
-        let result =
-            execute_grep("looking-for-this", None, None, None, dir.path()).await;
+        let result = execute_grep("looking-for-this", None, None, None, dir.path()).await;
         assert!(!result.is_error(), "{}", result.output);
-        assert!(result.output.contains("looking-for-this"), "{}", result.output);
+        assert!(
+            result.output.contains("looking-for-this"),
+            "{}",
+            result.output
+        );
     }
 
     #[tokio::test]
     async fn execute_grep_no_match_returns_message_normal() {
         let dir = tempfile::tempdir().expect("temp dir");
-        tokio::fs::write(dir.path().join("a.txt"), "x\n").await.unwrap();
+        tokio::fs::write(dir.path().join("a.txt"), "x\n")
+            .await
+            .unwrap();
 
-        let result =
-            execute_grep("never-here-zzz", None, None, None, dir.path()).await;
+        let result = execute_grep("never-here-zzz", None, None, None, dir.path()).await;
         assert!(!result.is_error());
         assert!(result.output.contains("No matches"), "{}", result.output);
     }
@@ -5368,14 +5405,8 @@ mod tests {
             .await
             .unwrap();
 
-        let result = execute_grep(
-            "needle",
-            None,
-            None,
-            Some("files_with_matches"),
-            dir.path(),
-        )
-        .await;
+        let result =
+            execute_grep("needle", None, None, Some("files_with_matches"), dir.path()).await;
         assert!(!result.is_error(), "{}", result.output);
         assert!(result.output.contains("a.txt"), "{}", result.output);
     }
@@ -5454,13 +5485,7 @@ mod tests {
         // Garbage status string: parser yields None and the patch leaves
         // status untouched. The update otherwise succeeds.
         let store = TaskStore::in_memory();
-        execute_task_create(
-            Some(store.clone()),
-            "x".into(),
-            "y".into(),
-            None,
-            vec![],
-        );
+        execute_task_create(Some(store.clone()), "x".into(), "y".into(), None, vec![]);
         let r = execute_task_update(
             Some(store),
             "t1",
@@ -5476,13 +5501,7 @@ mod tests {
     #[test]
     fn execute_task_done_marks_completed_normal() {
         let store = TaskStore::in_memory();
-        execute_task_create(
-            Some(store.clone()),
-            "do".into(),
-            "it".into(),
-            None,
-            vec![],
-        );
+        execute_task_create(Some(store.clone()), "do".into(), "it".into(), None, vec![]);
         let r = execute_task_done(Some(store), "t1");
         assert!(!r.is_error(), "{}", r.output);
         assert!(r.output.contains("completed"), "{}", r.output);
@@ -5527,13 +5546,7 @@ mod tests {
     #[test]
     fn execute_task_list_filters_by_owner_robust() {
         let store = TaskStore::in_memory();
-        execute_task_create(
-            Some(store.clone()),
-            "x".into(),
-            "y".into(),
-            None,
-            vec![],
-        );
+        execute_task_create(Some(store.clone()), "x".into(), "y".into(), None, vec![]);
         execute_task_update(
             Some(store.clone()),
             "t1",
@@ -5542,8 +5555,7 @@ mod tests {
             None,
             Some("alice".into()),
         );
-        let only_alice =
-            execute_task_list(Some(store.clone()), None, Some("alice"));
+        let only_alice = execute_task_list(Some(store.clone()), None, Some("alice"));
         assert!(only_alice.output.contains("alice"), "{}", only_alice.output);
 
         let only_bob = execute_task_list(Some(store), None, Some("bob"));
@@ -5555,9 +5567,7 @@ mod tests {
     #[test]
     fn execute_memory_create_invalid_level_fails_robust() {
         let dir = tempfile::tempdir().expect("temp dir");
-        let r = execute_memory_create(
-            "bogus", "context", "private", "body", dir.path(),
-        );
+        let r = execute_memory_create("bogus", "context", "private", "body", dir.path());
         assert!(r.is_error());
         assert!(r.output.contains("Invalid level"), "{}", r.output);
     }
@@ -5565,27 +5575,21 @@ mod tests {
     #[test]
     fn execute_memory_create_invalid_type_fails_robust() {
         let dir = tempfile::tempdir().expect("temp dir");
-        let r = execute_memory_create(
-            "user", "wibble", "private", "body", dir.path(),
-        );
+        let r = execute_memory_create("user", "wibble", "private", "body", dir.path());
         assert!(r.is_error());
     }
 
     #[test]
     fn execute_memory_create_invalid_scope_fails_robust() {
         let dir = tempfile::tempdir().expect("temp dir");
-        let r = execute_memory_create(
-            "user", "context", "wibble", "body", dir.path(),
-        );
+        let r = execute_memory_create("user", "context", "wibble", "body", dir.path());
         assert!(r.is_error());
     }
 
     #[test]
     fn execute_memory_create_empty_body_fails_robust() {
         let dir = tempfile::tempdir().expect("temp dir");
-        let r = execute_memory_create(
-            "project", "context", "private", "   ", dir.path(),
-        );
+        let r = execute_memory_create("project", "context", "private", "   ", dir.path());
         assert!(r.is_error());
         assert!(r.output.contains("body cannot be empty"), "{}", r.output);
     }
@@ -5621,19 +5625,14 @@ mod tests {
         std::fs::write(&path, "scratch").unwrap();
         let r = execute_memory_delete(path.to_str().unwrap());
         assert!(r.is_error(), "expected failure for path outside memory dir");
-        assert!(
-            r.output.contains("Failed to delete memory"),
-            "{}",
-            r.output
-        );
+        assert!(r.output.contains("Failed to delete memory"), "{}", r.output);
     }
 
     // ─── execute_team_member_mode validation ─────────────────────────────
 
     #[tokio::test]
     async fn execute_team_member_mode_invalid_mode_fails_robust() {
-        let r =
-            execute_team_member_mode("alice", "godmode", Some("alpha")).await;
+        let r = execute_team_member_mode("alice", "godmode", Some("alpha")).await;
         assert!(r.is_error());
         assert!(r.output.contains("Invalid mode"), "{}", r.output);
     }
@@ -5783,7 +5782,9 @@ mod tests {
     #[tokio::test]
     async fn execute_tool_dispatches_glob_normal() {
         let dir = tempfile::tempdir().expect("temp dir");
-        tokio::fs::write(dir.path().join("hit.rs"), "").await.unwrap();
+        tokio::fs::write(dir.path().join("hit.rs"), "")
+            .await
+            .unwrap();
         let r = execute_tool(
             ToolKind::Glob,
             ToolInput::Glob {

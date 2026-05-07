@@ -46,31 +46,22 @@ pub fn message_view_total_lines(app: &App, inner_w: usize) -> usize {
                 MessagePart::Text(text) => {
                     let mut cache = app.render_cache.borrow_mut();
                     let t = app.theme;
-                    let lines = cache.get_or_insert_with(text, width, |t_text, w| {
-                        markdown::to_lines(t_text, &t, w as usize)
-                    });
-                    // Use ratatui's own word-wrap line count instead
-                    // of `div_ceil(inner_w)`. ratatui's `Paragraph`
-                    // wraps at WORD boundaries (not column boundaries)
-                    // so a `width=80` line in a 60-col area can take 3
-                    // rows when no good word break lands near col 60,
-                    // even though `div_ceil(80, 60) = 2`. The earlier
-                    // mismatch made `total_lines` undercount the actual
-                    // rendered height, so `follow_bottom` pinned to a
-                    // scroll_offset that left the true last row off-
-                    // screen — exactly the symptom in the user's
-                    // screenshot.
-                    use ratatui::widgets::{Paragraph, Wrap};
-                    for line in lines {
-                        if line.width() == 0 {
-                            total += 1;
-                        } else if inner_w == 0 {
-                            total += 1;
-                        } else {
-                            let p = Paragraph::new(line.clone())
-                                .wrap(Wrap { trim: false });
-                            total += p.line_count(inner_w as u16).max(1);
-                        }
+                    if is_streaming_placeholder {
+                        // Streaming: render via fast path (no syntect), store in
+                        // dedicated slot so LRU is untouched.
+                        let rendered = markdown::to_lines_streaming(text, &t, width as usize);
+                        cache.set_streaming(idx, width, rendered);
+                        total += cache.streaming_wrapped_line_count(idx, width);
+                    } else {
+                        // Populate the cache (compute lines + wrapped count once),
+                        // then read the precomputed wrapped count. Pre-cache this
+                        // loop instantiated `Paragraph::new(line.clone()).wrap(...)`
+                        // for EVERY line on EVERY frame — see render_cache.rs
+                        // `compute_wrapped_line_count` for the moved-once version.
+                        cache.get_or_insert_with(text, width, |t_text, w| {
+                            markdown::to_lines(t_text, &t, w as usize)
+                        });
+                        total += cache.wrapped_line_count(text, width).unwrap_or(0);
                     }
                 }
                 MessagePart::Reasoning(text) => {
@@ -666,7 +657,20 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
             }
             match part {
                 MessagePart::Text(text) => {
-                    let lines = {
+                    let lines = if is_streaming_placeholder {
+                        // Streaming fast path: recompute every frame without
+                        // syntect. Cost is ~5µs/KB (pulldown-cmark only) vs
+                        // ~200µs/KB with syntect highlighting. The streaming
+                        // slot in RenderCache stores the result for line-count
+                        // queries within the same frame.
+                        let theme = t;
+                        let rendered = markdown::to_lines_streaming(
+                            text, &theme, inner_w,
+                        );
+                        let mut cache = app.render_cache.borrow_mut();
+                        cache.set_streaming(idx, inner_w as u16, rendered.clone());
+                        rendered
+                    } else {
                         let mut cache = app.render_cache.borrow_mut();
                         let width = inner_w as u16;
                         let theme = t;

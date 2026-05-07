@@ -19,7 +19,7 @@ pub struct AnthropicProvider {
 impl AnthropicProvider {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: super::http::streaming_client(),
             api_key: api_key.into(),
         }
     }

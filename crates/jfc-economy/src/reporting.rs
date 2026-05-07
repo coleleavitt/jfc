@@ -97,8 +97,7 @@ impl MarketReport {
         solutions_proposed: u32,
         solutions_accepted: u32,
     ) -> Self {
-        let health =
-            MarketHealth::compute(orchestrator, solutions_proposed, solutions_accepted);
+        let health = MarketHealth::compute(orchestrator, solutions_proposed, solutions_accepted);
         let flagged: Vec<String> = collusion
             .flagged_agents()
             .iter()
@@ -153,12 +152,19 @@ pub struct MarketStatusOutput {
 ///
 /// Defined in jfc-economy, implemented by jfc-ui. This allows the economy
 /// layer to request infrastructure operations without depending on the UI crate.
+///
+/// `create_worktree` / `remove_worktree` are async because the underlying
+/// implementations shell out to `git worktree {add,remove}` which can take
+/// hundreds of milliseconds. The orchestrator already runs inside an async
+/// context (`run_bounty_cycle` is `async fn`), so these directly translate
+/// to non-blocking subprocess waits via `tokio::process::Command`.
+#[async_trait::async_trait]
 pub trait SwarmProvider: Send + Sync {
     /// Create a git worktree for a solver agent to work in.
-    fn create_worktree(&self, bounty_id: &str, agent_id: &AgentId) -> Option<PathBuf>;
+    async fn create_worktree(&self, bounty_id: &str, agent_id: &AgentId) -> Option<PathBuf>;
 
     /// Remove a worktree after the solver completes or is abandoned.
-    fn remove_worktree(&self, path: &Path);
+    async fn remove_worktree(&self, path: &Path);
 
     /// Send a message to an agent's mailbox.
     fn send_message(&self, agent_id: &AgentId, message: &str);
@@ -228,19 +234,13 @@ pub trait AgentInvoker: Send + Sync {
     /// upper bound and set `solution.tokens_consumed` to the actual
     /// figure. On API failure, return Err — the orchestrator will
     /// mark the solver as Abandoned and continue.
-    async fn invoke_solver(
-        &self,
-        prompt: SolverPrompt,
-    ) -> Result<crate::types::Solution, String>;
+    async fn invoke_solver(&self, prompt: SolverPrompt) -> Result<crate::types::Solution, String>;
 
     /// Spawn a validator and collect its challenge outcome. Returns
     /// `ValidatorOutcome { flaw: None, .. }` when the validator
     /// determines the solution is sound — sealed validation means
     /// validators don't see each other's verdicts during this call.
-    async fn invoke_validator(
-        &self,
-        prompt: ValidatorPrompt,
-    ) -> Result<ValidatorOutcome, String>;
+    async fn invoke_validator(&self, prompt: ValidatorPrompt) -> Result<ValidatorOutcome, String>;
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -498,17 +498,18 @@ mod tests {
     #[test]
     fn test_swarm_provider_object_safety() {
         struct MockSwarm;
+        #[async_trait::async_trait]
         impl SwarmProvider for MockSwarm {
-            fn create_worktree(&self, _: &str, _: &AgentId) -> Option<PathBuf> {
+            async fn create_worktree(&self, _: &str, _: &AgentId) -> Option<PathBuf> {
                 Some(PathBuf::from("/tmp/mock"))
             }
-            fn remove_worktree(&self, _: &Path) {}
+            async fn remove_worktree(&self, _: &Path) {}
             fn send_message(&self, _: &AgentId, _: &str) {}
         }
 
         let provider: Box<dyn SwarmProvider> = Box::new(MockSwarm);
         let agent = AgentId("test".into());
-        let path = provider.create_worktree("bounty-1", &agent);
+        let path = futures::executor::block_on(provider.create_worktree("bounty-1", &agent));
         assert_eq!(path, Some(PathBuf::from("/tmp/mock")));
     }
 }

@@ -21,14 +21,14 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, warn};
 
+use super::TEAM_LEAD_NAME;
 use super::mailbox;
 use super::types::*;
-use super::TEAM_LEAD_NAME;
 
 /// Teammate colors matching v126's palette. Cycled through on each spawn.
 const TEAMMATE_COLORS: &[&str] = &[
-    "#4FC3F7", "#81C784", "#FFB74D", "#BA68C8", "#F06292",
-    "#4DD0E1", "#AED581", "#FFD54F", "#7986CB", "#A1887F",
+    "#4FC3F7", "#81C784", "#FFB74D", "#BA68C8", "#F06292", "#4DD0E1", "#AED581", "#FFD54F",
+    "#7986CB", "#A1887F",
 ];
 
 static COLOR_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -148,10 +148,7 @@ pub enum TeammateEvent {
         last_tool: Option<String>,
     },
     /// Teammate completed and exited its loop.
-    Completed {
-        task_id: String,
-        agent_id: String,
-    },
+    Completed { task_id: String, agent_id: String },
     /// Teammate encountered a fatal error.
     Failed {
         task_id: String,
@@ -216,7 +213,10 @@ async fn run_teammate_loop(
     loop {
         // Check abort before processing
         if *abort_rx.borrow() {
-            debug!("[InProcessRunner] {} aborted before iteration", identity.agent_name);
+            debug!(
+                "[InProcessRunner] {} aborted before iteration",
+                identity.agent_name
+            );
             break;
         }
 
@@ -242,7 +242,11 @@ async fn run_teammate_loop(
         .await;
 
         match turn_result {
-            TurnResult::Completed { token_count, tool_count, last_tool } => {
+            TurnResult::Completed {
+                token_count,
+                tool_count,
+                last_tool,
+            } => {
                 let _ = event_tx.send(TeammateEvent::Progress {
                     task_id: task_id.clone(),
                     agent_id: identity.agent_id.clone(),
@@ -280,7 +284,10 @@ async fn run_teammate_loop(
         )
         .await;
 
-        debug!("[InProcessRunner] {} waiting for next message", identity.agent_name);
+        debug!(
+            "[InProcessRunner] {} waiting for next message",
+            identity.agent_name
+        );
 
         // ─── Poll for next message ───────────────────────────────────────
         let poll_result = poll_for_next_message(identity, &mut abort_rx).await;
@@ -299,8 +306,12 @@ async fn run_teammate_loop(
                 if from == "user" {
                     current_prompt = message;
                 } else {
-                    current_prompt =
-                        format_teammate_message(&from, &message, color.as_deref(), summary.as_deref());
+                    current_prompt = format_teammate_message(
+                        &from,
+                        &message,
+                        color.as_deref(),
+                        summary.as_deref(),
+                    );
                 }
             }
             PollResult::ShutdownRequest {
@@ -368,15 +379,14 @@ async fn run_teammate_loop(
                     "[InProcessRunner] {} claimed task from task list",
                     identity.agent_name
                 );
-                current_prompt = format_teammate_message(
-                    "task-list",
-                    &prompt,
-                    None,
-                    Some("auto-claimed task"),
-                );
+                current_prompt =
+                    format_teammate_message("task-list", &prompt, None, Some("auto-claimed task"));
             }
             PollResult::Aborted => {
-                debug!("[InProcessRunner] {} aborted while waiting", identity.agent_name);
+                debug!(
+                    "[InProcessRunner] {} aborted while waiting",
+                    identity.agent_name
+                );
                 break;
             }
         }
@@ -426,12 +436,9 @@ async fn poll_for_next_message(
         for (idx, msg) in messages.iter().enumerate() {
             if !msg.read {
                 if let Some(shutdown) = mailbox::parse_shutdown_request(&msg.text) {
-                    let _ = mailbox::mark_message_read(
-                        &identity.agent_name,
-                        &identity.team_name,
-                        idx,
-                    )
-                    .await;
+                    let _ =
+                        mailbox::mark_message_read(&identity.agent_name, &identity.team_name, idx)
+                            .await;
                     return PollResult::ShutdownRequest {
                         request: Some(shutdown),
                         original_message: msg.text.clone(),
@@ -443,12 +450,8 @@ async fn poll_for_next_message(
         // Priority 2: Messages from leader
         for (idx, msg) in messages.iter().enumerate() {
             if !msg.read && msg.from == TEAM_LEAD_NAME {
-                let _ = mailbox::mark_message_read(
-                    &identity.agent_name,
-                    &identity.team_name,
-                    idx,
-                )
-                .await;
+                let _ = mailbox::mark_message_read(&identity.agent_name, &identity.team_name, idx)
+                    .await;
                 return PollResult::NewMessage {
                     message: msg.text.clone(),
                     from: msg.from.clone(),
@@ -461,12 +464,8 @@ async fn poll_for_next_message(
         // Priority 3: Any unread message
         for (idx, msg) in messages.iter().enumerate() {
             if !msg.read {
-                let _ = mailbox::mark_message_read(
-                    &identity.agent_name,
-                    &identity.team_name,
-                    idx,
-                )
-                .await;
+                let _ = mailbox::mark_message_read(&identity.agent_name, &identity.team_name, idx)
+                    .await;
                 return PollResult::NewMessage {
                     message: msg.text.clone(),
                     from: msg.from.clone(),
@@ -548,7 +547,8 @@ async fn check_task_list_for_work(identity: &TeammateIdentity) -> Option<String>
             identity.agent_name, task_id, subject
         );
 
-        let mut prompt = format!("Complete all open tasks. Start with task #{task_id}:\n\n {subject}");
+        let mut prompt =
+            format!("Complete all open tasks. Start with task #{task_id}:\n\n {subject}");
         if !description.is_empty() {
             prompt.push_str(&format!("\n\n{description}"));
         }
@@ -634,12 +634,9 @@ async fn run_single_turn(
         // Same logic as `tools::execute_task` — a long-running teammate
         // doing multi-turn research can otherwise blow the context
         // window before its final summary turn.
-        let compacted = crate::stream::auto_compact_subagent_history(
-            history,
-            provider.as_ref(),
-            model.clone(),
-        )
-        .await;
+        let compacted =
+            crate::stream::auto_compact_subagent_history(history, provider.as_ref(), model.clone())
+                .await;
         if compacted {
             tracing::info!(
                 target: "jfc::swarm::runner",
@@ -669,14 +666,31 @@ async fn run_single_turn(
         };
 
         let mut response_text = String::new();
-        let mut tool_calls: Vec<(String, String, ToolKind, ToolInput, serde_json::Value)> = Vec::new();
+        let mut tool_calls: Vec<(String, String, ToolKind, ToolInput, serde_json::Value)> =
+            Vec::new();
         let mut stop_reason = StopReason::EndTurn;
 
         futures::pin_mut!(stream);
-        while let Some(event_result) = stream.next().await {
+        loop {
             if *abort_rx.borrow() {
                 return TurnResult::Aborted;
             }
+
+            let event_result = tokio::select! {
+                biased;
+                changed = abort_rx.changed() => {
+                    if changed.is_err() || *abort_rx.borrow() {
+                        return TurnResult::Aborted;
+                    }
+                    continue;
+                }
+                event_result = stream.next() => event_result,
+            };
+
+            let Some(event_result) = event_result else {
+                break;
+            };
+
             let event = match event_result {
                 Ok(e) => e,
                 Err(e) => return TurnResult::Error(format!("stream error: {e}")),
@@ -694,15 +708,30 @@ async fn run_single_turn(
                     });
                     response_text.push_str(&delta);
                 }
-                StreamEvent::ToolDone { tool_name, tool_use_id, input_json, .. } => {
+                StreamEvent::ToolDone {
+                    tool_name,
+                    tool_use_id,
+                    input_json,
+                    ..
+                } => {
                     let input_value: serde_json::Value =
                         serde_json::from_str(&input_json).unwrap_or_default();
                     let kind = ToolKind::from_name(&tool_name);
                     let parsed_input = ToolInput::from_value(&tool_name, input_value.clone());
-                    tool_calls.push((tool_use_id, tool_name.clone(), kind, parsed_input, input_value));
+                    tool_calls.push((
+                        tool_use_id,
+                        tool_name.clone(),
+                        kind,
+                        parsed_input,
+                        input_value,
+                    ));
                     last_tool_name = Some(tool_name);
                 }
-                StreamEvent::Usage { input_tokens, output_tokens, .. } => {
+                StreamEvent::Usage {
+                    input_tokens,
+                    output_tokens,
+                    ..
+                } => {
                     total_tokens = (input_tokens + output_tokens) as u64;
                 }
                 StreamEvent::Done { stop_reason: r } => {
@@ -775,9 +804,7 @@ async fn run_single_turn(
                     &identity.team_name,
                 );
                 let request_id = request.id.clone();
-                if let Err(e) =
-                    super::permission_sync::write_permission_request(&request).await
-                {
+                if let Err(e) = super::permission_sync::write_permission_request(&request).await {
                     tracing::warn!(
                         target: "jfc::swarm::runner",
                         error = %e,
@@ -818,15 +845,9 @@ async fn run_single_turn(
                 }
             }
 
-            let result = tools::execute_tool(
-                kind.clone(),
-                input.clone(),
-                cwd.clone(),
-                None,
-                None,
-                None,
-            )
-            .await;
+            let result =
+                tools::execute_tool(kind.clone(), input.clone(), cwd.clone(), None, None, None)
+                    .await;
 
             tool_results.push(ProviderContent::ToolResult {
                 tool_use_id: id.clone(),
@@ -1419,7 +1440,9 @@ mod tests {
         let drain = async {
             while let Some(ev) = event_rx.recv().await {
                 match ev {
-                    TeammateEvent::Progress { last_tool: Some(t), .. } if t == "Read" => {
+                    TeammateEvent::Progress {
+                        last_tool: Some(t), ..
+                    } if t == "Read" => {
                         got_progress_with_tool = true;
                     }
                     TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } => {
@@ -1431,7 +1454,10 @@ mod tests {
             }
         };
         let _ = tokio::time::timeout(std::time::Duration::from_secs(3), drain).await;
-        assert!(got_progress_with_tool, "expected Progress event with last_tool=Read");
+        assert!(
+            got_progress_with_tool,
+            "expected Progress event with last_tool=Read"
+        );
         assert!(got_terminal);
     }
 

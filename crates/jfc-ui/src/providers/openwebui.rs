@@ -78,7 +78,7 @@ impl OpenWebUIProvider {
             "OpenWebUIProvider::new"
         );
         Self {
-            client: reqwest::Client::new(),
+            client: super::http::streaming_client(),
             store_path,
         }
     }
@@ -470,9 +470,21 @@ mod tests {
             ProviderMessage {
                 role: ProviderRole::User,
                 content: vec![
-                    ProviderContent::ToolResult { tool_use_id: "c1".into(), content: "ok".into(), is_error: false },
-                    ProviderContent::ToolResult { tool_use_id: "c2".into(), content: "ok".into(), is_error: false },
-                    ProviderContent::ToolResult { tool_use_id: "c3".into(), content: "ok".into(), is_error: false },
+                    ProviderContent::ToolResult {
+                        tool_use_id: "c1".into(),
+                        content: "ok".into(),
+                        is_error: false,
+                    },
+                    ProviderContent::ToolResult {
+                        tool_use_id: "c2".into(),
+                        content: "ok".into(),
+                        is_error: false,
+                    },
+                    ProviderContent::ToolResult {
+                        tool_use_id: "c3".into(),
+                        content: "ok".into(),
+                        is_error: false,
+                    },
                 ],
             },
         ];
@@ -1350,7 +1362,11 @@ mod tests {
                 None,
             ),
         );
-        assert!(!events.iter().any(|e| matches!(e, StreamEvent::TextDelta { .. })));
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, StreamEvent::TextDelta { .. }))
+        );
     }
 
     // ── build_body when system prompt is set ─────────────────────────────

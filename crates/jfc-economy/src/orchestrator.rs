@@ -157,7 +157,7 @@ impl MarketOrchestrator {
             let agent = self.solvers.spawn(bounty_id);
             let agent_id = agent.id.clone();
             self.trust.register(agent_id.clone());
-            let worktree = swarm.create_worktree(bounty_id, &agent_id);
+            let worktree = swarm.create_worktree(bounty_id, &agent_id).await;
             if let Some(s) = self.solvers.get_mut(&agent_id) {
                 s.start(worktree.clone());
             }
@@ -228,7 +228,7 @@ impl MarketOrchestrator {
                         s.abandon();
                     }
                     if let Some(p) = worktree {
-                        swarm.remove_worktree(&p);
+                        swarm.remove_worktree(&p).await;
                     }
                 }
             }
@@ -340,7 +340,7 @@ impl MarketOrchestrator {
         //    disk).
         for s in self.solvers.all() {
             if let Some(p) = &s.worktree_path {
-                swarm.remove_worktree(p);
+                swarm.remove_worktree(p).await;
             }
         }
 
