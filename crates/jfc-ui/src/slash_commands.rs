@@ -24,8 +24,8 @@ pub enum SlashCommand {
     Branch(Option<String>),
     /// /permissions — show current permission mode
     Permissions,
-    /// /memory — list memories
-    Memory,
+    /// /memory [sub] — list memories or manage recall (e.g. `/memory recall on`)
+    Memory(Option<String>),
     /// /hooks — list registered hooks
     Hooks,
     /// /sessions — list saved sessions
@@ -57,7 +57,8 @@ impl fmt::Display for SlashCommand {
             Self::Branch(Some(b)) => write!(f, "/branch {b}"),
             Self::Branch(None) => write!(f, "/branch"),
             Self::Permissions => write!(f, "/permissions"),
-            Self::Memory => write!(f, "/memory"),
+            Self::Memory(Some(s)) => write!(f, "/memory {s}"),
+            Self::Memory(None) => write!(f, "/memory"),
             Self::Hooks => write!(f, "/hooks"),
             Self::Sessions => write!(f, "/sessions"),
             Self::Help => write!(f, "/help"),
@@ -91,7 +92,7 @@ pub fn parse_slash_command(input: &str) -> Option<SlashCommand> {
         "resume" | "r" => SlashCommand::Resume(arg),
         "branch" | "br" => SlashCommand::Branch(arg),
         "permissions" | "perms" | "mode" => SlashCommand::Permissions,
-        "memory" | "mem" => SlashCommand::Memory,
+        "memory" | "mem" => SlashCommand::Memory(arg),
         "hooks" => SlashCommand::Hooks,
         "sessions" => SlashCommand::Sessions,
         "help" | "h" | "?" => SlashCommand::Help,
@@ -118,6 +119,7 @@ Available commands:
   /branch [name]   Show current branch or create <name>
   /permissions     Show/change permission mode
   /memory          List project memories
+  /memory recall   Manage two-phase memory recall (on / off / status)
   /hooks           Show registered lifecycle hooks
   /worktree [cmd]  Worktree management (create/list/remove/switch)
   /daemon [cmd]    Daemon management (start/stop/status/run/cron)

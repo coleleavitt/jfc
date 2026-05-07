@@ -2584,6 +2584,80 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     .into(),
             ));
         }
+        "/memory" | "/mem" => {
+            // `/memory` (no args)            → list memory files
+            // `/memory recall on|off|status` → toggle two-phase recall
+            //
+            // The recall sub-command targets the runtime override in
+            // `memory_recall::set_runtime_override` — persisting to
+            // `~/.config/jfc/config.toml` is left to the user since they
+            // may have hand-formatted that file.
+            let arg = parts.get(1).copied().unwrap_or("").trim();
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            if arg.starts_with("recall") {
+                let sub = arg
+                    .splitn(2, ' ')
+                    .nth(1)
+                    .map(str::trim)
+                    .unwrap_or("status");
+                match sub {
+                    "on" | "enable" => {
+                        crate::memory_recall::set_runtime_override(Some(true));
+                        app.messages.push(ChatMessage::assistant(
+                            "Two-phase memory recall: **on** (runtime override).".into(),
+                        ));
+                    }
+                    "off" | "disable" => {
+                        crate::memory_recall::set_runtime_override(Some(false));
+                        app.messages.push(ChatMessage::assistant(
+                            "Two-phase memory recall: **off** (runtime override).".into(),
+                        ));
+                    }
+                    "default" | "reset" => {
+                        crate::memory_recall::set_runtime_override(None);
+                        app.messages.push(ChatMessage::assistant(
+                            "Two-phase memory recall: cleared runtime override; \
+                             falling back to `~/.config/jfc/config.toml` value."
+                                .into(),
+                        ));
+                    }
+                    "status" | "" => {
+                        let persisted = crate::config::load().memory_recall_enabled;
+                        let effective = crate::memory_recall::is_enabled(persisted);
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "**Memory recall**\n\
+                             - Effective: **{}**\n\
+                             - Persisted (config.toml): **{}**\n\
+                             \n\
+                             Toggle with `/memory recall on|off|reset`.",
+                            if effective { "on" } else { "off" },
+                            if persisted { "on" } else { "off" }
+                        )));
+                    }
+                    other => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Unknown sub-command `{other}`. Try \
+                             `/memory recall on|off|reset|status`."
+                        )));
+                    }
+                }
+            } else {
+                let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+                let mems = crate::memory::load_all_memories(&cwd);
+                let body = if mems.is_empty() {
+                    "No memory files found. Create `.jfc/memory/*.md` (project) or \
+                     `~/.config/jfc/memory/*.md` (user) with YAML frontmatter \
+                     (`type:` and `scope:`) and a markdown body."
+                        .to_owned()
+                } else {
+                    let listing = crate::memory::format_existing_memories(&mems);
+                    format!("**{} memor{} loaded:**\n\n{listing}\n\nUse `/memory recall status` to see whether two-phase recall is active.",
+                        mems.len(),
+                        if mems.len() == 1 { "y" } else { "ies" })
+                };
+                app.messages.push(ChatMessage::assistant(body));
+            }
+        }
         "/skills" => {
             let skills =
                 crate::agents::load_skills(&std::env::current_dir().unwrap_or_else(|_| ".".into()));

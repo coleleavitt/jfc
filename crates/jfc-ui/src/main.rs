@@ -17,6 +17,7 @@ mod lsp_client;
 mod lsp_rpc;
 mod markdown;
 mod memory;
+mod memory_recall;
 mod mentions;
 mod message_view;
 mod notifications;

@@ -165,6 +165,32 @@ fn ceil_char_boundary(s: &str, mut i: usize) -> usize {
     i
 }
 
+/// Pull the most recent user-role text out of a provider message vec. Used by
+/// the memory-recall pass to know what query the user actually asked. Returns
+/// `None` when the conversation is empty or the last user turn carried only
+/// tool results (no plain text). Concatenates multiple text blocks in the
+/// same message with newlines so multi-paragraph prompts survive intact.
+fn last_user_text(messages: &[ProviderMessage]) -> Option<String> {
+    for msg in messages.iter().rev() {
+        if msg.role != ProviderRole::User {
+            continue;
+        }
+        let mut buf = String::new();
+        for c in &msg.content {
+            if let ProviderContent::Text(t) = c {
+                if !buf.is_empty() {
+                    buf.push('\n');
+                }
+                buf.push_str(t);
+            }
+        }
+        if !buf.trim().is_empty() {
+            return Some(buf);
+        }
+    }
+    None
+}
+
 /// Mirrors v131 Claude Code's `Yd6 = 1e5` constant — auto-compaction
 /// triggers when the running subagent transcript crosses this many
 /// estimated tokens. We multiply by `BYTES_PER_TOKEN` to convert to a
@@ -1043,6 +1069,40 @@ Do not use a colon before tool calls.";
         let memories = crate::memory::load_all_memories(&cwd_path);
         if let Some(memories_section) = crate::memory::render_memories_section(&memories) {
             system_prompt.push_str(&memories_section);
+        }
+
+        // Two-phase memory recall (v132 `bt1` / `xt1` / tengu_memory_survey).
+        // After the bulk-injected memory listing, we ask the model which
+        // memories actually apply to *this* user message and synthesize the
+        // hits into a short `<system-reminder>` block. The bulk listing stays
+        // — it's the cheap-but-coarse signal — and the recall block adds the
+        // expensive-but-targeted layer on top. Configurable via
+        // `Config.memory_recall_enabled` (default on); skipped for empty /
+        // slash-command queries since neither benefits from recall.
+        let recall_enabled =
+            crate::memory_recall::is_enabled(crate::config::load().memory_recall_enabled);
+        if recall_enabled && !memories.is_empty() {
+            let last_user_query = last_user_text(&messages);
+            if let Some(query) = last_user_query {
+                let trimmed = query.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('/') {
+                    let block = crate::memory_recall::run_recall(
+                        trimmed,
+                        &memories,
+                        provider.clone(),
+                        model.clone(),
+                    )
+                    .await;
+                    if let Some(b) = block {
+                        tracing::debug!(
+                            target: "jfc::stream",
+                            recall_block_len = b.len(),
+                            "appended memory recall block to system prompt"
+                        );
+                        system_prompt.push_str(&b);
+                    }
+                }
+            }
         }
 
         // Auto-context: when the previous turn(s) edited files via

@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 
 /// Top-level config. `default` applies to the primary chat agent and any agent
 /// not listed under `[agents.*]`; per-agent entries override individual fields.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default)]
     pub default: AgentConfig,
@@ -65,6 +65,41 @@ pub struct Config {
     /// Experimental feature flags.
     #[serde(default)]
     pub experimental: Option<ExperimentalConfig>,
+    /// Enable two-phase memory recall (v132 `bt1`/`xt1`). When true (default)
+    /// the stream-prep step issues two extra LLM calls per user turn — a
+    /// "select" pass over memory filenames, then a "synthesize" pass over the
+    /// chosen memories — and injects the synthesized facts as a
+    /// `<system-reminder>` block. Worth ~150–600 extra prompt tokens for the
+    /// recall calls; the savings come from injecting only the facts that
+    /// matter into the main turn instead of every memory file.
+    #[serde(default = "default_memory_recall_enabled")]
+    pub memory_recall_enabled: bool,
+}
+
+fn default_memory_recall_enabled() -> bool {
+    true
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        // Hand-rolled rather than derive because `memory_recall_enabled`
+        // defaults to `true` — `bool::default()` is `false` and the derived
+        // impl would silently turn the recall pass off for every fresh
+        // config. Every other field uses the derive-equivalent default.
+        Self {
+            default: AgentConfig::default(),
+            agents: HashMap::new(),
+            categories: HashMap::new(),
+            permission_automation: None,
+            background_task: None,
+            argus_auto_review: None,
+            mcp: HashMap::new(),
+            disabled_agents: Vec::new(),
+            disabled_tools: Vec::new(),
+            experimental: None,
+            memory_recall_enabled: default_memory_recall_enabled(),
+        }
+    }
 }
 
 /// Category-based model routing.
