@@ -145,6 +145,21 @@ pub fn message_view_total_lines(app: &App, inner_w: usize) -> usize {
                 MessagePart::CompactBoundary { .. } => {
                     total += 1;
                 }
+                MessagePart::Advisor(text) => {
+                    // 1 row for the "ADVISOR:" header + 1 wrapped row per
+                    // visible line. We approximate wrapping at `width`
+                    // (matches the Text branch's heuristic before
+                    // RenderCache enrichment lands).
+                    total += 1;
+                    let w = (width as usize).max(1);
+                    for line in text.lines() {
+                        // Each line wraps to ceil(len / width) rows.
+                        total += line.len().div_ceil(w).max(1);
+                    }
+                    if text.is_empty() {
+                        total += 1;
+                    }
+                }
             }
         }
 
@@ -686,6 +701,9 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
                         ),
                         Span::styled(" ───", Style::default().fg(t.border)),
                     ])));
+                }
+                MessagePart::Advisor(text) => {
+                    push_advisor_lines(&mut items, text, &t);
                 }
             }
             p += 1;
@@ -4292,6 +4310,59 @@ mod reasoning_preview_tests {
         // input's char count, but that's not truncation — no ellipsis.
         let s = collapsed_preview("a   b   c");
         assert!(!s.contains('…'), "false truncation marker; got: {s:?}");
+    }
+}
+
+/// Render a `MessagePart::Advisor` payload. Visually distinct from the main
+/// agent's reply: italic body in `text_secondary`, with a bolded "ADVISOR:"
+/// prefix and a left-side ribbon (`▎`) in the accent color so the user can
+/// pick out the advisor's contribution at a glance even when scrolling fast.
+///
+/// Inline-only — see the module-level note in `advisor.rs` re: side-pane
+/// rendering as a follow-up. The hook for a split-pane would be: wrap each
+/// `RenderItem::TextLine` produced here in a new `RenderItem::AdvisorPane`
+/// variant, then have the layout code carve out a right-side rect and direct
+/// those items there. That's out of scope for the inline implementation.
+fn push_advisor_lines<'a>(items: &mut Vec<RenderItem<'a>>, text: &'a str, t: &Theme) {
+    // Header row: bold, accent-colored "ADVISOR:" so it pops against the
+    // muted body. Without the bold, the prefix blended into the body and
+    // the user couldn't tell where the main reply ended and the advisor
+    // started.
+    items.push(RenderItem::TextLine(Line::from(vec![
+        Span::styled("▎ ", Style::default().fg(t.accent)),
+        Span::styled(
+            "ADVISOR:",
+            Style::default()
+                .fg(t.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])));
+    // Body rows: italic in text_secondary, ribboned with `▎` for the same
+    // visual nesting effect as Reasoning. Empty body still gets a single
+    // placeholder line so the height calculation in `compute_total_lines`
+    // (which adds 1 for empty bodies) lines up with what we render.
+    if text.is_empty() {
+        items.push(RenderItem::TextLine(Line::from(vec![
+            Span::styled("▎ ", Style::default().fg(t.accent)),
+            Span::styled(
+                "(no advice returned)",
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ])));
+        return;
+    }
+    for l in text.lines() {
+        items.push(RenderItem::TextLine(Line::from(vec![
+            Span::styled("▎ ", Style::default().fg(t.accent)),
+            Span::styled(
+                l.to_string(),
+                Style::default()
+                    .fg(t.text_secondary)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ])));
     }
 }
 

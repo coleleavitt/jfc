@@ -186,12 +186,19 @@ pub enum MessagePart {
     Tool(ToolCall),
     TaskStatus(TaskStatusPart),
     CompactBoundary { pre_tokens: usize },
+    /// A parallel-advisor reply (see `crate::advisor`). Rendered with a
+    /// distinct visual style (italic + secondary text color + "ADVISOR:"
+    /// prefix) so the user can tell at a glance that this came from the
+    /// out-of-band advisor and not the main agent. Doesn't participate in
+    /// the model's normal turn accounting — it's a UI-only side effect of
+    /// `/advisor <query>`.
+    Advisor(String),
 }
 
 impl MessagePart {
     pub fn approx_text_len(&self) -> usize {
         match self {
-            Self::Text(s) | Self::Reasoning(s) => s.len(),
+            Self::Text(s) | Self::Reasoning(s) | Self::Advisor(s) => s.len(),
             Self::Tool(tc) => tc.input.summary().len() + tc.output.approx_text_len(),
             Self::TaskStatus(ts) => {
                 ts.description.len() + ts.summary.as_deref().map_or(0, |s| s.len())
@@ -203,6 +210,7 @@ impl MessagePart {
     pub fn text_only(&self) -> String {
         match self {
             Self::Text(s) | Self::Reasoning(s) => s.clone(),
+            Self::Advisor(s) => format!("[Advisor: {s}]"),
             Self::Tool(tc) => {
                 format!("[Tool: {} → {}]", tc.kind.label(), tc.output.text_only())
             }
@@ -219,6 +227,7 @@ impl MessagePart {
         match self {
             Self::Text(s) => s.clone(),
             Self::Reasoning(s) => format!("[Reasoning: {}]", s),
+            Self::Advisor(s) => format!("[Advisor: {s}]"),
             Self::Tool(tc) => {
                 format!(
                     "[Tool: {} | Input: {} | Output: {}]",

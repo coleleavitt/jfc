@@ -1,3 +1,4 @@
+mod advisor;
 mod agents;
 mod app;
 

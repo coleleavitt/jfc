@@ -3500,6 +3500,10 @@ const SLASH_COMMANDS: &[(&str, &str)] = &[
     ("/swarm-approve", "approve a pending swarm tool request"),
     ("/swarm-deny", "deny a pending swarm tool request"),
     ("/auto-mode", "toggle the autonomous classifier"),
+    (
+        "/advisor",
+        "ask a parallel advisor without disturbing the main agent",
+    ),
 ];
 
 /// Returns the `/<prefix>` the user is currently typing, when the
