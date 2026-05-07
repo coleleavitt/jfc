@@ -1744,10 +1744,25 @@ fn render_text_block_skip(
                 )));
                 break 'outer;
             }
-            lines.push(Line::from(Span::styled(
-                sanitize_terminal_text(&chunk),
-                Style::default().fg(text_style),
-            )));
+            let clean = sanitize_terminal_text(&chunk);
+            // Try the git colorizers in order: diffstat first (most
+            // specific), then full diff hunks (broader). Falls back
+            // to plain styling for any line that doesn't match.
+            // Mirrors git's color slots from research/git/diff.c:84.
+            if let Some(spans) = colorize_diffstat_line(&clean, text_style, t) {
+                lines.push(Line::from(spans));
+            } else if let Some(spans) = colorize_git_diff_line(&clean, text_style, t) {
+                lines.push(Line::from(spans));
+            } else if let Some(spans) = colorize_git_status_line(&clean, text_style, t) {
+                lines.push(Line::from(spans));
+            } else if let Some(spans) = colorize_git_log_line(&clean, text_style, t) {
+                lines.push(Line::from(spans));
+            } else {
+                lines.push(Line::from(Span::styled(
+                    clean,
+                    Style::default().fg(text_style),
+                )));
+            }
             count += 1;
         }
     }
@@ -1756,6 +1771,269 @@ fn render_text_block_skip(
         .style(Style::default().bg(t.bg))
         .scroll((skip as u16, 0))
         .render(area, buf);
+}
+
+/// Detect git-diffstat-style lines (` path | NN +++---`) and return
+/// styled spans for the `+` (green) and `-` (red) runs. Returns `None`
+/// when the line doesn't match the shape — caller falls back to plain
+/// styling.
+///
+/// Match shape: leading whitespace, any non-`|` characters, ` | `,
+/// optional digits + space, then a tail of `+`s and `-`s (any order).
+fn colorize_diffstat_line(
+    line: &str,
+    fallback: Color,
+    t: Theme,
+) -> Option<Vec<Span<'static>>> {
+    // Find the ` | ` separator that anchors the diffstat shape.
+    let sep_idx = line.find(" | ")?;
+    let (prefix, rest) = line.split_at(sep_idx);
+    let rest = &rest[3..]; // skip " | "
+    // The stat tail is "<digits> <bars>" or "<digits>". Find the
+    // first run of `+`/`-`. Anything before that should be all
+    // ASCII digits / spaces; if not, this isn't a diffstat line.
+    let bars_start = rest
+        .char_indices()
+        .find(|(_, c)| *c == '+' || *c == '-')
+        .map(|(i, _)| i)?;
+    let head = &rest[..bars_start];
+    let bars = &rest[bars_start..];
+    if !head.chars().all(|c| c.is_ascii_digit() || c.is_whitespace()) {
+        return None;
+    }
+    if bars.is_empty() || !bars.chars().all(|c| c == '+' || c == '-') {
+        return None;
+    }
+    // Split bars into adjacent runs of the same char, each run becomes
+    // its own colored span.
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    spans.push(Span::styled(
+        format!("{prefix} | {head}"),
+        Style::default().fg(fallback),
+    ));
+    let mut buf: Vec<char> = Vec::new();
+    let mut current_kind: Option<char> = None;
+    for c in bars.chars() {
+        match current_kind {
+            Some(k) if k == c => buf.push(c),
+            Some(k) => {
+                let style = if k == '+' { t.success } else { t.error };
+                let s: String = buf.iter().collect();
+                spans.push(Span::styled(s, Style::default().fg(style)));
+                buf.clear();
+                buf.push(c);
+                current_kind = Some(c);
+            }
+            None => {
+                buf.push(c);
+                current_kind = Some(c);
+            }
+        }
+    }
+    if let Some(k) = current_kind {
+        let style = if k == '+' { t.success } else { t.error };
+        let s: String = buf.iter().collect();
+        spans.push(Span::styled(s, Style::default().fg(style)));
+    }
+    Some(spans)
+}
+
+/// Colorize a line of `git diff` output by its leading character.
+/// Matches git's color slots:
+/// - `+` (single, not `+++`)   → green (NEW)
+/// - `-` (single, not `---`)   → red   (OLD)
+/// - `@@`                       → cyan  (FRAGINFO)
+/// - `diff --git`, `index`, `---`, `+++` → bold (METAINFO)
+/// - `commit`                   → yellow (COMMIT)
+///
+/// Returns `None` for any line that doesn't look like git diff output
+/// so the caller falls through to plain styling.
+fn colorize_git_diff_line(
+    line: &str,
+    fallback: Color,
+    t: Theme,
+) -> Option<Vec<Span<'static>>> {
+    if line.is_empty() {
+        return None;
+    }
+    if line.starts_with("diff --git ")
+        || line.starts_with("index ")
+        || line.starts_with("similarity index ")
+        || line.starts_with("rename from ")
+        || line.starts_with("rename to ")
+        || line.starts_with("new file mode ")
+        || line.starts_with("deleted file mode ")
+    {
+        return Some(vec![Span::styled(
+            line.to_owned(),
+            Style::default().fg(t.text_primary).add_modifier(Modifier::BOLD),
+        )]);
+    }
+    if line.starts_with("--- ") || line.starts_with("+++ ") {
+        return Some(vec![Span::styled(
+            line.to_owned(),
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        )]);
+    }
+    if line.starts_with("@@") {
+        return Some(vec![Span::styled(
+            line.to_owned(),
+            Style::default().fg(t.accent),
+        )]);
+    }
+    if line.starts_with("commit ") && line.len() >= 47 {
+        // `commit ` + 40-char SHA = 47 minimum.
+        return Some(vec![Span::styled(
+            line.to_owned(),
+            Style::default().fg(t.warning),
+        )]);
+    }
+    // Single + / - hunk lines — red for deletions, green for additions.
+    // We've already filtered out the +++ and --- cases above.
+    if let Some(rest) = line.strip_prefix('+') {
+        return Some(vec![
+            Span::styled("+".to_owned(), Style::default().fg(t.success)),
+            Span::styled(rest.to_owned(), Style::default().fg(t.success)),
+        ]);
+    }
+    if let Some(rest) = line.strip_prefix('-') {
+        return Some(vec![
+            Span::styled("-".to_owned(), Style::default().fg(t.error)),
+            Span::styled(rest.to_owned(), Style::default().fg(t.error)),
+        ]);
+    }
+    let _ = fallback;
+    None
+}
+
+/// Colorize a `git status --porcelain` row: 2-char status column +
+/// space + path. Per `wt-status.c:45`, staged changes are green and
+/// unstaged / untracked / unmerged are red. Returns `None` for
+/// non-porcelain lines.
+fn colorize_git_status_line(
+    line: &str,
+    fallback: Color,
+    t: Theme,
+) -> Option<Vec<Span<'static>>> {
+    let bytes = line.as_bytes();
+    if bytes.len() < 4 || bytes[2] != b' ' {
+        return None;
+    }
+    let staged = bytes[0] as char;
+    let unstaged = bytes[1] as char;
+    if !is_status_char(staged) || !is_status_char(unstaged) {
+        return None;
+    }
+    let staged_style = if staged == ' ' {
+        Style::default().fg(fallback)
+    } else if matches!(staged, 'M' | 'A' | 'R' | 'C' | 'D' | 'T') {
+        Style::default().fg(t.success).add_modifier(Modifier::BOLD)
+    } else if staged == '?' {
+        Style::default().fg(t.error)
+    } else {
+        Style::default().fg(fallback)
+    };
+    let unstaged_style = if unstaged == ' ' {
+        Style::default().fg(fallback)
+    } else if matches!(unstaged, 'M' | 'D' | 'T' | 'U' | '?') {
+        Style::default().fg(t.error).add_modifier(Modifier::BOLD)
+    } else if matches!(unstaged, 'A' | 'R' | 'C') {
+        Style::default().fg(t.success).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(fallback)
+    };
+    let path = &line[3..];
+    Some(vec![
+        Span::styled(staged.to_string(), staged_style),
+        Span::styled(unstaged.to_string(), unstaged_style),
+        Span::styled(" ".to_owned(), Style::default().fg(fallback)),
+        Span::styled(path.to_owned(), Style::default().fg(fallback)),
+    ])
+}
+
+fn is_status_char(c: char) -> bool {
+    matches!(c, ' ' | 'M' | 'A' | 'D' | 'R' | 'C' | 'U' | 'T' | '?' | '!')
+}
+
+/// Colorize `git log --oneline` rows: `<hash> [refs] subject`.
+/// Hash is yellow (matches git's COMMIT slot), refs in green (HEAD/
+/// branch) and red (remote tracking), rest in default.
+fn colorize_git_log_line(
+    line: &str,
+    fallback: Color,
+    t: Theme,
+) -> Option<Vec<Span<'static>>> {
+    // Match a leading 7-40-char hex run followed by space.
+    let mut chars = line.chars();
+    let mut hash_len = 0;
+    for c in chars.by_ref() {
+        if c.is_ascii_hexdigit() {
+            hash_len += 1;
+            if hash_len > 40 {
+                return None;
+            }
+        } else if c == ' ' {
+            break;
+        } else {
+            return None;
+        }
+    }
+    if hash_len < 7 {
+        return None;
+    }
+    let hash = &line[..hash_len];
+    let rest = &line[hash_len + 1..];
+    let mut spans: Vec<Span<'static>> = vec![
+        Span::styled(
+            hash.to_owned(),
+            Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" ".to_owned(), Style::default().fg(fallback)),
+    ];
+    // If the next chunk is `(refs)`, color it.
+    if let Some(rest2) = rest.strip_prefix('(') {
+        if let Some(end) = rest2.find(')') {
+            let refs = &rest2[..end];
+            spans.push(Span::styled(
+                "(".to_owned(),
+                Style::default().fg(t.warning),
+            ));
+            for (i, part) in refs.split(", ").enumerate() {
+                if i > 0 {
+                    spans.push(Span::styled(
+                        ", ".to_owned(),
+                        Style::default().fg(t.warning),
+                    ));
+                }
+                let style = if part.starts_with("HEAD") {
+                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
+                } else if part.starts_with("origin/") || part.starts_with("upstream/") {
+                    Style::default().fg(t.error)
+                } else if part.starts_with("tag:") {
+                    Style::default().fg(t.warning)
+                } else {
+                    Style::default().fg(t.success)
+                };
+                spans.push(Span::styled(part.to_owned(), style));
+            }
+            spans.push(Span::styled(
+                ")".to_owned(),
+                Style::default().fg(t.warning),
+            ));
+            spans.push(Span::styled(
+                rest2[end + 1..].to_owned(),
+                Style::default().fg(fallback),
+            ));
+            return Some(spans);
+        }
+    }
+    spans.push(Span::styled(
+        rest.to_owned(),
+        Style::default().fg(fallback),
+    ));
+    Some(spans)
 }
 
 fn render_highlighted_with_line_numbers(
