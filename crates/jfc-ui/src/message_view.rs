@@ -23,8 +23,7 @@ pub fn message_view_total_lines(app: &App, inner_w: usize) -> usize {
     let width = inner_w as u16;
 
     for (idx, msg) in app.messages.iter().enumerate() {
-        let is_streaming_placeholder =
-            app.streaming_assistant_idx == Some(idx) && app.is_streaming;
+        let is_streaming_placeholder = app.streaming_assistant_idx == Some(idx) && app.is_streaming;
         if is_streaming_placeholder {
             let has_content = msg.parts.iter().any(|p| match p {
                 MessagePart::Text(s) => !s.is_empty(),
@@ -239,14 +238,11 @@ impl Widget for MessageView<'_> {
                             } else {
                                 (1.0 - phase) * 2.0
                             };
-                            let cursor_color = crate::render::pulse_color_pub(
-                                t.text_muted, t.accent, intensity,
-                            );
+                            let cursor_color =
+                                crate::render::pulse_color_pub(t.text_muted, t.accent, intensity);
                             let cell = &mut buf[(cx, cy)];
                             cell.set_symbol("▋");
-                            cell.set_style(
-                                Style::default().fg(cursor_color),
-                            );
+                            cell.set_style(Style::default().fg(cursor_color));
                         }
                     }
                     scope = None;
@@ -310,8 +306,7 @@ impl Widget for MessageView<'_> {
                     let last_y = y + render_h.saturating_sub(1);
                     if last_y < buf.area().bottom() {
                         let row_left = item_area.x;
-                        let row_right = (item_area.x + item_area.width)
-                            .min(buf.area().right());
+                        let row_right = (item_area.x + item_area.width).min(buf.area().right());
                         let mut last_content_x: Option<u16> = None;
                         let mut x_pos = row_left;
                         while x_pos < row_right {
@@ -323,11 +318,7 @@ impl Widget for MessageView<'_> {
                         }
                         if let Some(lx) = last_content_x {
                             let cursor_x = (lx + 1).min(row_right.saturating_sub(1));
-                            last_streaming_cursor = Some((
-                                cursor_x,
-                                last_y,
-                                render_h,
-                            ));
+                            last_streaming_cursor = Some((cursor_x, last_y, render_h));
                         }
                     }
                 }
@@ -390,8 +381,7 @@ impl<'a> RenderItem<'a> {
                     // rows for a line whose word boundaries don't land
                     // at the column edge.
                     use ratatui::widgets::{Paragraph, Wrap};
-                    let p = Paragraph::new(line.clone())
-                        .wrap(Wrap { trim: false });
+                    let p = Paragraph::new(line.clone()).wrap(Wrap { trim: false });
                     p.line_count(width as u16).max(1)
                 }
             }
@@ -417,7 +407,12 @@ impl<'a> RenderItem<'a> {
             RenderItem::ToolBlock(app, tool) => {
                 render_tool_block(app, tool, area, t, buf, skip);
             }
-            RenderItem::ToolGroup { kind_label, count, kind_color, .. } => {
+            RenderItem::ToolGroup {
+                kind_label,
+                count,
+                kind_color,
+                ..
+            } => {
                 if skip > 0 || area.height == 0 {
                     return;
                 }
@@ -572,9 +567,7 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
             Role::User => Line::from(Span::styled("you", t.user_label())),
             Role::Assistant => {
                 let mut spans = Vec::new();
-                if is_streaming_placeholder
-                    && !crate::spinner::reduced_motion()
-                {
+                if is_streaming_placeholder && !crate::spinner::reduced_motion() {
                     let phase = (std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_millis())
@@ -586,15 +579,9 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
                     } else {
                         (1.0 - phase) * 2.0
                     };
-                    let dot_color = crate::render::pulse_color_pub(
-                        t.text_muted,
-                        t.accent,
-                        intensity,
-                    );
-                    spans.push(Span::styled(
-                        "● ",
-                        Style::default().fg(dot_color),
-                    ));
+                    let dot_color =
+                        crate::render::pulse_color_pub(t.text_muted, t.accent, intensity);
+                    spans.push(Span::styled("● ", Style::default().fg(dot_color)));
                 }
                 spans.push(Span::styled("assistant", t.asst_label()));
                 Line::from(spans)
@@ -630,8 +617,7 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
                     }
                     let run_len = run_end - p;
                     let group_key = format!("{}:{}", idx, first_tool.id);
-                    let expanded =
-                        app.tool_group_expanded.contains(&group_key);
+                    let expanded = app.tool_group_expanded.contains(&group_key);
                     if run_len >= MIN_GROUP_LEN && !expanded {
                         items.push(RenderItem::ToolGroup {
                             key: group_key,
@@ -664,9 +650,7 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
                         // slot in RenderCache stores the result for line-count
                         // queries within the same frame.
                         let theme = t;
-                        let rendered = markdown::to_lines_streaming(
-                            text, &theme, inner_w,
-                        );
+                        let rendered = markdown::to_lines_streaming(text, &theme, inner_w);
                         let mut cache = app.render_cache.borrow_mut();
                         cache.set_streaming(idx, inner_w as u16, rendered.clone());
                         rendered
@@ -775,12 +759,7 @@ fn tool_block_height(tool: &ToolCall, inner_w: usize) -> usize {
     } else {
         content_w
     };
-    1 + cont
-        + tool_content_height_with(
-            &tool.output,
-            effective_content_w,
-            tool.expanded,
-        )
+    1 + cont + tool_content_height_with(&tool.output, effective_content_w, tool.expanded)
 }
 
 pub fn tool_block_height_pub(tool: &ToolCall, inner_w: usize) -> usize {
@@ -834,7 +813,11 @@ fn tool_content_height_with(output: &ToolOutput, content_w: usize, expanded: boo
             // non-empty the renderer also emits a `↳ stderr` divider
             // row between them — account for it so the height doesn't
             // undercount and clip the last stderr line.
-            let stderr_divider = if !stdout.is_empty() && !stderr.is_empty() { 1 } else { 0 };
+            let stderr_divider = if !stdout.is_empty() && !stderr.is_empty() {
+                1
+            } else {
+                0
+            };
             1 + stdout_total.min(cap)
                 + footer_if(stdout_total)
                 + stderr_divider
@@ -888,7 +871,14 @@ fn wrapped_line_count(text: &str, width: usize) -> usize {
         .max(if text.is_empty() { 0 } else { 1 })
 }
 
-fn render_tool_block(app: &App, tool: &ToolCall, area: Rect, t: Theme, buf: &mut Buffer, skip: usize) {
+fn render_tool_block(
+    app: &App,
+    tool: &ToolCall,
+    area: Rect,
+    t: Theme,
+    buf: &mut Buffer,
+    skip: usize,
+) {
     if area.height == 0 {
         return;
     }
@@ -949,9 +939,7 @@ fn render_tool_block(app: &App, tool: &ToolCall, area: Rect, t: Theme, buf: &mut
                     if area.x < buf.area().right() {
                         let cell = &mut buf[(area.x, area.y)];
                         cell.set_symbol("✦");
-                        let blended = crate::render::pulse_color_pub(
-                            t.bg, t.accent, intensity,
-                        );
+                        let blended = crate::render::pulse_color_pub(t.bg, t.accent, intensity);
                         cell.set_style(Style::default().fg(blended));
                     }
                 }
@@ -1077,7 +1065,9 @@ fn build_title_spans<'a>(
         spans.push(Span::raw(" "));
         spans.push(Span::styled(
             b,
-            Style::default().fg(t.text_muted).add_modifier(Modifier::DIM),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::DIM),
         ));
     }
     spans
@@ -1192,24 +1182,25 @@ fn tool_status_icon(tool: &ToolCall, t: &Theme) -> (&'static str, Style) {
 pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
     use ratatui::style::Color;
     match kind {
-        ToolKind::Read => Color::Rgb(120, 180, 255),       // soft blue
-        ToolKind::Write => Color::Rgb(255, 200, 130),      // amber
+        ToolKind::Read => Color::Rgb(120, 180, 255), // soft blue
+        ToolKind::Write => Color::Rgb(255, 200, 130), // amber
         ToolKind::Edit | ToolKind::ApplyPatch => Color::Rgb(160, 230, 170), // mint
-        ToolKind::Bash => Color::Rgb(180, 180, 200),       // neutral grey
+        ToolKind::Bash => Color::Rgb(180, 180, 200), // neutral grey
         ToolKind::Glob | ToolKind::Grep | ToolKind::Search => Color::Rgb(200, 160, 255), // lavender
-        ToolKind::Task => Color::Rgb(255, 170, 220),       // rose
-        ToolKind::TaskCreate
-        | ToolKind::TaskUpdate
-        | ToolKind::TaskList
-        | ToolKind::TaskDone => Color::Rgb(140, 220, 220),  // teal
+        ToolKind::Task => Color::Rgb(255, 170, 220), // rose
+        ToolKind::TaskCreate | ToolKind::TaskUpdate | ToolKind::TaskList | ToolKind::TaskDone => {
+            Color::Rgb(140, 220, 220)
+        } // teal
         ToolKind::MemoryCreate | ToolKind::MemoryDelete => Color::Rgb(220, 220, 140), // olive
         ToolKind::TeamCreate
         | ToolKind::TeamDelete
         | ToolKind::SendMessage
         | ToolKind::TeamMemberMode => Color::Rgb(255, 150, 130), // coral
-        ToolKind::Skill => Color::Rgb(180, 220, 255),       // ice
+        ToolKind::Skill => Color::Rgb(180, 220, 255), // ice
         ToolKind::GraphQuery | ToolKind::SymbolEdit => Color::Rgb(130, 200, 180), // sage
-        ToolKind::PostBounty | ToolKind::RunBounty | ToolKind::MarketStatus => Color::Rgb(255, 215, 100), // gold
+        ToolKind::PostBounty | ToolKind::RunBounty | ToolKind::MarketStatus => {
+            Color::Rgb(255, 215, 100)
+        } // gold
         ToolKind::Generic(_) => t.text_secondary,
     }
 }
@@ -1397,15 +1388,7 @@ fn render_tool_content_with_skip(
             } else if matches!(tool.kind, ToolKind::Task) {
                 render_markdown_block_skip(s, area, t, buf, skip);
             } else {
-                render_text_block_skip(
-                    s,
-                    area,
-                    t.text_secondary,
-                    t,
-                    buf,
-                    skip,
-                    tool.expanded,
-                );
+                render_text_block_skip(s, area, t.text_secondary, t, buf, skip, tool.expanded);
             }
         }
         ToolOutput::LargeText(lt) => {
@@ -1475,16 +1458,44 @@ fn render_tool_content_with_skip(
 
             match cmd_kind {
                 BashCmdKind::Grep if grep_success => render_grep_output_skip(
-                    stdout, stderr, *exit_code, area, t, buf, skip, tool.expanded,
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    area,
+                    t,
+                    buf,
+                    skip,
+                    tool.expanded,
                 ),
                 BashCmdKind::PathList if success => render_path_list_output_skip(
-                    stdout, stderr, *exit_code, area, t, buf, skip, tool.expanded,
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    area,
+                    t,
+                    buf,
+                    skip,
+                    tool.expanded,
                 ),
                 BashCmdKind::GitDiff if gitdiff_success => render_git_diff_output_skip(
-                    stdout, stderr, *exit_code, area, t, buf, skip, tool.expanded,
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    area,
+                    t,
+                    buf,
+                    skip,
+                    tool.expanded,
                 ),
                 BashCmdKind::GitLog if success => render_git_log_output_skip(
-                    stdout, stderr, *exit_code, area, t, buf, skip, tool.expanded,
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    area,
+                    t,
+                    buf,
+                    skip,
+                    tool.expanded,
                 ),
                 _ => {
                     // cat/head/tail path — fall through to the
@@ -1500,11 +1511,16 @@ fn render_tool_content_with_skip(
                         render_cat_markdown_output_skip(
                             stdout, stderr, *exit_code, area, t, buf, skip,
                         );
-                    } else if let Some(lang) =
-                        lang_hint.as_deref().filter(|_| success)
-                    {
+                    } else if let Some(lang) = lang_hint.as_deref().filter(|_| success) {
                         render_cat_output_skip(
-                            lang, stdout, stderr, *exit_code, area, t, buf, skip,
+                            lang,
+                            stdout,
+                            stderr,
+                            *exit_code,
+                            area,
+                            t,
+                            buf,
+                            skip,
                             tool.expanded,
                         );
                     } else {
@@ -1531,15 +1547,7 @@ fn render_tool_content_with_skip(
             } else {
                 language.as_str()
             };
-            render_highlighted_block_skip(
-                hl_lang,
-                content,
-                area,
-                t,
-                buf,
-                skip,
-                tool.expanded,
-            );
+            render_highlighted_block_skip(hl_lang, content, area, t, buf, skip, tool.expanded);
         }
         ToolOutput::FileList(files) => render_file_list_skip(files, area, t, buf, skip),
     }
@@ -1549,13 +1557,7 @@ fn render_tool_content_with_skip(
 /// instead of the plain width-wrapper. Use for Task subagent output and
 /// other tool results that are known to be assistant-authored markdown.
 /// Caps at `MAX_LINES` so a runaway agent can't drown the transcript.
-fn render_markdown_block_skip(
-    text: &str,
-    area: Rect,
-    t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
-) {
+fn render_markdown_block_skip(text: &str, area: Rect, t: Theme, buf: &mut Buffer, skip: usize) {
     const MAX_LINES: usize = 200;
     let width = area.width as usize;
     let mut lines = markdown::to_lines(text, &t, width.max(1));
@@ -1588,11 +1590,7 @@ fn wrap_styled_line(line: &Line<'static>, width: usize) -> Vec<Line<'static>> {
     if width == 0 {
         return vec![line.clone()];
     }
-    let total_chars: usize = line
-        .spans
-        .iter()
-        .map(|s| s.content.chars().count())
-        .sum();
+    let total_chars: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
     if total_chars <= width {
         return vec![line.clone()];
     }
@@ -1604,10 +1602,7 @@ fn wrap_styled_line(line: &Line<'static>, width: usize) -> Vec<Line<'static>> {
         for ch in span.content.chars() {
             if current_w >= width {
                 if !buf.is_empty() {
-                    current.push(Span::styled(
-                        std::mem::take(&mut buf),
-                        span.style,
-                    ));
+                    current.push(Span::styled(std::mem::take(&mut buf), span.style));
                 }
                 out.push(Line::from(std::mem::take(&mut current)));
                 current_w = 0;
@@ -1739,9 +1734,7 @@ fn render_highlighted_with_line_numbers(
                         Some(crate::diagnostics::Severity::Error) => ("✘", t.error),
                         Some(crate::diagnostics::Severity::Warning) => ("⚠", t.warning),
                         Some(crate::diagnostics::Severity::Info) => ("ℹ", t.accent),
-                        Some(crate::diagnostics::Severity::Hint) => {
-                            ("★", t.text_secondary)
-                        }
+                        Some(crate::diagnostics::Severity::Hint) => ("★", t.text_secondary),
                         None => (" ", t.text_muted),
                     };
                     spans_init.push(Span::styled(
@@ -2011,10 +2004,7 @@ fn classify_bash_cmd(command: &str) -> BashCmdKind {
     // covered by `&&` (single-`&` daemonization). The earlier
     // version blanket-rejected `&` which broke `cd X && cmd` for
     // every structured tool.
-    if trimmed.contains('$')
-        || trimmed.contains('`')
-        || trimmed.contains(';')
-    {
+    if trimmed.contains('$') || trimmed.contains('`') || trimmed.contains(';') {
         return BashCmdKind::Other;
     }
     // Reject lone `&` (background) — but `&&` was already split
@@ -2120,8 +2110,7 @@ fn parse_grep_line<'a>(raw: &'a str) -> Option<GrepLine<'a>> {
     // `-` markers is probably a heading.
     let trimmed = raw.trim();
     if !trimmed.is_empty()
-        && (trimmed.contains('/')
-            || std::path::Path::new(trimmed).extension().is_some())
+        && (trimmed.contains('/') || std::path::Path::new(trimmed).extension().is_some())
         && !trimmed.contains(':')
     {
         return Some(GrepLine::HeadingPath(trimmed));
@@ -2133,11 +2122,7 @@ fn parse_grep_line<'a>(raw: &'a str) -> Option<GrepLine<'a>> {
 /// file grep invocations where the filename isn't repeated on each
 /// line. Returns `Match` with `path = ""` so the renderer skips
 /// the path span entirely.
-fn parse_grep_no_path<'a>(
-    raw: &'a str,
-    sep: char,
-    is_context: bool,
-) -> Option<GrepLine<'a>> {
+fn parse_grep_no_path<'a>(raw: &'a str, sep: char, is_context: bool) -> Option<GrepLine<'a>> {
     let bytes = raw.as_bytes();
     if bytes.is_empty() || !bytes[0].is_ascii_digit() {
         return None;
@@ -2171,11 +2156,7 @@ fn parse_grep_no_path<'a>(
 /// Look for `path<sep>lineno<sep>[col<sep>]body` in `raw`.
 /// Returns None if the structure doesn't match — caller falls
 /// through to the next separator or the heading-path fallback.
-fn parse_grep_with_sep<'a>(
-    raw: &'a str,
-    sep: char,
-    is_context: bool,
-) -> Option<GrepLine<'a>> {
+fn parse_grep_with_sep<'a>(raw: &'a str, sep: char, is_context: bool) -> Option<GrepLine<'a>> {
     // Walk the string finding `<sep><digits><sep>` — that
     // anchors the "this is a (path, lineno) prefix" claim. Without
     // the digit-bracketed pattern, a path like
@@ -2316,11 +2297,7 @@ fn render_grep_output_skip(
                 } else {
                     t.text_secondary
                 };
-                let lineno_color = if is_context {
-                    t.text_muted
-                } else {
-                    t.warning
-                };
+                let lineno_color = if is_context { t.text_muted } else { t.warning };
                 let sep_str = if is_context { "-" } else { ":" };
                 let mut spans: Vec<Span<'static>> = Vec::new();
                 // Skip the path span when grep was invoked against a
@@ -2359,7 +2336,10 @@ fn render_grep_output_skip(
                     sep_str.to_owned(),
                     Style::default().fg(sep_color),
                 ));
-                spans.push(Span::styled(body.to_owned(), Style::default().fg(body_color)));
+                spans.push(Span::styled(
+                    body.to_owned(),
+                    Style::default().fg(body_color),
+                ));
                 lines.push(Line::from(spans));
             }
             Some(GrepLine::HeadingPath(path)) => {
@@ -2385,7 +2365,9 @@ fn render_grep_output_skip(
                 "… {} more lines · click or press o to expand",
                 total - max_lines
             ),
-            Style::default().fg(t.text_muted).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
         )));
     }
     if !stderr.is_empty() {
@@ -2455,7 +2437,8 @@ fn render_path_list_output_skip(
                     .iter()
                     .map(|s| s.len())
                     .sum::<usize>()
-                    + parts.len() - 2; // approximation
+                    + parts.len()
+                    - 2; // approximation
                 let name = parts.last().copied().unwrap_or("");
                 let _ = name_start;
                 let _ = cols;
@@ -2494,7 +2477,9 @@ fn render_path_list_output_skip(
                 "… {} more lines · click or press o to expand",
                 total - max_lines
             ),
-            Style::default().fg(t.text_muted).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
         )));
     }
     if !stderr.is_empty() {
@@ -2567,7 +2552,9 @@ fn render_git_diff_output_skip(
                 "… {} more lines · click or press o to expand",
                 total - max_lines
             ),
-            Style::default().fg(t.text_muted).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
         )));
     }
     if !stderr.is_empty() {
@@ -2630,17 +2617,12 @@ fn render_git_log_output_skip(
                 Span::styled("commit ", Style::default().fg(t.text_muted)),
                 Span::styled(
                     sha.to_owned(),
-                    Style::default()
-                        .fg(t.accent)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
                 ),
             ];
             if let Some(d) = decoration {
                 spans.push(Span::raw(" "));
-                spans.push(Span::styled(
-                    d.to_owned(),
-                    Style::default().fg(t.warning),
-                ));
+                spans.push(Span::styled(d.to_owned(), Style::default().fg(t.warning)));
             }
             lines.push(Line::from(spans));
         } else if raw.starts_with("Author:") || raw.starts_with("Date:") {
@@ -2668,14 +2650,9 @@ fn render_git_log_output_skip(
                     lines.push(Line::from(vec![
                         Span::styled(
                             head.to_owned(),
-                            Style::default()
-                                .fg(t.accent)
-                                .add_modifier(Modifier::BOLD),
+                            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(
-                            tail.to_owned(),
-                            Style::default().fg(t.text_secondary),
-                        ),
+                        Span::styled(tail.to_owned(), Style::default().fg(t.text_secondary)),
                     ]));
                     continue;
                 }
@@ -2692,7 +2669,9 @@ fn render_git_log_output_skip(
                 "… {} more lines · click or press o to expand",
                 total - max_lines
             ),
-            Style::default().fg(t.text_muted).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
         )));
     }
     if !stderr.is_empty() {
@@ -2752,7 +2731,10 @@ fn render_cat_markdown_output_skip(
         let total = lines.len();
         lines.truncate(MAX_LINES);
         lines.push(Line::from(Span::styled(
-            format!("… {} more lines · click or press o to expand", total - MAX_LINES),
+            format!(
+                "… {} more lines · click or press o to expand",
+                total - MAX_LINES
+            ),
             Style::default()
                 .fg(t.text_muted)
                 .add_modifier(Modifier::ITALIC),
@@ -2872,39 +2854,39 @@ fn render_command_output_skip(
     // sanitize-and-stripe path when the parser rejects (rare — only
     // truly malformed escape sequences). Each parsed Line is then
     // wrapped to fit the column width while preserving its spans.
-    let push_styled = |raw: &str,
-                       fallback_style: Style,
-                       lines: &mut Vec<Line<'static>>,
-                       count: &mut usize| {
-        if *count >= max_lines {
-            return;
-        }
-        let parsed = raw.into_text().ok();
-        let source_lines: Vec<Line<'static>> = match parsed {
-            Some(text) => text.lines.into_iter().collect(),
-            None => raw
-                .lines()
-                .map(|l| Line::from(Span::styled(
-                    sanitize_terminal_text(l),
-                    fallback_style,
-                )))
-                .collect(),
-        };
-        for line in source_lines {
+    let push_styled =
+        |raw: &str, fallback_style: Style, lines: &mut Vec<Line<'static>>, count: &mut usize| {
             if *count >= max_lines {
                 return;
             }
-            for wrapped in wrap_styled_line(&line, w.max(1)) {
-                lines.push(wrapped);
-                *count += 1;
+            let parsed = raw.into_text().ok();
+            let source_lines: Vec<Line<'static>> = match parsed {
+                Some(text) => text.lines.into_iter().collect(),
+                None => raw
+                    .lines()
+                    .map(|l| Line::from(Span::styled(sanitize_terminal_text(l), fallback_style)))
+                    .collect(),
+            };
+            for line in source_lines {
                 if *count >= max_lines {
                     return;
                 }
+                for wrapped in wrap_styled_line(&line, w.max(1)) {
+                    lines.push(wrapped);
+                    *count += 1;
+                    if *count >= max_lines {
+                        return;
+                    }
+                }
             }
-        }
-    };
+        };
 
-    push_styled(stdout, Style::default().fg(t.text_secondary), &mut lines, &mut count);
+    push_styled(
+        stdout,
+        Style::default().fg(t.text_secondary),
+        &mut lines,
+        &mut count,
+    );
     // Make the stdout→stderr boundary visible. Without this the user
     // sees red lines mixed in with grey and can't tell where the
     // failure stream begins. The divider only appears when both
@@ -2952,7 +2934,14 @@ pub fn diff_lang(diff: &DiffView) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, skip: usize, expanded: bool) {
+fn render_diff_skip(
+    diff: &DiffView,
+    area: Rect,
+    t: Theme,
+    buf: &mut Buffer,
+    skip: usize,
+    expanded: bool,
+) {
     let bottom = area.y + area.height;
     let mut virtual_row: usize = 0;
     let lang = diff_lang(diff);
@@ -3105,8 +3094,8 @@ fn render_diff_skip(diff: &DiffView, area: Rect, t: Theme, buf: &mut Buffer, ski
                             // deletions read as fading out (additions stay
                             // bright). Context lines get neither tint nor
                             // dim — pure syntax colors over `t.bg`.
-                            let extra_mod = matches!(dl.kind, DiffLineKind::Removed)
-                                .then_some(Modifier::DIM);
+                            let extra_mod =
+                                matches!(dl.kind, DiffLineKind::Removed).then_some(Modifier::DIM);
                             for sp in &hl.spans {
                                 let mut style = sp.style;
                                 style.bg = Some(bg_color);
@@ -3395,10 +3384,7 @@ fn push_reasoning_lines<'a>(
         // element. Mirrors how Discord / Slack indent quoted blocks.
         for l in text.lines() {
             items.push(RenderItem::TextLine(Line::from(vec![
-                Span::styled(
-                    "┃ ",
-                    Style::default().fg(t.reasoning_fg),
-                ),
+                Span::styled("┃ ", Style::default().fg(t.reasoning_fg)),
                 Span::styled(l.to_string(), t.reasoning()),
             ])));
         }
@@ -3689,7 +3675,12 @@ mod hit_test_tests {
     use super::*;
 
     fn r(x: u16, y: u16, w: u16, h: u16) -> Rect {
-        Rect { x, y, width: w, height: h }
+        Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        }
     }
 
     #[test]
@@ -3743,13 +3734,21 @@ mod bash_output_tests {
     // dispatch).
     #[test]
     fn classify_cat_is_other_normal() {
-        assert!(matches!(classify_bash_cmd("cat README.md"), BashCmdKind::Other));
+        assert!(matches!(
+            classify_bash_cmd("cat README.md"),
+            BashCmdKind::Other
+        ));
     }
 
     // Normal: grep / rg / ack / ag all dispatch to the Grep renderer.
     #[test]
     fn classify_grep_family_normal() {
-        for cmd in &["grep -rn x src/", "rg \"TODO\" --type rust", "ack pat", "ag pat"] {
+        for cmd in &[
+            "grep -rn x src/",
+            "rg \"TODO\" --type rust",
+            "ack pat",
+            "ag pat",
+        ] {
             assert!(matches!(classify_bash_cmd(cmd), BashCmdKind::Grep), "{cmd}");
         }
     }
@@ -3758,17 +3757,32 @@ mod bash_output_tests {
     #[test]
     fn classify_path_list_family_normal() {
         for cmd in &["find . -name '*.rs'", "ls -la", "tree", "fd rust"] {
-            assert!(matches!(classify_bash_cmd(cmd), BashCmdKind::PathList), "{cmd}");
+            assert!(
+                matches!(classify_bash_cmd(cmd), BashCmdKind::PathList),
+                "{cmd}"
+            );
         }
     }
 
     // Normal: git diff / git show / git log dispatch correctly.
     #[test]
     fn classify_git_subcommands_normal() {
-        assert!(matches!(classify_bash_cmd("git diff HEAD"), BashCmdKind::GitDiff));
-        assert!(matches!(classify_bash_cmd("git show abc123"), BashCmdKind::GitDiff));
-        assert!(matches!(classify_bash_cmd("git log --oneline -20"), BashCmdKind::GitLog));
-        assert!(matches!(classify_bash_cmd("git status"), BashCmdKind::Other));
+        assert!(matches!(
+            classify_bash_cmd("git diff HEAD"),
+            BashCmdKind::GitDiff
+        ));
+        assert!(matches!(
+            classify_bash_cmd("git show abc123"),
+            BashCmdKind::GitDiff
+        ));
+        assert!(matches!(
+            classify_bash_cmd("git log --oneline -20"),
+            BashCmdKind::GitLog
+        ));
+        assert!(matches!(
+            classify_bash_cmd("git status"),
+            BashCmdKind::Other
+        ));
     }
 
     // Robust: pipeline-aware classification — first segment of `||` or `|`
@@ -3802,12 +3816,18 @@ mod bash_output_tests {
     // change semantics in ways the simple sniff can't reason about).
     #[test]
     fn classify_rejects_complex_shell_robust() {
-        assert!(matches!(classify_bash_cmd("echo $(grep x y)"), BashCmdKind::Other));
+        assert!(matches!(
+            classify_bash_cmd("echo $(grep x y)"),
+            BashCmdKind::Other
+        ));
         assert!(matches!(
             classify_bash_cmd("grep x y; echo done"),
             BashCmdKind::Other
         ));
-        assert!(matches!(classify_bash_cmd("grep x y &"), BashCmdKind::Other));
+        assert!(matches!(
+            classify_bash_cmd("grep x y &"),
+            BashCmdKind::Other
+        ));
     }
 
     // Normal: parse a standard `path:line:body` grep result.
@@ -3871,7 +3891,10 @@ mod bash_output_tests {
                 assert_eq!(body, "/// docstring");
                 assert!(is_context);
             }
-            other => panic!("expected context match, got {other:?}", other = other.is_some()),
+            other => panic!(
+                "expected context match, got {other:?}",
+                other = other.is_some()
+            ),
         }
     }
 
@@ -3881,7 +3904,9 @@ mod bash_output_tests {
     fn parse_grep_handles_path_with_colon_robust() {
         let line = "C:/code/main.rs:99:hello";
         match parse_grep_line(line) {
-            Some(GrepLine::Match { path, lineno, body, .. }) => {
+            Some(GrepLine::Match {
+                path, lineno, body, ..
+            }) => {
                 assert_eq!(path, "C:/code/main.rs");
                 assert_eq!(lineno, Some("99"));
                 assert_eq!(body, "hello");
@@ -3935,9 +3960,8 @@ mod bash_chain_tests {
     // sniff should pick up `.md`.
     #[test]
     fn infer_lang_through_cd_and_chain_normal() {
-        let lang = infer_lang_from_bash(
-            "cd ~/proj && cat README.md 2>/dev/null || cat docs/README.md",
-        );
+        let lang =
+            infer_lang_from_bash("cd ~/proj && cat README.md 2>/dev/null || cat docs/README.md");
         assert_eq!(lang.as_deref(), Some("md"));
     }
 
@@ -3956,7 +3980,9 @@ mod bash_chain_tests {
     fn parse_grep_no_path_single_file_normal() {
         let line = "187214:    var _X = \"ScheduleWakeup\";";
         match parse_grep_line(line) {
-            Some(GrepLine::Match { path, lineno, body, .. }) => {
+            Some(GrepLine::Match {
+                path, lineno, body, ..
+            }) => {
                 assert_eq!(path, "");
                 assert_eq!(lineno, Some("187214"));
                 assert_eq!(body, "    var _X = \"ScheduleWakeup\";");
@@ -4154,10 +4180,7 @@ mod helper_tests {
         // No extension → use the filename (e.g. `Makefile` → `makefile`
         // when downstream lowercases it, but lang_from_path returns the
         // raw filename).
-        assert_eq!(
-            lang_from_path("Makefile").as_deref(),
-            Some("Makefile")
-        );
+        assert_eq!(lang_from_path("Makefile").as_deref(), Some("Makefile"));
     }
 
     #[test]
@@ -4836,16 +4859,22 @@ mod helper_tests {
     #[test]
     fn tool_title_width_cap_default_is_100_normal() {
         // Without any env override, default is 100.
-        unsafe { std::env::remove_var("JFC_TOOL_TITLE_WIDTH"); }
+        unsafe {
+            std::env::remove_var("JFC_TOOL_TITLE_WIDTH");
+        }
         assert_eq!(tool_title_width_cap(), 100);
     }
 
     #[test]
     fn tool_title_width_cap_rejects_too_small_robust() {
         // Values < 20 are rejected by `.filter(|n| *n >= 20)` → fallback to 100.
-        unsafe { std::env::set_var("JFC_TOOL_TITLE_WIDTH", "5"); }
+        unsafe {
+            std::env::set_var("JFC_TOOL_TITLE_WIDTH", "5");
+        }
         assert_eq!(tool_title_width_cap(), 100);
-        unsafe { std::env::remove_var("JFC_TOOL_TITLE_WIDTH"); }
+        unsafe {
+            std::env::remove_var("JFC_TOOL_TITLE_WIDTH");
+        }
     }
 
     // --- build_collapsed_header / build_title_spans / build_header_inner_spans
@@ -5074,7 +5103,13 @@ mod helper_tests {
     fn parse_grep_with_sep_match_form_normal() {
         let r = parse_grep_with_sep("src/foo.rs:5:body", ':', false);
         match r {
-            Some(GrepLine::Match { path, lineno, body, is_context, .. }) => {
+            Some(GrepLine::Match {
+                path,
+                lineno,
+                body,
+                is_context,
+                ..
+            }) => {
                 assert_eq!(path, "src/foo.rs");
                 assert_eq!(lineno, Some("5"));
                 assert_eq!(body, "body");
@@ -5094,7 +5129,13 @@ mod helper_tests {
     fn parse_grep_no_path_match_form_normal() {
         let r = parse_grep_no_path("42:body line", ':', false);
         match r {
-            Some(GrepLine::Match { path, lineno, body, is_context, .. }) => {
+            Some(GrepLine::Match {
+                path,
+                lineno,
+                body,
+                is_context,
+                ..
+            }) => {
                 assert_eq!(path, "");
                 assert_eq!(lineno, Some("42"));
                 assert_eq!(body, "body line");
@@ -5119,10 +5160,8 @@ mod helper_tests {
     #[test]
     fn message_view_total_lines_empty_app_normal() {
         // Build a fake App via the test helpers — empty messages → 0 lines.
+        use crate::provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
         use std::sync::Arc;
-        use crate::provider::{
-            EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions,
-        };
 
         struct Stub;
         #[async_trait::async_trait]
@@ -5147,4 +5186,3 @@ mod helper_tests {
         assert_eq!(message_view_total_lines(&app, 80), 0);
     }
 }
-

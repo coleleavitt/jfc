@@ -150,11 +150,22 @@ pub async fn execute_batches(
                     let ts = task_store.clone();
                     let atn = active_team_name.clone();
                     handles.push(tokio::spawn(async move {
-                        let result = tools::execute_tool(kind.clone(), input, cwd, Some(dedup), ts, atn.as_deref()).await;
-                        (kind, ToolExecution {
-                            tool_id: id,
-                            result,
-                        })
+                        let result = tools::execute_tool(
+                            kind.clone(),
+                            input,
+                            cwd,
+                            Some(dedup),
+                            ts,
+                            atn.as_deref(),
+                        )
+                        .await;
+                        (
+                            kind,
+                            ToolExecution {
+                                tool_id: id,
+                                result,
+                            },
+                        )
                     }));
                 }
                 for handle in handles {
@@ -168,10 +179,12 @@ pub async fn execute_batches(
                                 output_len = exec.result.output.len(),
                                 "tool completed",
                             );
-                            let _ = tx.send(AppEvent::ToolResult {
-                                tool_id: exec.tool_id.clone(),
-                                result: exec.result.clone(),
-                            }).await;
+                            let _ = tx
+                                .send(AppEvent::ToolResult {
+                                    tool_id: exec.tool_id.clone(),
+                                    result: exec.result.clone(),
+                                })
+                                .await;
                             all_results.push(exec);
                         }
                         Err(err) => {
@@ -211,10 +224,12 @@ pub async fn execute_batches(
                     output_len = result.output.len(),
                     "tool completed",
                 );
-                let _ = tx.send(AppEvent::ToolResult {
-                    tool_id: id.clone(),
-                    result: result.clone(),
-                }).await;
+                let _ = tx
+                    .send(AppEvent::ToolResult {
+                        tool_id: id.clone(),
+                        result: result.clone(),
+                    })
+                    .await;
                 all_results.push(ToolExecution {
                     tool_id: id,
                     result,
@@ -315,7 +330,10 @@ mod tests {
             ToolKind::TeamDelete,
             ToolKind::SendMessage,
         ] {
-            assert!(is_concurrency_safe(&kind), "expected {kind:?} concurrency-safe");
+            assert!(
+                is_concurrency_safe(&kind),
+                "expected {kind:?} concurrency-safe"
+            );
         }
     }
 
@@ -449,15 +467,8 @@ mod tests {
         let batches = schedule_tools(calls);
         let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
-        let results = execute_batches(
-            batches,
-            &tx,
-            dir.path().to_path_buf(),
-            dedup,
-            None,
-            None,
-        )
-        .await;
+        let results =
+            execute_batches(batches, &tx, dir.path().to_path_buf(), dedup, None, None).await;
         assert_eq!(results.len(), 2);
         // Both ToolResult events should be on the channel.
         drop(tx);
@@ -491,15 +502,8 @@ mod tests {
         assert!(matches!(&batches[0], ToolBatch::Sequential(_)));
         let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
-        let results = execute_batches(
-            batches,
-            &tx,
-            dir.path().to_path_buf(),
-            dedup,
-            None,
-            None,
-        )
-        .await;
+        let results =
+            execute_batches(batches, &tx, dir.path().to_path_buf(), dedup, None, None).await;
         assert_eq!(results.len(), 1);
         drop(tx);
         let ev = rx.recv().await.expect("event present");
@@ -531,15 +535,8 @@ mod tests {
         let batches = schedule_tools(calls);
         let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
-        let results = execute_batches(
-            batches,
-            &tx,
-            dir.path().to_path_buf(),
-            dedup,
-            None,
-            None,
-        )
-        .await;
+        let results =
+            execute_batches(batches, &tx, dir.path().to_path_buf(), dedup, None, None).await;
         assert_eq!(results.len(), 1);
         drop(tx);
         let ev = rx.recv().await.expect("got result");

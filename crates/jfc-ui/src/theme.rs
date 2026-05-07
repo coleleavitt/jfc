@@ -116,11 +116,11 @@ impl Theme {
     /// fenced code share a coherent look.
     pub fn catppuccin() -> Self {
         Self {
-            bg: Color::Rgb(30, 30, 46),       // Base
-            surface: Color::Rgb(49, 50, 68),   // Surface0
-            surface_raised: Color::Rgb(69, 71, 90), // Surface1
-            border: Color::Rgb(88, 91, 112),   // Surface2
-            text_primary: Color::Rgb(205, 214, 244),  // Text
+            bg: Color::Rgb(30, 30, 46),                // Base
+            surface: Color::Rgb(49, 50, 68),           // Surface0
+            surface_raised: Color::Rgb(69, 71, 90),    // Surface1
+            border: Color::Rgb(88, 91, 112),           // Surface2
+            text_primary: Color::Rgb(205, 214, 244),   // Text
             text_secondary: Color::Rgb(186, 194, 222), // Subtext1
             text_muted: Color::Rgb(127, 132, 156),     // Overlay1
             accent: Color::Rgb(137, 180, 250),         // Blue
@@ -129,12 +129,12 @@ impl Theme {
             error: Color::Rgb(243, 139, 168),          // Red
             user_bubble_bg: Color::Rgb(49, 50, 68),
             asst_bubble_bg: Color::Rgb(30, 30, 46),
-            code_bg: Color::Rgb(24, 24, 37),           // Mantle
+            code_bg: Color::Rgb(24, 24, 37), // Mantle
             code_fg: Color::Rgb(205, 214, 244),
             code_string: Color::Rgb(166, 227, 161),
-            code_keyword: Color::Rgb(203, 166, 247),   // Mauve
+            code_keyword: Color::Rgb(203, 166, 247), // Mauve
             code_comment: Color::Rgb(127, 132, 156),
-            code_number: Color::Rgb(250, 179, 135),    // Peach
+            code_number: Color::Rgb(250, 179, 135), // Peach
             reasoning_bg: Color::Rgb(49, 50, 68),
             reasoning_fg: Color::Rgb(166, 173, 200),
         }

@@ -88,10 +88,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // for the *whole* turn (set at submit, cleared at the
     // turn-complete event). Background tasks count too so a fan of
     // subagents keeps the spinner alive even if the leader finished.
-    let any_alive_subagent = app
-        .background_tasks
-        .values()
-        .any(|bt| bt.status.is_alive());
+    let any_alive_subagent = app.background_tasks.values().any(|bt| bt.status.is_alive());
     let show_spinner = app.is_streaming
         || app.compacting_started_at.is_some()
         || !app.pending_tool_calls.is_empty()
@@ -361,8 +358,8 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
             .iter()
             .skip(start)
             .map(|v| {
-                let idx = (((*v as f64) / max_val as f64) * (BARS.len() - 1) as f64).round()
-                    as usize;
+                let idx =
+                    (((*v as f64) / max_val as f64) * (BARS.len() - 1) as f64).round() as usize;
                 BARS[idx.min(BARS.len() - 1)]
             })
             .collect();
@@ -470,10 +467,8 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         // verbose hint like "LSPs will activate as files are read"
         // got hard-clipped at the column boundary as `… are rea`.
         // Word-wrap into one or more rows so the message is readable.
-        for row in wrap_text_to_width(
-            "LSPs will activate as files are read",
-            inner.width as usize,
-        ) {
+        for row in wrap_text_to_width("LSPs will activate as files are read", inner.width as usize)
+        {
             lines.push(Line::from(vec![Span::styled(
                 row,
                 Style::default().fg(t.text_muted),
@@ -505,10 +500,7 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     lines.push(section("MCP"));
 
     if app.mcp_servers.is_empty() {
-        for row in wrap_text_to_width(
-            "No MCP servers configured",
-            inner.width as usize,
-        ) {
+        for row in wrap_text_to_width("No MCP servers configured", inner.width as usize) {
             lines.push(Line::from(vec![Span::styled(
                 row,
                 Style::default().fg(t.text_muted),
@@ -552,10 +544,7 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
             let dot_color = crate::swarm::types::teammate_color(info.color.as_deref());
             lines.push(Line::from(vec![
                 Span::styled("  ● ", Style::default().fg(dot_color)),
-                Span::styled(
-                    &info.name,
-                    Style::default().fg(t.text_secondary),
-                ),
+                Span::styled(&info.name, Style::default().fg(t.text_secondary)),
             ]));
         }
 
@@ -864,10 +853,7 @@ fn highlight_mentions_in(s: &str, t: Theme, phase: f32) -> Vec<Span<'static>> {
         }
     }
     if !buf.is_empty() {
-        spans.push(Span::styled(
-            buf,
-            Style::default().fg(t.text_primary),
-        ));
+        spans.push(Span::styled(buf, Style::default().fg(t.text_primary)));
     }
     spans
 }
@@ -1040,21 +1026,15 @@ fn comet_config_from_state(app: &App, t: Theme, count: u32) -> CometConfig {
     // committed message). Drives the reverse-direction +
     // warning-color override so the user sees "the model is
     // executing something" at a glance.
-    let any_tool_running = app
-        .messages
-        .iter()
-        .rev()
-        .take(2)
-        .any(|m| {
-            m.parts.iter().any(|p| {
-                if let MessagePart::Tool(tc) = p {
-                    matches!(tc.status, ToolStatus::Running | ToolStatus::Pending)
-                } else {
-                    false
-                }
-            })
+    let any_tool_running = app.messages.iter().rev().take(2).any(|m| {
+        m.parts.iter().any(|p| {
+            if let MessagePart::Tool(tc) = p {
+                matches!(tc.status, ToolStatus::Running | ToolStatus::Pending)
+            } else {
+                false
+            }
         })
-        || !app.pending_tool_calls.is_empty();
+    }) || !app.pending_tool_calls.is_empty();
 
     let head_color = if bash_mode {
         // Bash mode trumps tool-use coloring — it's the highest-
@@ -1153,9 +1133,7 @@ fn parse_prompt_mode(raw: &str) -> PromptMode {
         ":notes" | ":music" => PromptMode::Notes,
         ":hourglass" | ":time" => PromptMode::Hourglass,
         ":atom" => PromptMode::Atom,
-        s if !s.is_empty() && s.chars().count() <= 2 => {
-            PromptMode::Static(s.to_owned())
-        }
+        s if !s.is_empty() && s.chars().count() <= 2 => PromptMode::Static(s.to_owned()),
         _ => PromptMode::Comet,
     }
 }
@@ -1599,10 +1577,7 @@ fn session_row(
         Span::styled(bullet.to_owned(), title_style),
         Span::styled(title, title_style),
     ]);
-    let line2 = Line::from(Span::styled(
-        secondary,
-        Style::default().fg(t.text_muted),
-    ));
+    let line2 = Line::from(Span::styled(secondary, Style::default().fg(t.text_muted)));
     ListItem::new(vec![line1, line2])
 }
 
@@ -1725,8 +1700,8 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
         // reads as a calm muted prompt. Reduced-motion skips
         // straight to the settled state.
         let boot_age = app.launched_at.elapsed();
-        let boot_active = boot_age < std::time::Duration::from_millis(1400)
-            && !crate::spinner::reduced_motion();
+        let boot_active =
+            boot_age < std::time::Duration::from_millis(1400) && !crate::spinner::reduced_motion();
         const HEADLINE: &str = "What can I help you with?";
         let headline_spans: Vec<Span<'static>> = if boot_active {
             // Sweep one bright cell across the headline. Cell width
@@ -1823,9 +1798,7 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
                     let intensity = 1.0 - (age_ms / 800.0);
                     let cx = area.x + area.width.saturating_sub(1);
                     let cy = area.y + area.height.saturating_sub(2);
-                    if cx < f.buffer_mut().area().right()
-                        && cy < f.buffer_mut().area().bottom()
-                    {
+                    if cx < f.buffer_mut().area().right() && cy < f.buffer_mut().area().bottom() {
                         let cell = &mut f.buffer_mut()[(cx, cy)];
                         cell.set_symbol("●");
                         let blended = pulse_color(t.border, t.accent, intensity);
@@ -1883,8 +1856,7 @@ pub(crate) fn task_view_body_lines(
         // of opening the task view is to see the result. Only running
         // tasks (whose output is still streaming) get the threshold.
         let collapsible = !task_done
-            && (line_count > TASK_VIEW_COLLAPSE_LINES
-                || raw.len() > TASK_VIEW_COLLAPSE_BYTES);
+            && (line_count > TASK_VIEW_COLLAPSE_LINES || raw.len() > TASK_VIEW_COLLAPSE_BYTES);
         let is_expanded = expanded.contains(&idx);
 
         if collapsible && !is_expanded {
@@ -1933,21 +1905,9 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
             static EMPTY: std::sync::OnceLock<std::collections::HashSet<usize>> =
                 std::sync::OnceLock::new();
             let empty = EMPTY.get_or_init(std::collections::HashSet::new);
-            let expanded = app
-                .viewing_task_expanded
-                .get(task_id)
-                .unwrap_or(empty);
-            let task_done = matches!(
-                bt.status,
-                crate::types::TaskLifecycle::Completed
-            );
-            let lines = task_view_body_lines(
-                &bt.messages,
-                expanded,
-                &t,
-                inner_width,
-                task_done,
-            );
+            let expanded = app.viewing_task_expanded.get(task_id).unwrap_or(empty);
+            let task_done = matches!(bt.status, crate::types::TaskLifecycle::Completed);
+            let lines = task_view_body_lines(&bt.messages, expanded, &t, inner_width, task_done);
             (title, lines)
         }
     };
@@ -1964,10 +1924,7 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let task_status = app
-        .background_tasks
-        .get(task_id)
-        .map(|bt| bt.status);
+    let task_status = app.background_tasks.get(task_id).map(|bt| bt.status);
     let task_is_running = matches!(task_status, Some(crate::types::TaskLifecycle::Running));
     let task_is_idle = matches!(task_status, Some(crate::types::TaskLifecycle::Idle));
 
@@ -1997,10 +1954,7 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
                 Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
             ),
             Span::raw("  "),
-            Span::styled(
-                "Receiving output…",
-                Style::default().fg(t.text_muted),
-            ),
+            Span::styled("Receiving output…", Style::default().fg(t.text_muted)),
         ]));
     } else if task_is_idle {
         if !body_lines.is_empty() {
@@ -2010,7 +1964,9 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
             Span::styled("⏸  ", Style::default().fg(t.text_muted)),
             Span::styled(
                 "idle — waiting for next message",
-                Style::default().fg(t.text_muted).add_modifier(Modifier::ITALIC),
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::ITALIC),
             ),
         ]));
     }
@@ -2020,16 +1976,19 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
     // `inner.width`. Counting logical lines (`body_lines.len()`)
     // undercounts and makes follow_bottom stop short of the true end.
     let render_width = inner.width;
-    let total_lines: usize = body_lines.iter().map(|line| {
-        if line.width() == 0 || render_width == 0 {
-            1
-        } else {
-            Paragraph::new(line.clone())
-                .wrap(ratatui::widgets::Wrap { trim: false })
-                .line_count(render_width)
-                .max(1)
-        }
-    }).sum();
+    let total_lines: usize = body_lines
+        .iter()
+        .map(|line| {
+            if line.width() == 0 || render_width == 0 {
+                1
+            } else {
+                Paragraph::new(line.clone())
+                    .wrap(ratatui::widgets::Wrap { trim: false })
+                    .line_count(render_width)
+                    .max(1)
+            }
+        })
+        .sum();
     let visible = inner.height as usize;
 
     // Pin to bottom while the task is streaming so each new chunk is
@@ -2082,9 +2041,10 @@ fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
     let task_ids: Vec<String> = app.background_tasks.keys().cloned().collect();
     if task_ids.is_empty() {
         f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("↑ back  · no tasks", Style::default().fg(t.text_muted)),
-            ]))
+            Paragraph::new(Line::from(vec![Span::styled(
+                "↑ back  · no tasks",
+                Style::default().fg(t.text_muted),
+            )]))
             .style(Style::default().bg(t.bg)),
             area,
         );
@@ -2099,9 +2059,7 @@ fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .map(|id| {
             let bt = app.background_tasks.get(id);
-            let desc = bt
-                .map(|b| b.description.as_str())
-                .unwrap_or(id.as_str());
+            let desc = bt.map(|b| b.description.as_str()).unwrap_or(id.as_str());
             let trimmed = if desc.chars().count() > 24 {
                 let mut s: String = desc.chars().take(23).collect();
                 s.push('…');
@@ -2121,11 +2079,7 @@ fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
                 Some(crate::types::TaskLifecycle::Completed) => "●",
                 _ => "○",
             };
-            Line::from(vec![
-                Span::raw(glyph),
-                Span::raw(" "),
-                Span::raw(trimmed),
-            ])
+            Line::from(vec![Span::raw(glyph), Span::raw(" "), Span::raw(trimmed)])
         })
         .collect();
 
@@ -2147,9 +2101,10 @@ fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
         .padding(" ", " ");
     f.render_widget(tabs, split[0]);
 
-    let hint = Line::from(vec![
-        Span::styled("↑ back · ←/→ cycle · ↓ jump to latest", Style::default().fg(t.text_muted)),
-    ]);
+    let hint = Line::from(vec![Span::styled(
+        "↑ back · ←/→ cycle · ↓ jump to latest",
+        Style::default().fg(t.text_muted),
+    )]);
     f.render_widget(
         Paragraph::new(hint).style(Style::default().bg(t.bg)),
         split[1],
@@ -2384,14 +2339,18 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // None when the model isn't using extended thinking this turn.
         let thinking = match (app.thinking_started_at, app.thinking_ended_at) {
             (Some(_), None) => Some(crate::spinner::ThinkingStatus::Live),
-            (Some(start), Some(end)) => {
-                Some(crate::spinner::ThinkingStatus::Done(end.duration_since(start)))
-            }
+            (Some(start), Some(end)) => Some(crate::spinner::ThinkingStatus::Done(
+                end.duration_since(start),
+            )),
             _ => None,
         };
         row1_elapsed = elapsed;
         let segs = crate::spinner::status_segments(
-            app.spinner_frame, elapsed, live_tokens, stall, thinking,
+            app.spinner_frame,
+            elapsed,
+            live_tokens,
+            stall,
+            thinking,
         );
         head_glyph = segs.glyph;
         let verb_width = segs.verb.chars().count();
@@ -2512,13 +2471,12 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         };
         let mut s = vec![Span::styled(
             format!("{} ", head_glyph),
-            Style::default().fg(glyph_color).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(glyph_color)
+                .add_modifier(Modifier::BOLD),
         )];
         s.extend(verb_spans);
-        s.push(Span::styled(
-            tail_body,
-            Style::default().fg(t.text_muted),
-        ));
+        s.push(Span::styled(tail_body, Style::default().fg(t.text_muted)));
         s
     };
     if active_agents > 0 {
@@ -2637,11 +2595,15 @@ pub(crate) fn format_token_count(n: u64) -> String {
 pub(crate) fn format_subagent_counters(bt: &crate::app::BackgroundTask) -> String {
     let mut parts: Vec<String> = Vec::new();
     if bt.tool_use_count > 0 {
-        parts.push(format!("{} tool{}",
+        parts.push(format!(
+            "{} tool{}",
             bt.tool_use_count,
-            if bt.tool_use_count == 1 { "" } else { "s" }));
+            if bt.tool_use_count == 1 { "" } else { "s" }
+        ));
     }
-    let total_tokens = bt.latest_input_tokens.saturating_add(bt.cumulative_output_tokens);
+    let total_tokens = bt
+        .latest_input_tokens
+        .saturating_add(bt.cumulative_output_tokens);
     if total_tokens > 0 {
         parts.push(format!("{} tok", format_token_count(total_tokens)));
     }
@@ -2695,9 +2657,7 @@ fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
         let connector = if is_last { "   └─ " } else { "   ├─ " };
         // Description is the human label the model passed when calling
         // Task; truncate so it doesn't blow out narrow terminals.
-        let desc = bt
-            .description
-            .as_str();
+        let desc = bt.description.as_str();
         let desc_trimmed = if desc.chars().count() > 48 {
             let mut s: String = desc.chars().take(47).collect();
             s.push('…');
@@ -2722,11 +2682,12 @@ fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
         // currently moving in a fan of N parallel agents. Idle agents
         // never get the bold-active treatment — they're not the
         // currently-moving one.
-        let is_active = !is_idle && app
-            .last_active_agent_task
-            .as_deref()
-            .map(|id| id == bt.task_id.as_str())
-            .unwrap_or(false);
+        let is_active = !is_idle
+            && app
+                .last_active_agent_task
+                .as_deref()
+                .map(|id| id == bt.task_id.as_str())
+                .unwrap_or(false);
         let name_style = if is_active {
             Style::default()
                 .fg(t.accent)
@@ -2807,7 +2768,8 @@ fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
         // Look up activity from background tasks. Match by name suffix
         // so a teammate "ui-explorer" finds its task whose id is
         // "teammate-ui-explorer@<team>".
-        let bt = app.background_tasks
+        let bt = app
+            .background_tasks
             .values()
             .find(|bt| bt.task_id.contains(&info.name));
         let bt_status = bt.map(|bt| bt.status);
@@ -2883,8 +2845,7 @@ fn input(f: &mut Frame, app: &mut App, area: Rect) {
     //   <any single char> — that char as a static glyph (color pulse)
     // Edit mode overrides any choice with `✎` (pencil).
     let in_edit_mode = app.editing_message_idx.is_some();
-    let raw_setting = std::env::var("JFC_PROMPT_CHAR")
-        .unwrap_or_else(|_| ":comet".to_string());
+    let raw_setting = std::env::var("JFC_PROMPT_CHAR").unwrap_or_else(|_| ":comet".to_string());
     let mode = parse_prompt_mode(&raw_setting);
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -2912,9 +2873,7 @@ fn input(f: &mut Frame, app: &mut App, area: Rect) {
     let title_line = if let Some(idx) = app.editing_message_idx {
         Line::from(Span::styled(
             format!(" editing #{idx} · Esc to cancel "),
-            Style::default()
-                .fg(t.warning)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
         ))
     } else {
         Line::from("")
@@ -3225,7 +3184,10 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
         let total_tools: u32 = alive.iter().map(|b| b.tool_use_count).sum();
         let total_tokens: u64 = alive
             .iter()
-            .map(|b| b.latest_input_tokens.saturating_add(b.cumulative_output_tokens))
+            .map(|b| {
+                b.latest_input_tokens
+                    .saturating_add(b.cumulative_output_tokens)
+            })
             .sum();
         let mut s = format!("⏵ {}", alive.len());
         if total_tools > 0 {
@@ -3252,8 +3214,8 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
     }
 
     // Pending approvals
-    let approval_count = app.approval_queue.len()
-        + if app.pending_approval.is_some() { 1 } else { 0 };
+    let approval_count =
+        app.approval_queue.len() + if app.pending_approval.is_some() { 1 } else { 0 };
     if approval_count > 0 {
         badges.push(format!("⏸ {approval_count}"));
     }
@@ -3280,7 +3242,10 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
     let left_full = format!(" {} ", badges.join(" · "));
     let left_chars: usize = left_full.chars().count();
     let left_truncated = if left_chars > right_start.saturating_sub(1) {
-        let truncated: String = left_full.chars().take(right_start.saturating_sub(2)).collect();
+        let truncated: String = left_full
+            .chars()
+            .take(right_start.saturating_sub(2))
+            .collect();
         format!("{truncated}…")
     } else {
         left_full
@@ -3375,9 +3340,9 @@ fn toast_overlay(f: &mut Frame, app: &App) {
     let frame_right = frame_area.x + frame_area.width;
     // Resting x of the strip + the slide offset. Capped to the
     // frame's right edge so we never go past the buffer.
-    let actual_x = target_x.saturating_add(slide_offset).min(
-        frame_area.x + frame_area.width.saturating_sub(1),
-    );
+    let actual_x = target_x
+        .saturating_add(slide_offset)
+        .min(frame_area.x + frame_area.width.saturating_sub(1));
     // Width *must* be derived from `actual_x` so `actual_x + width`
     // never exceeds `frame_right`. Earlier this was computed
     // independently (`w.saturating_sub(slide_offset)`), which clamped
@@ -3427,7 +3392,13 @@ fn toast_overlay(f: &mut Frame, app: &App) {
     let inner = block.inner(area);
     f.render_widget(block, area);
     let mut lines: Vec<Line> = Vec::new();
-    for toast in app.toasts.iter().rev().take(inner.height as usize).collect::<Vec<_>>() {
+    for toast in app
+        .toasts
+        .iter()
+        .rev()
+        .take(inner.height as usize)
+        .collect::<Vec<_>>()
+    {
         let (icon, color) = match toast.kind {
             ToastKind::Info => ("ℹ", t.text_secondary),
             ToastKind::Success => ("✓", t.success),
@@ -3517,8 +3488,14 @@ const SLASH_COMMANDS: &[(&str, &str)] = &[
     ("/compact", "summarize earlier messages to free context"),
     ("/help", "show jfc help"),
     ("/export", "save the transcript as markdown"),
-    ("/theme", "switch theme: dark / light / solarized / catppuccin"),
-    ("/dump-context", "show what the model sees: memories, skills, tools"),
+    (
+        "/theme",
+        "switch theme: dark / light / solarized / catppuccin",
+    ),
+    (
+        "/dump-context",
+        "show what the model sees: memories, skills, tools",
+    ),
     ("/worktree", "create / list / remove a git worktree"),
     ("/swarm-approve", "approve a pending swarm tool request"),
     ("/swarm-deny", "deny a pending swarm tool request"),
@@ -3594,7 +3571,10 @@ fn slash_popup(f: &mut Frame, app: &App, prefix: &str) {
         .map(|(i, (cmd, desc))| {
             let active = i == selected;
             let row_style = if active {
-                Style::default().fg(t.bg).bg(t.accent).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(t.bg)
+                    .bg(t.accent)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(t.text_primary)
             };
@@ -3649,9 +3629,7 @@ fn search_bar(f: &mut Frame, app: &App) {
     let prompt = Line::from(vec![
         Span::styled(
             "  /",
-            Style::default()
-                .fg(t.accent)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             s.query.clone(),
@@ -3713,58 +3691,76 @@ fn help_overlay(f: &mut Frame, app: &App) {
     // Each entry: (key, description). Sections separated by None.
     type Section = (&'static str, &'static [(&'static str, &'static str)]);
     const SECTIONS: &[Section] = &[
-        ("Input bar", &[
-            ("Enter", "send message"),
-            ("Shift+Enter", "newline"),
-            ("Up", "recall queued prompt (if input empty)"),
-            ("Ctrl+V", "paste (text or image from clipboard)"),
-            ("Ctrl+Z", "undo last edit"),
-            ("Ctrl+Shift+Z", "redo"),
-            ("Ctrl+F", "search inside the textarea"),
-            ("Ctrl+R", "retry last prompt"),
-            ("Ctrl+E", "edit + resubmit previous user message"),
-            ("Ctrl+L", "yank file:line ref to clipboard"),
-            ("/export", "save transcript as markdown"),
-            ("/theme", "switch theme"),
-            ("/dump-context", "show what the model sees"),
-        ]),
-        ("Transcript", &[
-            ("Ctrl+P", "command palette"),
-            ("Ctrl+M", "switch model"),
-            ("Ctrl+B", "toggle sessions sidebar"),
-            ("Ctrl+S/I", "toggle info sidebar"),
-            ("Ctrl+T", "show task panel"),
-            ("Ctrl+O", "expand diagnostic row / large tool block"),
-            ("o", "toggle expand on most recent collapsible block"),
-            ("Ctrl+Y", "yank last assistant response"),
-            ("Ctrl+L", "yank file:line ref from recent output"),
-            ("j / k", "vim scroll down / up (empty input)"),
-            ("g / G", "vim jump to top / bottom (empty input)"),
-            ("Shift+Tab", "cycle permission modes"),
-            ("PgUp/PgDn", "scroll a page"),
-            ("Ctrl+Home/End", "jump to top/bottom"),
-        ]),
-        ("Task view", &[
-            ("Ctrl+X then ↓", "enter task view"),
-            ("←/→", "previous / next running task"),
-            ("↓", "jump to most recent task"),
-            ("↑ or Esc", "exit task view"),
-            ("o", "expand the most recent collapsible message"),
-        ]),
-        ("Picker / Palette", &[
-            ("↑/↓ or k/j", "navigate"),
-            ("Home/End", "first / last"),
-            ("PgUp/PgDn", "page"),
-            ("Enter", "select"),
-            ("Esc", "cancel"),
-            ("type", "filter inline"),
-        ]),
-        ("Interrupt & approvals", &[
-            ("Esc Esc", "interrupt streaming / agentic loop"),
-            ("y / n / a", "approve / deny / always (in approval modal)"),
-            ("/swarm-approve <id>", "approve teammate permission request"),
-            ("/swarm-deny <id> [reason]", "deny teammate permission request"),
-        ]),
+        (
+            "Input bar",
+            &[
+                ("Enter", "send message"),
+                ("Shift+Enter", "newline"),
+                ("Up", "recall queued prompt (if input empty)"),
+                ("Ctrl+V", "paste (text or image from clipboard)"),
+                ("Ctrl+Z", "undo last edit"),
+                ("Ctrl+Shift+Z", "redo"),
+                ("Ctrl+F", "search inside the textarea"),
+                ("Ctrl+R", "retry last prompt"),
+                ("Ctrl+E", "edit + resubmit previous user message"),
+                ("Ctrl+L", "yank file:line ref to clipboard"),
+                ("/export", "save transcript as markdown"),
+                ("/theme", "switch theme"),
+                ("/dump-context", "show what the model sees"),
+            ],
+        ),
+        (
+            "Transcript",
+            &[
+                ("Ctrl+P", "command palette"),
+                ("Ctrl+M", "switch model"),
+                ("Ctrl+B", "toggle sessions sidebar"),
+                ("Ctrl+S/I", "toggle info sidebar"),
+                ("Ctrl+T", "show task panel"),
+                ("Ctrl+O", "expand diagnostic row / large tool block"),
+                ("o", "toggle expand on most recent collapsible block"),
+                ("Ctrl+Y", "yank last assistant response"),
+                ("Ctrl+L", "yank file:line ref from recent output"),
+                ("j / k", "vim scroll down / up (empty input)"),
+                ("g / G", "vim jump to top / bottom (empty input)"),
+                ("Shift+Tab", "cycle permission modes"),
+                ("PgUp/PgDn", "scroll a page"),
+                ("Ctrl+Home/End", "jump to top/bottom"),
+            ],
+        ),
+        (
+            "Task view",
+            &[
+                ("Ctrl+X then ↓", "enter task view"),
+                ("←/→", "previous / next running task"),
+                ("↓", "jump to most recent task"),
+                ("↑ or Esc", "exit task view"),
+                ("o", "expand the most recent collapsible message"),
+            ],
+        ),
+        (
+            "Picker / Palette",
+            &[
+                ("↑/↓ or k/j", "navigate"),
+                ("Home/End", "first / last"),
+                ("PgUp/PgDn", "page"),
+                ("Enter", "select"),
+                ("Esc", "cancel"),
+                ("type", "filter inline"),
+            ],
+        ),
+        (
+            "Interrupt & approvals",
+            &[
+                ("Esc Esc", "interrupt streaming / agentic loop"),
+                ("y / n / a", "approve / deny / always (in approval modal)"),
+                ("/swarm-approve <id>", "approve teammate permission request"),
+                (
+                    "/swarm-deny <id> [reason]",
+                    "deny teammate permission request",
+                ),
+            ],
+        ),
     ];
 
     let mut lines: Vec<Line<'static>> = Vec::new();
@@ -3787,10 +3783,7 @@ fn help_overlay(f: &mut Frame, app: &App) {
                         .fg(t.text_primary)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(
-                    (*desc).to_string(),
-                    Style::default().fg(t.text_secondary),
-                ),
+                Span::styled((*desc).to_string(), Style::default().fg(t.text_secondary)),
             ]));
         }
     }
@@ -4197,14 +4190,8 @@ fn model_picker(f: &mut Frame, app: &mut App) {
             Row::new(vec![
                 Cell::from(Span::styled(marker, Style::default().fg(t.accent))),
                 Cell::from(Span::styled(m.display_name.clone(), name_style)),
-                Cell::from(Span::styled(
-                    ctx_str,
-                    Style::default().fg(t.text_secondary),
-                )),
-                Cell::from(Span::styled(
-                    in_cost,
-                    Style::default().fg(t.text_secondary),
-                )),
+                Cell::from(Span::styled(ctx_str, Style::default().fg(t.text_secondary))),
+                Cell::from(Span::styled(in_cost, Style::default().fg(t.text_secondary))),
                 Cell::from(Span::styled(
                     out_cost,
                     Style::default().fg(t.text_secondary),
@@ -4509,17 +4496,14 @@ fn approval(f: &mut Frame, app: &App) {
         // Tool name styled with its kind color; arguments truncated
         // to fit the dialog width. Splitting into two spans makes the
         // identity colored without bleeding into the args.
-        let arg_cap = (rows[0].width as usize)
-            .saturating_sub(tool_label.chars().count() + 3);
+        let arg_cap = (rows[0].width as usize).saturating_sub(tool_label.chars().count() + 3);
         let arg_truncated: String = tool_input_summary.chars().take(arg_cap).collect();
         f.render_widget(
             Paragraph::new(vec![
                 Line::from(vec![
                     Span::styled(
                         tool_label.to_string(),
-                        Style::default()
-                            .fg(kind_color)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(kind_color).add_modifier(Modifier::BOLD),
                     ),
                     Span::raw(" "),
                     Span::styled(arg_truncated, Style::default().fg(t.text_primary)),
@@ -4547,17 +4531,14 @@ fn approval(f: &mut Frame, app: &App) {
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(2), Constraint::Min(1)])
             .split(inner);
-        let arg_cap = (width as usize)
-            .saturating_sub(tool_label.chars().count() + 5);
+        let arg_cap = (width as usize).saturating_sub(tool_label.chars().count() + 5);
         let arg_truncated: String = tool_input_summary.chars().take(arg_cap).collect();
         f.render_widget(
             Paragraph::new(vec![
                 Line::from(vec![
                     Span::styled(
                         tool_label.to_string(),
-                        Style::default()
-                            .fg(kind_color)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(kind_color).add_modifier(Modifier::BOLD),
                     ),
                     Span::raw(" "),
                     Span::styled(arg_truncated, Style::default().fg(t.text_primary)),
@@ -4714,9 +4695,7 @@ mod task_view_tests {
         // (which calls `strip_inline_tool_xml`) replaces them with the
         // `⟪tool_call⟫` marker so users see structure, not raw XML.
         let theme = Theme::dark();
-        let messages = vec![
-            "Before <tool_call>{\"name\":\"foo\"}</tool_call> after".to_string(),
-        ];
+        let messages = vec!["Before <tool_call>{\"name\":\"foo\"}</tool_call> after".to_string()];
         let expanded = HashSet::new();
         let lines = task_view_body_lines(&messages, &expanded, &theme, 80, false);
         let joined: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
@@ -4745,13 +4724,7 @@ mod task_view_tests {
             .join("\n");
         let messages = vec![body];
 
-        let collapsed_lines = task_view_body_lines(
-            &messages,
-            &HashSet::new(),
-            &theme,
-            80,
-            false,
-        );
+        let collapsed_lines = task_view_body_lines(&messages, &HashSet::new(), &theme, 80, false);
         let collapsed_text: String = collapsed_lines
             .iter()
             .map(line_text)
@@ -4988,7 +4961,10 @@ mod render_helpers_tests {
         assert!(matches!(parse_prompt_mode(":moon"), PromptMode::Moon));
         assert!(matches!(parse_prompt_mode(":dice"), PromptMode::Dice));
         assert!(matches!(parse_prompt_mode(":notes"), PromptMode::Notes));
-        assert!(matches!(parse_prompt_mode(":hourglass"), PromptMode::Hourglass));
+        assert!(matches!(
+            parse_prompt_mode(":hourglass"),
+            PromptMode::Hourglass
+        ));
         assert!(matches!(parse_prompt_mode(":atom"), PromptMode::Atom));
     }
 
@@ -5118,10 +5094,7 @@ mod pure_helper_tests {
         let c2 = Color::Rgb(100, 200, 50);
         match pulse_color(c1, c2, 0.5) {
             Color::Rgb(r, g, b) => {
-                assert!(
-                    (45..=55).contains(&r),
-                    "midpoint r should be ~50, got {r}"
-                );
+                assert!((45..=55).contains(&r), "midpoint r should be ~50, got {r}");
                 assert!((95..=105).contains(&g), "midpoint g should be ~100");
                 assert!((20..=30).contains(&b), "midpoint b should be ~25");
             }
@@ -5152,10 +5125,7 @@ mod pure_helper_tests {
     fn pulse_color_pub_matches_private_normal() {
         let c1 = Color::Rgb(20, 40, 60);
         let c2 = Color::Rgb(100, 120, 140);
-        assert_eq!(
-            pulse_color_pub(c1, c2, 0.25),
-            pulse_color(c1, c2, 0.25),
-        );
+        assert_eq!(pulse_color_pub(c1, c2, 0.25), pulse_color(c1, c2, 0.25),);
     }
 
     // --- tail_truncate -----------------------------------------------
@@ -5213,10 +5183,7 @@ mod pure_helper_tests {
         // Each row is a complete fragment, broken on whitespace.
         let rows = wrap_text_to_width("alpha beta gamma delta", 12);
         for row in &rows {
-            assert!(
-                row.chars().count() <= 12,
-                "row {row:?} exceeds width 12"
-            );
+            assert!(row.chars().count() <= 12, "row {row:?} exceeds width 12");
         }
         assert!(rows.len() >= 2, "should wrap into at least 2 rows");
     }
@@ -5235,10 +5202,7 @@ mod pure_helper_tests {
         let rows = wrap_text_to_width("supercalifragilisticexpialidocious", 10);
         assert!(rows.iter().any(|r| r.ends_with('…')), "rows: {rows:?}");
         for r in &rows {
-            assert!(
-                r.chars().count() <= 10,
-                "row {r:?} exceeded width"
-            );
+            assert!(r.chars().count() <= 10, "row {r:?} exceeded width");
         }
     }
 
@@ -5288,10 +5252,7 @@ mod pure_helper_tests {
     #[test]
     fn parse_prompt_mode_long_input_falls_back_to_comet_robust() {
         // 3+ chars and not a named preset → fall back to Comet (default).
-        assert!(matches!(
-            parse_prompt_mode("xyz123"),
-            PromptMode::Comet
-        ));
+        assert!(matches!(parse_prompt_mode("xyz123"), PromptMode::Comet));
     }
 
     #[test]
@@ -5303,10 +5264,7 @@ mod pure_helper_tests {
     #[test]
     fn parse_prompt_mode_trims_whitespace_robust() {
         // Whitespace around a preset token must not break the match.
-        assert!(matches!(
-            parse_prompt_mode("  :moon  "),
-            PromptMode::Moon
-        ));
+        assert!(matches!(parse_prompt_mode("  :moon  "), PromptMode::Moon));
     }
 
     // --- prompt_mode_frame -------------------------------------------
@@ -5335,9 +5293,11 @@ mod pure_helper_tests {
         let f1 = prompt_mode_frame(&PromptMode::Moon, true, 250);
         let f2 = prompt_mode_frame(&PromptMode::Moon, true, 500);
         let f3 = prompt_mode_frame(&PromptMode::Moon, true, 750);
-        assert!([f0, f1, f2, f3]
-            .iter()
-            .all(|g| ["○", "◐", "●", "◑"].contains(g)));
+        assert!(
+            [f0, f1, f2, f3]
+                .iter()
+                .all(|g| ["○", "◐", "●", "◑"].contains(g))
+        );
     }
 
     #[test]
@@ -5345,14 +5305,8 @@ mod pure_helper_tests {
         // 800ms flip cadence — at 0 and 1600ms, full glass; at 800ms,
         // empty.
         assert_eq!(prompt_mode_frame(&PromptMode::Hourglass, true, 0), "⌛");
-        assert_eq!(
-            prompt_mode_frame(&PromptMode::Hourglass, true, 800),
-            "⌚"
-        );
-        assert_eq!(
-            prompt_mode_frame(&PromptMode::Hourglass, true, 1600),
-            "⌛"
-        );
+        assert_eq!(prompt_mode_frame(&PromptMode::Hourglass, true, 800), "⌚");
+        assert_eq!(prompt_mode_frame(&PromptMode::Hourglass, true, 1600), "⌛");
     }
 
     #[test]
@@ -5432,7 +5386,9 @@ mod pure_helper_tests {
         // Default (no env) is 6.
         let app = fake_app();
         // Make sure no env var pollutes this test.
-        unsafe { std::env::remove_var("JFC_BORDER_COMET_TRAIL"); }
+        unsafe {
+            std::env::remove_var("JFC_BORDER_COMET_TRAIL");
+        }
         let cfg = comet_config_from_state(&app, app.theme, 1);
         assert!((2..=12).contains(&cfg.trail_len));
     }
@@ -5562,7 +5518,8 @@ mod pure_helper_tests {
         // logical col 8 → visual row 1 col 3.
         let mut app = fake_app();
         app.textarea = TextArea::from(vec!["abcdefghij".to_string()]);
-        app.textarea.move_cursor(ratatui_textarea::CursorMove::Jump(0, 8));
+        app.textarea
+            .move_cursor(ratatui_textarea::CursorMove::Jump(0, 8));
         let (lines, row, col) = input_soft_wrapped_lines(&app, 5);
         assert_eq!(lines.len(), 2);
         assert_eq!(row, 1);
@@ -5761,10 +5718,7 @@ mod pure_helper_tests {
     #[test]
     fn provider_color_known_providers_normal() {
         assert_eq!(provider_color("anthropic"), Color::Rgb(204, 120, 50));
-        assert_eq!(
-            provider_color("anthropic-oauth"),
-            Color::Rgb(204, 120, 50)
-        );
+        assert_eq!(provider_color("anthropic-oauth"), Color::Rgb(204, 120, 50));
         assert_eq!(provider_color("openwebui"), Color::Rgb(100, 180, 200));
     }
 
@@ -5911,8 +5865,7 @@ mod pure_helper_tests {
     #[test]
     fn current_slash_prefix_multiline_returns_none_robust() {
         let mut app = fake_app();
-        app.textarea =
-            TextArea::from(vec!["/help".to_string(), "extra".to_string()]);
+        app.textarea = TextArea::from(vec!["/help".to_string(), "extra".to_string()]);
         assert_eq!(current_slash_prefix(&app), None);
     }
 

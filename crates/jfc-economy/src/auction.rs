@@ -173,7 +173,10 @@ mod tests {
 
         // Boost high_trust agent to 75
         for _ in 0..5 {
-            registry.get_mut(&high_trust).unwrap().record_success("good");
+            registry
+                .get_mut(&high_trust)
+                .unwrap()
+                .record_success("good");
         }
         // Drop low_trust agent to 20
         registry.get_mut(&low_trust).unwrap().record_failure("bad");

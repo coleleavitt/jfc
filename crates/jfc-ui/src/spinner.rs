@@ -490,11 +490,7 @@ pub fn format_compact_status(
         let out_tokens = output_chars / 4;
         parts.push(format!("↓ {} tokens", fmt_tokens(out_tokens)));
     }
-    format!(
-        "{} Compacting… ({})",
-        frame_for(tick),
-        parts.join(" · ")
-    )
+    format!("{} Compacting… ({})", frame_for(tick), parts.join(" · "))
 }
 
 #[cfg(test)]
@@ -594,13 +590,7 @@ mod tests {
 
     #[test]
     fn format_status_omits_tokens_when_zero_robust() {
-        let s = format_status(
-            0,
-            Duration::from_secs(3),
-            0,
-            Duration::from_secs(0),
-            None,
-        );
+        let s = format_status(0, Duration::from_secs(3), 0, Duration::from_secs(0), None);
         assert!(
             !s.contains("tokens"),
             "should hide token suffix when 0: {s}"
@@ -610,13 +600,7 @@ mod tests {
 
     #[test]
     fn format_status_omits_stall_when_fresh_robust() {
-        let s = format_status(
-            0,
-            Duration::from_secs(5),
-            100,
-            Duration::from_secs(2),
-            None,
-        );
+        let s = format_status(0, Duration::from_secs(5), 100, Duration::from_secs(2), None);
         assert!(
             !s.contains("thinking"),
             "fresh stream shouldn't say 'thinking': {s}"
@@ -688,10 +672,7 @@ mod tests {
         let s = format_compact_status(0, Duration::from_secs(2), 0, 0);
         assert!(s.contains("Compacting"), "verb missing: {s}");
         assert!(s.contains("2s"), "elapsed missing: {s}");
-        assert!(
-            !s.contains("0 tokens"),
-            "shouldn't show 0-token chip: {s}"
-        );
+        assert!(!s.contains("0 tokens"), "shouldn't show 0-token chip: {s}");
     }
 
     // Live output during compact streaming: `output_chars` divided by 4

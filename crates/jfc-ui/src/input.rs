@@ -1,8 +1,8 @@
 use crossterm::event::{self, KeyCode, KeyModifiers};
 use ratatui::style::Style;
+use ratatui_textarea::{CursorMove, TextArea};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use ratatui_textarea::{CursorMove, TextArea};
 
 use crate::app::{App, AppEvent, ApprovalChoice};
 use crate::stream;
@@ -19,8 +19,7 @@ fn insert_tool_into_message(_app: &mut App, _tool: &ToolCall) {
 fn reset_input(app: &mut App) {
     app.textarea = TextArea::default();
     app.textarea.set_cursor_line_style(Style::default());
-    app.textarea
-        .set_placeholder_text("send a message…");
+    app.textarea.set_placeholder_text("send a message…");
 }
 
 fn input_line_char_len(app: &App, line: usize) -> usize {
@@ -37,7 +36,8 @@ fn cursor_index(value: usize) -> u16 {
 
 fn move_input_cursor_visual_up(app: &mut App) {
     let width = app.input_wrap_width.max(1);
-    let cursor = app.textarea.cursor(); let (line, col) = (cursor.0, cursor.1);
+    let cursor = app.textarea.cursor();
+    let (line, col) = (cursor.0, cursor.1);
 
     if col >= width {
         app.textarea.move_cursor(CursorMove::Jump(
@@ -63,7 +63,8 @@ fn move_input_cursor_visual_up(app: &mut App) {
 
 fn move_input_cursor_visual_down(app: &mut App) {
     let width = app.input_wrap_width.max(1);
-    let cursor = app.textarea.cursor(); let (line, col) = (cursor.0, cursor.1);
+    let cursor = app.textarea.cursor();
+    let (line, col) = (cursor.0, cursor.1);
     let line_len = input_line_char_len(app, line);
 
     if col + width <= line_len {
@@ -108,8 +109,7 @@ fn input_has_text(app: &App) -> bool {
 fn collect_recent_paths(messages: &[crate::types::ChatMessage]) -> Vec<String> {
     use crate::types::{MessagePart, ToolOutput};
     let mut out: Vec<String> = Vec::new();
-    let mut seen: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for msg in messages.iter().rev() {
         let mut found_in_this_msg = false;
         for part in msg.parts.iter().rev() {
@@ -186,18 +186,16 @@ fn scan_path_refs(text: &str) -> Vec<String> {
                 }
                 let line_end = j;
                 // Optional `:digit` for col.
-                let col_end = if j + 1 < bytes.len()
-                    && bytes[j] == b':'
-                    && bytes[j + 1].is_ascii_digit()
-                {
-                    let mut k = j + 1;
-                    while k < bytes.len() && bytes[k].is_ascii_digit() {
-                        k += 1;
-                    }
-                    k
-                } else {
-                    line_end
-                };
+                let col_end =
+                    if j + 1 < bytes.len() && bytes[j] == b':' && bytes[j + 1].is_ascii_digit() {
+                        let mut k = j + 1;
+                        while k < bytes.len() && bytes[k].is_ascii_digit() {
+                            k += 1;
+                        }
+                        k
+                    } else {
+                        line_end
+                    };
                 let path_slice = &text[start..path_end];
                 // Reject candidates that look like `12:34` (no path)
                 // or `http://...` (URL-port).
@@ -205,8 +203,7 @@ fn scan_path_refs(text: &str) -> Vec<String> {
                     || path_slice.starts_with("https://")
                     || path_slice.starts_with("file://");
                 let is_pure_number = path_slice.bytes().all(|c| c.is_ascii_digit());
-                let has_path_char =
-                    path_slice.contains('/') || path_slice.contains('.');
+                let has_path_char = path_slice.contains('/') || path_slice.contains('.');
                 if !is_url && !is_pure_number && has_path_char && path_end > start {
                     let captured = &text[start..col_end];
                     out.push(captured.to_owned());
@@ -236,9 +233,7 @@ fn refresh_search_matches(app: &mut App, query: &str) {
                 crate::types::MessagePart::Tool(tc) => {
                     tc.input.summary().to_lowercase().contains(&q)
                         || match &tc.output {
-                            crate::types::ToolOutput::Text(s) => {
-                                s.to_lowercase().contains(&q)
-                            }
+                            crate::types::ToolOutput::Text(s) => s.to_lowercase().contains(&q),
                             crate::types::ToolOutput::LargeText(lt) => {
                                 lt.content.to_lowercase().contains(&q)
                             }
@@ -310,7 +305,11 @@ fn scroll_to_message(app: &mut App, target_idx: usize) {
         &mut app.toasts,
         crate::toast::Toast::new(
             crate::toast::ToastKind::Info,
-            format!("jumped to message {}/{}", target_idx + 1, app.messages.len()),
+            format!(
+                "jumped to message {}/{}",
+                target_idx + 1,
+                app.messages.len()
+            ),
         ),
     );
 }
@@ -339,9 +338,12 @@ fn jump_to_last_error(app: &mut App) {
 
 fn jump_to_last_tool(app: &mut App) {
     use crate::types::MessagePart;
-    let target = app.messages.iter().enumerate().rev().find(|(_, m)| {
-        m.parts.iter().any(|p| matches!(p, MessagePart::Tool(_)))
-    });
+    let target = app
+        .messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, m)| m.parts.iter().any(|p| matches!(p, MessagePart::Tool(_))));
     match target {
         Some((idx, _)) => scroll_to_message(app, idx),
         None => crate::toast::push_with_cap(
@@ -410,11 +412,7 @@ fn user_prompts(app: &App) -> Vec<String> {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            if text.is_empty() {
-                None
-            } else {
-                Some(text)
-            }
+            if text.is_empty() { None } else { Some(text) }
         })
         .collect()
 }
@@ -848,11 +846,8 @@ pub async fn handle_key(
                 }
                 KeyCode::Up => {
                     let idx = app.slash_popup_selected.unwrap_or(0);
-                    app.slash_popup_selected = Some(if idx == 0 {
-                        matches.len() - 1
-                    } else {
-                        idx - 1
-                    });
+                    app.slash_popup_selected =
+                        Some(if idx == 0 { matches.len() - 1 } else { idx - 1 });
                     return Ok(false);
                 }
                 KeyCode::Esc => {
@@ -973,7 +968,7 @@ pub async fn handle_key(
                         Some(i) => (i + 1).min(task_count - 1),
                     };
                     app.viewing_task_id = task_ids.into_iter().nth(next);
-                        app.scroll_to_bottom();
+                    app.scroll_to_bottom();
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -985,7 +980,7 @@ pub async fn handle_key(
                     let pos = task_ids.iter().position(|t| t == id).unwrap_or(0);
                     if pos > 0 {
                         app.viewing_task_id = task_ids.into_iter().nth(pos - 1);
-                            }
+                    }
                 }
             }
             KeyCode::Right | KeyCode::Char('l') => {
@@ -993,7 +988,7 @@ pub async fn handle_key(
                     let pos = task_ids.iter().position(|t| t == id).unwrap_or(0);
                     if pos + 1 < task_count {
                         app.viewing_task_id = task_ids.into_iter().nth(pos + 1);
-                            }
+                    }
                 }
             }
             _ => {}
@@ -1104,13 +1099,10 @@ pub async fn handle_key(
             // resending or editing recent submissions.
             if !input_has_text(app) {
                 if let Some(prompt) = recall_previous_prompt(app) {
-                    app.textarea = TextArea::from(
-                        prompt.lines().map(str::to_string).collect::<Vec<_>>(),
-                    );
+                    app.textarea =
+                        TextArea::from(prompt.lines().map(str::to_string).collect::<Vec<_>>());
                     app.textarea.set_cursor_line_style(Style::default());
-                    app.textarea.set_placeholder_text(
-                        "send a message…",
-                    );
+                    app.textarea.set_placeholder_text("send a message…");
                     app.textarea.move_cursor(CursorMove::End);
                     return Ok(false);
                 }
@@ -1124,13 +1116,10 @@ pub async fn handle_key(
             // None or at the live edit, falls through to cursor move.
             if app.history_cursor.is_some() {
                 if let Some(prompt) = recall_next_prompt(app) {
-                    app.textarea = TextArea::from(
-                        prompt.lines().map(str::to_string).collect::<Vec<_>>(),
-                    );
+                    app.textarea =
+                        TextArea::from(prompt.lines().map(str::to_string).collect::<Vec<_>>());
                     app.textarea.set_cursor_line_style(Style::default());
-                    app.textarea.set_placeholder_text(
-                        "send a message…",
-                    );
+                    app.textarea.set_placeholder_text("send a message…");
                     app.textarea.move_cursor(CursorMove::End);
                     return Ok(false);
                 } else {
@@ -1203,9 +1192,7 @@ pub async fn handle_key(
                 app.messages.iter().enumerate().rev().find_map(|(i, m)| {
                     if m.role_is_user() && !m.is_compact_boundary() {
                         m.parts.iter().find_map(|p| match p {
-                            MessagePart::Text(s)
-                                if !s.is_empty() && !s.starts_with('/') =>
-                            {
+                            MessagePart::Text(s) if !s.is_empty() && !s.starts_with('/') => {
                                 Some((i, s.clone()))
                             }
                             _ => None,
@@ -1223,8 +1210,7 @@ pub async fn handle_key(
                     &mut app.toasts,
                     crate::toast::Toast::new(
                         crate::toast::ToastKind::Info,
-                        "editing previous message — Esc cancels, Enter resubmits"
-                            .to_string(),
+                        "editing previous message — Esc cancels, Enter resubmits".to_string(),
                     ),
                 );
             } else {
@@ -1258,20 +1244,13 @@ pub async fn handle_key(
             }
             let idx = app.path_yank_cursor % paths.len();
             let target = &paths[idx];
-            match arboard::Clipboard::new()
-                .and_then(|mut c| c.set_text(target.clone()))
-            {
+            match arboard::Clipboard::new().and_then(|mut c| c.set_text(target.clone())) {
                 Ok(_) => {
                     crate::toast::push_with_cap(
                         &mut app.toasts,
                         crate::toast::Toast::new(
                             crate::toast::ToastKind::Success,
-                            format!(
-                                "📋 {} ({}/{})",
-                                target,
-                                idx + 1,
-                                paths.len()
-                            ),
+                            format!("📋 {} ({}/{})", target, idx + 1, paths.len()),
                         ),
                     );
                 }
@@ -1318,9 +1297,9 @@ pub async fn handle_key(
                 .find(|m| {
                     m.role_is_user()
                         && !m.is_compact_boundary()
-                        && m.parts.iter().any(|p| {
-                            matches!(p, MessagePart::Text(s) if !s.starts_with('/'))
-                        })
+                        && m.parts
+                            .iter()
+                            .any(|p| matches!(p, MessagePart::Text(s) if !s.starts_with('/')))
                 })
                 .and_then(|m| {
                     m.parts.iter().find_map(|p| match p {
@@ -1354,8 +1333,7 @@ pub async fn handle_key(
             return Ok(false);
         }
         (mods, KeyCode::Char('Z'))
-            if mods.contains(KeyModifiers::CONTROL)
-                && mods.contains(KeyModifiers::SHIFT) =>
+            if mods.contains(KeyModifiers::CONTROL) && mods.contains(KeyModifiers::SHIFT) =>
         {
             // Ctrl+Shift+Z redo. The shift modifier may or may not be
             // exposed depending on the kitty-protocol negotiation, so
@@ -1429,24 +1407,30 @@ pub async fn handle_key(
                         Ok(()) => {
                             let preview: String = t.chars().take(40).collect();
                             let suffix = if t.chars().count() > 40 { "…" } else { "" };
-                            let _ = tx.send(crate::app::AppEvent::Toast {
-                                kind: crate::toast::ToastKind::Success,
-                                text: format!("Copied: {preview}{suffix}"),
-                            }).await;
+                            let _ = tx
+                                .send(crate::app::AppEvent::Toast {
+                                    kind: crate::toast::ToastKind::Success,
+                                    text: format!("Copied: {preview}{suffix}"),
+                                })
+                                .await;
                         }
                         Err(e) => {
-                            let _ = tx.send(crate::app::AppEvent::Toast {
-                                kind: crate::toast::ToastKind::Error,
-                                text: format!("Clipboard error: {e}"),
-                            }).await;
+                            let _ = tx
+                                .send(crate::app::AppEvent::Toast {
+                                    kind: crate::toast::ToastKind::Error,
+                                    text: format!("Clipboard error: {e}"),
+                                })
+                                .await;
                         }
                     }
                 }
                 _ => {
-                    let _ = tx.send(crate::app::AppEvent::Toast {
-                        kind: crate::toast::ToastKind::Warning,
-                        text: "No assistant message to yank".into(),
-                    }).await;
+                    let _ = tx
+                        .send(crate::app::AppEvent::Toast {
+                            kind: crate::toast::ToastKind::Warning,
+                            text: "No assistant message to yank".into(),
+                        })
+                        .await;
                 }
             }
             return Ok(false);
@@ -1509,15 +1493,11 @@ pub async fn handle_key(
             app.diagnostic_panel_scroll = app.diagnostic_panel_scroll.saturating_sub(10);
             return Ok(false);
         }
-        (KeyModifiers::NONE, KeyCode::Home | KeyCode::Char('g'))
-            if app.show_diagnostic_panel =>
-        {
+        (KeyModifiers::NONE, KeyCode::Home | KeyCode::Char('g')) if app.show_diagnostic_panel => {
             app.diagnostic_panel_scroll = 0;
             return Ok(false);
         }
-        (KeyModifiers::NONE, KeyCode::End | KeyCode::Char('G'))
-            if app.show_diagnostic_panel =>
-        {
+        (KeyModifiers::NONE, KeyCode::End | KeyCode::Char('G')) if app.show_diagnostic_panel => {
             // The renderer clamps overflow each frame, so passing a
             // large value lands at the bottom regardless of the
             // current diagnostic-set size.
@@ -1573,18 +1553,15 @@ pub async fn handle_key(
             // subagent renderer with `MessageView`.
             if let Some(ref task_id) = app.viewing_task_id.clone() {
                 if let Some(bt) = app.background_tasks.get(task_id) {
-                    let threshold_lines =
-                        crate::render::TASK_VIEW_COLLAPSE_LINES;
-                    let threshold_bytes =
-                        crate::render::TASK_VIEW_COLLAPSE_BYTES;
+                    let threshold_lines = crate::render::TASK_VIEW_COLLAPSE_LINES;
+                    let threshold_bytes = crate::render::TASK_VIEW_COLLAPSE_BYTES;
                     let last_collapsible = bt
                         .messages
                         .iter()
                         .enumerate()
                         .rev()
                         .find(|(_, m)| {
-                            m.lines().count() > threshold_lines
-                                || m.len() > threshold_bytes
+                            m.lines().count() > threshold_lines || m.len() > threshold_bytes
                         })
                         .map(|(i, _)| i);
                     if let Some(idx) = last_collapsible {
@@ -1613,8 +1590,7 @@ pub async fn handle_key(
                             // teaser to body.
                             match &tc.output {
                                 ToolOutput::LargeText(lt)
-                                    if lt.line_count
-                                        > crate::types::LargeText::COLLAPSE_LINES
+                                    if lt.line_count > crate::types::LargeText::COLLAPSE_LINES
                                         || lt.content.len()
                                             > crate::types::LargeText::COLLAPSE_BYTES =>
                                 {
@@ -1766,7 +1742,11 @@ pub async fn handle_key(
                 &mut app.toasts,
                 crate::toast::Toast::new(
                     crate::toast::ToastKind::Info,
-                    format!("{} Mode: {}", app.permission_mode.symbol(), app.permission_mode.label()),
+                    format!(
+                        "{} Mode: {}",
+                        app.permission_mode.symbol(),
+                        app.permission_mode.label()
+                    ),
                 ),
             );
             return Ok(false);
@@ -1935,8 +1915,7 @@ fn apply_mention_pick(app: &mut App, pick: &str) {
     let (new_buf, _new_cursor) = crate::mentions::apply_acceptance(&buffer, anchor, q_len, pick);
     app.textarea = TextArea::from(new_buf.lines().map(str::to_string).collect::<Vec<_>>());
     app.textarea.set_cursor_line_style(Style::default());
-    app.textarea
-        .set_placeholder_text("send a message…");
+    app.textarea.set_placeholder_text("send a message…");
     app.textarea.move_cursor(CursorMove::End);
 }
 
@@ -1944,7 +1923,8 @@ fn apply_mention_pick(app: &mut App, pick: &str) {
 /// whitespace) or update its query (already-active, more chars typed
 /// or backspace shrunk the buffer).
 fn update_mention_state_after_input(app: &mut App) {
-    let cursor = app.textarea.cursor(); let (line_idx, col) = (cursor.0, cursor.1);
+    let cursor = app.textarea.cursor();
+    let (line_idx, col) = (cursor.0, cursor.1);
     let line = match app.textarea.lines().get(line_idx) {
         Some(s) => s.clone(),
         None => return,
@@ -2102,8 +2082,9 @@ async fn handle_submit(
         let progress_tx = tx_pre.clone();
         let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
             // CompactionProgress is non-critical; next progress update supersedes.
-            let _ =
-                progress_tx.try_send(crate::app::AppEvent::CompactionProgress { output_chars: chars });
+            let _ = progress_tx.try_send(crate::app::AppEvent::CompactionProgress {
+                output_chars: chars,
+            });
         });
         tokio::spawn(async move {
             let options = crate::provider::StreamOptions::new(model.clone());
@@ -2134,12 +2115,14 @@ async fn handle_submit(
                         saved = pre_tokens.saturating_sub(post_tokens),
                         "pre-submit compaction succeeded — re-queuing user message"
                     );
-                    let _ = tx_pre.send(crate::app::AppEvent::CompactionDone {
-                        messages,
-                        tool_ctx,
-                        pre_tokens,
-                        post_tokens,
-                    }).await;
+                    let _ = tx_pre
+                        .send(crate::app::AppEvent::CompactionDone {
+                            messages,
+                            tool_ctx,
+                            pre_tokens,
+                            post_tokens,
+                        })
+                        .await;
                     // Re-queue the user's message — it didn't make it into
                     // the conversation before compaction ran.
                     let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text)).await;
@@ -2149,11 +2132,14 @@ async fn handle_submit(
                         target: "jfc::compact",
                         "pre-submit compaction: circuit breaker tripped"
                     );
-                    let _ = tx_pre.send(crate::app::AppEvent::CompactionFailed(
-                        "Circuit breaker tripped — submit again with `/compact` if needed".into(),
-                        None,
-                        false,
-                    )).await;
+                    let _ = tx_pre
+                        .send(crate::app::AppEvent::CompactionFailed(
+                            "Circuit breaker tripped — submit again with `/compact` if needed"
+                                .into(),
+                            None,
+                            false,
+                        ))
+                        .await;
                 }
                 crate::compact::CompactResult::Exhausted { attempts } => {
                     tracing::warn!(
@@ -2161,9 +2147,15 @@ async fn handle_submit(
                         attempts,
                         "pre-submit compaction exhausted all attempts"
                     );
-                    let _ = tx_pre.send(crate::app::AppEvent::CompactionFailed(format!(
-                        "Exhausted {attempts} compaction attempts — request is too large"
-                    ), Some(tool_ctx.approx_tokens), false)).await;
+                    let _ = tx_pre
+                        .send(crate::app::AppEvent::CompactionFailed(
+                            format!(
+                                "Exhausted {attempts} compaction attempts — request is too large"
+                            ),
+                            Some(tool_ctx.approx_tokens),
+                            false,
+                        ))
+                        .await;
                 }
                 _ => {
                     // Unsupported / TooFewGroups: provider can't compact.
@@ -2175,14 +2167,16 @@ async fn handle_submit(
                             target: "jfc::compact",
                             "pre-submit compaction unsupported and context is Blocked — cannot proceed"
                         );
-                        let _ = tx_pre.send(crate::app::AppEvent::CompactionFailed(
-                            "Context exceeds limit and provider cannot compact — \
+                        let _ = tx_pre
+                            .send(crate::app::AppEvent::CompactionFailed(
+                                "Context exceeds limit and provider cannot compact — \
                              try switching to a model/provider that supports compaction, \
                              or start a new session."
-                                .into(),
-                            Some(tool_ctx.approx_tokens),
-                            false,
-                        )).await;
+                                    .into(),
+                                Some(tool_ctx.approx_tokens),
+                                false,
+                            ))
+                            .await;
                     } else {
                         tracing::debug!(
                             target: "jfc::compact",
@@ -2224,7 +2218,13 @@ async fn handle_submit(
         .current_session_id
         .clone()
         .unwrap_or_else(crate::session::generate_session_id);
-    crate::session::save_session(&session_id, &app.messages, Some(app.cwd.as_str()), Some(app.model.as_str())).await;
+    crate::session::save_session(
+        &session_id,
+        &app.messages,
+        Some(app.cwd.as_str()),
+        Some(app.model.as_str()),
+    )
+    .await;
     app.current_session_id = Some(session_id.clone());
 
     let provider = app.provider.clone();
@@ -2262,11 +2262,7 @@ pub async fn run_slash_command(app: &mut App, text: &str) {
     handle_slash_command(app, text, None).await
 }
 
-async fn handle_slash_command(
-    app: &mut App,
-    text: &str,
-    tx: Option<&mpsc::Sender<AppEvent>>,
-) {
+async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sender<AppEvent>>) {
     let parts: Vec<&str> = text.splitn(2, ' ').collect();
     match parts[0] {
         "/rename" => {
@@ -2275,7 +2271,8 @@ async fn handle_slash_command(
             // precedence chain (custom → ai → firstPrompt → id-slice).
             // Persisted to the session JSON so it survives restarts.
             let new_title = parts.get(1).copied().unwrap_or("").trim().to_owned();
-            app.messages.push(ChatMessage::user(format!("/rename {new_title}")));
+            app.messages
+                .push(ChatMessage::user(format!("/rename {new_title}")));
             match (&app.current_session_id, new_title.is_empty()) {
                 (None, _) => {
                     app.messages.push(ChatMessage::assistant(
@@ -2475,10 +2472,9 @@ async fn handle_slash_command(
                     let current_cwd = std::env::current_dir()
                         .map(|p| p.to_string_lossy().into_owned())
                         .unwrap_or_default();
-                    if let Some(msg) = crate::session::cwd_mismatch_message(
-                        session_cwd.as_deref(),
-                        &current_cwd,
-                    ) {
+                    if let Some(msg) =
+                        crate::session::cwd_mismatch_message(session_cwd.as_deref(), &current_cwd)
+                    {
                         crate::toast::push_with_cap(
                             &mut app.toasts,
                             crate::toast::Toast::new(crate::toast::ToastKind::Warning, msg),
@@ -2669,7 +2665,8 @@ async fn handle_slash_command(
             let body = if cascade.is_empty() {
                 "No cascade tasks. Cascade entries are queued by `symbol_edit` \
                  when called with `dispatch_cascade: true` and the edit changes \
-                 a function signature with downstream callers.".to_owned()
+                 a function signature with downstream callers."
+                    .to_owned()
             } else {
                 let mut s = format!(
                     "**{} cascade task{}** (from `symbol_edit dispatch_cascade=true`):\n\n",
@@ -2716,17 +2713,26 @@ async fn handle_slash_command(
             let body = if records.is_empty() {
                 "No graph queries recorded yet. Run `graph_query` (via the model) or \
                  ask the model to query the code graph, then re-invoke `/graph-history` \
-                 to see the most recent queries with their result counts.".to_owned()
+                 to see the most recent queries with their result counts."
+                    .to_owned()
             } else {
-                let mut s = format!("**{} graph quer{} recorded** (most recent first):\n\n",
+                let mut s = format!(
+                    "**{} graph quer{} recorded** (most recent first):\n\n",
                     records.len(),
-                    if records.len() == 1 { "y" } else { "ies" });
+                    if records.len() == 1 { "y" } else { "ies" }
+                );
                 for record in records.iter().rev().take(20) {
-                    let trunc_marker = if record.was_truncated { " [truncated]" } else { "" };
+                    let trunc_marker = if record.was_truncated {
+                        " [truncated]"
+                    } else {
+                        ""
+                    };
                     let cycle_marker = if record.cycles_detected > 0 {
-                        format!(" [{} cycle{} detected]",
+                        format!(
+                            " [{} cycle{} detected]",
                             record.cycles_detected,
-                            if record.cycles_detected == 1 { "" } else { "s" })
+                            if record.cycles_detected == 1 { "" } else { "s" }
+                        )
                     } else {
                         String::new()
                     };
@@ -2734,14 +2740,19 @@ async fn handle_slash_command(
                         "- `{}`\n  → {} node{}{}{}\n",
                         record.query_text,
                         record.result_node_count,
-                        if record.result_node_count == 1 { "" } else { "s" },
+                        if record.result_node_count == 1 {
+                            ""
+                        } else {
+                            "s"
+                        },
                         trunc_marker,
                         cycle_marker,
                     ));
                 }
                 s
             };
-            app.messages.push(ChatMessage::user("/graph-history".into()));
+            app.messages
+                .push(ChatMessage::user("/graph-history".into()));
             app.messages.push(ChatMessage::assistant(body));
         }
         "/task-list" | "/tasks" => {
@@ -2923,7 +2934,8 @@ async fn handle_slash_command(
                 app.auto_mode.enabled = mode == crate::app::PermissionMode::Auto;
                 app.messages.push(ChatMessage::assistant(format!(
                     "**Mode → {} {}**",
-                    mode.symbol(), mode.label()
+                    mode.symbol(),
+                    mode.label()
                 )));
             }
         }
@@ -2987,7 +2999,10 @@ async fn handle_slash_command(
             // loop unblocks.
             let id = parts.get(1).copied().unwrap_or("").trim().to_owned();
             let approve = parts[0] == "/swarm-approve";
-            let feedback = parts.get(2..).map(|rest| rest.join(" ")).filter(|s| !s.trim().is_empty());
+            let feedback = parts
+                .get(2..)
+                .map(|rest| rest.join(" "))
+                .filter(|s| !s.trim().is_empty());
             if id.is_empty() {
                 app.messages.push(ChatMessage::assistant(format!(
                     "Usage: {} <request-id> [feedback]\nFind the id in the toast that appeared when the teammate asked.",
@@ -3116,7 +3131,13 @@ async fn handle_slash_command(
                     .current_session_id
                     .clone()
                     .unwrap_or_else(crate::session::generate_session_id);
-                crate::session::save_session(&session_id, &app.messages, None, Some(app.model.as_str())).await;
+                crate::session::save_session(
+                    &session_id,
+                    &app.messages,
+                    None,
+                    Some(app.model.as_str()),
+                )
+                .await;
                 app.current_session_id = Some(session_id);
 
                 let provider = app.provider.clone();
@@ -3127,7 +3148,8 @@ async fn handle_slash_command(
                 let interrupt = app.interrupt_flag.clone();
                 interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
                 tokio::spawn(async move {
-                    crate::stream::stream_response(provider, messages, model, tx_stream, interrupt).await;
+                    crate::stream::stream_response(provider, messages, model, tx_stream, interrupt)
+                        .await;
                 });
                 return;
             }
@@ -3159,14 +3181,8 @@ async fn handle_dump_context_command(app: &mut App) {
     report.push_str("**Model context dump**\n\n");
     report.push_str(&format!("- Model: `{}`\n", app.model));
     report.push_str(&format!("- Cwd: `{}`\n", app.cwd));
-    report.push_str(&format!(
-        "- Provider: `{}`\n",
-        app.provider.name()
-    ));
-    report.push_str(&format!(
-        "- Permission mode: `{:?}`\n",
-        app.permission_mode
-    ));
+    report.push_str(&format!("- Provider: `{}`\n", app.provider.name()));
+    report.push_str(&format!("- Permission mode: `{:?}`\n", app.permission_mode));
     if let Some(ref branch) = app.git_branch {
         report.push_str(&format!("- Git branch: `{branch}`\n"));
     }
@@ -3179,15 +3195,14 @@ async fn handle_dump_context_command(app: &mut App) {
         report.push_str(&rendered);
         report.push_str("\n```\n\n");
     } else {
-        report.push_str("### CLAUDE.md hierarchy\n\n_(none — no managed/user/project files found)_\n\n");
+        report.push_str(
+            "### CLAUDE.md hierarchy\n\n_(none — no managed/user/project files found)_\n\n",
+        );
     }
 
     // Skills
     let skills = crate::agents::load_skills(&cwd);
-    report.push_str(&format!(
-        "### Skills ({})\n\n",
-        skills.len()
-    ));
+    report.push_str(&format!("### Skills ({})\n\n", skills.len()));
     for skill in &skills {
         report.push_str(&format!("- `{}`\n", skill.name));
     }
@@ -3198,10 +3213,7 @@ async fn handle_dump_context_command(app: &mut App) {
 
     // Memories
     let memories = crate::memory::load_all_memories(&cwd);
-    report.push_str(&format!(
-        "### Memories ({})\n\n",
-        memories.len()
-    ));
+    report.push_str(&format!("### Memories ({})\n\n", memories.len()));
     for mem in &memories {
         let name = mem
             .path
@@ -3210,10 +3222,7 @@ async fn handle_dump_context_command(app: &mut App) {
             .unwrap_or("(unknown)");
         report.push_str(&format!(
             "- **{}** ({:?}, {:?}/{:?})\n",
-            name,
-            mem.level,
-            mem.frontmatter.memory_type,
-            mem.frontmatter.scope,
+            name, mem.level, mem.frontmatter.memory_type, mem.frontmatter.scope,
         ));
     }
     if memories.is_empty() {
@@ -3248,9 +3257,8 @@ async fn handle_dump_context_command(app: &mut App) {
     }
     report.push('\n');
 
-    app.messages.push(crate::types::ChatMessage::user(
-        "/dump-context".to_string(),
-    ));
+    app.messages
+        .push(crate::types::ChatMessage::user("/dump-context".to_string()));
     app.messages
         .push(crate::types::ChatMessage::assistant(report));
 }
@@ -3267,9 +3275,10 @@ fn handle_theme_command(app: &mut App, args: &str) {
             .copied()
             .collect::<Vec<_>>()
             .join(", ");
-        app.messages.push(crate::types::ChatMessage::assistant(
-            format!("Available themes: {list}.\n\nUse `/theme <name>` to switch."),
-        ));
+        app.messages
+            .push(crate::types::ChatMessage::assistant(format!(
+                "Available themes: {list}.\n\nUse `/theme <name>` to switch."
+            )));
         return;
     }
     match crate::theme::Theme::by_name(name) {
@@ -3366,7 +3375,11 @@ async fn handle_export_command(app: &mut App) {
                     let body = match &tc.output {
                         ToolOutput::Text(s) => s.clone(),
                         ToolOutput::LargeText(lt) => lt.content.clone(),
-                        ToolOutput::Command { stdout, stderr, exit_code } => {
+                        ToolOutput::Command {
+                            stdout,
+                            stderr,
+                            exit_code,
+                        } => {
                             format!(
                                 "exit: {}\nstdout:\n{}\nstderr:\n{}",
                                 exit_code.unwrap_or(-1),
@@ -3418,10 +3431,11 @@ async fn handle_export_command(app: &mut App) {
                     format!("exported to {}", path.display()),
                 ),
             );
-            app.messages.push(crate::types::ChatMessage::assistant(format!(
-                "Session exported to `{}`",
-                path.display()
-            )));
+            app.messages
+                .push(crate::types::ChatMessage::assistant(format!(
+                    "Session exported to `{}`",
+                    path.display()
+                )));
         }
         Err(e) => {
             crate::toast::push_with_cap(
@@ -4037,7 +4051,9 @@ mod tests {
         let mut app = test_app();
         arm_approval(&mut app, ToolKind::Bash);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('y')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('y')), &tx)
+            .await
+            .unwrap();
         assert!(app.pending_approval.is_none());
     }
 
@@ -4046,7 +4062,9 @@ mod tests {
         let mut app = test_app();
         arm_approval(&mut app, ToolKind::Bash);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('n')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('n')), &tx)
+            .await
+            .unwrap();
         assert!(app.pending_approval.is_none());
     }
 
@@ -4055,7 +4073,9 @@ mod tests {
         let mut app = test_app();
         arm_approval(&mut app, ToolKind::Bash);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('a')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('a')), &tx)
+            .await
+            .unwrap();
         assert!(app.always_approved.iter().any(|n| n == "Bash"));
     }
 
@@ -4064,7 +4084,9 @@ mod tests {
         let mut app = test_app();
         arm_approval(&mut app, ToolKind::Bash);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('s')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('s')), &tx)
+            .await
+            .unwrap();
         assert!(app.session_approved.iter().any(|n| n == "Bash"));
     }
 
@@ -4086,7 +4108,9 @@ mod tests {
         // selected = 1 → No
         app.pending_approval.as_mut().unwrap().selected = 1;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Enter), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Enter), &tx)
+            .await
+            .unwrap();
         assert!(app.pending_approval.is_none());
     }
 
@@ -4133,13 +4157,21 @@ mod tests {
     async fn ctrl_b_toggles_sidebar_normal() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('b'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('b'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.show_sidebar);
-        handle_key(&mut app, key_mod(KeyCode::Char('b'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('b'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(!app.show_sidebar);
     }
 
@@ -4162,9 +4194,13 @@ mod tests {
     async fn ctrl_p_opens_palette_normal() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('p'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.show_palette);
         assert_eq!(app.palette_selected, 0);
     }
@@ -4174,9 +4210,13 @@ mod tests {
         let mut app = test_app();
         app.show_palette = true;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('c')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('c')), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.palette_input, "c");
-        handle_key(&mut app, key(KeyCode::Backspace), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Backspace), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.palette_input, "");
     }
 
@@ -4209,7 +4249,9 @@ mod tests {
         // First palette item: "Clear Messages (/clear)"
         let (tx, _rx) = channel();
         app.messages.push(ChatMessage::user("hi".into()));
-        handle_key(&mut app, key(KeyCode::Enter), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Enter), &tx)
+            .await
+            .unwrap();
         assert!(!app.show_palette);
         // /clear via palette wipes messages
         assert!(app.messages.is_empty());
@@ -4223,9 +4265,13 @@ mod tests {
     async fn ctrl_m_opens_model_picker_normal() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('m'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('m'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.show_model_picker);
     }
 
@@ -4245,9 +4291,13 @@ mod tests {
         let mut app = test_app();
         app.show_model_picker = true;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('o')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('o')), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.model_picker_filter, "o");
-        handle_key(&mut app, key(KeyCode::Backspace), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Backspace), &tx)
+            .await
+            .unwrap();
         assert!(app.model_picker_filter.is_empty());
     }
 
@@ -4304,9 +4354,13 @@ mod tests {
     async fn ctrl_f_opens_search_normal() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('f'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('f'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.transcript_search.is_some());
     }
 
@@ -4318,7 +4372,9 @@ mod tests {
         app.transcript_search = Some(crate::app::TranscriptSearch::default());
         let (tx, _rx) = channel();
         for c in "hello".chars() {
-            handle_key(&mut app, key(KeyCode::Char(c)), &tx).await.unwrap();
+            handle_key(&mut app, key(KeyCode::Char(c)), &tx)
+                .await
+                .unwrap();
         }
         let s = app.transcript_search.as_ref().unwrap();
         assert_eq!(s.matches, vec![0]);
@@ -4333,7 +4389,9 @@ mod tests {
             ..Default::default()
         });
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Backspace), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Backspace), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.transcript_search.as_ref().unwrap().query, "ab");
     }
 
@@ -4345,7 +4403,9 @@ mod tests {
         s.matches = vec![0];
         app.transcript_search = Some(s);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Enter), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Enter), &tx)
+            .await
+            .unwrap();
         assert!(app.transcript_search.is_none());
     }
 
@@ -4381,9 +4441,13 @@ mod tests {
     async fn ctrl_g_arms_jump_mode_normal() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('g'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('g'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.jump_armed);
     }
 
@@ -4391,28 +4455,31 @@ mod tests {
     async fn jump_armed_e_jumps_to_error_normal() {
         let mut app = test_app();
         // failed tool in messages → e jumps to it
-        app.messages.push(ChatMessage::assistant_parts(vec![MessagePart::Tool(
-            ToolCall {
-                id: "t1".into(),
-                kind: ToolKind::Bash,
-                status: ToolStatus::Failed,
-                input: ToolInput::Bash {
-                    command: "x".into(),
-                    timeout: None,
-                    workdir: None,
+        app.messages
+            .push(ChatMessage::assistant_parts(vec![MessagePart::Tool(
+                ToolCall {
+                    id: "t1".into(),
+                    kind: ToolKind::Bash,
+                    status: ToolStatus::Failed,
+                    input: ToolInput::Bash {
+                        command: "x".into(),
+                        timeout: None,
+                        workdir: None,
+                    },
+                    output: ToolOutput::Empty,
+                    is_collapsed: false,
+                    expanded: false,
+                    elapsed_ms: None,
+                    started_at: None,
+                    pinned: false,
                 },
-                output: ToolOutput::Empty,
-                is_collapsed: false,
-                expanded: false,
-                elapsed_ms: None,
-                started_at: None,
-                pinned: false,
-            },
-        )]));
+            )]));
         app.jump_armed = true;
         app.jump_armed_at = Some(std::time::Instant::now());
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('e')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('e')), &tx)
+            .await
+            .unwrap();
         assert!(!app.jump_armed);
     }
 
@@ -4422,7 +4489,9 @@ mod tests {
         app.jump_armed = true;
         app.jump_armed_at = Some(std::time::Instant::now());
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('t')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('t')), &tx)
+            .await
+            .unwrap();
         assert!(!app.jump_armed);
     }
 
@@ -4432,7 +4501,9 @@ mod tests {
         app.jump_armed = true;
         app.jump_armed_at = Some(std::time::Instant::now());
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('m')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('m')), &tx)
+            .await
+            .unwrap();
         assert!(!app.jump_armed);
     }
 
@@ -4442,7 +4513,9 @@ mod tests {
         app.jump_armed = true;
         app.jump_armed_at = Some(std::time::Instant::now());
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('a')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('a')), &tx)
+            .await
+            .unwrap();
         assert!(!app.jump_armed);
     }
 
@@ -4454,9 +4527,13 @@ mod tests {
     async fn ctrl_x_arms_leader_normal() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('x'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('x'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.leader_key_active);
     }
 
@@ -4467,7 +4544,9 @@ mod tests {
         app.leader_key_timeout = Some(std::time::Instant::now());
         app.viewing_task_id = Some("t1".into());
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('k')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('k')), &tx)
+            .await
+            .unwrap();
         assert!(app.viewing_task_id.is_none());
         assert!(!app.leader_key_active);
     }
@@ -4494,8 +4573,7 @@ mod tests {
             is_meta: false,
         });
         // Push the placeholder user message that recall expects to remove.
-        app.messages
-            .push(ChatMessage::user("⏳ queued".into()));
+        app.messages.push(ChatMessage::user("⏳ queued".into()));
         let (tx, _rx) = channel();
         handle_key(&mut app, key(KeyCode::Up), &tx).await.unwrap();
         let txt = app.textarea.lines().join("\n");
@@ -4542,9 +4620,13 @@ mod tests {
     async fn ctrl_y_with_no_assistant_message_robust() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('y'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('y'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         // Best-effort: should not panic. No assistant message → no clipboard call.
     }
 
@@ -4556,9 +4638,13 @@ mod tests {
     async fn ctrl_c_clears_input_when_text_present_normal() {
         let mut app = test_app_with_input("hello", 80);
         let (tx, _rx) = channel();
-        let exit = handle_key(&mut app, key_mod(KeyCode::Char('c'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        let exit = handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(!exit);
         assert!(!input_has_text(&app));
     }
@@ -4567,9 +4653,13 @@ mod tests {
     async fn ctrl_c_exits_when_input_empty_robust() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        let exit = handle_key(&mut app, key_mod(KeyCode::Char('c'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        let exit = handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(exit);
     }
 
@@ -4582,9 +4672,13 @@ mod tests {
         let mut app = test_app_with_input("abc", 80);
         app.textarea.move_cursor(CursorMove::Head);
         let (tx, _rx) = channel();
-        let exit = handle_key(&mut app, key_mod(KeyCode::Char('d'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        let exit = handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('d'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(!exit);
     }
 
@@ -4592,9 +4686,13 @@ mod tests {
     async fn ctrl_d_exits_on_empty_robust() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        let exit = handle_key(&mut app, key_mod(KeyCode::Char('d'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        let exit = handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('d'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(exit);
     }
 
@@ -4607,9 +4705,13 @@ mod tests {
         let mut app = test_app();
         app.messages.push(ChatMessage::user("hello".into()));
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('e'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('e'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert_eq!(app.editing_message_idx, Some(0));
     }
 
@@ -4617,9 +4719,13 @@ mod tests {
     async fn ctrl_e_robust_no_user_message() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('e'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('e'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.editing_message_idx.is_none());
     }
 
@@ -4629,9 +4735,13 @@ mod tests {
         app.messages.push(ChatMessage::user("hi".into()));
         app.is_streaming = true;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('e'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('e'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.editing_message_idx.is_none());
     }
 
@@ -4641,9 +4751,13 @@ mod tests {
         let mut app = test_app_with_input("abc", 80);
         app.textarea.move_cursor(CursorMove::Head);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('e'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('e'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert_eq!(app.textarea.cursor(), (0, 3));
     }
 
@@ -4656,9 +4770,13 @@ mod tests {
         let mut app = test_app();
         app.messages.push(ChatMessage::user("ask".into()));
         let (tx, mut rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('r'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('r'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         match rx.try_recv().unwrap() {
             AppEvent::Submit(t) => assert_eq!(t, "ask"),
             _ => panic!("expected Submit"),
@@ -4669,9 +4787,13 @@ mod tests {
     async fn ctrl_r_robust_no_prompt() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('r'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('r'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -4680,9 +4802,13 @@ mod tests {
         app.messages.push(ChatMessage::user("ask".into()));
         app.is_streaming = true;
         let (tx, mut rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('r'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('r'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         // No Submit emitted.
         assert!(rx.try_recv().is_err());
     }
@@ -4695,9 +4821,13 @@ mod tests {
     async fn ctrl_l_robust_no_paths() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('l'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('l'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert_eq!(app.path_yank_cursor, 0);
     }
 
@@ -4709,9 +4839,13 @@ mod tests {
     async fn ctrl_z_undo_normal() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('z'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('z'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -4720,7 +4854,10 @@ mod tests {
         let (tx, _rx) = channel();
         handle_key(
             &mut app,
-            key_mod(KeyCode::Char('Z'), KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+            key_mod(
+                KeyCode::Char('Z'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
             &tx,
         )
         .await
@@ -4736,9 +4873,13 @@ mod tests {
         let mut app = test_app();
         let initial = app.show_info_sidebar;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('i'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('i'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert_ne!(app.show_info_sidebar, initial);
     }
 
@@ -4747,9 +4888,13 @@ mod tests {
         let mut app = test_app();
         let initial = app.show_info_sidebar;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('s'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('s'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert_ne!(app.show_info_sidebar, initial);
     }
 
@@ -4760,20 +4905,23 @@ mod tests {
     #[tokio::test]
     async fn ctrl_o_opens_diagnostic_panel_when_diagnostics_present_normal() {
         let mut app = test_app();
-        app.diagnostics
-            .push(crate::diagnostics::DiagnosticEntry {
-                file: "src/lib.rs".into(),
-                line: 1,
-                col: 1,
-                severity: crate::diagnostics::Severity::Error,
-                message: "boom".into(),
-                code: None,
-                source: None,
-            });
+        app.diagnostics.push(crate::diagnostics::DiagnosticEntry {
+            file: "src/lib.rs".into(),
+            line: 1,
+            col: 1,
+            severity: crate::diagnostics::Severity::Error,
+            message: "boom".into(),
+            code: None,
+            source: None,
+        });
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('o'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('o'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.show_diagnostic_panel);
     }
 
@@ -4782,9 +4930,13 @@ mod tests {
         let mut app = test_app();
         app.show_diagnostic_panel = true;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('o'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('o'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(!app.show_diagnostic_panel);
     }
 
@@ -4793,9 +4945,13 @@ mod tests {
         let mut app = test_app();
         app.messages.push(ChatMessage::assistant("hi".into()));
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('o'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('o'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert_eq!(app.reasoning_expanded.get(&0), Some(&true));
     }
 
@@ -4808,7 +4964,9 @@ mod tests {
         let mut app = test_app();
         app.show_diagnostic_panel = true;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('j')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('j')), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.diagnostic_panel_scroll, 1);
     }
 
@@ -4818,7 +4976,9 @@ mod tests {
         app.show_diagnostic_panel = true;
         app.diagnostic_panel_scroll = 5;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('k')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('k')), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.diagnostic_panel_scroll, 4);
     }
 
@@ -4827,7 +4987,9 @@ mod tests {
         let mut app = test_app();
         app.show_diagnostic_panel = true;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::PageDown), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::PageDown), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.diagnostic_panel_scroll, 10);
     }
 
@@ -4837,7 +4999,9 @@ mod tests {
         app.show_diagnostic_panel = true;
         app.diagnostic_panel_scroll = 20;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::PageUp), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::PageUp), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.diagnostic_panel_scroll, 10);
     }
 
@@ -4847,7 +5011,9 @@ mod tests {
         app.show_diagnostic_panel = true;
         app.diagnostic_panel_scroll = 5;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('g')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('g')), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.diagnostic_panel_scroll, 0);
     }
 
@@ -4856,7 +5022,9 @@ mod tests {
         let mut app = test_app();
         app.show_diagnostic_panel = true;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('G')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('G')), &tx)
+            .await
+            .unwrap();
         assert!(app.diagnostic_panel_scroll > 1_000_000);
     }
 
@@ -4879,7 +5047,9 @@ mod tests {
         app.scroll_offset = 0;
         app.total_lines = 100;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('j')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('j')), &tx)
+            .await
+            .unwrap();
         // Some scroll happened (or 0 if at top with no clamp); just validate
         // behaviour didn't panic and doesn't move down beyond bounds.
         let _ = app.scroll_offset;
@@ -4890,7 +5060,9 @@ mod tests {
         let mut app = test_app();
         app.scroll_offset = 5;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('k')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('k')), &tx)
+            .await
+            .unwrap();
         assert!(app.scroll_offset <= 5);
     }
 
@@ -4899,7 +5071,9 @@ mod tests {
         let mut app = test_app();
         app.follow_bottom = false;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('G')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('G')), &tx)
+            .await
+            .unwrap();
         assert!(app.follow_bottom);
     }
 
@@ -4909,7 +5083,9 @@ mod tests {
         app.scroll_offset = 50;
         app.follow_bottom = true;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('g')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('g')), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.scroll_offset, 0);
         assert!(!app.follow_bottom);
     }
@@ -4918,9 +5094,13 @@ mod tests {
     async fn question_toggles_help_normal() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('?')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('?')), &tx)
+            .await
+            .unwrap();
         assert!(app.show_help);
-        handle_key(&mut app, key(KeyCode::Char('?')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('?')), &tx)
+            .await
+            .unwrap();
         assert!(!app.show_help);
     }
 
@@ -4928,35 +5108,42 @@ mod tests {
     async fn shift_question_toggles_help_robust() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('?'), KeyModifiers::SHIFT), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('?'), KeyModifiers::SHIFT),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.show_help);
     }
 
     #[tokio::test]
     async fn lower_o_toggles_tool_expand_normal() {
         let mut app = test_app();
-        app.messages.push(ChatMessage::assistant_parts(vec![MessagePart::Tool(
-            ToolCall {
-                id: "t".into(),
-                kind: ToolKind::Read,
-                status: ToolStatus::Complete,
-                input: ToolInput::Read {
-                    file_path: "x".into(),
-                    offset: None,
-                    limit: None,
+        app.messages
+            .push(ChatMessage::assistant_parts(vec![MessagePart::Tool(
+                ToolCall {
+                    id: "t".into(),
+                    kind: ToolKind::Read,
+                    status: ToolStatus::Complete,
+                    input: ToolInput::Read {
+                        file_path: "x".into(),
+                        offset: None,
+                        limit: None,
+                    },
+                    output: ToolOutput::Text("hi".into()),
+                    is_collapsed: false,
+                    expanded: false,
+                    elapsed_ms: None,
+                    started_at: None,
+                    pinned: false,
                 },
-                output: ToolOutput::Text("hi".into()),
-                is_collapsed: false,
-                expanded: false,
-                elapsed_ms: None,
-                started_at: None,
-                pinned: false,
-            },
-        )]));
+            )]));
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Char('o')), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Char('o')), &tx)
+            .await
+            .unwrap();
         let MessagePart::Tool(tc) = &app.messages[0].parts[0] else {
             panic!("tool not found")
         };
@@ -5004,10 +5191,7 @@ mod tests {
         assert!(app.last_esc_at.is_some());
         // Second Esc immediately: triggers interrupt.
         handle_key(&mut app, key(KeyCode::Esc), &tx).await.unwrap();
-        assert!(
-            app.interrupt_flag
-                .load(std::sync::atomic::Ordering::SeqCst)
-        );
+        assert!(app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst));
     }
 
     #[tokio::test]
@@ -5027,7 +5211,9 @@ mod tests {
         let mut app = test_app();
         let initial = app.permission_mode;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::BackTab), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::BackTab), &tx)
+            .await
+            .unwrap();
         assert_ne!(app.permission_mode, initial);
     }
 
@@ -5039,8 +5225,12 @@ mod tests {
     async fn page_up_down_normal() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::PageUp), &tx).await.unwrap();
-        handle_key(&mut app, key(KeyCode::PageDown), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::PageUp), &tx)
+            .await
+            .unwrap();
+        handle_key(&mut app, key(KeyCode::PageDown), &tx)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -5075,9 +5265,13 @@ mod tests {
         let mut app = test_app_with_input("abc", 80);
         app.textarea.move_cursor(CursorMove::End);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('a'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('a'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert_eq!(app.textarea.cursor(), (0, 0));
     }
 
@@ -5086,9 +5280,13 @@ mod tests {
         let mut app = test_app_with_input("hello", 80);
         app.textarea.move_cursor(CursorMove::End);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('u'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.textarea.lines()[0].is_empty());
     }
 
@@ -5097,9 +5295,13 @@ mod tests {
         let mut app = test_app_with_input("hello", 80);
         app.textarea.move_cursor(CursorMove::Head);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('k'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('k'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.textarea.lines()[0].is_empty());
     }
 
@@ -5108,9 +5310,13 @@ mod tests {
         let mut app = test_app_with_input("hello world", 80);
         app.textarea.move_cursor(CursorMove::End);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('w'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('w'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(!app.textarea.lines()[0].contains("world"));
     }
 
@@ -5123,9 +5329,13 @@ mod tests {
         let mut app = test_app_with_input("foo bar", 80);
         app.textarea.move_cursor(CursorMove::End);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('b'), KeyModifiers::ALT), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('b'), KeyModifiers::ALT),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert_eq!(app.textarea.cursor().1, 4);
     }
 
@@ -5134,9 +5344,13 @@ mod tests {
         let mut app = test_app_with_input("foo bar", 80);
         app.textarea.move_cursor(CursorMove::Head);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('f'), KeyModifiers::ALT), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('f'), KeyModifiers::ALT),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(app.textarea.cursor().1 > 0);
     }
 
@@ -5145,9 +5359,13 @@ mod tests {
         let mut app = test_app_with_input("foo bar", 80);
         app.textarea.move_cursor(CursorMove::Head);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('d'), KeyModifiers::ALT), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('d'), KeyModifiers::ALT),
+            &tx,
+        )
+        .await
+        .unwrap();
         assert!(!app.textarea.lines()[0].contains("foo"));
     }
 
@@ -5160,9 +5378,13 @@ mod tests {
         let mut app = test_app_with_input("hello", 80);
         app.viewport_height = 5;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key_mod(KeyCode::Char('f'), KeyModifiers::CONTROL), &tx)
-            .await
-            .unwrap();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('f'), KeyModifiers::CONTROL),
+            &tx,
+        )
+        .await
+        .unwrap();
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -5173,7 +5395,9 @@ mod tests {
     async fn enter_with_empty_does_nothing_normal() {
         let mut app = test_app();
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Enter), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Enter), &tx)
+            .await
+            .unwrap();
         assert!(app.messages.is_empty());
     }
 
@@ -5182,7 +5406,9 @@ mod tests {
         let mut app = test_app_with_input("ask", 80);
         app.is_streaming = true;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Enter), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Enter), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.queued_prompts.len(), 1);
         assert_eq!(app.queued_prompts[0].text, "ask");
         assert!(!app.queued_prompts[0].is_meta);
@@ -5198,7 +5424,9 @@ mod tests {
         let mut app = test_app_with_input("/zzzz", 80);
         app.is_streaming = true;
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Enter), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Enter), &tx)
+            .await
+            .unwrap();
         assert_eq!(app.queued_prompts.len(), 1);
         assert!(app.queued_prompts[0].is_meta);
     }
@@ -5330,20 +5558,18 @@ mod tests {
     async fn slash_check_emits_assistant_robust() {
         let mut app = test_app();
         run_slash_command(&mut app, "/check").await;
-        assert!(app
-            .messages
-            .iter()
-            .any(|m| m.role == Role::Assistant));
+        assert!(app.messages.iter().any(|m| m.role == Role::Assistant));
     }
 
     #[tokio::test]
     async fn slash_config_reports_path_normal() {
         let mut app = test_app();
         run_slash_command(&mut app, "/config path").await;
-        assert!(app
-            .messages
-            .iter()
-            .any(|m| matches!(&m.parts[0], MessagePart::Text(s) if s.contains("Config path"))));
+        assert!(
+            app.messages
+                .iter()
+                .any(|m| matches!(&m.parts[0], MessagePart::Text(s) if s.contains("Config path")))
+        );
     }
 
     #[tokio::test]
@@ -5431,10 +5657,11 @@ mod tests {
     async fn slash_resume_unknown_id_robust() {
         let mut app = test_app();
         run_slash_command(&mut app, "/resume ses_does_not_exist").await;
-        assert!(app
-            .messages
-            .iter()
-            .any(|m| matches!(&m.parts[0], MessagePart::Text(s) if s.contains("not found"))));
+        assert!(
+            app.messages
+                .iter()
+                .any(|m| matches!(&m.parts[0], MessagePart::Text(s) if s.contains("not found")))
+        );
     }
 
     #[tokio::test]
@@ -5483,10 +5710,9 @@ mod tests {
     async fn slash_worktree_unknown_subcommand_robust() {
         let mut app = test_app();
         run_slash_command(&mut app, "/worktree foobar").await;
-        assert!(app
-            .messages
-            .iter()
-            .any(|m| matches!(&m.parts[0], MessagePart::Text(s) if s.contains("Unknown subcommand"))));
+        assert!(app.messages.iter().any(
+            |m| matches!(&m.parts[0], MessagePart::Text(s) if s.contains("Unknown subcommand"))
+        ));
     }
 
     #[tokio::test]

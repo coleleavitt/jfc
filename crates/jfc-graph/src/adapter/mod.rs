@@ -180,7 +180,10 @@ mod tests {
             path: "src/main.rs".into(),
             reason: "syntax error".into(),
         };
-        assert_eq!(err.to_string(), "parse failed for src/main.rs: syntax error");
+        assert_eq!(
+            err.to_string(),
+            "parse failed for src/main.rs: syntax error"
+        );
 
         let err = AdapterError::UnsupportedExtension { ext: "xyz".into() };
         assert_eq!(err.to_string(), "unsupported file extension: xyz");

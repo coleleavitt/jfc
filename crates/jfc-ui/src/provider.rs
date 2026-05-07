@@ -203,7 +203,8 @@ impl fmt::Display for ModelSpec {
 impl From<String> for ModelSpec {
     fn from(s: String) -> Self {
         // Attempt qualified parse; fall back to bare if it fails
-        s.parse().unwrap_or_else(|_| ModelSpec::bare(ModelId::new(s)))
+        s.parse()
+            .unwrap_or_else(|_| ModelSpec::bare(ModelId::new(s)))
     }
 }
 
@@ -648,12 +649,16 @@ mod tests {
     #[test]
     fn error_display_messages_robust() {
         assert!(ModelSpecParseError::Empty.to_string().contains("empty"));
-        assert!(ModelSpecParseError::EmptyProvider("/foo".to_owned())
-            .to_string()
-            .contains("empty provider"));
-        assert!(ModelSpecParseError::EmptyModel("foo/".to_owned())
-            .to_string()
-            .contains("empty model"));
+        assert!(
+            ModelSpecParseError::EmptyProvider("/foo".to_owned())
+                .to_string()
+                .contains("empty provider")
+        );
+        assert!(
+            ModelSpecParseError::EmptyModel("foo/".to_owned())
+                .to_string()
+                .contains("empty model")
+        );
     }
 
     // ─── ModelSpec constructors (new / qualified / bare / into_model) ──────
@@ -797,8 +802,14 @@ mod tests {
     // would silently route the wrong code path.
     #[test]
     fn stream_convention_distinct_variants_normal() {
-        assert_ne!(StreamConvention::AnthropicNative, StreamConvention::OpenAiNative);
-        assert_ne!(StreamConvention::OpenAiNative, StreamConvention::InlineXmlTags);
+        assert_ne!(
+            StreamConvention::AnthropicNative,
+            StreamConvention::OpenAiNative
+        );
+        assert_ne!(
+            StreamConvention::OpenAiNative,
+            StreamConvention::InlineXmlTags
+        );
         assert_eq!(
             StreamConvention::AnthropicNative,
             StreamConvention::AnthropicNative

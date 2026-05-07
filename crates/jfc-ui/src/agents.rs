@@ -285,7 +285,9 @@ pub(crate) fn render_skills_section(skills: &[Skill]) -> String {
 /// `Skill` tool / slash dispatcher to resolve a user-typed name.
 pub fn find_skill_by_name<'a>(all_skills: &'a [Skill], name: &str) -> Option<&'a Skill> {
     // Case-insensitive — `/Explain` should hit the same skill as `/explain`.
-    let result = all_skills.iter().find(|s| s.name.eq_ignore_ascii_case(name));
+    let result = all_skills
+        .iter()
+        .find(|s| s.name.eq_ignore_ascii_case(name));
     tracing::trace!(
         target: "jfc::agents",
         name,
@@ -719,7 +721,9 @@ mod tests {
         let out = render_skills_section(&[skill("only", Some("only one"))]);
         let first_lines: Vec<&str> = out.lines().take(4).collect();
         assert!(
-            first_lines.iter().any(|l| l.contains("## Available skills")),
+            first_lines
+                .iter()
+                .any(|l| l.contains("## Available skills")),
             "header missing from first 4 lines: {first_lines:?}"
         );
     }
@@ -841,10 +845,7 @@ mod tests {
     fn build_agent_system_prompt_preserves_order_robust() {
         let agent = make_agent("x", "Base.", vec!["a".to_owned(), "b".to_owned()]);
         // Pass `all_skills` in reverse to ensure the agent's order wins.
-        let skills = vec![
-            make_skill("b", "BBBB body."),
-            make_skill("a", "AAAA body."),
-        ];
+        let skills = vec![make_skill("b", "BBBB body."), make_skill("a", "AAAA body.")];
         let out = build_agent_system_prompt(&agent, &skills);
         let pos_a = out.find("AAAA body.").expect("a present");
         let pos_b = out.find("BBBB body.").expect("b present");
@@ -993,12 +994,7 @@ mod tests {
     fn built_in_agents_includes_canonical_set_normal() {
         let agents = built_in_agents();
         let names: Vec<&str> = agents.iter().map(|a| a.name.as_str()).collect();
-        for needed in [
-            "general-purpose",
-            "Explore",
-            "Plan",
-            "verification",
-        ] {
+        for needed in ["general-purpose", "Explore", "Plan", "verification"] {
             assert!(
                 names.contains(&needed),
                 "built-in {needed} missing from {names:?}"
@@ -1087,8 +1083,7 @@ mod tests {
         let agents_dir = tmp.join(".claude/agents");
         std::fs::create_dir_all(&agents_dir).unwrap();
         // No frontmatter at all — `parse_agent` returns None.
-        std::fs::write(agents_dir.join("broken.md"), "Just a body, no frontmatter")
-            .unwrap();
+        std::fs::write(agents_dir.join("broken.md"), "Just a body, no frontmatter").unwrap();
         // Frontmatter with bad YAML.
         std::fs::write(
             agents_dir.join("yaml-bad.md"),

@@ -268,9 +268,7 @@ impl<'de> serde::Deserialize<'de> for SerializedToolOutput {
         let value = Value::deserialize(deserializer)?;
         match &value {
             // Old format: plain string → Text
-            Value::String(s) => Ok(SerializedToolOutput::Text {
-                content: s.clone(),
-            }),
+            Value::String(s) => Ok(SerializedToolOutput::Text { content: s.clone() }),
             // null → Empty
             Value::Null => Ok(SerializedToolOutput::Empty),
             // New format: object with "type" tag
@@ -279,22 +277,77 @@ impl<'de> serde::Deserialize<'de> for SerializedToolOutput {
                 #[derive(Deserialize)]
                 #[serde(tag = "type", rename_all = "snake_case")]
                 enum Inner {
-                    Text { content: String },
-                    LargeText { content: String, line_count: usize, byte_count: usize },
-                    Diff { file_path: String, additions: usize, deletions: usize, hunks: Vec<SerializedDiffHunk> },
-                    FileContent { path: String, content: String, language: String },
-                    Command { stdout: String, stderr: String, #[serde(default)] exit_code: Option<i32> },
-                    FileList { files: Vec<String> },
+                    Text {
+                        content: String,
+                    },
+                    LargeText {
+                        content: String,
+                        line_count: usize,
+                        byte_count: usize,
+                    },
+                    Diff {
+                        file_path: String,
+                        additions: usize,
+                        deletions: usize,
+                        hunks: Vec<SerializedDiffHunk>,
+                    },
+                    FileContent {
+                        path: String,
+                        content: String,
+                        language: String,
+                    },
+                    Command {
+                        stdout: String,
+                        stderr: String,
+                        #[serde(default)]
+                        exit_code: Option<i32>,
+                    },
+                    FileList {
+                        files: Vec<String>,
+                    },
                     Empty,
                 }
-                let inner: Inner = serde_json::from_value(value)
-                    .map_err(de::Error::custom)?;
+                let inner: Inner = serde_json::from_value(value).map_err(de::Error::custom)?;
                 Ok(match inner {
                     Inner::Text { content } => SerializedToolOutput::Text { content },
-                    Inner::LargeText { content, line_count, byte_count } => SerializedToolOutput::LargeText { content, line_count, byte_count },
-                    Inner::Diff { file_path, additions, deletions, hunks } => SerializedToolOutput::Diff { file_path, additions, deletions, hunks },
-                    Inner::FileContent { path, content, language } => SerializedToolOutput::FileContent { path, content, language },
-                    Inner::Command { stdout, stderr, exit_code } => SerializedToolOutput::Command { stdout, stderr, exit_code },
+                    Inner::LargeText {
+                        content,
+                        line_count,
+                        byte_count,
+                    } => SerializedToolOutput::LargeText {
+                        content,
+                        line_count,
+                        byte_count,
+                    },
+                    Inner::Diff {
+                        file_path,
+                        additions,
+                        deletions,
+                        hunks,
+                    } => SerializedToolOutput::Diff {
+                        file_path,
+                        additions,
+                        deletions,
+                        hunks,
+                    },
+                    Inner::FileContent {
+                        path,
+                        content,
+                        language,
+                    } => SerializedToolOutput::FileContent {
+                        path,
+                        content,
+                        language,
+                    },
+                    Inner::Command {
+                        stdout,
+                        stderr,
+                        exit_code,
+                    } => SerializedToolOutput::Command {
+                        stdout,
+                        stderr,
+                        exit_code,
+                    },
                     Inner::FileList { files } => SerializedToolOutput::FileList { files },
                     Inner::Empty => SerializedToolOutput::Empty,
                 })
@@ -359,7 +412,12 @@ fn extract_first_prompt(messages: &[ChatMessage]) -> Option<String> {
 }
 
 #[tracing::instrument(target = "jfc::session", skip(messages), fields(n = messages.len()))]
-pub async fn save_session(session_id: &str, messages: &[ChatMessage], cwd: Option<&str>, model: Option<&str>) {
+pub async fn save_session(
+    session_id: &str,
+    messages: &[ChatMessage],
+    cwd: Option<&str>,
+    model: Option<&str>,
+) {
     let dir = sessions_dir();
     if tokio::fs::create_dir_all(&dir).await.is_err() {
         warn!(target: "jfc::session", "failed to create sessions directory");
@@ -441,7 +499,9 @@ pub async fn load_session(session_id: &str) -> Option<Vec<ChatMessage>> {
 
 /// Load session messages AND the model that was active. Used by `/continue`
 /// to restore the model selection.
-pub async fn load_session_with_model(session_id: &str) -> Option<(Vec<ChatMessage>, Option<String>)> {
+pub async fn load_session_with_model(
+    session_id: &str,
+) -> Option<(Vec<ChatMessage>, Option<String>)> {
     let path = sessions_dir().join(format!("{session_id}.json"));
     let content = tokio::fs::read_to_string(&path).await.ok()?;
     let session: SerializedSession = serde_json::from_str(&content).ok()?;
@@ -746,7 +806,11 @@ pub async fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMeta
 /// in project A doesn't accidentally resume a session from project B.
 /// Pass `None` for the legacy globally-most-recent behavior.
 pub async fn most_recent_session_for_cwd(cwd: Option<&str>) -> Option<String> {
-    let result = list_sessions_filtered(cwd).await.into_iter().next().map(|s| s.id);
+    let result = list_sessions_filtered(cwd)
+        .await
+        .into_iter()
+        .next()
+        .map(|s| s.id);
     debug!(target: "jfc::session", ?cwd, found = result.is_some(), "most recent session for cwd");
     result
 }
@@ -955,10 +1019,13 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             scope: scope.clone(),
             body: body.clone(),
         },
-        ToolInput::MemoryDelete { path } => SerializedToolInput::MemoryDelete {
-            path: path.clone(),
-        },
-        ToolInput::TeamCreate { team_name, description } => SerializedToolInput::Generic {
+        ToolInput::MemoryDelete { path } => {
+            SerializedToolInput::MemoryDelete { path: path.clone() }
+        }
+        ToolInput::TeamCreate {
+            team_name,
+            description,
+        } => SerializedToolInput::Generic {
             // Preserve the description in the summary so a resumed
             // session shows what the team was created for, not just
             // its name. Previously `description` was destructured but
@@ -972,19 +1039,33 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             summary: "TeamDelete".to_owned(),
         },
         ToolInput::SendMessage { to, summary, .. } => SerializedToolInput::Generic {
-            summary: format!("SendMessage to {to}: {}", summary.as_deref().unwrap_or("(message)")),
+            summary: format!(
+                "SendMessage to {to}: {}",
+                summary.as_deref().unwrap_or("(message)")
+            ),
         },
         ToolInput::TeamMemberMode { member_name, mode } => SerializedToolInput::Generic {
             summary: format!("TeamMemberMode {member_name}: {mode}"),
         },
         ToolInput::GraphQuery { query, max_tokens } => SerializedToolInput::Generic {
-            summary: format!("GraphQuery(budget={}): {}", max_tokens.unwrap_or(4000), query),
+            summary: format!(
+                "GraphQuery(budget={}): {}",
+                max_tokens.unwrap_or(4000),
+                query
+            ),
         },
         ToolInput::SymbolEdit { handle, .. } => SerializedToolInput::Generic {
             summary: format!("SymbolEdit: {handle}"),
         },
-        ToolInput::PostBounty { description, budget, .. } => SerializedToolInput::Generic {
-            summary: format!("PostBounty({budget} tok): {}", description.chars().take(60).collect::<String>()),
+        ToolInput::PostBounty {
+            description,
+            budget,
+            ..
+        } => SerializedToolInput::Generic {
+            summary: format!(
+                "PostBounty({budget} tok): {}",
+                description.chars().take(60).collect::<String>()
+            ),
         },
         ToolInput::MarketStatus { bounty_id } => SerializedToolInput::Generic {
             summary: match bounty_id {
@@ -1630,7 +1711,12 @@ mod tests {
 mod cwd_filter_tests {
     use super::*;
 
-    fn meta(id: &str, cwd: Option<&str>, title: Option<&str>, prompt: Option<&str>) -> SessionMetadata {
+    fn meta(
+        id: &str,
+        cwd: Option<&str>,
+        title: Option<&str>,
+        prompt: Option<&str>,
+    ) -> SessionMetadata {
         SessionMetadata {
             id: id.to_string(),
             created_at: "2026-01-01T00:00:00Z".to_string(),
@@ -1855,7 +1941,11 @@ mod disk_io_tests {
     async fn load_session_missing_returns_none_robust() {
         let _g = TempConfigHome::new();
         assert!(load_session("ses_does_not_exist").await.is_none());
-        assert!(load_session_with_model("ses_does_not_exist").await.is_none());
+        assert!(
+            load_session_with_model("ses_does_not_exist")
+                .await
+                .is_none()
+        );
         assert!(load_session_metadata("ses_does_not_exist").await.is_none());
     }
 
@@ -1999,7 +2089,10 @@ mod disk_io_tests {
         let created_at = meta1.created_at.clone();
 
         // Re-save with a different cwd — should NOT migrate.
-        let m2 = vec![ChatMessage::user("first".into()), ChatMessage::assistant("reply".into())];
+        let m2 = vec![
+            ChatMessage::user("first".into()),
+            ChatMessage::assistant("reply".into()),
+        ];
         save_session(id, &m2, Some("/elsewhere"), None).await;
         let meta2 = load_session_metadata(id).await.expect("second save");
         assert_eq!(meta2.created_at, created_at);
@@ -2035,9 +2128,7 @@ mod disk_io_tests {
         };
         let messages = vec![
             ChatMessage::user("run a command".into()),
-            ChatMessage::assistant_parts(vec![
-                crate::types::MessagePart::Tool(tool),
-            ]),
+            ChatMessage::assistant_parts(vec![crate::types::MessagePart::Tool(tool)]),
         ];
         let id = "ses_20260506_142000";
         save_session(id, &messages, Some("/tmp"), Some("opus")).await;
@@ -2052,7 +2143,11 @@ mod disk_io_tests {
             crate::types::MessagePart::Tool(tc) => {
                 assert_eq!(tc.kind, ToolKind::Bash);
                 match &tc.input {
-                    ToolInput::Bash { command, timeout, workdir } => {
+                    ToolInput::Bash {
+                        command,
+                        timeout,
+                        workdir,
+                    } => {
                         assert_eq!(command, "echo hi");
                         assert_eq!(*timeout, Some(30_000));
                         assert_eq!(workdir.as_deref(), Some("/tmp"));
@@ -2060,7 +2155,9 @@ mod disk_io_tests {
                     other => panic!("expected Bash input, got {other:?}"),
                 }
                 match &tc.output {
-                    ToolOutput::Command { stdout, exit_code, .. } => {
+                    ToolOutput::Command {
+                        stdout, exit_code, ..
+                    } => {
                         assert_eq!(stdout, "hi\n");
                         assert_eq!(*exit_code, Some(0));
                     }

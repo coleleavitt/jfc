@@ -194,10 +194,12 @@ mod tests {
 
     #[test]
     fn parse_minimal_config_normal() {
-        let cfg = parse(r#"
+        let cfg = parse(
+            r#"
 [default]
 model = "x"
-"#);
+"#,
+        );
         assert_eq!(cfg.default.model.as_deref(), Some("x"));
         assert!(cfg.agents.is_empty());
         assert!(cfg.default.fallback_models.is_empty());
@@ -206,7 +208,8 @@ model = "x"
 
     #[test]
     fn parse_full_config_normal() {
-        let cfg = parse(r#"
+        let cfg = parse(
+            r#"
 [default]
 model = "anthropic/claude-opus-4-7"
 fallback_models = ["openai/gpt-5"]
@@ -222,7 +225,8 @@ description = "Reviews diffs for security/perf"
 [agents.formatter]
 model = "anthropic/claude-haiku-4-5"
 mode = "subagent"
-"#);
+"#,
+        );
         // [default]
         assert_eq!(
             cfg.default.model.as_deref(),
@@ -240,10 +244,7 @@ mode = "subagent"
             reviewer.model.as_deref(),
             Some("anthropic/claude-sonnet-4-6")
         );
-        assert_eq!(
-            reviewer.fallback_models,
-            vec!["anthropic/claude-haiku-4-5"]
-        );
+        assert_eq!(reviewer.fallback_models, vec!["anthropic/claude-haiku-4-5"]);
         assert_eq!(reviewer.temperature, Some(0.1));
         assert_eq!(reviewer.disallowed_tools, vec!["Bash", "Write"]);
         assert_eq!(
@@ -259,13 +260,15 @@ mode = "subagent"
 
     #[test]
     fn resolve_model_uses_agent_override_normal() {
-        let cfg = parse(r#"
+        let cfg = parse(
+            r#"
 [default]
 model = "B"
 
 [agents.code-reviewer]
 model = "A"
-"#);
+"#,
+        );
         assert_eq!(
             resolve_model(&cfg, Some("code-reviewer")),
             Some("A".to_owned())
@@ -274,13 +277,15 @@ model = "A"
 
     #[test]
     fn resolve_model_falls_through_to_default_normal() {
-        let cfg = parse(r#"
+        let cfg = parse(
+            r#"
 [default]
 model = "B"
 
 [agents.code-reviewer]
 temperature = 0.1
-"#);
+"#,
+        );
         assert_eq!(
             resolve_model(&cfg, Some("code-reviewer")),
             Some("B".to_owned())
@@ -289,10 +294,12 @@ temperature = 0.1
 
     #[test]
     fn resolve_model_unknown_agent_uses_default_normal() {
-        let cfg = parse(r#"
+        let cfg = parse(
+            r#"
 [default]
 model = "B"
-"#);
+"#,
+        );
         assert_eq!(
             resolve_model(&cfg, Some("does-not-exist")),
             Some("B".to_owned())
@@ -303,13 +310,15 @@ model = "B"
     fn resolve_model_uses_fallback_when_no_model_robust() {
         // Agent has no `model` field but a non-empty `fallback_models` list →
         // step 2 of the cascade returns the first fallback, NOT the default.
-        let cfg = parse(r#"
+        let cfg = parse(
+            r#"
 [default]
 model = "default-model"
 
 [agents.formatter]
 fallback_models = ["fallback-A", "fallback-B"]
-"#);
+"#,
+        );
         assert_eq!(
             resolve_model(&cfg, Some("formatter")),
             Some("fallback-A".to_owned())
@@ -325,10 +334,12 @@ fallback_models = ["fallback-A", "fallback-B"]
 
     #[test]
     fn agent_disallowed_returns_list_normal() {
-        let cfg = parse(r#"
+        let cfg = parse(
+            r#"
 [agents.code-reviewer]
 disallowed_tools = ["Bash", "Write"]
-"#);
+"#,
+        );
         assert_eq!(
             agent_disallowed(&cfg, "code-reviewer"),
             &["Bash".to_owned(), "Write".to_owned()]
@@ -341,10 +352,12 @@ disallowed_tools = ["Bash", "Write"]
         assert!(agent_disallowed(&cfg, "ghost").is_empty());
 
         // Known agent, no disallowed_tools key → still empty slice.
-        let cfg2 = parse(r#"
+        let cfg2 = parse(
+            r#"
 [agents.formatter]
 model = "x"
-"#);
+"#,
+        );
         assert!(agent_disallowed(&cfg2, "formatter").is_empty());
     }
 

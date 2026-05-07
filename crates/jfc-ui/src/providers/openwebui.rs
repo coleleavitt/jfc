@@ -1572,7 +1572,7 @@ fn bedrock_scrub_tool_fields(body: &mut Value) {
     obj.remove("function_call");
 }
 
-fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> Value {
+pub(crate) fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> Value {
     let msgs: Vec<Value> = messages
         .iter()
         .flat_map(|m| {
@@ -1857,98 +1857,84 @@ impl Provider for OpenWebUIProvider {
             anyhow::bail!("OpenWebUI API error {status}: {text}");
         }
 
-        let byte_stream = resp
-            .bytes_stream()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+        Ok(openai_compatible_event_stream(resp))
+    }
+}
 
-        // OpenAI-compatible SSE: data: {...}\n\ndata: [DONE]\n\n
-        //
-        // Plain content arrives in `choices[0].delta.content`. Tool calls
-        // arrive as `choices[0].delta.tool_calls[]`. The OpenAI streaming
-        // contract is annoying: `function.name` and `id` come on the FIRST
-        // chunk for a given tool_call index, then later chunks ship only
-        // `function.arguments` fragments. Worst case (LiteLLM-on-Bedrock):
-        // the chunk that fires `finish_reason: "tool_calls"` may carry an
-        // empty `tool_calls: []` because by then the model has finished
-        // streaming and the proxy is just signalling termination.
-        //
-        // To handle this we keep a stateful accumulator (`tool_state`) keyed
-        // by index, populated by every name/id/argument fragment we see.
-        // When `finish_reason: "tool_calls"` fires we emit a synthetic
-        // `ToolDone` for every accumulator entry, even if the finish chunk
-        // itself carries no tool_calls. Stream-level tool_accum in
-        // `stream.rs` then assembles the final input_json from our
-        // ToolDelta fragments. Without this, models would silently drop
-        // tool turns whenever LiteLLM batched the finish event separately
-        // from the data events (the bug we hit on bedrock-claude-4-6-sonnet).
-        let event_stream = byte_stream
-            .eventsource()
-            .scan(
-                HashMap::<usize, AccumTool>::new(),
-                |state, result| {
-                    let mut emitted: Vec<anyhow::Result<StreamEvent>> = Vec::new();
-                    if let Ok(ev) = result {
-                        // Raw SSE bytes at TRACE level — flip RUST_LOG to
-                        // `jfc::provider::openwebui=trace` to dump every chunk
-                        // when debugging upstream proxy weirdness.
-                        tracing::trace!(
-                            target: "jfc::provider::openwebui",
-                            data = %&ev.data[..ev.data.len().min(400)],
-                            "sse data"
-                        );
-                        if ev.data == "[DONE]" || ev.data.is_empty() {
-                            tracing::debug!(target: "jfc::provider::openwebui", "sse [DONE]");
-                            emitted.push(Ok(StreamEvent::Done {
-                                stop_reason: StopReason::EndTurn,
-                            }));
-                        } else {
-                            match serde_json::from_str::<ChatChunk>(&ev.data) {
-                                Ok(chunk) => {
-                                    if let Some(c) = chunk.choices.first() {
-                                        if let Some(reason) = c.finish_reason.as_deref() {
-                                            tracing::info!(
-                                                target: "jfc::provider::openwebui",
-                                                finish_reason = reason,
-                                                tool_calls = c.delta.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
-                                                accum = state.len(),
-                                                "chunk_finish"
-                                            );
-                                        }
-                                    }
-                                    if let Some(ref u) = chunk.usage {
-                                        tracing::info!(
-                                            target: "jfc::provider::openwebui",
-                                            prompt_tokens = u.prompt_tokens,
-                                            completion_tokens = u.completion_tokens,
-                                            total_tokens = u.total_tokens,
-                                            "usage"
-                                        );
-                                        emitted.push(Ok(StreamEvent::Usage {
-                                            input_tokens: u.prompt_tokens,
-                                            output_tokens: u.completion_tokens,
-                                            cache_read_tokens: 0,
-                                            cache_write_tokens: 0,
-                                        }));
-                                    }
-                                    push_chunk_events_stateful(chunk, state, &mut emitted);
-                                }
-                                Err(e) => {
-                                    tracing::warn!(
-                                        target: "jfc::provider::openwebui",
-                                        error = %e,
-                                        data = %&ev.data[..ev.data.len().min(200)],
-                                        "sse parse error"
+/// OpenAI-compatible SSE: `data: {...}\n\ndata: [DONE]\n\n`.
+///
+/// Plain content arrives in `choices[0].delta.content`. Tool calls arrive as
+/// `choices[0].delta.tool_calls[]`. The OpenAI streaming contract sends
+/// `function.name` and `id` once, then streams only `function.arguments`
+/// fragments, so this keeps a stateful accumulator keyed by tool index and
+/// synthesizes final `ToolDone` events on `finish_reason: "tool_calls"`.
+pub(crate) fn openai_compatible_event_stream(resp: reqwest::Response) -> EventStream {
+    let byte_stream = resp
+        .bytes_stream()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+
+    let event_stream = byte_stream
+        .eventsource()
+        .scan(HashMap::<usize, AccumTool>::new(), |state, result| {
+            let mut emitted: Vec<anyhow::Result<StreamEvent>> = Vec::new();
+            if let Ok(ev) = result {
+                tracing::trace!(
+                    target: "jfc::provider::openai_compatible",
+                    data = %&ev.data[..ev.data.len().min(400)],
+                    "sse data"
+                );
+                if ev.data == "[DONE]" || ev.data.is_empty() {
+                    tracing::debug!(target: "jfc::provider::openai_compatible", "sse [DONE]");
+                    emitted.push(Ok(StreamEvent::Done {
+                        stop_reason: StopReason::EndTurn,
+                    }));
+                } else {
+                    match serde_json::from_str::<ChatChunk>(&ev.data) {
+                        Ok(chunk) => {
+                            if let Some(c) = chunk.choices.first() {
+                                if let Some(reason) = c.finish_reason.as_deref() {
+                                    tracing::info!(
+                                        target: "jfc::provider::openai_compatible",
+                                        finish_reason = reason,
+                                        tool_calls = c.delta.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
+                                        accum = state.len(),
+                                        "chunk_finish"
                                     );
                                 }
                             }
+                            if let Some(ref u) = chunk.usage {
+                                tracing::info!(
+                                    target: "jfc::provider::openai_compatible",
+                                    prompt_tokens = u.prompt_tokens,
+                                    completion_tokens = u.completion_tokens,
+                                    total_tokens = u.total_tokens,
+                                    "usage"
+                                );
+                                emitted.push(Ok(StreamEvent::Usage {
+                                    input_tokens: u.prompt_tokens,
+                                    output_tokens: u.completion_tokens,
+                                    cache_read_tokens: 0,
+                                    cache_write_tokens: 0,
+                                }));
+                            }
+                            push_chunk_events_stateful(chunk, state, &mut emitted);
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                target: "jfc::provider::openai_compatible",
+                                error = %e,
+                                data = %&ev.data[..ev.data.len().min(200)],
+                                "sse parse error"
+                            );
                         }
                     }
-                    futures::future::ready(Some(emitted))
-                },
-            )
-            .flat_map(futures::stream::iter);
-        Ok(Box::pin(event_stream))
-    }
+                }
+            }
+            futures::future::ready(Some(emitted))
+        })
+        .flat_map(futures::stream::iter);
+
+    Box::pin(event_stream)
 }
 
 /// Per-tool-call accumulator. Each chunk may set or extend any of the three

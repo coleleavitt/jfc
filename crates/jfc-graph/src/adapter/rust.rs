@@ -161,10 +161,8 @@ fn extract_nodes_recursive(
 
                     if let Some(body) = child.child_by_field_name("body") {
                         let mut new_scope: Vec<&str> = scope.to_vec();
-                        let name_in_source = &source[child
-                            .child_by_field_name("name")
-                            .unwrap()
-                            .byte_range()];
+                        let name_in_source =
+                            &source[child.child_by_field_name("name").unwrap().byte_range()];
                         new_scope.push(name_in_source);
                         extract_nodes_recursive(
                             body,
@@ -178,8 +176,7 @@ fn extract_nodes_recursive(
                 }
             }
             "trait_item" => {
-                if let Some(nd) =
-                    extract_trait(child, source, file_path, file_path_str, scope, out)
+                if let Some(nd) = extract_trait(child, source, file_path, file_path_str, scope, out)
                 {
                     out.push(nd);
                 }
@@ -236,7 +233,9 @@ fn extract_struct(
                         .child_by_field_name("type")
                         .map(|t| node_text(t, source))
                         .unwrap_or_default();
-                    fields.push(format!("{{\"name\":\"{field_name}\",\"type\":\"{field_type}\"}}"));
+                    fields.push(format!(
+                        "{{\"name\":\"{field_name}\",\"type\":\"{field_type}\"}}"
+                    ));
                 }
             }
         }
@@ -307,7 +306,8 @@ fn extract_trait(
         for item in body.named_children(&mut method_cursor) {
             if item.kind() == "function_signature_item" || item.kind() == "function_item" {
                 if let Some(method_name) = get_node_name(item, "name", source) {
-                    let qualified = build_qualified_name(scope, &format!("{trait_name}::{method_name}"));
+                    let qualified =
+                        build_qualified_name(scope, &format!("{trait_name}::{method_name}"));
                     let vis = detect_visibility(item, source);
                     let span = build_span(item, file_path);
                     let id = NodeId::new(file_path_str, &qualified, NodeKind::Function);
@@ -628,7 +628,10 @@ fn collect_type_identifiers(
     if node.kind() == "type_identifier" {
         let type_name = node_text(node, source);
         if let Some(target) = name_to_node.get(type_name.as_str()) {
-            if matches!(target.kind, NodeKind::Struct | NodeKind::Enum | NodeKind::Trait) {
+            if matches!(
+                target.kind,
+                NodeKind::Struct | NodeKind::Enum | NodeKind::Trait
+            ) {
                 let already_exists = edges.iter().any(|(src, dst, e)| {
                     *src == func_data.id
                         && *dst == target.id
@@ -730,18 +733,9 @@ mod tests {
 
         let fn_names: Vec<&str> = functions.iter().map(|n| n.name.as_str()).collect();
 
-        assert!(
-            fn_names.contains(&"foo"),
-            "missing foo, got: {fn_names:?}"
-        );
-        assert!(
-            fn_names.contains(&"bar"),
-            "missing bar, got: {fn_names:?}"
-        );
-        assert!(
-            fn_names.contains(&"baz"),
-            "missing baz, got: {fn_names:?}"
-        );
+        assert!(fn_names.contains(&"foo"), "missing foo, got: {fn_names:?}");
+        assert!(fn_names.contains(&"bar"), "missing bar, got: {fn_names:?}");
+        assert!(fn_names.contains(&"baz"), "missing baz, got: {fn_names:?}");
         assert!(
             fn_names.contains(&"process"),
             "missing process, got: {fn_names:?}"
@@ -769,7 +763,10 @@ mod tests {
         assert_eq!(structs.len(), 1);
         assert_eq!(structs[0].name, "Config");
 
-        let fields_json = structs[0].metadata.get("fields").expect("missing fields metadata");
+        let fields_json = structs[0]
+            .metadata
+            .get("fields")
+            .expect("missing fields metadata");
         assert!(fields_json.contains("name"));
         assert!(fields_json.contains("port"));
         assert!(fields_json.contains("debug"));
@@ -781,15 +778,15 @@ mod tests {
         let (adapter, parsed) = parse_fixture();
         let nodes = adapter.extract_nodes(&parsed);
 
-        let enums: Vec<_> = nodes
-            .iter()
-            .filter(|n| n.kind == NodeKind::Enum)
-            .collect();
+        let enums: Vec<_> = nodes.iter().filter(|n| n.kind == NodeKind::Enum).collect();
 
         assert_eq!(enums.len(), 1);
         assert_eq!(enums[0].name, "Status");
 
-        let variants = enums[0].metadata.get("variants").expect("missing variants metadata");
+        let variants = enums[0]
+            .metadata
+            .get("variants")
+            .expect("missing variants metadata");
         assert!(variants.contains("Active"));
         assert!(variants.contains("Inactive"));
         assert!(variants.contains("Error"));
@@ -800,10 +797,7 @@ mod tests {
         let (adapter, parsed) = parse_fixture();
         let nodes = adapter.extract_nodes(&parsed);
 
-        let traits: Vec<_> = nodes
-            .iter()
-            .filter(|n| n.kind == NodeKind::Trait)
-            .collect();
+        let traits: Vec<_> = nodes.iter().filter(|n| n.kind == NodeKind::Trait).collect();
 
         assert_eq!(traits.len(), 1);
         assert_eq!(traits[0].name, "Processor");
@@ -828,10 +822,16 @@ mod tests {
         let (adapter, parsed) = parse_fixture();
         let nodes = adapter.extract_nodes(&parsed);
 
-        let foo = nodes.iter().find(|n| n.name == "foo" && n.kind == NodeKind::Function).unwrap();
+        let foo = nodes
+            .iter()
+            .find(|n| n.name == "foo" && n.kind == NodeKind::Function)
+            .unwrap();
         assert_eq!(foo.visibility, Visibility::Public);
 
-        let bar = nodes.iter().find(|n| n.name == "bar" && n.kind == NodeKind::Function && n.qualified_name == "bar").unwrap();
+        let bar = nodes
+            .iter()
+            .find(|n| n.name == "bar" && n.kind == NodeKind::Function && n.qualified_name == "bar")
+            .unwrap();
         assert_eq!(bar.visibility, Visibility::Private);
     }
 
@@ -859,9 +859,18 @@ mod tests {
             .filter(|(_, _, e)| matches!(e.kind, EdgeKind::Calls))
             .collect();
 
-        let foo_node = nodes.iter().find(|n| n.name == "foo" && n.qualified_name == "foo").unwrap();
-        let bar_node = nodes.iter().find(|n| n.name == "bar" && n.qualified_name == "bar").unwrap();
-        let baz_node = nodes.iter().find(|n| n.name == "baz" && n.qualified_name == "baz").unwrap();
+        let foo_node = nodes
+            .iter()
+            .find(|n| n.name == "foo" && n.qualified_name == "foo")
+            .unwrap();
+        let bar_node = nodes
+            .iter()
+            .find(|n| n.name == "bar" && n.qualified_name == "bar")
+            .unwrap();
+        let baz_node = nodes
+            .iter()
+            .find(|n| n.name == "baz" && n.qualified_name == "baz")
+            .unwrap();
 
         let foo_calls_bar = call_edges
             .iter()
@@ -897,12 +906,18 @@ fn known() {}
         let has_unknown = unresolved
             .iter()
             .any(|(_, _, e)| matches!(&e.kind, EdgeKind::UnresolvedCall(name) if name == "unknown_function"));
-        assert!(has_unknown, "expected unresolved call to 'unknown_function', got: {unresolved:?}");
+        assert!(
+            has_unknown,
+            "expected unresolved call to 'unknown_function', got: {unresolved:?}"
+        );
 
         let has_thing = unresolved
             .iter()
             .any(|(_, _, e)| matches!(&e.kind, EdgeKind::UnresolvedCall(name) if name == "thing"));
-        assert!(has_thing, "expected unresolved call to 'thing', got: {unresolved:?}");
+        assert!(
+            has_thing,
+            "expected unresolved call to 'thing', got: {unresolved:?}"
+        );
     }
 
     #[test]
@@ -916,13 +931,22 @@ fn known() {}
             .filter(|(_, _, e)| matches!(e.kind, EdgeKind::Implements))
             .collect();
 
-        let config_node = nodes.iter().find(|n| n.name == "Config" && n.kind == NodeKind::Struct).unwrap();
-        let processor_node = nodes.iter().find(|n| n.name == "Processor" && n.kind == NodeKind::Trait).unwrap();
+        let config_node = nodes
+            .iter()
+            .find(|n| n.name == "Config" && n.kind == NodeKind::Struct)
+            .unwrap();
+        let processor_node = nodes
+            .iter()
+            .find(|n| n.name == "Processor" && n.kind == NodeKind::Trait)
+            .unwrap();
 
         let config_implements_processor = impl_edges
             .iter()
             .any(|(src, dst, _)| *src == config_node.id && *dst == processor_node.id);
-        assert!(config_implements_processor, "expected Config → Processor implements edge");
+        assert!(
+            config_implements_processor,
+            "expected Config → Processor implements edge"
+        );
     }
 
     #[test]
@@ -948,7 +972,10 @@ fn known() {}
         let process_uses_config = uses_type_edges
             .iter()
             .any(|(src, dst, _)| *src == process_node.id && *dst == config_node.id);
-        assert!(process_uses_config, "expected process → Config UsesType edge");
+        assert!(
+            process_uses_config,
+            "expected process → Config UsesType edge"
+        );
 
         let status_node = nodes
             .iter()
@@ -957,13 +984,17 @@ fn known() {}
         let process_uses_status = uses_type_edges
             .iter()
             .any(|(src, dst, _)| *src == process_node.id && *dst == status_node.id);
-        assert!(process_uses_status, "expected process → Status UsesType edge");
+        assert!(
+            process_uses_status,
+            "expected process → Status UsesType edge"
+        );
     }
 
     #[test]
     fn test_rust_mutual_recursion_edges() {
         let adapter = RustAdapter::new();
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mutual_recursion.rs");
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mutual_recursion.rs");
         let content = std::fs::read_to_string(&path).expect("read fixture");
         let parsed = adapter.parse_file(&path, &content).expect("parse");
         let nodes = adapter.extract_nodes(&parsed);

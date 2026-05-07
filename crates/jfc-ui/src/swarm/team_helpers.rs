@@ -216,11 +216,7 @@ pub async fn set_member_active(
 }
 
 /// Update a member's permission mode.
-pub async fn set_member_mode(
-    team_name: &str,
-    member_name: &str,
-    mode: &str,
-) -> anyhow::Result<()> {
+pub async fn set_member_mode(team_name: &str, member_name: &str, mode: &str) -> anyhow::Result<()> {
     let mut team_file = read_team_file(team_name)
         .await
         .ok_or_else(|| anyhow::anyhow!("Team '{team_name}' not found"))?;
@@ -297,7 +293,10 @@ mod tests {
     fn now_millis_is_nonzero_normal() {
         // Sanity: should produce a roughly-current epoch millisecond stamp.
         let n = now_millis();
-        assert!(n > 1_500_000_000_000, "expected post-2017 ms epoch, got {n}");
+        assert!(
+            n > 1_500_000_000_000,
+            "expected post-2017 ms epoch, got {n}"
+        );
     }
 
     #[test]

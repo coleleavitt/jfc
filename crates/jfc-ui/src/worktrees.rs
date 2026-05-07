@@ -81,30 +81,29 @@ pub fn parse_porcelain_output(s: &str) -> Vec<WorktreeInfo> {
     let mut detached = false;
     let mut bare = false;
 
-    let flush =
-        |out: &mut Vec<WorktreeInfo>,
-         path: &mut Option<String>,
-         branch: &mut Option<String>,
-         detached: &mut bool,
-         bare: &mut bool| {
-            if let Some(p) = path.take() {
-                let b = if *bare {
-                    "(bare)".to_owned()
-                } else if *detached {
-                    "(detached)".to_owned()
-                } else {
-                    branch.take().unwrap_or_default()
-                };
-                out.push(WorktreeInfo {
-                    path: p,
-                    branch: b,
-                    is_current: false,
-                });
-            }
-            *branch = None;
-            *detached = false;
-            *bare = false;
-        };
+    let flush = |out: &mut Vec<WorktreeInfo>,
+                 path: &mut Option<String>,
+                 branch: &mut Option<String>,
+                 detached: &mut bool,
+                 bare: &mut bool| {
+        if let Some(p) = path.take() {
+            let b = if *bare {
+                "(bare)".to_owned()
+            } else if *detached {
+                "(detached)".to_owned()
+            } else {
+                branch.take().unwrap_or_default()
+            };
+            out.push(WorktreeInfo {
+                path: p,
+                branch: b,
+                is_current: false,
+            });
+        }
+        *branch = None;
+        *detached = false;
+        *bare = false;
+    };
 
     for line in s.lines() {
         if line.is_empty() {
@@ -200,10 +199,7 @@ pub fn create_worktree(repo_root: &Path, name: &str) -> Result<WorktreeInfo, Str
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         tracing::warn!(target: "jfc::worktrees", name, %stderr, "create_worktree failed");
-        return Err(format!(
-            "`git worktree add` failed: {}",
-            stderr.trim()
-        ));
+        return Err(format!("`git worktree add` failed: {}", stderr.trim()));
     }
     let abs_path = repo_root.join(&rel_path).display().to_string();
     tracing::info!(target: "jfc::worktrees", name, path = %abs_path, "create_worktree ok");
@@ -263,10 +259,7 @@ pub fn remove_worktree(repo_root: &Path, name: &str) -> Result<(), String> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         tracing::warn!(target: "jfc::worktrees", name, %stderr, "remove_worktree failed");
-        return Err(format!(
-            "`git worktree remove` failed: {}",
-            stderr.trim()
-        ));
+        return Err(format!("`git worktree remove` failed: {}", stderr.trim()));
     }
     tracing::info!(target: "jfc::worktrees", name, "remove_worktree ok");
     Ok(())
@@ -476,7 +469,10 @@ mod tests {
         assert!(info.path.contains(".jfc-worktrees"));
         // The new worktree directory must exist on disk.
         let wt_dir = repo.join(".jfc-worktrees").join("feat-x");
-        assert!(wt_dir.exists(), "worktree dir was not created at {wt_dir:?}");
+        assert!(
+            wt_dir.exists(),
+            "worktree dir was not created at {wt_dir:?}"
+        );
 
         let listed = list_worktrees(&repo).expect("list_worktrees should succeed");
         assert!(
@@ -501,14 +497,15 @@ mod tests {
     fn create_worktree_invalid_name_robust() {
         let err = create_worktree(Path::new("/tmp"), "../traverse")
             .expect_err("invalid name must be rejected");
-        assert!(err.contains("must match") || err.contains("traversal") || err.contains("/"),
-            "unexpected error: {err}");
+        assert!(
+            err.contains("must match") || err.contains("traversal") || err.contains("/"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
     fn remove_worktree_invalid_name_robust() {
-        let err = remove_worktree(Path::new("/tmp"), "")
-            .expect_err("empty name must be rejected");
+        let err = remove_worktree(Path::new("/tmp"), "").expect_err("empty name must be rejected");
         assert!(err.contains("empty"), "unexpected error: {err}");
     }
 

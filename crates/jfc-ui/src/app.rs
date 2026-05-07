@@ -11,9 +11,9 @@ use ratatui_textarea::TextArea;
 use crate::auto_mode::AutoModeConfig;
 
 use crate::context::{ReadDedupCache, ToolContext};
-use crate::render_cache::RenderCache;
 use crate::provider::{ModelId, ModelInfo, Provider, ProviderId, StopReason};
 use crate::query::QueryCache;
+use crate::render_cache::RenderCache;
 use crate::tasks::TaskId;
 use crate::theme::Theme;
 use crate::tools::ExecutionResult;
@@ -234,39 +234,43 @@ impl PermissionMode {
     pub fn auto_approves(self, tool: &ToolCall) -> PermissionDecision {
         match self {
             Self::Default => PermissionDecision::NeedsPrompt,
-            Self::Plan => {
-                match tool.kind {
-                    ToolKind::Read | ToolKind::Glob | ToolKind::Grep
-                    | ToolKind::TaskCreate | ToolKind::TaskUpdate
-                    | ToolKind::TaskList | ToolKind::TaskDone
-                    | ToolKind::TeamCreate | ToolKind::TeamDelete
-                    | ToolKind::SendMessage => {
+            Self::Plan => match tool.kind {
+                ToolKind::Read
+                | ToolKind::Glob
+                | ToolKind::Grep
+                | ToolKind::TaskCreate
+                | ToolKind::TaskUpdate
+                | ToolKind::TaskList
+                | ToolKind::TaskDone
+                | ToolKind::TeamCreate
+                | ToolKind::TeamDelete
+                | ToolKind::SendMessage => PermissionDecision::Approved,
+                ToolKind::Bash => {
+                    let cmd = tool.input.summary().to_lowercase();
+                    if is_readonly_bash(&cmd) {
                         PermissionDecision::Approved
+                    } else {
+                        PermissionDecision::Denied("Plan mode: write operations blocked")
                     }
-                    ToolKind::Bash => {
-                        let cmd = tool.input.summary().to_lowercase();
-                        if is_readonly_bash(&cmd) {
-                            PermissionDecision::Approved
-                        } else {
-                            PermissionDecision::Denied("Plan mode: write operations blocked")
-                        }
-                    }
-                    _ => PermissionDecision::Denied("Plan mode: write operations blocked"),
                 }
-            }
-            Self::AcceptEdits => {
-                match tool.kind {
-                    ToolKind::Write | ToolKind::Edit | ToolKind::ApplyPatch
-                    | ToolKind::Read | ToolKind::Glob | ToolKind::Grep
-                    | ToolKind::TaskCreate | ToolKind::TaskUpdate
-                    | ToolKind::TaskList | ToolKind::TaskDone
-                    | ToolKind::TeamCreate | ToolKind::TeamDelete
-                    | ToolKind::SendMessage => {
-                        PermissionDecision::Approved
-                    }
-                    _ => PermissionDecision::NeedsPrompt,
-                }
-            }
+                _ => PermissionDecision::Denied("Plan mode: write operations blocked"),
+            },
+            Self::AcceptEdits => match tool.kind {
+                ToolKind::Write
+                | ToolKind::Edit
+                | ToolKind::ApplyPatch
+                | ToolKind::Read
+                | ToolKind::Glob
+                | ToolKind::Grep
+                | ToolKind::TaskCreate
+                | ToolKind::TaskUpdate
+                | ToolKind::TaskList
+                | ToolKind::TaskDone
+                | ToolKind::TeamCreate
+                | ToolKind::TeamDelete
+                | ToolKind::SendMessage => PermissionDecision::Approved,
+                _ => PermissionDecision::NeedsPrompt,
+            },
             Self::BypassPermissions => PermissionDecision::Approved,
             Self::Auto => PermissionDecision::NeedsClassifier,
         }
@@ -286,10 +290,31 @@ fn is_readonly_bash(cmd: &str) -> bool {
     let first_word = cmd.split_whitespace().next().unwrap_or("");
     matches!(
         first_word,
-        "ls" | "cat" | "head" | "tail" | "find" | "grep" | "rg" | "fd"
-            | "wc" | "file" | "stat" | "which" | "whoami" | "pwd" | "echo"
-            | "date" | "env" | "printenv" | "uname" | "hostname" | "id"
-            | "tree" | "du" | "df" | "free" | "ps"
+        "ls" | "cat"
+            | "head"
+            | "tail"
+            | "find"
+            | "grep"
+            | "rg"
+            | "fd"
+            | "wc"
+            | "file"
+            | "stat"
+            | "which"
+            | "whoami"
+            | "pwd"
+            | "echo"
+            | "date"
+            | "env"
+            | "printenv"
+            | "uname"
+            | "hostname"
+            | "id"
+            | "tree"
+            | "du"
+            | "df"
+            | "free"
+            | "ps"
     ) || cmd.starts_with("git log")
         || cmd.starts_with("git show")
         || cmd.starts_with("git diff")
@@ -781,7 +806,8 @@ pub struct App {
     pub team_context: crate::swarm::TeamContext,
     /// Channel receiver for events from in-process teammate runners.
     /// Polled in the main event loop alongside terminal/stream events.
-    pub teammate_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<crate::swarm::runner::TeammateEvent>>,
+    pub teammate_event_rx:
+        Option<tokio::sync::mpsc::UnboundedReceiver<crate::swarm::runner::TeammateEvent>>,
     /// Sender side — cloned into each spawned teammate's runner.
     pub teammate_event_tx: tokio::sync::mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
 }
@@ -1084,7 +1110,8 @@ impl App {
     }
 
     pub fn selected_context_window_tokens(&self) -> usize {
-        let result = self.selected_model_info()
+        let result = self
+            .selected_model_info()
             .and_then(|model| model.context_window_tokens)
             .unwrap_or_else(|| {
                 // Model info not yet loaded (async fetch_models hasn't completed).
@@ -1114,11 +1141,7 @@ impl App {
         // Without this guard, an async `ModelsLoaded` event firing after
         // session resume clobbers the 298k accurate value with a ~75k
         // chars/4 heuristic, making the gauge jump down to near-zero.
-        let has_usage_based_estimate = self
-            .messages
-            .iter()
-            .rev()
-            .any(|m| m.usage.is_some());
+        let has_usage_based_estimate = self.messages.iter().rev().any(|m| m.usage.is_some());
         if !has_usage_based_estimate {
             self.tool_ctx.approx_tokens = crate::compact::estimate_tokens(&self.messages);
         }
@@ -1257,12 +1280,10 @@ pub fn push_recent_model(recent: &mut Vec<String>, model: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{
-        EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions,
-    };
+    use crate::provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
     use crate::types::{
-        ChatMessage, MessagePart, ModelUsage, ReplacementMode, ToolCall, ToolInput,
-        ToolKind, ToolOutput, ToolStatus,
+        ChatMessage, MessagePart, ModelUsage, ReplacementMode, ToolCall, ToolInput, ToolKind,
+        ToolOutput, ToolStatus,
     };
 
     /// Minimal Provider implementation for App-construction tests. The
@@ -1336,10 +1357,7 @@ mod tests {
         // After 5 next() calls we should be back at Default.
         assert_eq!(seen[5], PermissionMode::Default);
         // All five distinct modes appeared.
-        let mut sorted: Vec<_> = seen[..5]
-            .iter()
-            .map(|m| m.label())
-            .collect::<Vec<_>>();
+        let mut sorted: Vec<_> = seen[..5].iter().map(|m| m.label()).collect::<Vec<_>>();
         sorted.sort();
         sorted.dedup();
         assert_eq!(sorted.len(), 5);
@@ -1590,7 +1608,8 @@ mod tests {
             tool: make_tool(ToolKind::Edit, "e1"),
             selected: 0,
         });
-        app.approval_queue.push_back(make_tool(ToolKind::Bash, "b1"));
+        app.approval_queue
+            .push_back(make_tool(ToolKind::Bash, "b1"));
         assert!(app.pending_approval.is_some());
         assert_eq!(app.approval_queue.len(), 1);
     }
@@ -1671,7 +1690,8 @@ mod tests {
     #[test]
     fn sync_selected_context_window_updates_max_normal() {
         let mut app = new_app();
-        app.messages.push(ChatMessage::user("0123456789abcdef".into()));
+        app.messages
+            .push(ChatMessage::user("0123456789abcdef".into()));
         app.sync_selected_context_window();
         assert_eq!(app.max_context_tokens, app.selected_context_window_tokens());
         // 16 chars / 4 * 1.5 = 6 tokens.
@@ -1710,7 +1730,8 @@ mod tests {
     #[test]
     fn recompute_no_usage_uses_estimator_normal() {
         let mut app = new_app();
-        app.messages.push(ChatMessage::user("0123456789abcdef".into()));
+        app.messages
+            .push(ChatMessage::user("0123456789abcdef".into()));
         app.last_usage_input = 999;
         app.last_usage_output = 999;
         app.recompute_token_estimate();
@@ -1734,7 +1755,8 @@ mod tests {
         });
         app.messages.push(anchor);
         // 16-char user message after the anchor → 6 tail tokens.
-        app.messages.push(ChatMessage::user("0123456789abcdef".into()));
+        app.messages
+            .push(ChatMessage::user("0123456789abcdef".into()));
         app.recompute_token_estimate();
         assert_eq!(app.tool_ctx.approx_tokens, 1_500 + 6);
         assert_eq!(app.last_usage_input, 1_000);
@@ -1804,12 +1826,7 @@ mod tests {
         // under XDG_CONFIG_HOME, but the in-memory data still works).
         let t1 = app
             .task_store
-            .create::<crate::tasks::TaskId>(
-                "subj".into(),
-                "desc".into(),
-                None,
-                Vec::new(),
-            )
+            .create::<crate::tasks::TaskId>("subj".into(), "desc".into(), None, Vec::new())
             .expect("created");
         // Mark it completed.
         app.task_store
@@ -1998,10 +2015,12 @@ mod tests {
     #[test]
     fn selected_model_info_finds_in_cache_normal() {
         let mut app = new_app();
-        let info = ModelInfo::new("test-model", "Test", "test")
-            .with_context_window_tokens(Some(50_000));
-        app.provider_models
-            .insert(crate::provider::ProviderId::from("test"), vec![info.clone()]);
+        let info =
+            ModelInfo::new("test-model", "Test", "test").with_context_window_tokens(Some(50_000));
+        app.provider_models.insert(
+            crate::provider::ProviderId::from("test"),
+            vec![info.clone()],
+        );
         let got = app.selected_model_info().expect("found");
         assert_eq!(got.id.as_str(), "test-model");
         assert_eq!(got.context_window_tokens, Some(50_000));

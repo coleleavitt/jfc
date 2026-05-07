@@ -61,10 +61,7 @@ pub fn notify_turn_complete(elapsed: Duration, summary: &str) {
         return;
     }
     let body = if summary.is_empty() {
-        format!(
-            "Finished after {}s",
-            elapsed.as_secs().max(1)
-        )
+        format!("Finished after {}s", elapsed.as_secs().max(1))
     } else {
         let preview: String = summary.chars().take(120).collect();
         format!("({}s) {}", elapsed.as_secs().max(1), preview)
@@ -181,25 +178,23 @@ mod tests {
     fn turn_complete_below_threshold_emits_nothing_normal() {
         // Below the 8-second threshold a short successful turn shouldn't
         // pop a notification.
-        let body = build_turn_complete_body(
-            Duration::from_secs(3),
-            "wrote a small refactor",
+        let body = build_turn_complete_body(Duration::from_secs(3), "wrote a small refactor");
+        assert!(
+            body.is_none(),
+            "short turn should not notify, got: {body:?}"
         );
-        assert!(body.is_none(), "short turn should not notify, got: {body:?}");
     }
 
     #[test]
     fn turn_complete_at_threshold_emits_notification_normal() {
-        let body =
-            build_turn_complete_body(LONG_TURN_THRESHOLD, "ran tests").unwrap();
+        let body = build_turn_complete_body(LONG_TURN_THRESHOLD, "ran tests").unwrap();
         assert!(body.contains("ran tests"), "summary not preserved: {body}");
         assert!(body.contains('s'), "should include seconds suffix: {body}");
     }
 
     #[test]
     fn turn_complete_empty_summary_uses_finished_after_normal() {
-        let body =
-            build_turn_complete_body(Duration::from_secs(15), "").unwrap();
+        let body = build_turn_complete_body(Duration::from_secs(15), "").unwrap();
         assert!(body.starts_with("Finished after "), "got: {body}");
         assert!(body.contains("15s"), "got: {body}");
     }
@@ -216,8 +211,7 @@ mod tests {
         // The preview is `chars().take(120)` — a 200-char summary should
         // be truncated, but the format prefix `(Ns) ` adds bytes too.
         let long_summary = "x".repeat(200);
-        let body =
-            build_turn_complete_body(Duration::from_secs(10), &long_summary).unwrap();
+        let body = build_turn_complete_body(Duration::from_secs(10), &long_summary).unwrap();
         // Count "x" characters, not the prefix.
         let x_count = body.chars().filter(|c| *c == 'x').count();
         assert_eq!(x_count, 120, "summary should be truncated to 120 chars");
@@ -228,8 +222,7 @@ mod tests {
         // `elapsed.as_secs().max(1)` — even a 0.1s elapsed renders as "1s".
         // Above-threshold so we get a body. (Synthesizing this with
         // Duration::from_millis(8_001) which floors to 8s.)
-        let body =
-            build_turn_complete_body(Duration::from_millis(8_001), "").unwrap();
+        let body = build_turn_complete_body(Duration::from_millis(8_001), "").unwrap();
         assert!(body.contains("8s"), "got: {body}");
     }
 

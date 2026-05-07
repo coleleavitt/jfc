@@ -6,9 +6,9 @@
 
 use std::collections::HashSet;
 
+use petgraph::Direction;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{Dfs, Reversed};
-use petgraph::Direction;
 
 use crate::graph::CodeGraph;
 use crate::nodes::NodeId;
@@ -65,11 +65,7 @@ pub struct TraversalResult {
 /// Depth tracking is maintained manually since petgraph's Bfs doesn't
 /// expose depth natively. Cycle detection reports back-edges via the
 /// `cycles_detected_at` field.
-pub fn traverse(
-    graph: &CodeGraph,
-    start: &NodeId,
-    config: &TraversalConfig,
-) -> TraversalResult {
+pub fn traverse(graph: &CodeGraph, start: &NodeId, config: &TraversalConfig) -> TraversalResult {
     let Some(start_idx) = graph.resolve(start) else {
         return TraversalResult {
             nodes: vec![],
@@ -103,15 +99,16 @@ pub fn traverse(
 
         for &current in &current_layer {
             let neighbors: Vec<NodeIndex> = match config.direction {
-                TraversalDirection::Outgoing => {
-                    inner.neighbors_directed(current, Direction::Outgoing).collect()
-                }
-                TraversalDirection::Incoming => {
-                    inner.neighbors_directed(current, Direction::Incoming).collect()
-                }
+                TraversalDirection::Outgoing => inner
+                    .neighbors_directed(current, Direction::Outgoing)
+                    .collect(),
+                TraversalDirection::Incoming => inner
+                    .neighbors_directed(current, Direction::Incoming)
+                    .collect(),
                 TraversalDirection::Both => {
-                    let mut n: Vec<NodeIndex> =
-                        inner.neighbors_directed(current, Direction::Outgoing).collect();
+                    let mut n: Vec<NodeIndex> = inner
+                        .neighbors_directed(current, Direction::Outgoing)
+                        .collect();
                     n.extend(inner.neighbors_directed(current, Direction::Incoming));
                     n
                 }
@@ -120,9 +117,7 @@ pub fn traverse(
             let current_id = graph.node_id_for(current).cloned();
 
             for neighbor in neighbors {
-                if let (Some(cur_id), Some(nbr_id)) =
-                    (&current_id, graph.node_id_for(neighbor))
-                {
+                if let (Some(cur_id), Some(nbr_id)) = (&current_id, graph.node_id_for(neighbor)) {
                     result_edges.push((cur_id.clone(), nbr_id.clone()));
 
                     if visited.contains(&neighbor) {
@@ -211,9 +206,7 @@ pub fn find_path(
                 let mut path_indices = vec![neighbor];
                 let mut cursor = current;
                 path_indices.push(cursor);
-                while let Some((_, Some(parent))) =
-                    parents.iter().find(|(n, _)| *n == cursor)
-                {
+                while let Some((_, Some(parent))) = parents.iter().find(|(n, _)| *n == cursor) {
                     path_indices.push(*parent);
                     cursor = *parent;
                 }

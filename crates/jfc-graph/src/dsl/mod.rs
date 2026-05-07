@@ -19,7 +19,7 @@ use std::collections::{HashSet, VecDeque};
 use crate::edges::EdgeKind;
 use crate::graph::CodeGraph;
 use crate::nodes::{NodeId, NodeKind};
-use crate::traversal::{self, TraversalDirection, TraversalConfig};
+use crate::traversal::{self, TraversalConfig, TraversalDirection};
 
 /// Token types produced by the lexer.
 #[derive(Debug, Clone, PartialEq)]
@@ -142,9 +142,9 @@ pub fn lex(input: &str) -> Result<Vec<Token>, ParseError> {
                     pos += 1;
                 }
                 let num_str = &input[start..pos];
-                let num: usize = num_str.parse().map_err(|_| {
-                    ParseError::new(start, format!("invalid number: {num_str}"))
-                })?;
+                let num: usize = num_str
+                    .parse()
+                    .map_err(|_| ParseError::new(start, format!("invalid number: {num_str}")))?;
                 tokens.push(Token::Number(num));
             }
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
@@ -249,18 +249,12 @@ pub fn parse(tokens: &[Token]) -> Result<Vec<DslOp>, ParseError> {
             if tokens[pos] == Token::Pipe {
                 pos += 1;
                 if pos >= tokens.len() {
-                    return Err(ParseError::new(
-                        pos,
-                        "expected operation after '|'",
-                    ));
+                    return Err(ParseError::new(pos, "expected operation after '|'"));
                 }
             } else {
                 return Err(ParseError::new(
                     pos,
-                    format!(
-                        "expected '|' or end of query, found {:?}",
-                        tokens[pos]
-                    ),
+                    format!("expected '|' or end of query, found {:?}", tokens[pos]),
                 ));
             }
         }
@@ -329,17 +323,11 @@ fn parse_op(tokens: &[Token], pos: &mut usize) -> Result<DslOp, ParseError> {
         Token::Filter => {
             *pos += 1;
             if *pos >= tokens.len() || tokens[*pos] != Token::Kind {
-                return Err(ParseError::new(
-                    *pos,
-                    "expected 'kind' after 'filter'",
-                ));
+                return Err(ParseError::new(*pos, "expected 'kind' after 'filter'"));
             }
             *pos += 1;
             if *pos >= tokens.len() || tokens[*pos] != Token::Equals {
-                return Err(ParseError::new(
-                    *pos,
-                    "expected '=' after 'filter kind'",
-                ));
+                return Err(ParseError::new(*pos, "expected '=' after 'filter kind'"));
             }
             *pos += 1;
             if *pos >= tokens.len() {
@@ -423,9 +411,7 @@ fn parse_node_kind(s: &str, pos: usize) -> Result<NodeKind, ParseError> {
         "Trait" => Ok(NodeKind::Trait),
         _ => Err(ParseError::new(
             pos,
-            format!(
-                "unknown node kind '{s}'. Valid kinds: Function, Struct, Enum, Module, Trait"
-            ),
+            format!("unknown node kind '{s}'. Valid kinds: Function, Struct, Enum, Module, Trait"),
         )),
     }
 }
@@ -437,9 +423,7 @@ fn parse_projection(s: &str, pos: usize) -> Result<Projection, ParseError> {
         "body" => Ok(Projection::Body),
         _ => Err(ParseError::new(
             pos,
-            format!(
-                "unknown projection '{s}'. Valid projections: fields, signature, body"
-            ),
+            format!("unknown projection '{s}'. Valid projections: fields, signature, body"),
         )),
     }
 }
@@ -587,8 +571,7 @@ impl<'a> QueryEngine<'a> {
                     // pairs the two.
                     let mut reachers = HashSet::new();
                     let mut visited = HashSet::new();
-                    let mut queue: VecDeque<NodeId> =
-                        working_set.iter().cloned().collect();
+                    let mut queue: VecDeque<NodeId> = working_set.iter().cloned().collect();
 
                     while let Some(current) = queue.pop_front() {
                         if visited.contains(&current) {
@@ -599,10 +582,7 @@ impl<'a> QueryEngine<'a> {
                         reachers.insert(current.clone());
 
                         for (source_id, edge) in self.graph.get_edges_to(&current) {
-                            if matches!(
-                                edge.kind,
-                                EdgeKind::Calls | EdgeKind::UnresolvedCall(_)
-                            ) {
+                            if matches!(edge.kind, EdgeKind::Calls | EdgeKind::UnresolvedCall(_)) {
                                 if visited.contains(source_id) {
                                     cycles_detected.push(source_id.clone());
                                 } else {
@@ -624,8 +604,7 @@ impl<'a> QueryEngine<'a> {
                     // inter-procedural tracking is out of scope for v1.
                     let mut tainted = HashSet::new();
                     let mut visited = HashSet::new();
-                    let mut queue: VecDeque<NodeId> =
-                        working_set.iter().cloned().collect();
+                    let mut queue: VecDeque<NodeId> = working_set.iter().cloned().collect();
 
                     while let Some(current) = queue.pop_front() {
                         if visited.contains(&current) {
@@ -636,10 +615,7 @@ impl<'a> QueryEngine<'a> {
                         tainted.insert(current.clone());
 
                         for (target_id, edge) in self.graph.get_edges_from(&current) {
-                            if matches!(
-                                edge.kind,
-                                EdgeKind::Calls | EdgeKind::UnresolvedCall(_)
-                            ) {
+                            if matches!(edge.kind, EdgeKind::Calls | EdgeKind::UnresolvedCall(_)) {
                                 if visited.contains(target_id) {
                                     cycles_detected.push(target_id.clone());
                                 } else {
@@ -664,7 +640,11 @@ impl<'a> QueryEngine<'a> {
         for node_id in &node_list {
             for (target, edge_data) in self.graph.get_edges_from(node_id) {
                 if node_set.contains(target) {
-                    edges.push((node_id.clone(), target.clone(), format!("{:?}", edge_data.kind)));
+                    edges.push((
+                        node_id.clone(),
+                        target.clone(),
+                        format!("{:?}", edge_data.kind),
+                    ));
                 }
             }
         }
@@ -758,10 +738,7 @@ mod tests {
         let ops = parse_query(r#"fn("danger") | preconditions"#).unwrap();
         assert_eq!(
             ops,
-            vec![
-                DslOp::SelectFn("danger".into()),
-                DslOp::Preconditions,
-            ]
+            vec![DslOp::SelectFn("danger".into()), DslOp::Preconditions,]
         );
     }
 
@@ -769,10 +746,8 @@ mod tests {
     // parser ambiguity.
     #[test]
     fn test_dsl_parse_preconditions_chain_robust() {
-        let ops = parse_query(
-            r#"fn("danger") | preconditions | filter kind=Function | depth 3"#,
-        )
-        .unwrap();
+        let ops = parse_query(r#"fn("danger") | preconditions | filter kind=Function | depth 3"#)
+            .unwrap();
         assert_eq!(
             ops,
             vec![
@@ -894,7 +869,11 @@ mod tests {
         let res = QueryEngine::new(&graph)
             .execute(&ops, &QueryConfig::default())
             .unwrap();
-        assert!(res.cycles_detected.iter().any(|id| *id == ping || *id == pong));
+        assert!(
+            res.cycles_detected
+                .iter()
+                .any(|id| *id == ping || *id == pong)
+        );
         assert!(res.nodes.len() <= 2);
     }
 

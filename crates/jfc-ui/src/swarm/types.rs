@@ -316,9 +316,7 @@ pub fn format_teammate_message(
     color: Option<&str>,
     summary: Option<&str>,
 ) -> String {
-    let color_attr = color
-        .map(|c| format!(" color=\"{c}\""))
-        .unwrap_or_default();
+    let color_attr = color.map(|c| format!(" color=\"{c}\"")).unwrap_or_default();
     let summary_attr = summary
         .map(|s| format!(" summary=\"{s}\""))
         .unwrap_or_default();
@@ -455,8 +453,7 @@ mod tests {
 
     #[test]
     fn format_teammate_message_with_color_and_summary_normal() {
-        let formatted =
-            format_teammate_message("bob", "report", Some("#123abc"), Some("done"));
+        let formatted = format_teammate_message("bob", "report", Some("#123abc"), Some("done"));
         assert!(formatted.contains("teammate_id=\"bob\""));
         assert!(formatted.contains("color=\"#123abc\""));
         assert!(formatted.contains("summary=\"done\""));
@@ -521,8 +518,7 @@ mod tests {
     fn permission_request_status_serde_lowercase_normal() {
         let s = serde_json::to_string(&PermissionRequestStatus::Pending).unwrap();
         assert_eq!(s, "\"pending\"");
-        let parsed: PermissionRequestStatus =
-            serde_json::from_str("\"approved\"").unwrap();
+        let parsed: PermissionRequestStatus = serde_json::from_str("\"approved\"").unwrap();
         assert_eq!(parsed, PermissionRequestStatus::Approved);
     }
 

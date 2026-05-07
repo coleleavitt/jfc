@@ -175,11 +175,13 @@ mod tests {
             .find(|(id, _)| *id == validator)
             .unwrap();
         assert_eq!(val_entry.1, -15);
-        assert!(settlement
-            .payouts
-            .iter()
-            .find(|(id, _)| *id == validator)
-            .is_none());
+        assert!(
+            settlement
+                .payouts
+                .iter()
+                .find(|(id, _)| *id == validator)
+                .is_none()
+        );
     }
 
     #[test]

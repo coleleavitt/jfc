@@ -73,7 +73,10 @@ pub fn try_parse(buf: &[u8]) -> Result<Option<(Value, usize)>, FrameError> {
         );
         FrameError::Json(msg)
     })?;
-    let method = value.get("method").and_then(|v| v.as_str()).unwrap_or("response");
+    let method = value
+        .get("method")
+        .and_then(|v| v.as_str())
+        .unwrap_or("response");
     tracing::trace!(
         target: "jfc::lsp::rpc",
         method,
