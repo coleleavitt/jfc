@@ -5,9 +5,18 @@
 //! - **Dominators**: precondition analysis ("what must be true to reach X?")
 //! - **Topological sort**: cascade edit ordering
 //! - **Simple paths**: taint path enumeration
+//! - **K-shortest paths**: bounded taint analysis
 //! - **Page rank**: function centrality / importance
 //! - **Connected components**: independent module detection
 //! - **Articulation points**: critical function identification
+//! - **Bridges**: critical edge detection
+//! - **Feedback arc set**: cycle-breaking suggestions
+//! - **Dijkstra**: weighted shortest path
+//! - **Transitive reduction**: display-clean DAG edges
+//! - **Graph coloring**: parallelism analysis
+//! - **Maximal cliques**: module clustering
+//! - **Floyd-Warshall**: all-pairs shortest paths
+//! - **Dot export**: Graphviz visualization
 
 use std::collections::{HashMap, HashSet};
 
