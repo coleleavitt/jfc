@@ -117,7 +117,7 @@ pub struct ToolExecution {
 /// per-tool `AppEvent::ToolResult` events as each tool finishes.
 pub async fn execute_batches(
     batches: Vec<ToolBatch>,
-    tx: &mpsc::UnboundedSender<AppEvent>,
+    tx: &mpsc::Sender<AppEvent>,
     cwd: PathBuf,
     dedup: Arc<Mutex<ReadDedupCache>>,
     task_store: Option<Arc<TaskStore>>,
@@ -171,7 +171,7 @@ pub async fn execute_batches(
                             let _ = tx.send(AppEvent::ToolResult {
                                 tool_id: exec.tool_id.clone(),
                                 result: exec.result.clone(),
-                            });
+                            }).await;
                             all_results.push(exec);
                         }
                         Err(err) => {
@@ -214,7 +214,7 @@ pub async fn execute_batches(
                 let _ = tx.send(AppEvent::ToolResult {
                     tool_id: id.clone(),
                     result: result.clone(),
-                });
+                }).await;
                 all_results.push(ToolExecution {
                     tool_id: id,
                     result,
@@ -447,7 +447,7 @@ mod tests {
             read_call("r2", p2.to_str().unwrap()),
         ];
         let batches = schedule_tools(calls);
-        let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+        let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
         let results = execute_batches(
             batches,
@@ -489,7 +489,7 @@ mod tests {
         // One Sequential batch.
         assert_eq!(batches.len(), 1);
         assert!(matches!(&batches[0], ToolBatch::Sequential(_)));
-        let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+        let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
         let results = execute_batches(
             batches,
@@ -511,7 +511,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn execute_batches_empty_input_robust() {
         let dir = tempfile::TempDir::new().expect("tempdir");
-        let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+        let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
         let results =
             execute_batches(Vec::new(), &tx, dir.path().to_path_buf(), dedup, None, None).await;
@@ -529,7 +529,7 @@ mod tests {
         let dir = tempfile::TempDir::new().expect("tempdir");
         let calls = vec![glob_call("g1", "**/*.nonexistent_pattern_zzz")];
         let batches = schedule_tools(calls);
-        let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+        let (tx, mut rx) = mpsc::channel::<AppEvent>(1024);
         let dedup = Arc::new(Mutex::new(ReadDedupCache::new()));
         let results = execute_batches(
             batches,

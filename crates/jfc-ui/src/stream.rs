@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use futures::StreamExt;
 use tokio::sync::{Mutex, mpsc};
@@ -29,6 +29,7 @@ pub(crate) const TRUNCATION_PREVIEW_CHARS: usize = 2_000;
 /// the in-memory `truncate_tool_result` path applies (50KB cap, head
 /// + tail preview).
 pub(crate) const TOOL_RESULT_DISK_PERSIST_BYTES: usize = 400_000;
+const STREAM_INTERRUPT_POLL: Duration = Duration::from_millis(50);
 
 /// Persist `body` to a temp file under `/tmp/jfc-tool-results/` and
 /// return a v131-style `<persisted-output>` reference the model can
@@ -225,9 +226,13 @@ pub(crate) fn render_message_as_text(msg: &crate::provider::ProviderMessage) -> 
                     .chars()
                     .take(200)
                     .collect::<String>();
-                out.push_str(&format!("\n  <tool_use name=\"{name}\" input=\"{preview}\"/>"));
+                out.push_str(&format!(
+                    "\n  <tool_use name=\"{name}\" input=\"{preview}\"/>"
+                ));
             }
-            ProviderContent::ToolResult { content, is_error, .. } => {
+            ProviderContent::ToolResult {
+                content, is_error, ..
+            } => {
                 let head: String = content.chars().take(400).collect();
                 let err = if *is_error { " error" } else { "" };
                 out.push_str(&format!(
@@ -641,7 +646,10 @@ mod budget_tests {
                 .iter()
                 .any(|c| matches!(c, ProviderContent::ToolResult { .. }))
         });
-        assert!(!has_orphan_tool_result, "tool_result left without its tool_use");
+        assert!(
+            !has_orphan_tool_result,
+            "tool_result left without its tool_use"
+        );
     }
 
     // Normal: estimate function counts text bytes, tool_use name+JSON
@@ -667,8 +675,8 @@ mod budget_tests {
 mod auto_compact_tests {
     use super::*;
     use crate::provider::{
-        EventStream, ModelId, ModelInfo, Provider, ProviderContent, ProviderMessage,
-        ProviderRole, StopReason, StreamEvent, StreamOptions,
+        EventStream, ModelId, ModelInfo, Provider, ProviderContent, ProviderMessage, ProviderRole,
+        StopReason, StreamEvent, StreamOptions,
     };
     use std::sync::{Arc, Mutex};
 
@@ -941,7 +949,7 @@ pub async fn stream_response(
     provider: Arc<dyn Provider>,
     messages: Vec<ProviderMessage>,
     model: ModelId,
-    tx: mpsc::UnboundedSender<AppEvent>,
+    tx: mpsc::Sender<AppEvent>,
     interrupt: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {
     let cwd = std::env::current_dir()
@@ -1076,13 +1084,13 @@ pub async fn stream_response(
                     Ok(s) => s,
                     Err(e2) => {
                         tracing::error!(target: "jfc::stream", error = %e2, "stream open failed (fallback without thinking)");
-                        let _ = tx.send(AppEvent::StreamError(e2.to_string()));
+                        let _ = tx.send(AppEvent::StreamError(e2.to_string())).await;
                         return;
                     }
                 }
             } else {
                 tracing::error!(target: "jfc::stream", error = %e, "stream open failed");
-                let _ = tx.send(AppEvent::StreamError(e.to_string()));
+                let _ = tx.send(AppEvent::StreamError(e.to_string())).await;
                 return;
             }
         }
@@ -1091,40 +1099,63 @@ pub async fn stream_response(
     let mut stop_reason = StopReason::EndTurn;
     let mut tool_accum: HashMap<usize, (String, String, String)> = HashMap::new();
 
-    while let Some(event) = stream.next().await {
+    loop {
         // Cooperative cancel: the user pressed ESC twice — drop the
         // stream mid-flight, surface a clean stop, and let the main
-        // loop reset state. Doing this *between* SSE events keeps the
-        // partial output the model sent so the user sees what made it
-        // through.
+        // loop reset state. Poll this while waiting for the next SSE
+        // event too; a stalled network read must not trap the UI in
+        // "Interrupting..." forever.
         if interrupt.load(std::sync::atomic::Ordering::SeqCst) {
             tracing::info!(target: "jfc::stream", "stream interrupted by user (ESC×2)");
-            let _ = tx.send(AppEvent::StreamError(
-                "Interrupted by user".to_owned(),
-            ));
+            let _ = tx
+                .send(AppEvent::StreamError("Interrupted by user".to_owned()))
+                .await;
             return;
         }
+
+        let event = tokio::select! {
+            biased;
+            _ = tokio::time::sleep(STREAM_INTERRUPT_POLL) => continue,
+            event = stream.next() => event,
+        };
+
+        let Some(event) = event else {
+            break;
+        };
+
         let event = match event {
             Ok(e) => e,
             Err(e) => {
                 tracing::error!(target: "jfc::stream", error = %e, "stream event error");
-                let _ = tx.send(AppEvent::StreamError(e.to_string()));
+                let _ = tx.send(AppEvent::StreamError(e.to_string())).await;
                 return;
             }
         };
 
         match event {
             StreamEvent::TextDelta { delta, .. } => {
-                let _ = tx.send(AppEvent::StreamChunk {
-                    text: Some(delta),
-                    reasoning: None,
-                });
+                // High-frequency token stream; safe to drop — next chunk supersedes.
+                if tx
+                    .try_send(AppEvent::StreamChunk {
+                        text: Some(delta),
+                        reasoning: None,
+                    })
+                    .is_err()
+                {
+                    tracing::trace!(target: "jfc::stream", "StreamChunk dropped (buffer full)");
+                }
             }
             StreamEvent::ThinkingDelta { delta, .. } => {
-                let _ = tx.send(AppEvent::StreamChunk {
-                    text: None,
-                    reasoning: Some(delta),
-                });
+                // High-frequency token stream; safe to drop — next chunk supersedes.
+                if tx
+                    .try_send(AppEvent::StreamChunk {
+                        text: None,
+                        reasoning: Some(delta),
+                    })
+                    .is_err()
+                {
+                    tracing::trace!(target: "jfc::stream", "StreamChunk(thinking) dropped (buffer full)");
+                }
             }
             StreamEvent::ToolDelta { index, delta } => {
                 let byte_len = delta.len();
@@ -1133,7 +1164,10 @@ pub async fn stream_response(
                 // 1. streaming_response_bytes increments (spinner token estimate stays live)
                 // 2. streaming_last_token_at resets (stall timer doesn't fire)
                 // Matches v126's responseLengthRef accumulation from input_json_delta events.
-                let _ = tx.send(AppEvent::ToolInputDelta(byte_len));
+                // High-frequency tool input delta; safe to drop — next delta supersedes.
+                if tx.try_send(AppEvent::ToolInputDelta(byte_len)).is_err() {
+                    tracing::trace!(target: "jfc::stream", "ToolInputDelta dropped (buffer full)");
+                }
             }
             StreamEvent::ToolDone {
                 index,
@@ -1178,7 +1212,7 @@ pub async fn stream_response(
                     pinned: false,
                 };
                 tool_accum.remove(&index);
-                let _ = tx.send(AppEvent::StreamTool(tool));
+                let _ = tx.send(AppEvent::StreamTool(tool)).await;
             }
             StreamEvent::Done { stop_reason: r } => {
                 // Never downgrade from ToolUse → EndTurn.  The OpenAI SSE
@@ -1210,16 +1244,22 @@ pub async fn stream_response(
                     cache_read_tokens, cache_write_tokens,
                     "stream usage report"
                 );
-                let _ = tx.send(AppEvent::StreamUsage {
-                    input_tokens,
-                    output_tokens,
-                    cache_read_tokens,
-                    cache_write_tokens,
-                });
+                // Usage stats are non-critical; safe to drop under backpressure.
+                if tx
+                    .try_send(AppEvent::StreamUsage {
+                        input_tokens,
+                        output_tokens,
+                        cache_read_tokens,
+                        cache_write_tokens,
+                    })
+                    .is_err()
+                {
+                    tracing::trace!(target: "jfc::stream", "StreamUsage dropped (buffer full)");
+                }
             }
             StreamEvent::Error { message } => {
                 tracing::error!(target: "jfc::stream", %message, "stream error event");
-                let _ = tx.send(AppEvent::StreamError(message));
+                let _ = tx.send(AppEvent::StreamError(message)).await;
                 return;
             }
         }
@@ -1230,13 +1270,13 @@ pub async fn stream_response(
         ?stop_reason,
         "stream finished — sending StreamDone"
     );
-    let _ = tx.send(AppEvent::StreamDone(stop_reason));
+    let _ = tx.send(AppEvent::StreamDone(stop_reason)).await;
 }
 
 #[tracing::instrument(target = "jfc::stream", skip(tx, dedup, task_store, provider, model, teammate_event_tx), fields(n = tool_calls.len()))]
 pub fn dispatch_tools_batched(
     tool_calls: Vec<ToolCall>,
-    tx: &mpsc::UnboundedSender<AppEvent>,
+    tx: &mpsc::Sender<AppEvent>,
     dedup: Arc<Mutex<ReadDedupCache>>,
     task_store: Option<Arc<crate::tasks::TaskStore>>,
     provider: Arc<dyn crate::provider::Provider>,
@@ -1270,7 +1310,7 @@ pub fn dispatch_tools_batched(
     let tx_done = tx.clone();
     let send_all_complete = move || {
         if pending.fetch_sub(1, Ordering::AcqRel) == 1 {
-            let _ = tx_done.send(AppEvent::AllToolsComplete);
+            let _ = tx_done.try_send(AppEvent::AllToolsComplete);
         }
     };
 
@@ -1346,8 +1386,7 @@ pub fn dispatch_tools_batched(
             {
                 let team_name = team_name.clone();
                 tokio::spawn(async move {
-                    if let Err(e) =
-                        crate::swarm::team_helpers::add_member(&team_name, member).await
+                    if let Err(e) = crate::swarm::team_helpers::add_member(&team_name, member).await
                     {
                         tracing::warn!(
                             target: "jfc::swarm",
@@ -1387,7 +1426,7 @@ pub fn dispatch_tools_batched(
             // entire session, so the team-mode tree (`team-lead` leader,
             // teammate rows) never activated and we fell through to
             // the generic subagent tree even though we were in a team.
-            let _ = tx_task.send(AppEvent::TeammateSpawned {
+            let _ = tx_task.try_send(AppEvent::TeammateSpawned {
                 name: name.clone(),
                 team_name: team_name.clone(),
                 agent_id: agent_id.clone(),
@@ -1398,12 +1437,12 @@ pub fn dispatch_tools_batched(
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_default(),
             });
-            let _ = tx_task.send(AppEvent::TaskStarted {
+            let _ = tx_task.try_send(AppEvent::TaskStarted {
                 task_id: runner_task_id.clone(),
                 description: format!("spawn teammate: {name}"),
             });
 
-            let _ = tx_task.send(AppEvent::ToolResult {
+            let _ = tx_task.try_send(AppEvent::ToolResult {
                 tool_id: task_id,
                 result: crate::tools::ExecutionResult::success(
                     serde_json::to_string_pretty(&result_json).unwrap_or_default(),
@@ -1435,11 +1474,7 @@ pub fn dispatch_tools_batched(
         let agent_def = task_input
             .subagent_type
             .as_deref()
-            .and_then(|t| {
-                agents
-                    .iter()
-                    .find(|a| a.name.eq_ignore_ascii_case(t))
-            })
+            .and_then(|t| agents.iter().find(|a| a.name.eq_ignore_ascii_case(t)))
             .cloned();
         if agent_def.is_none() {
             if let Some(t) = task_input.subagent_type.as_deref() {
@@ -1455,7 +1490,14 @@ pub fn dispatch_tools_batched(
         tokio::spawn(async move {
             // If isolation: "worktree", create a git worktree for this agent
             let worktree_info = if task_input.isolation.as_deref() == Some("worktree") {
-                let name = format!("agent-{}", task_id.replace("toolu_", "").chars().take(8).collect::<String>());
+                let name = format!(
+                    "agent-{}",
+                    task_id
+                        .replace("toolu_", "")
+                        .chars()
+                        .take(8)
+                        .collect::<String>()
+                );
                 let repo_root = std::env::current_dir().unwrap_or_default();
                 match crate::worktrees::create_worktree(&repo_root, &name) {
                     Ok(info) => {
@@ -1487,10 +1529,12 @@ pub fn dispatch_tools_batched(
                 has_agent_def = agent_def.is_some(),
                 "task tool: spawning execute_task"
             );
-            let _ = tx_task.send(AppEvent::TaskStarted {
-                task_id: task_id.clone(),
-                description,
-            });
+            let _ = tx_task
+                .send(AppEvent::TaskStarted {
+                    task_id: task_id.clone(),
+                    description,
+                })
+                .await;
 
             let started = std::time::Instant::now();
             // Forward the subagent's streaming text into the main event
@@ -1527,10 +1571,12 @@ pub fn dispatch_tools_batched(
                     output_preview = %&result.output[..result.output.len().min(200)],
                     "task tool: execute_task failed"
                 );
-                let _ = tx_task.send(AppEvent::TaskFailed {
-                    task_id: task_id.clone(),
-                    error: result.output.clone(),
-                });
+                let _ = tx_task
+                    .send(AppEvent::TaskFailed {
+                        task_id: task_id.clone(),
+                        error: result.output.clone(),
+                    })
+                    .await;
             } else {
                 tracing::info!(
                     target: "jfc::stream",
@@ -1539,11 +1585,13 @@ pub fn dispatch_tools_batched(
                     output_len = result.output.len(),
                     "task tool: execute_task succeeded"
                 );
-                let _ = tx_task.send(AppEvent::TaskCompleted {
-                    task_id: task_id.clone(),
-                    summary: result.output.clone(),
-                    elapsed_ms,
-                });
+                let _ = tx_task
+                    .send(AppEvent::TaskCompleted {
+                        task_id: task_id.clone(),
+                        summary: result.output.clone(),
+                        elapsed_ms,
+                    })
+                    .await;
             }
 
             // Decide the worktree's fate BEFORE sending the ToolResult so the
@@ -1554,88 +1602,91 @@ pub fn dispatch_tools_batched(
             // branch are returned in the result." `git status
             // --porcelain` is the standard "is the working tree clean"
             // signal — quiet, scriptable, exit-code aware.
-            let worktree_outcome: Option<(crate::worktrees::WorktreeInfo, bool)> =
-                if let Some(wt) = worktree_info {
-                    let dirty = match tokio::process::Command::new("git")
-                        .arg("-C")
-                        .arg(&wt.path)
-                        .arg("status")
-                        .arg("--porcelain")
-                        .output()
-                        .await
-                    {
-                        Ok(out) if out.status.success() => !out.stdout.is_empty(),
-                        Ok(out) => {
-                            tracing::warn!(
-                                target: "jfc::stream",
-                                worktree = %wt.path,
-                                stderr = %String::from_utf8_lossy(&out.stderr),
-                                "git status in worktree returned non-zero — keeping worktree to be safe"
-                            );
-                            true
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                target: "jfc::stream",
-                                worktree = %wt.path,
-                                error = %e,
-                                "git status spawn failed — keeping worktree"
-                            );
-                            true
-                        }
-                    };
-                    if !dirty {
-                        let repo_root = std::env::current_dir().unwrap_or_default();
-                        let wt_name = std::path::Path::new(&wt.path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("");
-                        match crate::worktrees::remove_worktree(&repo_root, wt_name) {
-                            Ok(_) => tracing::info!(
-                                target: "jfc::stream",
-                                worktree = %wt.path,
-                                "worktree had no changes — removed"
-                            ),
-                            Err(e) => tracing::warn!(
-                                target: "jfc::stream",
-                                worktree = %wt.path,
-                                error = %e,
-                                "worktree cleanup failed"
-                            ),
-                        }
-                        Some((wt, false))
-                    } else {
-                        tracing::info!(
+            let worktree_outcome: Option<(crate::worktrees::WorktreeInfo, bool)> = if let Some(wt) =
+                worktree_info
+            {
+                let dirty = match tokio::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&wt.path)
+                    .arg("status")
+                    .arg("--porcelain")
+                    .output()
+                    .await
+                {
+                    Ok(out) if out.status.success() => !out.stdout.is_empty(),
+                    Ok(out) => {
+                        tracing::warn!(
                             target: "jfc::stream",
                             worktree = %wt.path,
-                            "worktree has uncommitted changes — preserving"
+                            stderr = %String::from_utf8_lossy(&out.stderr),
+                            "git status in worktree returned non-zero — keeping worktree to be safe"
                         );
-                        Some((wt, true))
+                        true
                     }
-                } else {
-                    None
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "jfc::stream",
+                            worktree = %wt.path,
+                            error = %e,
+                            "git status spawn failed — keeping worktree"
+                        );
+                        true
+                    }
                 };
+                if !dirty {
+                    let repo_root = std::env::current_dir().unwrap_or_default();
+                    let wt_name = std::path::Path::new(&wt.path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("");
+                    match crate::worktrees::remove_worktree(&repo_root, wt_name) {
+                        Ok(_) => tracing::info!(
+                            target: "jfc::stream",
+                            worktree = %wt.path,
+                            "worktree had no changes — removed"
+                        ),
+                        Err(e) => tracing::warn!(
+                            target: "jfc::stream",
+                            worktree = %wt.path,
+                            error = %e,
+                            "worktree cleanup failed"
+                        ),
+                    }
+                    Some((wt, false))
+                } else {
+                    tracing::info!(
+                        target: "jfc::stream",
+                        worktree = %wt.path,
+                        "worktree has uncommitted changes — preserving"
+                    );
+                    Some((wt, true))
+                }
+            } else {
+                None
+            };
 
-            let _ = tx_task.send(AppEvent::ToolResult {
-                tool_id: task_id,
-                result: match &worktree_outcome {
-                    Some((wt, true)) => crate::tools::ExecutionResult::success(format!(
-                        "{}\n\n[worktree preserved with uncommitted changes]\n\
+            let _ = tx_task
+                .send(AppEvent::ToolResult {
+                    tool_id: task_id,
+                    result: match &worktree_outcome {
+                        Some((wt, true)) => crate::tools::ExecutionResult::success(format!(
+                            "{}\n\n[worktree preserved with uncommitted changes]\n\
                          path: {}\nbranch: {}\n\
                          To inspect: cd {} && git diff\n\
                          To merge:   git merge {}\n\
                          To discard: git worktree remove {} && git branch -D {}",
-                        result.output,
-                        wt.path,
-                        wt.branch,
-                        wt.path,
-                        wt.branch,
-                        wt.path,
-                        wt.branch,
-                    )),
-                    Some((_, false)) | None => result,
-                },
-            });
+                            result.output,
+                            wt.path,
+                            wt.branch,
+                            wt.path,
+                            wt.branch,
+                            wt.path,
+                            wt.branch,
+                        )),
+                        Some((_, false)) | None => result,
+                    },
+                })
+                .await;
 
             done();
         });
@@ -1685,7 +1736,7 @@ pub fn should_continue_loop(messages: &[ChatMessage]) -> bool {
     all_done
 }
 
-pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::UnboundedSender<AppEvent>) {
+pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     let assistant_idx = app.messages.len();
     tracing::info!(
         target: "jfc::stream",
@@ -2170,11 +2221,7 @@ mod ensure_user_last_tests {
     // Normal: multiple trailing empty assistants are ALL stripped.
     #[test]
     fn strips_multiple_trailing_empty_assistants() {
-        let input = vec![
-            user_text("hi"),
-            assistant_text(""),
-            assistant_text(""),
-        ];
+        let input = vec![user_text("hi"), assistant_text(""), assistant_text("")];
         let out = ensure_user_last(input);
         // Both empties stripped, "hi" remains. User-last already satisfied.
         assert_eq!(out.len(), 1);
@@ -2372,12 +2419,19 @@ mod build_provider_messages_tests {
         ChatMessage::assistant_parts(parts)
     }
 
-    fn make_tool_call(id: &str, kind: ToolKind, status: ToolStatus, output: ToolOutput) -> ToolCall {
+    fn make_tool_call(
+        id: &str,
+        kind: ToolKind,
+        status: ToolStatus,
+        output: ToolOutput,
+    ) -> ToolCall {
         ToolCall {
             id: id.to_owned(),
             kind,
             status,
-            input: ToolInput::Generic { summary: "x".into() },
+            input: ToolInput::Generic {
+                summary: "x".into(),
+            },
             output,
             is_collapsed: false,
             expanded: false,
@@ -2478,7 +2532,11 @@ mod build_provider_messages_tests {
         }
         assert_eq!(out[2].role, ProviderRole::User);
         match &out[2].content[0] {
-            ProviderContent::ToolResult { tool_use_id, content, is_error } => {
+            ProviderContent::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } => {
                 assert_eq!(tool_use_id, "toolu_a");
                 assert_eq!(content, "hello world");
                 assert!(!is_error);
@@ -2530,7 +2588,9 @@ mod build_provider_messages_tests {
         let out = build_provider_messages_with_tool_results(&msgs);
         let last = out.last().unwrap();
         match &last.content[0] {
-            ProviderContent::ToolResult { content, is_error, .. } => {
+            ProviderContent::ToolResult {
+                content, is_error, ..
+            } => {
                 assert!(*is_error, "abandoned tool must be flagged is_error");
                 assert!(
                     content.contains("abandoned"),
@@ -2648,8 +2708,18 @@ mod build_provider_messages_tests {
     // batched tool_result blocks to share a single message.
     #[test]
     fn build_with_tool_results_batched_results_robust() {
-        let t1 = make_tool_call("a", ToolKind::Bash, ToolStatus::Complete, ToolOutput::Text("1".into()));
-        let t2 = make_tool_call("b", ToolKind::Read, ToolStatus::Complete, ToolOutput::Text("2".into()));
+        let t1 = make_tool_call(
+            "a",
+            ToolKind::Bash,
+            ToolStatus::Complete,
+            ToolOutput::Text("1".into()),
+        );
+        let t2 = make_tool_call(
+            "b",
+            ToolKind::Read,
+            ToolStatus::Complete,
+            ToolOutput::Text("2".into()),
+        );
         let msgs = vec![
             user_msg("hi"),
             assistant_with_parts(vec![MessagePart::Tool(t1), MessagePart::Tool(t2)]),
@@ -2788,7 +2858,9 @@ mod should_continue_loop_tests {
             id: "toolu_x".into(),
             kind: ToolKind::Bash,
             status,
-            input: ToolInput::Generic { summary: "x".into() },
+            input: ToolInput::Generic {
+                summary: "x".into(),
+            },
             output: ToolOutput::Empty,
             is_collapsed: false,
             expanded: false,

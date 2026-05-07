@@ -21,6 +21,7 @@
 
 use std::path::Path;
 use std::process::Command;
+use tokio::process::Command as TokioCommand;
 
 /// One row from `git worktree list --porcelain`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,6 +154,31 @@ pub fn list_worktrees(repo_root: &Path) -> Result<Vec<WorktreeInfo>, String> {
     Ok(entries)
 }
 
+/// Async variant of `list_worktrees` for use in tokio event loops.
+/// Uses `tokio::process` so the subprocess spawn does not block the runtime.
+pub async fn list_worktrees_async(repo_root: &Path) -> Result<Vec<WorktreeInfo>, String> {
+    tracing::debug!(target: "jfc::worktrees", ?repo_root, "list_worktrees_async");
+    let output = TokioCommand::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .arg("worktree")
+        .arg("list")
+        .arg("--porcelain")
+        .output()
+        .await
+        .map_err(|e| format!("failed to spawn `git worktree list`: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "`git worktree list` failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let entries = parse_porcelain_output(&stdout);
+    tracing::debug!(target: "jfc::worktrees", count = entries.len(), "list_worktrees_async done");
+    Ok(entries)
+}
+
 /// Create `<repo_root>/.jfc-worktrees/<name>` checking out a fresh branch
 /// `jfc/<name>`. Validates the name first; surfaces git's stderr on failure.
 /// Shells out — not unit-tested; see module docs.
@@ -188,6 +214,37 @@ pub fn create_worktree(repo_root: &Path, name: &str) -> Result<WorktreeInfo, Str
     })
 }
 
+/// Async variant of `create_worktree`.
+pub async fn create_worktree_async(repo_root: &Path, name: &str) -> Result<WorktreeInfo, String> {
+    tracing::info!(target: "jfc::worktrees", ?repo_root, name, "create_worktree_async");
+    validate_name(name)?;
+    let rel_path = format!(".jfc-worktrees/{name}");
+    let branch = format!("jfc/{name}");
+    let output = TokioCommand::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .arg("worktree")
+        .arg("add")
+        .arg(&rel_path)
+        .arg("-b")
+        .arg(&branch)
+        .output()
+        .await
+        .map_err(|e| format!("failed to spawn `git worktree add`: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!(target: "jfc::worktrees", name, %stderr, "create_worktree_async failed");
+        return Err(format!("`git worktree add` failed: {}", stderr.trim()));
+    }
+    let abs_path = repo_root.join(&rel_path).display().to_string();
+    tracing::info!(target: "jfc::worktrees", name, path = %abs_path, "create_worktree_async ok");
+    Ok(WorktreeInfo {
+        path: abs_path,
+        branch,
+        is_current: false,
+    })
+}
+
 /// Remove `<repo_root>/.jfc-worktrees/<name>`. The `jfc/<name>` branch is NOT
 /// deleted — the user can still recover the work by checking the branch out
 /// elsewhere. Shells out — not unit-tested; see module docs.
@@ -212,6 +269,29 @@ pub fn remove_worktree(repo_root: &Path, name: &str) -> Result<(), String> {
         ));
     }
     tracing::info!(target: "jfc::worktrees", name, "remove_worktree ok");
+    Ok(())
+}
+
+/// Async variant of `remove_worktree`.
+pub async fn remove_worktree_async(repo_root: &Path, name: &str) -> Result<(), String> {
+    tracing::info!(target: "jfc::worktrees", ?repo_root, name, "remove_worktree_async");
+    validate_name(name)?;
+    let rel_path = format!(".jfc-worktrees/{name}");
+    let output = TokioCommand::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .arg("worktree")
+        .arg("remove")
+        .arg(&rel_path)
+        .output()
+        .await
+        .map_err(|e| format!("failed to spawn `git worktree remove`: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!(target: "jfc::worktrees", name, %stderr, "remove_worktree_async failed");
+        return Err(format!("`git worktree remove` failed: {}", stderr.trim()));
+    }
+    tracing::info!(target: "jfc::worktrees", name, "remove_worktree_async ok");
     Ok(())
 }
 

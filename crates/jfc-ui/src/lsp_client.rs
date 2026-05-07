@@ -165,7 +165,7 @@ impl LspClient {
         server_cmd: &str,
         args: &[&str],
         root_uri: &str,
-        app_tx: UnboundedSender<AppEvent>,
+        app_tx: mpsc::Sender<AppEvent>,
     ) -> Option<Self> {
         let mut child: Child = match Command::new(server_cmd)
             .args(args)
@@ -382,7 +382,7 @@ impl LspClient {
 
 async fn handle_inbound(
     msg: &Value,
-    app_tx: &UnboundedSender<AppEvent>,
+    app_tx: &mpsc::Sender<AppEvent>,
     init_done_tx: &Arc<tokio::sync::Mutex<Option<oneshot::Sender<()>>>>,
     pending: &PendingRequests,
 ) {
@@ -419,7 +419,7 @@ async fn handle_inbound(
         let Some((_uri, entries)) = lsp_rpc::parse_publish_diagnostics(params) else {
             return;
         };
-        let _ = app_tx.send(AppEvent::DiagnosticsUpdated { entries });
+        let _ = app_tx.send(AppEvent::DiagnosticsUpdated { entries }).await;
     }
 }
 
@@ -588,7 +588,7 @@ pub fn detect_lsp_for_cwd(cwd: &std::path::Path) -> Option<(&'static str, Vec<&'
 /// returned task handle is dropped (we don't keep the client alive
 /// across the UI loop yet; that's a follow-up integration). Wire it up
 /// from `main.rs` near the other startup spawns.
-pub fn maybe_spawn_lsp_clients(cwd: std::path::PathBuf, app_tx: UnboundedSender<AppEvent>) {
+pub fn maybe_spawn_lsp_clients(cwd: std::path::PathBuf, app_tx: mpsc::Sender<AppEvent>) {
     if matches!(
         std::env::var("JFC_DISABLE_LSP").as_deref(),
         Ok("1") | Ok("true")

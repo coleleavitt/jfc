@@ -771,6 +771,11 @@ pub struct App {
     /// frame. Uses `RefCell` because `MessageView` borrows `&App` immutably
     /// during `Widget::render` but needs mutable cache access.
     pub render_cache: RefCell<RenderCache>,
+    /// Cached result of `collect_diff_stats()`. Keyed on
+    /// `(messages.len(), total_parts_count)` — invalidates when a message is
+    /// appended or a tool result lands. Avoids O(N_messages × N_parts)
+    /// HashMap walk per frame; reduces to O(1) lookup on cache hit.
+    pub diff_stats_cache: RefCell<Option<(usize, usize, crate::render::DiffStats)>>,
     /// Swarm / team orchestration state. Tracks the current team, spawned
     /// teammates, and message delivery. `None` when no team is active.
     pub team_context: crate::swarm::TeamContext,
@@ -921,6 +926,7 @@ impl App {
             pending_attachments: Vec::new(),
             tool_hit_regions: RefCell::new(Vec::new()),
             render_cache: RefCell::new(RenderCache::new()),
+            diff_stats_cache: RefCell::new(None),
             team_context: crate::swarm::TeamContext::default(),
             teammate_event_rx: Some(teammate_rx),
             teammate_event_tx: teammate_tx,

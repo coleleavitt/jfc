@@ -17,6 +17,7 @@ async-trait = "0.1"
 jfc-graph = { path = "../jfc-graph" }
 
 [dev-dependencies]
+futures = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

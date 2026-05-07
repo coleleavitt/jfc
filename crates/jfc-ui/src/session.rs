@@ -359,9 +359,9 @@ fn extract_first_prompt(messages: &[ChatMessage]) -> Option<String> {
 }
 
 #[tracing::instrument(target = "jfc::session", skip(messages), fields(n = messages.len()))]
-pub fn save_session(session_id: &str, messages: &[ChatMessage], cwd: Option<&str>, model: Option<&str>) {
+pub async fn save_session(session_id: &str, messages: &[ChatMessage], cwd: Option<&str>, model: Option<&str>) {
     let dir = sessions_dir();
-    if std::fs::create_dir_all(&dir).is_err() {
+    if tokio::fs::create_dir_all(&dir).await.is_err() {
         warn!(target: "jfc::session", "failed to create sessions directory");
         return;
     }
@@ -375,7 +375,8 @@ pub fn save_session(session_id: &str, messages: &[ChatMessage], cwd: Option<&str
     // user `cd`s elsewhere — that would conflate two projects' work into
     // one session, and would also defeat the cwd-mismatch warning on
     // resume (codex-rs `tui/src/session_resume.rs:99-111`).
-    let prior = std::fs::read_to_string(&path)
+    let prior = tokio::fs::read_to_string(&path)
+        .await
         .ok()
         .and_then(|content| serde_json::from_str::<SerializedSession>(&content).ok());
     let created_at = prior
@@ -410,17 +411,17 @@ pub fn save_session(session_id: &str, messages: &[ChatMessage], cwd: Option<&str
     };
 
     if let Ok(json) = serde_json::to_string_pretty(&serialized) {
-        let _ = std::fs::write(&path, json);
+        let _ = tokio::fs::write(&path, json).await;
         info!(target: "jfc::session", session_id, message_count = messages.len(), path = %path.display(), "session saved");
     } else {
         warn!(target: "jfc::session", session_id, "failed to serialize session");
     }
 }
 
-pub fn load_session(session_id: &str) -> Option<Vec<ChatMessage>> {
+pub async fn load_session(session_id: &str) -> Option<Vec<ChatMessage>> {
     debug!(target: "jfc::session", session_id, "loading session");
     let path = sessions_dir().join(format!("{session_id}.json"));
-    let content = std::fs::read_to_string(&path).ok()?;
+    let content = tokio::fs::read_to_string(&path).await.ok()?;
     let session: SerializedSession = match serde_json::from_str(&content) {
         Ok(s) => s,
         Err(e) => {
@@ -440,9 +441,9 @@ pub fn load_session(session_id: &str) -> Option<Vec<ChatMessage>> {
 
 /// Load session messages AND the model that was active. Used by `/continue`
 /// to restore the model selection.
-pub fn load_session_with_model(session_id: &str) -> Option<(Vec<ChatMessage>, Option<String>)> {
+pub async fn load_session_with_model(session_id: &str) -> Option<(Vec<ChatMessage>, Option<String>)> {
     let path = sessions_dir().join(format!("{session_id}.json"));
-    let content = std::fs::read_to_string(&path).ok()?;
+    let content = tokio::fs::read_to_string(&path).await.ok()?;
     let session: SerializedSession = serde_json::from_str(&content).ok()?;
     let model = session.model.clone();
     let messages: Vec<ChatMessage> = session
@@ -462,9 +463,9 @@ pub fn load_session_with_model(session_id: &str) -> Option<(Vec<ChatMessage>, Op
 /// and the picker dropped it from the sidebar. Now we deserialize a
 /// lightweight `SessionMetaShallow` that treats `messages` as opaque
 /// JSON values; the Tool-input shape never gates picker visibility.
-pub fn load_session_metadata(session_id: &str) -> Option<SessionMetadata> {
+pub async fn load_session_metadata(session_id: &str) -> Option<SessionMetadata> {
     let path = sessions_dir().join(format!("{session_id}.json"));
-    let content = std::fs::read_to_string(&path).ok()?;
+    let content = tokio::fs::read_to_string(&path).await.ok()?;
     let shallow: SessionMetaShallow = match serde_json::from_str(&content) {
         Ok(s) => s,
         Err(e) => {
@@ -689,20 +690,20 @@ pub fn cwd_mismatch_message(session_cwd: Option<&str>, current_cwd: &str) -> Opt
     ))
 }
 
-pub fn list_sessions() -> Vec<String> {
+pub async fn list_sessions() -> Vec<String> {
     let dir = sessions_dir();
     debug!(target: "jfc::session", dir = %dir.display(), "listing sessions");
-    let Ok(entries) = std::fs::read_dir(&dir) else {
+    let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
         debug!(target: "jfc::session", dir = %dir.display(), "sessions directory not readable");
         return vec![];
     };
-    let mut ids: Vec<String> = entries
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            name.strip_suffix(".json").map(str::to_owned)
-        })
-        .collect();
+    let mut ids: Vec<String> = Vec::new();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if let Some(id) = name.strip_suffix(".json") {
+            ids.push(id.to_owned());
+        }
+    }
     ids.sort_by(|a, b| b.cmp(a)); // newest first
     debug!(target: "jfc::session", count = ids.len(), "sessions listed");
     ids
@@ -712,21 +713,25 @@ pub fn list_sessions() -> Vec<String> {
 /// When `cwd_filter` is `Some(path)`, only sessions whose `cwd` matches
 /// (or whose cwd is unset — legacy) are returned. Pass `None` for the
 /// "show all" mode (mirrors codex-rs `--show-all` / v126's all-sessions).
-pub fn list_sessions_with_metadata() -> Vec<SessionMetadata> {
-    list_sessions_filtered(None)
+pub async fn list_sessions_with_metadata() -> Vec<SessionMetadata> {
+    list_sessions_filtered(None).await
 }
 
-pub fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMetadata> {
+pub async fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMetadata> {
     debug!(target: "jfc::session", ?cwd_filter, "listing sessions with filter");
-    let ids = list_sessions();
-    let mut sessions: Vec<SessionMetadata> = ids
-        .into_iter()
-        .filter_map(|id| load_session_metadata(&id))
-        .filter(|s| match cwd_filter {
-            None => true,
-            Some(target) => s.cwd.as_deref().is_none_or(|c| c == target),
-        })
-        .collect();
+    let ids = list_sessions().await;
+    let mut sessions: Vec<SessionMetadata> = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(meta) = load_session_metadata(&id).await {
+            let keep = match cwd_filter {
+                None => true,
+                Some(target) => meta.cwd.as_deref().is_none_or(|c| c == target),
+            };
+            if keep {
+                sessions.push(meta);
+            }
+        }
+    }
     sessions.sort_by(|a, b| {
         let a_time = a.updated_at.as_ref().unwrap_or(&a.created_at);
         let b_time = b.updated_at.as_ref().unwrap_or(&b.created_at);
@@ -740,15 +745,15 @@ pub fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMetadata> 
 /// (cli.js:480735-480741) and codex-rs default behavior — `--continue`
 /// in project A doesn't accidentally resume a session from project B.
 /// Pass `None` for the legacy globally-most-recent behavior.
-pub fn most_recent_session_for_cwd(cwd: Option<&str>) -> Option<String> {
-    let result = list_sessions_filtered(cwd).into_iter().next().map(|s| s.id);
+pub async fn most_recent_session_for_cwd(cwd: Option<&str>) -> Option<String> {
+    let result = list_sessions_filtered(cwd).await.into_iter().next().map(|s| s.id);
     debug!(target: "jfc::session", ?cwd, found = result.is_some(), "most recent session for cwd");
     result
 }
 
 /// Globally most-recent session id (legacy callers + `--global` flag).
-pub fn most_recent_session() -> Option<String> {
-    let result = list_sessions().into_iter().next();
+pub async fn most_recent_session() -> Option<String> {
+    let result = list_sessions().await.into_iter().next();
     debug!(target: "jfc::session", found = result.is_some(), "most recent session (global)");
     result
 }
@@ -757,10 +762,10 @@ pub fn most_recent_session() -> Option<String> {
 /// silently on I/O failures — title is cosmetic, shouldn't block the
 /// chat. Mirrors v126's `customTitle` field (cli.js:39786) which sits
 /// atop the title precedence chain.
-pub fn set_session_title(session_id: &str, title: &str) {
+pub async fn set_session_title(session_id: &str, title: &str) {
     debug!(target: "jfc::session", session_id, "setting session title");
     let path = sessions_dir().join(format!("{session_id}.json"));
-    let Ok(content) = std::fs::read_to_string(&path) else {
+    let Ok(content) = tokio::fs::read_to_string(&path).await else {
         warn!(target: "jfc::session", session_id, "cannot read session file for title update");
         return;
     };
@@ -770,7 +775,7 @@ pub fn set_session_title(session_id: &str, title: &str) {
     };
     session.title = Some(title.to_owned());
     if let Ok(json) = serde_json::to_string_pretty(&session) {
-        let _ = std::fs::write(&path, json);
+        let _ = tokio::fs::write(&path, json).await;
         info!(target: "jfc::session", session_id, "session title updated");
     }
 }
@@ -1814,58 +1819,58 @@ mod disk_io_tests {
     // Normal: round-trip a session through save/load with a few common
     // message variants. Verifies the file lands under sessions_dir() and
     // load_session reconstructs the messages with the same shape.
-    #[test]
-    fn save_load_roundtrip_normal() {
+    #[tokio::test]
+    async fn save_load_roundtrip_normal() {
         let _g = TempConfigHome::new();
         let messages = vec![
             ChatMessage::user("first user prompt".into()),
             ChatMessage::assistant("first reply".into()),
         ];
         let id = "ses_20260506_120000";
-        save_session(id, &messages, Some("/tmp/test"), Some("test-model"));
+        save_session(id, &messages, Some("/tmp/test"), Some("test-model")).await;
         // The file should exist on disk now.
         let path = sessions_dir().join(format!("{id}.json"));
         assert!(path.exists(), "session file written");
 
-        let loaded = load_session(id).expect("loadable");
+        let loaded = load_session(id).await.expect("loadable");
         assert_eq!(loaded.len(), 2);
         assert!(loaded[0].role_is_user());
     }
 
     // Normal: load_session_with_model returns the persisted model id.
-    #[test]
-    fn load_session_with_model_normal() {
+    #[tokio::test]
+    async fn load_session_with_model_normal() {
         let _g = TempConfigHome::new();
         let messages = vec![ChatMessage::user("hi".into())];
         let id = "ses_20260506_120100";
-        save_session(id, &messages, Some("/tmp/proj"), Some("opus-4-7"));
-        let (loaded, model) = load_session_with_model(id).expect("loadable");
+        save_session(id, &messages, Some("/tmp/proj"), Some("opus-4-7")).await;
+        let (loaded, model) = load_session_with_model(id).await.expect("loadable");
         assert_eq!(loaded.len(), 1);
         assert_eq!(model.as_deref(), Some("opus-4-7"));
     }
 
     // Robust: load_session for a non-existent id returns None instead of
     // panicking.
-    #[test]
-    fn load_session_missing_returns_none_robust() {
+    #[tokio::test]
+    async fn load_session_missing_returns_none_robust() {
         let _g = TempConfigHome::new();
-        assert!(load_session("ses_does_not_exist").is_none());
-        assert!(load_session_with_model("ses_does_not_exist").is_none());
-        assert!(load_session_metadata("ses_does_not_exist").is_none());
+        assert!(load_session("ses_does_not_exist").await.is_none());
+        assert!(load_session_with_model("ses_does_not_exist").await.is_none());
+        assert!(load_session_metadata("ses_does_not_exist").await.is_none());
     }
 
     // Normal: load_session_metadata reports the same first_prompt and
     // message_count we saved.
-    #[test]
-    fn load_session_metadata_picks_up_first_prompt_normal() {
+    #[tokio::test]
+    async fn load_session_metadata_picks_up_first_prompt_normal() {
         let _g = TempConfigHome::new();
         let messages = vec![
             ChatMessage::user("Refactor the renderer".into()),
             ChatMessage::assistant("Plan: …".into()),
         ];
         let id = "ses_20260506_120200";
-        save_session(id, &messages, Some("/tmp/proj"), None);
-        let meta = load_session_metadata(id).expect("metadata loads");
+        save_session(id, &messages, Some("/tmp/proj"), None).await;
+        let meta = load_session_metadata(id).await.expect("metadata loads");
         assert_eq!(meta.id, id);
         assert_eq!(meta.first_prompt.as_deref(), Some("Refactor the renderer"));
         assert_eq!(meta.message_count, 2);
@@ -1874,26 +1879,26 @@ mod disk_io_tests {
 
     // Robust: corrupted JSON in a session file makes load_session_metadata
     // return None without aborting (parse errors are logged and swallowed).
-    #[test]
-    fn load_session_metadata_handles_corrupted_robust() {
+    #[tokio::test]
+    async fn load_session_metadata_handles_corrupted_robust() {
         let _g = TempConfigHome::new();
         let dir = sessions_dir();
         std::fs::create_dir_all(&dir).expect("dir");
         let path = dir.join("ses_corrupted.json");
         std::fs::write(&path, "{ this is not json").expect("write garbage");
-        assert!(load_session_metadata("ses_corrupted").is_none());
+        assert!(load_session_metadata("ses_corrupted").await.is_none());
     }
 
     // Normal: list_sessions returns all known ids, newest-first by id sort
     // (which is also chronological for the `ses_YYYYMMDD_HHMMSS` shape).
-    #[test]
-    fn list_sessions_returns_all_sorted_newest_first_normal() {
+    #[tokio::test]
+    async fn list_sessions_returns_all_sorted_newest_first_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("hi".into())];
-        save_session("ses_20260101_000000", &m, None, None);
-        save_session("ses_20260601_000000", &m, None, None);
-        save_session("ses_20260301_000000", &m, None, None);
-        let ids = list_sessions();
+        save_session("ses_20260101_000000", &m, None, None).await;
+        save_session("ses_20260601_000000", &m, None, None).await;
+        save_session("ses_20260301_000000", &m, None, None).await;
+        let ids = list_sessions().await;
         assert_eq!(
             ids,
             vec![
@@ -1906,97 +1911,97 @@ mod disk_io_tests {
 
     // Robust: list_sessions on a non-existent sessions directory returns
     // an empty vec rather than panicking.
-    #[test]
-    fn list_sessions_missing_dir_is_empty_robust() {
+    #[tokio::test]
+    async fn list_sessions_missing_dir_is_empty_robust() {
         let _g = TempConfigHome::new();
         // No save_session calls — directory doesn't even exist yet.
-        assert!(list_sessions().is_empty());
+        assert!(list_sessions().await.is_empty());
     }
 
     // Normal: list_sessions_filtered with a cwd filter returns only that
     // project's sessions plus any legacy (cwd=None) entries.
-    #[test]
-    fn list_sessions_filtered_includes_matching_and_legacy_normal() {
+    #[tokio::test]
+    async fn list_sessions_filtered_includes_matching_and_legacy_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("hi".into())];
-        save_session("ses_20260101_000000", &m, Some("/projA"), None);
-        save_session("ses_20260201_000000", &m, Some("/projB"), None);
-        save_session("ses_20260301_000000", &m, Some("/projA"), None);
+        save_session("ses_20260101_000000", &m, Some("/projA"), None).await;
+        save_session("ses_20260201_000000", &m, Some("/projB"), None).await;
+        save_session("ses_20260301_000000", &m, Some("/projA"), None).await;
 
-        let only_a = list_sessions_filtered(Some("/projA"));
+        let only_a = list_sessions_filtered(Some("/projA")).await;
         let ids: Vec<&str> = only_a.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, vec!["ses_20260301_000000", "ses_20260101_000000"]);
 
         // No filter (None) returns all sessions sorted newest-first by
         // updated_at.
-        let all = list_sessions_filtered(None);
+        let all = list_sessions_filtered(None).await;
         assert_eq!(all.len(), 3);
     }
 
     // Normal: most_recent_session_for_cwd returns the newest in the matching
     // project bucket.
-    #[test]
-    fn most_recent_session_for_cwd_returns_top_normal() {
+    #[tokio::test]
+    async fn most_recent_session_for_cwd_returns_top_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("hi".into())];
-        save_session("ses_20260101_000000", &m, Some("/proj"), None);
-        save_session("ses_20260301_000000", &m, Some("/proj"), None);
-        save_session("ses_20260201_000000", &m, Some("/other"), None);
-        let top = most_recent_session_for_cwd(Some("/proj"));
+        save_session("ses_20260101_000000", &m, Some("/proj"), None).await;
+        save_session("ses_20260301_000000", &m, Some("/proj"), None).await;
+        save_session("ses_20260201_000000", &m, Some("/other"), None).await;
+        let top = most_recent_session_for_cwd(Some("/proj")).await;
         assert_eq!(top.as_deref(), Some("ses_20260301_000000"));
     }
 
     // Robust: most_recent_session (global) returns the newest id regardless
     // of cwd.
-    #[test]
-    fn most_recent_session_global_robust() {
+    #[tokio::test]
+    async fn most_recent_session_global_robust() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("hi".into())];
-        save_session("ses_20260101_000000", &m, None, None);
-        save_session("ses_20260601_000000", &m, None, None);
-        let top = most_recent_session();
+        save_session("ses_20260101_000000", &m, None, None).await;
+        save_session("ses_20260601_000000", &m, None, None).await;
+        let top = most_recent_session().await;
         assert_eq!(top.as_deref(), Some("ses_20260601_000000"));
     }
 
     // Normal: set_session_title writes a custom title that overrides
     // first_prompt in display.
-    #[test]
-    fn set_session_title_persists_and_overrides_first_prompt_normal() {
+    #[tokio::test]
+    async fn set_session_title_persists_and_overrides_first_prompt_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("Original prompt".into())];
         let id = "ses_20260506_140000";
-        save_session(id, &m, Some("/tmp"), None);
-        set_session_title(id, "My custom title");
-        let meta = load_session_metadata(id).expect("loaded");
+        save_session(id, &m, Some("/tmp"), None).await;
+        set_session_title(id, "My custom title").await;
+        let meta = load_session_metadata(id).await.expect("loaded");
         assert_eq!(meta.title.as_deref(), Some("My custom title"));
         assert_eq!(meta.display_title(), "My custom title");
     }
 
     // Robust: set_session_title on a non-existent id is a no-op (does not
     // panic, does not create files).
-    #[test]
-    fn set_session_title_missing_session_is_noop_robust() {
+    #[tokio::test]
+    async fn set_session_title_missing_session_is_noop_robust() {
         let _g = TempConfigHome::new();
         // Don't save — target doesn't exist.
-        set_session_title("ses_nope", "ignored");
-        assert!(load_session_metadata("ses_nope").is_none());
+        set_session_title("ses_nope", "ignored").await;
+        assert!(load_session_metadata("ses_nope").await.is_none());
     }
 
     // Normal: when re-saving an existing session, the original created_at
     // and cwd are preserved (cwd is pinned at first save).
-    #[test]
-    fn save_session_preserves_created_at_and_cwd_normal() {
+    #[tokio::test]
+    async fn save_session_preserves_created_at_and_cwd_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("first".into())];
         let id = "ses_20260506_141500";
-        save_session(id, &m, Some("/orig"), None);
-        let meta1 = load_session_metadata(id).expect("first save");
+        save_session(id, &m, Some("/orig"), None).await;
+        let meta1 = load_session_metadata(id).await.expect("first save");
         let created_at = meta1.created_at.clone();
 
         // Re-save with a different cwd — should NOT migrate.
         let m2 = vec![ChatMessage::user("first".into()), ChatMessage::assistant("reply".into())];
-        save_session(id, &m2, Some("/elsewhere"), None);
-        let meta2 = load_session_metadata(id).expect("second save");
+        save_session(id, &m2, Some("/elsewhere"), None).await;
+        let meta2 = load_session_metadata(id).await.expect("second save");
         assert_eq!(meta2.created_at, created_at);
         assert_eq!(meta2.cwd.as_deref(), Some("/orig"));
         assert_eq!(meta2.message_count, 2);
@@ -2005,8 +2010,8 @@ mod disk_io_tests {
     // Normal: round-trip a tool message with full input + output content.
     // Exercises the serialize_part / deserialize_part / serialize_tool_input
     // / deserialize_tool_input paths for a non-trivial tool variant.
-    #[test]
-    fn save_load_with_tool_message_round_trips_normal() {
+    #[tokio::test]
+    async fn save_load_with_tool_message_round_trips_normal() {
         let _g = TempConfigHome::new();
         let tool = ToolCall {
             id: "tool-1".into(),
@@ -2035,8 +2040,8 @@ mod disk_io_tests {
             ]),
         ];
         let id = "ses_20260506_142000";
-        save_session(id, &messages, Some("/tmp"), Some("opus"));
-        let loaded = load_session(id).expect("loaded");
+        save_session(id, &messages, Some("/tmp"), Some("opus")).await;
+        let loaded = load_session(id).await.expect("loaded");
         assert_eq!(loaded.len(), 2);
         let tool_part = loaded[1]
             .parts
