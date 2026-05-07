@@ -54,6 +54,13 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
         body["system"] = json!(sys);
     }
 
+    if let Some(temp) = opts.temperature {
+        body["temperature"] = serde_json::Value::from(temp);
+    }
+    if let Some(top_p) = opts.top_p {
+        body["top_p"] = serde_json::Value::from(top_p);
+    }
+
     if !opts.tools.is_empty() {
         body["tools"] = sse::build_tools(&opts.tools);
     }
