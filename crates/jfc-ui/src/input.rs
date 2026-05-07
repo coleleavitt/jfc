@@ -2232,7 +2232,26 @@ async fn handle_submit(
 
     let provider = app.provider.clone();
     let messages = crate::stream::build_provider_messages(&app.messages[..assistant_idx]);
-    let model = app.model.clone();
+    // Slate per-turn model selection: when the router is configured (config
+    // `slate_enabled = true`), classify the user's text and route to the
+    // best-fit model for this turn. When None (default), use the pinned
+    // `app.model` — legacy behavior. The pinned model is also the fallback
+    // for unmatched classes inside the router itself.
+    let model = if let Some(ref router) = app.slate {
+        let (routed, class, rule_idx) =
+            router.route_explained(&text, app.model.clone());
+        tracing::info!(
+            target: "jfc::slate",
+            class = ?class,
+            matched_rule = ?rule_idx,
+            routed_model = %routed,
+            pinned_model = %app.model,
+            "slate routed turn"
+        );
+        routed
+    } else {
+        app.model.clone()
+    };
     let tx = tx.clone();
     let interrupt = app.interrupt_flag.clone();
     // Fresh user submission resets any prior interrupt state — the user
