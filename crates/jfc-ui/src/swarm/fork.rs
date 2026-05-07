@@ -1,7 +1,18 @@
+#![allow(dead_code)]
 //! Fork subagent — clone current conversation state to a new agent.
 //!
 //! Enables parallel exploration: take the current conversation context,
 //! clone it, and hand the clone to a new agent with different instructions.
+//!
+//! ## Wiring status
+//!
+//! Standalone helpers (`build_forked_context`,
+//! `build_fork_handoff_message`) are complete. Integration with the
+//! Task tool's spawn path is the missing piece: today the dispatcher
+//! always seeds subagents with a fresh prompt. Wiring fork would mean
+//! adding a `fork: true` flag to the Task tool's input schema and
+//! routing through these helpers when the flag is set. Marked
+//! `dead_code` on purpose — code preserved, wiring deferred.
 
 use crate::types::ChatMessage;
 

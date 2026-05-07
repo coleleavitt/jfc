@@ -25,6 +25,40 @@ impl AnthropicProvider {
     }
 }
 
+/// Pluck the `error.type` field out of an Anthropic API error body
+/// without parsing the whole JSON. The canonical shape is
+/// `{"type":"error","error":{"type":"<kind>","message":"…"}}`. We
+/// accept any of the documented values: `authentication_error`,
+/// `permission_error`, `rate_limit_error`, `overloaded_error`,
+/// `api_error`, `invalid_request_error`, `not_found_error`,
+/// `request_too_large`. Returns the matched kind as a static str so
+/// callers can match against it without a cloned String. None when
+/// the body is missing/malformed (e.g. a 503 HTML page from a proxy).
+fn anthropic_error_type(body: &str) -> Option<&'static str> {
+    let candidates: &[&'static str] = &[
+        "authentication_error",
+        "permission_error",
+        "rate_limit_error",
+        "overloaded_error",
+        "request_too_large",
+        "invalid_request_error",
+        "not_found_error",
+        "api_error",
+    ];
+    // Look for `"type":"<kind>"` *inside* the inner error object.
+    // The outer `"type":"error"` is always present, so we skip past
+    // it by anchoring to `"error":{`.
+    let inner_start = body.find("\"error\":{").map(|i| i + "\"error\":{".len())?;
+    let inner = &body[inner_start..];
+    for kind in candidates {
+        let needle = format!("\"type\":\"{kind}\"");
+        if inner.contains(&needle) {
+            return Some(kind);
+        }
+    }
+    None
+}
+
 fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_json::Value {
     let thinking_mode = if opts.adaptive_thinking {
         "adaptive"
@@ -121,17 +155,37 @@ impl Provider for AnthropicProvider {
     ) -> anyhow::Result<EventStream> {
         let body = build_body(messages, options);
 
-        let resp = self
-            .client
-            .post(API_URL)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("anthropic-beta", ANTHROPIC_BETA)
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await?;
+        let send_started = std::time::Instant::now();
+        let resp = match super::http::send_with_retry("anthropic.messages", || {
+            self.client
+                .post(API_URL)
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", ANTHROPIC_VERSION)
+                .header("anthropic-beta", ANTHROPIC_BETA)
+                .header("content-type", "application/json")
+                .json(&body)
+                .send()
+        })
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                let cause = super::http::classify_send_error(&e);
+                tracing::warn!(
+                    target: "jfc::provider::anthropic",
+                    error = %e,
+                    cause = cause,
+                    "POST messages failed before response (after retries)"
+                );
+                anyhow::bail!(
+                    "Anthropic request failed: {cause} ({e}). \
+                     If this persists, check your network and try again — \
+                     long thinking turns can stall briefly under proxies."
+                );
+            }
+        };
 
+        super::http::report_first_byte_latency("anthropic.messages", send_started.elapsed());
         let status = resp.status();
         let content_type = resp
             .headers()
@@ -160,7 +214,43 @@ impl Provider for AnthropicProvider {
                      Pin a model you have access to (Ctrl+M)."
                 );
             }
-            anyhow::bail!("Anthropic API error {status}: {text}");
+            // Map the body's `error.type` against the canonical strings
+            // v132 (`extracted_2.1.132/src/entrypoints/cli.js`) recognises:
+            // overloaded_error / rate_limit_error / api_error /
+            // authentication_error / permission_error / invalid_request_error
+            // / not_found_error / request_too_large. Surfacing the
+            // semantic kind first gives the user a one-line cause
+            // before we dump the raw body.
+            let kind = anthropic_error_type(&text);
+            let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+            match kind {
+                Some("authentication_error") => anyhow::bail!(
+                    "Authentication failed — check your API key or token. \
+                     {friendly}"
+                ),
+                Some("permission_error") => anyhow::bail!(
+                    "Permission denied — your account may not have access \
+                     to this model. {friendly}"
+                ),
+                Some("rate_limit_error") => anyhow::bail!(
+                    "Rate limited — wait a moment and retry. {friendly}"
+                ),
+                Some("overloaded_error") => anyhow::bail!(
+                    "Anthropic is overloaded ({status}). Try again in a \
+                     few seconds. {friendly}"
+                ),
+                Some("request_too_large") => anyhow::bail!(
+                    "Request too large — auto-compaction should kick in. \
+                     {friendly}"
+                ),
+                Some("invalid_request_error") => anyhow::bail!(
+                    "Invalid request: {friendly}\n  raw: {text}"
+                ),
+                Some("not_found_error") => anyhow::bail!(
+                    "Model or endpoint not found: {friendly}"
+                ),
+                _ => anyhow::bail!("Anthropic API error {status}: {friendly}\n  raw: {text}"),
+            }
         }
 
         Ok(sse::into_event_stream(resp))
@@ -193,6 +283,47 @@ mod tests {
 
     fn opts(model: &str) -> StreamOptions {
         StreamOptions::new(model)
+    }
+
+    // Normal: anthropic_error_type recognises the canonical shape
+    // and every documented `error.type` value v132 cli.js looks for.
+    #[test]
+    fn anthropic_error_type_recognises_all_kinds_normal() {
+        for kind in &[
+            "authentication_error",
+            "permission_error",
+            "rate_limit_error",
+            "overloaded_error",
+            "api_error",
+            "invalid_request_error",
+            "not_found_error",
+            "request_too_large",
+        ] {
+            let body = format!(
+                "{{\"type\":\"error\",\"error\":{{\"type\":\"{kind}\",\"message\":\"x\"}}}}"
+            );
+            assert_eq!(anthropic_error_type(&body), Some(*kind), "{kind}");
+        }
+    }
+
+    // Robust: an unknown kind, malformed body, or HTML proxy page
+    // returns None so the dispatcher falls back to the generic
+    // status-code handler.
+    #[test]
+    fn anthropic_error_type_returns_none_when_missing_robust() {
+        assert_eq!(anthropic_error_type(""), None);
+        assert_eq!(anthropic_error_type("<html>503</html>"), None);
+        assert_eq!(
+            anthropic_error_type(
+                "{\"type\":\"error\",\"error\":{\"type\":\"future_kind\",\"message\":\"\"}}"
+            ),
+            None
+        );
+        // Outer `"type":"error"` alone — no inner error object — None.
+        assert_eq!(
+            anthropic_error_type("{\"type\":\"error\"}"),
+            None
+        );
     }
 
     // Normal: a fresh provider exposes the expected name / convention pair so

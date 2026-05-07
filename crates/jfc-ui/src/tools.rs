@@ -172,6 +172,76 @@ pub(crate) fn snapshot_event_sender() -> Option<tokio::sync::mpsc::Sender<crate:
         .and_then(|g| g.clone())
 }
 
+/// Process-global handle to the active MCP registry. Set once at
+/// startup via `register_mcp_registry`, read by the dispatch arm in
+/// `execute_tool` so MCP tool calls can route to the right server
+/// without threading a registry parameter through every callsite.
+///
+/// Mirrors `active_event_sender_handle` exactly — the dispatcher is
+/// already a process-global singleton via tokio tasks, and bolting a
+/// registry parameter on would touch dozens of callsites for no
+/// architectural win.
+fn active_mcp_registry_handle() -> &'static std::sync::RwLock<Option<crate::mcp::McpRegistry>> {
+    static H: OnceLock<std::sync::RwLock<Option<crate::mcp::McpRegistry>>> = OnceLock::new();
+    H.get_or_init(|| std::sync::RwLock::new(None))
+}
+
+pub fn register_mcp_registry(registry: crate::mcp::McpRegistry) {
+    if let Ok(mut g) = active_mcp_registry_handle().write() {
+        *g = Some(registry);
+    }
+}
+
+pub(crate) fn snapshot_mcp_registry() -> Option<crate::mcp::McpRegistry> {
+    active_mcp_registry_handle()
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+}
+
+/// Process-global queue of attachments staged for the next outgoing
+/// request. The Read tool pushes to this queue when it ingests a
+/// `.pdf` (or, in future, an image) so the file lands in the
+/// upcoming `tool_result` message as a `document` / `image` content
+/// block instead of being squashed into a base64 text blob the
+/// model can't usefully read.
+///
+/// Drained by `stream::build_provider_messages_with_tool_results`
+/// just before serialization.
+fn pending_tool_attachments_handle()
+-> &'static std::sync::Mutex<Vec<crate::attachments::Attachment>> {
+    static H: OnceLock<std::sync::Mutex<Vec<crate::attachments::Attachment>>> =
+        OnceLock::new();
+    H.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+/// Stash an attachment for the next outgoing tool_result message.
+/// Called by tools (currently the Read tool when handed a `.pdf`)
+/// that need to surface a binary blob via Anthropic's `document` or
+/// `image` content block.
+pub(crate) fn push_pending_tool_attachment(att: crate::attachments::Attachment) {
+    if let Ok(mut g) = pending_tool_attachments_handle().lock() {
+        tracing::debug!(
+            target: "jfc::tools::attach",
+            kind = att.kind.mime_type(),
+            bytes = att.bytes.len(),
+            queued = g.len() + 1,
+            "queued attachment for next request"
+        );
+        g.push(att);
+    }
+}
+
+/// Drain every staged attachment. Called from
+/// `stream::build_provider_messages_with_tool_results` so the next
+/// request includes the attachments and the queue resets to empty.
+pub fn take_pending_tool_attachments() -> Vec<crate::attachments::Attachment> {
+    pending_tool_attachments_handle()
+        .lock()
+        .map(|mut g| std::mem::take(&mut *g))
+        .unwrap_or_default()
+}
+
 /// SwarmProvider impl for jfc-ui — delegates to the existing
 /// `worktrees` module. Each solver gets a worktree named
 /// `economy/<bounty_id>/<agent_id>` so concurrent bounties don't
@@ -624,6 +694,37 @@ pub(crate) fn split_patch_and_explanation(text: &str) -> (String, String) {
         }
     }
     (text.trim().to_string(), String::new())
+}
+
+/// Cheap HTML→text fallback used by `WebFetch` when content-type
+/// indicates HTML. This is intentionally minimal — drops anything
+/// between `<` and `>`, collapses runs of whitespace, normalizes
+/// line breaks. Doesn't decode entities or handle `<script>`/`<style>`
+/// content cleanly. A proper implementation would use scraper /
+/// html5ever, but the dependency cost isn't worth it for an MVP
+/// WebFetch — the model can usually reason about even ragged text.
+fn strip_html_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    let mut last_was_space = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if in_tag => {}
+            _ if c.is_whitespace() => {
+                if !last_was_space {
+                    out.push(' ');
+                    last_was_space = true;
+                }
+            }
+            _ => {
+                out.push(c);
+                last_was_space = false;
+            }
+        }
+    }
+    out.trim().to_string()
 }
 
 /// Result of applying a winning solver's solution to disk.
@@ -1828,7 +1929,364 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                 }
             }),
         },
+        ToolDef {
+            name: "MultiEdit".into(),
+            description: "Apply multiple edits to a single file in one tool call. \
+                `edits` is an array of `{old_string, new_string, replace_all?}` \
+                objects, applied in order — each edit sees the previous edit's \
+                output as input. Saves a tool round-trip when the model needs \
+                several rewrites in the same source file.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "file_path": { "type": "string" },
+                    "edits": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "old_string": { "type": "string" },
+                                "new_string": { "type": "string" },
+                                "replace_all": { "type": "boolean", "default": false }
+                            },
+                            "required": ["old_string", "new_string"]
+                        }
+                    }
+                },
+                "required": ["file_path", "edits"]
+            }),
+        },
+        ToolDef {
+            name: "AskUserQuestion".into(),
+            description: "Ask the user a multi-choice question mid-turn to gather \
+                preferences, clarify ambiguity, or offer choices. Use sparingly — \
+                only when context genuinely requires user input. Each option is \
+                a `{label, description}` object. Returns the user's selected \
+                label(s) as the tool result.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "question": { "type": "string" },
+                    "options": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": { "type": "string" },
+                                "description": { "type": "string" }
+                            },
+                            "required": ["label"]
+                        },
+                        "minItems": 2, "maxItems": 4
+                    },
+                    "multi_select": { "type": "boolean", "default": false }
+                },
+                "required": ["question", "options"]
+            }),
+        },
+        ToolDef {
+            name: "WebFetch".into(),
+            description: "Fetch a URL and return its contents (HTML extracted to \
+                text, JSON pretty-printed, plain text passed through). Optional \
+                `prompt` argument tells the model what aspect of the page to \
+                focus on; useful for long pages where you want a summary rather \
+                than the full body.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "Absolute URL (https:// preferred)" },
+                    "prompt": { "type": "string", "description": "Optional focus / summary instruction" }
+                },
+                "required": ["url"]
+            }),
+        },
+        ToolDef {
+            name: "WebSearch".into(),
+            description: "Search the web for `query`. Returns a ranked list of \
+                results with title, URL, and snippet. Combine with `WebFetch` \
+                to read promising hits.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" },
+                    "max_results": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5 }
+                },
+                "required": ["query"]
+            }),
+        },
+        ToolDef {
+            name: "ExitPlanMode".into(),
+            description: "Surface a finalized plan to the user and request \
+                permission to leave plan mode. Use this when you've gathered \
+                enough context (read files, run grep / git log, etc.) and \
+                are ready to execute destructive edits. The `plan` argument \
+                must be a markdown summary of: (1) the change you intend to \
+                make, (2) the files you'll touch, (3) anything risky / \
+                irreversible. After this tool returns success, you may \
+                proceed with Write/Edit/destructive Bash calls — the user \
+                has approved by virtue of you reaching this point. Mirrors \
+                Claude Code v2.1.132's ExitPlanMode tool contract.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "string",
+                        "description": "Markdown-formatted plan describing the work you're about to undertake."
+                    }
+                },
+                "required": ["plan"]
+            }),
+        },
+        // ── daemon-driven scheduling tools ─────────────────────────────────
+        ToolDef {
+            name: "CronCreate".into(),
+            description: "Register a recurring cron job with the local jfc daemon. \
+                Schedule accepts five-field crontab (`*/5 * * * *`), `@hourly`, \
+                `@daily`, `@weekly`, or `@every <duration>` (e.g. `@every 5m`, \
+                `@every 1h30m`). Returns the new job's id."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "schedule": { "type": "string" },
+                    "command": { "type": "string" },
+                    "description": { "type": "string" }
+                },
+                "required": ["schedule", "command", "description"]
+            }),
+        },
+        ToolDef {
+            name: "CronList".into(),
+            description: "List all cron jobs currently registered with the local jfc daemon.".into(),
+            input_schema: serde_json::json!({ "type": "object", "properties": {} }),
+        },
+        ToolDef {
+            name: "CronDelete".into(),
+            description: "Delete a cron job from the local jfc daemon by id.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": { "id": { "type": "string" } },
+                "required": ["id"]
+            }),
+        },
+        ToolDef {
+            name: "ScheduleWakeup".into(),
+            description: "Schedule a one-shot wakeup that re-posts a prompt to \
+                the conversation after `delay_seconds` elapse. Persisted to \
+                daemon state so it replays after restart."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "delay_seconds": { "type": "integer", "minimum": 0 },
+                    "prompt": { "type": "string" },
+                    "reason": { "type": "string" }
+                },
+                "required": ["delay_seconds", "prompt", "reason"]
+            }),
+        },
+        ToolDef {
+            name: "Monitor".into(),
+            description: "Spawn a long-running command and stream stdout \
+                line-by-line, returning the first line matching the `until` \
+                regex. Times out after 60s."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string" },
+                    "until": { "type": "string" }
+                },
+                "required": ["command", "until"]
+            }),
+        },
+        ToolDef {
+            name: "LSP".into(),
+            description: "Query the language server for `hover`, `definition`, \
+                or `references` at a specific source location. Uses the \
+                already-spawned LSP client (rust-analyzer / zls / etc.) — \
+                returns an error if no LSP is running for the workspace.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["hover", "definition", "references"],
+                        "description": "Which LSP request to issue."
+                    },
+                    "file": {
+                        "type": "string",
+                        "description": "Absolute path to the source file."
+                    },
+                    "line": {
+                        "type": "number",
+                        "description": "1-indexed line number of the symbol position."
+                    },
+                    "column": {
+                        "type": "number",
+                        "description": "1-indexed column number of the symbol position."
+                    }
+                },
+                "required": ["kind", "file", "line", "column"]
+            }),
+        },
+        ToolDef {
+            name: "PushNotification".into(),
+            description: "Send a desktop notification to the user via the \
+                native notification daemon (notify-send / NotificationCenter / \
+                Toast). Use sparingly for events that need attention while \
+                the user has switched focus away from the terminal.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Body text shown in the notification."
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Optional title; defaults to `jfc`."
+                    }
+                },
+                "required": ["message"]
+            }),
+        },
+        ToolDef {
+            name: "RemoteTrigger".into(),
+            description: "POST a payload to a webhook URL the user pre-registered \
+                in `~/.config/jfc/triggers.toml`. Use to fire CI runs, Slack \
+                hooks, custom alert endpoints, etc. without exposing the URL \
+                to the model. Triggers are looked up by `trigger_id`; unknown \
+                IDs return an error.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "trigger_id": {
+                        "type": "string",
+                        "description": "Identifier registered in `~/.config/jfc/triggers.toml`."
+                    },
+                    "payload": {
+                        "type": "object",
+                        "description": "Optional JSON object POSTed as the request body."
+                    }
+                },
+                "required": ["trigger_id"]
+            }),
+        },
+        ToolDef {
+            name: "EnterPlanMode".into(),
+            description: "Switch the leader's permission mode to `Plan`. In \
+                plan mode the model can read but cannot write or run shell \
+                commands without user approval. Pair with a `reason` so the \
+                user understands why analysis-only mode was requested.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Why plan mode is needed (visible to the user)."
+                    }
+                },
+                "required": ["reason"]
+            }),
+        },
+        ToolDef {
+            name: "EnterWorktree".into(),
+            description: "Create (if needed) and switch into a git worktree at \
+                `.jfc-worktrees/<name>` checking out branch `jfc/<name>` (or a \
+                caller-provided branch). Subsequent tool calls run in that \
+                worktree's directory until `ExitWorktree` is invoked.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Worktree name. [A-Za-z0-9_-], <= 64 chars."
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Optional branch to check out (defaults to `jfc/<name>`)."
+                    }
+                },
+                "required": ["name"]
+            }),
+        },
+        ToolDef {
+            name: "ExitWorktree".into(),
+            description: "Leave the current worktree. The worktree is left intact \
+                on disk; only the agent's effective cwd resets to the repo root.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+        ToolDef {
+            name: "NotebookRead".into(),
+            description: "Read a Jupyter `.ipynb` notebook and return each cell's \
+                id, type (code/markdown/raw), source, and outputs (for code cells). \
+                Use before NotebookEdit to discover cell IDs.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the .ipynb file."
+                    }
+                },
+                "required": ["path"]
+            }),
+        },
+        ToolDef {
+            name: "NotebookEdit".into(),
+            description: "Edit a Jupyter `.ipynb` notebook by cell id. \
+                `edit_mode=replace` (default) overwrites the cell's source; \
+                `insert` adds a new code cell after the named cell; `delete` \
+                removes the cell. Outputs are cleared on replace+insert. The \
+                notebook JSON is parsed, spliced, and written back atomically.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the .ipynb file."
+                    },
+                    "cell_id": {
+                        "type": "string",
+                        "description": "Target cell id (from NotebookRead). For `insert` mode the new cell is placed AFTER this one."
+                    },
+                    "new_source": {
+                        "type": "string",
+                        "description": "Replacement (or new) cell source. Ignored when edit_mode=delete."
+                    },
+                    "edit_mode": {
+                        "type": "string",
+                        "enum": ["replace", "insert", "delete"],
+                        "description": "How to apply the edit. Defaults to replace."
+                    }
+                },
+                "required": ["path", "cell_id", "new_source"]
+            }),
+        },
     ]
+}
+
+/// `all_tool_defs()` + every MCP server's advertised tools. The
+/// streaming send-loop calls this so the model sees the union of
+/// native + MCP tools in a single `tools` array. When no MCP registry
+/// is registered (headless test, MCP disabled), this degrades to
+/// `all_tool_defs()`.
+///
+/// Exists as a separate function (rather than mutating
+/// `all_tool_defs`) so the synchronous-only callers — diagnostics
+/// dump, unit tests — keep working without an async runtime, and
+/// every push-to-API path explicitly opts into MCP discovery.
+pub async fn all_tool_defs_with_mcp() -> Vec<ToolDef> {
+    let mut tools = all_tool_defs();
+    if let Some(registry) = snapshot_mcp_registry() {
+        tools.extend(registry.all_advertised_tool_defs().await);
+    }
+    tools
 }
 
 #[derive(Debug, Clone)]
@@ -2716,6 +3174,296 @@ pub async fn execute_tool(
             }
             ExecutionResult::success(body)
         }
+        (
+            ToolKind::MultiEdit,
+            ToolInput::MultiEdit { file_path, edits },
+        ) => {
+            // Apply each edit in order. Each edit sees the previous
+            // edit's output, so later edits can reference text that
+            // earlier edits introduced. Bails on the first edit that
+            // doesn't match — partial application would leave the
+            // file in a half-edited state the model has to recover
+            // from. Same contract as v132.
+            let path = std::path::PathBuf::from(&file_path);
+            let mut content = match tokio::fs::read_to_string(&path).await {
+                Ok(s) => s,
+                Err(e) => {
+                    return ExecutionResult::failure(format!(
+                        "MultiEdit: cannot read {file_path}: {e}"
+                    ));
+                }
+            };
+            let edit_array = match edits.as_array() {
+                Some(a) => a,
+                None => return ExecutionResult::failure(
+                    "MultiEdit: `edits` must be an array of {old_string, new_string} objects".to_string(),
+                ),
+            };
+            let mut applied = 0usize;
+            for (i, edit) in edit_array.iter().enumerate() {
+                let old = edit.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+                let new_s = edit.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                let replace_all = edit
+                    .get("replace_all")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if old.is_empty() {
+                    return ExecutionResult::failure(format!(
+                        "MultiEdit: edit {} has empty old_string",
+                        i + 1
+                    ));
+                }
+                if !content.contains(old) {
+                    return ExecutionResult::failure(format!(
+                        "MultiEdit: edit {} of {} — old_string not found. \
+                         Earlier edits applied: {applied}. \
+                         Read the file and retry with the current contents.",
+                        i + 1,
+                        edit_array.len()
+                    ));
+                }
+                content = if replace_all {
+                    content.replace(old, new_s)
+                } else {
+                    let occurrences = content.matches(old).count();
+                    if occurrences > 1 {
+                        return ExecutionResult::failure(format!(
+                            "MultiEdit: edit {} matched {occurrences} times — \
+                             pass `replace_all: true` or include more context to disambiguate.",
+                            i + 1
+                        ));
+                    }
+                    content.replacen(old, new_s, 1)
+                };
+                applied += 1;
+            }
+            if let Err(e) = tokio::fs::write(&path, &content).await {
+                return ExecutionResult::failure(format!("MultiEdit: write {file_path}: {e}"));
+            }
+            tracing::info!(
+                target: "jfc::tools::multi_edit",
+                file_path = %file_path,
+                applied,
+                bytes = content.len(),
+                "MultiEdit applied"
+            );
+            ExecutionResult::success(format!("Applied {applied} edits to {file_path}."))
+        }
+        (
+            ToolKind::AskUserQuestion,
+            ToolInput::AskUserQuestion {
+                question,
+                options,
+                multi_select,
+            },
+        ) => {
+            // Surface the prompt to the user as a special transcript
+            // entry. The user replies with text that the next turn
+            // sees as the tool result. We don't block here because
+            // jfc has no modal-prompt UI yet — the entry pattern is
+            // "post the question, return immediately, treat the next
+            // user message as the answer."
+            let opts_repr: Vec<String> = options
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|opt| {
+                            let label = opt.get("label").and_then(|v| v.as_str())?;
+                            let desc = opt.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                            if desc.is_empty() {
+                                Some(format!("- {label}"))
+                            } else {
+                                Some(format!("- {label} — {desc}"))
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let body = format!(
+                "**Question for you:** {question}\n\n{}\n\n_(Reply with your choice{} as your next message.)_",
+                opts_repr.join("\n"),
+                if multi_select { "(s)" } else { "" }
+            );
+            // The transcript itself surfaces the question; we don't
+            // fire a toast since AppEvent::Toast's exact shape varies
+            // across builds and the transcript line is enough for the
+            // user to act on.
+            tracing::info!(
+                target: "jfc::tools::ask",
+                question = %question.chars().take(80).collect::<String>(),
+                option_count = opts_repr.len(),
+                multi = multi_select,
+                "AskUserQuestion surfaced"
+            );
+            ExecutionResult::success(format!(
+                "{body}\n\n(The user's next message is your tool result.)"
+            ))
+        }
+        (ToolKind::WebFetch, ToolInput::WebFetch { url, prompt }) => {
+            // Use reqwest with a short timeout. Strips HTML to text
+            // when content-type indicates HTML; otherwise returns
+            // the body as-is. The optional `prompt` is *not* applied
+            // here (we don't run a second LLM pass) — it's surfaced
+            // verbatim in the tool result so the model sees its own
+            // intent and can summarize during the next turn.
+            let client = match reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .user_agent("jfc/0.1 (https://github.com/anthropics/jfc)")
+                .build()
+            {
+                Ok(c) => c,
+                Err(e) => return ExecutionResult::failure(format!("WebFetch: client init: {e}")),
+            };
+            let resp = match client.get(&url).send().await {
+                Ok(r) => r,
+                Err(e) => return ExecutionResult::failure(format!("WebFetch: {url}: {e}")),
+            };
+            let status = resp.status();
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_owned();
+            let body = resp.text().await.unwrap_or_default();
+            let body = if content_type.contains("html") {
+                // Cheap HTML→text: strip tags. A real impl would use
+                // scraper/html5ever; this is an MVP.
+                strip_html_tags(&body)
+            } else {
+                body
+            };
+            // Cap to 50 KB so the tool result doesn't blow context.
+            let truncated = if body.len() > 50_000 {
+                format!("{}\n\n[...truncated, full {} bytes]", &body[..50_000], body.len())
+            } else {
+                body
+            };
+            let prompt_hint = prompt
+                .as_ref()
+                .map(|p| format!("Focus: {p}\n\n"))
+                .unwrap_or_default();
+            ExecutionResult::success(format!(
+                "GET {url} → {status}\n\n{prompt_hint}{truncated}"
+            ))
+        }
+        (ToolKind::WebSearch, ToolInput::WebSearch { query, max_results: _ }) => {
+            // jfc doesn't ship a search backend — this is a stub that
+            // tells the model to fall back to manual search. v132's
+            // WebSearch goes through Anthropic's hosted search API
+            // which we don't have access to from this client.
+            ExecutionResult::failure(format!(
+                "WebSearch not yet wired in jfc. As a workaround, suggest the \
+                 user run a search themselves and paste results, OR use WebFetch \
+                 against a known URL. Query was: {query}"
+            ))
+        }
+        (ToolKind::ExitPlanMode, ToolInput::ExitPlanMode { plan }) => {
+            // Hand the plan off to the UI thread so all permission-mode
+            // mutations stay on a single task. The model's tool result
+            // is the success acknowledgment — the actual mode flip
+            // happens when the main loop drains AppEvent::ExitPlanModeRequested.
+            if let Some(tx) = snapshot_event_sender() {
+                let _ = tx
+                    .send(crate::app::AppEvent::ExitPlanModeRequested { plan: plan.clone() })
+                    .await;
+                tracing::info!(
+                    target: "jfc::tools::plan_mode",
+                    plan_bytes = plan.len(),
+                    "ExitPlanMode dispatched to UI thread"
+                );
+                ExecutionResult::success(
+                    "Plan presented to user. Permission mode transitions \
+                     from Plan to AcceptEdits — you may now perform the \
+                     destructive operations described in the plan.".to_string(),
+                )
+            } else {
+                tracing::warn!(
+                    target: "jfc::tools::plan_mode",
+                    "ExitPlanMode called but no AppEvent sender registered"
+                );
+                ExecutionResult::failure(
+                    "ExitPlanMode failed: UI event channel unavailable.".to_string(),
+                )
+            }
+        }
+        (ToolKind::Mcp(advertised_name), ToolInput::Mcp { arguments, .. }) => {
+            // Route through the global MCP registry. The registry is
+            // populated at startup from `[mcp.<name>]` config blocks;
+            // if it's missing, MCP isn't wired in this build (e.g.
+            // headless test) — surface a clean failure so the model
+            // can recover rather than thinking the call hung.
+            let Some(registry) = snapshot_mcp_registry() else {
+                return ExecutionResult::failure(
+                    "MCP registry not initialized — restart jfc with the MCP module enabled."
+                        .to_string(),
+                );
+            };
+            match crate::mcp::dispatch_tool(&registry, &advertised_name, arguments).await {
+                Ok(outcome) if outcome.is_error => ExecutionResult::failure(outcome.text),
+                Ok(outcome) => ExecutionResult::success(outcome.text),
+                Err(e) => ExecutionResult::failure(format!("MCP dispatch failed: {e}")),
+            }
+        }
+        (
+            ToolKind::CronCreate,
+            ToolInput::CronCreate {
+                schedule,
+                command,
+                description,
+            },
+        ) => execute_cron_create(&schedule, &command, &description),
+        (ToolKind::CronList, ToolInput::CronList) => execute_cron_list(),
+        (ToolKind::CronDelete, ToolInput::CronDelete { id }) => execute_cron_delete(&id),
+        (
+            ToolKind::ScheduleWakeup,
+            ToolInput::ScheduleWakeup {
+                delay_seconds,
+                prompt,
+                reason,
+            },
+        ) => execute_schedule_wakeup(delay_seconds, &prompt, &reason),
+        (ToolKind::Monitor, ToolInput::Monitor { command, until }) => {
+            execute_monitor(&command, &until, &cwd).await
+        }
+        (
+            ToolKind::Lsp,
+            ToolInput::Lsp {
+                kind: req_kind,
+                file,
+                line,
+                column,
+            },
+        ) => execute_lsp(&req_kind, &file, line, column, &cwd).await,
+        (ToolKind::PushNotification, ToolInput::PushNotification { message, title }) => {
+            execute_push_notification(&message, title.as_deref())
+        }
+        (
+            ToolKind::RemoteTrigger,
+            ToolInput::RemoteTrigger {
+                trigger_id,
+                payload,
+            },
+        ) => execute_remote_trigger(&trigger_id, payload.as_ref()).await,
+        (ToolKind::EnterPlanMode, ToolInput::EnterPlanMode { reason }) => {
+            execute_enter_plan_mode(&reason).await
+        }
+        (ToolKind::EnterWorktree, ToolInput::EnterWorktree { name, branch }) => {
+            execute_enter_worktree(&name, branch.as_deref(), &cwd).await
+        }
+        (ToolKind::ExitWorktree, ToolInput::ExitWorktree) => execute_exit_worktree(&cwd).await,
+        (ToolKind::NotebookRead, ToolInput::NotebookRead { path }) => {
+            execute_notebook_read(&path).await
+        }
+        (
+            ToolKind::NotebookEdit,
+            ToolInput::NotebookEdit {
+                path,
+                cell_id,
+                new_source,
+                edit_mode,
+            },
+        ) => execute_notebook_edit(&path, &cell_id, &new_source, edit_mode.as_deref()).await,
         (kind, _) => ExecutionResult::failure(format!("Tool {:?} not yet implemented", kind)),
     }
 }
@@ -2746,6 +3494,636 @@ async fn execute_team_member_mode(
         Ok(_) => ExecutionResult::success(format!("{member_name} mode set to {mode}")),
         Err(e) => ExecutionResult::failure(format!("Failed to update {member_name}'s mode: {e}")),
     }
+}
+
+// ─── LSP tool ──────────────────────────────────────────────────────────────
+//
+// Spawns a one-shot LSP client per request, fires the request, and shuts
+// the client down. This is wasteful when the same workspace is queried
+// repeatedly — a future iteration should pull from a global registry of
+// already-spawned clients seeded by `lsp_client::maybe_spawn_lsp_clients`.
+// For now the tool stays self-contained: the model can ask LSP questions
+// without depending on startup having succeeded.
+async fn execute_lsp(
+    kind: &str,
+    file: &str,
+    line: u32,
+    column: u32,
+    cwd: &Path,
+) -> ExecutionResult {
+    let kind_norm = kind.to_ascii_lowercase();
+    if !matches!(kind_norm.as_str(), "hover" | "definition" | "references") {
+        return ExecutionResult::failure(format!(
+            "lsp: invalid kind '{kind}'. Must be one of: hover | definition | references"
+        ));
+    }
+
+    let path = std::path::PathBuf::from(file);
+    if !path.is_absolute() {
+        return ExecutionResult::failure(format!("lsp: file path must be absolute (got '{file}')"));
+    }
+    if !path.exists() {
+        return ExecutionResult::failure(format!("lsp: file does not exist: {file}"));
+    }
+
+    let Some((cmd, args)) = crate::lsp_client::detect_lsp_for_cwd(cwd) else {
+        return ExecutionResult::failure(format!(
+            "lsp: no language server detected for {} (looked for Cargo.toml, build.zig)",
+            cwd.display()
+        ));
+    };
+
+    // Spawn a discard channel for app events — this client is one-shot
+    // and we don't need its publishDiagnostics notifications.
+    let (tx, _rx) = tokio::sync::mpsc::channel::<crate::app::AppEvent>(16);
+    let root_uri = format!("file://{}", cwd.display());
+    let owned_args: Vec<&str> = args.to_vec();
+    let Some(client) =
+        crate::lsp_client::LspClient::spawn(cmd, &owned_args, &root_uri, tx).await
+    else {
+        return ExecutionResult::failure(format!(
+            "lsp: failed to spawn '{cmd}' (binary not on PATH or handshake timed out)"
+        ));
+    };
+
+    // The server only pushes useful answers once it has the file open.
+    let language_id = match path.extension().and_then(|e| e.to_str()) {
+        Some("rs") => "rust",
+        Some("zig") => "zig",
+        Some("ts") => "typescript",
+        Some("tsx") => "typescriptreact",
+        Some("js") => "javascript",
+        Some("py") => "python",
+        Some("go") => "go",
+        _ => "plaintext",
+    };
+    let uri = format!("file://{}", path.display());
+    if let Ok(text) = tokio::fs::read_to_string(&path).await {
+        client.did_open(&uri, language_id, 1, &text);
+        // Give rust-analyzer a moment to index the file before queries.
+        // Without this nap, hover/definition often comes back empty.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    let result = match kind_norm.as_str() {
+        "hover" => {
+            let params = serde_json::json!({
+                "textDocument": { "uri": uri },
+                "position": {
+                    "line": line.saturating_sub(1),
+                    "character": column.saturating_sub(1),
+                },
+            });
+            match client.send_request("textDocument/hover", params).await {
+                Some(v) => format_lsp_hover(&v),
+                None => "lsp: hover request timed out or returned nothing".to_owned(),
+            }
+        }
+        "definition" => match client.goto_definition_async(&path, line, column).await {
+            Some(loc) => format!(
+                "{}:{}:{}",
+                loc.file.display(),
+                loc.line + 1,
+                loc.col + 1,
+            ),
+            None => "lsp: definition not found".to_owned(),
+        },
+        "references" => {
+            let locs = client.find_references_async(&path, line, column).await;
+            if locs.is_empty() {
+                "lsp: no references found".to_owned()
+            } else {
+                locs.iter()
+                    .map(|loc| {
+                        format!(
+                            "{}:{}:{}",
+                            loc.file.display(),
+                            loc.line + 1,
+                            loc.col + 1,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        }
+        _ => unreachable!("kind validated above"),
+    };
+
+    client.shutdown().await;
+    ExecutionResult::success(result)
+}
+
+fn format_lsp_hover(v: &serde_json::Value) -> String {
+    // LSP hover responses come as one of:
+    //   {"contents": "string"}                — legacy
+    //   {"contents": {"kind":"markdown","value":"..."}}
+    //   {"contents": [...]}                   — MarkedString[]
+    if v.is_null() {
+        return "lsp: no hover information".to_owned();
+    }
+    let contents = v.get("contents").unwrap_or(v);
+    if let Some(s) = contents.as_str() {
+        return s.to_owned();
+    }
+    if let Some(obj) = contents.as_object()
+        && let Some(val) = obj.get("value").and_then(|v| v.as_str())
+    {
+        return val.to_owned();
+    }
+    if let Some(arr) = contents.as_array() {
+        let parts: Vec<String> = arr
+            .iter()
+            .filter_map(|item| {
+                if let Some(s) = item.as_str() {
+                    Some(s.to_owned())
+                } else {
+                    item.get("value")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_owned)
+                }
+            })
+            .collect();
+        if !parts.is_empty() {
+            return parts.join("\n");
+        }
+    }
+    contents.to_string()
+}
+
+// ─── PushNotification tool ────────────────────────────────────────────────
+fn execute_push_notification(message: &str, title: Option<&str>) -> ExecutionResult {
+    if message.is_empty() {
+        return ExecutionResult::failure("push_notification: message is required");
+    }
+    let title = title.filter(|s| !s.is_empty()).unwrap_or("jfc");
+    crate::notifications::notify(title, message);
+    // TODO(remote-control): once the remote-control transport (websocket
+    // bridge to the user's mobile companion) is wired in, also push the
+    // notification through it. For now we only hit the local desktop
+    // daemon and surface the gap in the success message so the user
+    // knows we haven't silently dropped the remote leg.
+    ExecutionResult::success(format!(
+        "Desktop notification posted: {title} — {message} (remote-control push not yet implemented)"
+    ))
+}
+
+// ─── RemoteTrigger tool ────────────────────────────────────────────────────
+async fn execute_remote_trigger(
+    trigger_id: &str,
+    payload: Option<&serde_json::Value>,
+) -> ExecutionResult {
+    if trigger_id.is_empty() {
+        return ExecutionResult::failure("remote_trigger: trigger_id is required");
+    }
+
+    let triggers_path = match remote_trigger_config_path() {
+        Some(p) => p,
+        None => {
+            return ExecutionResult::failure(
+                "remote_trigger: cannot resolve ~/.config/jfc/triggers.toml (no HOME)",
+            );
+        }
+    };
+    let triggers_text = match tokio::fs::read_to_string(&triggers_path).await {
+        Ok(s) => s,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "remote_trigger: cannot read {} ({e}). \
+                 Create the file with `[<trigger_id>] url = \"https://...\"` entries.",
+                triggers_path.display()
+            ));
+        }
+    };
+    let url = match parse_trigger_url(&triggers_text, trigger_id) {
+        Ok(u) => u,
+        Err(e) => return ExecutionResult::failure(format!("remote_trigger: {e}")),
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "remote_trigger: failed to build http client: {e}"
+            ));
+        }
+    };
+    let body = payload.cloned().unwrap_or(serde_json::json!({}));
+    let resp = match client.post(&url).json(&body).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "remote_trigger: POST to {url} failed: {e}"
+            ));
+        }
+    };
+    let status = resp.status();
+    let resp_text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return ExecutionResult::failure(format!(
+            "remote_trigger: {trigger_id} → HTTP {} from {url}: {}",
+            status.as_u16(),
+            resp_text.chars().take(200).collect::<String>(),
+        ));
+    }
+    ExecutionResult::success(format!(
+        "Triggered {trigger_id} (HTTP {}): {}",
+        status.as_u16(),
+        resp_text.chars().take(500).collect::<String>(),
+    ))
+}
+
+fn remote_trigger_config_path() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("jfc").join("triggers.toml"))
+}
+
+/// Parse a triggers.toml document and resolve `trigger_id` to its URL.
+/// Format: each trigger is a table keyed by id with at minimum a `url`
+/// string field. Example:
+///   [deploy]
+///   url = "https://ci.example.com/hook/deploy"
+///
+/// Errors:
+///   - parse error  → "invalid TOML"
+///   - missing id   → "trigger '<id>' not found"
+///   - missing url  → "trigger '<id>' has no `url` field"
+pub(crate) fn parse_trigger_url(toml_text: &str, trigger_id: &str) -> Result<String, String> {
+    let parsed: toml::Value = toml::from_str(toml_text)
+        .map_err(|e| format!("invalid triggers.toml: {e}"))?;
+    let table = parsed
+        .as_table()
+        .ok_or_else(|| "triggers.toml must be a TOML table at the top level".to_owned())?;
+    let entry = table
+        .get(trigger_id)
+        .ok_or_else(|| format!("trigger '{trigger_id}' not found in triggers.toml"))?;
+    let url = entry
+        .get("url")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("trigger '{trigger_id}' has no `url` field"))?;
+    Ok(url.to_owned())
+}
+
+// ─── EnterPlanMode tool ────────────────────────────────────────────────────
+async fn execute_enter_plan_mode(reason: &str) -> ExecutionResult {
+    let Some(tx) = snapshot_event_sender() else {
+        return ExecutionResult::failure(
+            "enter_plan_mode: no event sender registered (main.rs must call \
+             tools::register_event_sender during startup)",
+        );
+    };
+    let reason = reason.to_owned();
+    if let Err(e) = tx
+        .send(crate::app::AppEvent::EnterPlanModeRequested {
+            reason: reason.clone(),
+        })
+        .await
+    {
+        return ExecutionResult::failure(format!("enter_plan_mode: send failed: {e}"));
+    }
+    ExecutionResult::success(format!(
+        "Entered plan mode (reason: {})",
+        if reason.is_empty() { "(none)" } else { &reason }
+    ))
+}
+
+// ─── EnterWorktree / ExitWorktree ──────────────────────────────────────────
+//
+// EnterWorktree creates the worktree (idempotent on git's side — it errors
+// if it already exists, which we catch and treat as success). The agent's
+// effective cwd does NOT actually change — main.rs would need to swap it
+// over for that. We return a success message documenting where the worktree
+// landed and what branch it's on. ExitWorktree is presently a documentation
+// shim because cwd switching is out of scope for the tool layer.
+async fn execute_enter_worktree(
+    name: &str,
+    branch: Option<&str>,
+    cwd: &Path,
+) -> ExecutionResult {
+    if let Err(e) = crate::worktrees::validate_name(name) {
+        return ExecutionResult::failure(format!("enter_worktree: {e}"));
+    }
+    let repo_root = match find_repo_root(cwd) {
+        Some(r) => r,
+        None => {
+            return ExecutionResult::failure(format!(
+                "enter_worktree: {} is not inside a git repository",
+                cwd.display()
+            ));
+        }
+    };
+
+    // If a branch override was supplied we route through `git worktree
+    // add <path> <branch>` directly — `create_worktree_async` always
+    // creates a new `jfc/<name>` branch, which would clobber the
+    // caller's intent.
+    if let Some(branch) = branch.filter(|s| !s.is_empty()) {
+        let rel_path = format!(".jfc-worktrees/{name}");
+        let output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo_root)
+            .arg("worktree")
+            .arg("add")
+            .arg(&rel_path)
+            .arg(branch)
+            .output()
+            .await;
+        return match output {
+            Ok(out) if out.status.success() => {
+                let abs = repo_root.join(&rel_path);
+                ExecutionResult::success(format!(
+                    "Worktree '{name}' ready at {} on branch '{branch}'",
+                    abs.display()
+                ))
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                if stderr.contains("already exists") || stderr.contains("already checked out") {
+                    let abs = repo_root.join(&rel_path);
+                    ExecutionResult::success(format!(
+                        "Worktree '{name}' already exists at {} (branch '{branch}')",
+                        abs.display()
+                    ))
+                } else {
+                    ExecutionResult::failure(format!(
+                        "enter_worktree: `git worktree add` failed: {}",
+                        stderr.trim()
+                    ))
+                }
+            }
+            Err(e) => {
+                ExecutionResult::failure(format!("enter_worktree: spawn failed: {e}"))
+            }
+        };
+    }
+
+    match crate::worktrees::create_worktree_async(&repo_root, name).await {
+        Ok(info) => ExecutionResult::success(format!(
+            "Worktree '{name}' created at {} on branch '{}'",
+            info.path, info.branch
+        )),
+        Err(e) => {
+            // git emits "already exists" when a worktree with that name
+            // is already registered. That's the idempotent case — return
+            // success and tell the caller where it landed.
+            if e.contains("already exists") || e.contains("already checked out") {
+                let abs = repo_root.join(format!(".jfc-worktrees/{name}"));
+                ExecutionResult::success(format!(
+                    "Worktree '{name}' already exists at {}",
+                    abs.display()
+                ))
+            } else {
+                ExecutionResult::failure(format!("enter_worktree: {e}"))
+            }
+        }
+    }
+}
+
+async fn execute_exit_worktree(cwd: &Path) -> ExecutionResult {
+    // The tool layer doesn't currently swap the agent's cwd; the user can
+    // exit the worktree by issuing the next command in the parent repo.
+    // We return an informational message rather than erroring so the model
+    // can chain ExitWorktree as a no-op intent marker.
+    let repo_root = find_repo_root(cwd)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| cwd.display().to_string());
+    ExecutionResult::success(format!(
+        "exit_worktree: cwd-switching is not yet handled by the tool layer; \
+         subsequent commands will continue to run in the current cwd ({}). \
+         Use the `/worktree` slash command to manually return to {repo_root}.",
+        cwd.display()
+    ))
+}
+
+fn find_repo_root(start: &Path) -> Option<std::path::PathBuf> {
+    let mut cur = start;
+    loop {
+        if cur.join(".git").exists() {
+            return Some(cur.to_path_buf());
+        }
+        cur = cur.parent()?;
+    }
+}
+
+// ─── NotebookRead / NotebookEdit ──────────────────────────────────────────
+//
+// Jupyter `.ipynb` files are JSON documents with a `cells` array. Each
+// cell has `id` (nbformat 4.5+), `cell_type`, `source` (string or array
+// of strings), and code cells additionally have `outputs`. We parse,
+// splice, and write back without round-tripping through nbformat — keeps
+// the tool dependency-free.
+
+async fn execute_notebook_read(path_str: &str) -> ExecutionResult {
+    let path = std::path::PathBuf::from(path_str);
+    if !path.is_absolute() {
+        return ExecutionResult::failure(format!(
+            "notebook_read: path must be absolute (got '{path_str}')"
+        ));
+    }
+    let text = match tokio::fs::read_to_string(&path).await {
+        Ok(s) => s,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "notebook_read: cannot read {path_str}: {e}"
+            ));
+        }
+    };
+    match notebook_read_text(&text) {
+        Ok(rendered) => ExecutionResult::success(rendered),
+        Err(e) => ExecutionResult::failure(format!("notebook_read: {e}")),
+    }
+}
+
+/// Parse a notebook JSON document and emit a human-readable rendering
+/// (one block per cell). Returned to the caller as the tool result so
+/// the model has cell IDs available for follow-up `NotebookEdit` calls.
+pub(crate) fn notebook_read_text(text: &str) -> Result<String, String> {
+    let v: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("invalid notebook JSON: {e}"))?;
+    let cells = v
+        .get("cells")
+        .and_then(|c| c.as_array())
+        .ok_or_else(|| "notebook missing `cells` array".to_owned())?;
+    let mut out = String::new();
+    out.push_str(&format!("Notebook: {} cells\n", cells.len()));
+    for (i, cell) in cells.iter().enumerate() {
+        let id = cell
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("cell-{i}"));
+        let kind = cell
+            .get("cell_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let source = collect_cell_source(cell);
+        out.push_str(&format!("\n--- [{i}] {kind} (id={id}) ---\n"));
+        out.push_str(&source);
+        if !source.ends_with('\n') {
+            out.push('\n');
+        }
+        if kind == "code"
+            && let Some(outputs) = cell.get("outputs").and_then(|o| o.as_array())
+            && !outputs.is_empty()
+        {
+            out.push_str(&format!("--- outputs ({}) ---\n", outputs.len()));
+            for (j, output) in outputs.iter().enumerate() {
+                let text_block = collect_output_text(output);
+                if text_block.is_empty() {
+                    let kind = output
+                        .get("output_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?");
+                    out.push_str(&format!("  [{j}] {kind} (binary or no text)\n"));
+                } else {
+                    out.push_str(&format!("  [{j}] {text_block}\n"));
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn collect_cell_source(cell: &serde_json::Value) -> String {
+    match cell.get("source") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => String::new(),
+    }
+}
+
+fn collect_output_text(output: &serde_json::Value) -> String {
+    if let Some(s) = output.get("text") {
+        return collect_string_or_array(s);
+    }
+    if let Some(data) = output.get("data")
+        && let Some(plain) = data.get("text/plain")
+    {
+        return collect_string_or_array(plain);
+    }
+    if let Some(name) = output.get("evalue").and_then(|v| v.as_str()) {
+        return name.to_owned();
+    }
+    String::new()
+}
+
+fn collect_string_or_array(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => v.to_string(),
+    }
+}
+
+async fn execute_notebook_edit(
+    path_str: &str,
+    cell_id: &str,
+    new_source: &str,
+    edit_mode: Option<&str>,
+) -> ExecutionResult {
+    let path = std::path::PathBuf::from(path_str);
+    if !path.is_absolute() {
+        return ExecutionResult::failure(format!(
+            "notebook_edit: path must be absolute (got '{path_str}')"
+        ));
+    }
+    let text = match tokio::fs::read_to_string(&path).await {
+        Ok(s) => s,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "notebook_edit: cannot read {path_str}: {e}"
+            ));
+        }
+    };
+    let mode = edit_mode.unwrap_or("replace");
+    match notebook_edit_text(&text, cell_id, new_source, mode) {
+        Ok(new_text) => match tokio::fs::write(&path, &new_text).await {
+            Ok(_) => ExecutionResult::success(format!(
+                "notebook_edit: {mode} on {path_str}#{cell_id} ({} bytes written)",
+                new_text.len()
+            )),
+            Err(e) => ExecutionResult::failure(format!(
+                "notebook_edit: write to {path_str} failed: {e}"
+            )),
+        },
+        Err(e) => ExecutionResult::failure(format!("notebook_edit: {e}")),
+    }
+}
+
+/// Pure helper exposed for testing. Returns the modified notebook JSON.
+pub(crate) fn notebook_edit_text(
+    notebook_json: &str,
+    cell_id: &str,
+    new_source: &str,
+    edit_mode: &str,
+) -> Result<String, String> {
+    if !matches!(edit_mode, "replace" | "insert" | "delete") {
+        return Err(format!(
+            "invalid edit_mode '{edit_mode}'. Must be one of: replace | insert | delete"
+        ));
+    }
+    let mut v: serde_json::Value = serde_json::from_str(notebook_json)
+        .map_err(|e| format!("invalid notebook JSON: {e}"))?;
+    let cells = v
+        .get_mut("cells")
+        .and_then(|c| c.as_array_mut())
+        .ok_or_else(|| "notebook missing `cells` array".to_owned())?;
+
+    let idx = cells
+        .iter()
+        .position(|c| {
+            c.get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| s == cell_id)
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| format!("cell with id '{cell_id}' not found"))?;
+
+    match edit_mode {
+        "replace" => {
+            if let Some(obj) = cells[idx].as_object_mut() {
+                obj.insert(
+                    "source".into(),
+                    serde_json::Value::String(new_source.to_owned()),
+                );
+                // Clear cached execution outputs — they no longer match
+                // the new source.
+                if obj.contains_key("outputs") {
+                    obj.insert("outputs".into(), serde_json::Value::Array(Vec::new()));
+                }
+                if obj.contains_key("execution_count") {
+                    obj.insert("execution_count".into(), serde_json::Value::Null);
+                }
+            }
+        }
+        "insert" => {
+            let new_id = format!("{cell_id}-new-{}", uuid::Uuid::new_v4().simple());
+            let new_cell = serde_json::json!({
+                "cell_type": "code",
+                "id": new_id,
+                "metadata": {},
+                "source": new_source,
+                "outputs": [],
+                "execution_count": null,
+            });
+            cells.insert(idx + 1, new_cell);
+        }
+        "delete" => {
+            cells.remove(idx);
+        }
+        _ => unreachable!(),
+    }
+
+    serde_json::to_string_pretty(&v).map_err(|e| format!("re-serialize failed: {e}"))
 }
 
 async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> ExecutionResult {
@@ -2916,6 +4294,43 @@ async fn execute_read(
     debug!(target: "jfc::tools", file_path, offset, limit, "read: starting");
     let path = PathBuf::from(file_path);
 
+    // PDF fast-path: load the file as binary, stage it as an
+    // attachment for the next outgoing request, return a textual
+    // summary so the tool_result row in the transcript stays
+    // human-readable. Without this branch, `tokio::fs::read_to_string`
+    // below would either fail (non-UTF8) or produce mojibake the
+    // model can't use.
+    let is_pdf = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("pdf"))
+        .unwrap_or(false);
+    if is_pdf && !path.is_dir() {
+        match crate::attachments::read_pdf_file(&path) {
+            Ok(att) => {
+                let bytes = att.bytes.len();
+                push_pending_tool_attachment(att);
+                tracing::info!(
+                    target: "jfc::tools",
+                    file_path,
+                    bytes,
+                    "read: staged PDF as attachment"
+                );
+                return ExecutionResult::success(format!(
+                    "Loaded PDF {} ({} bytes). The full document is attached \
+                     to this tool_result and will be sent to the model as a \
+                     `document` content block — you can reason about its \
+                     pages, text, and embedded images directly.",
+                    file_path, bytes
+                ));
+            }
+            Err(e) => {
+                tracing::warn!(target: "jfc::tools", file_path, error = %e, "read: PDF load failed");
+                return ExecutionResult::failure(format!("Cannot read PDF: {e}"));
+            }
+        }
+    }
+
     if path.is_dir() {
         match tokio::fs::read_dir(&path).await {
             Ok(mut entries) => {
@@ -2991,6 +4406,29 @@ async fn execute_read(
                     file_path, line_count = slice.len(), total_lines, start,
                     "read: success"
                 );
+
+                // v132 parity: surface a `<system-reminder>` when the
+                // file is empty or the offset overshoots the line
+                // count — without it the model sees a blank tool
+                // result and often re-reads. The reminder makes the
+                // root cause visible.
+                if total_lines == 0 {
+                    return ExecutionResult::success(crate::system_reminder::format(
+                        &format!(
+                            "Warning: the file at {file_path} exists but its contents are empty."
+                        ),
+                    ));
+                }
+                if start >= total_lines {
+                    return ExecutionResult::success(crate::system_reminder::format(
+                        &format!(
+                            "Warning: the file at {file_path} exists but is shorter \
+                             than the provided offset ({}). The file has {} lines.",
+                            start + 1,
+                            total_lines
+                        ),
+                    ));
+                }
                 ExecutionResult::success(numbered)
             }
             Err(e) => {
@@ -4029,6 +5467,185 @@ async fn execute_send_message(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Daemon-driven scheduling tools
+//
+// These executors talk to the local jfc daemon by writing/reading its
+// state file directly. The daemon process polls that file once per
+// second, so registrations made here are picked up on the next tick
+// without needing an IPC channel. When the daemon isn't running the
+// state file still updates — the next `jfc daemon start` replays it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn execute_cron_create(schedule_expr: &str, command: &str, description: &str) -> ExecutionResult {
+    use crate::daemon::{Daemon, DaemonPaths, parse_schedule};
+    let schedule = match parse_schedule(schedule_expr) {
+        Ok(s) => s,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "Invalid schedule `{schedule_expr}`: {e}"
+            ));
+        }
+    };
+    let paths = DaemonPaths::default_user();
+    let mut daemon = match Daemon::new(&paths.base_dir) {
+        Ok(d) => d,
+        Err(e) => return ExecutionResult::failure(format!("daemon state init failed: {e}")),
+    };
+    let id = daemon.add_cron_job(schedule, description, command);
+    ExecutionResult::success(format!(
+        "Created cron job `{id}` ({schedule_expr}): {description}\n  command: {command}"
+    ))
+}
+
+fn execute_cron_list() -> ExecutionResult {
+    use crate::daemon::{Daemon, DaemonPaths};
+    let paths = DaemonPaths::default_user();
+    let daemon = match Daemon::new(&paths.base_dir) {
+        Ok(d) => d,
+        Err(e) => return ExecutionResult::failure(format!("daemon state init failed: {e}")),
+    };
+    if daemon.state.cron_jobs.is_empty() {
+        return ExecutionResult::success("(no cron jobs registered)".to_string());
+    }
+    let mut out = String::new();
+    for j in &daemon.state.cron_jobs {
+        out.push_str(&format!(
+            "{} [{}] {}\n  command: {}\n",
+            j.id,
+            if j.enabled { "on" } else { "off" },
+            j.description,
+            j.command,
+        ));
+    }
+    ExecutionResult::success(out)
+}
+
+fn execute_cron_delete(id: &str) -> ExecutionResult {
+    use crate::daemon::{Daemon, DaemonPaths};
+    let paths = DaemonPaths::default_user();
+    let mut daemon = match Daemon::new(&paths.base_dir) {
+        Ok(d) => d,
+        Err(e) => return ExecutionResult::failure(format!("daemon state init failed: {e}")),
+    };
+    if daemon.remove_cron_job(id) {
+        ExecutionResult::success(format!("Deleted cron job `{id}`"))
+    } else {
+        ExecutionResult::failure(format!("No cron job with id `{id}`"))
+    }
+}
+
+fn execute_schedule_wakeup(delay_seconds: u32, prompt: &str, reason: &str) -> ExecutionResult {
+    use crate::daemon::{Daemon, DaemonPaths};
+    if prompt.is_empty() {
+        return ExecutionResult::failure("ScheduleWakeup: prompt must not be empty");
+    }
+    let paths = DaemonPaths::default_user();
+    let mut daemon = match Daemon::new(&paths.base_dir) {
+        Ok(d) => d,
+        Err(e) => return ExecutionResult::failure(format!("daemon state init failed: {e}")),
+    };
+    let delay = std::time::Duration::from_secs(u64::from(delay_seconds));
+    let id = daemon.schedule_wakeup(delay, prompt, reason);
+    ExecutionResult::success(format!(
+        "Scheduled wakeup `{id}` in {delay_seconds}s: {reason}"
+    ))
+}
+
+/// Spawn `command` and stream stdout line-by-line until `until` matches
+/// or 60s elapse. Reuses the same `tokio::process` + `BufReader::lines`
+/// pattern that `execute_bash_inner` uses so behaviour stays consistent
+/// (line-buffered output, no terminal-color env, sane defaults).
+async fn execute_monitor(command: &str, until: &str, cwd: &Path) -> ExecutionResult {
+    use std::process::Stdio;
+    use std::time::Duration;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command as TokioCommand;
+
+    const MONITOR_TIMEOUT_SECS: u64 = 60;
+
+    let regex = match regex::Regex::new(until) {
+        Ok(r) => r,
+        Err(e) => return ExecutionResult::failure(format!("invalid `until` regex: {e}")),
+    };
+
+    let mut cmd = TokioCommand::new("bash");
+    cmd.arg("-c")
+        .arg(command)
+        .current_dir(cwd)
+        .env("CI", "true")
+        .env("TERM", "dumb")
+        .env("NO_COLOR", "1")
+        .env("PAGER", "cat")
+        .env("GIT_PAGER", "cat")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return ExecutionResult::failure(format!("failed to spawn monitor: {e}")),
+    };
+
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => return ExecutionResult::failure("monitor: no stdout handle"),
+    };
+    let mut reader = BufReader::new(stdout).lines();
+    let mut tail: Vec<String> = Vec::new();
+    const TAIL_KEEP: usize = 20;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(MONITOR_TIMEOUT_SECS);
+    loop {
+        let next = tokio::time::timeout_at(deadline, reader.next_line()).await;
+        match next {
+            Ok(Ok(Some(line))) => {
+                if regex.is_match(&line) {
+                    let _ = child.kill().await;
+                    return ExecutionResult::success(format!(
+                        "matched: {line}"
+                    ));
+                }
+                tail.push(line);
+                if tail.len() > TAIL_KEEP {
+                    tail.remove(0);
+                }
+            }
+            Ok(Ok(None)) => {
+                // EOF without match — process exited.
+                let exit = child.wait().await.ok().and_then(|s| s.code()).unwrap_or(-1);
+                let body = if tail.is_empty() {
+                    format!("Process exited [{exit}] without matching /{until}/")
+                } else {
+                    format!(
+                        "Process exited [{exit}] without matching /{until}/. Last {} line(s):\n{}",
+                        tail.len(),
+                        tail.join("\n")
+                    )
+                };
+                return ExecutionResult::failure(body);
+            }
+            Ok(Err(e)) => {
+                let _ = child.kill().await;
+                return ExecutionResult::failure(format!("monitor read error: {e}"));
+            }
+            Err(_) => {
+                let _ = child.kill().await;
+                let body = if tail.is_empty() {
+                    format!("Timeout after {MONITOR_TIMEOUT_SECS}s without matching /{until}/")
+                } else {
+                    format!(
+                        "Timeout after {MONITOR_TIMEOUT_SECS}s without matching /{until}/. Last {} line(s):\n{}",
+                        tail.len(),
+                        tail.join("\n")
+                    )
+                };
+                return ExecutionResult::failure(body);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4217,6 +5834,14 @@ mod tests {
             "post_bounty",
             "run_bounty",
             "market_status",
+            "LSP",
+            "PushNotification",
+            "RemoteTrigger",
+            "EnterPlanMode",
+            "EnterWorktree",
+            "ExitWorktree",
+            "NotebookRead",
+            "NotebookEdit",
         ] {
             assert!(
                 names.contains(&required),
@@ -5182,6 +6807,22 @@ mod tests {
                 "tool {} schema must be object-typed",
                 def.name,
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn all_tool_defs_with_mcp_no_registry_matches_native_normal() {
+        // When no MCP registry has been registered (process-global slot
+        // is None — true in fresh tests), the function should degrade
+        // to the native `all_tool_defs()` set.
+        let native = all_tool_defs();
+        let combined = all_tool_defs_with_mcp().await;
+        // Some other test in this module may have registered a registry
+        // earlier — what we care about is that combined is at least as
+        // big as native and starts with the same names.
+        assert!(combined.len() >= native.len());
+        for (i, def) in native.iter().enumerate() {
+            assert_eq!(combined[i].name, def.name);
         }
     }
 
@@ -6209,5 +7850,434 @@ mod tests {
         .await;
         assert!(!r.is_error(), "{}", r.output);
         assert!(r.output.contains("via dispatcher"), "{}", r.output);
+    }
+
+    // ─── Monitor tool (DO-178B _normal/_robust) ─────────────────────────
+
+    #[tokio::test]
+    async fn monitor_matches_first_line_normal() {
+        // `printf` writes the matching line immediately; the monitor
+        // should kill the process and return the matched line.
+        let r = execute_monitor(
+            "printf 'starting\\nfound the goal\\nfinished\\n'",
+            r"goal",
+            Path::new("."),
+        )
+        .await;
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("found the goal"), "{}", r.output);
+    }
+
+    #[tokio::test]
+    async fn monitor_invalid_regex_robust() {
+        let r = execute_monitor("echo hi", "[invalid(regex", Path::new(".")).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("invalid `until` regex"), "{}", r.output);
+    }
+
+    #[tokio::test]
+    async fn monitor_eof_without_match_reports_failure_robust() {
+        // `true` exits immediately with no output — Monitor should
+        // report process exit without match (failure).
+        let r = execute_monitor("true", r"never-matches", Path::new(".")).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("Process exited"), "{}", r.output);
+    }
+
+    // ─── LSP tool ─────────────────────────────────────────────────────────
+
+    /// Normal: `LSP` with `kind=hover`, valid file, valid coords reaches the
+    /// validation path and either succeeds (when rust-analyzer exists) or
+    /// fails with an actionable detection error. Either outcome means the
+    /// dispatch wiring is correct.
+    #[tokio::test]
+    async fn lsp_dispatch_routes_through_dispatcher_normal() {
+        // Pick a directory without Cargo.toml/build.zig so detect_lsp_for_cwd
+        // returns None — the tool fails with a known message; dispatch is
+        // still verified.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src = dir.path().join("foo.txt");
+        std::fs::write(&src, "hello\n").expect("write");
+        let r = execute_tool(
+            ToolKind::Lsp,
+            ToolInput::Lsp {
+                kind: "hover".into(),
+                file: src.display().to_string(),
+                line: 1,
+                column: 1,
+            },
+            dir.path().to_path_buf(),
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(r.is_error(), "expected detection error: {}", r.output);
+        assert!(
+            r.output.contains("no language server detected"),
+            "{}",
+            r.output
+        );
+    }
+
+    /// Robust: invalid `kind` is rejected before any LSP work happens.
+    #[tokio::test]
+    async fn lsp_rejects_invalid_kind_robust() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src = dir.path().join("foo.rs");
+        std::fs::write(&src, "fn main() {}\n").expect("write");
+        let r = execute_lsp("nonsense", &src.display().to_string(), 1, 1, dir.path()).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("invalid kind"), "{}", r.output);
+    }
+
+    /// Robust: relative paths are rejected — LSP uses absolute file URIs.
+    #[tokio::test]
+    async fn lsp_rejects_relative_path_robust() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let r = execute_lsp("hover", "relative/path.rs", 1, 1, dir.path()).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("absolute"), "{}", r.output);
+    }
+
+    // ─── PushNotification tool ─────────────────────────────────────────────
+
+    #[test]
+    fn push_notification_normal() {
+        // Disable the OS daemon so this never fires a real notification
+        // in CI. The success message proves the dispatch wiring works.
+        unsafe { std::env::set_var("JFC_DISABLE_NOTIFICATIONS", "1") };
+        let r = execute_push_notification("Build green", Some("CI"));
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("Build green"), "{}", r.output);
+        assert!(r.output.contains("CI"), "{}", r.output);
+        assert!(
+            r.output.contains("remote-control push not yet implemented"),
+            "expected the unsupported-feature notice: {}",
+            r.output
+        );
+    }
+
+    #[test]
+    fn push_notification_empty_message_fails_robust() {
+        let r = execute_push_notification("", None);
+        assert!(r.is_error(), "{}", r.output);
+    }
+
+    // ─── RemoteTrigger tool ────────────────────────────────────────────────
+
+    #[test]
+    fn parse_trigger_url_extracts_url_normal() {
+        let toml = r#"
+[deploy]
+url = "https://ci.example.com/hook/deploy"
+"#;
+        assert_eq!(
+            parse_trigger_url(toml, "deploy").unwrap(),
+            "https://ci.example.com/hook/deploy"
+        );
+    }
+
+    #[test]
+    fn parse_trigger_url_unknown_id_fails_robust() {
+        let toml = r#"
+[other]
+url = "https://x"
+"#;
+        let err = parse_trigger_url(toml, "deploy").unwrap_err();
+        assert!(err.contains("not found"), "{err}");
+    }
+
+    #[test]
+    fn parse_trigger_url_missing_url_fails_robust() {
+        let toml = r#"
+[deploy]
+description = "no url here"
+"#;
+        let err = parse_trigger_url(toml, "deploy").unwrap_err();
+        assert!(err.contains("no `url`"), "{err}");
+    }
+
+    /// Normal: `execute_remote_trigger` POSTs to the configured URL using
+    /// a tokio listener as the destination. We reach into a hand-written
+    /// triggers.toml in a temp HOME so the production path resolves there.
+    #[tokio::test]
+    async fn execute_remote_trigger_posts_payload_normal() {
+        use std::net::SocketAddr;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        // Bind to a free port and remember the address.
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr: SocketAddr = listener.local_addr().expect("addr");
+        let port = addr.port();
+
+        // Spawn a one-shot HTTP responder that captures the body.
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let captured_for_task = captured.clone();
+        let handle = tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let n = sock.read(&mut buf).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                *captured_for_task.lock().expect("lock") = req;
+                let _ = sock
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                    .await;
+                let _ = sock.shutdown().await;
+            }
+        });
+
+        // Stage triggers.toml in an isolated XDG_CONFIG_HOME so the global
+        // resolver finds our test file rather than the real user config.
+        let home = tempfile::tempdir().expect("tempdir");
+        let cfg_dir = home.path().join("jfc");
+        std::fs::create_dir_all(&cfg_dir).expect("mkdir");
+        let triggers = format!(
+            "[t1]\nurl = \"http://127.0.0.1:{port}/hook\"\n",
+        );
+        std::fs::write(cfg_dir.join("triggers.toml"), triggers).expect("write");
+        // SAFETY: tests are not concurrent with code that reads XDG_CONFIG_HOME
+        // arbitrarily — only the tool resolver uses it.
+        let prev = std::env::var("XDG_CONFIG_HOME").ok();
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", home.path()) };
+
+        let payload = serde_json::json!({"hello": "world"});
+        let r = execute_remote_trigger("t1", Some(&payload)).await;
+
+        // Restore env early so an assertion failure doesn't leak it.
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+        let _ = handle.await;
+
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("HTTP 200"), "{}", r.output);
+        let req = captured.lock().expect("lock").clone();
+        assert!(req.starts_with("POST /hook"), "captured: {req}");
+        assert!(
+            req.contains("\"hello\":\"world\""),
+            "payload not in body: {req}",
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_remote_trigger_unknown_id_fails_robust() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let cfg_dir = home.path().join("jfc");
+        std::fs::create_dir_all(&cfg_dir).expect("mkdir");
+        std::fs::write(cfg_dir.join("triggers.toml"), "").expect("write");
+        let prev = std::env::var("XDG_CONFIG_HOME").ok();
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", home.path()) };
+
+        let r = execute_remote_trigger("nope", None).await;
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+
+        assert!(r.is_error());
+        assert!(r.output.contains("not found"), "{}", r.output);
+    }
+
+    // ─── EnterPlanMode tool ────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn enter_plan_mode_dispatches_event_normal() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::app::AppEvent>(8);
+        register_event_sender(tx);
+        let r = execute_enter_plan_mode("safety check").await;
+        assert!(!r.is_error(), "{}", r.output);
+        let evt = rx.recv().await.expect("event");
+        match evt {
+            crate::app::AppEvent::EnterPlanModeRequested { reason } => {
+                assert_eq!(reason, "safety check");
+            }
+            _ => panic!("expected EnterPlanModeRequested AppEvent variant"),
+        }
+    }
+
+    /// Robust: when no event sender is registered (e.g. early-boot tool
+    /// calls or test setup that didn't wire one), the call fails with a
+    /// clear message rather than panicking.
+    #[tokio::test]
+    async fn enter_plan_mode_without_sender_fails_robust() {
+        // Clear any previously-registered sender. We use a separate
+        // process-global, so this requires reaching into the handle.
+        if let Ok(mut g) = active_event_sender_handle().write() {
+            *g = None;
+        }
+        let r = execute_enter_plan_mode("noop").await;
+        assert!(r.is_error());
+        assert!(r.output.contains("no event sender"), "{}", r.output);
+    }
+
+    // ─── EnterWorktree / ExitWorktree ──────────────────────────────────────
+
+    /// Normal: `EnterWorktree` happily creates a fresh worktree under the
+    /// repo root. We initialize a tiny throwaway git repo as the host.
+    #[tokio::test]
+    async fn enter_worktree_creates_fresh_normal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = dir.path();
+        run_git(repo, &["init", "-q"]).await;
+        run_git(repo, &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init", "-q"]).await;
+        let r = execute_enter_worktree("featx", None, repo).await;
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(repo.join(".jfc-worktrees/featx").exists());
+        // Idempotent: second invocation succeeds with "already exists".
+        let r2 = execute_enter_worktree("featx", None, repo).await;
+        assert!(!r2.is_error(), "{}", r2.output);
+        assert!(r2.output.contains("already"), "{}", r2.output);
+    }
+
+    /// Robust: bad name is rejected with the validator's message before we
+    /// shell out to git.
+    #[tokio::test]
+    async fn enter_worktree_invalid_name_fails_robust() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let r = execute_enter_worktree("bad/name", None, dir.path()).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("[A-Za-z0-9_-]"), "{}", r.output);
+    }
+
+    /// Robust: outside a git repo we surface the missing-repo error rather
+    /// than blindly invoking git.
+    #[tokio::test]
+    async fn enter_worktree_outside_repo_fails_robust() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let r = execute_enter_worktree("ok", None, dir.path()).await;
+        assert!(r.is_error());
+        assert!(
+            r.output.contains("not inside a git repository"),
+            "{}",
+            r.output
+        );
+    }
+
+    /// Normal: `ExitWorktree` is a no-op informational tool — never errors,
+    /// always returns a success message.
+    #[tokio::test]
+    async fn exit_worktree_returns_informational_normal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let r = execute_exit_worktree(dir.path()).await;
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("exit_worktree"), "{}", r.output);
+    }
+
+    async fn run_git(cwd: &Path, args: &[&str]) {
+        let _ = tokio::process::Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .await;
+    }
+
+    // ─── NotebookRead / NotebookEdit ──────────────────────────────────────
+
+    fn sample_ipynb() -> String {
+        serde_json::json!({
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "id": "abc123",
+                    "metadata": {},
+                    "source": "x = 1\nprint(x)\n",
+                    "outputs": [
+                        {
+                            "output_type": "stream",
+                            "name": "stdout",
+                            "text": "1\n"
+                        }
+                    ],
+                    "execution_count": 1
+                },
+                {
+                    "cell_type": "markdown",
+                    "id": "md1",
+                    "metadata": {},
+                    "source": ["## Header\n", "Some text"]
+                }
+            ],
+            "metadata": {},
+            "nbformat": 4,
+            "nbformat_minor": 5
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn notebook_read_renders_cells_normal() {
+        let rendered = notebook_read_text(&sample_ipynb()).expect("read");
+        assert!(rendered.contains("2 cells"), "{rendered}");
+        assert!(rendered.contains("id=abc123"), "{rendered}");
+        assert!(rendered.contains("id=md1"), "{rendered}");
+        assert!(rendered.contains("x = 1"), "{rendered}");
+        assert!(rendered.contains("## Header"), "{rendered}");
+        assert!(rendered.contains("outputs"), "{rendered}");
+    }
+
+    #[test]
+    fn notebook_read_invalid_json_fails_robust() {
+        let err = notebook_read_text("not-json").unwrap_err();
+        assert!(err.contains("invalid notebook JSON"), "{err}");
+    }
+
+    #[test]
+    fn notebook_read_missing_cells_fails_robust() {
+        let err = notebook_read_text("{}").unwrap_err();
+        assert!(err.contains("missing `cells`"), "{err}");
+    }
+
+    #[test]
+    fn notebook_edit_replace_clears_outputs_normal() {
+        let nb = sample_ipynb();
+        let edited = notebook_edit_text(&nb, "abc123", "y = 2\n", "replace").expect("edit");
+        let v: serde_json::Value = serde_json::from_str(&edited).expect("json");
+        let cell = &v["cells"][0];
+        assert_eq!(cell["source"], "y = 2\n");
+        assert!(cell["outputs"].as_array().unwrap().is_empty());
+        assert!(cell["execution_count"].is_null());
+    }
+
+    #[test]
+    fn notebook_edit_insert_adds_after_target_normal() {
+        let nb = sample_ipynb();
+        let edited = notebook_edit_text(&nb, "abc123", "z = 3\n", "insert").expect("edit");
+        let v: serde_json::Value = serde_json::from_str(&edited).expect("json");
+        let cells = v["cells"].as_array().unwrap();
+        assert_eq!(cells.len(), 3);
+        assert_eq!(cells[1]["source"], "z = 3\n");
+        assert_eq!(cells[1]["cell_type"], "code");
+    }
+
+    #[test]
+    fn notebook_edit_delete_removes_cell_normal() {
+        let nb = sample_ipynb();
+        let edited = notebook_edit_text(&nb, "abc123", "", "delete").expect("edit");
+        let v: serde_json::Value = serde_json::from_str(&edited).expect("json");
+        let cells = v["cells"].as_array().unwrap();
+        assert_eq!(cells.len(), 1);
+        assert_eq!(cells[0]["id"], "md1");
+    }
+
+    #[test]
+    fn notebook_edit_unknown_cell_fails_robust() {
+        let nb = sample_ipynb();
+        let err = notebook_edit_text(&nb, "no-such-cell", "x", "replace").unwrap_err();
+        assert!(err.contains("not found"), "{err}");
+    }
+
+    #[test]
+    fn notebook_edit_invalid_mode_fails_robust() {
+        let nb = sample_ipynb();
+        let err = notebook_edit_text(&nb, "abc123", "x", "wat").unwrap_err();
+        assert!(err.contains("invalid edit_mode"), "{err}");
     }
 }

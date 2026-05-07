@@ -27,14 +27,22 @@
 
 use base64::Engine as _;
 
-/// Image media type. Matches the four Anthropic Messages API supports
-/// (`image/png`, `image/jpeg`, `image/gif`, `image/webp`).
+/// Attachment media type. Covers the image formats Anthropic's
+/// Messages API supports (`image/png`, `image/jpeg`, `image/gif`,
+/// `image/webp`) plus `application/pdf` documents — Claude Code v132
+/// (`extracted_2.1.132/src/entrypoints/cli.js`) handles all of these
+/// across Read tool ingestion, the attachment picker, and the message
+/// content-block builder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttachmentKind {
     ImagePng,
     ImageJpeg,
     ImageGif,
     ImageWebp,
+    /// PDF document. Anthropic supports this via the `document`
+    /// content-block type — Claude can read the PDF text + images.
+    /// 32 MB payload limit, 100 pages max per Anthropic's API docs.
+    ApplicationPdf,
 }
 
 impl AttachmentKind {
@@ -46,7 +54,16 @@ impl AttachmentKind {
             Self::ImageJpeg => "image/jpeg",
             Self::ImageGif => "image/gif",
             Self::ImageWebp => "image/webp",
+            Self::ApplicationPdf => "application/pdf",
         }
+    }
+
+    /// Whether this kind renders via Anthropic's `image` content
+    /// block (PNG/JPEG/GIF/WebP) or the `document` block (PDF).
+    /// Determines which JSON shape `to_anthropic_content_block`
+    /// emits — they are *not* interchangeable on the wire.
+    pub fn is_pdf(self) -> bool {
+        matches!(self, Self::ApplicationPdf)
     }
 }
 
@@ -82,7 +99,50 @@ pub fn detect_kind(bytes: &[u8]) -> Option<AttachmentKind> {
     if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
         return Some(AttachmentKind::ImageWebp);
     }
+    // PDF: ASCII `%PDF-` (the version follows: `1.4`, `1.7`, `2.0`).
+    // 5 bytes is enough for a positive ID; the Anthropic API accepts
+    // any standard-compliant PDF so we don't need to parse the version.
+    if bytes.len() >= 5 && bytes.starts_with(b"%PDF-") {
+        return Some(AttachmentKind::ApplicationPdf);
+    }
     None
+}
+
+/// Read a PDF from disk and return it as an `Attachment`. Used by
+/// the Read tool when the path's extension is `.pdf` so the file
+/// content lands in the next message as a `document` block instead
+/// of garbled binary text. Caps at 32 MiB — Anthropic rejects
+/// larger payloads, and we'd rather fail fast than wait for the
+/// 413 round-trip.
+pub fn read_pdf_file(path: &std::path::Path) -> Result<Attachment, String> {
+    const MAX_PDF_BYTES: u64 = 32 * 1024 * 1024;
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| format!("stat {}: {e}", path.display()))?;
+    if metadata.len() > MAX_PDF_BYTES {
+        return Err(format!(
+            "PDF too large ({} bytes; cap is {} MiB)",
+            metadata.len(),
+            MAX_PDF_BYTES / 1024 / 1024
+        ));
+    }
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    if detect_kind(&bytes) != Some(AttachmentKind::ApplicationPdf) {
+        return Err(format!(
+            "{} does not start with `%PDF-` magic bytes",
+            path.display()
+        ));
+    }
+    tracing::info!(
+        target: "jfc::attachments",
+        path = %path.display(),
+        size = bytes.len(),
+        "read_pdf_file: loaded PDF"
+    );
+    Ok(Attachment {
+        kind: AttachmentKind::ApplicationPdf,
+        bytes,
+    })
 }
 
 /// Read an image from the system clipboard and return it as a PNG-encoded
@@ -142,23 +202,29 @@ pub fn read_clipboard_image() -> Result<Option<Attachment>, String> {
     }))
 }
 
-/// Build the Anthropic Messages-API content block for an image attachment.
+/// Build the Anthropic Messages-API content block for an attachment.
 ///
-/// Shape:
+/// Image kinds (PNG/JPEG/GIF/WebP) emit:
 /// ```json
-/// {
-///   "type": "image",
-///   "source": {
-///     "type": "base64",
-///     "media_type": "image/png",
-///     "data": "<base64-encoded bytes>"
-///   }
-/// }
+/// { "type": "image",
+///   "source": { "type": "base64", "media_type": "image/png", "data": "..." } }
 /// ```
+///
+/// PDF kind emits the `document` block shape Anthropic added for
+/// multi-page PDFs:
+/// ```json
+/// { "type": "document",
+///   "source": { "type": "base64", "media_type": "application/pdf", "data": "..." } }
+/// ```
+///
+/// The two block types are *not* interchangeable on the wire — the API
+/// returns 400 if you send a PDF as `image`. Routing happens here so
+/// callers don't have to remember the rule.
 pub fn to_anthropic_content_block(att: &Attachment) -> serde_json::Value {
     let data = base64::engine::general_purpose::STANDARD.encode(&att.bytes);
+    let block_type = if att.kind.is_pdf() { "document" } else { "image" };
     serde_json::json!({
-        "type": "image",
+        "type": block_type,
         "source": {
             "type": "base64",
             "media_type": att.kind.mime_type(),
@@ -340,5 +406,104 @@ mod tests {
         let mut hidden = vec![0x00, 0x00, 0x00];
         hidden.extend_from_slice(&[0xFF, 0xD8, 0xFF]); // JPEG marker, but offset
         assert_eq!(detect_kind(&hidden), None);
+    }
+
+    // Normal: PDFs start with `%PDF-` plus a version. Detect any of
+    // the common version markers.
+    #[test]
+    fn detect_kind_pdf_normal() {
+        for header in [
+            b"%PDF-1.4\nfake content".as_slice(),
+            b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n",
+            b"%PDF-2.0\n",
+        ] {
+            assert_eq!(detect_kind(header), Some(AttachmentKind::ApplicationPdf));
+        }
+    }
+
+    // Robust: 4-byte `%PDF` prefix (no version dash) is short of the
+    // 5-byte signature, so detect_kind must say None.
+    #[test]
+    fn detect_kind_pdf_too_short_robust() {
+        assert_eq!(detect_kind(b"%PDF"), None);
+        assert_eq!(detect_kind(b"%PD"), None);
+        assert_eq!(detect_kind(b""), None);
+    }
+
+    // Normal: PDF mime + content-block shape. PDFs MUST emit
+    // `type: "document"` not `type: "image"` — verifying this prevents
+    // the 400 "wrong content block" error from the Anthropic API.
+    #[test]
+    fn pdf_to_content_block_uses_document_type_normal() {
+        let pdf = Attachment {
+            kind: AttachmentKind::ApplicationPdf,
+            bytes: b"%PDF-1.7\nfake".to_vec(),
+        };
+        let block = to_anthropic_content_block(&pdf);
+        assert_eq!(block["type"], "document");
+        assert_eq!(block["source"]["type"], "base64");
+        assert_eq!(block["source"]["media_type"], "application/pdf");
+        // Round-trip the data field.
+        let data = block["source"]["data"].as_str().unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .unwrap();
+        assert_eq!(decoded, pdf.bytes);
+    }
+
+    // Normal: read_pdf_file accepts a real PDF starting with `%PDF-`.
+    #[test]
+    fn read_pdf_file_accepts_valid_pdf_normal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("test.pdf");
+        std::fs::write(&path, b"%PDF-1.4\nstub body").unwrap();
+        let att = read_pdf_file(&path).expect("should accept");
+        assert_eq!(att.kind, AttachmentKind::ApplicationPdf);
+        assert!(att.bytes.starts_with(b"%PDF-"));
+    }
+
+    // Robust: a `.pdf` file whose contents *aren't* a real PDF must
+    // be rejected — we don't want to send arbitrary garbage as
+    // `application/pdf` and watch the API 400.
+    #[test]
+    fn read_pdf_file_rejects_non_pdf_robust() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("fake.pdf");
+        std::fs::write(&path, b"not a pdf at all").unwrap();
+        let res = read_pdf_file(&path);
+        assert!(res.is_err(), "must reject non-PDF content");
+    }
+
+    // Robust: the size cap fires for files over the 32 MiB limit.
+    // Build a 33 MiB file to drive past the boundary; the cap exists
+    // because Anthropic's API rejects larger PDFs and a synchronous
+    // round-trip 413 is worse UX than a clear local error.
+    #[test]
+    fn read_pdf_file_rejects_oversized_robust() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("huge.pdf");
+        // 33 MiB of `%PDF-` followed by zeros — passes magic-byte
+        // sniffing but trips the size cap.
+        let mut buf = Vec::with_capacity(33 * 1024 * 1024);
+        buf.extend_from_slice(b"%PDF-1.7\n");
+        buf.resize(33 * 1024 * 1024, 0u8);
+        std::fs::write(&path, &buf).unwrap();
+        let res = read_pdf_file(&path);
+        assert!(res.is_err(), "must reject >32 MiB PDFs");
+        assert!(
+            res.as_ref().unwrap_err().contains("too large"),
+            "error message should mention size: {res:?}"
+        );
+    }
+
+    // Normal: is_pdf() drives the routing decision. Pin the truth
+    // table so a future enum variant can't accidentally claim PDF.
+    #[test]
+    fn is_pdf_classification_normal() {
+        assert!(AttachmentKind::ApplicationPdf.is_pdf());
+        assert!(!AttachmentKind::ImagePng.is_pdf());
+        assert!(!AttachmentKind::ImageJpeg.is_pdf());
+        assert!(!AttachmentKind::ImageGif.is_pdf());
+        assert!(!AttachmentKind::ImageWebp.is_pdf());
     }
 }

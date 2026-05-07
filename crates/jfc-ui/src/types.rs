@@ -186,12 +186,19 @@ pub enum MessagePart {
     Tool(ToolCall),
     TaskStatus(TaskStatusPart),
     CompactBoundary { pre_tokens: usize },
+    /// A parallel-advisor reply (see `crate::advisor`). Rendered with a
+    /// distinct visual style (italic + secondary text color + "ADVISOR:"
+    /// prefix) so the user can tell at a glance that this came from the
+    /// out-of-band advisor and not the main agent. Doesn't participate in
+    /// the model's normal turn accounting — it's a UI-only side effect of
+    /// `/advisor <query>`.
+    Advisor(String),
 }
 
 impl MessagePart {
     pub fn approx_text_len(&self) -> usize {
         match self {
-            Self::Text(s) | Self::Reasoning(s) => s.len(),
+            Self::Text(s) | Self::Reasoning(s) | Self::Advisor(s) => s.len(),
             Self::Tool(tc) => tc.input.summary().len() + tc.output.approx_text_len(),
             Self::TaskStatus(ts) => {
                 ts.description.len() + ts.summary.as_deref().map_or(0, |s| s.len())
@@ -203,6 +210,7 @@ impl MessagePart {
     pub fn text_only(&self) -> String {
         match self {
             Self::Text(s) | Self::Reasoning(s) => s.clone(),
+            Self::Advisor(s) => format!("[Advisor: {s}]"),
             Self::Tool(tc) => {
                 format!("[Tool: {} → {}]", tc.kind.label(), tc.output.text_only())
             }
@@ -219,6 +227,7 @@ impl MessagePart {
         match self {
             Self::Text(s) => s.clone(),
             Self::Reasoning(s) => format!("[Reasoning: {}]", s),
+            Self::Advisor(s) => format!("[Advisor: {s}]"),
             Self::Tool(tc) => {
                 format!(
                     "[Tool: {} | Input: {} | Output: {}]",
@@ -443,6 +452,31 @@ pub enum ToolKind {
     GraphQuery,
     /// Edit code by symbol handle (semantic editing).
     SymbolEdit,
+    /// v132 parity: invoked by the model to surface a finalized plan.
+    ExitPlanMode,
+    MultiEdit,
+    AskUserQuestion,
+    WebFetch,
+    WebSearch,
+    /// MCP-advertised tool, full `mcp__server__tool` name.
+    Mcp(String),
+    CronCreate,
+    CronList,
+    CronDelete,
+    ScheduleWakeup,
+    Monitor,
+    /// Query LSP for hover/definition/references.
+    Lsp,
+    /// Send a desktop notification.
+    PushNotification,
+    /// Hit a webhook URL pre-registered in triggers.toml.
+    RemoteTrigger,
+    /// Model-callable: enter plan mode.
+    EnterPlanMode,
+    EnterWorktree,
+    ExitWorktree,
+    NotebookRead,
+    NotebookEdit,
     Generic(String),
 }
 
@@ -590,6 +624,80 @@ pub enum ToolInput {
         /// effect — without validation we don't compute the cascade.
         #[serde(default, rename = "dispatch_cascade")]
         dispatch_cascade: bool,
+    },
+    ExitPlanMode {
+        plan: String,
+    },
+    MultiEdit {
+        file_path: String,
+        edits: serde_json::Value,
+    },
+    AskUserQuestion {
+        question: String,
+        options: serde_json::Value,
+        multi_select: bool,
+    },
+    WebFetch {
+        url: String,
+        prompt: Option<String>,
+    },
+    WebSearch {
+        query: String,
+        max_results: Option<u32>,
+    },
+    Mcp {
+        name: String,
+        arguments: serde_json::Value,
+    },
+    CronCreate {
+        schedule: String,
+        command: String,
+        description: String,
+    },
+    CronList,
+    CronDelete {
+        id: String,
+    },
+    ScheduleWakeup {
+        delay_seconds: u32,
+        prompt: String,
+        reason: String,
+    },
+    Monitor {
+        command: String,
+        until: String,
+    },
+    Lsp {
+        kind: String,
+        file: String,
+        line: u32,
+        column: u32,
+    },
+    PushNotification {
+        message: String,
+        title: Option<String>,
+    },
+    RemoteTrigger {
+        trigger_id: String,
+        #[serde(default)]
+        payload: Option<serde_json::Value>,
+    },
+    EnterPlanMode {
+        reason: String,
+    },
+    EnterWorktree {
+        name: String,
+        branch: Option<String>,
+    },
+    ExitWorktree,
+    NotebookRead {
+        path: String,
+    },
+    NotebookEdit {
+        path: String,
+        cell_id: String,
+        new_source: String,
+        edit_mode: Option<String>,
     },
     Generic {
         summary: String,
@@ -887,9 +995,30 @@ impl ToolKind {
             "teammembermode" => Self::TeamMemberMode,
             "graphquery" => Self::GraphQuery,
             "symboledit" => Self::SymbolEdit,
+            "exitplanmode" => Self::ExitPlanMode,
+            "multiedit" => Self::MultiEdit,
+            "askuserquestion" => Self::AskUserQuestion,
+            "webfetch" | "web_fetch" => Self::WebFetch,
+            "websearch" | "web_search" => Self::WebSearch,
             "postbounty" | "post_bounty" => Self::PostBounty,
             "marketstatus" | "market_status" => Self::MarketStatus,
             "runbounty" | "run_bounty" => Self::RunBounty,
+            "croncreate" | "cron_create" => Self::CronCreate,
+            "cronlist" | "cron_list" => Self::CronList,
+            "crondelete" | "cron_delete" => Self::CronDelete,
+            "schedulewakeup" | "schedule_wakeup" => Self::ScheduleWakeup,
+            "monitor" => Self::Monitor,
+            "lsp" => Self::Lsp,
+            "pushnotification" | "push_notification" => Self::PushNotification,
+            "remotetrigger" | "remote_trigger" => Self::RemoteTrigger,
+            "enterplanmode" | "enter_plan_mode" => Self::EnterPlanMode,
+            "enterworktree" | "enter_worktree" => Self::EnterWorktree,
+            "exitworktree" | "exit_worktree" => Self::ExitWorktree,
+            "notebookread" | "notebook_read" => Self::NotebookRead,
+            "notebookedit" | "notebook_edit" => Self::NotebookEdit,
+            // MCP-namespaced tools route to the Mcp variant. Goes last
+            // so it doesn't shadow specific matches.
+            _ if name.starts_with("mcp__") => Self::Mcp(name.to_owned()),
             _ => Self::Generic(name.to_owned()),
         }
     }
@@ -918,9 +1047,28 @@ impl ToolKind {
             Self::TeamMemberMode => "TeamMemberMode",
             Self::GraphQuery => "GraphQuery",
             Self::SymbolEdit => "SymbolEdit",
+            Self::ExitPlanMode => "ExitPlanMode",
+            Self::MultiEdit => "MultiEdit",
+            Self::AskUserQuestion => "AskUserQuestion",
+            Self::WebFetch => "WebFetch",
+            Self::WebSearch => "WebSearch",
             Self::PostBounty => "PostBounty",
             Self::RunBounty => "RunBounty",
             Self::MarketStatus => "MarketStatus",
+            Self::Mcp(name) => name.as_str(),
+            Self::CronCreate => "CronCreate",
+            Self::CronList => "CronList",
+            Self::CronDelete => "CronDelete",
+            Self::ScheduleWakeup => "ScheduleWakeup",
+            Self::Monitor => "Monitor",
+            Self::Lsp => "LSP",
+            Self::PushNotification => "PushNotification",
+            Self::RemoteTrigger => "RemoteTrigger",
+            Self::EnterPlanMode => "EnterPlanMode",
+            Self::EnterWorktree => "EnterWorktree",
+            Self::ExitWorktree => "ExitWorktree",
+            Self::NotebookRead => "NotebookRead",
+            Self::NotebookEdit => "NotebookEdit",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -949,9 +1097,28 @@ impl ToolKind {
             Self::TeamMemberMode => "TeamMemberMode",
             Self::GraphQuery => "graph_query",
             Self::SymbolEdit => "symbol_edit",
+            Self::ExitPlanMode => "ExitPlanMode",
+            Self::MultiEdit => "MultiEdit",
+            Self::AskUserQuestion => "AskUserQuestion",
+            Self::WebFetch => "WebFetch",
+            Self::WebSearch => "WebSearch",
             Self::PostBounty => "post_bounty",
             Self::RunBounty => "run_bounty",
             Self::MarketStatus => "market_status",
+            Self::Mcp(name) => name.as_str(),
+            Self::CronCreate => "CronCreate",
+            Self::CronList => "CronList",
+            Self::CronDelete => "CronDelete",
+            Self::ScheduleWakeup => "ScheduleWakeup",
+            Self::Monitor => "Monitor",
+            Self::Lsp => "LSP",
+            Self::PushNotification => "PushNotification",
+            Self::RemoteTrigger => "RemoteTrigger",
+            Self::EnterPlanMode => "EnterPlanMode",
+            Self::EnterWorktree => "EnterWorktree",
+            Self::ExitWorktree => "ExitWorktree",
+            Self::NotebookRead => "NotebookRead",
+            Self::NotebookEdit => "NotebookEdit",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -1036,6 +1203,54 @@ impl ToolInput {
                 None => "market status".into(),
             },
             Self::RunBounty { bounty_id, .. } => format!("run bounty: {bounty_id}"),
+            Self::ExitPlanMode { plan } => {
+                let head: String = plan.lines().next().unwrap_or("").chars().take(60).collect();
+                format!("exit plan mode: {head}")
+            }
+            Self::MultiEdit { file_path, edits } => {
+                let n = edits.as_array().map(|a| a.len()).unwrap_or(0);
+                format!("{file_path} ({n} edit{})", if n == 1 { "" } else { "s" })
+            }
+            Self::AskUserQuestion { question, .. } => {
+                format!("ask: {}", question.chars().take(60).collect::<String>())
+            }
+            Self::WebFetch { url, .. } => format!("fetch: {url}"),
+            Self::WebSearch { query, .. } => format!("search: {query}"),
+            Self::Mcp { name, arguments } => {
+                let label = crate::mcp::split_advertised(name)
+                    .map(|(server, tool)| format!("{tool}@{server}"))
+                    .unwrap_or_else(|| name.clone());
+                let preview: String = arguments.to_string().chars().take(60).collect();
+                format!("{label}: {preview}")
+            }
+            Self::CronCreate { schedule, description, .. } => format!("cron `{schedule}`: {description}"),
+            Self::CronList => "list cron jobs".into(),
+            Self::CronDelete { id } => format!("delete cron: {id}"),
+            Self::ScheduleWakeup { delay_seconds, reason, .. } => format!("wake in {delay_seconds}s: {reason}"),
+            Self::Monitor { command, until } => {
+                let preview: String = command.chars().take(40).collect();
+                format!("monitor `{preview}` until /{until}/")
+            }
+            Self::Lsp { kind, file, line, .. } => format!("lsp {kind} {file}:{line}"),
+            Self::PushNotification { message, title } => match title {
+                Some(t) if !t.is_empty() => format!("{t}: {message}"),
+                _ => message.clone(),
+            },
+            Self::RemoteTrigger { trigger_id, .. } => format!("trigger: {trigger_id}"),
+            Self::EnterPlanMode { reason } => {
+                let preview: String = reason.chars().take(60).collect();
+                format!("enter plan mode: {preview}")
+            }
+            Self::EnterWorktree { name, branch } => match branch {
+                Some(b) => format!("enter worktree {name} ({b})"),
+                None => format!("enter worktree {name}"),
+            },
+            Self::ExitWorktree => "exit worktree".into(),
+            Self::NotebookRead { path } => path.clone(),
+            Self::NotebookEdit { path, cell_id, edit_mode, .. } => {
+                let mode = edit_mode.as_deref().unwrap_or("replace");
+                format!("notebook {mode} {path}#{cell_id}")
+            }
             Self::Generic { summary } => summary.clone(),
         }
     }
@@ -1221,6 +1436,92 @@ impl ToolInput {
                     .and_then(|m| m.get("max_solvers"))
                     .and_then(|v| v.as_u64())
                     .map(|n| n.min(255) as u8),
+            },
+            ToolKind::ExitPlanMode => Self::ExitPlanMode {
+                plan: str_field("plan"),
+            },
+            ToolKind::MultiEdit => Self::MultiEdit {
+                file_path: str_field("file_path"),
+                edits: obj
+                    .and_then(|m| m.get("edits"))
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Array(vec![])),
+            },
+            ToolKind::AskUserQuestion => Self::AskUserQuestion {
+                question: str_field("question"),
+                options: obj
+                    .and_then(|m| m.get("options"))
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Array(vec![])),
+                multi_select: bool_field("multi_select"),
+            },
+            ToolKind::WebFetch => Self::WebFetch {
+                url: str_field("url"),
+                prompt: opt_str_field("prompt"),
+            },
+            ToolKind::WebSearch => Self::WebSearch {
+                query: str_field("query"),
+                max_results: obj
+                    .and_then(|m| m.get("max_results"))
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32),
+            },
+            ToolKind::Mcp(name) => Self::Mcp {
+                name,
+                arguments: v.clone(),
+            },
+            ToolKind::CronCreate => Self::CronCreate {
+                schedule: str_field("schedule"),
+                command: str_field("command"),
+                description: str_field("description"),
+            },
+            ToolKind::CronList => Self::CronList,
+            ToolKind::CronDelete => Self::CronDelete {
+                id: str_field("id"),
+            },
+            ToolKind::ScheduleWakeup => Self::ScheduleWakeup {
+                delay_seconds: obj
+                    .and_then(|m| m.get("delay_seconds"))
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n.min(u32::MAX as u64) as u32)
+                    .unwrap_or(0),
+                prompt: str_field("prompt"),
+                reason: str_field("reason"),
+            },
+            ToolKind::Monitor => Self::Monitor {
+                command: str_field("command"),
+                until: str_field("until"),
+            },
+            ToolKind::Lsp => Self::Lsp {
+                kind: str_field("kind"),
+                file: str_field("file"),
+                line: obj.and_then(|m| m.get("line")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                column: obj.and_then(|m| m.get("column")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            },
+            ToolKind::PushNotification => Self::PushNotification {
+                message: str_field("message"),
+                title: opt_str_field("title"),
+            },
+            ToolKind::RemoteTrigger => Self::RemoteTrigger {
+                trigger_id: str_field("trigger_id"),
+                payload: obj.and_then(|m| m.get("payload")).cloned(),
+            },
+            ToolKind::EnterPlanMode => Self::EnterPlanMode {
+                reason: str_field("reason"),
+            },
+            ToolKind::EnterWorktree => Self::EnterWorktree {
+                name: str_field("name"),
+                branch: opt_str_field("branch"),
+            },
+            ToolKind::ExitWorktree => Self::ExitWorktree,
+            ToolKind::NotebookRead => Self::NotebookRead {
+                path: str_field("path"),
+            },
+            ToolKind::NotebookEdit => Self::NotebookEdit {
+                path: str_field("path"),
+                cell_id: str_field("cell_id"),
+                new_source: str_field("new_source"),
+                edit_mode: opt_str_field("edit_mode"),
             },
             ToolKind::Generic(_) => Self::Generic {
                 summary: v.to_string(),
@@ -1475,6 +1776,110 @@ impl ToolInput {
                 let mut v = json!({ "bounty_id": bounty_id });
                 if let Some(n) = max_solvers {
                     v["max_solvers"] = json!(n);
+                }
+                v
+            }
+            Self::ExitPlanMode { plan } => json!({ "plan": plan }),
+            Self::MultiEdit { file_path, edits } => json!({
+                "file_path": file_path,
+                "edits": edits,
+            }),
+            Self::AskUserQuestion {
+                question,
+                options,
+                multi_select,
+            } => json!({
+                "question": question,
+                "options": options,
+                "multi_select": multi_select,
+            }),
+            Self::WebFetch { url, prompt } => {
+                let mut v = json!({ "url": url });
+                if let Some(p) = prompt {
+                    v["prompt"] = json!(p);
+                }
+                v
+            }
+            Self::WebSearch { query, max_results } => {
+                let mut v = json!({ "query": query });
+                if let Some(n) = max_results {
+                    v["max_results"] = json!(n);
+                }
+                v
+            }
+            Self::Mcp { arguments, .. } => arguments.clone(),
+            Self::CronCreate {
+                schedule,
+                command,
+                description,
+            } => json!({
+                "schedule": schedule,
+                "command": command,
+                "description": description,
+            }),
+            Self::CronList => json!({}),
+            Self::CronDelete { id } => json!({ "id": id }),
+            Self::ScheduleWakeup {
+                delay_seconds,
+                prompt,
+                reason,
+            } => json!({
+                "delay_seconds": delay_seconds,
+                "prompt": prompt,
+                "reason": reason,
+            }),
+            Self::Monitor { command, until } => json!({
+                "command": command,
+                "until": until,
+            }),
+            Self::Lsp {
+                kind,
+                file,
+                line,
+                column,
+            } => {
+                json!({ "kind": kind, "file": file, "line": line, "column": column })
+            }
+            Self::PushNotification { message, title } => {
+                let mut v = json!({ "message": message });
+                if let Some(t) = title {
+                    v["title"] = json!(t);
+                }
+                v
+            }
+            Self::RemoteTrigger {
+                trigger_id,
+                payload,
+            } => {
+                let mut v = json!({ "trigger_id": trigger_id });
+                if let Some(p) = payload {
+                    v["payload"] = p.clone();
+                }
+                v
+            }
+            Self::EnterPlanMode { reason } => json!({ "reason": reason }),
+            Self::EnterWorktree { name, branch } => {
+                let mut v = json!({ "name": name });
+                if let Some(b) = branch {
+                    v["branch"] = json!(b);
+                }
+                v
+            }
+            Self::ExitWorktree => json!({}),
+            Self::NotebookRead { path } => json!({ "path": path }),
+            Self::NotebookEdit {
+                path,
+                cell_id,
+                new_source,
+                edit_mode,
+            } => {
+                let mut v = json!({
+                    "path": path,
+                    "cell_id": cell_id,
+                    "new_source": new_source,
+                });
+                if let Some(m) = edit_mode {
+                    v["edit_mode"] = json!(m);
                 }
                 v
             }
@@ -1916,6 +2321,191 @@ mod tests {
         match ToolKind::from_name("not_a_real_tool") {
             ToolKind::Generic(s) => assert_eq!(s, "not_a_real_tool"),
             other => panic!("expected Generic, got {other:?}"),
+        }
+    }
+
+    // MCP-namespaced names route to the Mcp variant carrying the full
+    // advertised name.
+    #[test]
+    fn from_name_mcp_prefixed_routes_to_mcp_variant_normal() {
+        match ToolKind::from_name("mcp__filesystem__read_file") {
+            ToolKind::Mcp(s) => assert_eq!(s, "mcp__filesystem__read_file"),
+            other => panic!("expected Mcp, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_name_mcp_without_separator_is_generic_robust() {
+        match ToolKind::from_name("mcp_dispatch") {
+            ToolKind::Generic(s) => assert_eq!(s, "mcp_dispatch"),
+            other => panic!("expected Generic, got {other:?}"),
+        }
+    }
+
+    // The 8 v2.1.132 tools must all parse from PascalCase and snake_case.
+    #[test]
+    fn from_name_resolves_v2_1_132_tools_normal() {
+        assert!(matches!(ToolKind::from_name("LSP"), ToolKind::Lsp));
+        assert!(matches!(ToolKind::from_name("lsp"), ToolKind::Lsp));
+        assert!(matches!(
+            ToolKind::from_name("PushNotification"),
+            ToolKind::PushNotification
+        ));
+        assert!(matches!(
+            ToolKind::from_name("push_notification"),
+            ToolKind::PushNotification
+        ));
+        assert!(matches!(
+            ToolKind::from_name("RemoteTrigger"),
+            ToolKind::RemoteTrigger
+        ));
+        assert!(matches!(
+            ToolKind::from_name("remote_trigger"),
+            ToolKind::RemoteTrigger
+        ));
+        assert!(matches!(
+            ToolKind::from_name("EnterPlanMode"),
+            ToolKind::EnterPlanMode
+        ));
+        assert!(matches!(
+            ToolKind::from_name("EnterWorktree"),
+            ToolKind::EnterWorktree
+        ));
+        assert!(matches!(
+            ToolKind::from_name("ExitWorktree"),
+            ToolKind::ExitWorktree
+        ));
+        assert!(matches!(
+            ToolKind::from_name("NotebookRead"),
+            ToolKind::NotebookRead
+        ));
+        assert!(matches!(
+            ToolKind::from_name("NotebookEdit"),
+            ToolKind::NotebookEdit
+        ));
+    }
+
+    #[test]
+    fn label_v2_1_132_tools_normal() {
+        assert_eq!(ToolKind::Lsp.label(), "LSP");
+        assert_eq!(ToolKind::PushNotification.label(), "PushNotification");
+        assert_eq!(ToolKind::RemoteTrigger.label(), "RemoteTrigger");
+        assert_eq!(ToolKind::EnterPlanMode.label(), "EnterPlanMode");
+        assert_eq!(ToolKind::EnterWorktree.label(), "EnterWorktree");
+        assert_eq!(ToolKind::ExitWorktree.label(), "ExitWorktree");
+        assert_eq!(ToolKind::NotebookRead.label(), "NotebookRead");
+        assert_eq!(ToolKind::NotebookEdit.label(), "NotebookEdit");
+    }
+
+    #[test]
+    fn api_name_v2_1_132_tools_normal() {
+        assert_eq!(ToolKind::Lsp.api_name(), "LSP");
+        assert_eq!(ToolKind::PushNotification.api_name(), "PushNotification");
+        assert_eq!(ToolKind::RemoteTrigger.api_name(), "RemoteTrigger");
+        assert_eq!(ToolKind::EnterPlanMode.api_name(), "EnterPlanMode");
+        assert_eq!(ToolKind::EnterWorktree.api_name(), "EnterWorktree");
+        assert_eq!(ToolKind::ExitWorktree.api_name(), "ExitWorktree");
+        assert_eq!(ToolKind::NotebookRead.api_name(), "NotebookRead");
+        assert_eq!(ToolKind::NotebookEdit.api_name(), "NotebookEdit");
+    }
+
+    /// The summary string is what shows in the tool row's right column.
+    /// Each new tool needs a non-empty, distinguishable summary so the UI
+    /// doesn't show identical placeholder strings for multiple calls.
+    #[test]
+    fn summary_v2_1_132_tools_normal() {
+        let lsp = ToolInput::Lsp {
+            kind: "hover".into(),
+            file: "/tmp/x.rs".into(),
+            line: 12,
+            column: 4,
+        };
+        assert!(lsp.summary().contains("hover"), "{}", lsp.summary());
+        assert!(lsp.summary().contains("/tmp/x.rs:12"), "{}", lsp.summary());
+
+        let pn = ToolInput::PushNotification {
+            message: "hi".into(),
+            title: Some("CI".into()),
+        };
+        assert_eq!(pn.summary(), "CI: hi");
+
+        let rt = ToolInput::RemoteTrigger {
+            trigger_id: "deploy".into(),
+            payload: None,
+        };
+        assert_eq!(rt.summary(), "trigger: deploy");
+
+        let pm = ToolInput::EnterPlanMode {
+            reason: "double check".into(),
+        };
+        assert!(pm.summary().contains("double check"), "{}", pm.summary());
+
+        let ew = ToolInput::EnterWorktree {
+            name: "feat".into(),
+            branch: Some("dev".into()),
+        };
+        assert!(ew.summary().contains("feat"), "{}", ew.summary());
+        assert!(ew.summary().contains("dev"), "{}", ew.summary());
+
+        assert_eq!(ToolInput::ExitWorktree.summary(), "exit worktree");
+
+        let nr = ToolInput::NotebookRead {
+            path: "/tmp/n.ipynb".into(),
+        };
+        assert_eq!(nr.summary(), "/tmp/n.ipynb");
+
+        let ne = ToolInput::NotebookEdit {
+            path: "/tmp/n.ipynb".into(),
+            cell_id: "c1".into(),
+            new_source: "x".into(),
+            edit_mode: Some("insert".into()),
+        };
+        assert!(ne.summary().contains("insert"), "{}", ne.summary());
+        assert!(ne.summary().contains("c1"), "{}", ne.summary());
+    }
+
+    /// from_value/to_value round-trip for each new tool's parameters.
+    #[test]
+    fn from_value_to_value_round_trip_v2_1_132_robust() {
+        let cases: Vec<(&str, serde_json::Value)> = vec![
+            (
+                "LSP",
+                serde_json::json!({"kind": "definition", "file": "/a/b.rs", "line": 3, "column": 7}),
+            ),
+            (
+                "PushNotification",
+                serde_json::json!({"message": "ok", "title": "build"}),
+            ),
+            (
+                "RemoteTrigger",
+                serde_json::json!({"trigger_id": "deploy", "payload": {"k": "v"}}),
+            ),
+            ("EnterPlanMode", serde_json::json!({"reason": "audit"})),
+            (
+                "EnterWorktree",
+                serde_json::json!({"name": "feat", "branch": "main"}),
+            ),
+            ("ExitWorktree", serde_json::json!({})),
+            ("NotebookRead", serde_json::json!({"path": "/tmp/x.ipynb"})),
+            (
+                "NotebookEdit",
+                serde_json::json!({
+                    "path": "/tmp/x.ipynb",
+                    "cell_id": "c1",
+                    "new_source": "y = 2",
+                    "edit_mode": "replace",
+                }),
+            ),
+        ];
+        for (name, v) in cases {
+            let parsed = ToolInput::from_value(name, v.clone());
+            let back = parsed.to_value();
+            for (k, vv) in v.as_object().unwrap() {
+                assert_eq!(
+                    &back[k], vv,
+                    "round-trip lost field {k} for {name}: back={back}"
+                );
+            }
         }
     }
 

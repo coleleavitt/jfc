@@ -287,6 +287,13 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
                         "name": name,
                         "input": input,
                     }),
+                    // Image (PNG/JPEG/GIF/WebP) → `image` block;
+                    // PDF → `document` block. Both share the base64
+                    // source struct — `to_anthropic_content_block`
+                    // owns the type-routing rule.
+                    ProviderContent::Attachment(att) => {
+                        crate::attachments::to_anthropic_content_block(att)
+                    }
                 })
                 .collect();
             json!({ "role": role, "content": content })

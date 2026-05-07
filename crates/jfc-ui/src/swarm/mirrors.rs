@@ -1,8 +1,19 @@
+#![allow(dead_code, unused_imports)]
 //! Session mirrors — real-time observation of teammate work.
 //!
 //! A mirror allows the leader (or any observer) to see a teammate's
 //! tool calls and model responses in real-time, without interfering
 //! with their execution.
+//!
+//! ## Wiring status
+//!
+//! Data layer is complete (event format, file-watcher, mailbox).
+//! UI integration is the missing piece: a leader-side `/mirror <id>`
+//! slash command that opens a follower pane, plus a teammate-side
+//! emitter that writes mirror events alongside the existing mailbox
+//! traffic. Both pieces are tractable but require ratatui pane
+//! plumbing the rest of the swarm code doesn't have yet. Marked
+//! `dead_code` on purpose — code preserved, wiring deferred.
 
 use std::path::PathBuf;
 use std::time::SystemTime;

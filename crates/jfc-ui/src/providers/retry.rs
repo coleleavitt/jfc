@@ -7,7 +7,7 @@
 //! - Configurable max retries (default: 2)
 
 use std::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// Configuration for retry behavior.
 #[derive(Debug, Clone)]
@@ -64,7 +64,12 @@ pub fn should_retry_status(status: u16, headers: Option<&reqwest::header::Header
         }
     }
 
-    matches!(status, 408 | 409 | 429 | 500..=599)
+    // Match v132's retry policy: 408 (timeout), 409 (conflict), 425
+    // (too-early), 429 (rate-limit), and any 5xx including the
+    // Cloudflare-specific 520-526 + 529 (overloaded). 413 is *not*
+    // retried because it indicates the body itself is the problem;
+    // the caller should compact instead.
+    matches!(status, 408 | 409 | 425 | 429 | 500..=599)
 }
 
 /// Whether an error is a connection/network error worth retrying.
@@ -73,30 +78,62 @@ pub fn is_retriable_error(err: &reqwest::Error) -> bool {
 }
 
 /// User-friendly error message for common HTTP errors.
+///
+/// Coverage matches v2.1.132's `cli.js` error-handling matrix
+/// (extracted from `~/VulnerabilityResearch/anthropic/extracted_2.1.132/
+/// src/entrypoints/cli.js`): 400 (with prompt-too-long detection),
+/// 401, 403, 408, 409, 413, 425, 429, 500, 502, 503, 504, 520-526,
+/// 529. Anything outside this set falls through to the generic
+/// `HTTP <status>:` form so the user still gets the raw status.
 pub fn friendly_error_message(status: u16, body: &str) -> String {
     match status {
-        401 => "Authentication failed — check your API key or token.".to_string(),
-        403 => "Access forbidden — your account may not have access to this model.".to_string(),
-        429 => {
-            if body.contains("rate_limit") {
-                "Rate limited — too many requests. Retrying with backoff...".to_string()
-            } else {
-                "Rate limited — waiting before retry.".to_string()
-            }
-        }
-        400 if body.contains("prompt is too long") || body.contains("ContextWindowExceeded") => {
-            // Extract the token count if possible
+        // ── 4xx — client/auth ────────────────────────────────────
+        400 if body.contains("prompt is too long")
+            || body.contains("ContextWindowExceeded")
+            || body.contains("context_length_exceeded") =>
+        {
             if let Some(cap) = extract_token_count(body) {
                 format!("Context window exceeded ({cap} tokens). Auto-compaction should trigger.")
             } else {
                 "Context window exceeded. Auto-compaction should trigger.".to_string()
             }
         }
+        400 if body.contains("tool use concurrency") => {
+            "API Error: 400 due to tool use concurrency issues — retrying.".to_string()
+        }
         400 => format!("Bad request: {}", truncate(body, 200)),
-        500 => "Internal server error — the provider is having issues.".to_string(),
-        502 => "Bad gateway — the provider proxy is unreachable.".to_string(),
-        503 => "Service unavailable — the model may be overloaded.".to_string(),
-        529 => "Provider is overloaded (529). Retrying...".to_string(),
+        401 => "Authentication failed — check your API key or token (run /login if using OAuth).".to_string(),
+        403 => "Access forbidden — your account may not have access to this model.".to_string(),
+        408 => "Request timed out (408) — the upstream gave up before the body finished. Retrying.".to_string(),
+        409 => "Conflict (409) — concurrent state change. Retrying.".to_string(),
+        413 => {
+            // v132 treats 413 like request_too_large: hint at compaction
+            // rather than just dumping "payload too large".
+            "Request body too large (413). Auto-compaction should kick in for context-window cases.".to_string()
+        }
+        425 => "Server rejected the request as 'too early' (425). Retrying after a short delay.".to_string(),
+        429 => {
+            if body.contains("rate_limit") {
+                "Rate limited — too many requests. Retrying with backoff.".to_string()
+            } else {
+                "Rate limited — waiting before retry.".to_string()
+            }
+        }
+        // ── 5xx — server/proxy ───────────────────────────────────
+        500 => "Internal server error (500) — the provider is having issues.".to_string(),
+        502 => "Bad gateway (502) — the provider proxy is unreachable.".to_string(),
+        503 => "Service unavailable (503) — the model may be overloaded. Retrying.".to_string(),
+        504 => "Gateway timeout (504) — upstream took too long to respond. Retrying.".to_string(),
+        // Cloudflare proxy errors. v132 surfaces these as transient
+        // and auto-retries; the user almost never needs to react.
+        520 => "Cloudflare 520 — origin returned an unknown error. Retrying.".to_string(),
+        521 => "Cloudflare 521 — origin web server is down. Retrying.".to_string(),
+        522 => "Cloudflare 522 — connection timed out at the edge. Retrying.".to_string(),
+        523 => "Cloudflare 523 — origin is unreachable. Retrying.".to_string(),
+        524 => "Cloudflare 524 — origin took too long to send the response. Retrying.".to_string(),
+        525 => "Cloudflare 525 — TLS handshake failed at the edge. Retrying.".to_string(),
+        526 => "Cloudflare 526 — invalid SSL cert at the origin.".to_string(),
+        529 => "Provider is overloaded (529). Retrying.".to_string(),
         _ => format!("HTTP {status}: {}", truncate(body, 150)),
     }
 }
@@ -208,5 +245,47 @@ mod tests {
         assert!(friendly_error_message(401, "").contains("Authentication"));
         assert!(friendly_error_message(400, "prompt is too long: 210169 tokens > 200000")
             .contains("210169"));
+    }
+
+    /// Coverage check: every status code v132's cli.js explicitly
+    /// branches on must produce a status-specific friendly message,
+    /// not the generic `HTTP <status>:` fallback. Prevents a quiet
+    /// regression where someone deletes a branch and the user starts
+    /// seeing raw upstream JSON for an error type we used to handle.
+    #[test]
+    fn covers_all_v132_status_codes_normal() {
+        let v132_codes: &[u16] = &[
+            400, 401, 403, 408, 409, 413, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524,
+            525, 526, 529,
+        ];
+        for code in v132_codes {
+            let msg = friendly_error_message(*code, "");
+            assert!(
+                !msg.starts_with(&format!("HTTP {code}")),
+                "status {code} should have a tailored message, got: {msg}"
+            );
+        }
+    }
+
+    /// 413 is special: v132 rejects retrying it (it's the body that's
+    /// the problem, not the network). Confirm `should_retry_status`
+    /// returns false so we don't loop on a forever-too-large request.
+    #[test]
+    fn should_retry_excludes_413_robust() {
+        assert!(!should_retry_status(413, None));
+        assert!(!should_retry_status(400, None));
+        assert!(!should_retry_status(401, None));
+    }
+
+    /// 408 / 425 / Cloudflare 5xx (520-526) / 529 must all retry —
+    /// these are exactly the transient cases v132 retries.
+    #[test]
+    fn retries_v132_transient_codes_normal() {
+        for code in [408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 529] {
+            assert!(
+                should_retry_status(code, None),
+                "status {code} should be retried"
+            );
+        }
     }
 }

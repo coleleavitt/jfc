@@ -1843,19 +1843,44 @@ impl Provider for OpenWebUIProvider {
         // `x-litellm-*-timeout` headers tell LiteLLM (which fronts most
         // Bedrock-on-OWUI deployments) to honor a long upstream timeout —
         // tool-call streams can exceed LiteLLM's default of 60s.
-        let resp = self
-            .client
-            .post(&url)
-            .header("authorization", format!("Bearer {}", account.token))
-            .header("accept", "application/json")
-            .header("content-type", "application/json")
-            .header("connection", "keep-alive")
-            .header("x-litellm-stream-timeout", "600")
-            .header("x-litellm-timeout", "600")
-            .json(&body)
-            .send()
-            .await?;
+        let send_started = std::time::Instant::now();
+        let resp = match super::http::send_with_retry("openwebui.chat/completions", || {
+            self.client
+                .post(&url)
+                .header("authorization", format!("Bearer {}", account.token))
+                .header("accept", "application/json")
+                .header("content-type", "application/json")
+                .header("connection", "keep-alive")
+                .header("x-litellm-stream-timeout", "600")
+                .header("x-litellm-timeout", "600")
+                .json(&body)
+                .send()
+        })
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                let cause = super::http::classify_send_error(&e);
+                tracing::warn!(
+                    target: "jfc::provider::openwebui",
+                    url = %url,
+                    error = %e,
+                    cause = cause,
+                    "POST chat/completions failed before response (after retries)"
+                );
+                anyhow::bail!(
+                    "OpenWebUI request to {url} failed: {cause} ({e}). \
+                     If this happens repeatedly, check the proxy/LiteLLM \
+                     logs and verify ~/.config/jfc/openwebui/accounts.toml \
+                     has a reachable base_url."
+                );
+            }
+        };
 
+        super::http::report_first_byte_latency(
+            "openwebui.chat/completions",
+            send_started.elapsed(),
+        );
         tracing::info!(
             target: "jfc::provider::openwebui",
             status = %resp.status(),
@@ -1867,7 +1892,12 @@ impl Provider for OpenWebUIProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            anyhow::bail!("OpenWebUI API error {status}: {text}");
+            // Route through `friendly_error_message` so 401/403/429/5xx
+            // get a human-readable hint instead of dumping the raw
+            // upstream JSON. Falls back to the literal status+body for
+            // anything we don't have a recipe for.
+            let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+            anyhow::bail!("OpenWebUI API error {status}: {friendly}\n  raw: {text}");
         }
 
         Ok(openai_compatible_event_stream(resp))

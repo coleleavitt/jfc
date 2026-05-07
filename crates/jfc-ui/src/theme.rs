@@ -140,20 +140,300 @@ impl Theme {
         }
     }
 
+    /// Tokyo Night — folke/tokyonight.nvim. Cool indigo background
+    /// with violet/blue accents; popular for low eye-strain night work.
+    pub fn tokyo_night() -> Self {
+        Self {
+            bg: Color::Rgb(26, 27, 38),
+            surface: Color::Rgb(22, 22, 30),
+            surface_raised: Color::Rgb(41, 46, 66),
+            border: Color::Rgb(65, 72, 104),
+            text_primary: Color::Rgb(192, 202, 245),
+            text_secondary: Color::Rgb(169, 177, 214),
+            text_muted: Color::Rgb(86, 95, 137),
+            accent: Color::Rgb(122, 162, 247),
+            success: Color::Rgb(158, 206, 106),
+            warning: Color::Rgb(224, 175, 104),
+            error: Color::Rgb(247, 118, 142),
+            user_bubble_bg: Color::Rgb(30, 32, 48),
+            asst_bubble_bg: Color::Rgb(22, 22, 30),
+            code_bg: Color::Rgb(20, 21, 30),
+            code_fg: Color::Rgb(192, 202, 245),
+            code_string: Color::Rgb(158, 206, 106),
+            code_keyword: Color::Rgb(187, 154, 247),
+            code_comment: Color::Rgb(86, 95, 137),
+            code_number: Color::Rgb(255, 158, 100),
+            reasoning_bg: Color::Rgb(36, 40, 59),
+            reasoning_fg: Color::Rgb(154, 165, 206),
+        }
+    }
+
+    /// Dracula — dracula/dracula. Vivid violet/pink/cyan on dark
+    /// charcoal; arguably the most-recognizable dark palette.
+    pub fn dracula() -> Self {
+        Self {
+            bg: Color::Rgb(40, 42, 54),
+            surface: Color::Rgb(44, 46, 62),
+            surface_raised: Color::Rgb(68, 71, 90),
+            border: Color::Rgb(98, 114, 164),
+            text_primary: Color::Rgb(248, 248, 242),
+            text_secondary: Color::Rgb(191, 191, 191),
+            text_muted: Color::Rgb(98, 114, 164),
+            accent: Color::Rgb(189, 147, 249),
+            success: Color::Rgb(80, 250, 123),
+            warning: Color::Rgb(241, 250, 140),
+            error: Color::Rgb(255, 85, 85),
+            user_bubble_bg: Color::Rgb(44, 46, 62),
+            asst_bubble_bg: Color::Rgb(40, 42, 54),
+            code_bg: Color::Rgb(34, 36, 48),
+            code_fg: Color::Rgb(248, 248, 242),
+            code_string: Color::Rgb(241, 250, 140),
+            code_keyword: Color::Rgb(255, 121, 198),
+            code_comment: Color::Rgb(98, 114, 164),
+            code_number: Color::Rgb(189, 147, 249),
+            reasoning_bg: Color::Rgb(50, 52, 68),
+            reasoning_fg: Color::Rgb(180, 180, 200),
+        }
+    }
+
+    /// Nord — arcticicestudio/nord. Cold polar palette with subdued
+    /// frost accents — strong for daytime use under bright lighting.
+    pub fn nord() -> Self {
+        Self {
+            bg: Color::Rgb(46, 52, 64),       // nord0
+            surface: Color::Rgb(59, 66, 82),  // nord1
+            surface_raised: Color::Rgb(67, 76, 94), // nord2
+            border: Color::Rgb(76, 86, 106),  // nord3
+            text_primary: Color::Rgb(216, 222, 233), // nord4
+            text_secondary: Color::Rgb(229, 233, 240), // nord5
+            text_muted: Color::Rgb(76, 86, 106),
+            accent: Color::Rgb(136, 192, 208), // nord8 (frost)
+            success: Color::Rgb(163, 190, 140), // nord14
+            warning: Color::Rgb(235, 203, 139), // nord13
+            error: Color::Rgb(191, 97, 106),    // nord11
+            user_bubble_bg: Color::Rgb(59, 66, 82),
+            asst_bubble_bg: Color::Rgb(46, 52, 64),
+            code_bg: Color::Rgb(36, 41, 51),
+            code_fg: Color::Rgb(216, 222, 233),
+            code_string: Color::Rgb(163, 190, 140),
+            code_keyword: Color::Rgb(129, 161, 193), // nord9
+            code_comment: Color::Rgb(76, 86, 106),
+            code_number: Color::Rgb(180, 142, 173), // nord15
+            reasoning_bg: Color::Rgb(59, 66, 82),
+            reasoning_fg: Color::Rgb(180, 188, 200),
+        }
+    }
+
+    /// Gruvbox Dark — morhetz/gruvbox. Warm retro greys with
+    /// orange/yellow accents; cherished by old-school terminal users.
+    pub fn gruvbox_dark() -> Self {
+        Self {
+            bg: Color::Rgb(40, 40, 40),       // bg0
+            surface: Color::Rgb(60, 56, 54),  // bg1
+            surface_raised: Color::Rgb(80, 73, 69), // bg2
+            border: Color::Rgb(102, 92, 84),  // bg3
+            text_primary: Color::Rgb(235, 219, 178), // fg1
+            text_secondary: Color::Rgb(213, 196, 161), // fg2
+            text_muted: Color::Rgb(168, 153, 132),     // fg4
+            accent: Color::Rgb(131, 165, 152),         // blue/aqua
+            success: Color::Rgb(184, 187, 38),         // green
+            warning: Color::Rgb(250, 189, 47),         // yellow
+            error: Color::Rgb(251, 73, 52),            // red
+            user_bubble_bg: Color::Rgb(60, 56, 54),
+            asst_bubble_bg: Color::Rgb(40, 40, 40),
+            code_bg: Color::Rgb(29, 32, 33), // bg0_h
+            code_fg: Color::Rgb(235, 219, 178),
+            code_string: Color::Rgb(184, 187, 38),
+            code_keyword: Color::Rgb(251, 73, 52),
+            code_comment: Color::Rgb(146, 131, 116), // gray
+            code_number: Color::Rgb(211, 134, 155),  // purple
+            reasoning_bg: Color::Rgb(60, 56, 54),
+            reasoning_fg: Color::Rgb(189, 174, 147),
+        }
+    }
+
+    /// Monokai — TextMate's classic. Hot pink keywords, lime strings,
+    /// cyan accent on black-coffee bg.
+    pub fn monokai() -> Self {
+        Self {
+            bg: Color::Rgb(39, 40, 34),
+            surface: Color::Rgb(45, 46, 37),
+            surface_raised: Color::Rgb(62, 61, 50),
+            border: Color::Rgb(73, 72, 62),
+            text_primary: Color::Rgb(248, 248, 242),
+            text_secondary: Color::Rgb(207, 207, 194),
+            text_muted: Color::Rgb(117, 113, 94),
+            accent: Color::Rgb(102, 217, 239),
+            success: Color::Rgb(166, 226, 46),
+            warning: Color::Rgb(230, 219, 116),
+            error: Color::Rgb(249, 38, 114),
+            user_bubble_bg: Color::Rgb(45, 46, 37),
+            asst_bubble_bg: Color::Rgb(39, 40, 34),
+            code_bg: Color::Rgb(33, 34, 28),
+            code_fg: Color::Rgb(248, 248, 242),
+            code_string: Color::Rgb(230, 219, 116),
+            code_keyword: Color::Rgb(249, 38, 114),
+            code_comment: Color::Rgb(117, 113, 94),
+            code_number: Color::Rgb(174, 129, 255),
+            reasoning_bg: Color::Rgb(48, 49, 41),
+            reasoning_fg: Color::Rgb(207, 207, 194),
+        }
+    }
+
+    /// Ayu Dark — ayu-theme/ayu. Deep navy with electric cyan and
+    /// orange-yellow accents. Sister to Tokyo Night with warmer code.
+    pub fn ayu_dark() -> Self {
+        Self {
+            bg: Color::Rgb(10, 14, 20),
+            surface: Color::Rgb(15, 20, 25),
+            surface_raised: Color::Rgb(22, 27, 34),
+            border: Color::Rgb(40, 50, 64),
+            text_primary: Color::Rgb(179, 177, 173),
+            text_secondary: Color::Rgb(130, 136, 146),
+            text_muted: Color::Rgb(77, 85, 102),
+            accent: Color::Rgb(57, 186, 230),
+            success: Color::Rgb(194, 217, 76),
+            warning: Color::Rgb(255, 180, 84),
+            error: Color::Rgb(240, 113, 120),
+            user_bubble_bg: Color::Rgb(15, 20, 25),
+            asst_bubble_bg: Color::Rgb(10, 14, 20),
+            code_bg: Color::Rgb(7, 11, 16),
+            code_fg: Color::Rgb(179, 177, 173),
+            code_string: Color::Rgb(194, 217, 76),
+            code_keyword: Color::Rgb(255, 143, 64),
+            code_comment: Color::Rgb(92, 103, 115),
+            code_number: Color::Rgb(255, 180, 84),
+            reasoning_bg: Color::Rgb(20, 25, 31),
+            reasoning_fg: Color::Rgb(150, 158, 170),
+        }
+    }
+
+    /// Rose Pine — rose-pine/rose-pine. Soft mauve/foam/rose
+    /// pastels on a deep purple-grey bg. Gentle on the eyes.
+    pub fn rose_pine() -> Self {
+        Self {
+            bg: Color::Rgb(25, 23, 36),       // base
+            surface: Color::Rgb(31, 29, 46),  // surface
+            surface_raised: Color::Rgb(38, 35, 58), // overlay
+            border: Color::Rgb(64, 60, 88),
+            text_primary: Color::Rgb(224, 222, 244), // text
+            text_secondary: Color::Rgb(144, 140, 170), // subtle
+            text_muted: Color::Rgb(110, 106, 134), // muted
+            accent: Color::Rgb(196, 167, 231), // iris
+            success: Color::Rgb(156, 207, 216), // foam
+            warning: Color::Rgb(246, 193, 119), // gold
+            error: Color::Rgb(235, 111, 146), // love
+            user_bubble_bg: Color::Rgb(31, 29, 46),
+            asst_bubble_bg: Color::Rgb(25, 23, 36),
+            code_bg: Color::Rgb(20, 18, 30),
+            code_fg: Color::Rgb(224, 222, 244),
+            code_string: Color::Rgb(246, 193, 119),
+            code_keyword: Color::Rgb(196, 167, 231),
+            code_comment: Color::Rgb(110, 106, 134),
+            code_number: Color::Rgb(235, 188, 186), // rose
+            reasoning_bg: Color::Rgb(31, 29, 46),
+            reasoning_fg: Color::Rgb(180, 175, 210),
+        }
+    }
+
+    /// One Dark — Atom's flagship. Slate background with cool blue
+    /// accent and warm orange numbers; balanced for full-day work.
+    pub fn one_dark() -> Self {
+        Self {
+            bg: Color::Rgb(40, 44, 52),
+            surface: Color::Rgb(33, 37, 43),
+            surface_raised: Color::Rgb(62, 68, 81),
+            border: Color::Rgb(82, 90, 102),
+            text_primary: Color::Rgb(171, 178, 191),
+            text_secondary: Color::Rgb(130, 137, 151),
+            text_muted: Color::Rgb(92, 99, 112),
+            accent: Color::Rgb(97, 175, 239),
+            success: Color::Rgb(152, 195, 121),
+            warning: Color::Rgb(229, 192, 123),
+            error: Color::Rgb(224, 108, 117),
+            user_bubble_bg: Color::Rgb(33, 37, 43),
+            asst_bubble_bg: Color::Rgb(40, 44, 52),
+            code_bg: Color::Rgb(28, 31, 38),
+            code_fg: Color::Rgb(171, 178, 191),
+            code_string: Color::Rgb(152, 195, 121),
+            code_keyword: Color::Rgb(198, 120, 221),
+            code_comment: Color::Rgb(92, 99, 112),
+            code_number: Color::Rgb(209, 154, 102),
+            reasoning_bg: Color::Rgb(45, 49, 58),
+            reasoning_fg: Color::Rgb(160, 168, 182),
+        }
+    }
+
+    /// GitHub Light — primer/github-vscode-theme. Crisp white bg
+    /// with GitHub's official accent palette. Excellent for daytime
+    /// office work or sharing screenshots.
+    pub fn github_light() -> Self {
+        Self {
+            bg: Color::Rgb(255, 255, 255),
+            surface: Color::Rgb(246, 248, 250),
+            surface_raised: Color::Rgb(234, 238, 242),
+            border: Color::Rgb(208, 215, 222),
+            text_primary: Color::Rgb(36, 41, 47),
+            text_secondary: Color::Rgb(87, 96, 106),
+            text_muted: Color::Rgb(110, 119, 129),
+            accent: Color::Rgb(9, 105, 218),
+            success: Color::Rgb(26, 127, 55),
+            warning: Color::Rgb(154, 103, 0),
+            error: Color::Rgb(207, 34, 46),
+            user_bubble_bg: Color::Rgb(221, 244, 255),
+            asst_bubble_bg: Color::Rgb(246, 248, 250),
+            code_bg: Color::Rgb(246, 248, 250),
+            code_fg: Color::Rgb(36, 41, 47),
+            code_string: Color::Rgb(10, 48, 105),
+            code_keyword: Color::Rgb(207, 34, 46),
+            code_comment: Color::Rgb(110, 119, 129),
+            code_number: Color::Rgb(5, 80, 174),
+            reasoning_bg: Color::Rgb(243, 246, 249),
+            reasoning_fg: Color::Rgb(80, 88, 100),
+        }
+    }
+
     /// Look up a theme by name. Returns None for unknown names so
-    /// the caller can show an error toast.
+    /// the caller can show an error toast. Lookup is case-insensitive
+    /// and accepts aliases (`solarized` ↔ `solarized-dark`,
+    /// `catppuccin` ↔ `catppuccin-mocha`, `tokyo` ↔ `tokyo-night`).
     pub fn by_name(name: &str) -> Option<Self> {
-        match name {
+        match name.to_ascii_lowercase().as_str() {
             "dark" => Some(Self::dark()),
             "light" => Some(Self::light()),
             "solarized" | "solarized-dark" => Some(Self::solarized_dark()),
             "catppuccin" | "catppuccin-mocha" => Some(Self::catppuccin()),
+            "tokyo" | "tokyo-night" | "tokyonight" => Some(Self::tokyo_night()),
+            "dracula" => Some(Self::dracula()),
+            "nord" => Some(Self::nord()),
+            "gruvbox" | "gruvbox-dark" => Some(Self::gruvbox_dark()),
+            "monokai" => Some(Self::monokai()),
+            "ayu" | "ayu-dark" => Some(Self::ayu_dark()),
+            "rose-pine" | "rosepine" | "rose_pine" => Some(Self::rose_pine()),
+            "one-dark" | "onedark" | "atom" | "atom-one-dark" => Some(Self::one_dark()),
+            "github" | "github-light" => Some(Self::github_light()),
             _ => None,
         }
     }
 
+    /// Canonical names for `/theme` listing. Aliases are NOT included
+    /// — users see one entry per visually distinct palette.
     pub fn available_names() -> &'static [&'static str] {
-        &["dark", "light", "solarized", "catppuccin"]
+        &[
+            "dark",
+            "light",
+            "solarized",
+            "catppuccin",
+            "tokyo-night",
+            "dracula",
+            "nord",
+            "gruvbox",
+            "monokai",
+            "ayu",
+            "rose-pine",
+            "one-dark",
+            "github-light",
+        ]
     }
 }
 
@@ -310,6 +590,25 @@ mod tests {
         assert_text_distinct_from_bg(&t, "catppuccin");
     }
 
+    /// Every canonical theme — including the new opencode-style palettes —
+    /// gets the same legibility + RGB-slot guarantees as the originals.
+    /// Using `available_names()` here means new themes added to the list
+    /// pick up these checks automatically without per-theme test code.
+    #[test]
+    fn every_canonical_theme_passes_palette_checks_normal() {
+        for name in Theme::available_names() {
+            let t = Theme::by_name(name)
+                .unwrap_or_else(|| panic!("available name {name:?} must resolve"));
+            assert_all_slots_rgb(&t, name);
+            assert_text_distinct_from_bg(&t, name);
+            // Semantic colors must be distinct so red/yellow/green
+            // can't collide on any palette.
+            assert_ne!(rgb_of(t.success), rgb_of(t.warning), "{name}: success vs warning");
+            assert_ne!(rgb_of(t.warning), rgb_of(t.error), "{name}: warning vs error");
+            assert_ne!(rgb_of(t.success), rgb_of(t.error), "{name}: success vs error");
+        }
+    }
+
     #[test]
     fn dark_and_light_have_inverted_brightness_robust() {
         // Sanity-check the dark/light division: dark.bg should be much
@@ -400,7 +699,19 @@ mod tests {
     fn by_name_returns_none_for_unknown_robust() {
         assert!(Theme::by_name("not-a-theme").is_none());
         assert!(Theme::by_name("").is_none());
-        assert!(Theme::by_name("DARK").is_none(), "case-sensitive lookup");
+    }
+
+    /// Lookup is case-insensitive — users frequently type `/theme Dracula`
+    /// and shouldn't have to memorise the canonical lowercase form. The
+    /// previous version of this test asserted case-*sensitive* lookup
+    /// returned None; we changed the contract because the case-folded
+    /// form costs nothing and avoids "unknown theme 'DARK'" papercuts.
+    #[test]
+    fn by_name_is_case_insensitive_normal() {
+        assert!(Theme::by_name("DARK").is_some());
+        assert!(Theme::by_name("Dracula").is_some());
+        assert!(Theme::by_name("Tokyo-Night").is_some());
+        assert!(Theme::by_name("GITHUB-LIGHT").is_some());
     }
 
     #[test]

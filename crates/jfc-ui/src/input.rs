@@ -2232,7 +2232,26 @@ async fn handle_submit(
 
     let provider = app.provider.clone();
     let messages = crate::stream::build_provider_messages(&app.messages[..assistant_idx]);
-    let model = app.model.clone();
+    // Slate per-turn model selection: when the router is configured (config
+    // `slate_enabled = true`), classify the user's text and route to the
+    // best-fit model for this turn. When None (default), use the pinned
+    // `app.model` — legacy behavior. The pinned model is also the fallback
+    // for unmatched classes inside the router itself.
+    let model = if let Some(ref router) = app.slate {
+        let (routed, class, rule_idx) =
+            router.route_explained(&text, app.model.clone());
+        tracing::info!(
+            target: "jfc::slate",
+            class = ?class,
+            matched_rule = ?rule_idx,
+            routed_model = %routed,
+            pinned_model = %app.model,
+            "slate routed turn"
+        );
+        routed
+    } else {
+        app.model.clone()
+    };
     let tx = tx.clone();
     let interrupt = app.interrupt_flag.clone();
     // Fresh user submission resets any prior interrupt state — the user
@@ -2349,6 +2368,83 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 app.max_context_tokens
             )));
             app.force_compact_pending = true;
+        }
+        "/advisor" => {
+            // Parallel advisor (see `crate::advisor`). Doesn't touch the main
+            // agent's stream — runs a separate `provider.complete()` against a
+            // SNAPSHOT of the current transcript and surfaces the reply as a
+            // dedicated `MessagePart::Advisor` part with its own visual style.
+            //
+            // Default-off per deliverable: gated by `app.advisor_enabled`,
+            // populated from `JFC_ADVISOR_ENABLED=1` on startup. Even when on,
+            // each session has a per-budget ceiling (`DEFAULT_TOKEN_BUDGET`)
+            // so a runaway loop can't drain the user's account.
+            let query = parts.get(1).copied().unwrap_or("").trim().to_owned();
+            // Echo the user's command into the transcript first so the chat
+            // shows what the user asked, even on the error paths below.
+            app.messages
+                .push(ChatMessage::user(format!("/advisor {query}")));
+            if !app.advisor_enabled {
+                app.messages.push(ChatMessage::assistant_parts(vec![
+                    MessagePart::Advisor(
+                        "Advisor mode is disabled. Set `JFC_ADVISOR_ENABLED=1` and \
+                         restart jfc to enable parallel advisor queries."
+                            .into(),
+                    ),
+                ]));
+            } else if query.is_empty() {
+                app.messages.push(ChatMessage::assistant_parts(vec![
+                    MessagePart::Advisor(
+                        "Usage: `/advisor <question>` — runs a parallel call \
+                         against a snapshot of this transcript and surfaces \
+                         the reply here without disturbing the main agent."
+                            .into(),
+                    ),
+                ]));
+            } else {
+                // Lazy-mint the session on first use so users that never
+                // call /advisor pay no allocation cost. The session model
+                // tracks the *active* model at first invocation; switching
+                // models mid-session keeps the original advisor model.
+                let session = app
+                    .advisor_session
+                    .get_or_insert_with(|| {
+                        crate::advisor::AdvisorSession::new(app.model.clone())
+                    });
+                // Snapshot — Vec::clone is fine here, the deliverable
+                // explicitly calls for a SNAPSHOT semantic. Without the
+                // clone, `ask_advisor` would borrow `app.messages`
+                // immutably while we're holding `&mut app.advisor_session`
+                // mutably — borrow-check fails.
+                let snapshot = app.messages.clone();
+                let provider = std::sync::Arc::clone(&app.provider);
+                match crate::advisor::ask_advisor(
+                    provider.as_ref(),
+                    session,
+                    query.clone(),
+                    &snapshot,
+                )
+                .await
+                {
+                    Ok(reply) => {
+                        let remaining = session.tokens_remaining();
+                        let total_budget = session.token_budget;
+                        app.messages.push(ChatMessage::assistant_parts(vec![
+                            MessagePart::Advisor(format!(
+                                "{reply}\n\n_(advisor budget: {} of {} tokens remaining)_",
+                                remaining, total_budget
+                            )),
+                        ]));
+                    }
+                    Err(e) => {
+                        app.messages.push(ChatMessage::assistant_parts(vec![
+                            MessagePart::Advisor(format!(
+                                "Advisor error: {e}\n\nUse `/clear` to start a fresh session if the budget is exhausted."
+                            )),
+                        ]));
+                    }
+                }
+            }
         }
         "/config" => {
             // `/config` (no args) → dump the parsed config as TOML in a code block.
@@ -2546,6 +2642,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 "**Available commands:**\n\
                  - `/clear` — Clear conversation and start fresh\n\
                  - `/compact` — Manually compact the conversation\n\
+                 - `/advisor <question>` — Ask a parallel advisor without disturbing the main agent (set `JFC_ADVISOR_ENABLED=1`)\n\
                  - `/check` — Re-run cargo-check diagnostics\n\
                  - `/config` — Show parsed `~/.config/jfc/config.toml` (use `/config path` for the file location)\n\
                  - `/continue` (or `/c`) — Resume most recent session\n\
@@ -2562,6 +2659,10 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                  - `/task-done <id>` — Mark task completed\n\
                  - `/task-rm <id>` — Delete task\n\
                  - `/worktree [list|create <name>|remove <name>|switch <name>]` — Manage `.jfc-worktrees/<name>` checkouts on `jfc/<name>` branches\n\
+                 - `/install-github-app` — Install Claude GitHub App on the current repo (browser flow)\n\
+                 - `/pr <num>` — Show PR title, description, and review comments\n\
+                 - `/pr-autofix <num>` — Build a model prompt that addresses PR review comments\n\
+                 - `/setup-github-actions [force]` — Write `.github/workflows/jfc-review.yml`\n\
                  - `/help` — Show this message\n\
                  \n\
                  **Keys:**\n\
@@ -2580,9 +2681,84 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                  - `JFC_DISABLE_AUTO_COMPACT=1` — disable auto-compaction\n\
                  - `JFC_DISABLE_CARGO_CHECK=1` — skip startup `cargo check`\n\
                  - `JFC_AUTOCOMPACT_PCT_OVERRIDE=N` — force compact threshold\n\
-                 - `JFC_TOOL_TITLE_WIDTH=N` — cap tool title length (default 100)"
+                 - `JFC_TOOL_TITLE_WIDTH=N` — cap tool title length (default 100)\n\
+                 - `JFC_ADVISOR_ENABLED=1` — enable the `/advisor` parallel-advice slash command"
                     .into(),
             ));
+        }
+        "/memory" | "/mem" => {
+            // `/memory` (no args)            → list memory files
+            // `/memory recall on|off|status` → toggle two-phase recall
+            //
+            // The recall sub-command targets the runtime override in
+            // `memory_recall::set_runtime_override` — persisting to
+            // `~/.config/jfc/config.toml` is left to the user since they
+            // may have hand-formatted that file.
+            let arg = parts.get(1).copied().unwrap_or("").trim();
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            if arg.starts_with("recall") {
+                let sub = arg
+                    .splitn(2, ' ')
+                    .nth(1)
+                    .map(str::trim)
+                    .unwrap_or("status");
+                match sub {
+                    "on" | "enable" => {
+                        crate::memory_recall::set_runtime_override(Some(true));
+                        app.messages.push(ChatMessage::assistant(
+                            "Two-phase memory recall: **on** (runtime override).".into(),
+                        ));
+                    }
+                    "off" | "disable" => {
+                        crate::memory_recall::set_runtime_override(Some(false));
+                        app.messages.push(ChatMessage::assistant(
+                            "Two-phase memory recall: **off** (runtime override).".into(),
+                        ));
+                    }
+                    "default" | "reset" => {
+                        crate::memory_recall::set_runtime_override(None);
+                        app.messages.push(ChatMessage::assistant(
+                            "Two-phase memory recall: cleared runtime override; \
+                             falling back to `~/.config/jfc/config.toml` value."
+                                .into(),
+                        ));
+                    }
+                    "status" | "" => {
+                        let persisted = crate::config::load().memory_recall_enabled;
+                        let effective = crate::memory_recall::is_enabled(persisted);
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "**Memory recall**\n\
+                             - Effective: **{}**\n\
+                             - Persisted (config.toml): **{}**\n\
+                             \n\
+                             Toggle with `/memory recall on|off|reset`.",
+                            if effective { "on" } else { "off" },
+                            if persisted { "on" } else { "off" }
+                        )));
+                    }
+                    other => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Unknown sub-command `{other}`. Try \
+                             `/memory recall on|off|reset|status`."
+                        )));
+                    }
+                }
+            } else {
+                let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+                let mems = crate::memory::load_all_memories(&cwd);
+                let body = if mems.is_empty() {
+                    "No memory files found. Create `.jfc/memory/*.md` (project) or \
+                     `~/.config/jfc/memory/*.md` (user) with YAML frontmatter \
+                     (`type:` and `scope:`) and a markdown body."
+                        .to_owned()
+                } else {
+                    let listing = crate::memory::format_existing_memories(&mems);
+                    format!("**{} memor{} loaded:**\n\n{listing}\n\nUse `/memory recall status` to see whether two-phase recall is active.",
+                        mems.len(),
+                        if mems.len() == 1 { "y" } else { "ies" })
+                };
+                app.messages.push(ChatMessage::assistant(body));
+            }
         }
         "/skills" => {
             let skills =
@@ -2985,14 +3161,61 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
         "/worktree" => {
             handle_worktree_command(app, parts.get(1).copied().unwrap_or("").trim()).await;
         }
+        "/mcp" => {
+            handle_mcp_command(app, parts.get(1).copied().unwrap_or("").trim()).await;
+        }
         "/export" => {
             handle_export_command(app).await;
         }
         "/theme" => {
             handle_theme_command(app, parts.get(1).copied().unwrap_or("").trim());
         }
+        "/fleet" | "/fleetview" => {
+            handle_fleet_command(app);
+        }
+        "/teleport" => {
+            handle_teleport_command(app, parts.get(1).copied().unwrap_or("").trim()).await;
+        }
+        "/init" => {
+            handle_init_command(app).await;
+        }
+        "/cost" | "/stats" => {
+            handle_cost_command(app);
+        }
+        "/doctor" => {
+            handle_doctor_command(app).await;
+        }
+        "/bug" => {
+            handle_bug_command(app, parts.get(1..).map(|r| r.join(" ")).unwrap_or_default());
+        }
+        "/rewind" => {
+            handle_rewind_command(app, parts.get(1).copied().unwrap_or("").trim());
+        }
+        "/output-style" | "/style" | "/brief" => {
+            // `/brief` is shorthand for `/output-style brief`. v132
+            // exposes the same alias via `tengu_brief_mode_toggled`.
+            let alias_brief = parts[0] == "/brief";
+            let arg = if alias_brief {
+                "brief".to_string()
+            } else {
+                parts.get(1).copied().unwrap_or("").trim().to_string()
+            };
+            handle_output_style_command(app, &arg);
+        }
         "/dump-context" | "/debug-context" => {
             handle_dump_context_command(app).await;
+        }
+        "/install-github-app" => {
+            handle_install_github_app(app).await;
+        }
+        "/pr" => {
+            handle_pr_view(app, parts.get(1).copied().unwrap_or("").trim()).await;
+        }
+        "/pr-autofix" => {
+            handle_pr_autofix(app, parts.get(1).copied().unwrap_or("").trim(), tx).await;
+        }
+        "/setup-github-actions" => {
+            handle_setup_github_actions(app, parts.get(1).copied().unwrap_or("").trim()).await;
         }
         "/swarm-approve" | "/swarm-deny" => {
             // Resolve a pending swarm permission request from the user's
@@ -3270,8 +3493,8 @@ async fn handle_dump_context_command(app: &mut App) {
 
 /// `/theme [name]` — switch the live UI theme. With no argument,
 /// lists the available built-ins. Apply to `app.theme` so all
-/// subsequent renders pick it up. Doesn't persist (the user can
-/// add `theme` to their config.toml later if we ever wire one).
+/// subsequent renders pick it up, then persist the choice to
+/// `~/.config/jfc/config.toml` so it survives restarts.
 fn handle_theme_command(app: &mut App, args: &str) {
     let name = args.trim();
     if name.is_empty() {
@@ -3282,18 +3505,35 @@ fn handle_theme_command(app: &mut App, args: &str) {
             .join(", ");
         app.messages
             .push(crate::types::ChatMessage::assistant(format!(
-                "Available themes: {list}.\n\nUse `/theme <name>` to switch."
+                "Available themes: {list}.\n\nUse `/theme <name>` to switch. \
+                 Selection is persisted to ~/.config/jfc/config.toml."
             )));
         return;
     }
     match crate::theme::Theme::by_name(name) {
         Some(theme) => {
             app.theme = theme;
+            // Persist the selection so the next launch boots into
+            // the same look. Persistence failure is non-fatal — we
+            // already updated `app.theme`, so the user gets the
+            // visual change for this session even if the write fails.
+            let persist_msg = match crate::config::save_theme(name) {
+                Ok(_) => format!("theme: {name}"),
+                Err(e) => {
+                    tracing::warn!(
+                        target: "jfc::ui::theme",
+                        theme = %name,
+                        error = %e,
+                        "applied theme but could not persist"
+                    );
+                    format!("theme: {name} (not persisted: {e})")
+                }
+            };
             crate::toast::push_with_cap(
                 &mut app.toasts,
                 crate::toast::Toast::new(
                     crate::toast::ToastKind::Success,
-                    format!("theme: {name}"),
+                    persist_msg,
                 ),
             );
         }
@@ -3310,6 +3550,420 @@ fn handle_theme_command(app: &mut App, args: &str) {
             );
         }
     }
+}
+
+/// `/fleet` — print a snapshot of every active teammate. Lists agent
+/// id, status, last tool, and elapsed time since spawn so the user
+/// can see what their swarm is up to without paging through each
+/// session. Mirrors v132's `tengu_fleetview` command surface; the
+/// renderer in `fleet_view.rs` is reused for the in-TUI live view
+/// (planned follow-up); this slash command produces the textual
+/// digest right now so the data wire is exercised.
+fn handle_fleet_command(app: &mut App) {
+    let mut lines: Vec<String> = Vec::new();
+    if app.team_context.teammates.is_empty() {
+        lines.push("No active teammates.".into());
+        lines.push("Spawn one via the Task tool with `name` + `team_name` set.".into());
+    } else {
+        lines.push(format!(
+            "Fleet: {} teammate{} active",
+            app.team_context.teammates.len(),
+            if app.team_context.teammates.len() == 1 { "" } else { "s" }
+        ));
+        lines.push("".into());
+        for tm in app.team_context.teammates.values() {
+            let elapsed = tm.spawned_at.elapsed();
+            lines.push(format!(
+                "  {} · {} · spawned {}m{}s ago{}",
+                tm.name,
+                tm.agent_type.as_deref().unwrap_or("(no agent type)"),
+                elapsed.as_secs() / 60,
+                elapsed.as_secs() % 60,
+                tm.color.as_deref()
+                    .map(|c| format!(" · color={c}"))
+                    .unwrap_or_default(),
+            ));
+        }
+    }
+    app.messages
+        .push(crate::types::ChatMessage::user("/fleet".into()));
+    app.messages
+        .push(crate::types::ChatMessage::assistant(lines.join("\n")));
+    tracing::info!(
+        target: "jfc::ui::fleet",
+        teammates = app.team_context.teammates.len(),
+        "/fleet rendered"
+    );
+}
+
+/// `/teleport [branch]` — list jfc-managed branches in the current
+/// repo, or check out the named branch and resume that session.
+/// Argument-less form prints the available targets so the user can
+/// pick one. Wraps `swarm::teleport::teleport_to_session` /
+/// `list_teleport_targets`. Mirrors v132's `/teleport` command.
+async fn handle_teleport_command(app: &mut App, target: &str) {
+    use std::path::Path;
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let repo_root: &Path = cwd.as_path();
+
+    if target.is_empty() {
+        let targets = crate::swarm::teleport::list_teleport_targets(repo_root);
+        let body = if targets.is_empty() {
+            "No jfc-managed branches in this repo (looking for `jfc/<session>` branches).\n\
+             Spawn a teammate via Task to create one, or check out a branch with `git checkout`."
+                .to_string()
+        } else {
+            let mut s = format!("Teleport targets ({}):\n\n", targets.len());
+            for t in &targets {
+                s.push_str(&format!(
+                    "  {} → /teleport {}\n",
+                    t.session_id.as_deref().unwrap_or("(no session id)"),
+                    t.branch
+                ));
+            }
+            s.push_str("\nRun `/teleport <branch>` to jump.");
+            s
+        };
+        app.messages
+            .push(crate::types::ChatMessage::user("/teleport".into()));
+        app.messages
+            .push(crate::types::ChatMessage::assistant(body));
+        return;
+    }
+
+    // Caller wants to jump to a specific branch. Use the session id
+    // form if supplied (e.g. `/teleport abc123`) else assume it's a
+    // full branch name (e.g. `/teleport jfc/abc123`).
+    let target_branch = if target.starts_with("jfc/") {
+        target.to_string()
+    } else {
+        format!("jfc/{target}")
+    };
+    let result = crate::swarm::teleport::teleport_to_session(
+        repo_root,
+        &target_branch,
+        None,
+    );
+    app.messages
+        .push(crate::types::ChatMessage::user(format!("/teleport {target}")));
+    app.messages
+        .push(crate::types::ChatMessage::assistant(result.message.clone()));
+    tracing::info!(
+        target: "jfc::ui::teleport",
+        target = %target_branch,
+        message = %result.message,
+        "/teleport executed"
+    );
+}
+
+/// `/output-style [name]` — switch the verbosity / formatting style
+/// of assistant replies. Without an argument, lists the built-ins.
+/// With an argument, applies the new style and persists it to
+/// `~/.config/jfc/config.toml` so the choice sticks across restarts.
+/// `/brief` is a shorthand alias the dispatcher pre-resolves.
+fn handle_output_style_command(app: &mut App, args: &str) {
+    use crate::output_style::OutputStyle;
+    let arg = args.trim();
+    if arg.is_empty() {
+        let mut lines = vec!["Available output styles:".to_string(), "".to_string()];
+        for s in OutputStyle::all() {
+            let active = if *s == app.output_style { " · ACTIVE" } else { "" };
+            let suffix = s
+                .system_prompt_suffix()
+                .map(|t| t.split('.').next().unwrap_or("").trim().to_string())
+                .unwrap_or_else(|| "no system-prompt change".to_string());
+            lines.push(format!("  {} — {}{active}", s.name(), suffix));
+        }
+        lines.push("".into());
+        lines.push("Use `/output-style <name>` to switch.".into());
+        app.messages
+            .push(crate::types::ChatMessage::user("/output-style".into()));
+        app.messages
+            .push(crate::types::ChatMessage::assistant(lines.join("\n")));
+        return;
+    }
+    let parsed = OutputStyle::from_str_loose(arg);
+    if parsed == OutputStyle::Default && !arg.eq_ignore_ascii_case("default") {
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Warning,
+                format!(
+                    "Unknown output style '{arg}' — try one of: {}",
+                    OutputStyle::all()
+                        .iter()
+                        .map(|s| s.name())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ),
+        );
+        return;
+    }
+    app.output_style = parsed;
+    crate::output_style::set_active(parsed);
+    // Persist by mutating only the output_style field of the on-disk
+    // config — same pattern theme persistence uses. A failure here is
+    // non-fatal; the in-memory value still applies for this session.
+    let persist_msg = match save_output_style(parsed.name()) {
+        Ok(_) => format!("output style: {}", parsed.name()),
+        Err(e) => {
+            tracing::warn!(target: "jfc::ui::output_style", style = %parsed.name(), error = %e, "applied but not persisted");
+            format!("output style: {} (not persisted: {e})", parsed.name())
+        }
+    };
+    crate::toast::push_with_cap(
+        &mut app.toasts,
+        crate::toast::Toast::new(crate::toast::ToastKind::Success, persist_msg),
+    );
+}
+
+/// Persist the chosen output style to ~/.config/jfc/config.toml.
+/// Reads existing config so other fields aren't clobbered. Refuses
+/// to overwrite an unparseable file (same safety rule as save_theme).
+fn save_output_style(name: &str) -> Result<std::path::PathBuf, String> {
+    let path = crate::config::config_path();
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return Err(format!("cannot create {}: {e}", parent.display()));
+    }
+    let mut cfg: crate::config::Config = match std::fs::read_to_string(&path) {
+        Ok(s) if !s.trim().is_empty() => match toml::from_str(&s) {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(format!(
+                    "{} is not valid TOML — fix it first ({e})",
+                    path.display()
+                ));
+            }
+        },
+        _ => crate::config::Config::default(),
+    };
+    cfg.output_style = Some(name.to_string());
+    let serialized = toml::to_string_pretty(&cfg)
+        .map_err(|e| format!("serialize failed: {e}"))?;
+    std::fs::write(&path, serialized)
+        .map_err(|e| format!("write {} failed: {e}", path.display()))?;
+    Ok(path)
+}
+
+/// `/init` — bootstrap a CLAUDE.md in the current working directory.
+/// Mirrors v132's onboarding flow. If CLAUDE.md already exists, surfaces
+/// the path so the user can edit it; otherwise writes a starter template
+/// and prompts the user to fill it in. Reload happens lazily on next
+/// turn via `ClaudeMdHierarchy::load`.
+async fn handle_init_command(app: &mut App) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let target = cwd.join("CLAUDE.md");
+    let body = if target.exists() {
+        format!(
+            "CLAUDE.md already exists at {}. Open it in your editor to add project rules, \
+             coding standards, key patterns, or anything you want every turn to remember.",
+            target.display()
+        )
+    } else {
+        let template = r#"# Project rules
+
+## Coding standards
+
+- (your standards here)
+
+## Key patterns
+
+- (your conventions / architectural choices)
+
+## Things to avoid
+
+- (what should *not* be done)
+"#;
+        match tokio::fs::write(&target, template).await {
+            Ok(()) => {
+                tracing::info!(target: "jfc::ui::init", path = %target.display(), "wrote CLAUDE.md template");
+                format!(
+                    "Created {} with a starter template. Edit it to capture project rules — \
+                     it'll be loaded into every turn's context.",
+                    target.display()
+                )
+            }
+            Err(e) => format!("Failed to create {}: {e}", target.display()),
+        }
+    };
+    app.messages.push(crate::types::ChatMessage::user("/init".into()));
+    app.messages.push(crate::types::ChatMessage::assistant(body));
+}
+
+/// `/cost` — running session cost in dollars, broken down by model and
+/// token kind (input/output/cache_read/cache_write). v132 mirrors this
+/// via `tengu_cost_threshold_*` events; jfc surfaces it as an on-demand
+/// transcript message so users can see spend without a side panel.
+fn handle_cost_command(app: &mut App) {
+    let mut total = 0.0f64;
+    let mut lines: Vec<String> = vec!["Session cost so far:".into(), "".into()];
+    if app.usage_by_model.is_empty() {
+        lines.push("  (no model usage yet — try a prompt first)".into());
+    } else {
+        for (model, usage) in &app.usage_by_model {
+            let cost = crate::cost::cost_for(model.as_str(), usage);
+            total += cost;
+            lines.push(format!(
+                "  {} · {} in / {} out / {} cache-read / {} cache-write → {}",
+                model.as_str(),
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cache_read_tokens,
+                usage.cache_write_tokens,
+                crate::cost::fmt_cost(cost),
+            ));
+        }
+    }
+    lines.push("".into());
+    lines.push(format!("**Total: {}**", crate::cost::fmt_cost(total)));
+    app.messages.push(crate::types::ChatMessage::user("/cost".into()));
+    app.messages.push(crate::types::ChatMessage::assistant(lines.join("\n")));
+}
+
+/// `/doctor` — health check covering provider auth, model reachability,
+/// config, working directory, git status. Mirrors v132's `tengu_doctor_command`.
+/// Each line is an icon + label so users get a quick triage view.
+async fn handle_doctor_command(app: &mut App) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let mut lines: Vec<String> = vec!["Diagnostic check:".into(), "".into()];
+
+    // Working directory
+    lines.push(format!("  ✓ cwd: {}", cwd.display()));
+
+    // Git
+    let git_ok = std::process::Command::new("git")
+        .arg("rev-parse")
+        .arg("--is-inside-work-tree")
+        .current_dir(&cwd)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if git_ok {
+        lines.push("  ✓ git: in a repo".into());
+    } else {
+        lines.push("  ⚠ git: not in a repo (some features need one)".into());
+    }
+
+    // Config
+    let cfg_path = crate::config::config_path();
+    if cfg_path.exists() {
+        lines.push(format!("  ✓ config: {}", cfg_path.display()));
+    } else {
+        lines.push(format!("  ⚠ config: not found at {} (will use defaults)", cfg_path.display()));
+    }
+
+    // CLAUDE.md
+    let claude_md = cwd.join("CLAUDE.md");
+    if claude_md.exists() {
+        lines.push(format!("  ✓ CLAUDE.md: {}", claude_md.display()));
+    } else {
+        lines.push("  ⚠ CLAUDE.md: not present (run /init to create)".into());
+    }
+
+    // Provider
+    lines.push(format!("  ✓ provider: {}", app.provider.name()));
+    lines.push(format!("  ✓ model: {}", app.model.as_str()));
+
+    // Permission mode
+    lines.push(format!("  ✓ mode: {:?}", app.permission_mode));
+
+    // Theme
+    lines.push(format!(
+        "  ✓ theme: {} ({} available)",
+        // We don't store the theme name post-load — surface the slot count instead.
+        "active",
+        crate::theme::Theme::available_names().len()
+    ));
+
+    lines.push("".into());
+    lines.push("Run /config to inspect detailed config.".into());
+    app.messages.push(crate::types::ChatMessage::user("/doctor".into()));
+    app.messages.push(crate::types::ChatMessage::assistant(lines.join("\n")));
+}
+
+/// `/bug` — tell the user where to file a bug + capture a session-id
+/// hint they can paste in. v132 has `tengu_bug_report_*` events for
+/// in-product reporting; jfc currently just points at GitHub since
+/// we don't have a managed reporting endpoint.
+fn handle_bug_command(app: &mut App, description: String) {
+    let session_id = app.current_session_id.as_deref().unwrap_or("(none)");
+    let body = format!(
+        "Bug reports go to https://github.com/anthropics/jfc/issues/new\n\n\
+         Include in your report:\n\
+         - **Session ID**: `{session_id}`\n\
+         - **Provider/model**: `{}` / `{}`\n\
+         - **Mode**: {:?}\n\
+         - **Description**: {}\n\n\
+         Tip: run `/dump-context` first to grab the full session for the report.",
+        app.provider.name(),
+        app.model.as_str(),
+        app.permission_mode,
+        if description.trim().is_empty() {
+            "(your description here)"
+        } else {
+            description.trim()
+        }
+    );
+    app.messages
+        .push(crate::types::ChatMessage::user(format!("/bug {description}").trim_end().into()));
+    app.messages.push(crate::types::ChatMessage::assistant(body));
+}
+
+/// `/rewind [N]` — drop the last N user/assistant turn pairs from the
+/// transcript so the user can retry a divergent path without starting
+/// fresh. N defaults to 1 (the most recent exchange). v132 reserves
+/// `tengu_rewind*` for this; we implement the in-memory variant —
+/// session.jsonl persistence still reflects pre-rewind state until
+/// the next save.
+fn handle_rewind_command(app: &mut App, n_str: &str) {
+    let n: usize = n_str.parse().unwrap_or(1).max(1);
+    use crate::types::Role;
+    // Walk backwards, dropping user/assistant pairs. A "pair" here is
+    // a user message + every assistant message that follows until the
+    // next user. We rewind whole pairs to keep tool_use / tool_result
+    // groupings intact.
+    let mut dropped_pairs = 0usize;
+    while dropped_pairs < n {
+        let last_user_idx = app
+            .messages
+            .iter()
+            .rposition(|m| m.role == Role::User);
+        match last_user_idx {
+            Some(idx) => {
+                let removed = app.messages.split_off(idx).len();
+                tracing::info!(
+                    target: "jfc::ui::rewind",
+                    pair = dropped_pairs + 1,
+                    removed,
+                    remaining = app.messages.len(),
+                    "rewind: dropped a turn pair"
+                );
+                dropped_pairs += 1;
+            }
+            None => break,
+        }
+    }
+    let body = if dropped_pairs == 0 {
+        "Nothing to rewind — transcript is empty or has no user turns.".to_string()
+    } else {
+        format!(
+            "Rewound {} turn pair{} ({} message{} remaining). Re-prompt to continue \
+             from this point — the trimmed history is gone for this session.",
+            dropped_pairs,
+            if dropped_pairs == 1 { "" } else { "s" },
+            app.messages.len(),
+            if app.messages.len() == 1 { "" } else { "s" },
+        )
+    };
+    crate::toast::push_with_cap(
+        &mut app.toasts,
+        crate::toast::Toast::new(crate::toast::ToastKind::Info, body.clone()),
+    );
+    app.messages
+        .push(crate::types::ChatMessage::assistant(body));
 }
 
 /// `/export` — serialize the current transcript as markdown and write
@@ -3421,6 +4075,18 @@ async fn handle_export_command(app: &mut App) {
                         "\n---\n_(compaction at ~{} tokens)_\n---\n\n",
                         pre_tokens
                     ));
+                }
+                MessagePart::Advisor(s) => {
+                    // Quote-block the advisor reply so the export marks it as
+                    // out-of-band guidance, not part of the main agent's
+                    // turn. Mirrors how Reasoning is exported.
+                    out.push_str("> _advisor:_\n>\n");
+                    for line in s.lines() {
+                        out.push_str("> ");
+                        out.push_str(line);
+                        out.push('\n');
+                    }
+                    out.push('\n');
                 }
             }
         }
@@ -3584,6 +4250,126 @@ async fn handle_worktree_command(app: &mut App, args: &str) {
                     "Unknown subcommand `{other}`. Try `/worktree list|create <name>|remove <name>|switch <name>`."
                 ),
             );
+        }
+    }
+}
+
+/// Dispatch `/mcp …` subcommands.
+///
+/// - `/mcp` or `/mcp list` — show every configured MCP server, its
+///   connection status, and the count of tools it exposes.
+/// - `/mcp restart <name>` — kill the running server (if any) and
+///   re-spawn it from the cached config. Useful when an MCP server
+///   wedges or its tool list goes stale.
+/// - `/mcp logs <name>` — print the last 50 stderr lines from a
+///   server. The transport keeps a 200-line ring buffer per server so
+///   even if the user didn't `RUST_LOG=jfc::mcp=debug`, recent
+///   diagnostics are recoverable.
+async fn handle_mcp_command(app: &mut App, args: &str) {
+    let mut it = args.split_whitespace();
+    let sub = it.next().unwrap_or("list");
+    let arg = it.next().unwrap_or("");
+
+    let raw = if args.is_empty() {
+        "/mcp".to_owned()
+    } else {
+        format!("/mcp {args}")
+    };
+
+    let Some(registry) = crate::tools::snapshot_mcp_registry() else {
+        app.messages.push(ChatMessage::user(raw));
+        app.messages.push(ChatMessage::assistant(
+            "MCP registry not initialized. Add `[mcp.<name>]` blocks to \
+             `~/.config/jfc/config.toml` and restart jfc.".to_owned(),
+        ));
+        return;
+    };
+
+    match sub {
+        "" | "list" => {
+            let servers = registry.list().await;
+            let body = if servers.is_empty() {
+                "No MCP servers configured. Add `[mcp.<name>]` blocks to \
+                 `~/.config/jfc/config.toml`.".to_owned()
+            } else {
+                let mut s = format!("**{} MCP server(s):**\n\n", servers.len());
+                for srv in &servers {
+                    s.push_str(&format!(
+                        "- `{}` — *{}* — {} tool{}\n",
+                        srv.name,
+                        srv.status.label(),
+                        srv.tools.len(),
+                        if srv.tools.len() == 1 { "" } else { "s" }
+                    ));
+                }
+                s
+            };
+            app.messages.push(ChatMessage::user(raw));
+            app.messages.push(ChatMessage::assistant(body));
+        }
+        "restart" => {
+            if arg.is_empty() {
+                app.messages.push(ChatMessage::user(raw));
+                app.messages.push(ChatMessage::assistant(
+                    "Usage: `/mcp restart <name>`.".to_owned(),
+                ));
+                return;
+            }
+            app.messages.push(ChatMessage::user(raw));
+            let body = match crate::mcp::restart_server(&registry, arg).await {
+                Some(true) => format!("MCP server `{arg}` restarted and reconnected."),
+                Some(false) => format!(
+                    "MCP server `{arg}` was restarted but failed to reconnect. \
+                     See `/mcp logs {arg}` for stderr."
+                ),
+                None => format!("MCP server `{arg}` is not configured."),
+            };
+            app.messages.push(ChatMessage::assistant(body));
+        }
+        "logs" => {
+            if arg.is_empty() {
+                app.messages.push(ChatMessage::user(raw));
+                app.messages.push(ChatMessage::assistant(
+                    "Usage: `/mcp logs <name>`.".to_owned(),
+                ));
+                return;
+            }
+            let body = match registry.get(arg).await {
+                None => format!("MCP server `{arg}` is not configured."),
+                Some(server) => match server.transport.as_ref() {
+                    None => format!(
+                        "MCP server `{arg}` has no live transport (status: {}).",
+                        server.status.label()
+                    ),
+                    Some(transport) => {
+                        let lines = transport.recent_stderr().await;
+                        if lines.is_empty() {
+                            format!("MCP server `{arg}` — no stderr captured yet.")
+                        } else {
+                            let recent: Vec<&String> = lines.iter().rev().take(50).collect();
+                            let mut body = format!(
+                                "**`{arg}` stderr (last {} line{}):**\n\n```\n",
+                                recent.len(),
+                                if recent.len() == 1 { "" } else { "s" }
+                            );
+                            for l in recent.iter().rev() {
+                                body.push_str(l);
+                                body.push('\n');
+                            }
+                            body.push_str("```\n");
+                            body
+                        }
+                    }
+                },
+            };
+            app.messages.push(ChatMessage::user(raw));
+            app.messages.push(ChatMessage::assistant(body));
+        }
+        other => {
+            app.messages.push(ChatMessage::user(raw));
+            app.messages.push(ChatMessage::assistant(format!(
+                "Unknown subcommand `{other}`. Try `/mcp list`, `/mcp restart <name>`, or `/mcp logs <name>`."
+            )));
         }
     }
 }
@@ -3754,6 +4540,277 @@ pub fn collect_all_models(app: &App) -> Vec<crate::provider::ModelInfo> {
     } else {
         all
     }
+}
+
+// ----------------------------------------------------------------------
+// GitHub deep-integration slash handlers
+// ----------------------------------------------------------------------
+
+/// Helper: emit a uniform "gh is missing / unauthed" toast + chat message.
+/// Centralized so all four github commands fail the same way and the user
+/// always sees `gh auth login` as the next step.
+fn push_gh_unavailable(app: &mut App, cmd: &str) {
+    let msg = "GitHub CLI not found on PATH. Install via <https://cli.github.com> \
+               or set `JFC_GH_BIN_OVERRIDE` to a `gh` binary path."
+        .to_owned();
+    crate::toast::push_with_cap(
+        &mut app.toasts,
+        crate::toast::Toast::new(crate::toast::ToastKind::Error, "gh not installed"),
+    );
+    app.messages.push(ChatMessage::user(cmd.to_owned()));
+    app.messages.push(ChatMessage::assistant(msg));
+}
+
+/// `/install-github-app` — open the install URL and (if authed) check
+/// whether the Claude GitHub App is already installed on the current repo.
+async fn handle_install_github_app(app: &mut App) {
+    if !crate::github::is_gh_installed() {
+        push_gh_unavailable(app, "/install-github-app");
+        return;
+    }
+    let Some(ctx) = crate::github::current_repo().await else {
+        app.messages
+            .push(ChatMessage::user("/install-github-app".into()));
+        app.messages.push(ChatMessage::assistant(
+            "Could not determine GitHub repo from `git remote get-url origin`. \
+             Run this command from inside a checkout whose `origin` points at GitHub."
+                .into(),
+        ));
+        return;
+    };
+    let url = crate::github::install::install_url(&ctx);
+
+    // Best-effort: check if already installed first; if so, skip the browser.
+    let client = crate::github::GhClient::new();
+    let already = crate::github::install::check_installed(&client, &ctx).await;
+    let body = match already {
+        Ok(Some(v)) => {
+            let id = v.get("id").and_then(|n| n.as_u64());
+            crate::github::install::already_installed_message(&ctx, id)
+        }
+        Ok(None) | Err(crate::github::client::GhError::NotAuthenticated) => {
+            // Not installed (or we can't tell because we're unauthed) — show
+            // the wizard and try to open the browser.
+            if let Err(e) = crate::github::install::open_browser(&url).await {
+                tracing::warn!(target: "jfc::github", err = %e, "failed to open browser");
+            }
+            crate::github::install::install_message(&ctx, &url)
+        }
+        Err(e) => format!("**Error checking install state:** {e}"),
+    };
+    app.messages
+        .push(ChatMessage::user("/install-github-app".into()));
+    app.messages.push(ChatMessage::assistant(body));
+}
+
+/// Parse the `<num>` arg used by `/pr` and `/pr-autofix`. Returns the
+/// parsed number or an Err string suitable for echoing.
+fn parse_pr_num(arg: &str, cmd: &str) -> Result<u64, String> {
+    let trimmed = arg.trim().trim_start_matches('#');
+    if trimmed.is_empty() {
+        return Err(format!("Usage: `{cmd} <pr-number>` (e.g. `{cmd} 42`)"));
+    }
+    trimmed
+        .parse::<u64>()
+        .map_err(|_| format!("`{trimmed}` is not a valid PR number."))
+}
+
+/// `/pr <num>` — fetch PR + comments and render a markdown summary.
+async fn handle_pr_view(app: &mut App, arg: &str) {
+    if !crate::github::is_gh_installed() {
+        push_gh_unavailable(app, &format!("/pr {arg}"));
+        return;
+    }
+    let cmd = format!("/pr {arg}");
+    let num = match parse_pr_num(arg, "/pr") {
+        Ok(n) => n,
+        Err(e) => {
+            app.messages.push(ChatMessage::user(cmd));
+            app.messages.push(ChatMessage::assistant(e));
+            return;
+        }
+    };
+    let client = crate::github::GhClient::new();
+    let body = match client.gh_pr_view(num).await {
+        Ok(pr) => {
+            let mut s = format!(
+                "**PR #{n}** ({state}) — {title}\n\
+                 Author: @{author}  ·  {head} → {base}\n\
+                 URL: <{url}>\n",
+                n = pr.number,
+                state = pr.state,
+                title = pr.title,
+                author = pr.author.login,
+                head = pr.head_ref_name,
+                base = pr.base_ref_name,
+                url = pr.url,
+            );
+            if !pr.body.trim().is_empty() {
+                s.push_str("\n## Description\n\n");
+                s.push_str(pr.body.trim());
+                s.push('\n');
+            }
+            if !pr.comments.is_empty() {
+                s.push_str(&format!("\n## Issue comments ({})\n\n", pr.comments.len()));
+                for c in &pr.comments {
+                    s.push_str(&format!(
+                        "- **@{}**: {}\n",
+                        c.author.login,
+                        c.body.lines().next().unwrap_or(""),
+                    ));
+                }
+            }
+            let review_total: usize = pr.reviews.iter().map(|r| r.comments.len()).sum();
+            if !pr.reviews.is_empty() {
+                s.push_str(&format!(
+                    "\n## Reviews ({}, {} inline comment{})\n\n",
+                    pr.reviews.len(),
+                    review_total,
+                    if review_total == 1 { "" } else { "s" }
+                ));
+                for r in &pr.reviews {
+                    s.push_str(&format!(
+                        "- @{} ({}): {}\n",
+                        r.author.login,
+                        if r.state.is_empty() { "COMMENTED" } else { &r.state },
+                        r.body.lines().next().unwrap_or("")
+                    ));
+                }
+            }
+            s.push_str("\n_Tip: run `/pr-autofix <num>` to ask the model to address review comments._");
+            s
+        }
+        Err(crate::github::client::GhError::NotAuthenticated) => {
+            "`gh` is not authenticated — run `gh auth login` and try again.".into()
+        }
+        Err(crate::github::client::GhError::RateLimited { reminder }) => {
+            format!("**GitHub API rate limit hit.**\n\n{reminder}")
+        }
+        Err(e) => format!("**Error:** {e}"),
+    };
+    app.messages.push(ChatMessage::user(cmd));
+    app.messages.push(ChatMessage::assistant(body));
+}
+
+/// `/pr-autofix <num>` — fetch the PR, build the autofix prompt, and either
+/// inject it as a fresh user turn (driving a model response) or echo it
+/// inline if no `tx` channel is available (e.g. queued-prompt drain).
+async fn handle_pr_autofix(
+    app: &mut App,
+    arg: &str,
+    tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    if !crate::github::is_gh_installed() {
+        push_gh_unavailable(app, &format!("/pr-autofix {arg}"));
+        return;
+    }
+    let cmd = format!("/pr-autofix {arg}");
+    let num = match parse_pr_num(arg, "/pr-autofix") {
+        Ok(n) => n,
+        Err(e) => {
+            app.messages.push(ChatMessage::user(cmd));
+            app.messages.push(ChatMessage::assistant(e));
+            return;
+        }
+    };
+    let client = crate::github::GhClient::new();
+    let prompt = match crate::github::autofix::run(&client, num).await {
+        Ok(p) => p,
+        Err(crate::github::client::GhError::NotAuthenticated) => {
+            app.messages.push(ChatMessage::user(cmd));
+            app.messages.push(ChatMessage::assistant(
+                "`gh` is not authenticated — run `gh auth login` and try again.".into(),
+            ));
+            return;
+        }
+        Err(crate::github::client::GhError::RateLimited { reminder }) => {
+            app.messages.push(ChatMessage::user(cmd));
+            app.messages
+                .push(ChatMessage::assistant(format!("Rate limited.\n\n{reminder}")));
+            return;
+        }
+        Err(e) => {
+            app.messages.push(ChatMessage::user(cmd));
+            app.messages
+                .push(ChatMessage::assistant(format!("**Error:** {e}")));
+            return;
+        }
+    };
+
+    // Echo what the user typed.
+    app.messages.push(ChatMessage::user(cmd));
+
+    // Without a stream channel (queued-prompt drain), we can only show the
+    // prompt — same fallback the skill-fallthrough arm uses.
+    let Some(tx) = tx else {
+        app.messages.push(ChatMessage::assistant(format!(
+            "Autofix prompt prepared (no stream channel — submit `/pr-autofix {num}` from the input bar to drive the model):\n\n{prompt}"
+        )));
+        return;
+    };
+
+    // Drive a model turn: push the synthetic user message (the prompt body)
+    // and an empty assistant placeholder, then spawn the provider stream.
+    // Mirrors the skill-fallthrough setup at the bottom of handle_slash_command.
+    let assistant_idx = app.messages.len() + 1;
+    app.messages.push(ChatMessage::user(prompt));
+    app.tool_ctx.total_user_turns += 1;
+    app.messages.push(ChatMessage::assistant(String::new()));
+    app.streaming_text.clear();
+    app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
+    app.streaming_assistant_idx = Some(assistant_idx);
+    app.is_streaming = true;
+    let now = std::time::Instant::now();
+    app.streaming_started_at = Some(now);
+    app.streaming_last_token_at = Some(now);
+    app.turn_started_at = Some(now);
+    app.thinking_started_at = None;
+    app.thinking_ended_at = None;
+    app.last_usage_output = 0;
+    app.usage_apply_baseline = (0, 0, 0, 0);
+    app.scroll_to_bottom();
+
+    let session_id = app
+        .current_session_id
+        .clone()
+        .unwrap_or_else(crate::session::generate_session_id);
+    {
+        let sid = session_id.clone();
+        let msgs = app.messages.clone();
+        let model = app.model.clone();
+        tokio::spawn(async move {
+            crate::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
+        });
+    }
+    app.current_session_id = Some(session_id);
+
+    let provider = app.provider.clone();
+    let messages = crate::stream::build_provider_messages(&app.messages[..assistant_idx]);
+    let model = app.model.clone();
+    let tx_stream = tx.clone();
+    let interrupt = app.interrupt_flag.clone();
+    interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
+    tokio::spawn(async move {
+        crate::stream::stream_response(provider, messages, model, tx_stream, interrupt).await;
+    });
+}
+
+/// `/setup-github-actions [force]` — write `.github/workflows/jfc-review.yml`.
+async fn handle_setup_github_actions(app: &mut App, arg: &str) {
+    let force = matches!(arg, "force" | "--force" | "-f" | "overwrite");
+    let echo = if force {
+        "/setup-github-actions force".to_owned()
+    } else {
+        "/setup-github-actions".to_owned()
+    };
+    let repo_root = std::path::PathBuf::from(&app.cwd);
+    let body = match crate::github::actions::write_workflow(&repo_root, force) {
+        Ok(outcome) => crate::github::actions::success_message(&outcome),
+        Err(e) => format!("**Error writing workflow:** {e}"),
+    };
+    app.messages.push(ChatMessage::user(echo));
+    app.messages.push(ChatMessage::assistant(body));
 }
 
 #[cfg(test)]
