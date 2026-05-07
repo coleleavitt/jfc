@@ -10,6 +10,7 @@ mod cost;
 mod diagnostics;
 mod diagnostics_producer;
 mod effort;
+mod fleet_view;
 mod inline_tools;
 mod input;
 mod lsp_client;
