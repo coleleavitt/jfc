@@ -1545,4 +1545,268 @@ mod tests {
         // Should include caller1, caller2, grandcaller
         assert_eq!(order.len(), 3);
     }
+
+    // ─── Tests for new algorithms ────────────────────────────────────────────
+
+    #[test]
+    fn test_transitive_reduction() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        // a→b→c and a→c (the a→c is redundant)
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+        g.add_edge(&a, &c, edge()).unwrap();
+
+        let redundant = transitive_reduction(&g);
+        assert_eq!(redundant.len(), 1);
+        assert_eq!(redundant[0].from, a);
+        assert_eq!(redundant[0].to, c);
+
+        let essential = essential_edges(&g);
+        assert_eq!(essential.len(), 2);
+    }
+
+    #[test]
+    fn test_transitive_reduction_no_redundancy() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        // Linear chain — no redundancy
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+
+        let redundant = transitive_reduction(&g);
+        assert!(redundant.is_empty());
+    }
+
+    #[test]
+    fn test_parallel_edit_groups() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        // a→b, a→c — b and c are independent of each other
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&a, &c, edge()).unwrap();
+
+        let groups = parallel_edit_groups(&g);
+        assert!(!groups.is_empty());
+
+        // b and c should be in the same color group (they don't share an edge)
+        let b_color = groups.iter().find(|grp| grp.members.contains(&b)).unwrap().color;
+        let c_color = groups.iter().find(|grp| grp.members.contains(&c)).unwrap().color;
+        assert_eq!(b_color, c_color);
+
+        // a should be in a different color than b (they share an edge)
+        let a_color = groups.iter().find(|grp| grp.members.contains(&a)).unwrap().color;
+        assert_ne!(a_color, b_color);
+    }
+
+    #[test]
+    fn test_chromatic_number() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        // Triangle: all connected to each other
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+        g.add_edge(&c, &a, edge()).unwrap();
+
+        // Triangle needs 3 colors
+        assert_eq!(chromatic_number(&g), 3);
+    }
+
+    #[test]
+    fn test_maximal_cliques() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        let d = g.add_node(node("d"));
+        // a↔b↔c forms a triangle (as undirected), d is connected only to a
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &a, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+        g.add_edge(&c, &b, edge()).unwrap();
+        g.add_edge(&a, &c, edge()).unwrap();
+        g.add_edge(&c, &a, edge()).unwrap();
+        g.add_edge(&a, &d, edge()).unwrap();
+
+        let cliques = maximal_cliques(&g);
+        // Should find the {a,b,c} triangle
+        let has_triangle = cliques.iter().any(|c| c.members.len() == 3);
+        assert!(has_triangle);
+    }
+
+    #[test]
+    fn test_all_pairs_distances() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+
+        let dists = all_pairs_distances(&g);
+        assert_eq!(*dists.get(&(a.clone(), b.clone())).unwrap(), 1.0);
+        assert_eq!(*dists.get(&(a.clone(), c.clone())).unwrap(), 2.0);
+        assert_eq!(*dists.get(&(b.clone(), c.clone())).unwrap(), 1.0);
+        // No path from c to a (directed graph)
+        assert!(!dists.contains_key(&(c, a)));
+    }
+
+    #[test]
+    fn test_nearest_neighbors() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        let d = g.add_node(node("d"));
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&a, &c, EdgeData { kind: EdgeKind::Calls, source_span: span(), weight: 5.0 }).unwrap();
+        g.add_edge(&a, &d, EdgeData { kind: EdgeKind::Calls, source_span: span(), weight: 2.0 }).unwrap();
+
+        let neighbors = nearest_neighbors(&g, &a, 2);
+        assert_eq!(neighbors.len(), 2);
+        // b (weight 1.0) should be closest, then d (weight 2.0)
+        assert_eq!(neighbors[0].0, b);
+        assert_eq!(neighbors[1].0, d);
+    }
+
+    #[test]
+    fn test_weighted_shortest_path() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        // a→b (cost 1) + b→c (cost 1) = 2, vs a→c (cost 10)
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+        g.add_edge(&a, &c, EdgeData { kind: EdgeKind::Calls, source_span: span(), weight: 10.0 }).unwrap();
+
+        let (path, cost) = weighted_shortest_path(&g, &a, &c).unwrap();
+        assert_eq!(cost, 2.0);
+        assert_eq!(path, vec![a, b, c]);
+    }
+
+    #[test]
+    fn test_k_shortest_paths() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        // Two paths: a→b→c (cost 2) and a→c (cost 3)
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+        g.add_edge(&a, &c, EdgeData { kind: EdgeKind::Calls, source_span: span(), weight: 3.0 }).unwrap();
+
+        let paths = k_shortest_paths(&g, &a, &c, 2);
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0].1, 2.0); // shortest
+        assert_eq!(paths[1].1, 3.0); // second shortest
+    }
+
+    #[test]
+    fn test_cycle_break_suggestions() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        // a→b→c→a cycle
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+        g.add_edge(&c, &a, edge()).unwrap();
+
+        let suggestions = cycle_break_suggestions(&g);
+        assert!(!suggestions.is_empty());
+    }
+
+    #[test]
+    fn test_dot_export() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        g.add_edge(&a, &b, edge()).unwrap();
+
+        let dot = to_dot(&g);
+        assert!(dot.contains("digraph CodeGraph"));
+        assert!(dot.contains("\"a\\n(Function)\""));
+        assert!(dot.contains("\"b\\n(Function)\""));
+        assert!(dot.contains("calls"));
+    }
+
+    #[test]
+    fn test_dot_subgraph() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+
+        // Only show a and b
+        let dot = to_dot_subgraph(&g, &[a.clone(), b.clone()]);
+        assert!(dot.contains("digraph QueryResult"));
+        assert!(dot.contains("\"a\""));
+        assert!(dot.contains("\"b\""));
+        // Edge a→b should be included, b→c should NOT (c not in subgraph)
+        assert!(dot.contains("calls"));
+    }
+
+    #[test]
+    fn test_call_only_edges() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(
+            &a,
+            &b,
+            EdgeData {
+                kind: EdgeKind::Contains,
+                source_span: span(),
+                weight: 1.0,
+            },
+        )
+        .unwrap();
+
+        let call_edges = call_only_edges(&g);
+        assert_eq!(call_edges.len(), 1);
+        assert_eq!(call_edges[0].0, a);
+        assert_eq!(call_edges[0].1, b);
+    }
+
+    #[test]
+    fn test_bridge_edges() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        // a↔b is a bridge; b→c is a bridge (removing either disconnects)
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &a, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+
+        let bridges = bridge_edges(&g);
+        // b→c is a bridge (removing it disconnects c)
+        assert!(!bridges.is_empty());
+    }
+
+    #[test]
+    fn test_critical_nodes() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        // a→b→c — removing b disconnects a from c
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+
+        let critical = critical_nodes(&g);
+        assert!(critical.contains(&b));
+    }
 }

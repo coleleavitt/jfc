@@ -2825,8 +2825,16 @@ async fn run(
 
         // Streaming/compaction needs continuous redraws to show progress
         // (border-comet animation, spinner). Re-arm the dirty flag so a
-        // bare Tick can drive the next frame.
-        let want_streaming_cursor = app.is_streaming || app.compacting_started_at.is_some();
+        // bare Tick can drive the next frame. Also re-arm when tools are
+        // pending or approval is active — without this, the screen stalls
+        // between StreamDone and the next stream start (the user has to
+        // move their cursor to trigger a redraw).
+        let want_streaming_cursor = app.is_streaming
+            || app.compacting_started_at.is_some()
+            || !app.pending_tool_calls.is_empty()
+            || app.pending_approval.is_some()
+            || !app.approval_queue.is_empty()
+            || app.turn_started_at.is_some();
         if want_streaming_cursor {
             needs_draw = true;
         }
