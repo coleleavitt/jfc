@@ -1076,6 +1076,35 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::RunBounty { bounty_id, .. } => SerializedToolInput::Generic {
             summary: format!("RunBounty: {bounty_id}"),
         },
+        // Daemon-driven scheduling tools — collapse to Generic in the
+        // session log (their full schemas live in `daemon-state.json`,
+        // not here, so re-replaying a session shouldn't re-trigger them).
+        ToolInput::CronCreate {
+            schedule,
+            description,
+            ..
+        } => SerializedToolInput::Generic {
+            summary: format!("CronCreate({schedule}): {description}"),
+        },
+        ToolInput::CronList => SerializedToolInput::Generic {
+            summary: "CronList".into(),
+        },
+        ToolInput::CronDelete { id } => SerializedToolInput::Generic {
+            summary: format!("CronDelete: {id}"),
+        },
+        ToolInput::ScheduleWakeup {
+            delay_seconds,
+            reason,
+            ..
+        } => SerializedToolInput::Generic {
+            summary: format!("ScheduleWakeup({delay_seconds}s): {reason}"),
+        },
+        ToolInput::Monitor { command, until } => SerializedToolInput::Generic {
+            summary: format!(
+                "Monitor `{}` until /{until}/",
+                command.chars().take(40).collect::<String>()
+            ),
+        },
         ToolInput::Generic { summary } => SerializedToolInput::Generic {
             summary: summary.clone(),
         },

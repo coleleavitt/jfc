@@ -1828,6 +1828,111 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                 }
             }),
         },
+        // ── daemon-driven scheduling tools ─────────────────────────────────
+        // These three speak to the local jfc daemon. They write directly
+        // to the daemon's state file (`~/.config/jfc/daemon-state.json`)
+        // so the model can register cron jobs / wakeups even when the
+        // daemon process happens to be down — the next `jfc daemon start`
+        // picks them up.
+        ToolDef {
+            name: "CronCreate".into(),
+            description: "Register a recurring cron job with the local jfc daemon. \
+                Schedule accepts five-field crontab (`*/5 * * * *`), `@hourly`, \
+                `@daily`, `@weekly`, or `@every <duration>` (e.g. `@every 5m`, \
+                `@every 1h30m`). Returns the new job's id."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "schedule": {
+                        "type": "string",
+                        "description": "Schedule expression: cron `* * * * *`, `@daily`/`@hourly`/`@weekly`, or `@every <duration>`."
+                    },
+                    "command": {
+                        "type": "string",
+                        "description": "Shell command to run when the schedule fires."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Human-friendly description shown in `daemon list`."
+                    }
+                },
+                "required": ["schedule", "command", "description"]
+            }),
+        },
+        ToolDef {
+            name: "CronList".into(),
+            description: "List all cron jobs currently registered with the local jfc daemon.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {}
+            }),
+        },
+        ToolDef {
+            name: "CronDelete".into(),
+            description: "Delete a cron job from the local jfc daemon by id.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Cron job id (e.g. `cron-abcd1234`) returned by CronCreate / CronList."
+                    }
+                },
+                "required": ["id"]
+            }),
+        },
+        ToolDef {
+            name: "ScheduleWakeup".into(),
+            description: "Schedule a one-shot wakeup that re-posts a prompt to \
+                the conversation after `delay_seconds` elapse. The wakeup is \
+                persisted to daemon state, so it replays after a daemon \
+                restart. Use for short-term reminders (`/loop`-style polling, \
+                `check the deploy in 5 minutes`)."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "delay_seconds": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "How many seconds from now to fire."
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Prompt text to post to the conversation when the wakeup fires."
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Why this was scheduled — surfaces in `daemon list`."
+                    }
+                },
+                "required": ["delay_seconds", "prompt", "reason"]
+            }),
+        },
+        ToolDef {
+            name: "Monitor".into(),
+            description: "Spawn a long-running command and stream its stdout \
+                line-by-line, returning the first line that matches the `until` \
+                regex. Returns after at most 60 seconds whether or not the \
+                regex matched (the timeout line is annotated). Use for `tail \
+                -f` style waits — e.g. `watch test runner until /PASS|FAIL/`."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Shell command to run (executed via bash -c)."
+                    },
+                    "until": {
+                        "type": "string",
+                        "description": "Regex; the first stdout line matching this is returned."
+                    }
+                },
+                "required": ["command", "until"]
+            }),
+        },
     ]
 }
 
@@ -2715,6 +2820,27 @@ pub async fn execute_tool(
                 }
             }
             ExecutionResult::success(body)
+        }
+        (
+            ToolKind::CronCreate,
+            ToolInput::CronCreate {
+                schedule,
+                command,
+                description,
+            },
+        ) => execute_cron_create(&schedule, &command, &description),
+        (ToolKind::CronList, ToolInput::CronList) => execute_cron_list(),
+        (ToolKind::CronDelete, ToolInput::CronDelete { id }) => execute_cron_delete(&id),
+        (
+            ToolKind::ScheduleWakeup,
+            ToolInput::ScheduleWakeup {
+                delay_seconds,
+                prompt,
+                reason,
+            },
+        ) => execute_schedule_wakeup(delay_seconds, &prompt, &reason),
+        (ToolKind::Monitor, ToolInput::Monitor { command, until }) => {
+            execute_monitor(&command, &until, &cwd).await
         }
         (kind, _) => ExecutionResult::failure(format!("Tool {:?} not yet implemented", kind)),
     }
@@ -4026,6 +4152,185 @@ async fn execute_send_message(
             ExecutionResult::success(serde_json::to_string_pretty(&result).unwrap_or_default())
         }
         Err(e) => ExecutionResult::failure(format!("Failed to send message: {e}")),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Daemon-driven scheduling tools
+//
+// These executors talk to the local jfc daemon by writing/reading its
+// state file directly. The daemon process polls that file once per
+// second, so registrations made here are picked up on the next tick
+// without needing an IPC channel. When the daemon isn't running the
+// state file still updates — the next `jfc daemon start` replays it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn execute_cron_create(schedule_expr: &str, command: &str, description: &str) -> ExecutionResult {
+    use crate::daemon::{Daemon, DaemonPaths, parse_schedule};
+    let schedule = match parse_schedule(schedule_expr) {
+        Ok(s) => s,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "Invalid schedule `{schedule_expr}`: {e}"
+            ));
+        }
+    };
+    let paths = DaemonPaths::default_user();
+    let mut daemon = match Daemon::new(&paths.base_dir) {
+        Ok(d) => d,
+        Err(e) => return ExecutionResult::failure(format!("daemon state init failed: {e}")),
+    };
+    let id = daemon.add_cron_job(schedule, description, command);
+    ExecutionResult::success(format!(
+        "Created cron job `{id}` ({schedule_expr}): {description}\n  command: {command}"
+    ))
+}
+
+fn execute_cron_list() -> ExecutionResult {
+    use crate::daemon::{Daemon, DaemonPaths};
+    let paths = DaemonPaths::default_user();
+    let daemon = match Daemon::new(&paths.base_dir) {
+        Ok(d) => d,
+        Err(e) => return ExecutionResult::failure(format!("daemon state init failed: {e}")),
+    };
+    if daemon.state.cron_jobs.is_empty() {
+        return ExecutionResult::success("(no cron jobs registered)".to_string());
+    }
+    let mut out = String::new();
+    for j in &daemon.state.cron_jobs {
+        out.push_str(&format!(
+            "{} [{}] {}\n  command: {}\n",
+            j.id,
+            if j.enabled { "on" } else { "off" },
+            j.description,
+            j.command,
+        ));
+    }
+    ExecutionResult::success(out)
+}
+
+fn execute_cron_delete(id: &str) -> ExecutionResult {
+    use crate::daemon::{Daemon, DaemonPaths};
+    let paths = DaemonPaths::default_user();
+    let mut daemon = match Daemon::new(&paths.base_dir) {
+        Ok(d) => d,
+        Err(e) => return ExecutionResult::failure(format!("daemon state init failed: {e}")),
+    };
+    if daemon.remove_cron_job(id) {
+        ExecutionResult::success(format!("Deleted cron job `{id}`"))
+    } else {
+        ExecutionResult::failure(format!("No cron job with id `{id}`"))
+    }
+}
+
+fn execute_schedule_wakeup(delay_seconds: u32, prompt: &str, reason: &str) -> ExecutionResult {
+    use crate::daemon::{Daemon, DaemonPaths};
+    if prompt.is_empty() {
+        return ExecutionResult::failure("ScheduleWakeup: prompt must not be empty");
+    }
+    let paths = DaemonPaths::default_user();
+    let mut daemon = match Daemon::new(&paths.base_dir) {
+        Ok(d) => d,
+        Err(e) => return ExecutionResult::failure(format!("daemon state init failed: {e}")),
+    };
+    let delay = std::time::Duration::from_secs(u64::from(delay_seconds));
+    let id = daemon.schedule_wakeup(delay, prompt, reason);
+    ExecutionResult::success(format!(
+        "Scheduled wakeup `{id}` in {delay_seconds}s: {reason}"
+    ))
+}
+
+/// Spawn `command` and stream stdout line-by-line until `until` matches
+/// or 60s elapse. Reuses the same `tokio::process` + `BufReader::lines`
+/// pattern that `execute_bash_inner` uses so behaviour stays consistent
+/// (line-buffered output, no terminal-color env, sane defaults).
+async fn execute_monitor(command: &str, until: &str, cwd: &Path) -> ExecutionResult {
+    use std::process::Stdio;
+    use std::time::Duration;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command as TokioCommand;
+
+    const MONITOR_TIMEOUT_SECS: u64 = 60;
+
+    let regex = match regex::Regex::new(until) {
+        Ok(r) => r,
+        Err(e) => return ExecutionResult::failure(format!("invalid `until` regex: {e}")),
+    };
+
+    let mut cmd = TokioCommand::new("bash");
+    cmd.arg("-c")
+        .arg(command)
+        .current_dir(cwd)
+        .env("CI", "true")
+        .env("TERM", "dumb")
+        .env("NO_COLOR", "1")
+        .env("PAGER", "cat")
+        .env("GIT_PAGER", "cat")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return ExecutionResult::failure(format!("failed to spawn monitor: {e}")),
+    };
+
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => return ExecutionResult::failure("monitor: no stdout handle"),
+    };
+    let mut reader = BufReader::new(stdout).lines();
+    let mut tail: Vec<String> = Vec::new();
+    const TAIL_KEEP: usize = 20;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(MONITOR_TIMEOUT_SECS);
+    loop {
+        let next = tokio::time::timeout_at(deadline, reader.next_line()).await;
+        match next {
+            Ok(Ok(Some(line))) => {
+                if regex.is_match(&line) {
+                    let _ = child.kill().await;
+                    return ExecutionResult::success(format!(
+                        "matched: {line}"
+                    ));
+                }
+                tail.push(line);
+                if tail.len() > TAIL_KEEP {
+                    tail.remove(0);
+                }
+            }
+            Ok(Ok(None)) => {
+                // EOF without match — process exited.
+                let exit = child.wait().await.ok().and_then(|s| s.code()).unwrap_or(-1);
+                let body = if tail.is_empty() {
+                    format!("Process exited [{exit}] without matching /{until}/")
+                } else {
+                    format!(
+                        "Process exited [{exit}] without matching /{until}/. Last {} line(s):\n{}",
+                        tail.len(),
+                        tail.join("\n")
+                    )
+                };
+                return ExecutionResult::failure(body);
+            }
+            Ok(Err(e)) => {
+                let _ = child.kill().await;
+                return ExecutionResult::failure(format!("monitor read error: {e}"));
+            }
+            Err(_) => {
+                let _ = child.kill().await;
+                let body = if tail.is_empty() {
+                    format!("Timeout after {MONITOR_TIMEOUT_SECS}s without matching /{until}/")
+                } else {
+                    format!(
+                        "Timeout after {MONITOR_TIMEOUT_SECS}s without matching /{until}/. Last {} line(s):\n{}",
+                        tail.len(),
+                        tail.join("\n")
+                    )
+                };
+                return ExecutionResult::failure(body);
+            }
+        }
     }
 }
 
@@ -6209,5 +6514,37 @@ mod tests {
         .await;
         assert!(!r.is_error(), "{}", r.output);
         assert!(r.output.contains("via dispatcher"), "{}", r.output);
+    }
+
+    // ─── Monitor tool (DO-178B _normal/_robust) ─────────────────────────
+
+    #[tokio::test]
+    async fn monitor_matches_first_line_normal() {
+        // `printf` writes the matching line immediately; the monitor
+        // should kill the process and return the matched line.
+        let r = execute_monitor(
+            "printf 'starting\\nfound the goal\\nfinished\\n'",
+            r"goal",
+            Path::new("."),
+        )
+        .await;
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("found the goal"), "{}", r.output);
+    }
+
+    #[tokio::test]
+    async fn monitor_invalid_regex_robust() {
+        let r = execute_monitor("echo hi", "[invalid(regex", Path::new(".")).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("invalid `until` regex"), "{}", r.output);
+    }
+
+    #[tokio::test]
+    async fn monitor_eof_without_match_reports_failure_robust() {
+        // `true` exits immediately with no output — Monitor should
+        // report process exit without match (failure).
+        let r = execute_monitor("true", r"never-matches", Path::new(".")).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("Process exited"), "{}", r.output);
     }
 }

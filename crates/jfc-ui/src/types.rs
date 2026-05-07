@@ -443,6 +443,18 @@ pub enum ToolKind {
     GraphQuery,
     /// Edit code by symbol handle (semantic editing).
     SymbolEdit,
+    /// Register a new cron job with the local daemon.
+    CronCreate,
+    /// List active cron jobs registered with the local daemon.
+    CronList,
+    /// Delete a cron job by ID.
+    CronDelete,
+    /// Schedule a one-shot wakeup that re-posts a prompt to the
+    /// conversation after `delay_seconds`. Persisted across restarts.
+    ScheduleWakeup,
+    /// Spawn a long-running command and stream stdout until a regex
+    /// matches OR a 60s timeout fires.
+    Monitor,
     Generic(String),
 }
 
@@ -590,6 +602,34 @@ pub enum ToolInput {
         /// effect — without validation we don't compute the cascade.
         #[serde(default, rename = "dispatch_cascade")]
         dispatch_cascade: bool,
+    },
+    /// `CronCreate { schedule, command, description }`.
+    CronCreate {
+        /// Schedule expression: `* * * * *`, `@daily`, `@every 5m`, etc.
+        schedule: String,
+        /// Shell command to run when the schedule fires.
+        command: String,
+        /// Human-friendly description shown in `daemon list`.
+        description: String,
+    },
+    /// `CronList { }` — no inputs.
+    CronList,
+    /// `CronDelete { id }`.
+    CronDelete {
+        id: String,
+    },
+    /// `ScheduleWakeup { delay_seconds, prompt, reason }`.
+    ScheduleWakeup {
+        delay_seconds: u32,
+        prompt: String,
+        reason: String,
+    },
+    /// `Monitor { command, until }` — spawn `command` and stream
+    /// stdout line-by-line; return the line that matches `until`,
+    /// or time out after 60s.
+    Monitor {
+        command: String,
+        until: String,
     },
     Generic {
         summary: String,
@@ -890,6 +930,11 @@ impl ToolKind {
             "postbounty" | "post_bounty" => Self::PostBounty,
             "marketstatus" | "market_status" => Self::MarketStatus,
             "runbounty" | "run_bounty" => Self::RunBounty,
+            "croncreate" | "cron_create" => Self::CronCreate,
+            "cronlist" | "cron_list" => Self::CronList,
+            "crondelete" | "cron_delete" => Self::CronDelete,
+            "schedulewakeup" | "schedule_wakeup" => Self::ScheduleWakeup,
+            "monitor" => Self::Monitor,
             _ => Self::Generic(name.to_owned()),
         }
     }
@@ -921,6 +966,11 @@ impl ToolKind {
             Self::PostBounty => "PostBounty",
             Self::RunBounty => "RunBounty",
             Self::MarketStatus => "MarketStatus",
+            Self::CronCreate => "CronCreate",
+            Self::CronList => "CronList",
+            Self::CronDelete => "CronDelete",
+            Self::ScheduleWakeup => "ScheduleWakeup",
+            Self::Monitor => "Monitor",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -952,6 +1002,11 @@ impl ToolKind {
             Self::PostBounty => "post_bounty",
             Self::RunBounty => "run_bounty",
             Self::MarketStatus => "market_status",
+            Self::CronCreate => "CronCreate",
+            Self::CronList => "CronList",
+            Self::CronDelete => "CronDelete",
+            Self::ScheduleWakeup => "ScheduleWakeup",
+            Self::Monitor => "Monitor",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -1036,6 +1091,22 @@ impl ToolInput {
                 None => "market status".into(),
             },
             Self::RunBounty { bounty_id, .. } => format!("run bounty: {bounty_id}"),
+            Self::CronCreate {
+                schedule,
+                description,
+                ..
+            } => format!("cron `{schedule}`: {description}"),
+            Self::CronList => "list cron jobs".into(),
+            Self::CronDelete { id } => format!("delete cron: {id}"),
+            Self::ScheduleWakeup {
+                delay_seconds,
+                reason,
+                ..
+            } => format!("wake in {delay_seconds}s: {reason}"),
+            Self::Monitor { command, until } => {
+                let preview: String = command.chars().take(40).collect();
+                format!("monitor `{preview}` until /{until}/")
+            }
             Self::Generic { summary } => summary.clone(),
         }
     }
@@ -1221,6 +1292,28 @@ impl ToolInput {
                     .and_then(|m| m.get("max_solvers"))
                     .and_then(|v| v.as_u64())
                     .map(|n| n.min(255) as u8),
+            },
+            ToolKind::CronCreate => Self::CronCreate {
+                schedule: str_field("schedule"),
+                command: str_field("command"),
+                description: str_field("description"),
+            },
+            ToolKind::CronList => Self::CronList,
+            ToolKind::CronDelete => Self::CronDelete {
+                id: str_field("id"),
+            },
+            ToolKind::ScheduleWakeup => Self::ScheduleWakeup {
+                delay_seconds: obj
+                    .and_then(|m| m.get("delay_seconds"))
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n.min(u32::MAX as u64) as u32)
+                    .unwrap_or(0),
+                prompt: str_field("prompt"),
+                reason: str_field("reason"),
+            },
+            ToolKind::Monitor => Self::Monitor {
+                command: str_field("command"),
+                until: str_field("until"),
             },
             ToolKind::Generic(_) => Self::Generic {
                 summary: v.to_string(),
@@ -1478,6 +1571,30 @@ impl ToolInput {
                 }
                 v
             }
+            Self::CronCreate {
+                schedule,
+                command,
+                description,
+            } => json!({
+                "schedule": schedule,
+                "command": command,
+                "description": description,
+            }),
+            Self::CronList => json!({}),
+            Self::CronDelete { id } => json!({ "id": id }),
+            Self::ScheduleWakeup {
+                delay_seconds,
+                prompt,
+                reason,
+            } => json!({
+                "delay_seconds": delay_seconds,
+                "prompt": prompt,
+                "reason": reason,
+            }),
+            Self::Monitor { command, until } => json!({
+                "command": command,
+                "until": until,
+            }),
             Self::Generic { summary } => {
                 serde_json::from_str(summary).unwrap_or(json!({ "input": summary }))
             }

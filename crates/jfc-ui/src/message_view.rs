@@ -1201,6 +1201,11 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         ToolKind::PostBounty | ToolKind::RunBounty | ToolKind::MarketStatus => {
             Color::Rgb(255, 215, 100)
         } // gold
+        ToolKind::CronCreate
+        | ToolKind::CronList
+        | ToolKind::CronDelete
+        | ToolKind::ScheduleWakeup
+        | ToolKind::Monitor => Color::Rgb(180, 200, 255), // ice-blue (daemon family)
         ToolKind::Generic(_) => t.text_secondary,
     }
 }

@@ -65,6 +65,11 @@ libc = "0.2.186"
 # a tray bubble instead of having to refocus to check. Disabled when
 # `JFC_DISABLE_NOTIFICATIONS=1` so headless / SSH sessions don't error.
 notify-rust = { version = "4", default-features = false, features = ["d"] }
+# Used by the Monitor tool's `until` matcher and the CronSchedule
+# parser. Default features include unicode + perl classes which is
+# overkill for our needs but the binary already pulls regex through
+# `tracing-subscriber`'s env-filter, so this is essentially free.
+regex = "1"
 jfc-graph = { path = "../jfc-graph" }
 jfc-economy = { path = "../jfc-economy" }
 

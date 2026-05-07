@@ -1644,6 +1644,7 @@ dependencies = [
  "rand 0.10.1",
  "ratatui",
  "ratatui-textarea",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

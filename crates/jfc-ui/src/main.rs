@@ -55,7 +55,7 @@ mod sandbox;
 
 use std::{io, sync::Arc, time::Duration};
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crossterm::{
     cursor::SetCursorStyle,
     event::{
@@ -97,6 +97,39 @@ struct Cli {
     /// Model to use (overrides ANTHROPIC_MODEL env var)
     #[arg(long, short = 'm', value_name = "MODEL")]
     model: Option<String>,
+
+    /// Subcommand. When omitted, jfc launches the interactive TUI.
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+/// Top-level subcommands. Currently only the daemon family — leaving the
+/// TUI to be the default invocation keeps `jfc` ergonomic for humans.
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Manage the background daemon (cron jobs + scheduled wakeups).
+    Daemon {
+        #[command(subcommand)]
+        sub: DaemonSubcommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum DaemonSubcommand {
+    /// Run the daemon in the foreground (cron + wakeup poll loop).
+    /// Use `&` or `nohup` from the shell to background it.
+    Start,
+    /// Stop the running daemon (SIGTERM the PID file).
+    Stop,
+    /// Print daemon health + session/cron/wakeup counts.
+    Status,
+    /// List registered cron jobs and pending wakeups.
+    List,
+    /// Manually fire a cron job by ID once.
+    Fire {
+        /// Cron job ID returned by `daemon list` (e.g. `cron-abcd1234`).
+        id: String,
+    },
 }
 
 /// Session to load at startup based on CLI args
@@ -135,6 +168,13 @@ async fn main() -> anyhow::Result<()> {
     // is `info` which lights up the high-signal #[instrument] spans we
     // sprinkled across providers, the classifier, and the tool dispatcher.
     let _trace_guard = init_tracing();
+
+    // Subcommand dispatch must run before any TUI setup — `daemon start`
+    // expects a clean stdout, and `daemon status / list / stop / fire`
+    // print plain text rather than entering the alt-screen.
+    if let Some(cmd) = cli.command {
+        return run_subcommand(cmd).await;
+    }
 
     let init = build_providers();
     let providers = init.providers;
@@ -193,6 +233,49 @@ async fn main() -> anyhow::Result<()> {
     terminal.show_cursor()?;
 
     result
+}
+
+/// Dispatch `jfc <subcommand>`. Pure CLI — no terminal raw-mode, no TUI.
+async fn run_subcommand(cmd: Command) -> anyhow::Result<()> {
+    match cmd {
+        Command::Daemon { sub } => run_daemon_subcommand(sub).await,
+    }
+}
+
+async fn run_daemon_subcommand(sub: DaemonSubcommand) -> anyhow::Result<()> {
+    use crate::daemon::{
+        DaemonPaths, fire_cron_cli, list_string, run_daemon, status_string, stop_daemon,
+    };
+    let paths = DaemonPaths::default_user();
+
+    match sub {
+        DaemonSubcommand::Start => {
+            run_daemon(paths)
+                .await
+                .map_err(|e| anyhow::anyhow!("daemon start failed: {e}"))?;
+            Ok(())
+        }
+        DaemonSubcommand::Stop => {
+            stop_daemon(&paths).map_err(|e| anyhow::anyhow!("daemon stop failed: {e}"))?;
+            println!("daemon stopped");
+            Ok(())
+        }
+        DaemonSubcommand::Status => {
+            print!("{}", status_string(&paths));
+            Ok(())
+        }
+        DaemonSubcommand::List => {
+            print!("{}", list_string(&paths));
+            Ok(())
+        }
+        DaemonSubcommand::Fire { id } => {
+            let msg = fire_cron_cli(&paths, &id)
+                .await
+                .map_err(|e| anyhow::anyhow!("fire failed: {e}"))?;
+            println!("{msg}");
+            Ok(())
+        }
+    }
 }
 
 fn install_terminal_panic_hook() {
