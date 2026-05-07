@@ -798,6 +798,11 @@ pub struct App {
     /// against `mcp::registry::refresh_counter()` to detect inbound
     /// `notifications/tools/list_changed` and emit a toast + reminder.
     pub last_mcp_refresh_seen: u64,
+    /// Last file-watcher change-counter we observed. Tick handler
+    /// compares against `file_watcher::change_counter()` to detect
+    /// CLAUDE.md / agents / settings edits and prepend a system-
+    /// reminder on the next outbound prompt.
+    pub last_file_watcher_seen: u64,
     /// Message indices the user pinned via `/pin <idx>`. Compaction
     /// preserves pinned messages verbatim regardless of token pressure.
     /// Stored as indices into `messages` rather than a flag on
@@ -806,6 +811,12 @@ pub struct App {
     /// `/verbose` toggle: when true, tool blocks render expanded by
     /// default. When false (default), they preview to N lines.
     pub verbose_mode: bool,
+    /// Per-session FIFO of tool mutations the user can `/undo`. Each
+    /// entry captures `(file_path, prev_content, op_label)` before the
+    /// tool runs. Capped at 100 entries (the oldest gets dropped). New
+    /// entries push to the back; /undo pops the back (most recent
+    /// first).
+    pub tool_undo_history: std::collections::VecDeque<crate::types::ToolUndoEntry>,
     /// v132 Marsh (mid-stream bash → model) buffer. Each entry is
     /// `(tool_id, line)` captured from `ToolOutputChunk`. `stream.rs`
     /// drains this on the next outbound request so the model sees what
@@ -1028,8 +1039,10 @@ impl App {
             effort_state: crate::effort::EffortState::new(),
             last_heartbeat_at: None,
             last_mcp_refresh_seen: 0,
+            last_file_watcher_seen: 0,
             pinned_message_indices: std::collections::HashSet::new(),
             verbose_mode: false,
+            tool_undo_history: std::collections::VecDeque::new(),
             pending_marsh_chunks: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             cost_budget_warned_at: 0,
             background_tasks: HashMap::new(),

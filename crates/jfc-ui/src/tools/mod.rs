@@ -507,6 +507,48 @@ fn configure_tool_command(command: &mut Command) {
     }
 }
 
+/// Process-global FIFO of `/undo` entries. Tool dispatchers call
+/// `push_undo_entry` *before* mutating the filesystem; the slash
+/// command handler pops from this and applies the reversal. Stored
+/// here (not on App) so per-tool dispatchers don't need a handle to
+/// App threaded through the tool layer. Capped at 100 entries.
+fn undo_history_handle()
+-> &'static std::sync::RwLock<std::collections::VecDeque<crate::types::ToolUndoEntry>> {
+    use std::sync::OnceLock;
+    static H: OnceLock<std::sync::RwLock<std::collections::VecDeque<crate::types::ToolUndoEntry>>> =
+        OnceLock::new();
+    H.get_or_init(|| std::sync::RwLock::new(std::collections::VecDeque::new()))
+}
+
+/// Push an undo entry onto the per-session stack. Called from
+/// `execute_edit` / `execute_write` / `execute_apply_patch` / etc.
+/// before they mutate the filesystem.
+pub fn push_undo_entry(file_path: &str, previous_content: Option<String>, op_label: &str) {
+    let entry = crate::types::ToolUndoEntry {
+        file_path: file_path.to_owned(),
+        previous_content,
+        op_label: op_label.to_owned(),
+    };
+    if let Ok(mut h) = undo_history_handle().write() {
+        if h.len() >= 100 {
+            h.pop_front();
+        }
+        h.push_back(entry);
+    }
+}
+
+/// Drain the most recent undo entry.
+pub fn pop_undo_entry() -> Option<crate::types::ToolUndoEntry> {
+    undo_history_handle().write().ok()?.pop_back()
+}
+
+/// Push an entry back (used when /undo failed to apply).
+pub fn restore_undo_entry(entry: crate::types::ToolUndoEntry) {
+    if let Ok(mut h) = undo_history_handle().write() {
+        h.push_back(entry);
+    }
+}
+
 fn terminal_safe_text(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut chars = input.chars().peekable();

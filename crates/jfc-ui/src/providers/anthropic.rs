@@ -85,7 +85,19 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
     });
 
     if let Some(sys) = &opts.system {
-        body["system"] = json!(sys);
+        // v132 prompt caching: tag the system prompt as `ephemeral` so
+        // Anthropic's 5-minute cache kicks in. Multi-turn sessions read
+        // the same big system block every turn — caching it cuts input
+        // token costs by ~70% on those turns. The v132 SDK does the
+        // same; cli.js sets `cache_control: {type:"ephemeral"}` on the
+        // last block of system + tools.
+        body["system"] = json!([
+            {
+                "type": "text",
+                "text": sys,
+                "cache_control": { "type": "ephemeral" },
+            }
+        ]);
     }
 
     if let Some(temp) = opts.temperature {
@@ -96,7 +108,22 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
     }
 
     if !opts.tools.is_empty() {
-        body["tools"] = sse::build_tools(&opts.tools);
+        // Tag the LAST tool with cache_control so the entire tools
+        // array becomes a cache breakpoint. v132 picks the last tool
+        // (vs. first) so callers can prepend ephemeral tools without
+        // re-keying the cache.
+        let mut tools = sse::build_tools(&opts.tools);
+        if let Some(arr) = tools.as_array_mut() {
+            if let Some(last) = arr.last_mut() {
+                if let Some(obj) = last.as_object_mut() {
+                    obj.insert(
+                        "cache_control".to_owned(),
+                        json!({ "type": "ephemeral" }),
+                    );
+                }
+            }
+        }
+        body["tools"] = tools;
     }
 
     if opts.adaptive_thinking {

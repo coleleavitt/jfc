@@ -521,7 +521,15 @@ fn build_system_blocks(billing_header_text: &str, caller_system: Option<&str>) -
     if let Some(sys) = caller_system {
         let sanitized = sanitize_system_prompt(sys);
         if !sanitized.is_empty() {
-            blocks.push(json!({ "type": "text", "text": sanitized }));
+            // Cache the caller's (jfc's) system prompt too — it's the
+            // largest block and changes least often, so a cache hit
+            // saves the most. v132 puts a breakpoint on the last
+            // system block; we mirror that.
+            blocks.push(json!({
+                "type": "text",
+                "text": sanitized,
+                "cache_control": { "type": "ephemeral" },
+            }));
         }
     }
     json!(blocks)
@@ -621,7 +629,18 @@ fn build_body(
         "system": build_system_blocks(billing_header_text, opts.system.as_deref()),
     });
     if !opts.tools.is_empty() {
-        body["tools"] = sse::build_tools(&opts.tools);
+        let mut tools = sse::build_tools(&opts.tools);
+        if let Some(arr) = tools.as_array_mut() {
+            if let Some(last) = arr.last_mut() {
+                if let Some(obj) = last.as_object_mut() {
+                    obj.insert(
+                        "cache_control".to_owned(),
+                        json!({ "type": "ephemeral" }),
+                    );
+                }
+            }
+        }
+        body["tools"] = tools;
     }
     if opts.adaptive_thinking {
         body["thinking"] = json!({ "type": "adaptive" });

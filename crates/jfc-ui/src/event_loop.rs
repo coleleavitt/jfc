@@ -1090,6 +1090,29 @@ pub(crate) async fn run(
                         );
                     }
 
+                    // v132 file-watcher reload — detect CLAUDE.md /
+                    // agents / settings edits by comparing the global
+                    // change counter against our last-seen value. On
+                    // change, emit a toast + system-reminder so the
+                    // model picks up the new content next turn.
+                    let cur_fw = crate::file_watcher::change_counter();
+                    if cur_fw > app.last_file_watcher_seen {
+                        app.last_file_watcher_seen = cur_fw;
+                        toast::push_with_cap(
+                            &mut app.toasts,
+                            toast::Toast::new(
+                                toast::ToastKind::Info,
+                                "Config file changed — reloaded for next turn",
+                            ),
+                        );
+                        crate::system_reminder::append_to_last_user(
+                            &mut app.messages,
+                            "CLAUDE.md / agent / settings file changed since last \
+                             turn. The reloaded content will be reflected in the \
+                             next system prompt.",
+                        );
+                    }
+
                     // Refresh the worktree count at most once per second
                     // so the status-bar `⌥ N wt` badge reflects /worktree
                     // create|remove and agent-isolation churn without

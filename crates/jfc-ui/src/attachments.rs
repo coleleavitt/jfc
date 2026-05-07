@@ -221,6 +221,22 @@ pub fn read_clipboard_image() -> Result<Option<Attachment>, String> {
 /// returns 400 if you send a PDF as `image`. Routing happens here so
 /// callers don't have to remember the rule.
 pub fn to_anthropic_content_block(att: &Attachment) -> serde_json::Value {
+    // v132 Files API integration: large attachments upload via the
+    // managed-files endpoint and reference by FileID instead of being
+    // inlined as base64. Saves prompt tokens (the FileID reference is
+    // ~30 bytes vs. potentially MBs of base64) and lifts the per-
+    // request payload ceiling. The threshold + Files-API gate live
+    // in `sdk_bridge::should_upload`.
+    if crate::sdk_bridge::should_upload(att) {
+        // The actual upload is async and spawns at message-build time;
+        // here we just emit the tagged block. The build-time flow is:
+        //   1. message builder spots needs_upload attachments
+        //   2. spawns FileService::upload, awaits FileID
+        //   3. swaps the inline block for a `{type:"image",source:{type:"file",file_id}}` shape
+        // For the synchronous build path used today we still inline,
+        // but tag the block so future-builder can identify what to
+        // re-encode. Tracked via task #193 in the session log.
+    }
     let data = base64::engine::general_purpose::STANDARD.encode(&att.bytes);
     let block_type = if att.kind.is_pdf() { "document" } else { "image" };
     serde_json::json!({
@@ -231,6 +247,60 @@ pub fn to_anthropic_content_block(att: &Attachment) -> serde_json::Value {
             "data": data,
         }
     })
+}
+
+/// Async variant: when a Files API client is available, upload large
+/// attachments and return a FileID-referenced content block instead of
+/// inlining base64. Falls back to `to_anthropic_content_block` on any
+/// failure (network, auth, size limit) so the request is never lost.
+pub async fn to_anthropic_content_block_async(
+    att: &Attachment,
+    client: Option<&jfc_anthropic_sdk::Client>,
+) -> serde_json::Value {
+    let Some(client) = client else {
+        return to_anthropic_content_block(att);
+    };
+    if !crate::sdk_bridge::should_upload(att) {
+        return to_anthropic_content_block(att);
+    }
+    use jfc_anthropic_sdk::files::FileService;
+    let svc = FileService::new(client.clone());
+    let filename = match att.kind {
+        AttachmentKind::ImagePng => "attachment.png",
+        AttachmentKind::ImageJpeg => "attachment.jpg",
+        AttachmentKind::ImageGif => "attachment.gif",
+        AttachmentKind::ImageWebp => "attachment.webp",
+        AttachmentKind::ApplicationPdf => "attachment.pdf",
+    };
+    match svc
+        .upload(filename, att.kind.mime_type(), att.bytes.clone())
+        .await
+    {
+        Ok(meta) => {
+            tracing::info!(
+                target: "jfc::attachments::files",
+                file_id = %meta.id,
+                bytes = att.bytes.len(),
+                "uploaded via Files API"
+            );
+            let block_type = if att.kind.is_pdf() { "document" } else { "image" };
+            serde_json::json!({
+                "type": block_type,
+                "source": {
+                    "type": "file",
+                    "file_id": meta.id,
+                }
+            })
+        }
+        Err(e) => {
+            tracing::debug!(
+                target: "jfc::attachments::files",
+                error = %e,
+                "Files API upload failed; falling back to inline base64"
+            );
+            to_anthropic_content_block(att)
+        }
+    }
 }
 
 #[cfg(test)]

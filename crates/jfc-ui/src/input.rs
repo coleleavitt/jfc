@@ -1458,6 +1458,40 @@ pub async fn handle_key(
             app.show_info_sidebar = !app.show_info_sidebar;
             return Ok(false);
         }
+        (KeyModifiers::CONTROL, KeyCode::Char('v')) => {
+            // Image-paste keybind. Some terminals don't translate Ctrl+V
+            // into bracketed-paste events (xterm without
+            // `enableModifyOtherKeys`, certain tmux configurations), so
+            // we explicitly try `read_clipboard_image` here. If the
+            // clipboard holds an image, attach it; if it holds text,
+            // fall through to the textarea's normal paste handling.
+            match crate::attachments::read_clipboard_image() {
+                Ok(Some(att)) => {
+                    crate::toast::push_with_cap(
+                        &mut app.toasts,
+                        crate::toast::Toast::new(
+                            crate::toast::ToastKind::Info,
+                            format!("📎 image attached ({} bytes)", att.bytes.len()),
+                        ),
+                    );
+                    app.pending_attachments.push(att);
+                    return Ok(false);
+                }
+                Ok(None) => {
+                    // Try text clipboard fallback.
+                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                        if let Ok(text) = cb.get_text() {
+                            app.textarea.insert_str(&text);
+                        }
+                    }
+                    return Ok(false);
+                }
+                Err(e) => {
+                    tracing::debug!(target: "jfc::input", error = %e, "Ctrl+V image paste failed");
+                    return Ok(false);
+                }
+            }
+        }
         (KeyModifiers::CONTROL, KeyCode::Char('y')) => {
             // Yank the most recent assistant message's text to the clipboard.
             // v126 has the same shortcut (cli.js advertises `Ctrl+Y` for
@@ -2114,6 +2148,85 @@ async fn handle_submit(
             .await;
         return Ok(());
     }
+
+    // v132 @-mention auto-attach: scan the prompt for `@path/to/file`
+    // tokens. If the path resolves to a real file, read it and stage
+    // it as an attachment so the model sees the content alongside the
+    // user's text. URLs (containing `://`) are skipped — those are
+    // user-supplied references, not local paths.
+    {
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for token in text.split_whitespace() {
+            // Strip surrounding punctuation: `(@src/foo.rs)` → `src/foo.rs`.
+            let stripped = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '/' && c != '.' && c != '_' && c != '-' && c != '@');
+            let Some(rest) = stripped.strip_prefix('@') else {
+                continue;
+            };
+            if rest.is_empty() || rest.contains("://") {
+                continue;
+            }
+            if seen.contains(rest) {
+                continue;
+            }
+            let path = std::path::PathBuf::from(rest);
+            if !path.is_file() {
+                continue;
+            }
+            let Ok(meta) = path.metadata() else {
+                continue;
+            };
+            // Cap at 1 MB so a runaway @ doesn't OOM the prompt.
+            if meta.len() > 1_000_000 {
+                tracing::debug!(
+                    target: "jfc::input::mention",
+                    path = %path.display(),
+                    bytes = meta.len(),
+                    "@-mention skipped (file too large)"
+                );
+                continue;
+            }
+            // Image/PDF: stage as binary attachment via the existing
+            // attachments path. Text: just nudge via system reminder
+            // (the model can Read it itself if needed; auto-Read'ing
+            // would burn tokens on every @ even when the user didn't
+            // mean "show me this file").
+            let bytes = match std::fs::read(&path) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            if let Some(kind) = crate::attachments::detect_kind(&bytes) {
+                let att = crate::attachments::Attachment { kind, bytes };
+                crate::tools::push_pending_tool_attachment(att);
+                tracing::info!(
+                    target: "jfc::input::mention",
+                    path = %path.display(),
+                    "@-mention auto-attached image/pdf"
+                );
+            } else {
+                // Plain text: prepend a system-reminder so the model
+                // sees the content inline without us actually adding
+                // it as an attachment block.
+                if let Ok(content) = String::from_utf8(bytes) {
+                    let preview: String = content.chars().take(50_000).collect();
+                    crate::system_reminder::append_to_last_user(
+                        &mut app.messages,
+                        &format!(
+                            "User mentioned `@{rest}` — content of `{}` follows:\n\n```\n{preview}\n```",
+                            path.display()
+                        ),
+                    );
+                    tracing::info!(
+                        target: "jfc::input::mention",
+                        path = %path.display(),
+                        bytes = preview.len(),
+                        "@-mention auto-injected text"
+                    );
+                }
+            }
+            seen.insert(rest.to_owned());
+        }
+    }
+
     // Edit mode: if the user is editing an earlier message, rewrite
     // history at that index and drop everything after before
     // continuing as a fresh submit. The new turn arrives as if the
@@ -2829,6 +2942,585 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     )));
                 }
             }
+        }
+        "/login" => {
+            // v132 `/login` flow. With no arg, prints the chooser. With
+            // a sub-target, the dispatcher returns a body string +
+            // some side effects need a browser open. We always shell
+            // out to xdg-open / open / start to launch the browser
+            // (cheap, async-safe; failures are silent on systems
+            // without one of those binaries).
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let arg = parts.get(1).copied().map(str::trim).filter(|s| !s.is_empty());
+            let dispatch = crate::providers::login_dispatch::dispatch(arg);
+            let url = match &dispatch {
+                crate::providers::login_dispatch::LoginDispatch::AnthropicApiKey(_)
+                | crate::providers::login_dispatch::LoginDispatch::ConsoleApiKey(_) => {
+                    Some("https://console.anthropic.com/settings/keys")
+                }
+                crate::providers::login_dispatch::LoginDispatch::ClaudeAiOAuth(_) => {
+                    Some("https://claude.ai/login")
+                }
+                _ => None,
+            };
+            if let Some(url) = url {
+                // Best-effort: shell out to the platform browser opener.
+                // Don't await — the browser launch is fire-and-forget.
+                #[cfg(target_os = "linux")]
+                let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+                #[cfg(target_os = "macos")]
+                let _ = std::process::Command::new("open").arg(url).spawn();
+                #[cfg(target_os = "windows")]
+                let _ = std::process::Command::new("cmd")
+                    .args(["/C", "start", url])
+                    .spawn();
+                tracing::info!(target: "jfc::login", %url, "opened browser for /login");
+            }
+            app.messages.push(ChatMessage::assistant(format!(
+                "{dispatch}{}",
+                if url.is_some() {
+                    "\n\n_(opened the browser for you)_"
+                } else {
+                    ""
+                }
+            )));
+        }
+        "/batch" => {
+            // /batch <prompt-file>: read newline-delimited prompts and
+            // submit them via Anthropic's Message Batches API for the
+            // 50% discount. The batch ID is returned synchronously;
+            // results stream back via the Sessions API in a follow-up
+            // turn (poll `/batch status <id>`).
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let arg = parts.get(1).copied().unwrap_or("").trim();
+            if arg.is_empty() {
+                app.messages.push(ChatMessage::assistant(
+                    "Usage: `/batch <prompt-file>`. The file should contain one prompt per line.".into(),
+                ));
+                return;
+            }
+            let path = std::path::PathBuf::from(arg);
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(e) => {
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Failed to read `{}`: {e}",
+                        path.display(),
+                    )));
+                    return;
+                }
+            };
+            let prompts: Vec<String> = content
+                .lines()
+                .map(|l| l.trim().to_owned())
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .collect();
+            if prompts.is_empty() {
+                app.messages.push(ChatMessage::assistant(
+                    "No prompts found (each non-empty, non-`#`-comment line counts as one).".into(),
+                ));
+                return;
+            }
+            let Some(client) = crate::sdk_bridge::build_client() else {
+                app.messages.push(ChatMessage::assistant(
+                    "No Anthropic API key configured — `/batch` needs one (set ANTHROPIC_API_KEY).".into(),
+                ));
+                return;
+            };
+            let model = app.model.as_str().to_owned();
+            let prompt_count = prompts.len();
+            let path_for_msg = path.display().to_string();
+            tokio::spawn(async move {
+                use jfc_anthropic_sdk::batches::{BatchRequest, MessageBatchService};
+                use jfc_anthropic_sdk::messages::{ContentBlock, Message, MessageRequest, Role};
+                let svc = MessageBatchService::new(client);
+                let requests: Vec<BatchRequest> = prompts
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, p)| BatchRequest {
+                        custom_id: format!("batch-{i}"),
+                        params: MessageRequest {
+                            model: model.clone(),
+                            messages: vec![Message {
+                                role: Role::User,
+                                content: vec![ContentBlock::Text { text: p }],
+                            }],
+                            max_tokens: 4096,
+                            system: None,
+                            temperature: None,
+                            top_p: None,
+                            stop_sequences: Vec::new(),
+                            tools: Vec::new(),
+                            tool_choice: None,
+                            stream: Some(false),
+                            thinking: None,
+                            reasoning_effort: None,
+                        },
+                    })
+                    .collect();
+                match svc.create(requests).await {
+                    Ok(batch) => {
+                        tracing::info!(
+                            target: "jfc::batch",
+                            batch_id = %batch.id,
+                            count = prompt_count,
+                            "batch submitted"
+                        );
+                        eprintln!(
+                            "[batch] submitted {prompt_count} prompts from {path_for_msg} → batch {}",
+                            batch.id
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("[batch] failed: {e}");
+                    }
+                }
+            });
+            app.messages.push(ChatMessage::assistant(format!(
+                "Queued {prompt_count} prompts from `{}` for batch processing. \
+                 Watch stderr / `/doctor` for the batch ID.",
+                path.display()
+            )));
+        }
+        "/diff" => {
+            // Show pending uncommitted + unstaged changes via `git diff
+            // HEAD --stat`. Read-only; doesn't run unless we're in a
+            // git repo. Surface in the transcript as an assistant
+            // message (markdown code block) so the user — and the
+            // model on the next turn — can see what's pending.
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let in_repo = std::process::Command::new("git")
+                .args(["rev-parse", "--is-inside-work-tree"])
+                .current_dir(&cwd)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if !in_repo {
+                app.messages.push(ChatMessage::assistant(
+                    "Not inside a git repository — `/diff` has nothing to show.".into(),
+                ));
+                return;
+            }
+            let stat = std::process::Command::new("git")
+                .args(["diff", "HEAD", "--stat"])
+                .current_dir(&cwd)
+                .output()
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .unwrap_or_default();
+            let untracked = std::process::Command::new("git")
+                .args(["ls-files", "--others", "--exclude-standard"])
+                .current_dir(&cwd)
+                .output()
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .unwrap_or_default();
+            if stat.trim().is_empty() && untracked.trim().is_empty() {
+                app.messages.push(ChatMessage::assistant(
+                    "Working tree is clean — no pending changes.".into(),
+                ));
+            } else {
+                let mut body = String::from("**Pending changes (`git diff HEAD`):**\n\n```\n");
+                if !stat.trim().is_empty() {
+                    body.push_str(&stat);
+                } else {
+                    body.push_str("(no tracked-file changes)\n");
+                }
+                if !untracked.trim().is_empty() {
+                    body.push_str("\n--- untracked ---\n");
+                    body.push_str(&untracked);
+                }
+                body.push_str("```\n");
+                app.messages.push(ChatMessage::assistant(body));
+            }
+        }
+        "/undo" => {
+            // Revert the most recent Edit / Write / MultiEdit /
+            // ApplyPatch tool's filesystem mutation. Pulls from
+            // `app.tool_undo_history` which the tool dispatcher
+            // populates by capturing pre-mutation file content
+            // before the tool executes. Only undoes ONE step;
+            // run /undo repeatedly to walk back further.
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let entry = crate::tools::pop_undo_entry();
+            let Some(entry) = entry else {
+                app.messages.push(ChatMessage::assistant(
+                    "Nothing to undo — no recent file mutation captured this session.".into(),
+                ));
+                return;
+            };
+            let path = std::path::PathBuf::from(&entry.file_path);
+            match entry.previous_content.clone() {
+                Some(prev) => match std::fs::write(&path, &prev) {
+                    Ok(()) => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Reverted `{}` to its pre-{} state ({} bytes restored).",
+                            path.display(),
+                            entry.op_label,
+                            prev.len()
+                        )));
+                    }
+                    Err(e) => {
+                        crate::tools::restore_undo_entry(entry.clone());
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Failed to write `{}`: {e} (kept the entry, run /undo again after fixing)",
+                            path.display(),
+                        )));
+                    }
+                },
+                None => match std::fs::remove_file(&path) {
+                    Ok(()) => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Reverted `{}` (deleted; was newly-created by `{}`).",
+                            path.display(),
+                            entry.op_label
+                        )));
+                    }
+                    Err(e) => {
+                        crate::tools::restore_undo_entry(entry.clone());
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Failed to remove `{}`: {e}",
+                            path.display(),
+                        )));
+                    }
+                },
+            }
+        }
+        "/export" => {
+            // /export <path>: write the transcript as markdown to the
+            // given path (defaults to ./jfc-transcript.md).
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let raw_path = parts.get(1).copied().unwrap_or("").trim();
+            let path: std::path::PathBuf = if raw_path.is_empty() {
+                std::path::PathBuf::from("jfc-transcript.md")
+            } else {
+                std::path::PathBuf::from(raw_path)
+            };
+            let mut body = String::from("# jfc transcript\n\n");
+            for msg in &app.messages {
+                let role = match msg.role {
+                    crate::types::Role::User => "User",
+                    crate::types::Role::Assistant => "Assistant",
+                };
+                body.push_str(&format!("## {role}\n\n"));
+                for part in &msg.parts {
+                    match part {
+                        crate::types::MessagePart::Text(t) => {
+                            body.push_str(t);
+                            body.push_str("\n\n");
+                        }
+                        crate::types::MessagePart::Reasoning(t) => {
+                            body.push_str("> _thinking_\n> \n> ");
+                            body.push_str(&t.replace('\n', "\n> "));
+                            body.push_str("\n\n");
+                        }
+                        crate::types::MessagePart::Tool(tc) => {
+                            body.push_str(&format!(
+                                "- **Tool: {}** ({})\n",
+                                tc.kind.label(),
+                                match tc.status {
+                                    crate::types::ToolStatus::Pending => "pending",
+                                    crate::types::ToolStatus::Running => "running",
+                                    crate::types::ToolStatus::Complete => "complete",
+                                    crate::types::ToolStatus::Failed => "failed",
+                                }
+                            ));
+                            body.push_str(&format!("  Input: {}\n", tc.input.summary()));
+                            body.push('\n');
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            match std::fs::write(&path, &body) {
+                Ok(()) => {
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Wrote transcript ({} bytes) to `{}`.",
+                        body.len(),
+                        path.display(),
+                    )));
+                }
+                Err(e) => {
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Failed to write `{}`: {e}",
+                        path.display(),
+                    )));
+                }
+            }
+        }
+        "/verbose" => {
+            // Toggle expanded-by-default tool blocks for the rest of
+            // the session. Renderers read `app.verbose_mode` and lift
+            // the per-tool preview cap when set.
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let arg = parts.get(1).copied().unwrap_or("").trim().to_ascii_lowercase();
+            let target = match arg.as_str() {
+                "on" | "true" | "1" => Some(true),
+                "off" | "false" | "0" => Some(false),
+                "" => Some(!app.verbose_mode),
+                _ => None,
+            };
+            match target {
+                Some(v) => {
+                    app.verbose_mode = v;
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Verbose mode **{}** — tool blocks {} preview cap.",
+                        if v { "ON" } else { "OFF" },
+                        if v { "expand past" } else { "respect" },
+                    )));
+                }
+                None => {
+                    app.messages.push(ChatMessage::assistant(
+                        "Usage: `/verbose [on|off]`. With no arg, toggles.".into(),
+                    ));
+                }
+            }
+        }
+        "/pin" => {
+            // Pin a message by transcript index so compaction can't
+            // drop it. /pin without an arg pins the most recent
+            // message; /pin <n> pins index n; /pin list prints the
+            // current pin set.
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let arg = parts.get(1).copied().unwrap_or("").trim();
+            if arg == "list" {
+                if app.pinned_message_indices.is_empty() {
+                    app.messages.push(ChatMessage::assistant(
+                        "No pinned messages. `/pin <n>` pins index n; `/pin` pins the most recent.".into(),
+                    ));
+                } else {
+                    let mut idx: Vec<usize> = app.pinned_message_indices.iter().copied().collect();
+                    idx.sort();
+                    let listing = idx
+                        .into_iter()
+                        .map(|i| format!("- #{i}"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "**Pinned messages:**\n{listing}"
+                    )));
+                }
+            } else if arg.is_empty() {
+                if app.messages.is_empty() {
+                    return;
+                }
+                let idx = app.messages.len() - 1;
+                app.pinned_message_indices.insert(idx);
+                app.messages.push(ChatMessage::assistant(format!(
+                    "Pinned message #{idx} (compaction will preserve it)."
+                )));
+            } else {
+                match arg.parse::<usize>() {
+                    Ok(idx) if idx < app.messages.len() => {
+                        app.pinned_message_indices.insert(idx);
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Pinned message #{idx}."
+                        )));
+                    }
+                    Ok(idx) => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "No message at index {idx} (transcript has {} messages).",
+                            app.messages.len()
+                        )));
+                    }
+                    Err(_) => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Couldn't parse `{arg}` as a message index. Use `/pin`, `/pin <n>`, or `/pin list`."
+                        )));
+                    }
+                }
+            }
+        }
+        "/unpin" => {
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let arg = parts.get(1).copied().unwrap_or("").trim();
+            if arg.is_empty() || arg == "all" {
+                let n = app.pinned_message_indices.len();
+                app.pinned_message_indices.clear();
+                app.messages.push(ChatMessage::assistant(format!(
+                    "Cleared {n} pin(s)."
+                )));
+            } else {
+                match arg.parse::<usize>() {
+                    Ok(idx) => {
+                        if app.pinned_message_indices.remove(&idx) {
+                            app.messages.push(ChatMessage::assistant(format!(
+                                "Unpinned message #{idx}."
+                            )));
+                        } else {
+                            app.messages.push(ChatMessage::assistant(format!(
+                                "Message #{idx} wasn't pinned."
+                            )));
+                        }
+                    }
+                    Err(_) => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Couldn't parse `{arg}` as a message index."
+                        )));
+                    }
+                }
+            }
+        }
+        "/timeline" => {
+            // Render a chronological tool-call timeline for the most
+            // recent assistant turn. For each Tool part, emit one row
+            // with "kind │ summary │ Δms" so the user can spot slow
+            // tools at a glance.
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let last_assistant = app
+                .messages
+                .iter()
+                .rposition(|m| matches!(m.role, crate::types::Role::Assistant));
+            let Some(idx) = last_assistant else {
+                app.messages.push(ChatMessage::assistant(
+                    "No assistant turn yet — nothing to timeline.".into(),
+                ));
+                return;
+            };
+            let msg = &app.messages[idx];
+            let mut rows: Vec<String> = Vec::new();
+            for part in &msg.parts {
+                if let crate::types::MessagePart::Tool(tc) = part {
+                    let elapsed = tc
+                        .elapsed_ms
+                        .map(|ms| {
+                            if ms >= 1_000 {
+                                format!("{:.1}s", ms as f64 / 1000.0)
+                            } else {
+                                format!("{ms}ms")
+                            }
+                        })
+                        .unwrap_or_else(|| "—".to_owned());
+                    let summary = tc.input.summary();
+                    let summary: String = summary.chars().take(60).collect();
+                    rows.push(format!(
+                        "  - **{}** · `{}` · {elapsed}",
+                        tc.kind.label(),
+                        summary,
+                    ));
+                }
+            }
+            if rows.is_empty() {
+                app.messages.push(ChatMessage::assistant(
+                    "Most recent assistant turn ran no tools.".into(),
+                ));
+            } else {
+                app.messages.push(ChatMessage::assistant(format!(
+                    "**Tool timeline (last assistant turn, {} tools):**\n{}",
+                    rows.len(),
+                    rows.join("\n"),
+                )));
+            }
+        }
+        "/doctor" => {
+            // Health check: scan the most-likely failure modes for an
+            // out-of-the-box jfc setup and surface a single status
+            // block. Read-only; no fixes applied automatically — the
+            // user opts in to remedies after seeing the report.
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let mut report = String::from("**jfc /doctor**\n\n");
+            // Provider reachable
+            report.push_str(&format!(
+                "- Active provider: `{}`\n",
+                app.provider.name(),
+            ));
+            // MCP server count
+            report.push_str(&format!(
+                "- MCP servers configured: {}\n",
+                app.mcp_servers.len(),
+            ));
+            // LSP server count
+            report.push_str(&format!(
+                "- LSP servers active: {}\n",
+                app.lsp_servers.len(),
+            ));
+            // Permission rules parseable
+            #[cfg(feature = "permission-automation")]
+            {
+                let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                let cfg = crate::config::feature_config::FeatureConfig::load(&cwd);
+                let _rules = crate::permissions::RuleSet::from_config(&cfg);
+                report.push_str("- `.jfc/permissions.toml`: parseable\n");
+            }
+            // Memory dirs accessible
+            let memory_dir = crate::memory::user_memory_dir();
+            report.push_str(&format!(
+                "- User memory dir: `{}` ({})\n",
+                memory_dir.display(),
+                if memory_dir.exists() { "exists" } else { "missing" },
+            ));
+            // Tracing log dir
+            if let Some(home) = std::env::var_os("HOME") {
+                let log_dir = std::path::Path::new(&home)
+                    .join(".config")
+                    .join("jfc")
+                    .join("logs");
+                report.push_str(&format!(
+                    "- Tracing log dir: `{}` ({})\n",
+                    log_dir.display(),
+                    if log_dir.exists() { "writable" } else { "will be created" },
+                ));
+            }
+            // Auto-mode / permission mode
+            report.push_str(&format!(
+                "- Permission mode: `{:?}`\n",
+                app.permission_mode,
+            ));
+            // Telemetry posture (from env)
+            let telemetry = std::env::var("JFC_TELEMETRY")
+                .ok()
+                .filter(|v| matches!(v.as_str(), "0" | "false" | "off"))
+                .map(|_| "OPT-OUT (env)")
+                .unwrap_or("default (no telemetry shipped today)");
+            report.push_str(&format!("- Telemetry: {telemetry}\n"));
+            // Auth chain: confirm provider-specific CLIs / env vars
+            // are present so the user knows their effective auth path.
+            let aws_ok = std::process::Command::new("aws")
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            report.push_str(&format!(
+                "- AWS CLI for Bedrock: `{}`\n",
+                if aws_ok { "available" } else { "not found (run /login bedrock to set up)" },
+            ));
+            let gcloud_ok = std::process::Command::new("gcloud")
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            report.push_str(&format!(
+                "- gcloud CLI for Vertex: `{}`\n",
+                if gcloud_ok { "available" } else { "not found (run /login vertex to set up)" },
+            ));
+            let api_key_set = std::env::var("ANTHROPIC_API_KEY").is_ok();
+            report.push_str(&format!(
+                "- ANTHROPIC_API_KEY env: `{}`\n",
+                if api_key_set { "set" } else { "unset (run /login anthropic to set up)" },
+            ));
+            // Cost so far this session
+            let total = crate::cost::total_cost(&app.usage_by_model);
+            report.push_str(&format!(
+                "- Session cost: {}\n",
+                crate::cost::fmt_cost(total),
+            ));
+            // Background tasks
+            let alive = app
+                .background_tasks
+                .values()
+                .filter(|bt| bt.status.is_alive())
+                .count();
+            report.push_str(&format!("- Live agent tasks: {alive}\n"));
+            // Feature gates that diverge
+            let gate_overrides = crate::feature_gates::FeatureGate::ALL
+                .iter()
+                .filter(|g| crate::feature_gates::is_enabled(**g) != g.default_for())
+                .count();
+            report.push_str(&format!(
+                "- Feature gates overridden: {gate_overrides}\n",
+            ));
+            app.messages.push(ChatMessage::assistant(report));
         }
         "/effort" => {
             // v132 reasoning-effort pin. `/effort low|medium|high|xhigh|max`

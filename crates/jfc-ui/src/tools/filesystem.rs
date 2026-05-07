@@ -193,6 +193,10 @@ pub(super) async fn execute_write(file_path: &str, content: &str) -> ExecutionRe
     // v126 always renders a diff for Write so the user sees what
     // actually changed; a bare "Written 97 bytes" tells them nothing.
     let prior = tokio::fs::read_to_string(&path).await.ok();
+    // /undo capture: stash the pre-mutation content so the user can
+    // revert this Write step. None = file didn't exist (undo will
+    // delete the new file).
+    crate::tools::push_undo_entry(file_path, prior.clone(), "Write");
     match tokio::fs::write(&path, content).await {
         Ok(_) => {
             let line_count = content.lines().count();
@@ -267,6 +271,9 @@ pub(super) async fn execute_edit(
             } else {
                 content.replacen(old_string, new_string, 1)
             };
+            // /undo capture: stash the pre-mutation content. The Edit
+            // tool always preserves the file, so we never push None.
+            crate::tools::push_undo_entry(file_path, Some(content.clone()), "Edit");
             match tokio::fs::write(file_path, &new_content).await {
                 Ok(_) => {
                     debug!(target: "jfc::tools", file_path, count, "edit: success");
