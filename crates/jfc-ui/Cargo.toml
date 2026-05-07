@@ -28,6 +28,7 @@ anyhow = { workspace = true }
 # making typed text disappear at the right edge.
 unicode-width = "0.2"
 tracing = { workspace = true }
+thiserror = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
 arboard = { version = "3", default-features = false, features = ["wayland-data-control", "image-data"] }

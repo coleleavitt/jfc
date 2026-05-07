@@ -161,6 +161,12 @@ pub struct ExperimentalConfig {
     pub hashline_edit: bool,
     #[serde(default)]
     pub model_fallback: bool,
+    /// Enable the speculation engine: pre-run Write/Edit/MultiEdit/Bash
+    /// tools inside an isolated `/tmp/jfc-speculation` overlay before the
+    /// user approves them, so commit-on-approve feels instantaneous.
+    /// Default off; opt-in until the engine has soaked in production.
+    #[serde(default)]
+    pub speculation_enabled: bool,
 }
 
 /// Feature configuration loaded from `.jfc/features.toml`.

@@ -28,6 +28,7 @@ mod render_cache;
 mod scheduler;
 mod session;
 mod slash_commands;
+mod speculation;
 mod spinner;
 mod stream;
 mod swarm;
