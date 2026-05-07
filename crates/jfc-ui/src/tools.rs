@@ -2004,6 +2004,18 @@ pub async fn execute_tool(
     task_store: Option<Arc<TaskStore>>,
     active_team_name: Option<&str>,
 ) -> ExecutionResult {
+    #[cfg(feature = "hooks")]
+    {
+        // Hook integration point: BeforeToolDispatch
+        // When fully wired, this will:
+        // 1. Build HookContext from tool name + input
+        // 2. Fire BeforeToolDispatch hooks
+        // 3. If Abort → return error
+        // 4. If Skip → return empty result
+        // 5. If Replace → use replacement input
+        tracing::trace!(target: "jfc::hooks", "hook integration point: BeforeToolDispatch");
+    }
+
     #[cfg(feature = "permission-automation")]
     {
         use crate::permissions::{PermissionAction, check_tool_permission};

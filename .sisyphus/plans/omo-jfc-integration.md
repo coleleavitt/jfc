@@ -701,7 +701,7 @@ Wave FINAL (Review):
 
   **Commit**: YES (groups with 7, 8, 9)
 
-- [ ] 11. Hook Enum Definition (8 Hook Points)
+- [x] 11. Hook Enum Definition (8 Hook Points)
 
   **What to do**:
   - Create `crates/jfc-ui/src/hooks.rs` (behind `hooks` feature)
@@ -749,7 +749,7 @@ Wave FINAL (Review):
   **Commit**: YES (groups with 12-16)
   - Message: `feat(hooks): lifecycle hook system + intent classification`
 
-- [ ] 12. Hook Registry + Deterministic Ordering
+- [x] 12. Hook Registry + Deterministic Ordering
 
   **What to do**:
   - `HookRegistry` struct: `Vec<(HookPoint, HookHandler)>` (built at startup, not hot-modified)
@@ -791,7 +791,7 @@ Wave FINAL (Review):
 
   **Commit**: YES (groups with 11, 13-16)
 
-- [ ] 13. Hook Integration with Tool Dispatch Pipeline
+- [x] 13. Hook Integration with Tool Dispatch Pipeline
 
   **What to do**:
   - In tool dispatch: fire `BeforeToolDispatch` before execution
@@ -834,7 +834,7 @@ Wave FINAL (Review):
 
   **Commit**: YES (groups with 11, 12, 14-16)
 
-- [ ] 14. Intent Classification Heuristic Engine
+- [x] 14. Intent Classification Heuristic Engine
 
   **What to do**:
   - Create `crates/jfc-ui/src/intent.rs` (behind `intent-gate` feature)
@@ -883,7 +883,7 @@ Wave FINAL (Review):
 
   **Commit**: YES (groups with 11-13, 15-16)
 
-- [ ] 15. Intent → Tool Availability Mapping
+- [x] 15. Intent → Tool Availability Mapping
 
   **What to do**:
   - Map Intent to suggested tool subset (advisory, not enforcing):
@@ -926,7 +926,7 @@ Wave FINAL (Review):
 
   **Commit**: YES (groups with 11-14, 16)
 
-- [ ] 16. Hook + Intent Wiring
+- [x] 16. Hook + Intent Wiring
 
   **What to do**:
   - Register built-in hook: `OnSessionStart` → classify intent, store in session state
