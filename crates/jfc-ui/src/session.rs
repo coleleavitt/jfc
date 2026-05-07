@@ -219,6 +219,41 @@ pub enum SerializedToolInput {
     MemoryDelete {
         path: String,
     },
+    Lsp {
+        kind: String,
+        file: String,
+        line: u32,
+        column: u32,
+    },
+    PushNotification {
+        message: String,
+        #[serde(default)]
+        title: Option<String>,
+    },
+    RemoteTrigger {
+        trigger_id: String,
+        #[serde(default)]
+        payload: Option<serde_json::Value>,
+    },
+    EnterPlanMode {
+        reason: String,
+    },
+    EnterWorktree {
+        name: String,
+        #[serde(default)]
+        branch: Option<String>,
+    },
+    ExitWorktree,
+    NotebookRead {
+        path: String,
+    },
+    NotebookEdit {
+        path: String,
+        cell_id: String,
+        new_source: String,
+        #[serde(default)]
+        edit_mode: Option<String>,
+    },
     Generic {
         summary: String,
     },
@@ -1104,11 +1139,7 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::Mcp { name, arguments } => SerializedToolInput::Generic {
             summary: format!("{name}: {arguments}"),
         },
-        ToolInput::CronCreate {
-            schedule,
-            description,
-            ..
-        } => SerializedToolInput::Generic {
+        ToolInput::CronCreate { schedule, description, .. } => SerializedToolInput::Generic {
             summary: format!("CronCreate({schedule}): {description}"),
         },
         ToolInput::CronList => SerializedToolInput::Generic {
@@ -1117,17 +1148,46 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::CronDelete { id } => SerializedToolInput::Generic {
             summary: format!("CronDelete: {id}"),
         },
-        ToolInput::ScheduleWakeup {
-            delay_seconds,
-            reason,
-            ..
-        } => SerializedToolInput::Generic {
+        ToolInput::ScheduleWakeup { delay_seconds, reason, .. } => SerializedToolInput::Generic {
             summary: format!("ScheduleWakeup({delay_seconds}s): {reason}"),
         },
         ToolInput::Monitor { command, until } => SerializedToolInput::Generic {
             summary: format!(
                 "Monitor `{}` until /{until}/",
                 command.chars().take(40).collect::<String>()
+            ),
+        },
+        ToolInput::Lsp { kind, file, line, .. } => SerializedToolInput::Generic {
+            summary: format!("LSP {kind} {file}:{line}"),
+        },
+        ToolInput::PushNotification { message, title } => SerializedToolInput::Generic {
+            summary: match title {
+                Some(t) => format!("PushNotification: {t}: {message}"),
+                None => format!("PushNotification: {message}"),
+            },
+        },
+        ToolInput::RemoteTrigger { trigger_id, .. } => SerializedToolInput::Generic {
+            summary: format!("RemoteTrigger: {trigger_id}"),
+        },
+        ToolInput::EnterPlanMode { reason } => SerializedToolInput::Generic {
+            summary: format!("EnterPlanMode: {reason}"),
+        },
+        ToolInput::EnterWorktree { name, branch } => SerializedToolInput::Generic {
+            summary: match branch {
+                Some(b) => format!("EnterWorktree: {name} ({b})"),
+                None => format!("EnterWorktree: {name}"),
+            },
+        },
+        ToolInput::ExitWorktree => SerializedToolInput::Generic {
+            summary: "ExitWorktree".into(),
+        },
+        ToolInput::NotebookRead { path } => SerializedToolInput::Generic {
+            summary: format!("NotebookRead: {path}"),
+        },
+        ToolInput::NotebookEdit { path, cell_id, edit_mode, .. } => SerializedToolInput::Generic {
+            summary: format!(
+                "NotebookEdit({}): {path}#{cell_id}",
+                edit_mode.as_deref().unwrap_or("replace"),
             ),
         },
         ToolInput::Generic { summary } => SerializedToolInput::Generic {
@@ -1418,6 +1478,44 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             body,
         },
         SerializedToolInput::MemoryDelete { path } => ToolInput::MemoryDelete { path },
+        SerializedToolInput::Lsp {
+            kind,
+            file,
+            line,
+            column,
+        } => ToolInput::Lsp {
+            kind,
+            file,
+            line,
+            column,
+        },
+        SerializedToolInput::PushNotification { message, title } => {
+            ToolInput::PushNotification { message, title }
+        }
+        SerializedToolInput::RemoteTrigger {
+            trigger_id,
+            payload,
+        } => ToolInput::RemoteTrigger {
+            trigger_id,
+            payload,
+        },
+        SerializedToolInput::EnterPlanMode { reason } => ToolInput::EnterPlanMode { reason },
+        SerializedToolInput::EnterWorktree { name, branch } => {
+            ToolInput::EnterWorktree { name, branch }
+        }
+        SerializedToolInput::ExitWorktree => ToolInput::ExitWorktree,
+        SerializedToolInput::NotebookRead { path } => ToolInput::NotebookRead { path },
+        SerializedToolInput::NotebookEdit {
+            path,
+            cell_id,
+            new_source,
+            edit_mode,
+        } => ToolInput::NotebookEdit {
+            path,
+            cell_id,
+            new_source,
+            edit_mode,
+        },
         SerializedToolInput::Generic { summary } => ToolInput::Generic { summary },
     }
 }

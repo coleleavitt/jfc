@@ -2822,6 +2822,22 @@ async fn run(
                     };
                     toast::push_with_cap(&mut app.toasts, toast::Toast::new(toast_kind, toast_msg));
                 }
+                AppEvent::EnterPlanModeRequested { reason } => {
+                    // Model-callable plan mode entry — the EnterPlanMode tool
+                    // emits this. Flip the leader's permission mode and toast
+                    // the reason so the user knows what triggered it.
+                    app.permission_mode = crate::app::PermissionMode::Plan;
+                    let preview: String = reason.chars().take(120).collect();
+                    let body = if preview.is_empty() {
+                        "Entered plan mode (model request)".to_owned()
+                    } else {
+                        format!("Plan mode: {preview}")
+                    };
+                    toast::push_with_cap(
+                        &mut app.toasts,
+                        toast::Toast::new(toast::ToastKind::Info, body),
+                    );
+                }
                 AppEvent::Submit(text) => {
                     // Re-fire after pre-submit compaction. Reuses the same
                     // dispatch path as a typed prompt so message persistence,

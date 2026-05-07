@@ -1229,6 +1229,12 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         | ToolKind::CronDelete
         | ToolKind::ScheduleWakeup
         | ToolKind::Monitor => Color::Rgb(180, 200, 255),
+        ToolKind::Lsp => Color::Rgb(140, 200, 240),
+        ToolKind::PushNotification | ToolKind::RemoteTrigger => Color::Rgb(255, 180, 110),
+        ToolKind::EnterPlanMode | ToolKind::EnterWorktree | ToolKind::ExitWorktree => {
+            Color::Rgb(180, 220, 180)
+        }
+        ToolKind::NotebookRead | ToolKind::NotebookEdit => Color::Rgb(255, 170, 100),
         ToolKind::Generic(_) => t.text_secondary,
     }
 }

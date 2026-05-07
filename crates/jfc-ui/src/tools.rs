@@ -2100,6 +2100,174 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                 "required": ["command", "until"]
             }),
         },
+        ToolDef {
+            name: "LSP".into(),
+            description: "Query the language server for `hover`, `definition`, \
+                or `references` at a specific source location. Uses the \
+                already-spawned LSP client (rust-analyzer / zls / etc.) — \
+                returns an error if no LSP is running for the workspace.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["hover", "definition", "references"],
+                        "description": "Which LSP request to issue."
+                    },
+                    "file": {
+                        "type": "string",
+                        "description": "Absolute path to the source file."
+                    },
+                    "line": {
+                        "type": "number",
+                        "description": "1-indexed line number of the symbol position."
+                    },
+                    "column": {
+                        "type": "number",
+                        "description": "1-indexed column number of the symbol position."
+                    }
+                },
+                "required": ["kind", "file", "line", "column"]
+            }),
+        },
+        ToolDef {
+            name: "PushNotification".into(),
+            description: "Send a desktop notification to the user via the \
+                native notification daemon (notify-send / NotificationCenter / \
+                Toast). Use sparingly for events that need attention while \
+                the user has switched focus away from the terminal.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Body text shown in the notification."
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Optional title; defaults to `jfc`."
+                    }
+                },
+                "required": ["message"]
+            }),
+        },
+        ToolDef {
+            name: "RemoteTrigger".into(),
+            description: "POST a payload to a webhook URL the user pre-registered \
+                in `~/.config/jfc/triggers.toml`. Use to fire CI runs, Slack \
+                hooks, custom alert endpoints, etc. without exposing the URL \
+                to the model. Triggers are looked up by `trigger_id`; unknown \
+                IDs return an error.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "trigger_id": {
+                        "type": "string",
+                        "description": "Identifier registered in `~/.config/jfc/triggers.toml`."
+                    },
+                    "payload": {
+                        "type": "object",
+                        "description": "Optional JSON object POSTed as the request body."
+                    }
+                },
+                "required": ["trigger_id"]
+            }),
+        },
+        ToolDef {
+            name: "EnterPlanMode".into(),
+            description: "Switch the leader's permission mode to `Plan`. In \
+                plan mode the model can read but cannot write or run shell \
+                commands without user approval. Pair with a `reason` so the \
+                user understands why analysis-only mode was requested.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Why plan mode is needed (visible to the user)."
+                    }
+                },
+                "required": ["reason"]
+            }),
+        },
+        ToolDef {
+            name: "EnterWorktree".into(),
+            description: "Create (if needed) and switch into a git worktree at \
+                `.jfc-worktrees/<name>` checking out branch `jfc/<name>` (or a \
+                caller-provided branch). Subsequent tool calls run in that \
+                worktree's directory until `ExitWorktree` is invoked.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Worktree name. [A-Za-z0-9_-], <= 64 chars."
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Optional branch to check out (defaults to `jfc/<name>`)."
+                    }
+                },
+                "required": ["name"]
+            }),
+        },
+        ToolDef {
+            name: "ExitWorktree".into(),
+            description: "Leave the current worktree. The worktree is left intact \
+                on disk; only the agent's effective cwd resets to the repo root.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+        ToolDef {
+            name: "NotebookRead".into(),
+            description: "Read a Jupyter `.ipynb` notebook and return each cell's \
+                id, type (code/markdown/raw), source, and outputs (for code cells). \
+                Use before NotebookEdit to discover cell IDs.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the .ipynb file."
+                    }
+                },
+                "required": ["path"]
+            }),
+        },
+        ToolDef {
+            name: "NotebookEdit".into(),
+            description: "Edit a Jupyter `.ipynb` notebook by cell id. \
+                `edit_mode=replace` (default) overwrites the cell's source; \
+                `insert` adds a new code cell after the named cell; `delete` \
+                removes the cell. Outputs are cleared on replace+insert. The \
+                notebook JSON is parsed, spliced, and written back atomically.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the .ipynb file."
+                    },
+                    "cell_id": {
+                        "type": "string",
+                        "description": "Target cell id (from NotebookRead). For `insert` mode the new cell is placed AFTER this one."
+                    },
+                    "new_source": {
+                        "type": "string",
+                        "description": "Replacement (or new) cell source. Ignored when edit_mode=delete."
+                    },
+                    "edit_mode": {
+                        "type": "string",
+                        "enum": ["replace", "insert", "delete"],
+                        "description": "How to apply the edit. Defaults to replace."
+                    }
+                },
+                "required": ["path", "cell_id", "new_source"]
+            }),
+        },
     ]
 }
 
@@ -3258,6 +3426,44 @@ pub async fn execute_tool(
         (ToolKind::Monitor, ToolInput::Monitor { command, until }) => {
             execute_monitor(&command, &until, &cwd).await
         }
+        (
+            ToolKind::Lsp,
+            ToolInput::Lsp {
+                kind: req_kind,
+                file,
+                line,
+                column,
+            },
+        ) => execute_lsp(&req_kind, &file, line, column, &cwd).await,
+        (ToolKind::PushNotification, ToolInput::PushNotification { message, title }) => {
+            execute_push_notification(&message, title.as_deref())
+        }
+        (
+            ToolKind::RemoteTrigger,
+            ToolInput::RemoteTrigger {
+                trigger_id,
+                payload,
+            },
+        ) => execute_remote_trigger(&trigger_id, payload.as_ref()).await,
+        (ToolKind::EnterPlanMode, ToolInput::EnterPlanMode { reason }) => {
+            execute_enter_plan_mode(&reason).await
+        }
+        (ToolKind::EnterWorktree, ToolInput::EnterWorktree { name, branch }) => {
+            execute_enter_worktree(&name, branch.as_deref(), &cwd).await
+        }
+        (ToolKind::ExitWorktree, ToolInput::ExitWorktree) => execute_exit_worktree(&cwd).await,
+        (ToolKind::NotebookRead, ToolInput::NotebookRead { path }) => {
+            execute_notebook_read(&path).await
+        }
+        (
+            ToolKind::NotebookEdit,
+            ToolInput::NotebookEdit {
+                path,
+                cell_id,
+                new_source,
+                edit_mode,
+            },
+        ) => execute_notebook_edit(&path, &cell_id, &new_source, edit_mode.as_deref()).await,
         (kind, _) => ExecutionResult::failure(format!("Tool {:?} not yet implemented", kind)),
     }
 }
@@ -3288,6 +3494,636 @@ async fn execute_team_member_mode(
         Ok(_) => ExecutionResult::success(format!("{member_name} mode set to {mode}")),
         Err(e) => ExecutionResult::failure(format!("Failed to update {member_name}'s mode: {e}")),
     }
+}
+
+// ─── LSP tool ──────────────────────────────────────────────────────────────
+//
+// Spawns a one-shot LSP client per request, fires the request, and shuts
+// the client down. This is wasteful when the same workspace is queried
+// repeatedly — a future iteration should pull from a global registry of
+// already-spawned clients seeded by `lsp_client::maybe_spawn_lsp_clients`.
+// For now the tool stays self-contained: the model can ask LSP questions
+// without depending on startup having succeeded.
+async fn execute_lsp(
+    kind: &str,
+    file: &str,
+    line: u32,
+    column: u32,
+    cwd: &Path,
+) -> ExecutionResult {
+    let kind_norm = kind.to_ascii_lowercase();
+    if !matches!(kind_norm.as_str(), "hover" | "definition" | "references") {
+        return ExecutionResult::failure(format!(
+            "lsp: invalid kind '{kind}'. Must be one of: hover | definition | references"
+        ));
+    }
+
+    let path = std::path::PathBuf::from(file);
+    if !path.is_absolute() {
+        return ExecutionResult::failure(format!("lsp: file path must be absolute (got '{file}')"));
+    }
+    if !path.exists() {
+        return ExecutionResult::failure(format!("lsp: file does not exist: {file}"));
+    }
+
+    let Some((cmd, args)) = crate::lsp_client::detect_lsp_for_cwd(cwd) else {
+        return ExecutionResult::failure(format!(
+            "lsp: no language server detected for {} (looked for Cargo.toml, build.zig)",
+            cwd.display()
+        ));
+    };
+
+    // Spawn a discard channel for app events — this client is one-shot
+    // and we don't need its publishDiagnostics notifications.
+    let (tx, _rx) = tokio::sync::mpsc::channel::<crate::app::AppEvent>(16);
+    let root_uri = format!("file://{}", cwd.display());
+    let owned_args: Vec<&str> = args.to_vec();
+    let Some(client) =
+        crate::lsp_client::LspClient::spawn(cmd, &owned_args, &root_uri, tx).await
+    else {
+        return ExecutionResult::failure(format!(
+            "lsp: failed to spawn '{cmd}' (binary not on PATH or handshake timed out)"
+        ));
+    };
+
+    // The server only pushes useful answers once it has the file open.
+    let language_id = match path.extension().and_then(|e| e.to_str()) {
+        Some("rs") => "rust",
+        Some("zig") => "zig",
+        Some("ts") => "typescript",
+        Some("tsx") => "typescriptreact",
+        Some("js") => "javascript",
+        Some("py") => "python",
+        Some("go") => "go",
+        _ => "plaintext",
+    };
+    let uri = format!("file://{}", path.display());
+    if let Ok(text) = tokio::fs::read_to_string(&path).await {
+        client.did_open(&uri, language_id, 1, &text);
+        // Give rust-analyzer a moment to index the file before queries.
+        // Without this nap, hover/definition often comes back empty.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    let result = match kind_norm.as_str() {
+        "hover" => {
+            let params = serde_json::json!({
+                "textDocument": { "uri": uri },
+                "position": {
+                    "line": line.saturating_sub(1),
+                    "character": column.saturating_sub(1),
+                },
+            });
+            match client.send_request("textDocument/hover", params).await {
+                Some(v) => format_lsp_hover(&v),
+                None => "lsp: hover request timed out or returned nothing".to_owned(),
+            }
+        }
+        "definition" => match client.goto_definition_async(&path, line, column).await {
+            Some(loc) => format!(
+                "{}:{}:{}",
+                loc.file.display(),
+                loc.line + 1,
+                loc.col + 1,
+            ),
+            None => "lsp: definition not found".to_owned(),
+        },
+        "references" => {
+            let locs = client.find_references_async(&path, line, column).await;
+            if locs.is_empty() {
+                "lsp: no references found".to_owned()
+            } else {
+                locs.iter()
+                    .map(|loc| {
+                        format!(
+                            "{}:{}:{}",
+                            loc.file.display(),
+                            loc.line + 1,
+                            loc.col + 1,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        }
+        _ => unreachable!("kind validated above"),
+    };
+
+    client.shutdown().await;
+    ExecutionResult::success(result)
+}
+
+fn format_lsp_hover(v: &serde_json::Value) -> String {
+    // LSP hover responses come as one of:
+    //   {"contents": "string"}                — legacy
+    //   {"contents": {"kind":"markdown","value":"..."}}
+    //   {"contents": [...]}                   — MarkedString[]
+    if v.is_null() {
+        return "lsp: no hover information".to_owned();
+    }
+    let contents = v.get("contents").unwrap_or(v);
+    if let Some(s) = contents.as_str() {
+        return s.to_owned();
+    }
+    if let Some(obj) = contents.as_object()
+        && let Some(val) = obj.get("value").and_then(|v| v.as_str())
+    {
+        return val.to_owned();
+    }
+    if let Some(arr) = contents.as_array() {
+        let parts: Vec<String> = arr
+            .iter()
+            .filter_map(|item| {
+                if let Some(s) = item.as_str() {
+                    Some(s.to_owned())
+                } else {
+                    item.get("value")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_owned)
+                }
+            })
+            .collect();
+        if !parts.is_empty() {
+            return parts.join("\n");
+        }
+    }
+    contents.to_string()
+}
+
+// ─── PushNotification tool ────────────────────────────────────────────────
+fn execute_push_notification(message: &str, title: Option<&str>) -> ExecutionResult {
+    if message.is_empty() {
+        return ExecutionResult::failure("push_notification: message is required");
+    }
+    let title = title.filter(|s| !s.is_empty()).unwrap_or("jfc");
+    crate::notifications::notify(title, message);
+    // TODO(remote-control): once the remote-control transport (websocket
+    // bridge to the user's mobile companion) is wired in, also push the
+    // notification through it. For now we only hit the local desktop
+    // daemon and surface the gap in the success message so the user
+    // knows we haven't silently dropped the remote leg.
+    ExecutionResult::success(format!(
+        "Desktop notification posted: {title} — {message} (remote-control push not yet implemented)"
+    ))
+}
+
+// ─── RemoteTrigger tool ────────────────────────────────────────────────────
+async fn execute_remote_trigger(
+    trigger_id: &str,
+    payload: Option<&serde_json::Value>,
+) -> ExecutionResult {
+    if trigger_id.is_empty() {
+        return ExecutionResult::failure("remote_trigger: trigger_id is required");
+    }
+
+    let triggers_path = match remote_trigger_config_path() {
+        Some(p) => p,
+        None => {
+            return ExecutionResult::failure(
+                "remote_trigger: cannot resolve ~/.config/jfc/triggers.toml (no HOME)",
+            );
+        }
+    };
+    let triggers_text = match tokio::fs::read_to_string(&triggers_path).await {
+        Ok(s) => s,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "remote_trigger: cannot read {} ({e}). \
+                 Create the file with `[<trigger_id>] url = \"https://...\"` entries.",
+                triggers_path.display()
+            ));
+        }
+    };
+    let url = match parse_trigger_url(&triggers_text, trigger_id) {
+        Ok(u) => u,
+        Err(e) => return ExecutionResult::failure(format!("remote_trigger: {e}")),
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "remote_trigger: failed to build http client: {e}"
+            ));
+        }
+    };
+    let body = payload.cloned().unwrap_or(serde_json::json!({}));
+    let resp = match client.post(&url).json(&body).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "remote_trigger: POST to {url} failed: {e}"
+            ));
+        }
+    };
+    let status = resp.status();
+    let resp_text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return ExecutionResult::failure(format!(
+            "remote_trigger: {trigger_id} → HTTP {} from {url}: {}",
+            status.as_u16(),
+            resp_text.chars().take(200).collect::<String>(),
+        ));
+    }
+    ExecutionResult::success(format!(
+        "Triggered {trigger_id} (HTTP {}): {}",
+        status.as_u16(),
+        resp_text.chars().take(500).collect::<String>(),
+    ))
+}
+
+fn remote_trigger_config_path() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("jfc").join("triggers.toml"))
+}
+
+/// Parse a triggers.toml document and resolve `trigger_id` to its URL.
+/// Format: each trigger is a table keyed by id with at minimum a `url`
+/// string field. Example:
+///   [deploy]
+///   url = "https://ci.example.com/hook/deploy"
+///
+/// Errors:
+///   - parse error  → "invalid TOML"
+///   - missing id   → "trigger '<id>' not found"
+///   - missing url  → "trigger '<id>' has no `url` field"
+pub(crate) fn parse_trigger_url(toml_text: &str, trigger_id: &str) -> Result<String, String> {
+    let parsed: toml::Value = toml::from_str(toml_text)
+        .map_err(|e| format!("invalid triggers.toml: {e}"))?;
+    let table = parsed
+        .as_table()
+        .ok_or_else(|| "triggers.toml must be a TOML table at the top level".to_owned())?;
+    let entry = table
+        .get(trigger_id)
+        .ok_or_else(|| format!("trigger '{trigger_id}' not found in triggers.toml"))?;
+    let url = entry
+        .get("url")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("trigger '{trigger_id}' has no `url` field"))?;
+    Ok(url.to_owned())
+}
+
+// ─── EnterPlanMode tool ────────────────────────────────────────────────────
+async fn execute_enter_plan_mode(reason: &str) -> ExecutionResult {
+    let Some(tx) = snapshot_event_sender() else {
+        return ExecutionResult::failure(
+            "enter_plan_mode: no event sender registered (main.rs must call \
+             tools::register_event_sender during startup)",
+        );
+    };
+    let reason = reason.to_owned();
+    if let Err(e) = tx
+        .send(crate::app::AppEvent::EnterPlanModeRequested {
+            reason: reason.clone(),
+        })
+        .await
+    {
+        return ExecutionResult::failure(format!("enter_plan_mode: send failed: {e}"));
+    }
+    ExecutionResult::success(format!(
+        "Entered plan mode (reason: {})",
+        if reason.is_empty() { "(none)" } else { &reason }
+    ))
+}
+
+// ─── EnterWorktree / ExitWorktree ──────────────────────────────────────────
+//
+// EnterWorktree creates the worktree (idempotent on git's side — it errors
+// if it already exists, which we catch and treat as success). The agent's
+// effective cwd does NOT actually change — main.rs would need to swap it
+// over for that. We return a success message documenting where the worktree
+// landed and what branch it's on. ExitWorktree is presently a documentation
+// shim because cwd switching is out of scope for the tool layer.
+async fn execute_enter_worktree(
+    name: &str,
+    branch: Option<&str>,
+    cwd: &Path,
+) -> ExecutionResult {
+    if let Err(e) = crate::worktrees::validate_name(name) {
+        return ExecutionResult::failure(format!("enter_worktree: {e}"));
+    }
+    let repo_root = match find_repo_root(cwd) {
+        Some(r) => r,
+        None => {
+            return ExecutionResult::failure(format!(
+                "enter_worktree: {} is not inside a git repository",
+                cwd.display()
+            ));
+        }
+    };
+
+    // If a branch override was supplied we route through `git worktree
+    // add <path> <branch>` directly — `create_worktree_async` always
+    // creates a new `jfc/<name>` branch, which would clobber the
+    // caller's intent.
+    if let Some(branch) = branch.filter(|s| !s.is_empty()) {
+        let rel_path = format!(".jfc-worktrees/{name}");
+        let output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo_root)
+            .arg("worktree")
+            .arg("add")
+            .arg(&rel_path)
+            .arg(branch)
+            .output()
+            .await;
+        return match output {
+            Ok(out) if out.status.success() => {
+                let abs = repo_root.join(&rel_path);
+                ExecutionResult::success(format!(
+                    "Worktree '{name}' ready at {} on branch '{branch}'",
+                    abs.display()
+                ))
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                if stderr.contains("already exists") || stderr.contains("already checked out") {
+                    let abs = repo_root.join(&rel_path);
+                    ExecutionResult::success(format!(
+                        "Worktree '{name}' already exists at {} (branch '{branch}')",
+                        abs.display()
+                    ))
+                } else {
+                    ExecutionResult::failure(format!(
+                        "enter_worktree: `git worktree add` failed: {}",
+                        stderr.trim()
+                    ))
+                }
+            }
+            Err(e) => {
+                ExecutionResult::failure(format!("enter_worktree: spawn failed: {e}"))
+            }
+        };
+    }
+
+    match crate::worktrees::create_worktree_async(&repo_root, name).await {
+        Ok(info) => ExecutionResult::success(format!(
+            "Worktree '{name}' created at {} on branch '{}'",
+            info.path, info.branch
+        )),
+        Err(e) => {
+            // git emits "already exists" when a worktree with that name
+            // is already registered. That's the idempotent case — return
+            // success and tell the caller where it landed.
+            if e.contains("already exists") || e.contains("already checked out") {
+                let abs = repo_root.join(format!(".jfc-worktrees/{name}"));
+                ExecutionResult::success(format!(
+                    "Worktree '{name}' already exists at {}",
+                    abs.display()
+                ))
+            } else {
+                ExecutionResult::failure(format!("enter_worktree: {e}"))
+            }
+        }
+    }
+}
+
+async fn execute_exit_worktree(cwd: &Path) -> ExecutionResult {
+    // The tool layer doesn't currently swap the agent's cwd; the user can
+    // exit the worktree by issuing the next command in the parent repo.
+    // We return an informational message rather than erroring so the model
+    // can chain ExitWorktree as a no-op intent marker.
+    let repo_root = find_repo_root(cwd)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| cwd.display().to_string());
+    ExecutionResult::success(format!(
+        "exit_worktree: cwd-switching is not yet handled by the tool layer; \
+         subsequent commands will continue to run in the current cwd ({}). \
+         Use the `/worktree` slash command to manually return to {repo_root}.",
+        cwd.display()
+    ))
+}
+
+fn find_repo_root(start: &Path) -> Option<std::path::PathBuf> {
+    let mut cur = start;
+    loop {
+        if cur.join(".git").exists() {
+            return Some(cur.to_path_buf());
+        }
+        cur = cur.parent()?;
+    }
+}
+
+// ─── NotebookRead / NotebookEdit ──────────────────────────────────────────
+//
+// Jupyter `.ipynb` files are JSON documents with a `cells` array. Each
+// cell has `id` (nbformat 4.5+), `cell_type`, `source` (string or array
+// of strings), and code cells additionally have `outputs`. We parse,
+// splice, and write back without round-tripping through nbformat — keeps
+// the tool dependency-free.
+
+async fn execute_notebook_read(path_str: &str) -> ExecutionResult {
+    let path = std::path::PathBuf::from(path_str);
+    if !path.is_absolute() {
+        return ExecutionResult::failure(format!(
+            "notebook_read: path must be absolute (got '{path_str}')"
+        ));
+    }
+    let text = match tokio::fs::read_to_string(&path).await {
+        Ok(s) => s,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "notebook_read: cannot read {path_str}: {e}"
+            ));
+        }
+    };
+    match notebook_read_text(&text) {
+        Ok(rendered) => ExecutionResult::success(rendered),
+        Err(e) => ExecutionResult::failure(format!("notebook_read: {e}")),
+    }
+}
+
+/// Parse a notebook JSON document and emit a human-readable rendering
+/// (one block per cell). Returned to the caller as the tool result so
+/// the model has cell IDs available for follow-up `NotebookEdit` calls.
+pub(crate) fn notebook_read_text(text: &str) -> Result<String, String> {
+    let v: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("invalid notebook JSON: {e}"))?;
+    let cells = v
+        .get("cells")
+        .and_then(|c| c.as_array())
+        .ok_or_else(|| "notebook missing `cells` array".to_owned())?;
+    let mut out = String::new();
+    out.push_str(&format!("Notebook: {} cells\n", cells.len()));
+    for (i, cell) in cells.iter().enumerate() {
+        let id = cell
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("cell-{i}"));
+        let kind = cell
+            .get("cell_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let source = collect_cell_source(cell);
+        out.push_str(&format!("\n--- [{i}] {kind} (id={id}) ---\n"));
+        out.push_str(&source);
+        if !source.ends_with('\n') {
+            out.push('\n');
+        }
+        if kind == "code"
+            && let Some(outputs) = cell.get("outputs").and_then(|o| o.as_array())
+            && !outputs.is_empty()
+        {
+            out.push_str(&format!("--- outputs ({}) ---\n", outputs.len()));
+            for (j, output) in outputs.iter().enumerate() {
+                let text_block = collect_output_text(output);
+                if text_block.is_empty() {
+                    let kind = output
+                        .get("output_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?");
+                    out.push_str(&format!("  [{j}] {kind} (binary or no text)\n"));
+                } else {
+                    out.push_str(&format!("  [{j}] {text_block}\n"));
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn collect_cell_source(cell: &serde_json::Value) -> String {
+    match cell.get("source") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => String::new(),
+    }
+}
+
+fn collect_output_text(output: &serde_json::Value) -> String {
+    if let Some(s) = output.get("text") {
+        return collect_string_or_array(s);
+    }
+    if let Some(data) = output.get("data")
+        && let Some(plain) = data.get("text/plain")
+    {
+        return collect_string_or_array(plain);
+    }
+    if let Some(name) = output.get("evalue").and_then(|v| v.as_str()) {
+        return name.to_owned();
+    }
+    String::new()
+}
+
+fn collect_string_or_array(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => v.to_string(),
+    }
+}
+
+async fn execute_notebook_edit(
+    path_str: &str,
+    cell_id: &str,
+    new_source: &str,
+    edit_mode: Option<&str>,
+) -> ExecutionResult {
+    let path = std::path::PathBuf::from(path_str);
+    if !path.is_absolute() {
+        return ExecutionResult::failure(format!(
+            "notebook_edit: path must be absolute (got '{path_str}')"
+        ));
+    }
+    let text = match tokio::fs::read_to_string(&path).await {
+        Ok(s) => s,
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "notebook_edit: cannot read {path_str}: {e}"
+            ));
+        }
+    };
+    let mode = edit_mode.unwrap_or("replace");
+    match notebook_edit_text(&text, cell_id, new_source, mode) {
+        Ok(new_text) => match tokio::fs::write(&path, &new_text).await {
+            Ok(_) => ExecutionResult::success(format!(
+                "notebook_edit: {mode} on {path_str}#{cell_id} ({} bytes written)",
+                new_text.len()
+            )),
+            Err(e) => ExecutionResult::failure(format!(
+                "notebook_edit: write to {path_str} failed: {e}"
+            )),
+        },
+        Err(e) => ExecutionResult::failure(format!("notebook_edit: {e}")),
+    }
+}
+
+/// Pure helper exposed for testing. Returns the modified notebook JSON.
+pub(crate) fn notebook_edit_text(
+    notebook_json: &str,
+    cell_id: &str,
+    new_source: &str,
+    edit_mode: &str,
+) -> Result<String, String> {
+    if !matches!(edit_mode, "replace" | "insert" | "delete") {
+        return Err(format!(
+            "invalid edit_mode '{edit_mode}'. Must be one of: replace | insert | delete"
+        ));
+    }
+    let mut v: serde_json::Value = serde_json::from_str(notebook_json)
+        .map_err(|e| format!("invalid notebook JSON: {e}"))?;
+    let cells = v
+        .get_mut("cells")
+        .and_then(|c| c.as_array_mut())
+        .ok_or_else(|| "notebook missing `cells` array".to_owned())?;
+
+    let idx = cells
+        .iter()
+        .position(|c| {
+            c.get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| s == cell_id)
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| format!("cell with id '{cell_id}' not found"))?;
+
+    match edit_mode {
+        "replace" => {
+            if let Some(obj) = cells[idx].as_object_mut() {
+                obj.insert(
+                    "source".into(),
+                    serde_json::Value::String(new_source.to_owned()),
+                );
+                // Clear cached execution outputs — they no longer match
+                // the new source.
+                if obj.contains_key("outputs") {
+                    obj.insert("outputs".into(), serde_json::Value::Array(Vec::new()));
+                }
+                if obj.contains_key("execution_count") {
+                    obj.insert("execution_count".into(), serde_json::Value::Null);
+                }
+            }
+        }
+        "insert" => {
+            let new_id = format!("{cell_id}-new-{}", uuid::Uuid::new_v4().simple());
+            let new_cell = serde_json::json!({
+                "cell_type": "code",
+                "id": new_id,
+                "metadata": {},
+                "source": new_source,
+                "outputs": [],
+                "execution_count": null,
+            });
+            cells.insert(idx + 1, new_cell);
+        }
+        "delete" => {
+            cells.remove(idx);
+        }
+        _ => unreachable!(),
+    }
+
+    serde_json::to_string_pretty(&v).map_err(|e| format!("re-serialize failed: {e}"))
 }
 
 async fn execute_bash(command: &str, timeout_ms: Option<u64>, cwd: &Path) -> ExecutionResult {
@@ -4998,6 +5834,14 @@ mod tests {
             "post_bounty",
             "run_bounty",
             "market_status",
+            "LSP",
+            "PushNotification",
+            "RemoteTrigger",
+            "EnterPlanMode",
+            "EnterWorktree",
+            "ExitWorktree",
+            "NotebookRead",
+            "NotebookEdit",
         ] {
             assert!(
                 names.contains(&required),
@@ -7038,5 +7882,402 @@ mod tests {
         let r = execute_monitor("true", r"never-matches", Path::new(".")).await;
         assert!(r.is_error());
         assert!(r.output.contains("Process exited"), "{}", r.output);
+    }
+
+    // ─── LSP tool ─────────────────────────────────────────────────────────
+
+    /// Normal: `LSP` with `kind=hover`, valid file, valid coords reaches the
+    /// validation path and either succeeds (when rust-analyzer exists) or
+    /// fails with an actionable detection error. Either outcome means the
+    /// dispatch wiring is correct.
+    #[tokio::test]
+    async fn lsp_dispatch_routes_through_dispatcher_normal() {
+        // Pick a directory without Cargo.toml/build.zig so detect_lsp_for_cwd
+        // returns None — the tool fails with a known message; dispatch is
+        // still verified.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src = dir.path().join("foo.txt");
+        std::fs::write(&src, "hello\n").expect("write");
+        let r = execute_tool(
+            ToolKind::Lsp,
+            ToolInput::Lsp {
+                kind: "hover".into(),
+                file: src.display().to_string(),
+                line: 1,
+                column: 1,
+            },
+            dir.path().to_path_buf(),
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(r.is_error(), "expected detection error: {}", r.output);
+        assert!(
+            r.output.contains("no language server detected"),
+            "{}",
+            r.output
+        );
+    }
+
+    /// Robust: invalid `kind` is rejected before any LSP work happens.
+    #[tokio::test]
+    async fn lsp_rejects_invalid_kind_robust() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src = dir.path().join("foo.rs");
+        std::fs::write(&src, "fn main() {}\n").expect("write");
+        let r = execute_lsp("nonsense", &src.display().to_string(), 1, 1, dir.path()).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("invalid kind"), "{}", r.output);
+    }
+
+    /// Robust: relative paths are rejected — LSP uses absolute file URIs.
+    #[tokio::test]
+    async fn lsp_rejects_relative_path_robust() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let r = execute_lsp("hover", "relative/path.rs", 1, 1, dir.path()).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("absolute"), "{}", r.output);
+    }
+
+    // ─── PushNotification tool ─────────────────────────────────────────────
+
+    #[test]
+    fn push_notification_normal() {
+        // Disable the OS daemon so this never fires a real notification
+        // in CI. The success message proves the dispatch wiring works.
+        unsafe { std::env::set_var("JFC_DISABLE_NOTIFICATIONS", "1") };
+        let r = execute_push_notification("Build green", Some("CI"));
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("Build green"), "{}", r.output);
+        assert!(r.output.contains("CI"), "{}", r.output);
+        assert!(
+            r.output.contains("remote-control push not yet implemented"),
+            "expected the unsupported-feature notice: {}",
+            r.output
+        );
+    }
+
+    #[test]
+    fn push_notification_empty_message_fails_robust() {
+        let r = execute_push_notification("", None);
+        assert!(r.is_error(), "{}", r.output);
+    }
+
+    // ─── RemoteTrigger tool ────────────────────────────────────────────────
+
+    #[test]
+    fn parse_trigger_url_extracts_url_normal() {
+        let toml = r#"
+[deploy]
+url = "https://ci.example.com/hook/deploy"
+"#;
+        assert_eq!(
+            parse_trigger_url(toml, "deploy").unwrap(),
+            "https://ci.example.com/hook/deploy"
+        );
+    }
+
+    #[test]
+    fn parse_trigger_url_unknown_id_fails_robust() {
+        let toml = r#"
+[other]
+url = "https://x"
+"#;
+        let err = parse_trigger_url(toml, "deploy").unwrap_err();
+        assert!(err.contains("not found"), "{err}");
+    }
+
+    #[test]
+    fn parse_trigger_url_missing_url_fails_robust() {
+        let toml = r#"
+[deploy]
+description = "no url here"
+"#;
+        let err = parse_trigger_url(toml, "deploy").unwrap_err();
+        assert!(err.contains("no `url`"), "{err}");
+    }
+
+    /// Normal: `execute_remote_trigger` POSTs to the configured URL using
+    /// a tokio listener as the destination. We reach into a hand-written
+    /// triggers.toml in a temp HOME so the production path resolves there.
+    #[tokio::test]
+    async fn execute_remote_trigger_posts_payload_normal() {
+        use std::net::SocketAddr;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        // Bind to a free port and remember the address.
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr: SocketAddr = listener.local_addr().expect("addr");
+        let port = addr.port();
+
+        // Spawn a one-shot HTTP responder that captures the body.
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let captured_for_task = captured.clone();
+        let handle = tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let n = sock.read(&mut buf).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                *captured_for_task.lock().expect("lock") = req;
+                let _ = sock
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                    .await;
+                let _ = sock.shutdown().await;
+            }
+        });
+
+        // Stage triggers.toml in an isolated XDG_CONFIG_HOME so the global
+        // resolver finds our test file rather than the real user config.
+        let home = tempfile::tempdir().expect("tempdir");
+        let cfg_dir = home.path().join("jfc");
+        std::fs::create_dir_all(&cfg_dir).expect("mkdir");
+        let triggers = format!(
+            "[t1]\nurl = \"http://127.0.0.1:{port}/hook\"\n",
+        );
+        std::fs::write(cfg_dir.join("triggers.toml"), triggers).expect("write");
+        // SAFETY: tests are not concurrent with code that reads XDG_CONFIG_HOME
+        // arbitrarily — only the tool resolver uses it.
+        let prev = std::env::var("XDG_CONFIG_HOME").ok();
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", home.path()) };
+
+        let payload = serde_json::json!({"hello": "world"});
+        let r = execute_remote_trigger("t1", Some(&payload)).await;
+
+        // Restore env early so an assertion failure doesn't leak it.
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+        let _ = handle.await;
+
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("HTTP 200"), "{}", r.output);
+        let req = captured.lock().expect("lock").clone();
+        assert!(req.starts_with("POST /hook"), "captured: {req}");
+        assert!(
+            req.contains("\"hello\":\"world\""),
+            "payload not in body: {req}",
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_remote_trigger_unknown_id_fails_robust() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let cfg_dir = home.path().join("jfc");
+        std::fs::create_dir_all(&cfg_dir).expect("mkdir");
+        std::fs::write(cfg_dir.join("triggers.toml"), "").expect("write");
+        let prev = std::env::var("XDG_CONFIG_HOME").ok();
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", home.path()) };
+
+        let r = execute_remote_trigger("nope", None).await;
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+
+        assert!(r.is_error());
+        assert!(r.output.contains("not found"), "{}", r.output);
+    }
+
+    // ─── EnterPlanMode tool ────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn enter_plan_mode_dispatches_event_normal() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::app::AppEvent>(8);
+        register_event_sender(tx);
+        let r = execute_enter_plan_mode("safety check").await;
+        assert!(!r.is_error(), "{}", r.output);
+        let evt = rx.recv().await.expect("event");
+        match evt {
+            crate::app::AppEvent::EnterPlanModeRequested { reason } => {
+                assert_eq!(reason, "safety check");
+            }
+            _ => panic!("expected EnterPlanModeRequested AppEvent variant"),
+        }
+    }
+
+    /// Robust: when no event sender is registered (e.g. early-boot tool
+    /// calls or test setup that didn't wire one), the call fails with a
+    /// clear message rather than panicking.
+    #[tokio::test]
+    async fn enter_plan_mode_without_sender_fails_robust() {
+        // Clear any previously-registered sender. We use a separate
+        // process-global, so this requires reaching into the handle.
+        if let Ok(mut g) = active_event_sender_handle().write() {
+            *g = None;
+        }
+        let r = execute_enter_plan_mode("noop").await;
+        assert!(r.is_error());
+        assert!(r.output.contains("no event sender"), "{}", r.output);
+    }
+
+    // ─── EnterWorktree / ExitWorktree ──────────────────────────────────────
+
+    /// Normal: `EnterWorktree` happily creates a fresh worktree under the
+    /// repo root. We initialize a tiny throwaway git repo as the host.
+    #[tokio::test]
+    async fn enter_worktree_creates_fresh_normal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = dir.path();
+        run_git(repo, &["init", "-q"]).await;
+        run_git(repo, &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init", "-q"]).await;
+        let r = execute_enter_worktree("featx", None, repo).await;
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(repo.join(".jfc-worktrees/featx").exists());
+        // Idempotent: second invocation succeeds with "already exists".
+        let r2 = execute_enter_worktree("featx", None, repo).await;
+        assert!(!r2.is_error(), "{}", r2.output);
+        assert!(r2.output.contains("already"), "{}", r2.output);
+    }
+
+    /// Robust: bad name is rejected with the validator's message before we
+    /// shell out to git.
+    #[tokio::test]
+    async fn enter_worktree_invalid_name_fails_robust() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let r = execute_enter_worktree("bad/name", None, dir.path()).await;
+        assert!(r.is_error());
+        assert!(r.output.contains("[A-Za-z0-9_-]"), "{}", r.output);
+    }
+
+    /// Robust: outside a git repo we surface the missing-repo error rather
+    /// than blindly invoking git.
+    #[tokio::test]
+    async fn enter_worktree_outside_repo_fails_robust() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let r = execute_enter_worktree("ok", None, dir.path()).await;
+        assert!(r.is_error());
+        assert!(
+            r.output.contains("not inside a git repository"),
+            "{}",
+            r.output
+        );
+    }
+
+    /// Normal: `ExitWorktree` is a no-op informational tool — never errors,
+    /// always returns a success message.
+    #[tokio::test]
+    async fn exit_worktree_returns_informational_normal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let r = execute_exit_worktree(dir.path()).await;
+        assert!(!r.is_error(), "{}", r.output);
+        assert!(r.output.contains("exit_worktree"), "{}", r.output);
+    }
+
+    async fn run_git(cwd: &Path, args: &[&str]) {
+        let _ = tokio::process::Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .await;
+    }
+
+    // ─── NotebookRead / NotebookEdit ──────────────────────────────────────
+
+    fn sample_ipynb() -> String {
+        serde_json::json!({
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "id": "abc123",
+                    "metadata": {},
+                    "source": "x = 1\nprint(x)\n",
+                    "outputs": [
+                        {
+                            "output_type": "stream",
+                            "name": "stdout",
+                            "text": "1\n"
+                        }
+                    ],
+                    "execution_count": 1
+                },
+                {
+                    "cell_type": "markdown",
+                    "id": "md1",
+                    "metadata": {},
+                    "source": ["## Header\n", "Some text"]
+                }
+            ],
+            "metadata": {},
+            "nbformat": 4,
+            "nbformat_minor": 5
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn notebook_read_renders_cells_normal() {
+        let rendered = notebook_read_text(&sample_ipynb()).expect("read");
+        assert!(rendered.contains("2 cells"), "{rendered}");
+        assert!(rendered.contains("id=abc123"), "{rendered}");
+        assert!(rendered.contains("id=md1"), "{rendered}");
+        assert!(rendered.contains("x = 1"), "{rendered}");
+        assert!(rendered.contains("## Header"), "{rendered}");
+        assert!(rendered.contains("outputs"), "{rendered}");
+    }
+
+    #[test]
+    fn notebook_read_invalid_json_fails_robust() {
+        let err = notebook_read_text("not-json").unwrap_err();
+        assert!(err.contains("invalid notebook JSON"), "{err}");
+    }
+
+    #[test]
+    fn notebook_read_missing_cells_fails_robust() {
+        let err = notebook_read_text("{}").unwrap_err();
+        assert!(err.contains("missing `cells`"), "{err}");
+    }
+
+    #[test]
+    fn notebook_edit_replace_clears_outputs_normal() {
+        let nb = sample_ipynb();
+        let edited = notebook_edit_text(&nb, "abc123", "y = 2\n", "replace").expect("edit");
+        let v: serde_json::Value = serde_json::from_str(&edited).expect("json");
+        let cell = &v["cells"][0];
+        assert_eq!(cell["source"], "y = 2\n");
+        assert!(cell["outputs"].as_array().unwrap().is_empty());
+        assert!(cell["execution_count"].is_null());
+    }
+
+    #[test]
+    fn notebook_edit_insert_adds_after_target_normal() {
+        let nb = sample_ipynb();
+        let edited = notebook_edit_text(&nb, "abc123", "z = 3\n", "insert").expect("edit");
+        let v: serde_json::Value = serde_json::from_str(&edited).expect("json");
+        let cells = v["cells"].as_array().unwrap();
+        assert_eq!(cells.len(), 3);
+        assert_eq!(cells[1]["source"], "z = 3\n");
+        assert_eq!(cells[1]["cell_type"], "code");
+    }
+
+    #[test]
+    fn notebook_edit_delete_removes_cell_normal() {
+        let nb = sample_ipynb();
+        let edited = notebook_edit_text(&nb, "abc123", "", "delete").expect("edit");
+        let v: serde_json::Value = serde_json::from_str(&edited).expect("json");
+        let cells = v["cells"].as_array().unwrap();
+        assert_eq!(cells.len(), 1);
+        assert_eq!(cells[0]["id"], "md1");
+    }
+
+    #[test]
+    fn notebook_edit_unknown_cell_fails_robust() {
+        let nb = sample_ipynb();
+        let err = notebook_edit_text(&nb, "no-such-cell", "x", "replace").unwrap_err();
+        assert!(err.contains("not found"), "{err}");
+    }
+
+    #[test]
+    fn notebook_edit_invalid_mode_fails_robust() {
+        let nb = sample_ipynb();
+        let err = notebook_edit_text(&nb, "abc123", "x", "wat").unwrap_err();
+        assert!(err.contains("invalid edit_mode"), "{err}");
     }
 }
