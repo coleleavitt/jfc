@@ -345,7 +345,7 @@ Wave FINAL (Review):
 
   **Commit**: YES (groups with 1, 2)
 
-- [ ] 4. Hashline Content-Hash Computation + Line ID Resolution
+- [x] 4. Hashline Content-Hash Computation + Line ID Resolution
 
   **What to do**:
   - Create `crates/jfc-ui/src/hashline.rs` (behind `hashline` feature)
@@ -395,7 +395,7 @@ Wave FINAL (Review):
   **Commit**: YES (groups with 5, 6)
   - Message: `feat(edit): hashline content-anchored edit resolution`
 
-- [ ] 5. Hashline Fuzzy-Match Fallback + Cache Invalidation
+- [x] 5. Hashline Fuzzy-Match Fallback + Cache Invalidation
 
   **What to do**:
   - Add fuzzy match: if exact hash not found, find line with minimum Levenshtein distance (threshold: 0.8 similarity)
@@ -441,7 +441,7 @@ Wave FINAL (Review):
 
   **Commit**: YES (groups with 4, 6)
 
-- [ ] 6. Hashline Edit Tool Integration
+- [x] 6. Hashline Edit Tool Integration
 
   **What to do**:
   - Wrap existing Edit handling: when Hashline is enabled, before applying an edit via exact `old_string` match:
@@ -508,7 +508,7 @@ Wave FINAL (Review):
 
   **Commit**: YES (groups with 4, 5)
 
-- [ ] 7. Permission Rule Parser (TOML → RuleSet)
+- [x] 7. Permission Rule Parser (TOML → RuleSet)
 
   **What to do**:
   - Create `crates/jfc-ui/src/permissions.rs` (behind `permission-automation` feature)
@@ -556,7 +556,7 @@ Wave FINAL (Review):
   **Commit**: YES (groups with 8, 9, 10)
   - Message: `feat(permissions): TOML-driven permission automation`
 
-- [ ] 8. Permission Matcher (Tool + Path Glob Matching)
+- [x] 8. Permission Matcher (Tool + Path Glob Matching)
 
   **What to do**:
   - Implement `RuleSet::evaluate(tool_name: &str, path: Option<&str>) -> PermissionDecision`
@@ -605,7 +605,7 @@ Wave FINAL (Review):
 
   **Commit**: YES (groups with 7, 9, 10)
 
-- [ ] 9. Permission Integration with Tool Dispatch
+- [x] 9. Permission Integration with Tool Dispatch
 
   **What to do**:
   - In `dispatch_tools_batched` (or equivalent): before executing each tool, call `RuleSet::evaluate`
@@ -654,7 +654,7 @@ Wave FINAL (Review):
 
   **Commit**: YES (groups with 7, 8, 10)
 
-- [ ] 10. Permission Escalation Ceiling
+- [x] 10. Permission Escalation Ceiling
 
   **What to do**:
   - Add `[permissions.ceiling]` config section: tools that are ALWAYS denied regardless of other rules

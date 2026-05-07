@@ -1967,6 +1967,33 @@ pub enum ToolSource {
     LocalExecutor,
 }
 
+#[cfg(feature = "permission-automation")]
+fn tool_permission_path(input: &ToolInput) -> Option<&str> {
+    match input {
+        ToolInput::Edit { file_path, .. }
+        | ToolInput::Write { file_path, .. }
+        | ToolInput::Read { file_path, .. } => Some(file_path.as_str()),
+        ToolInput::Bash {
+            workdir: Some(workdir),
+            ..
+        }
+        | ToolInput::Glob {
+            path: Some(workdir),
+            ..
+        }
+        | ToolInput::Grep {
+            path: Some(workdir),
+            ..
+        }
+        | ToolInput::Search {
+            path: Some(workdir),
+            ..
+        } => Some(workdir.as_str()),
+        ToolInput::MemoryDelete { path } => Some(path.as_str()),
+        _ => None,
+    }
+}
+
 /// REQ-TOOLS-002: Tool executors — bash/read/write/edit/glob/grep/task via tokio + fs.
 #[tracing::instrument(target = "jfc::tools", skip(input, cwd, dedup, task_store), fields(kind = ?kind))]
 pub async fn execute_tool(
@@ -1977,6 +2004,26 @@ pub async fn execute_tool(
     task_store: Option<Arc<TaskStore>>,
     active_team_name: Option<&str>,
 ) -> ExecutionResult {
+    #[cfg(feature = "permission-automation")]
+    {
+        use crate::permissions::{PermissionAction, check_tool_permission};
+
+        let config = crate::config::feature_config::FeatureConfig::load(&cwd);
+        let rules = crate::permissions::RuleSet::from_config(&config);
+        let decision = check_tool_permission(&rules, kind.api_name(), tool_permission_path(&input));
+
+        if matches!(decision.action, PermissionAction::Deny) {
+            let reason = decision
+                .reason
+                .as_deref()
+                .unwrap_or("permission rule denied tool invocation");
+            return ExecutionResult::failure(format!(
+                "Permission denied for {}: {reason}",
+                kind.api_name()
+            ));
+        }
+    }
+
     match (kind, input) {
         (
             ToolKind::Bash,
