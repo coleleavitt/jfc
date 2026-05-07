@@ -840,6 +840,19 @@ pub struct App {
     /// every user submission to pick a per-turn model — see
     /// `slate::SlateRouter::route` and `crates/jfc-ui/src/slate.rs`.
     pub slate: Option<SlateRouter>,
+    /// Advisor session for `/advisor <query>` (see `crate::advisor`).
+    /// `None` until the user invokes `/advisor` for the first time —
+    /// mints lazily so the cost is paid only by users who actually use
+    /// the feature. The session owns its own model id, transcript, and
+    /// token budget; budget exhaustion returns Err and the user must
+    /// reset (e.g. via `/clear`) to get a fresh budget.
+    pub advisor_session: Option<crate::advisor::AdvisorSession>,
+    /// Gate for the `/advisor` slash command. Default OFF per the
+    /// deliverable's "no /advisor command without a config flag" rule.
+    /// Set via the `JFC_ADVISOR_ENABLED=1` env var on startup OR via a
+    /// future config-toml field. When false, the slash command surfaces
+    /// a hint message instead of running.
+    pub advisor_enabled: bool,
 }
 
 impl App {
@@ -991,6 +1004,14 @@ impl App {
             // `main.rs::run_app`). Constructor default = None so the unit
             // tests that build a bare `App` don't need to plumb a router.
             slate: None,
+            advisor_session: None,
+            // Read the env gate once at construction. Tests bypass this
+            // by setting the field directly; users who want it on for a
+            // session export `JFC_ADVISOR_ENABLED=1` before launch.
+            advisor_enabled: std::env::var("JFC_ADVISOR_ENABLED")
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
         };
         // Open the task store with the real session id so tasks persist to disk.
         if let Some(ref sid) = app.current_session_id {

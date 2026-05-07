@@ -106,6 +106,12 @@ pub enum SerializedPart {
     CompactBoundary {
         pre_tokens: usize,
     },
+    /// Persisted advisor reply (see `crate::advisor`). Preserves the text so
+    /// resuming a session that had `/advisor` invocations renders them with
+    /// the same italic/secondary styling.
+    Advisor {
+        content: String,
+    },
 }
 
 /// Full tool input serialization - preserves all fields for proper resume
@@ -882,6 +888,7 @@ fn serialize_part(part: &MessagePart) -> SerializedPart {
         MessagePart::CompactBoundary { pre_tokens } => SerializedPart::CompactBoundary {
             pre_tokens: *pre_tokens,
         },
+        MessagePart::Advisor(t) => SerializedPart::Advisor { content: t.clone() },
     }
 }
 
@@ -1255,6 +1262,7 @@ fn deserialize_part(part: SerializedPart) -> MessagePart {
         SerializedPart::CompactBoundary { pre_tokens } => {
             MessagePart::CompactBoundary { pre_tokens }
         }
+        SerializedPart::Advisor { content } => MessagePart::Advisor(content),
     }
 }
 

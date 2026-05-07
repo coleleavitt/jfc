@@ -2369,6 +2369,83 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             )));
             app.force_compact_pending = true;
         }
+        "/advisor" => {
+            // Parallel advisor (see `crate::advisor`). Doesn't touch the main
+            // agent's stream — runs a separate `provider.complete()` against a
+            // SNAPSHOT of the current transcript and surfaces the reply as a
+            // dedicated `MessagePart::Advisor` part with its own visual style.
+            //
+            // Default-off per deliverable: gated by `app.advisor_enabled`,
+            // populated from `JFC_ADVISOR_ENABLED=1` on startup. Even when on,
+            // each session has a per-budget ceiling (`DEFAULT_TOKEN_BUDGET`)
+            // so a runaway loop can't drain the user's account.
+            let query = parts.get(1).copied().unwrap_or("").trim().to_owned();
+            // Echo the user's command into the transcript first so the chat
+            // shows what the user asked, even on the error paths below.
+            app.messages
+                .push(ChatMessage::user(format!("/advisor {query}")));
+            if !app.advisor_enabled {
+                app.messages.push(ChatMessage::assistant_parts(vec![
+                    MessagePart::Advisor(
+                        "Advisor mode is disabled. Set `JFC_ADVISOR_ENABLED=1` and \
+                         restart jfc to enable parallel advisor queries."
+                            .into(),
+                    ),
+                ]));
+            } else if query.is_empty() {
+                app.messages.push(ChatMessage::assistant_parts(vec![
+                    MessagePart::Advisor(
+                        "Usage: `/advisor <question>` — runs a parallel call \
+                         against a snapshot of this transcript and surfaces \
+                         the reply here without disturbing the main agent."
+                            .into(),
+                    ),
+                ]));
+            } else {
+                // Lazy-mint the session on first use so users that never
+                // call /advisor pay no allocation cost. The session model
+                // tracks the *active* model at first invocation; switching
+                // models mid-session keeps the original advisor model.
+                let session = app
+                    .advisor_session
+                    .get_or_insert_with(|| {
+                        crate::advisor::AdvisorSession::new(app.model.clone())
+                    });
+                // Snapshot — Vec::clone is fine here, the deliverable
+                // explicitly calls for a SNAPSHOT semantic. Without the
+                // clone, `ask_advisor` would borrow `app.messages`
+                // immutably while we're holding `&mut app.advisor_session`
+                // mutably — borrow-check fails.
+                let snapshot = app.messages.clone();
+                let provider = std::sync::Arc::clone(&app.provider);
+                match crate::advisor::ask_advisor(
+                    provider.as_ref(),
+                    session,
+                    query.clone(),
+                    &snapshot,
+                )
+                .await
+                {
+                    Ok(reply) => {
+                        let remaining = session.tokens_remaining();
+                        let total_budget = session.token_budget;
+                        app.messages.push(ChatMessage::assistant_parts(vec![
+                            MessagePart::Advisor(format!(
+                                "{reply}\n\n_(advisor budget: {} of {} tokens remaining)_",
+                                remaining, total_budget
+                            )),
+                        ]));
+                    }
+                    Err(e) => {
+                        app.messages.push(ChatMessage::assistant_parts(vec![
+                            MessagePart::Advisor(format!(
+                                "Advisor error: {e}\n\nUse `/clear` to start a fresh session if the budget is exhausted."
+                            )),
+                        ]));
+                    }
+                }
+            }
+        }
         "/config" => {
             // `/config` (no args) → dump the parsed config as TOML in a code block.
             // `/config path` → print the canonical file path so the user knows
@@ -2565,6 +2642,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 "**Available commands:**\n\
                  - `/clear` — Clear conversation and start fresh\n\
                  - `/compact` — Manually compact the conversation\n\
+                 - `/advisor <question>` — Ask a parallel advisor without disturbing the main agent (set `JFC_ADVISOR_ENABLED=1`)\n\
                  - `/check` — Re-run cargo-check diagnostics\n\
                  - `/config` — Show parsed `~/.config/jfc/config.toml` (use `/config path` for the file location)\n\
                  - `/continue` (or `/c`) — Resume most recent session\n\
@@ -2599,7 +2677,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                  - `JFC_DISABLE_AUTO_COMPACT=1` — disable auto-compaction\n\
                  - `JFC_DISABLE_CARGO_CHECK=1` — skip startup `cargo check`\n\
                  - `JFC_AUTOCOMPACT_PCT_OVERRIDE=N` — force compact threshold\n\
-                 - `JFC_TOOL_TITLE_WIDTH=N` — cap tool title length (default 100)"
+                 - `JFC_TOOL_TITLE_WIDTH=N` — cap tool title length (default 100)\n\
+                 - `JFC_ADVISOR_ENABLED=1` — enable the `/advisor` parallel-advice slash command"
                     .into(),
             ));
         }
@@ -3980,6 +4059,18 @@ async fn handle_export_command(app: &mut App) {
                         "\n---\n_(compaction at ~{} tokens)_\n---\n\n",
                         pre_tokens
                     ));
+                }
+                MessagePart::Advisor(s) => {
+                    // Quote-block the advisor reply so the export marks it as
+                    // out-of-band guidance, not part of the main agent's
+                    // turn. Mirrors how Reasoning is exported.
+                    out.push_str("> _advisor:_\n>\n");
+                    for line in s.lines() {
+                        out.push_str("> ");
+                        out.push_str(line);
+                        out.push('\n');
+                    }
+                    out.push('\n');
                 }
             }
         }
