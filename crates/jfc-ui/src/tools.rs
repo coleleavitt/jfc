@@ -675,10 +675,14 @@ pub(crate) fn apply_winning_solution(
     if !file_blocks.is_empty() {
         let mut written = Vec::new();
         for (path, contents) in &file_blocks {
-            let abs = if path.is_absolute() {
-                path.clone()
-            } else {
-                cwd.join(path)
+            let Some(abs) = resolve_solution_file_path(cwd, path) else {
+                tracing::warn!(
+                    target: "jfc::ui::bounty",
+                    bounty_id = %bounty_id,
+                    path = %path.display(),
+                    "rejected solver file path outside bounty worktree"
+                );
+                continue;
             };
             if let Some(parent) = abs.parent()
                 && let Err(e) = std::fs::create_dir_all(parent)
@@ -786,6 +790,26 @@ pub(crate) fn apply_winning_solution(
             audit_dir.display()
         ),
     }
+}
+
+fn resolve_solution_file_path(
+    cwd: &std::path::Path,
+    path: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    use std::path::Component;
+
+    if path.is_absolute() {
+        return None;
+    }
+
+    for component in path.components() {
+        match component {
+            Component::Normal(_) | Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+
+    Some(cwd.join(path))
 }
 
 #[derive(Debug)]
@@ -4851,6 +4875,30 @@ mod tests {
         let res = apply_winning_solution(tmp.path(), "no_winner", None);
         assert!(res.files.is_empty());
         assert!(res.summary.contains("No winning solution"));
+    }
+
+    #[test]
+    fn apply_winning_solution_rejects_file_block_path_escape_robust() {
+        use jfc_economy::types::{AgentId, Solution};
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let outside = tmp.path().join("outside.txt");
+        let sol = Solution {
+            agent_id: AgentId::new("solver"),
+            bounty_id: "escape".into(),
+            patch: "===FILE: ../outside.txt===\nowned\n===END===\n".into(),
+            explanation: "try escape".into(),
+            self_assessment: 0.5,
+            tokens_consumed: 1,
+            compiles: Some(true),
+            tests_pass: Some(true),
+            suspicious: false,
+        };
+
+        let res = apply_winning_solution(tmp.path(), "escape", Some(&sol));
+        assert!(!outside.exists());
+        assert!(res.summary.contains("no files written"));
+        assert!(res.files.is_empty());
     }
 
     // Regression: a bounty solution must not be accepted just because it

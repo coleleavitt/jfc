@@ -12,8 +12,8 @@ use std::time::Duration;
 use tokio::fs;
 use tracing::{debug, trace, warn};
 
-use super::types::{IdleNotification, MailboxMessage, ShutdownRequest};
 use super::TEAM_LEAD_NAME;
+use super::types::{IdleNotification, MailboxMessage, ShutdownRequest};
 
 // ─── Path helpers ────────────────────────────────────────────────────────────
 
@@ -357,7 +357,9 @@ mod tests {
             summary: Some("greeting".into()),
             read: false,
         };
-        write_to_mailbox("alice", msg.clone(), "alpha").await.unwrap();
+        write_to_mailbox("alice", msg.clone(), "alpha")
+            .await
+            .unwrap();
         let got = read_mailbox("alice", "alpha").await;
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].from, "leader");

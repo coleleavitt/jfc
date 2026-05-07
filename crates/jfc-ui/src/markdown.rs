@@ -442,7 +442,9 @@ impl TableState {
         // closing `│` at the right edge.
         //   total = sum(content_widths) + 3 * ncols + 1
         let chrome_cost = 3 * ncols + 1;
-        let widths = if target_width == 0 || natural.iter().sum::<usize>() + chrome_cost <= target_width {
+        let widths = if target_width == 0
+            || natural.iter().sum::<usize>() + chrome_cost <= target_width
+        {
             // Fits naturally — no wrap needed.
             natural.clone()
         } else {
@@ -459,8 +461,7 @@ impl TableState {
                 let mut out = vec![0usize; ncols];
                 let mut allocated = 0usize;
                 for (i, &n) in natural.iter().enumerate() {
-                    let share =
-                        (n as f64 / total_natural as f64 * avail as f64).round() as usize;
+                    let share = (n as f64 / total_natural as f64 * avail as f64).round() as usize;
                     out[i] = share.max(3);
                     allocated += out[i];
                 }
@@ -468,9 +469,7 @@ impl TableState {
                 // widest column. Better than the table sneaking 1
                 // cell past the target.
                 while allocated > avail.max(3 * ncols) {
-                    if let Some((widest_i, _)) =
-                        out.iter().enumerate().max_by_key(|(_, w)| **w)
-                    {
+                    if let Some((widest_i, _)) = out.iter().enumerate().max_by_key(|(_, w)| **w) {
                         if out[widest_i] > 3 {
                             out[widest_i] -= 1;
                             allocated -= 1;
@@ -495,7 +494,11 @@ impl TableState {
         // sides. Without this the table read as "free-standing rows
         // with internal dividers" — easy to miss in dense prose.
         lines.push(Line::from(border_row(
-            &widths, "┌─", "─┬─", "─┐", border_style,
+            &widths,
+            "┌─",
+            "─┬─",
+            "─┐",
+            border_style,
         )));
 
         // Render head row (may span multiple visual lines if any
@@ -507,7 +510,11 @@ impl TableState {
 
             // Header/body separator `├──┼──┤`.
             lines.push(Line::from(border_row(
-                &widths, "├─", "─┼─", "─┤", border_style,
+                &widths,
+                "├─",
+                "─┼─",
+                "─┤",
+                border_style,
             )));
         }
 
@@ -521,7 +528,11 @@ impl TableState {
 
         // Bottom border `└──┴──┘`.
         lines.push(Line::from(border_row(
-            &widths, "└─", "─┴─", "─┘", border_style,
+            &widths,
+            "└─",
+            "─┴─",
+            "─┘",
+            border_style,
         )));
 
         lines
@@ -2029,9 +2040,18 @@ mod table_reflow_tests {
         let lines = render_table_with_width(src, 200);
         let texts: Vec<String> = lines.iter().map(line_text).collect();
         // Should have a top border, header, separator, body, bottom border.
-        assert!(texts.iter().any(|t| t.starts_with("┌")), "no top: {texts:?}");
-        assert!(texts.iter().any(|t| t.starts_with("├")), "no sep: {texts:?}");
-        assert!(texts.iter().any(|t| t.starts_with("└")), "no bot: {texts:?}");
+        assert!(
+            texts.iter().any(|t| t.starts_with("┌")),
+            "no top: {texts:?}"
+        );
+        assert!(
+            texts.iter().any(|t| t.starts_with("├")),
+            "no sep: {texts:?}"
+        );
+        assert!(
+            texts.iter().any(|t| t.starts_with("└")),
+            "no bot: {texts:?}"
+        );
         assert!(texts.iter().any(|t| t.contains("1") && t.contains("2")));
     }
 
@@ -2051,8 +2071,7 @@ mod table_reflow_tests {
         // should be ≤ target width in cells.
         use unicode_width::UnicodeWidthStr;
         for t in texts.iter().filter(|t| {
-            t.starts_with("┌") || t.starts_with("├") || t.starts_with("└") ||
-            t.starts_with("│")
+            t.starts_with("┌") || t.starts_with("├") || t.starts_with("└") || t.starts_with("│")
         }) {
             let w = UnicodeWidthStr::width(t.as_str());
             assert!(

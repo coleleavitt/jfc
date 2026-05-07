@@ -168,12 +168,7 @@ impl RenderCache {
 
     /// Store rendered lines for the actively-streaming message. Replaces any
     /// previous streaming content in-place without touching the main LRU map.
-    pub fn set_streaming(
-        &mut self,
-        message_idx: usize,
-        width: u16,
-        lines: Vec<Line<'static>>,
-    ) {
+    pub fn set_streaming(&mut self, message_idx: usize, width: u16, lines: Vec<Line<'static>>) {
         let wrapped_line_count = compute_wrapped_line_count(&lines, width);
         self.streaming_slot = Some(StreamingEntry {
             message_idx,
@@ -348,9 +343,7 @@ mod tests {
         for i in 0..MAX_ENTRIES {
             cache.insert(&format!("pre_{i}"), 80, vec![Line::from("x")]);
         }
-        let lines = cache.get_or_insert_with("new_one", 80, |t, _| {
-            vec![Line::from(t.to_owned())]
-        });
+        let lines = cache.get_or_insert_with("new_one", 80, |t, _| vec![Line::from(t.to_owned())]);
         assert_eq!(lines.len(), 1);
         assert!(
             cache.len() <= MAX_ENTRIES,
@@ -381,7 +374,10 @@ mod tests {
         // Touching `first` shouldn't bump generation (only insert does); but
         // it should leave the entry retrievable.
         let _ = cache.get("first", 80);
-        assert_eq!(cache.generation, gen_before, "get should not bump generation");
+        assert_eq!(
+            cache.generation, gen_before,
+            "get should not bump generation"
+        );
         assert!(cache.get("first", 80).is_some());
     }
 }

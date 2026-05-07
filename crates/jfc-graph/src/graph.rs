@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use petgraph::Direction;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
-use petgraph::Direction;
 use thiserror::Error;
 
 use crate::adapter::LanguageAdapter;
@@ -88,9 +88,7 @@ impl CodeGraph {
 
     /// Get node data by ID.
     pub fn get_node(&self, id: &NodeId) -> Option<&NodeData> {
-        self.index_map
-            .get(id)
-            .map(|&idx| &self.graph[idx])
+        self.index_map.get(id).map(|&idx| &self.graph[idx])
     }
 
     /// Get all outgoing edges from a node: (target_id, edge_data)

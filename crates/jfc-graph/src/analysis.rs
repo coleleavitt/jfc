@@ -11,15 +11,13 @@
 
 use std::collections::HashSet;
 
+use petgraph::Direction;
 use petgraph::algo::{
-    connected_components, page_rank, toposort,
-    dominators::simple_fast as dominators_simple_fast,
-    scc::tarjan_scc::tarjan_scc,
-    simple_paths::all_simple_paths,
+    connected_components, dominators::simple_fast as dominators_simple_fast, page_rank,
+    scc::tarjan_scc::tarjan_scc, simple_paths::all_simple_paths, toposort,
 };
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use petgraph::Direction;
 
 use crate::edges::EdgeKind;
 use crate::graph::CodeGraph;
@@ -146,14 +144,12 @@ pub fn dominator_chain(
 /// Returns `None` if the graph contains cycles (use `find_mutual_recursion`
 /// to identify them first).
 pub fn topological_order(graph: &CodeGraph) -> Option<Vec<NodeId>> {
-    toposort(graph.inner(), None)
-        .ok()
-        .map(|order| {
-            order
-                .into_iter()
-                .filter_map(|idx| graph.node_id_for(idx).cloned())
-                .collect()
-        })
+    toposort(graph.inner(), None).ok().map(|order| {
+        order
+            .into_iter()
+            .filter_map(|idx| graph.node_id_for(idx).cloned())
+            .collect()
+    })
 }
 
 /// Compute topological order of nodes affected by editing `target`.
@@ -170,7 +166,10 @@ pub fn cascade_order(graph: &CodeGraph, target: &NodeId) -> Vec<NodeId> {
     let mut reachable: HashSet<NodeIndex> = HashSet::new();
     let mut stack = vec![target_idx];
     while let Some(current) = stack.pop() {
-        for neighbor in graph.inner().neighbors_directed(current, Direction::Incoming) {
+        for neighbor in graph
+            .inner()
+            .neighbors_directed(current, Direction::Incoming)
+        {
             if reachable.insert(neighbor) {
                 stack.push(neighbor);
             }
@@ -270,7 +269,11 @@ pub fn centrality(graph: &CodeGraph, top_n: usize, damping_factor: f32) -> Vec<R
         })
         .collect();
 
-    ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    ranked.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     ranked.truncate(top_n);
     ranked
 }

@@ -85,7 +85,13 @@ mod tests {
     fn mock_result(count: usize) -> QueryResult {
         QueryResult {
             nodes: (0..count)
-                .map(|i| NodeId::new("test.rs", &format!("crate::fn_{i}"), crate::nodes::NodeKind::Function))
+                .map(|i| {
+                    NodeId::new(
+                        "test.rs",
+                        &format!("crate::fn_{i}"),
+                        crate::nodes::NodeKind::Function,
+                    )
+                })
                 .collect(),
             edges: vec![],
             was_truncated: false,

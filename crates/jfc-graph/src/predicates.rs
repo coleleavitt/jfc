@@ -99,10 +99,8 @@ pub fn outgoing_call_predicates(
                 _ => None,
             })
             .unwrap_or_else(|| "?".to_string());
-        let preds = extract_predicates_at_file(
-            &edge.source_span.file,
-            edge.source_span.byte_range.start,
-        );
+        let preds =
+            extract_predicates_at_file(&edge.source_span.file, edge.source_span.byte_range.start);
         if !preds.is_empty() {
             out.push((target_name, preds));
         }

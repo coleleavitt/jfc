@@ -617,8 +617,7 @@ mod tests {
     // ─── Fake provider for classify() tests ───────────────────────────────
 
     use crate::provider::{
-        EventStream, ModelInfo, ProviderMessage as PMsg, StreamOptions as SOpts,
-        StreamConvention,
+        EventStream, ModelInfo, ProviderMessage as PMsg, StreamConvention, StreamOptions as SOpts,
     };
     use async_trait::async_trait;
 

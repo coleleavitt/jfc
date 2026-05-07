@@ -127,19 +127,19 @@ impl BountyManager {
         Ok(bounty.reward)
     }
 
-        pub fn get(&self, bounty_id: &str) -> Option<&Bounty> {
+    pub fn get(&self, bounty_id: &str) -> Option<&Bounty> {
         self.bounties.iter().find(|b| b.id == bounty_id)
     }
 
-        pub fn get_mut(&mut self, bounty_id: &str) -> Option<&mut Bounty> {
+    pub fn get_mut(&mut self, bounty_id: &str) -> Option<&mut Bounty> {
         self.bounties.iter_mut().find(|b| b.id == bounty_id)
     }
 
-        pub fn audit_log(&self) -> &[AuditEntry] {
+    pub fn audit_log(&self) -> &[AuditEntry] {
         &self.audit_log
     }
 
-        pub fn open_bounties(&self) -> Vec<&Bounty> {
+    pub fn open_bounties(&self) -> Vec<&Bounty> {
         self.bounties
             .iter()
             .filter(|b| matches!(b.state, MarketState::Open | MarketState::Bidding))

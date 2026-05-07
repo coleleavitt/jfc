@@ -90,9 +90,7 @@ pub fn create_permission_request(
 
 /// Write a pending permission request to disk.
 #[tracing::instrument(target = "jfc::swarm", level = "trace", skip_all, fields(id = %request.id, team = %request.team_name, tool = %request.tool_name))]
-pub async fn write_permission_request(
-    request: &SwarmPermissionRequest,
-) -> anyhow::Result<()> {
+pub async fn write_permission_request(request: &SwarmPermissionRequest) -> anyhow::Result<()> {
     ensure_permission_dirs(&request.team_name).await?;
     let path = pending_dir(&request.team_name).join(format!("{}.json", request.id));
     let json = serde_json::to_string_pretty(request)?;
@@ -168,7 +166,10 @@ pub async fn resolve_permission(
     fs::write(&resolved_path, json).await?;
     fs::remove_file(&pending_path).await?;
 
-    debug!("[PermissionSync] Resolved request {request_id} with {:?}", resolution.decision);
+    debug!(
+        "[PermissionSync] Resolved request {request_id} with {:?}",
+        resolution.decision
+    );
     Ok(true)
 }
 

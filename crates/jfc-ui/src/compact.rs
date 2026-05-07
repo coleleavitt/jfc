@@ -362,9 +362,7 @@ pub async fn compact(
     let turns_since_compact = tool_ctx
         .total_user_turns
         .saturating_sub(tool_ctx.last_compact_turn);
-    if turns_since_compact >= THRASH_TURN_WINDOW
-        && tool_ctx.rapid_refill_count > 0
-    {
+    if turns_since_compact >= THRASH_TURN_WINDOW && tool_ctx.rapid_refill_count > 0 {
         info!(
             target: "jfc::compact",
             turns_since_compact,
@@ -506,10 +504,8 @@ pub async fn compact(
                         response_preview = %&response.content[..response.content.len().min(300)],
                         "summary response empty or itself an error — retrying with larger preserve"
                     );
-                    let step =
-                        token_gap_step(last_token_gap, &group_tokens, split_point);
-                    preserve_count =
-                        (preserve_count + step).min(total_groups - 1);
+                    let step = token_gap_step(last_token_gap, &group_tokens, split_point);
+                    preserve_count = (preserve_count + step).min(total_groups - 1);
                     continue;
                 }
                 let formatted = format_compact_summary(&response.content);
@@ -532,8 +528,8 @@ pub async fn compact(
                 // a long agentic batch with multi-tens-of-KB Read outputs)
                 // gets stuck in a compact-resubmit loop because each
                 // pass produces a Success that's still over Blocked.
-                let blocked = blocked_override()
-                    .unwrap_or_else(|| window.saturating_sub(BLOCKED_HEADROOM));
+                let blocked =
+                    blocked_override().unwrap_or_else(|| window.saturating_sub(BLOCKED_HEADROOM));
                 if post_tokens >= blocked {
                     if preserve_count > 0 {
                         info!(
@@ -701,18 +697,16 @@ fn is_usable_summary(text: &str) -> bool {
     // substring scan. We mirror that, plus a length cap so a runaway
     // prefix-match on a legitimate long response can't fire.
     const ERROR_PREFIX_PATTERNS: &[&str] = &[
-        "litellm.",                 // LiteLLM exception prefix (BedrockException, ContextWindowExceededError, etc.)
-        "{\"error\":",              // OWUI/OpenAI proxy JSON-error blob
-        "{\"message\":",            // alt JSON envelope
-        "Error:",                   // generic prefix
-        "BadRequestError:",         // litellm BadRequestError
+        "litellm.", // LiteLLM exception prefix (BedrockException, ContextWindowExceededError, etc.)
+        "{\"error\":", // OWUI/OpenAI proxy JSON-error blob
+        "{\"message\":", // alt JSON envelope
+        "Error:",   // generic prefix
+        "BadRequestError:", // litellm BadRequestError
         "BedrockException:",
         "AnthropicException:",
-        "context_window_fallback",  // litellm fallback message
+        "context_window_fallback", // litellm fallback message
     ];
-    let starts_with_error = ERROR_PREFIX_PATTERNS
-        .iter()
-        .any(|p| trimmed.starts_with(p));
+    let starts_with_error = ERROR_PREFIX_PATTERNS.iter().any(|p| trimmed.starts_with(p));
     let is_short_enough_to_be_only_error = trimmed.len() < 2_000;
     let rejected = starts_with_error && is_short_enough_to_be_only_error;
 
@@ -822,9 +816,7 @@ fn build_summary_text(messages: &[ChatMessage], strip_media: bool) -> String {
         message_count = messages.len(), strip_media,
         "building summary text"
     );
-    let mut text = String::from(
-        "Here is the conversation to summarize:\n\n",
-    );
+    let mut text = String::from("Here is the conversation to summarize:\n\n");
 
     for msg in messages {
         let role = if msg.role_is_user() {
@@ -1073,14 +1065,8 @@ mod level_tests {
 
     #[test]
     fn parse_token_gap_returns_none_when_no_overflow() {
-        assert_eq!(
-            parse_token_gap_from_error("ok: 100 tokens of 200000"),
-            None
-        );
-        assert_eq!(
-            parse_token_gap_from_error("connection reset"),
-            None
-        );
+        assert_eq!(parse_token_gap_from_error("ok: 100 tokens of 200000"), None);
+        assert_eq!(parse_token_gap_from_error("connection reset"), None);
     }
 
     #[test]

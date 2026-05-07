@@ -182,11 +182,31 @@ mod tests {
 
     fn build_test_graph() -> CodeGraph {
         let mut graph = CodeGraph::new();
-        graph.add_node(make_node("src/sample.rs", "foo", "sample::foo", NodeKind::Function));
-        graph.add_node(make_node("src/sample.rs", "bar", "sample::bar", NodeKind::Function));
-        graph.add_node(make_node("src/lib.rs", "Config", "Config", NodeKind::Struct));
+        graph.add_node(make_node(
+            "src/sample.rs",
+            "foo",
+            "sample::foo",
+            NodeKind::Function,
+        ));
+        graph.add_node(make_node(
+            "src/sample.rs",
+            "bar",
+            "sample::bar",
+            NodeKind::Function,
+        ));
+        graph.add_node(make_node(
+            "src/lib.rs",
+            "Config",
+            "Config",
+            NodeKind::Struct,
+        ));
         graph.add_node(make_node("src/lib.rs", "Status", "Status", NodeKind::Enum));
-        graph.add_node(make_node("src/helpers.rs", "helpers", "helpers", NodeKind::Module));
+        graph.add_node(make_node(
+            "src/helpers.rs",
+            "helpers",
+            "helpers",
+            NodeKind::Module,
+        ));
         graph
     }
 
@@ -265,7 +285,9 @@ mod tests {
         assert_eq!(handle, "fn:sample::foo");
 
         let config_id = NodeId::new("src/lib.rs", "Config", NodeKind::Struct);
-        let handle = table.handle_for_node(&config_id).expect("should find handle");
+        let handle = table
+            .handle_for_node(&config_id)
+            .expect("should find handle");
         assert_eq!(handle, "struct:Config");
 
         let fake_id = NodeId(99999);

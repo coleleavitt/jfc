@@ -440,13 +440,7 @@ mod tests {
         // Sessions 0 and 1: flaw upheld
         for idx in 0..2 {
             let session = pool.get_mut(idx).unwrap();
-            let challenge = make_challenge(
-                &validators[idx],
-                &s,
-                "bounty-1",
-                "some flaw",
-                0.8,
-            );
+            let challenge = make_challenge(&validators[idx], &s, "bounty-1", "some flaw", 0.8);
             session.submit_challenge(challenge).unwrap();
             session.submit_defense("defense".to_string()).unwrap();
             session.adjudicate(true).unwrap();

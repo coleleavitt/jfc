@@ -113,16 +113,44 @@ pub struct AuditEntry {
 /// Events recorded in the audit log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AuditEvent {
-    BountyPosted { reward: u64 },
-    BidReceived { agent_id: AgentId, price: u64 },
-    SolverSelected { agent_id: AgentId },
-    SolutionSubmitted { agent_id: AgentId, compiles: bool },
-    ValidationStarted { validator_id: AgentId, solution_agent_id: AgentId },
-    ValidationVerdict { verdict: ValidationVerdict },
-    SettlementComplete { winner: Option<AgentId>, total_cost: u64 },
-    StateTransition { from: MarketState, to: MarketState },
-    CharterViolation { agent_id: AgentId, violation: String, penalty: i8 },
-    SurgePricing { old_reward: u64, new_reward: u64 },
+    BountyPosted {
+        reward: u64,
+    },
+    BidReceived {
+        agent_id: AgentId,
+        price: u64,
+    },
+    SolverSelected {
+        agent_id: AgentId,
+    },
+    SolutionSubmitted {
+        agent_id: AgentId,
+        compiles: bool,
+    },
+    ValidationStarted {
+        validator_id: AgentId,
+        solution_agent_id: AgentId,
+    },
+    ValidationVerdict {
+        verdict: ValidationVerdict,
+    },
+    SettlementComplete {
+        winner: Option<AgentId>,
+        total_cost: u64,
+    },
+    StateTransition {
+        from: MarketState,
+        to: MarketState,
+    },
+    CharterViolation {
+        agent_id: AgentId,
+        violation: String,
+        penalty: i8,
+    },
+    SurgePricing {
+        old_reward: u64,
+        new_reward: u64,
+    },
 }
 
 #[cfg(test)]

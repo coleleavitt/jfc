@@ -110,8 +110,7 @@ mod tests {
         }
     }
 
-    const BIG_CONFIG_FIELDS: &str =
-        "name:String:pub;port:u16:pub;host:String:pub;debug:bool:pub;\
+    const BIG_CONFIG_FIELDS: &str = "name:String:pub;port:u16:pub;host:String:pub;debug:bool:pub;\
          max_retries:u32:pub;timeout_ms:u64:pub;log_level:String:pub;workers:usize:pub";
 
     fn make_struct_node(fields_meta: &str) -> NodeData {

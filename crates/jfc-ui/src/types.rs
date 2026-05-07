@@ -1021,8 +1021,15 @@ impl ToolInput {
             }
             Self::GraphQuery { query, .. } => query.clone(),
             Self::SymbolEdit { handle, .. } => format!("edit: {handle}"),
-            Self::PostBounty { description, budget, .. } => {
-                format!("bounty ({budget} tok): {}", description.chars().take(60).collect::<String>())
+            Self::PostBounty {
+                description,
+                budget,
+                ..
+            } => {
+                format!(
+                    "bounty ({budget} tok): {}",
+                    description.chars().take(60).collect::<String>()
+                )
             }
             Self::MarketStatus { bounty_id } => match bounty_id {
                 Some(id) => format!("market status: {id}"),
@@ -1152,7 +1159,10 @@ impl ToolInput {
             },
             ToolKind::TeamCreate => Self::TeamCreate {
                 team_name: str_field("team_name"),
-                description: v.get("description").and_then(|d| d.as_str()).map(str::to_owned),
+                description: v
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .map(str::to_owned),
             },
             ToolKind::TeamDelete => Self::TeamDelete,
             ToolKind::SendMessage => Self::SendMessage {
@@ -1175,7 +1185,10 @@ impl ToolInput {
             },
             ToolKind::GraphQuery => Self::GraphQuery {
                 query: str_field("query"),
-                max_tokens: obj.and_then(|m| m.get("max_tokens")).and_then(|v| v.as_u64()).map(|v| v as usize),
+                max_tokens: obj
+                    .and_then(|m| m.get("max_tokens"))
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize),
             },
             ToolKind::SymbolEdit => Self::SymbolEdit {
                 handle: str_field("handle"),
@@ -1413,7 +1426,12 @@ impl ToolInput {
                 }
                 v
             }
-            Self::SymbolEdit { handle, new_content, validate, dispatch_cascade } => {
+            Self::SymbolEdit {
+                handle,
+                new_content,
+                validate,
+                dispatch_cascade,
+            } => {
                 let mut v = json!({ "handle": handle, "new_content": new_content });
                 if *validate {
                     v["validate"] = json!(true);
@@ -1423,7 +1441,13 @@ impl ToolInput {
                 }
                 v
             }
-            Self::PostBounty { description, budget, acceptance_criteria, max_solvers, auto_dispatch } => {
+            Self::PostBounty {
+                description,
+                budget,
+                acceptance_criteria,
+                max_solvers,
+                auto_dispatch,
+            } => {
                 let mut v = json!({
                     "description": description,
                     "budget": budget,
@@ -1444,7 +1468,10 @@ impl ToolInput {
                 }
                 v
             }
-            Self::RunBounty { bounty_id, max_solvers } => {
+            Self::RunBounty {
+                bounty_id,
+                max_solvers,
+            } => {
                 let mut v = json!({ "bounty_id": bounty_id });
                 if let Some(n) = max_solvers {
                     v["max_solvers"] = json!(n);
@@ -2135,10 +2162,7 @@ mod tests {
 
     #[test]
     fn tool_output_approx_text_len_diff_sums_line_content_normal() {
-        let view = parse_unified_diff(
-            "x.rs",
-            "@@ -1,1 +1,1 @@\n-abc\n+abcd\n",
-        );
+        let view = parse_unified_diff("x.rs", "@@ -1,1 +1,1 @@\n-abc\n+abcd\n");
         let out = ToolOutput::Diff(view);
         // "abc" (3) + "abcd" (4) = 7
         assert_eq!(out.approx_text_len(), 7);
@@ -2146,10 +2170,7 @@ mod tests {
 
     #[test]
     fn tool_output_text_only_diff_includes_counts_normal() {
-        let view = parse_unified_diff(
-            "x.rs",
-            "@@ -1,1 +1,1 @@\n-old\n+new\n",
-        );
+        let view = parse_unified_diff("x.rs", "@@ -1,1 +1,1 @@\n-old\n+new\n");
         let s = ToolOutput::Diff(view).text_only();
         assert!(s.contains("x.rs"), "{s}");
         assert!(s.contains("+1"), "{s}");
@@ -2193,8 +2214,7 @@ mod tests {
 
     #[test]
     fn tool_output_text_only_filelist_count_normal() {
-        let s = ToolOutput::FileList(vec!["a".into(), "b".into(), "c".into()])
-            .text_only();
+        let s = ToolOutput::FileList(vec!["a".into(), "b".into(), "c".into()]).text_only();
         assert_eq!(s, "3 files");
     }
 
@@ -2674,7 +2694,10 @@ mod tests {
     #[test]
     fn chat_message_compact_boundary_marks_role_user_with_system_agent_robust() {
         let m = ChatMessage::compact_boundary("summary text", 12_345);
-        assert!(m.role_is_user(), "compact boundary uses user role for replay");
+        assert!(
+            m.role_is_user(),
+            "compact boundary uses user role for replay"
+        );
         assert!(m.is_compact_boundary());
         assert_eq!(m.agent_name.as_deref(), Some("system"));
     }
@@ -2761,10 +2784,7 @@ mod tests {
 
     #[test]
     fn parse_unified_diff_counts_additions_deletions_normal() {
-        let view = parse_unified_diff(
-            "x.rs",
-            "@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n",
-        );
+        let view = parse_unified_diff("x.rs", "@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n");
         assert_eq!(view.additions, 1);
         assert_eq!(view.deletions, 1);
         assert_eq!(view.file_path, "x.rs");

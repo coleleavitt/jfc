@@ -164,7 +164,10 @@ mod tests {
 
     #[test]
     fn pricing_for_unknown_returns_none_robust() {
-        assert!(pricing_for("gpt-4o").is_none(), "OpenAI model should be unknown");
+        assert!(
+            pricing_for("gpt-4o").is_none(),
+            "OpenAI model should be unknown"
+        );
         assert!(
             pricing_for("random-model").is_none(),
             "arbitrary string should be unknown"

@@ -401,10 +401,7 @@ async fn handle_inbound(
         // Route to pending request map.
         let mut guard = pending.lock().await;
         if let Some(tx) = guard.remove(&id) {
-            let result = msg
-                .get("result")
-                .cloned()
-                .unwrap_or(Value::Null);
+            let result = msg.get("result").cloned().unwrap_or(Value::Null);
             let _ = tx.send(result);
         }
         return;
@@ -748,11 +745,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let p = std::env::temp_dir().join(format!(
-            "jfc-lsp-test-{}-{}",
-            std::process::id(),
-            nanos
-        ));
+        let p = std::env::temp_dir().join(format!("jfc-lsp-test-{}-{}", std::process::id(), nanos));
         std::fs::create_dir_all(&p).unwrap();
         TmpDir(p)
     }

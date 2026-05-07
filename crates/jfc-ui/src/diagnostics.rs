@@ -147,8 +147,14 @@ pub fn render_for_prompt(entries: &[DiagnosticEntry]) -> Option<String> {
 
     let total = entries.len();
     let file_count = groups.len();
-    let errors = entries.iter().filter(|e| matches!(e.severity, Severity::Error)).count();
-    let warnings = entries.iter().filter(|e| matches!(e.severity, Severity::Warning)).count();
+    let errors = entries
+        .iter()
+        .filter(|e| matches!(e.severity, Severity::Error))
+        .count();
+    let warnings = entries
+        .iter()
+        .filter(|e| matches!(e.severity, Severity::Warning))
+        .count();
 
     let mut out = String::new();
     out.push_str("\n\n## Current diagnostics\n\n");

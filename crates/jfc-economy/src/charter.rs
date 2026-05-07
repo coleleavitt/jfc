@@ -206,7 +206,10 @@ sanctions:
         assert!((charter.surge_multiplier - 1.25).abs() < f32::EPSILON);
         assert!((charter.payment_floor - 0.6).abs() < f32::EPSILON);
 
-        let sanction = charter.sanctions.get(&ViolationType::SandboxEscape).unwrap();
+        let sanction = charter
+            .sanctions
+            .get(&ViolationType::SandboxEscape)
+            .unwrap();
         assert_eq!(sanction.trust_penalty, 60);
         assert!(sanction.blocks_action);
     }
@@ -256,8 +259,16 @@ sanctions:
     fn test_charter_unknown_violation() {
         let charter = Charter::default();
         // BudgetExceeded and TimeoutExceeded are not in default sanctions
-        assert!(charter.check_violation(&ViolationType::BudgetExceeded).is_none());
-        assert!(charter.check_violation(&ViolationType::TimeoutExceeded).is_none());
+        assert!(
+            charter
+                .check_violation(&ViolationType::BudgetExceeded)
+                .is_none()
+        );
+        assert!(
+            charter
+                .check_violation(&ViolationType::TimeoutExceeded)
+                .is_none()
+        );
     }
 
     #[test]
@@ -286,8 +297,14 @@ sanctions:
         assert_eq!(restored.sanctions.len(), original.sanctions.len());
         for (violation, original_sanction) in &original.sanctions {
             let restored_sanction = restored.sanctions.get(violation).unwrap();
-            assert_eq!(restored_sanction.trust_penalty, original_sanction.trust_penalty);
-            assert_eq!(restored_sanction.blocks_action, original_sanction.blocks_action);
+            assert_eq!(
+                restored_sanction.trust_penalty,
+                original_sanction.trust_penalty
+            );
+            assert_eq!(
+                restored_sanction.blocks_action,
+                original_sanction.blocks_action
+            );
         }
     }
 }

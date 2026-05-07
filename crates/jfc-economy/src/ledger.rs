@@ -67,7 +67,11 @@ impl PriceOracle {
 
     /// Estimate cost for a request before execution.
     pub fn estimate_cost(&self, model: &str, estimated_input: u64, estimated_output: u64) -> u64 {
-        let input_rate = self.input_costs.get(model).copied().unwrap_or(self.default_input);
+        let input_rate = self
+            .input_costs
+            .get(model)
+            .copied()
+            .unwrap_or(self.default_input);
         let output_rate = self
             .output_costs
             .get(model)
@@ -78,7 +82,11 @@ impl PriceOracle {
 
     /// Calculate actual cost from a completed LLM response.
     pub fn actual_cost(&self, model: &str, input_tokens: u64, output_tokens: u64) -> u64 {
-        let input_rate = self.input_costs.get(model).copied().unwrap_or(self.default_input);
+        let input_rate = self
+            .input_costs
+            .get(model)
+            .copied()
+            .unwrap_or(self.default_input);
         let output_rate = self
             .output_costs
             .get(model)
@@ -144,7 +152,9 @@ impl TokenLedger {
         estimated_input: u64,
         estimated_output: u64,
     ) -> Result<u64, BudgetError> {
-        let estimated_cost = self.oracle.estimate_cost(model, estimated_input, estimated_output);
+        let estimated_cost = self
+            .oracle
+            .estimate_cost(model, estimated_input, estimated_output);
         let remaining = self.total_budget.saturating_sub(self.total_spent);
 
         if estimated_cost > remaining {

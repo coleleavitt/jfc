@@ -296,7 +296,11 @@ impl TaskStore {
                 }
             }
         }
-        let truncated_subject: &str = if subject.len() > 80 { &subject[..80] } else { &subject };
+        let truncated_subject: &str = if subject.len() > 80 {
+            &subject[..80]
+        } else {
+            &subject
+        };
         tracing::info!(
             target: "jfc::tasks",
             id = %id,

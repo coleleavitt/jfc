@@ -156,13 +156,9 @@ pub fn project_memory_dir(project_root: &Path) -> PathBuf {
 
 /// Returns `true` if the given path resides inside a known memory directory.
 pub fn is_memory_path(path: &Path) -> bool {
-    let normalized = path
-        .canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf());
+    let normalized = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let user_dir = user_memory_dir();
-    let user_canon = user_dir
-        .canonicalize()
-        .unwrap_or_else(|_| user_dir.clone());
+    let user_canon = user_dir.canonicalize().unwrap_or_else(|_| user_dir.clone());
 
     if normalized.starts_with(&user_canon) {
         return true;
@@ -171,9 +167,7 @@ pub fn is_memory_path(path: &Path) -> bool {
     // Check against current working directory's project memory
     if let Ok(cwd) = std::env::current_dir() {
         let proj_dir = project_memory_dir(&cwd);
-        let proj_canon = proj_dir
-            .canonicalize()
-            .unwrap_or_else(|_| proj_dir.clone());
+        let proj_canon = proj_dir.canonicalize().unwrap_or_else(|_| proj_dir.clone());
         if normalized.starts_with(&proj_canon) {
             return true;
         }
@@ -231,8 +225,7 @@ fn load_from_dir(dir: &Path, level: MemoryLevel, out: &mut Vec<MemoryEntry>) {
 
 /// Parse a single memory `.md` file with YAML frontmatter.
 fn parse_memory_file(path: &Path, level: MemoryLevel) -> Result<MemoryEntry, String> {
-    let content =
-        std::fs::read_to_string(path).map_err(|e| format!("read error: {e}"))?;
+    let content = std::fs::read_to_string(path).map_err(|e| format!("read error: {e}"))?;
 
     let (frontmatter, body) = parse_frontmatter_and_body(&content)?;
 
@@ -289,8 +282,7 @@ pub fn create_memory(
     };
 
     // Ensure directory exists
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("failed to create memory directory: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("failed to create memory directory: {e}"))?;
 
     // Generate a filename based on timestamp + a slug from the body
     let now: DateTime<Utc> = SystemTime::now().into();
@@ -305,8 +297,7 @@ pub fn create_memory(
         now.to_rfc3339()
     );
 
-    std::fs::write(&path, &content)
-        .map_err(|e| format!("failed to write memory file: {e}"))?;
+    std::fs::write(&path, &content).map_err(|e| format!("failed to write memory file: {e}"))?;
 
     tracing::info!(
         target: "jfc::memory",
@@ -328,8 +319,7 @@ pub fn delete_memory(path: &Path) -> Result<(), String> {
             path.display()
         ));
     }
-    std::fs::remove_file(path)
-        .map_err(|e| format!("failed to delete memory: {e}"))?;
+    std::fs::remove_file(path).map_err(|e| format!("failed to delete memory: {e}"))?;
     tracing::info!(
         target: "jfc::memory",
         path = %path.display(),
@@ -347,7 +337,9 @@ pub fn render_memories_section(memories: &[MemoryEntry]) -> Option<String> {
         return None;
     }
 
-    let mut out = String::from("\n\n# Memory\n\nThe following memories have been saved from previous conversations:\n");
+    let mut out = String::from(
+        "\n\n# Memory\n\nThe following memories have been saved from previous conversations:\n",
+    );
 
     // Group by level for readability
     let user_memories: Vec<_> = memories
@@ -520,9 +512,11 @@ mod tests {
         assert_eq!(memories.len(), 1);
         assert_eq!(memories[0].frontmatter.memory_type, MemoryType::Feedback);
         assert_eq!(memories[0].frontmatter.scope, MemoryScope::Team);
-        assert!(memories[0]
-            .body
-            .contains("Always run tests before committing."));
+        assert!(
+            memories[0]
+                .body
+                .contains("Always run tests before committing.")
+        );
     }
 
     #[test]
