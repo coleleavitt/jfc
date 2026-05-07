@@ -53,93 +53,31 @@ impl GraphBuilder {
     }
 
     fn discover_files(dir: &Path, extensions: &[&str]) -> Vec<PathBuf> {
+        use ignore::WalkBuilder;
+
         let mut files = Vec::new();
-        let mut visited_dirs = std::collections::HashSet::new();
-        // Canonicalize the root so we can detect symlink cycles.
-        if let Ok(canonical) = dir.canonicalize() {
-            visited_dirs.insert(canonical);
-        }
-        Self::walk_dir(dir, extensions, &mut files, &mut visited_dirs, 0);
-        files.sort();
-        files
-    }
+        let walker = WalkBuilder::new(dir)
+            .hidden(true)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .follow_links(false)
+            .max_depth(Some(32))
+            .build();
 
-    /// Max directory recursion depth to prevent runaway traversal on
-    /// deeply nested source trees (e.g. vendored Rust compiler builds
-    /// with symlink cycles like `stage2/lib/rustlib/src/rust → /`).
-    const MAX_WALK_DEPTH: usize = 32;
-
-    fn should_skip_dir(path: &Path) -> bool {
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            return false;
-        };
-        matches!(
-            name,
-            "target"
-                | "node_modules"
-                | ".git"
-                | "build"
-                | "dist"
-                | "vendor"
-                | ".cargo"
-                | "__pycache__"
-                | ".tox"
-                | "venv"
-                | ".venv"
-                | "research"
-        )
-    }
-
-    fn walk_dir(
-        dir: &Path,
-        extensions: &[&str],
-        files: &mut Vec<PathBuf>,
-        visited_dirs: &mut std::collections::HashSet<PathBuf>,
-        depth: usize,
-    ) {
-        if depth >= Self::MAX_WALK_DEPTH {
-            tracing::debug!(
-                path = %dir.display(),
-                depth,
-                "walk_dir: max depth reached, skipping"
-            );
-            return;
-        }
-
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-
-        for entry in entries.flatten() {
+        for entry in walker.flatten() {
             let path = entry.path();
-            if path.is_dir() {
-                // Skip directories that are never useful for code graph indexing.
-                // Mirrors rustc tidy's filter_dirs (src/tools/tidy/src/walk.rs:11-39).
-                if Self::should_skip_dir(&path) {
-                    continue;
-                }
-                // Resolve symlinks to detect cycles (like Linux's ELOOP on
-                // total_link_count >= MAXSYMLINKS in fs/namei.c:1977).
-                // If canonicalize fails (dangling symlink, permission error)
-                // skip the directory entirely.
-                let canonical = match path.canonicalize() {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
-                if !visited_dirs.insert(canonical) {
-                    tracing::debug!(
-                        path = %path.display(),
-                        "walk_dir: symlink cycle detected, skipping"
-                    );
-                    continue;
-                }
-                Self::walk_dir(&path, extensions, files, visited_dirs, depth + 1);
-            } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if extensions.contains(&ext) {
-                    files.push(path);
+            if path.is_file() {
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if extensions.contains(&ext) {
+                        files.push(path.to_path_buf());
+                    }
                 }
             }
         }
+
+        files.sort();
+        files
     }
 }
 

@@ -13,6 +13,7 @@ tree-sitter-rust = "0.24"
 serde = { workspace = true }
 serde_json = { workspace = true }
 bincode = "2"
+ignore = "0.4"
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
