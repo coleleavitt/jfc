@@ -56,6 +56,8 @@ mod push_notifications;
 mod sdk_bridge;
 mod managed_session;
 mod idle_prefetch;
+mod telemetry;
+mod file_watcher;
 mod github;
 mod worktrees;
 
@@ -107,9 +109,23 @@ struct Cli {
     #[arg(long, short = 'r', value_name = "SESSION_ID")]
     resume: Option<String>,
 
-    /// Initial prompt to send (non-interactive if specified)
+    /// Initial prompt to send. With `--print`, runs headless and exits.
+    /// Without `--print`, opens the TUI and pre-fills the input.
     #[arg(long, short = 'p', value_name = "PROMPT")]
     prompt: Option<String>,
+
+    /// Headless one-shot mode: send the prompt, stream the response to
+    /// stdout, exit. Skip the TUI entirely. Pair with `--prompt "..."`
+    /// or pipe the prompt on stdin.
+    #[arg(long = "print", short = 'P')]
+    print_mode: bool,
+
+    /// Connect to a remote managed-agent session by ID. Streams the
+    /// session's events into the TUI transcript and forwards user
+    /// input via the Sessions API. Pairs with the SDK's
+    /// `managed_session::ManagedSession`.
+    #[arg(long = "remote-session", value_name = "SESSION_ID")]
+    remote_session: Option<String>,
 
     /// Model to use (overrides ANTHROPIC_MODEL env var)
     #[arg(long, short = 'm', value_name = "MODEL")]
@@ -192,6 +208,13 @@ async fn main() -> anyhow::Result<()> {
     // hooks land via .claude/settings.json in a future pass). Idempotent.
     crate::hooks::init_global(crate::hooks::default_registry());
 
+    // v132 file watcher: install on startup so CLAUDE.md /
+    // .claude/agents/*.md / settings.toml edits emit a system-reminder
+    // on the next turn instead of waiting for a session restart. The
+    // Tick handler in the main loop polls the change counter and
+    // emits the reminder when it sees a bump.
+    crate::file_watcher::install();
+
     // Subcommand dispatch must run before any TUI setup — `daemon start`
     // expects a clean stdout, and `daemon status / list / stop / fire`
     // print plain text rather than entering the alt-screen.
@@ -205,11 +228,48 @@ async fn main() -> anyhow::Result<()> {
     // Determine startup session from CLI flags (before consuming cli fields)
     let startup_session = cli.startup_session();
     let initial_prompt = cli.prompt;
+    let print_mode = cli.print_mode;
 
     // CLI --model overrides env var
     let model = cli.model.map(ModelId::from).unwrap_or(init.model);
     let oauth_handle = init.oauth;
     let provider = providers[active_idx].clone();
+
+    // v132 `-p`/`--print` headless one-shot mode. Skips the TUI
+    // entirely, streams the response to stdout, exits with the
+    // model's stop_reason. Used for scripting and CI: `jfc -p
+    // "summarize this PR" --print | tee out.md`. When `--print` is
+    // set without `--prompt`, read the prompt from stdin.
+    if print_mode {
+        let prompt = match initial_prompt {
+            Some(p) => p,
+            None => {
+                use std::io::Read;
+                let mut buf = String::new();
+                if std::io::stdin().read_to_string(&mut buf).is_err() {
+                    eprintln!("--print: no prompt provided (use --prompt or pipe stdin)");
+                    std::process::exit(2);
+                }
+                buf
+            }
+        };
+        return run_print_mode(provider, model, prompt).await;
+    }
+
+    // v132 `--remote-session <id>` — connect to a managed-agent
+    // session via the SDK. Pre-flight check the SDK client now so
+    // we fail fast on missing API key instead of after entering
+    // the alt-screen.
+    if let Some(remote_id) = cli.remote_session.clone() {
+        let Some(sdk_client) = crate::sdk_bridge::build_client() else {
+            eprintln!(
+                "--remote-session: no Anthropic API key found (set ANTHROPIC_API_KEY \
+                 or configure a profile via .jfc/account.toml)"
+            );
+            std::process::exit(2);
+        };
+        return run_remote_session(sdk_client, remote_id).await;
+    }
 
     // Register the active provider with the tools layer so the
     // agent-economy auto_dispatch path can spawn real solver +
@@ -259,6 +319,83 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// Dispatch `jfc <subcommand>`. Pure CLI — no terminal raw-mode, no TUI.
+/// v132 `--print` headless mode entry. Builds a minimal stream against
+/// the active provider, prints text deltas to stdout as they arrive,
+/// exits with the stream's stop_reason. No TUI, no session save, no
+/// tool dispatch (tools require user approval which is meaningless in
+/// headless mode — callers needing tools should drive the TUI).
+async fn run_print_mode(
+    provider: std::sync::Arc<dyn provider::Provider>,
+    model: provider::ModelId,
+    prompt: String,
+) -> anyhow::Result<()> {
+    use futures::StreamExt;
+    use provider::{ProviderContent, ProviderMessage, ProviderRole, StreamEvent, StreamOptions};
+    use std::io::Write;
+
+    let messages = vec![ProviderMessage {
+        role: ProviderRole::User,
+        content: vec![ProviderContent::Text(prompt)],
+    }];
+    let opts = StreamOptions::new(model.clone()).max_tokens(8192);
+    let mut stream = provider
+        .stream(messages, &opts)
+        .await
+        .map_err(|e| anyhow::anyhow!("stream open failed: {e}"))?;
+    let mut stdout = std::io::stdout().lock();
+    let mut exit_code = 0;
+    while let Some(event) = stream.next().await {
+        match event {
+            Ok(StreamEvent::TextDelta { delta, .. }) => {
+                let _ = stdout.write_all(delta.as_bytes());
+                let _ = stdout.flush();
+            }
+            Ok(StreamEvent::Done { .. }) => break,
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("\n[stream error: {e}]");
+                exit_code = 1;
+                break;
+            }
+        }
+    }
+    let _ = stdout.write_all(b"\n");
+    let _ = stdout.flush();
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
+    Ok(())
+}
+
+/// `--remote-session <id>` entry. Streams events from a managed-agent
+/// session to stdout. Minimal first cut — full TUI integration with
+/// rendering of v132's 17 event types lives in `managed_session.rs`
+/// and ships behind a follow-on flag once the eventer is verified.
+async fn run_remote_session(
+    client: jfc_anthropic_sdk::Client,
+    session_id: String,
+) -> anyhow::Result<()> {
+    use futures::StreamExt;
+    let session = crate::managed_session::ManagedSession::new(client, session_id.clone());
+    eprintln!("--remote-session: subscribing to session {session_id}");
+    let mut stream = session
+        .connect()
+        .await
+        .map_err(|e| anyhow::anyhow!("session connect: {e}"))?;
+    while let Some(event) = stream.next().await {
+        match event {
+            Ok(ev) => {
+                println!("{}", crate::managed_session::render_event_line(&ev));
+            }
+            Err(e) => {
+                eprintln!("[stream error: {e}]");
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn run_subcommand(cmd: Command) -> anyhow::Result<()> {
     match cmd {
         Command::Daemon { sub } => run_daemon_subcommand(sub).await,

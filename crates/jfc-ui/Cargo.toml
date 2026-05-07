@@ -67,6 +67,7 @@ jfc-anthropic-sdk = { path = "../jfc-anthropic-sdk" }
 # a tray bubble instead of having to refocus to check. Disabled when
 # `JFC_DISABLE_NOTIFICATIONS=1` so headless / SSH sessions don't error.
 notify-rust = { version = "4", default-features = false, features = ["d"] }
+notify = "8"
 # Used by the Monitor tool's `until` matcher and the CronSchedule
 # parser. Default features include unicode + perl classes which is
 # overkill for our needs but the binary already pulls regex through

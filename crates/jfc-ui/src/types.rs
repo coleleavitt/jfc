@@ -249,6 +249,17 @@ impl MessagePart {
     }
 }
 
+/// One step in the per-session undo stack. Captured by the tool
+/// dispatcher *before* an Edit / Write / MultiEdit / ApplyPatch fires
+/// so `/undo` can restore the pre-mutation state. `previous_content =
+/// None` means the file didn't exist before — undo deletes it.
+#[derive(Debug, Clone)]
+pub struct ToolUndoEntry {
+    pub file_path: String,
+    pub previous_content: Option<String>,
+    pub op_label: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct ToolCall {
     pub id: String,
