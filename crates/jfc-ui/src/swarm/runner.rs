@@ -609,7 +609,7 @@ async fn run_single_turn(
     let mut total_tokens: u64 = 0;
     let mut total_tools: u64 = 0;
     let mut last_tool_name: Option<String> = None;
-    let max_turns = 25u32; // safety limit
+    let max_turns = 200u32; // generous safety limit (CC has no limit)
     let mut turn = 0u32;
 
     loop {

@@ -3425,10 +3425,12 @@ async fn execute_skill_in(cwd: &Path, name: &str, args: Option<&str>) -> Executi
 
 /// Default agentic-loop bound when an agent definition doesn't pin one.
 /// Generous enough that legitimate multi-tool tasks complete; tight enough
-/// that a runaway subagent can't burn unlimited tokens. Mirrors v126's
-/// `MAX_AGENT_TURNS` default in cli.2.1.126 (the subagent runner there
-/// caps at ~20 iterations).
-const DEFAULT_AGENT_MAX_TURNS: u32 = 20;
+/// Safety cap for subagent turns. Claude Code has no fixed limit — agents
+/// run until end_turn or abort. We keep a generous cap to prevent truly
+/// runaway agents (e.g. infinite tool loops), but set it high enough that
+/// real multi-step tasks complete normally. Override per-agent via
+/// `agent_def.max_turns`.
+const DEFAULT_AGENT_MAX_TURNS: u32 = 200;
 
 /// Apply an agent's `allowedTools` (allowlist) and `disallowedTools`
 /// (blocklist) to the parent's full tool catalogue. An empty `allowed`
