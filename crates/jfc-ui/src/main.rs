@@ -75,7 +75,10 @@ use tokio::sync::mpsc;
 
 use app::{App, AppEvent, PendingApproval, SPINNER, TICK_MS};
 use provider::{ModelId, ModelSpec, Provider, ProviderId};
-use providers::{AnthropicOAuthProvider, AnthropicProvider, OpenAIProvider, OpenWebUIProvider};
+use providers::{
+    AnthropicOAuthProvider, AnthropicProvider, BedrockProvider, OpenAIProvider, OpenWebUIProvider,
+    VertexProvider,
+};
 use types::*;
 
 /// JFC - A TUI assistant for code exploration and development
@@ -526,6 +529,27 @@ fn build_providers() -> ProvidersInit {
         if std::env::var("OPENWEBUI_BASE_URL").is_ok() {
             prefer.get_or_insert("openwebui");
         }
+    }
+
+    // Bedrock + Vertex: register as candidates when the wizard config is on
+    // disk *and* the relevant CLI is installed. Neither becomes the default
+    // — the user opts in by picking a Bedrock/Vertex model from the picker
+    // or by using a `bedrock/<id>` / `vertex/<id>` qualified ModelSpec.
+    let bedrock = BedrockProvider::new();
+    if bedrock.has_usable_config() {
+        tracing::info!(
+            target: "jfc::startup",
+            "registering Bedrock provider (config + aws CLI present)"
+        );
+        providers.push(Arc::new(bedrock));
+    }
+    let vertex = VertexProvider::new();
+    if vertex.has_usable_config() {
+        tracing::info!(
+            target: "jfc::startup",
+            "registering Vertex provider (config + gcloud CLI present)"
+        );
+        providers.push(Arc::new(vertex));
     }
 
     if providers.is_empty() {
