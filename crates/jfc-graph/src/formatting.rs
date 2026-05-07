@@ -1,5 +1,7 @@
 //! Token-budgeted output formatting for query results.
 
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+
 use crate::dsl::QueryResult;
 use crate::graph::CodeGraph;
 use crate::symbols::SymbolTable;
@@ -64,6 +66,38 @@ pub fn format_query_result(
         nodes_shown,
         nodes_total: result.nodes.len(),
     }
+}
+
+/// Export the graph as Graphviz DOT format.
+pub fn to_dot(graph: &CodeGraph) -> String {
+    use std::fmt::Write;
+
+    let inner = graph.inner();
+    let mut out = String::from("digraph CodeGraph {\n");
+    out.push_str("  rankdir=LR;\n");
+    out.push_str("  node [shape=box, style=filled, fillcolor=lightyellow];\n\n");
+
+    for idx in inner.node_indices() {
+        if let Some(node) = inner.node_weight(idx) {
+            let label = format!("{}\\n{:?}", node.name, node.kind);
+            let _ = writeln!(out, "  n{} [label=\"{}\"];", idx.index(), label);
+        }
+    }
+    out.push('\n');
+
+    for edge in inner.edge_references() {
+        let kind_label = format!("{:?}", edge.weight().kind);
+        let _ = writeln!(
+            out,
+            "  n{} -> n{} [label=\"{}\"];",
+            edge.source().index(),
+            edge.target().index(),
+            kind_label
+        );
+    }
+
+    out.push_str("}\n");
+    out
 }
 
 #[cfg(test)]

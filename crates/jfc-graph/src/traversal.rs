@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 
 use petgraph::Direction;
-use petgraph::graph::NodeIndex;
+use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::{Dfs, Reversed};
 
 use crate::graph::CodeGraph;

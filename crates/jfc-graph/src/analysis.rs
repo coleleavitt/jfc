@@ -9,15 +9,15 @@
 //! - **Connected components**: independent module detection
 //! - **Articulation points**: critical function identification
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use petgraph::Direction;
 use petgraph::algo::{
-    connected_components, dominators::simple_fast as dominators_simple_fast, page_rank,
-    scc::tarjan_scc::tarjan_scc, simple_paths::all_simple_paths, toposort,
+    dominators::simple_fast as dominators_simple_fast, page_rank, scc::tarjan_scc::tarjan_scc,
+    simple_paths::all_simple_paths, toposort,
 };
-use petgraph::graph::NodeIndex;
-use petgraph::visit::EdgeRef;
+use petgraph::stable_graph::NodeIndex;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
 use crate::edges::EdgeKind;
 use crate::graph::CodeGraph;
@@ -237,6 +237,100 @@ pub fn taint_paths(
         .collect()
 }
 
+// ─── K-Shortest Paths ────────────────────────────────────────────────────────
+
+/// Find up to `k` shortest simple paths between two nodes using edge weights.
+///
+/// Paths are returned in ascending total-cost order. This uses a bounded
+/// best-first search over simple paths, so it is most appropriate for small `k`
+/// and local code-graph queries.
+pub fn k_shortest_paths(
+    graph: &CodeGraph,
+    from: &NodeId,
+    to: &NodeId,
+    k: usize,
+) -> Vec<(Vec<NodeId>, f32)> {
+    use std::cmp::Ordering;
+    use std::collections::BinaryHeap;
+
+    if k == 0 {
+        return vec![];
+    }
+
+    let Some(from_idx) = graph.resolve(from) else {
+        return vec![];
+    };
+    let Some(to_idx) = graph.resolve(to) else {
+        return vec![];
+    };
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct PathState {
+        cost: f32,
+        path: Vec<NodeIndex>,
+    }
+
+    impl Eq for PathState {}
+
+    impl PartialOrd for PathState {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for PathState {
+        fn cmp(&self, other: &Self) -> Ordering {
+            other
+                .cost
+                .partial_cmp(&self.cost)
+                .unwrap_or(Ordering::Equal)
+        }
+    }
+
+    let inner = graph.inner();
+    let mut heap = BinaryHeap::new();
+    let mut results = Vec::new();
+
+    heap.push(PathState {
+        cost: 0.0,
+        path: vec![from_idx],
+    });
+
+    while let Some(PathState { cost, path }) = heap.pop() {
+        let Some(&current) = path.last() else {
+            continue;
+        };
+
+        if current == to_idx {
+            let node_path: Vec<NodeId> = path
+                .iter()
+                .filter_map(|&idx| graph.node_id_for(idx).cloned())
+                .collect();
+            results.push((node_path, cost));
+            if results.len() == k {
+                break;
+            }
+            continue;
+        }
+
+        for edge in inner.edges_directed(current, Direction::Outgoing) {
+            let next = edge.target();
+            if path.contains(&next) {
+                continue;
+            }
+
+            let mut next_path = path.clone();
+            next_path.push(next);
+            heap.push(PathState {
+                cost: cost + edge.weight().weight,
+                path: next_path,
+            });
+        }
+    }
+
+    results
+}
+
 // ─── Page Rank ───────────────────────────────────────────────────────────────
 
 /// Node ranked by importance (centrality).
@@ -285,7 +379,7 @@ pub fn centrality(graph: &CodeGraph, top_n: usize, damping_factor: f32) -> Vec<R
 /// Returns the number of components. Independent components can be
 /// edited in parallel without risk of cross-contamination.
 pub fn independent_module_count(graph: &CodeGraph) -> usize {
-    connected_components(graph.inner())
+    count_components(graph)
 }
 
 /// Group nodes by their weakly connected component.
@@ -296,35 +390,30 @@ pub fn component_groups(graph: &CodeGraph) -> Vec<Vec<NodeId>> {
         return vec![];
     }
 
-    // Use petgraph's connected_components to assign each node a component ID
-    // then group by component.
-    // petgraph's connected_components returns a count, not the assignment.
-    // We'll do BFS from each unvisited node to find components.
-    let mut visited = vec![false; node_count];
+    let mut visited: HashSet<NodeIndex> = HashSet::new();
     let mut components: Vec<Vec<NodeId>> = Vec::new();
 
     for start in inner.node_indices() {
-        if visited[start.index()] {
+        if visited.contains(&start) {
             continue;
         }
         let mut component = Vec::new();
         let mut stack = vec![start];
         while let Some(current) = stack.pop() {
-            if visited[current.index()] {
+            if !visited.insert(current) {
                 continue;
             }
-            visited[current.index()] = true;
             if let Some(id) = graph.node_id_for(current) {
                 component.push(id.clone());
             }
             // Undirected reachability
             for neighbor in inner.neighbors_directed(current, Direction::Outgoing) {
-                if !visited[neighbor.index()] {
+                if !visited.contains(&neighbor) {
                     stack.push(neighbor);
                 }
             }
             for neighbor in inner.neighbors_directed(current, Direction::Incoming) {
-                if !visited[neighbor.index()] {
+                if !visited.contains(&neighbor) {
                     stack.push(neighbor);
                 }
             }
@@ -349,39 +438,36 @@ pub fn component_groups(graph: &CodeGraph) -> Vec<Vec<NodeId>> {
 /// code graphs which are typically <10K nodes.
 pub fn critical_nodes(graph: &CodeGraph) -> Vec<NodeId> {
     let inner = graph.inner();
-    let n = inner.node_count();
-    if n == 0 {
+    if inner.node_count() == 0 {
         return vec![];
     }
 
-    let base_components = connected_components(inner);
-    let mut is_ap = vec![false; n];
+    let base_components = count_components(graph);
+    let mut articulation_points = Vec::new();
 
     for node_idx in inner.node_indices() {
         // Count components in graph minus this node
-        let mut node_visited = vec![false; n];
-        node_visited[node_idx.index()] = true; // "remove" by marking visited
+        let mut visited: HashSet<NodeIndex> = HashSet::new();
+        visited.insert(node_idx); // "remove" by pre-marking
         let mut components = 0;
 
         for start in inner.node_indices() {
-            if node_visited[start.index()] {
+            if visited.contains(&start) {
                 continue;
             }
             components += 1;
-            // BFS from start avoiding node_idx
             let mut stack = vec![start];
             while let Some(current) = stack.pop() {
-                if node_visited[current.index()] {
+                if !visited.insert(current) {
                     continue;
                 }
-                node_visited[current.index()] = true;
                 for neighbor in inner.neighbors_directed(current, Direction::Outgoing) {
-                    if !node_visited[neighbor.index()] {
+                    if !visited.contains(&neighbor) {
                         stack.push(neighbor);
                     }
                 }
                 for neighbor in inner.neighbors_directed(current, Direction::Incoming) {
-                    if !node_visited[neighbor.index()] {
+                    if !visited.contains(&neighbor) {
                         stack.push(neighbor);
                     }
                 }
@@ -389,15 +475,213 @@ pub fn critical_nodes(graph: &CodeGraph) -> Vec<NodeId> {
         }
 
         if components > base_components {
-            is_ap[node_idx.index()] = true;
+            if let Some(id) = graph.node_id_for(node_idx) {
+                articulation_points.push(id.clone());
+            }
         }
     }
 
-    inner
-        .node_indices()
-        .filter(|idx| is_ap[idx.index()])
-        .filter_map(|idx| graph.node_id_for(idx).cloned())
-        .collect()
+    articulation_points
+}
+
+// ─── Bridges (Critical Edges) ────────────────────────────────────────────────
+
+/// A bridge edge whose removal disconnects the graph.
+#[derive(Debug, Clone)]
+pub struct BridgeEdge {
+    pub from: NodeId,
+    pub to: NodeId,
+}
+
+/// Find bridge edges — edges whose removal increases the number of
+/// connected components. These represent fragile coupling points.
+///
+/// Uses brute-force edge removal + component recount. O(E * (V + E)).
+pub fn bridge_edges(graph: &CodeGraph) -> Vec<BridgeEdge> {
+    let base = count_components(graph);
+    let inner = graph.inner();
+    let mut bridges = Vec::new();
+
+    for edge in inner.edge_references() {
+        let from_idx = edge.source();
+        let to_idx = edge.target();
+        let mut visited: HashSet<NodeIndex> = HashSet::new();
+        let mut components = 0;
+        let edge_id = edge.id();
+
+        for start in inner.node_indices() {
+            if visited.contains(&start) {
+                continue;
+            }
+            components += 1;
+            let mut stack = vec![start];
+            while let Some(current) = stack.pop() {
+                if !visited.insert(current) {
+                    continue;
+                }
+                for e in inner.edges_directed(current, Direction::Outgoing) {
+                    if e.id() != edge_id && !visited.contains(&e.target()) {
+                        stack.push(e.target());
+                    }
+                }
+                for e in inner.edges_directed(current, Direction::Incoming) {
+                    if e.id() != edge_id && !visited.contains(&e.source()) {
+                        stack.push(e.source());
+                    }
+                }
+            }
+        }
+
+        if components > base {
+            if let (Some(from), Some(to)) = (graph.node_id_for(from_idx), graph.node_id_for(to_idx))
+            {
+                bridges.push(BridgeEdge {
+                    from: from.clone(),
+                    to: to.clone(),
+                });
+            }
+        }
+    }
+
+    bridges
+}
+
+// ─── Feedback Arc Set (Cycle Breaking) ───────────────────────────────────────
+
+/// An edge that, if removed, helps break cycles in the graph.
+#[derive(Debug, Clone)]
+pub struct CycleBreakEdge {
+    pub from: NodeId,
+    pub to: NodeId,
+}
+
+/// Find a set of edges whose removal helps make the graph acyclic.
+///
+/// Uses a greedy heuristic: for each SCC, suggest the edge whose target has the
+/// highest in-degree within that SCC.
+pub fn cycle_break_suggestions(graph: &CodeGraph) -> Vec<CycleBreakEdge> {
+    let inner = graph.inner();
+    let sccs = tarjan_scc(inner);
+    let mut suggestions = Vec::new();
+
+    for scc in &sccs {
+        if scc.len() <= 1 {
+            continue;
+        }
+        let scc_set: HashSet<NodeIndex> = scc.iter().copied().collect();
+        let mut best_edge: Option<(NodeIndex, NodeIndex, usize)> = None;
+        for &node in scc {
+            for e in inner.edges_directed(node, Direction::Outgoing) {
+                let target = e.target();
+                if scc_set.contains(&target) {
+                    let in_degree = inner
+                        .edges_directed(target, Direction::Incoming)
+                        .filter(|edge| scc_set.contains(&edge.source()))
+                        .count();
+                    if best_edge.map(|(_, _, d)| in_degree > d).unwrap_or(true) {
+                        best_edge = Some((node, target, in_degree));
+                    }
+                }
+            }
+        }
+        if let Some((from, to, _)) = best_edge {
+            if let (Some(from_id), Some(to_id)) = (graph.node_id_for(from), graph.node_id_for(to)) {
+                suggestions.push(CycleBreakEdge {
+                    from: from_id.clone(),
+                    to: to_id.clone(),
+                });
+            }
+        }
+    }
+
+    suggestions
+}
+
+// ─── Dijkstra Weighted Shortest Path ─────────────────────────────────────────
+
+/// Find the weighted shortest path between two nodes using edge weights.
+///
+/// Returns `None` if no path exists.
+pub fn weighted_shortest_path(
+    graph: &CodeGraph,
+    from: &NodeId,
+    to: &NodeId,
+) -> Option<(Vec<NodeId>, f32)> {
+    use std::cmp::Ordering;
+    use std::collections::BinaryHeap;
+
+    let from_idx = graph.resolve(from)?;
+    let to_idx = graph.resolve(to)?;
+    let inner = graph.inner();
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct State {
+        cost: f32,
+        node: NodeIndex,
+    }
+
+    impl Eq for State {}
+
+    impl PartialOrd for State {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for State {
+        fn cmp(&self, other: &Self) -> Ordering {
+            other
+                .cost
+                .partial_cmp(&self.cost)
+                .unwrap_or(Ordering::Equal)
+        }
+    }
+
+    let mut dist: HashMap<NodeIndex, f32> = HashMap::new();
+    let mut prev: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+    let mut heap = BinaryHeap::new();
+
+    dist.insert(from_idx, 0.0);
+    heap.push(State {
+        cost: 0.0,
+        node: from_idx,
+    });
+
+    while let Some(State { cost, node }) = heap.pop() {
+        if node == to_idx {
+            let mut path = vec![to_idx];
+            let mut current = to_idx;
+            while let Some(&p) = prev.get(&current) {
+                path.push(p);
+                current = p;
+            }
+            path.reverse();
+            let node_path: Vec<NodeId> = path
+                .iter()
+                .filter_map(|&idx| graph.node_id_for(idx).cloned())
+                .collect();
+            return Some((node_path, cost));
+        }
+
+        if cost > *dist.get(&node).unwrap_or(&f32::INFINITY) {
+            continue;
+        }
+
+        for edge in inner.edges_directed(node, Direction::Outgoing) {
+            let next = edge.target();
+            let next_cost = cost + edge.weight().weight;
+            if next_cost < *dist.get(&next).unwrap_or(&f32::INFINITY) {
+                dist.insert(next, next_cost);
+                prev.insert(next, node);
+                heap.push(State {
+                    cost: next_cost,
+                    node: next,
+                });
+            }
+        }
+    }
+
+    None
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -414,6 +698,38 @@ pub fn call_graph_edges(graph: &CodeGraph) -> Vec<(NodeId, NodeId)> {
             Some((from.clone(), to.clone()))
         })
         .collect()
+}
+
+/// Count weakly connected components using BFS (works with StableGraph).
+fn count_components(graph: &CodeGraph) -> usize {
+    let inner = graph.inner();
+    let mut visited: HashSet<NodeIndex> = HashSet::new();
+    let mut count = 0;
+
+    for start in inner.node_indices() {
+        if visited.contains(&start) {
+            continue;
+        }
+        count += 1;
+        let mut stack = vec![start];
+        while let Some(current) = stack.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            for neighbor in inner.neighbors_directed(current, Direction::Outgoing) {
+                if !visited.contains(&neighbor) {
+                    stack.push(neighbor);
+                }
+            }
+            for neighbor in inner.neighbors_directed(current, Direction::Incoming) {
+                if !visited.contains(&neighbor) {
+                    stack.push(neighbor);
+                }
+            }
+        }
+    }
+
+    count
 }
 
 #[cfg(test)]

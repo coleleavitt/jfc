@@ -1,10 +1,13 @@
 //! Core graph data structure and operations.
+//!
+//! Uses `StableGraph` instead of `DiGraph` so that `NodeIndex` values remain
+//! stable across removals — no more swap-back fixup.
 
 use std::collections::HashMap;
 use std::path::Path;
 
 use petgraph::Direction;
-use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::stable_graph::{NodeIndex, StableDiGraph};
 use petgraph::visit::EdgeRef;
 use thiserror::Error;
 
@@ -23,16 +26,19 @@ pub enum GraphError {
     EdgeExists { from: NodeId, to: NodeId },
 }
 
-/// The core code graph — wraps petgraph with typed nodes and O(1) ID lookup.
+/// The core code graph — wraps petgraph's `StableDiGraph` with typed nodes and O(1) ID lookup.
+///
+/// `StableDiGraph` keeps indices stable across removals, eliminating the swap-back
+/// fixup that was necessary with plain `DiGraph`.
 pub struct CodeGraph {
-    pub(crate) graph: DiGraph<NodeData, EdgeData>,
+    pub(crate) graph: StableDiGraph<NodeData, EdgeData>,
     pub(crate) index_map: HashMap<NodeId, NodeIndex>,
 }
 
 impl CodeGraph {
     pub fn new() -> Self {
         Self {
-            graph: DiGraph::new(),
+            graph: StableDiGraph::new(),
             index_map: HashMap::new(),
         }
     }
@@ -40,7 +46,7 @@ impl CodeGraph {
     /// Direct read access to the inner petgraph. Enables all petgraph
     /// algorithms (SCC, dominators, toposort, page_rank, etc.) to operate
     /// without copying.
-    pub fn inner(&self) -> &DiGraph<NodeData, EdgeData> {
+    pub fn inner(&self) -> &StableDiGraph<NodeData, EdgeData> {
         &self.graph
     }
 
@@ -122,20 +128,11 @@ impl CodeGraph {
     }
 
     /// Remove a node and all its connected edges.
+    ///
+    /// With `StableDiGraph`, indices remain stable after removal — no swap-back fixup needed.
     pub fn remove_node(&mut self, id: &NodeId) -> Option<NodeData> {
         let idx = self.index_map.remove(id)?;
-
-        let removed = self.graph.remove_node(idx)?;
-
-        // petgraph swaps the last node into the removed index.
-        // If the removed index is now occupied by a different node, update index_map.
-        if idx.index() < self.graph.node_count() {
-            // A node was swapped into `idx`
-            let swapped_data = &self.graph[idx];
-            self.index_map.insert(swapped_data.id.clone(), idx);
-        }
-
-        Some(removed)
+        self.graph.remove_node(idx)
     }
 
     /// Find nodes by kind.
@@ -173,6 +170,11 @@ impl CodeGraph {
     /// Check if a node exists.
     pub fn contains_node(&self, id: &NodeId) -> bool {
         self.index_map.contains_key(id)
+    }
+
+    /// Iterate over all node indices (for algorithm adapters).
+    pub fn node_indices(&self) -> impl Iterator<Item = NodeIndex> + '_ {
+        self.graph.node_indices()
     }
 
     /// Incrementally update the graph for a single changed file.
@@ -332,5 +334,22 @@ mod tests {
         assert!(graph.contains_node(&id));
         graph.remove_node(&id);
         assert!(!graph.contains_node(&id));
+    }
+
+    #[test]
+    fn test_stable_indices_after_removal() {
+        let mut graph = CodeGraph::new();
+        let a_id = graph.add_node(make_node("a", NodeKind::Function));
+        let b_id = graph.add_node(make_node("b", NodeKind::Function));
+        let c_id = graph.add_node(make_node("c", NodeKind::Function));
+
+        // Remove middle node
+        graph.remove_node(&b_id);
+
+        // Other indices still resolve correctly
+        assert!(graph.resolve(&a_id).is_some());
+        assert!(graph.resolve(&c_id).is_some());
+        assert_eq!(graph.get_node(&a_id).unwrap().name, "a");
+        assert_eq!(graph.get_node(&c_id).unwrap().name, "c");
     }
 }
