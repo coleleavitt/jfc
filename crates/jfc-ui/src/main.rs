@@ -30,6 +30,7 @@ mod scheduler;
 mod session;
 mod slash_commands;
 mod slate;
+mod speculation;
 mod spinner;
 mod stream;
 mod swarm;
