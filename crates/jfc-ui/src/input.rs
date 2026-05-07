@@ -2218,13 +2218,16 @@ async fn handle_submit(
         .current_session_id
         .clone()
         .unwrap_or_else(crate::session::generate_session_id);
-    crate::session::save_session(
-        &session_id,
-        &app.messages,
-        Some(app.cwd.as_str()),
-        Some(app.model.as_str()),
-    )
-    .await;
+    // Fire-and-forget session save — don't block the UI on disk I/O.
+    {
+        let sid = session_id.clone();
+        let msgs = app.messages.clone();
+        let cwd = app.cwd.clone();
+        let model = app.model.clone();
+        tokio::spawn(async move {
+            crate::session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
+        });
+    }
     app.current_session_id = Some(session_id.clone());
 
     let provider = app.provider.clone();
@@ -3131,13 +3134,15 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     .current_session_id
                     .clone()
                     .unwrap_or_else(crate::session::generate_session_id);
-                crate::session::save_session(
-                    &session_id,
-                    &app.messages,
-                    None,
-                    Some(app.model.as_str()),
-                )
-                .await;
+                // Fire-and-forget — don't block UI on disk I/O
+                {
+                    let sid = session_id.clone();
+                    let msgs = app.messages.clone();
+                    let model = app.model.clone();
+                    tokio::spawn(async move {
+                        crate::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
+                    });
+                }
                 app.current_session_id = Some(session_id);
 
                 let provider = app.provider.clone();
