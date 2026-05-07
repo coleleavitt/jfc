@@ -77,6 +77,11 @@ pub struct AgentDef {
     /// dispatcher to fail-safe a runaway agent.
     #[serde(default, rename = "maxTurns")]
     pub max_turns: Option<u32>,
+    /// Per-agent token budget. When `latest_input + cumulative_output`
+    /// exceeds this value, the dispatcher kills the agent and surfaces
+    /// an error to the leader. Defaults to None (unlimited).
+    #[serde(default, rename = "maxInputTokens")]
+    pub max_input_tokens: Option<u64>,
     /// Memory scope for stored snippets (cli.js:225233). `user` = global,
     /// `project` = .claude/memory/, `local` = ephemeral.
     #[serde(default)]
@@ -89,7 +94,41 @@ pub struct AgentDef {
     /// shell commands. `pre-edit`, `post-test`, `pre-bash`, etc.
     #[serde(default)]
     pub hooks: std::collections::HashMap<String, Vec<String>>,
+    /// One-line dispatch trigger surfaced in the leader's system
+    /// prompt. Mirrors oh-my-opencode's `keyTrigger` field — concrete
+    /// observable signal that should make the leader fire this agent
+    /// without being asked. Example: `"2+ modules involved → fire
+    /// explore in background"`.
+    #[serde(default, rename = "keyTrigger")]
+    pub key_trigger: Option<String>,
+    /// Concrete request shapes that should auto-dispatch to this
+    /// agent. Used to populate the leader's Intent → Dispatch table.
+    /// Each entry is a verbatim user-phrasing (`"how does X work"`,
+    /// `"find Y"`).
+    #[serde(default, rename = "useWhen")]
+    pub use_when: Vec<String>,
+    /// Anti-patterns — situations where the leader should NOT fire
+    /// this agent and should use direct tools instead. Helps prevent
+    /// the leader from over-delegating trivial work.
+    #[serde(default, rename = "avoidWhen")]
+    pub avoid_when: Vec<String>,
+    /// Cost class. `free` = cached / cheap; `cheap` = haiku-tier;
+    /// `expensive` = opus-tier. Used by the leader's Intent gate to
+    /// bias toward cheap agents when the request is ambiguous.
+    #[serde(default)]
+    pub cost: Option<AgentCost>,
     pub system_prompt: String,
+}
+
+/// Cost tier for an agent — surfaced to the leader so cheaper agents
+/// are preferred when the request is ambiguous. Maps loosely to model
+/// tier (haiku/sonnet/opus).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentCost {
+    Free,
+    Cheap,
+    Expensive,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -399,6 +438,112 @@ fn parse_skill(path: &Path, raw: &str) -> Option<Skill> {
     })
 }
 
+/// Render the auto-dispatch section that gets injected into the
+/// leader's system prompt. Mirrors v132's "For broad codebase
+/// exploration or research that'll take more than 3 queries, spawn
+/// Task with subagent_type=Explore" nudge plus oh-my-opencode's
+/// Sisyphus-style Intent Gate. The result reads:
+///
+/// ```text
+/// ## Delegation — fire agents proactively
+///
+/// **Default Bias: DELEGATE.** Work yourself only when the task is
+/// trivially small (one-line edit, single grep). Otherwise dispatch
+/// the matching specialist via the Task tool.
+///
+/// ### Key triggers (check BEFORE acting)
+/// - `Explore` — broad codebase exploration / 2+ modules / unfamiliar
+///   structure → fire Explore in background
+/// - `Plan` — multi-step / risky / cross-cutting change → fire Plan
+///   before any destructive edit
+/// - `verification` — after every non-trivial edit → fire verification
+///   in background to actually run + test
+///
+/// ### Delegation Trust Rule
+/// Once you fire an agent for a question, do NOT manually grep / read
+/// the same files yourself in parallel. Wait for the agent's result.
+/// ```
+///
+/// Only renders when at least one agent has a `key_trigger` populated.
+/// Returns `""` otherwise so callers can unconditionally `push_str`.
+pub(crate) fn render_dispatch_section(agents: &[AgentDef]) -> String {
+    let triggers: Vec<&AgentDef> = agents
+        .iter()
+        .filter(|a| a.key_trigger.is_some())
+        .collect();
+    if triggers.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from(
+        "\n\n## Delegation — fire agents proactively\n\n\
+         **Default Bias: DELEGATE.** Work yourself only when the task is \
+         trivially small (one-line edit, single grep, single read of a known \
+         file). Otherwise dispatch the matching specialist via the Task tool. \
+         Mirrors v132's `subagent_type=Explore` nudge for any research that \
+         would take more than 3 direct queries.\n\n\
+         ### Key triggers (check BEFORE acting yourself)\n",
+    );
+    for a in &triggers {
+        if let Some(t) = &a.key_trigger {
+            out.push_str(&format!("- `{}` — {}\n", a.name, t));
+        }
+    }
+    out.push_str("\n### Use vs avoid\n");
+    for a in &triggers {
+        if a.use_when.is_empty() && a.avoid_when.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("\n**`{}`**\n", a.name));
+        if !a.use_when.is_empty() {
+            out.push_str("  Use when:\n");
+            for line in &a.use_when {
+                out.push_str(&format!("  - {line}\n"));
+            }
+        }
+        if !a.avoid_when.is_empty() {
+            out.push_str("  Avoid when:\n");
+            for line in &a.avoid_when {
+                out.push_str(&format!("  - {line}\n"));
+            }
+        }
+    }
+    out.push_str(
+        "\n### Delegation Trust Rule\n\
+         Once you fire an agent for a question, do NOT manually grep / read \
+         the same files yourself in parallel. Wait for the agent's result. \
+         If you fire multiple agents, fire them in a single message via \
+         multiple Task tool_use blocks (parallel dispatch) — never sequence \
+         independent investigations.\n\n\
+         ### Parallel fan-out\n\
+         When a question has 2+ independent angles (e.g. \"how is X handled in \
+         the frontend AND backend\", \"find every callsite of A, B, and C\", \
+         \"audit the test coverage of these 5 modules\"), fan out **one Task \
+         per angle in a single tool-use block**. Each agent runs concurrently \
+         and returns to you in any order; the more independent the angles, \
+         the higher the parallelism payoff. Cap at ~5 simultaneous agents per \
+         turn so you can synthesize without losing track.\n\n\
+         ### Result synthesis\n\
+         After agents return, do not just paste their output. Synthesize:\n\
+         - **Deduplicate**: same file mentioned twice → one entry, citing both agents.\n\
+         - **Reconcile contradictions**: if agent A and agent B disagree, name \
+           the conflict explicitly and either resolve it (re-read the source) or \
+           flag it for the user.\n\
+         - **Cite sources**: every claim should reference a `file_path:line_number` \
+           the agent surfaced, not just \"the agent said so\".\n\
+         - **Filter for relevance**: drop content that doesn't move the user's task \
+           forward, even if the agent reported it.\n\n\
+         ### Intent → dispatch routing (fast lookup)\n\
+         | User says… | Default action |\n\
+         | --- | --- |\n\
+         | \"how does X work\" / \"explain Y\" / \"find Z\" | Fire `Explore` in background |\n\
+         | \"plan the refactor\" / \"design Y\" / \"implement big-thing\" | Fire `Plan`, surface plan via ExitPlanMode |\n\
+         | \"does this still work\" / \"run the tests\" / after a non-trivial edit | Fire `verification` in background |\n\
+         | multi-angle audit (frontend+backend, N modules, N callers) | Fire N `Explore` agents in parallel, then synthesize |\n\
+         | one-liner edit, exact-known file, single keyword grep | Use direct tools, no agent needed |\n",
+    );
+    out
+}
+
 fn parse_agent(path: &Path, raw: &str) -> Option<AgentDef> {
     let (front, body) = split_frontmatter(raw);
     let yaml = front?;
@@ -417,9 +562,17 @@ fn parse_agent(path: &Path, raw: &str) -> Option<AgentDef> {
         color: parsed.color,
         effort: parsed.effort,
         max_turns: parsed.max_turns,
+        max_input_tokens: parsed.max_input_tokens,
         memory: parsed.memory,
         mcp_servers: parsed.mcp_servers.unwrap_or_default(),
         hooks: parsed.hooks.unwrap_or_default(),
+        // Auto-dispatch metadata is YAML-parsed via the same AgentFront
+        // path; defaults to None / empty so existing user-defined
+        // agents in `.claude/agents/` keep working without churn.
+        key_trigger: parsed.key_trigger,
+        use_when: parsed.use_when.unwrap_or_default(),
+        avoid_when: parsed.avoid_when.unwrap_or_default(),
+        cost: parsed.cost,
         system_prompt: body.trim().to_owned(),
     })
 }
@@ -472,12 +625,23 @@ struct AgentFront {
     effort: Option<Effort>,
     #[serde(default, rename = "maxTurns")]
     max_turns: Option<u32>,
+    #[serde(default, rename = "maxInputTokens")]
+    max_input_tokens: Option<u64>,
     #[serde(default)]
     memory: Option<MemoryScope>,
     #[serde(default, rename = "mcpServers")]
     mcp_servers: Option<Vec<String>>,
     #[serde(default)]
     hooks: Option<std::collections::HashMap<String, Vec<String>>>,
+    /// Auto-dispatch metadata — see `AgentDef` field docs.
+    #[serde(default, rename = "keyTrigger")]
+    key_trigger: Option<String>,
+    #[serde(default, rename = "useWhen")]
+    use_when: Option<Vec<String>>,
+    #[serde(default, rename = "avoidWhen")]
+    avoid_when: Option<Vec<String>>,
+    #[serde(default)]
+    cost: Option<AgentCost>,
 }
 
 // ─── Built-in Agent Definitions ──────────────────────────────────────────────
@@ -500,9 +664,20 @@ pub fn built_in_agents() -> Vec<AgentDef> {
             color: None,
             effort: None,
             max_turns: None,
+            max_input_tokens: None,
             memory: None,
             mcp_servers: Vec::new(),
             hooks: std::collections::HashMap::new(),
+            key_trigger: Some("ambiguous / multi-step user request → general-purpose handles when no specialist fits".into()),
+            use_when: vec![
+                "request spans multiple unrelated concerns".into(),
+                "user prompt doesn't match a more specific agent's domain".into(),
+            ],
+            avoid_when: vec![
+                "the request is read-only exploration → fire Explore instead".into(),
+                "the request is plan-only design → fire Plan instead".into(),
+            ],
+            cost: Some(AgentCost::Expensive),
             system_prompt: "You are an agent for Claude Code. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done.\n\nYour strengths:\n- Searching for code, configurations, and patterns across large codebases\n- Analyzing multiple files to understand system architecture\n- Investigating complex questions that require exploring many files\n- Performing multi-step research tasks\n\nGuidelines:\n- For file searches: search broadly when you don't know where something lives. Use Read when you know the specific file path.\n- For analysis: Start broad and narrow down. Use multiple search strategies if the first doesn't yield results.\n- Be thorough: Check multiple locations, consider different naming conventions, look for related files.\n- NEVER create files unless they're absolutely necessary for achieving your goal. ALWAYS prefer editing an existing file to creating a new one.\n- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested.\n\nWhen you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.".into(),
         },
         AgentDef {
@@ -523,9 +698,23 @@ pub fn built_in_agents() -> Vec<AgentDef> {
             color: None,
             effort: None,
             max_turns: None,
+            max_input_tokens: None,
             memory: None,
             mcp_servers: Vec::new(),
             hooks: std::collections::HashMap::new(),
+            key_trigger: Some("broad codebase exploration / 2+ modules / unfamiliar structure → fire Explore in background".into()),
+            use_when: vec![
+                "user asks 'how does X work', 'find Y', 'where is Z', 'look into …'".into(),
+                "request spans 2+ files or modules".into(),
+                "you don't know exact file locations and the search would take >3 grep calls".into(),
+                "multiple search angles would strengthen understanding".into(),
+            ],
+            avoid_when: vec![
+                "you already know the exact file (Read directly)".into(),
+                "single-keyword grep would suffice (Grep directly)".into(),
+                "Explore is already running on the same question (Delegation Trust Rule)".into(),
+            ],
+            cost: Some(AgentCost::Cheap),
             system_prompt: "You are a file search specialist. You excel at thoroughly navigating and exploring codebases.\n\n=== CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===\nThis is a READ-ONLY exploration task. You are STRICTLY PROHIBITED from:\n- Creating new files\n- Modifying existing files\n- Deleting files\n- Running ANY commands that change system state\n\nYour role is EXCLUSIVELY to search and analyze existing code.\n\nYour strengths:\n- Rapidly finding files using glob patterns\n- Searching code and text with powerful regex patterns\n- Reading and analyzing file contents\n\nGuidelines:\n- Use Glob for broad file pattern matching\n- Use Grep for searching file contents with regex\n- Use Read when you know the specific file path you need to read\n- Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail)\n- Adapt your search approach based on the thoroughness level specified by the caller\n- Wherever possible spawn multiple parallel tool calls for grepping and reading files\n\nComplete the user's search request efficiently and report your findings clearly.".into(),
         },
         AgentDef {
@@ -546,9 +735,21 @@ pub fn built_in_agents() -> Vec<AgentDef> {
             color: None,
             effort: None,
             max_turns: None,
+            max_input_tokens: None,
             memory: None,
             mcp_servers: Vec::new(),
             hooks: std::collections::HashMap::new(),
+            key_trigger: Some("multi-step / risky / cross-cutting change → fire Plan before any destructive edit".into()),
+            use_when: vec![
+                "user asks 'how should I implement X', 'design Y', 'plan the Z refactor'".into(),
+                "the change touches 3+ files / 2+ modules and you don't have a clear approach".into(),
+                "the change is irreversible (schema migration, public API change, large refactor)".into(),
+            ],
+            avoid_when: vec![
+                "the change is a one-liner with obvious scope".into(),
+                "the user already gave a step-by-step plan".into(),
+            ],
+            cost: Some(AgentCost::Expensive),
             system_prompt: "You are a software architect and planning specialist. Your role is to explore the codebase and design implementation plans.\n\n=== CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===\nThis is a READ-ONLY planning task. You are STRICTLY PROHIBITED from modifying files.\n\nYour Process:\n1. Understand Requirements: Focus on the requirements provided.\n2. Explore Thoroughly: Read files, find existing patterns, understand architecture, identify similar features.\n3. Design Solution: Create implementation approach, consider trade-offs.\n4. Detail the Plan: Step-by-step strategy, dependencies, potential challenges.\n\nGuidelines:\n- Use Glob, Grep, and Read to explore the codebase\n- Use Bash ONLY for read-only operations\n- NEVER modify, create, or delete files\n\nEnd your response with:\n### Critical Files for Implementation\nList 3-5 files most critical for implementing this plan.".into(),
         },
         AgentDef {
@@ -569,10 +770,59 @@ pub fn built_in_agents() -> Vec<AgentDef> {
             color: Some("red".into()),
             effort: None,
             max_turns: None,
+            max_input_tokens: None,
             memory: None,
             mcp_servers: Vec::new(),
             hooks: std::collections::HashMap::new(),
+            key_trigger: Some("after every non-trivial edit → fire verification in background to actually run + test".into()),
+            use_when: vec![
+                "you just finished a feature, fix, or refactor and the user wants confidence".into(),
+                "the change touches a runtime path (server / CLI / build pipeline)".into(),
+                "tests exist and the user expects you to run them".into(),
+            ],
+            avoid_when: vec![
+                "the change was a doc / comment edit only".into(),
+                "the user asked you NOT to run tests this turn".into(),
+            ],
+            cost: Some(AgentCost::Cheap),
             system_prompt: "You are a verification specialist. Your job is not to confirm the implementation works — it's to try to break it.\n\n=== CRITICAL: DO NOT MODIFY THE PROJECT ===\nYou are STRICTLY PROHIBITED from creating, modifying, or deleting any files IN THE PROJECT DIRECTORY.\n\nYou MAY write ephemeral test scripts to /tmp via Bash when inline commands aren't sufficient.\n\n=== VERIFICATION STRATEGY ===\nAdapt based on what changed:\n- Frontend: Start dev server, curl endpoints, run frontend tests\n- Backend/API: Start server, curl/fetch endpoints, verify responses, test error handling\n- CLI: Run with representative inputs, verify stdout/stderr/exit codes\n- Bug fixes: Reproduce original bug, verify fix, run regression tests\n\n=== REQUIRED STEPS ===\n1. Read CLAUDE.md/README for build/test commands\n2. Run the build (broken build = automatic FAIL)\n3. Run the test suite (failing tests = automatic FAIL)\n4. Run linters/type-checkers if configured\n5. Check for regressions\n\n=== OUTPUT FORMAT ===\nEvery check must follow:\n```\n### Check: [what you're verifying]\n**Command run:** [exact command]\n**Output observed:** [actual output]\n**Result: PASS** (or FAIL with Expected vs Actual)\n```\n\nEnd with exactly: VERDICT: PASS or VERDICT: FAIL or VERDICT: PARTIAL".into(),
+        },
+        AgentDef {
+            name: "orchestrator".into(),
+            source: PathBuf::from("built-in"),
+            model: None,
+            isolation: None,
+            skills: Vec::new(),
+            allowed_tools: vec![
+                "Read".into(), "Glob".into(), "Grep".into(), "Bash".into(),
+                "TaskCreate".into(), "TaskList".into(), "AskUserQuestion".into(),
+            ],
+            disallowed_tools: vec![
+                "Edit".into(), "Write".into(), "ApplyPatch".into(),
+            ],
+            permission_mode: None,
+            forks_parent_context: None,
+            background: None,
+            color: Some("magenta".into()),
+            effort: None,
+            max_turns: Some(8),
+            max_input_tokens: None,
+            memory: None,
+            mcp_servers: Vec::new(),
+            hooks: std::collections::HashMap::new(),
+            key_trigger: Some("vague multi-area request → fire orchestrator to decompose into N concrete subtasks before authorizing work".into()),
+            use_when: vec![
+                "user request is broad: 'fix all the auth bugs', 'modernize the build', 'audit security'".into(),
+                "you can't tell what 'done' looks like without scoping".into(),
+                "the work would touch >5 files across multiple subsystems".into(),
+            ],
+            avoid_when: vec![
+                "user already gave a numbered plan".into(),
+                "the request is concrete (Edit / Write / single bug fix)".into(),
+                "Plan agent fits better — Plan designs the *how* for one task; orchestrator decomposes a wide request into many tasks".into(),
+            ],
+            cost: Some(AgentCost::Cheap),
+            system_prompt: "You are an orchestrator. Your job is to decompose a vague, wide-scope user request into a numbered plan of concrete subtasks the leader can dispatch.\n\n=== READ-ONLY ===\nDo NOT edit code. Do NOT run destructive commands. Use Read / Grep / Glob / Bash (read-only) to scope the work, then output the plan.\n\n=== WORKFLOW ===\n1. **Scope**: enumerate the surface area touched. Use Glob + Grep to find every file/module/test the request implicates.\n2. **Cluster**: group findings into independent units of work (\"refactor auth middleware\", \"update auth tests\", \"migrate session storage\", etc.). Each unit should be assignable to a single agent run.\n3. **Sequence**: identify dependencies between units. Mark units that can run in parallel.\n4. **Estimate**: per-unit, predict roughly how many tool calls and which agents fit (`general-purpose` for code change, `Explore` for investigation, `verification` after each).\n5. **Surface for authorization**: output a numbered plan and STOP. The leader will decide which units to dispatch.\n\n=== OUTPUT FORMAT ===\n```\n## Plan: <one-line summary>\n\n### Surface scope\n- file/path:line — observation\n- file/path:line — observation\n\n### Subtasks\n1. **<title>** — <one-line scope>\n   - Files: ...\n   - Agent: <general-purpose | Plan | Explore | verification>\n   - Parallel-safe: yes/no\n   - Verification: <command to confirm done>\n2. **<title>** — ...\n\n### Dependency graph\n- 2 depends on 1\n- 3 and 4 are parallel\n```\n\nDo NOT proceed past the plan. The leader fires the actual work.".into(),
         },
     ]
 }
@@ -762,6 +1012,56 @@ mod tests {
         );
     }
 
+    /// Normal: dispatch section is empty when no agent has a key_trigger.
+    /// Existing user agents (no metadata) shouldn't create noise in the
+    /// system prompt.
+    #[test]
+    fn render_dispatch_section_empty_when_no_triggers_normal() {
+        let agents = vec![make_agent("plain", "system", vec![])];
+        let out = render_dispatch_section(&agents);
+        assert_eq!(out, "");
+    }
+
+    /// Normal: dispatch section lists every trigger-bearing agent with
+    /// its keyTrigger line. Pin the v132-style "Default Bias: DELEGATE"
+    /// language so future refactors can't accidentally weaken it.
+    #[test]
+    fn render_dispatch_section_includes_triggers_normal() {
+        let mut a = make_agent("Explore", "...", vec![]);
+        a.key_trigger = Some("broad codebase exploration → fire Explore".into());
+        a.use_when = vec!["how does X work".into()];
+        a.avoid_when = vec!["already running".into()];
+        a.cost = Some(AgentCost::Cheap);
+        let out = render_dispatch_section(&[a]);
+        assert!(out.contains("Default Bias: DELEGATE"), "{out}");
+        assert!(out.contains("Explore"), "{out}");
+        assert!(out.contains("broad codebase exploration"), "{out}");
+        assert!(out.contains("how does X work"), "{out}");
+        assert!(out.contains("Delegation Trust Rule"), "{out}");
+        assert!(out.contains("Intent → dispatch routing"), "{out}");
+    }
+
+    /// Robust: built-in agents already have triggers populated, so a
+    /// fresh `built_in_agents()` always yields a non-empty section.
+    /// This test pins that contract — if someone removes a key_trigger
+    /// the system prompt loses the dispatch nudge silently otherwise.
+    #[test]
+    fn built_in_agents_have_dispatch_triggers_robust() {
+        let agents = built_in_agents();
+        let with_triggers: Vec<&str> = agents
+            .iter()
+            .filter(|a| a.key_trigger.is_some())
+            .map(|a| a.name.as_str())
+            .collect();
+        // All four built-ins should advertise auto-dispatch.
+        for expected in ["general-purpose", "Explore", "Plan", "verification"] {
+            assert!(
+                with_triggers.contains(&expected),
+                "{expected} must have a keyTrigger; got {with_triggers:?}"
+            );
+        }
+    }
+
     fn make_agent(name: &str, system_prompt: &str, skills: Vec<String>) -> AgentDef {
         AgentDef {
             name: name.to_owned(),
@@ -778,9 +1078,14 @@ mod tests {
             system_prompt: system_prompt.to_owned(),
             effort: None,
             max_turns: None,
+            max_input_tokens: None,
             memory: None,
             mcp_servers: Vec::new(),
             hooks: std::collections::HashMap::new(),
+            key_trigger: None,
+            use_when: Vec::new(),
+            avoid_when: Vec::new(),
+            cost: None,
         }
     }
 

@@ -35,6 +35,11 @@ pub enum MemoryLevel {
     User,
     /// `<project>/.jfc/memory/`
     Project,
+    /// `<project>/.jfc/memory/team/` — shared across everyone working
+    /// in this repo. v132 prompt: "Other teammates' Claude sessions
+    /// write here too. Merge near-duplicates within `team/`. DO NOT
+    /// delete a team memory just because you don't recognize it."
+    Team,
 }
 
 impl fmt::Display for MemoryLevel {
@@ -42,6 +47,7 @@ impl fmt::Display for MemoryLevel {
         match self {
             Self::User => write!(f, "user"),
             Self::Project => write!(f, "project"),
+            Self::Team => write!(f, "team"),
         }
     }
 }
@@ -154,6 +160,14 @@ pub fn project_memory_dir(project_root: &Path) -> PathBuf {
     project_root.join(".jfc").join("memory")
 }
 
+/// Returns the team-shared memory directory:
+/// `<project>/.jfc/memory/team/`. Mirrors v132's `## Team memory
+/// (team/ subdirectory)` taxonomy: anything checked into git here is
+/// shared across every contributor's jfc sessions.
+pub fn team_memory_dir(project_root: &Path) -> PathBuf {
+    project_memory_dir(project_root).join("team")
+}
+
 /// Returns `true` if the given path resides inside a known memory directory.
 pub fn is_memory_path(path: &Path) -> bool {
     let normalized = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
@@ -185,6 +199,16 @@ pub fn load_all_memories(project_root: &Path) -> Vec<MemoryEntry> {
     load_from_dir(
         &project_memory_dir(project_root),
         MemoryLevel::Project,
+        &mut entries,
+    );
+    // Team memory lives under `<project>/.jfc/memory/team/` and is
+    // shared across everyone working in the repo. Loaded after the
+    // project root so the simple flat scan above doesn't pick up
+    // team files twice (project_memory_dir reads only `.md` files
+    // directly in `.jfc/memory/`, not subdirs).
+    load_from_dir(
+        &team_memory_dir(project_root),
+        MemoryLevel::Team,
         &mut entries,
     );
     tracing::info!(
@@ -279,6 +303,7 @@ pub fn create_memory(
     let dir = match level {
         MemoryLevel::User => user_memory_dir(),
         MemoryLevel::Project => project_memory_dir(project_root),
+        MemoryLevel::Team => team_memory_dir(project_root),
     };
 
     // Ensure directory exists
@@ -341,7 +366,6 @@ pub fn render_memories_section(memories: &[MemoryEntry]) -> Option<String> {
         "\n\n# Memory\n\nThe following memories have been saved from previous conversations:\n",
     );
 
-    // Group by level for readability
     let user_memories: Vec<_> = memories
         .iter()
         .filter(|m| m.level == MemoryLevel::User)
@@ -349,6 +373,10 @@ pub fn render_memories_section(memories: &[MemoryEntry]) -> Option<String> {
     let project_memories: Vec<_> = memories
         .iter()
         .filter(|m| m.level == MemoryLevel::Project)
+        .collect();
+    let team_memories: Vec<_> = memories
+        .iter()
+        .filter(|m| m.level == MemoryLevel::Team)
         .collect();
 
     if !user_memories.is_empty() {
@@ -365,16 +393,57 @@ pub fn render_memories_section(memories: &[MemoryEntry]) -> Option<String> {
         }
     }
 
+    if !team_memories.is_empty() {
+        out.push_str(
+            "\n## Team memories\n\n\
+             Other teammates' jfc sessions write here too. Merge near-duplicates within \
+             `team/`. DO NOT delete a team memory just because you don't recognize it — \
+             it may belong to another contributor's workflow.\n\n",
+        );
+        for mem in &team_memories {
+            render_memory_entry(mem, &mut out);
+        }
+    }
+
+    out.push_str(MEMORY_USAGE_SECTIONS);
+
     tracing::debug!(
         target: "jfc::memory",
         user_count = user_memories.len(),
         project_count = project_memories.len(),
+        team_count = team_memories.len(),
         output_len = out.len(),
         "rendered memories section"
     );
 
     Some(out)
 }
+
+/// v132-mirrored guidance on when/how to use memory. Appended to the
+/// memories section so the model has the same usage rules whether or
+/// not the memory file lives in user/project/team scope.
+const MEMORY_USAGE_SECTIONS: &str = "\n\
+## Memory scope\n\
+- **User** — global to this user across all projects.\n\
+- **Project** — scoped to this working tree (`.jfc/memory/project/`).\n\
+- **Team** — shared with other contributors via `.jfc/memory/team/` (committed to the repo).\n\n\
+## When to access memory\n\
+- When memories seem relevant, or the user references prior-conversation work.\n\
+- You MUST access memory when the user explicitly asks you to check, recall, or remember.\n\
+- If the user says to *ignore* or *not use* memory: do not apply remembered facts, cite, compare against, or mention memory content.\n\
+- Memory records can become stale. Use memory as context for what was true at a given point in time. Before answering or acting on memory, verify it is still correct by reading the current state of the files or resources. If a recalled memory conflicts with current information, trust what you observe now — and update or remove the stale memory rather than acting on it.\n\n\
+## Before recommending from memory\n\
+A memory that names a specific function, file, or flag is a claim that it existed *when the memory was written*. It may have been renamed, removed, or never merged. Before recommending it:\n\
+- If the memory names a file path: check the file exists.\n\
+- If the memory names a function or flag: grep for it.\n\
+- If the user is about to act on your recommendation (not just asking about history), verify first.\n\n\
+\"The memory says X exists\" is not the same as \"X exists now.\"\n\n\
+## What NOT to save\n\
+- Code patterns, conventions, architecture, file paths, or project structure — these can be derived by reading the current project state.\n\
+- Git history, recent changes, or who-changed-what — `git log` / `git blame` are authoritative.\n\
+- Debugging solutions or fix recipes — the fix is in the code; the commit message has the context.\n\
+- Anything already documented in CLAUDE.md files.\n\
+- Ephemeral task details: in-progress work, temporary state, current conversation context.\n";
 
 fn render_memory_entry(mem: &MemoryEntry, out: &mut String) {
     let filename = mem
@@ -563,5 +632,58 @@ mod tests {
         assert!(rendered.contains("User memories"));
         assert!(rendered.contains("Prefer concise responses"));
         assert!(rendered.contains("[preference|private]"));
+    }
+
+    #[test]
+    fn render_memories_section_includes_v132_guidance_normal() {
+        let entries = vec![MemoryEntry {
+            path: PathBuf::from("/home/user/.config/jfc/memory/test.md"),
+            level: MemoryLevel::User,
+            frontmatter: MemoryFrontmatter {
+                memory_type: MemoryType::Preference,
+                scope: MemoryScope::Private,
+                created: None,
+            },
+            body: "Prefer concise responses.".to_string(),
+        }];
+        let rendered = render_memories_section(&entries).unwrap();
+        assert!(rendered.contains("## Memory scope"));
+        assert!(rendered.contains("## When to access memory"));
+        assert!(rendered.contains("## Before recommending from memory"));
+        assert!(rendered.contains("## What NOT to save"));
+    }
+
+    #[test]
+    fn render_memories_section_renders_team_scope_normal() {
+        let entries = vec![MemoryEntry {
+            path: PathBuf::from(".jfc/memory/team/team-rule.md"),
+            level: MemoryLevel::Team,
+            frontmatter: MemoryFrontmatter {
+                memory_type: MemoryType::Feedback,
+                scope: MemoryScope::Team,
+                created: None,
+            },
+            body: "All PRs require two reviewers.".to_string(),
+        }];
+        let rendered = render_memories_section(&entries).unwrap();
+        assert!(rendered.contains("## Team memories"));
+        assert!(rendered.contains("All PRs require two reviewers"));
+        assert!(rendered.contains("DO NOT delete a team memory"));
+    }
+
+    #[test]
+    fn render_memories_section_skips_empty_team_scope_robust() {
+        let entries = vec![MemoryEntry {
+            path: PathBuf::from("/u/.config/jfc/memory/u.md"),
+            level: MemoryLevel::User,
+            frontmatter: MemoryFrontmatter {
+                memory_type: MemoryType::Preference,
+                scope: MemoryScope::Private,
+                created: None,
+            },
+            body: "X".to_string(),
+        }];
+        let rendered = render_memories_section(&entries).unwrap();
+        assert!(!rendered.contains("## Team memories"));
     }
 }

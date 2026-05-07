@@ -369,7 +369,41 @@ pub fn default_registry() -> HookRegistry {
     registry.register(HookPoint::OnAgentSpawned, HookHandler::Logger);
     registry.register(HookPoint::OnAgentTerminated, HookHandler::Logger);
     registry.register(HookPoint::OnFileChanged, HookHandler::Logger);
+    registry.register(HookPoint::OnUserPromptSubmit, HookHandler::Logger);
+    registry.register(HookPoint::BeforeStream, HookHandler::Logger);
+    registry.register(HookPoint::AfterStream, HookHandler::Logger);
     registry
+}
+
+// ─── Process-global registry ────────────────────────────────────────────────
+
+use std::sync::OnceLock;
+
+static GLOBAL_REGISTRY: OnceLock<HookRegistry> = OnceLock::new();
+
+/// Initialize the process-global registry (idempotent, first call wins).
+/// Call once from `main.rs` after settings are loaded.
+pub fn init_global(registry: HookRegistry) {
+    let _ = GLOBAL_REGISTRY.set(registry);
+}
+
+/// Fire a hook against the process-global registry. No-op if no registry
+/// has been initialized — keeps the hook surface zero-cost when disabled.
+pub fn fire(point: HookPoint, ctx: &HookContext) -> HookAction {
+    if let Some(reg) = GLOBAL_REGISTRY.get() {
+        reg.fire(point, ctx)
+    } else {
+        HookAction::Continue
+    }
+}
+
+/// Fire a hook asynchronously (non-blocking). Used at high-frequency
+/// sites (heartbeat, model-response chunks) where we don't want any
+/// per-call overhead from short-circuit logic.
+pub fn fire_async(point: HookPoint, ctx: &HookContext) {
+    if let Some(reg) = GLOBAL_REGISTRY.get() {
+        reg.fire_async(point, ctx);
+    }
 }
 
 #[cfg(test)]

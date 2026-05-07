@@ -61,6 +61,7 @@ itertools = "0.14"
 clap = { version = "4", features = ["derive"] }
 rand = "0.10.1"
 libc = "0.2.186"
+jfc-anthropic-sdk = { path = "../jfc-anthropic-sdk" }
 # OS-level desktop notifications. Fire-and-forget: when a long-running
 # turn completes or a tool fails while jfc isn't focused, the user gets
 # a tray bubble instead of having to refocus to check. Disabled when
@@ -83,7 +84,7 @@ proptest = "1"
 tempfile = "3.27.0"
 
 [features]
-default = []
+default = ["hooks", "permission-automation"]
 hashline = []
 permission-automation = []
 hooks = []

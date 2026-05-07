@@ -118,6 +118,19 @@ pub fn total_cost(usage_by_model: &HashMap<String, ModelUsage>) -> f64 {
     total
 }
 
+/// Estimate per-agent cost from a `BackgroundTask`'s captured model and
+/// running token counts. Returns `0.0` when no model is recorded or no
+/// pricing entry matches.
+pub fn cost_for_background_task(bt: &crate::app::BackgroundTask) -> f64 {
+    let Some(model) = bt.model_used.as_deref() else {
+        return 0.0;
+    };
+    let mut usage = crate::types::ModelUsage::default();
+    usage.input_tokens = bt.latest_input_tokens;
+    usage.output_tokens = bt.cumulative_output_tokens;
+    cost_for(model, &usage)
+}
+
 /// Format a dollar amount for the sidebar.
 ///
 /// Rules: zero renders as `"$0.00"`, amounts under $1 use 4 decimal

@@ -877,13 +877,25 @@ fn tool_content_height_with(output: &ToolOutput, content_w: usize, expanded: boo
 }
 
 fn wrapped_line_count(text: &str, width: usize) -> usize {
+    use unicode_width::UnicodeWidthChar;
     if width == 0 {
         return text.lines().count().max(1);
     }
+    // Use display-cell width (matching `markdown::hard_wrap_str` at
+    // render time) rather than raw char count. Without this, lines
+    // containing CJK / emoji / box-drawing chars undercount their
+    // wrapped row height (each takes 2 cells, counted as 1) and the
+    // tool block's allocated area is smaller than what the renderer
+    // emits — corrupting the buffer with overlapping text. Bug
+    // observed when streaming `git diff --stat` output containing
+    // wide path glyphs.
     text.lines()
         .map(|line| {
-            let chars = line.chars().count();
-            if chars == 0 { 1 } else { chars.div_ceil(width) }
+            let cells: usize = line
+                .chars()
+                .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+                .sum();
+            if cells == 0 { 1 } else { cells.div_ceil(width) }
         })
         .sum::<usize>()
         .max(if text.is_empty() { 0 } else { 1 })

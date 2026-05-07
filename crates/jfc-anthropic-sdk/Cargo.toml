@@ -1,0 +1,22 @@
+[package]
+name = "jfc-anthropic-sdk"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+eventsource-stream = { workspace = true }
+futures = { workspace = true }
+reqwest = { workspace = true, features = ["multipart"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }
+tracing = { workspace = true }
+chrono = { workspace = true }

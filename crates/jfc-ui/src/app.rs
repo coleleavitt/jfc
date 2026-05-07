@@ -423,6 +423,16 @@ pub struct BackgroundTask {
     /// `latest_input + cumulative_output` to match Claude Code's
     /// "89.7k tokens" figure.
     pub cumulative_output_tokens: u64,
+    /// Model the agent is currently using. Captured from the spawn site
+    /// so per-agent cost can be computed via `cost::cost_for(model, usage)`.
+    pub model_used: Option<String>,
+    /// Per-agent token budget. When set and `latest_input + cumulative_output`
+    /// exceeds it, the agent is forcibly terminated and an error toast
+    /// fires. Defaults to None (unlimited).
+    pub max_input_tokens: Option<u64>,
+    /// Set once per task when the budget gets crossed so we don't fire
+    /// the kill / toast multiple times.
+    pub budget_killed: bool,
 }
 
 pub struct App {
@@ -776,6 +786,36 @@ pub struct App {
     /// turn) and `Usage by model` shows numbers an order of magnitude too
     /// high. Reset to (0,0,0,0) when a new turn starts.
     pub usage_apply_baseline: (u32, u32, u32, u32),
+    /// Reasoning-effort pin for this session. `/effort low|medium|high|xhigh|max`
+    /// flips it; `stream_response` mirrors `effort_state.api_param()` into
+    /// the `reasoning_effort` field of `StreamOptions` if the active model
+    /// supports it.
+    pub effort_state: crate::effort::EffortState,
+    /// Last time we fired the OnHeartbeat hook. Tick handler checks this
+    /// every 80ms and fires the hook at most once every 30s when idle.
+    pub last_heartbeat_at: Option<std::time::Instant>,
+    /// Last MCP refresh counter we observed. Tick handler compares this
+    /// against `mcp::registry::refresh_counter()` to detect inbound
+    /// `notifications/tools/list_changed` and emit a toast + reminder.
+    pub last_mcp_refresh_seen: u64,
+    /// Message indices the user pinned via `/pin <idx>`. Compaction
+    /// preserves pinned messages verbatim regardless of token pressure.
+    /// Stored as indices into `messages` rather than a flag on
+    /// ChatMessage so we don't have to touch every construction site.
+    pub pinned_message_indices: std::collections::HashSet<usize>,
+    /// `/verbose` toggle: when true, tool blocks render expanded by
+    /// default. When false (default), they preview to N lines.
+    pub verbose_mode: bool,
+    /// v132 Marsh (mid-stream bash → model) buffer. Each entry is
+    /// `(tool_id, line)` captured from `ToolOutputChunk`. `stream.rs`
+    /// drains this on the next outbound request so the model sees what
+    /// bash printed since the last turn.
+    pub pending_marsh_chunks: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    /// Highest budget threshold the user has been warned about so far this
+    /// session. 0 = no warnings yet, 80 = 80% warning shown, 100 = 100%
+    /// warning shown. Prevents toast spam when the same threshold is
+    /// crossed multiple times across re-renders.
+    pub cost_budget_warned_at: u8,
     pub background_tasks: HashMap<String, BackgroundTask>,
     pub show_info_sidebar: bool,
     pub mcp_servers: Vec<crate::types::McpServerInfo>,
@@ -985,6 +1025,13 @@ impl App {
             launched_at: std::time::Instant::now(),
             delivered_diagnostics: std::collections::HashSet::new(),
             usage_apply_baseline: (0, 0, 0, 0),
+            effort_state: crate::effort::EffortState::new(),
+            last_heartbeat_at: None,
+            last_mcp_refresh_seen: 0,
+            pinned_message_indices: std::collections::HashSet::new(),
+            verbose_mode: false,
+            pending_marsh_chunks: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            cost_budget_warned_at: 0,
             background_tasks: HashMap::new(),
             show_info_sidebar: true,
             mcp_servers: Vec::new(),

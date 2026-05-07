@@ -102,6 +102,24 @@ pub struct McpRegistry {
     inner: Arc<RwLock<HashMap<String, Arc<McpServer>>>>,
 }
 
+/// Process-global "tools/list_changed" signal — incremented every time a
+/// server pushes the `notifications/tools/list_changed` notification.
+/// The Tick handler checks this and emits a UI toast + invalidates the
+/// per-server tool cache so the next stream sees the fresh catalog.
+static REFRESH_PENDING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Bump the refresh counter. Cheap, non-blocking — called from the
+/// MCP transport on inbound notifications.
+pub fn request_refresh() {
+    REFRESH_PENDING.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Snapshot the refresh counter. Tick handler compares against its
+/// last-seen value to detect new notifications.
+pub fn refresh_counter() -> u64 {
+    REFRESH_PENDING.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 impl McpRegistry {
     pub fn new() -> Self {
         Self::default()

@@ -55,7 +55,9 @@ pub fn notify(summary: impl Into<String>, body: impl Into<String>) {
 }
 
 /// Fire a "turn complete" notification when the elapsed exceeds the
-/// threshold. Saves the user from refocusing every 30s to check.
+/// threshold. Saves the user from refocusing every 30s to check. Also
+/// rings the terminal bell so the user hears it without having to focus
+/// the window — disable via `JFC_DISABLE_BELL=1`.
 pub fn notify_turn_complete(elapsed: Duration, summary: &str) {
     if elapsed < LONG_TURN_THRESHOLD {
         return;
@@ -66,7 +68,27 @@ pub fn notify_turn_complete(elapsed: Duration, summary: &str) {
         let preview: String = summary.chars().take(120).collect();
         format!("({}s) {}", elapsed.as_secs().max(1), preview)
     };
-    notify("jfc · turn complete", body);
+    notify("jfc · turn complete", &body);
+    crate::push_notifications::push(
+        "jfc · turn complete",
+        &body,
+        crate::push_notifications::PushKind::TurnComplete,
+    );
+    ring_bell();
+}
+
+/// Print BEL (\x07) so the terminal flashes / dings per the user's
+/// terminal settings. Cheap, async-signal safe, opt-out via env var.
+fn ring_bell() {
+    if matches!(
+        std::env::var("JFC_DISABLE_BELL").as_deref(),
+        Ok("1") | Ok("true")
+    ) {
+        return;
+    }
+    use std::io::Write;
+    let _ = std::io::stderr().write_all(b"\x07");
+    let _ = std::io::stderr().flush();
 }
 
 pub fn notify_tool_failed(tool_name: &str, message: &str) {

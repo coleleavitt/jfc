@@ -608,6 +608,42 @@ pub async fn handle_key(
                 app.pending_approval = None;
                 app.approval_queue.clear();
             }
+            // v132 Tern (batch tool approval): Shift+B = approve THIS
+            // tool plus every queued tool with the same `kind.label()`,
+            // in one keystroke. Useful when the model dispatches 8
+            // Reads in a turn — one Shift+B clears them all. Suppressed
+            // when the Tern gate is off so users on the conservative
+            // path keep one-tool-per-prompt.
+            KeyCode::Char('b') | KeyCode::Char('B')
+                if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::Tern) =>
+            {
+                let label = approval.tool.kind.label().to_owned();
+                let tool = app.pending_approval.take().unwrap().tool;
+                insert_tool_into_message(app, &tool);
+                dispatch_approved_tool(app, tool, tx);
+                let mut drained = 1;
+                let mut keep = std::collections::VecDeque::new();
+                while let Some(next) = app.approval_queue.pop_front() {
+                    if next.kind.label() == label {
+                        insert_tool_into_message(app, &next);
+                        dispatch_approved_tool(app, next, tx);
+                        drained += 1;
+                    } else {
+                        keep.push_back(next);
+                    }
+                }
+                app.approval_queue = keep;
+                if drained > 1 {
+                    crate::toast::push_with_cap(
+                        &mut app.toasts,
+                        crate::toast::Toast::new(
+                            crate::toast::ToastKind::Info,
+                            format!("Batch-approved {drained} `{label}` tools"),
+                        ),
+                    );
+                }
+                advance_approval_queue(app, tx);
+            }
             _ => {}
         }
         return Ok(false);
@@ -988,6 +1024,51 @@ pub async fn handle_key(
                     let pos = task_ids.iter().position(|t| t == id).unwrap_or(0);
                     if pos + 1 < task_count {
                         app.viewing_task_id = task_ids.into_iter().nth(pos + 1);
+                    }
+                }
+            }
+            // v132 fleet ergonomics: `x` cancels the selected task by
+            // flipping it to Failed and surfacing a toast so the user
+            // sees the cancellation took effect. The actual tokio task
+            // continues briefly until the next interrupt-flag check —
+            // BackgroundTask status drives the fan UI, so flipping it
+            // stops the visual bleed and lets the user move on.
+            KeyCode::Char('x') => {
+                if let Some(id) = app.viewing_task_id.clone() {
+                    if let Some(bt) = app.background_tasks.get_mut(&id) {
+                        if matches!(bt.status, crate::types::TaskLifecycle::Running | crate::types::TaskLifecycle::Idle) {
+                            bt.status = crate::types::TaskLifecycle::Failed;
+                            bt.error = Some("cancelled by user".into());
+                            crate::toast::push_with_cap(
+                                &mut app.toasts,
+                                crate::toast::Toast::new(
+                                    crate::toast::ToastKind::Warning,
+                                    format!("Cancelled task {id}"),
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+            // `r` retries: re-queue the original task description as a
+            // fresh user prompt so the leader dispatches a new agent.
+            KeyCode::Char('r') => {
+                if let Some(id) = app.viewing_task_id.clone() {
+                    if let Some(bt) = app.background_tasks.get(&id) {
+                        let prompt = bt.description.clone();
+                        let tx_clone = tx.clone();
+                        tokio::spawn(async move {
+                            let _ = tx_clone
+                                .send(crate::app::AppEvent::Submit(prompt))
+                                .await;
+                        });
+                        crate::toast::push_with_cap(
+                            &mut app.toasts,
+                            crate::toast::Toast::new(
+                                crate::toast::ToastKind::Info,
+                                format!("Retrying task {id}"),
+                            ),
+                        );
                     }
                 }
             }
@@ -1713,11 +1794,27 @@ pub async fn handle_key(
                     app.interrupt_flag
                         .store(true, std::sync::atomic::Ordering::SeqCst);
                     app.last_esc_at = None;
+                    // v132: SIGTERM any in-flight bash subprocesses so the
+                    // user's resources aren't held by a runaway script
+                    // after they've already given up. Best-effort — kills
+                    // are async-signal-safe so this can't deadlock.
+                    let killed = crate::bash_processes::terminate_all();
+                    if killed > 0 {
+                        tracing::info!(
+                            target: "jfc::input::abort",
+                            killed,
+                            "SIGTERMed in-flight bash subprocesses"
+                        );
+                    }
                     crate::toast::push_with_cap(
                         &mut app.toasts,
                         crate::toast::Toast::new(
                             crate::toast::ToastKind::Warning,
-                            "⏹ Interrupting…".to_owned(),
+                            if killed > 0 {
+                                format!("⏹ Interrupting… (SIGTERMed {killed} bash process{})", if killed == 1 { "" } else { "es" })
+                            } else {
+                                "⏹ Interrupting…".to_owned()
+                            },
                         ),
                     );
                 } else {
@@ -1992,6 +2089,31 @@ async fn handle_submit(
         editing_idx = ?app.editing_message_idx,
         "handle_submit"
     );
+
+    // v132 OnUserPromptSubmit hook — fires before any compaction or
+    // stream setup so a registered handler can inject system reminders,
+    // veto the turn, or rewrite the text. Default registry has only
+    // a Logger so production behavior is unchanged when no user hooks
+    // are configured.
+    let session_id_for_hook = app
+        .current_session_id
+        .clone()
+        .unwrap_or_else(|| "<no-session>".to_owned());
+    let hook_action = crate::hooks::fire(
+        crate::hooks::HookPoint::OnUserPromptSubmit,
+        &crate::hooks::HookContext::for_session(&session_id_for_hook)
+            .with_extra("text_len", text.len().to_string()),
+    );
+    if let crate::hooks::HookAction::Abort(reason) = &hook_action {
+        tracing::warn!(target: "jfc::hooks", %reason, "OnUserPromptSubmit aborted turn");
+        let _ = tx
+            .send(crate::app::AppEvent::Toast {
+                kind: crate::toast::ToastKind::Error,
+                text: format!("Turn aborted by hook: {reason}"),
+            })
+            .await;
+        return Ok(());
+    }
     // Edit mode: if the user is editing an earlier message, rewrite
     // history at that index and drop everything after before
     // continuing as a fresh submit. The new turn arrives as if the
@@ -2630,6 +2752,179 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 }
                 app.messages.push(ChatMessage::user("/sessions".into()));
                 app.messages.push(ChatMessage::assistant(body));
+            }
+        }
+        "/workflow" | "/wf" => {
+            // v132 workflow templates. `/workflow` lists; `/workflow run <name>`
+            // queues each step's prompt as a follow-up Submit so the leader
+            // dispatches them in order. `parallel = true` steps batch into
+            // a single multi-Task fan-out turn (the leader sees all the
+            // prompts in one user message and is told to use parallel
+            // dispatch).
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let arg = parts.get(1).copied().unwrap_or("").trim();
+            let mut sub = arg.split_whitespace();
+            let verb = sub.next().unwrap_or("");
+            let rest: String = sub.collect::<Vec<_>>().join(" ");
+            match verb {
+                "" | "list" => {
+                    let names = crate::workflows::list(&cwd);
+                    if names.is_empty() {
+                        app.messages.push(ChatMessage::assistant(
+                            "No workflows found. Create `.jfc/workflows/<name>.toml` with a TOML body containing `[[step]]` tables.".into(),
+                        ));
+                    } else {
+                        let mut body = String::from("**Available workflows:**\n\n");
+                        for name in &names {
+                            match crate::workflows::load(&cwd, name) {
+                                Ok(w) => body.push_str(&crate::workflows::render_summary(name, &w)),
+                                Err(e) => body.push_str(&format!("- `{name}` (parse error: {e})\n")),
+                            }
+                        }
+                        body.push_str("\nRun with `/workflow run <name>`.");
+                        app.messages.push(ChatMessage::assistant(body));
+                    }
+                }
+                "run" => {
+                    if rest.is_empty() {
+                        app.messages.push(ChatMessage::assistant(
+                            "Usage: `/workflow run <name>`. List available workflows with `/workflow`.".into(),
+                        ));
+                        return;
+                    }
+                    match crate::workflows::load(&cwd, &rest) {
+                        Err(e) => {
+                            app.messages.push(ChatMessage::assistant(format!(
+                                "Failed to load workflow `{rest}`: {e}"
+                            )));
+                        }
+                        Ok(workflow) => {
+                            // Queue each step as a Submit so the leader sees
+                            // them sequentially. Parallel steps would need
+                            // a multi-Task aggregator — flag for now and
+                            // dispatch sequentially as a stop-gap.
+                            if let Some(tx) = tx {
+                                for step in workflow.step {
+                                    let prompt = format!(
+                                        "Use the `{}` agent (Task tool) for this step:\n\n{}",
+                                        step.agent, step.prompt
+                                    );
+                                    let _ = tx.send(crate::app::AppEvent::Submit(prompt)).await;
+                                }
+                                app.messages.push(ChatMessage::assistant(format!(
+                                    "Workflow `{rest}` queued — steps will fire sequentially."
+                                )));
+                            } else {
+                                app.messages.push(ChatMessage::assistant(
+                                    "Workflow runner needs the event channel; called from a context that doesn't have one.".into(),
+                                ));
+                            }
+                        }
+                    }
+                }
+                other => {
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Unknown subcommand `{other}`. Use `/workflow list` or `/workflow run <name>`."
+                    )));
+                }
+            }
+        }
+        "/effort" => {
+            // v132 reasoning-effort pin. `/effort low|medium|high|xhigh|max`
+            // sets the pin; `/effort` alone shows the current state;
+            // `/effort clear` removes the pin so the model picks adaptive.
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let arg = parts.get(1).copied().unwrap_or("").trim();
+            if arg.is_empty() {
+                app.messages
+                    .push(ChatMessage::assistant(app.effort_state.status()));
+            } else if arg == "clear" || arg == "off" {
+                let msg = app.effort_state.clear();
+                app.messages.push(ChatMessage::assistant(msg));
+            } else if let Some(level) = crate::effort::ReasoningEffort::from_str_loose(arg) {
+                let msg = app.effort_state.set(level);
+                app.messages.push(ChatMessage::assistant(msg));
+            } else {
+                app.messages.push(ChatMessage::assistant(format!(
+                    "Unknown effort `{arg}`. Use one of: low, medium, high, xhigh, max, clear."
+                )));
+            }
+        }
+        "/feature" => {
+            // v132 feature-gate framework. `/feature` lists all gates and
+            // their state; `/feature <codename> on|off` flips one.
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let rest = parts.get(1).copied().unwrap_or("").trim();
+            if rest.is_empty() {
+                let mut body = String::from("**Feature gates:**\n\n");
+                for &gate in crate::feature_gates::FeatureGate::ALL {
+                    body.push_str(&format!(
+                        "- `{}` — **{}** ({})\n",
+                        gate.codename(),
+                        if crate::feature_gates::is_enabled(gate) {
+                            "ON"
+                        } else {
+                            "OFF"
+                        },
+                        gate.description(),
+                    ));
+                }
+                body.push_str("\nToggle with `/feature <codename> on|off`.");
+                app.messages.push(ChatMessage::assistant(body));
+            } else {
+                let mut sub = rest.split_whitespace();
+                let name = sub.next().unwrap_or("");
+                let toggle = sub.next().unwrap_or("").to_ascii_lowercase();
+                let Some(gate) = crate::feature_gates::FeatureGate::from_codename(name) else {
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Unknown feature gate `{name}`. List with `/feature`."
+                    )));
+                    return;
+                };
+                let enabled = match toggle.as_str() {
+                    "on" | "enable" | "true" | "1" => true,
+                    "off" | "disable" | "false" | "0" => false,
+                    "" => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "`{}` is currently **{}**. Toggle with `/feature {} on|off`.",
+                            gate.codename(),
+                            if crate::feature_gates::is_enabled(gate) {
+                                "ON"
+                            } else {
+                                "OFF"
+                            },
+                            gate.codename(),
+                        )));
+                        return;
+                    }
+                    other => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Unknown toggle `{other}`. Use `on` or `off`."
+                        )));
+                        return;
+                    }
+                };
+                crate::feature_gates::set(gate, enabled);
+                app.messages.push(ChatMessage::assistant(format!(
+                    "`{}` set to **{}** ({}).",
+                    gate.codename(),
+                    if enabled { "ON" } else { "OFF" },
+                    gate.description(),
+                )));
+                // v132 system-reminder so the model sees the gate flip
+                // on the next turn (rather than guessing from changed
+                // behavior).
+                crate::system_reminder::append_to_last_user(
+                    &mut app.messages,
+                    &format!(
+                        "Feature gate `{}` flipped to **{}** ({}). Adjust your \
+                         behavior accordingly.",
+                        gate.codename(),
+                        if enabled { "ON" } else { "OFF" },
+                        gate.description(),
+                    ),
+                );
             }
         }
         "/help" => {

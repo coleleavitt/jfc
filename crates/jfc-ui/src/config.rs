@@ -98,6 +98,13 @@ pub struct Config {
     /// matter into the main turn instead of every memory file.
     #[serde(default = "default_memory_recall_enabled")]
     pub memory_recall_enabled: bool,
+    /// Optional per-session cost ceiling in USD. When set, the next-turn
+    /// gate surfaces a warning toast at 80% and a high-priority warning
+    /// at 100%; the user is never hard-blocked (a runaway estimate
+    /// shouldn't kill an in-flight investigation), but they get a clear
+    /// signal to call /quit or switch to a cheaper model.
+    #[serde(default)]
+    pub session_cost_budget_usd: Option<f64>,
 }
 
 fn default_memory_recall_enabled() -> bool {
@@ -126,6 +133,7 @@ impl Default for Config {
             slate_enabled: false,
             slate_rules: None,
             memory_recall_enabled: default_memory_recall_enabled(),
+            session_cost_budget_usd: None,
         }
     }
 }

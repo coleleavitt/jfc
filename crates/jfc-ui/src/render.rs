@@ -35,6 +35,38 @@ use crate::types::*;
         follow_bottom = app.follow_bottom,
     ),
 )]
+/// v132 Ribbon header strip: a single row above the message column with
+/// model | mode | cwd | branch | cost. Always-on context the user
+/// glances at without scrolling. Hidden when the `Ribbon` feature gate
+/// flips off (`/feature ribbon off`).
+fn render_ribbon(f: &mut Frame, app: &App, area: Rect) {
+    let t = app.theme;
+    let mode_label = match app.permission_mode {
+        crate::app::PermissionMode::Default => "default",
+        crate::app::PermissionMode::AcceptEdits => "accept-edits",
+        crate::app::PermissionMode::BypassPermissions => "bypass",
+        crate::app::PermissionMode::Auto => "auto",
+        crate::app::PermissionMode::Plan => "plan",
+    };
+    let cwd = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "?".to_owned());
+    let branch = app.git_branch.clone().unwrap_or_else(|| "—".to_owned());
+    let cost = crate::cost::fmt_cost(crate::cost::total_cost(&app.usage_by_model));
+    let body = format!(
+        " {model} │ {mode_label} │ {cwd} │ {branch} │ {cost} ",
+        model = app.model.as_str(),
+    );
+    let para = ratatui::widgets::Paragraph::new(body).style(
+        Style::default()
+            .fg(t.text_primary)
+            .bg(t.surface_raised)
+            .add_modifier(Modifier::BOLD),
+    );
+    f.render_widget(para, area);
+}
+
 pub fn frame(f: &mut Frame, app: &mut App) {
     let t = app.theme;
 
@@ -138,9 +170,19 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         crate::diagnostics::unacknowledged(&app.diagnostics, &app.delivered_diagnostics).len();
     let diag_row_height: u16 = if unack_count == 0 { 0 } else { 1 };
 
+    // v132 Ribbon header strip — rendered at the top showing
+    // model | mode | cwd | branch | cost. Suppressed when the Ribbon
+    // feature gate is off so users on tiny terminals can reclaim a row.
+    let ribbon_height: u16 = if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::Ribbon) {
+        1
+    } else {
+        0
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(ribbon_height),
             Constraint::Min(3),
             Constraint::Length(subagent_footer_height),
             Constraint::Length(diag_row_height),
@@ -149,6 +191,11 @@ pub fn frame(f: &mut Frame, app: &mut App) {
             Constraint::Length(2),
         ])
         .split(f.area());
+
+    if ribbon_height > 0 {
+        render_ribbon(f, app, chunks[0]);
+    }
+    let chunks = &chunks[1..];
 
     let show_left = app.show_sidebar;
     let show_right = app.show_info_sidebar && f.area().width >= 100;
@@ -5924,6 +5971,9 @@ mod subagent_counter_tests {
             tool_use_count: tools,
             latest_input_tokens: in_tok,
             cumulative_output_tokens: out_tok,
+            model_used: None,
+            max_input_tokens: None,
+            budget_killed: false,
         }
     }
 

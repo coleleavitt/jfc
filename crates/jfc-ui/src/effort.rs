@@ -5,7 +5,18 @@
 //! higher effort = more thorough reasoning.
 
 use std::fmt;
+use std::sync::RwLock;
 use serde::{Deserialize, Serialize};
+
+/// Process-global slot mirroring the active session's effort pin.
+/// `stream_response` reads this every turn so the API param flows
+/// through without threading state through every call site.
+static ACTIVE_EFFORT: RwLock<Option<String>> = RwLock::new(None);
+
+/// Snapshot the global effort param, if any.
+pub fn active_global() -> Option<String> {
+    ACTIVE_EFFORT.read().ok().and_then(|g| g.clone())
+}
 
 /// Reasoning effort levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,18 +84,28 @@ impl EffortState {
     /// Set effort level. Returns a status message.
     pub fn set(&mut self, level: ReasoningEffort) -> String {
         self.current = Some(level);
+        self.publish_global();
         format!("Reasoning effort set to: {} ({})", level, level.description())
     }
 
     /// Clear effort (use server default).
     pub fn clear(&mut self) -> String {
         self.current = None;
+        self.publish_global();
         "Reasoning effort cleared (using server default)".to_string()
     }
 
     /// Get the current effort as an API parameter value, or None.
     pub fn api_param(&self) -> Option<&'static str> {
         self.current.map(|e| e.api_value())
+    }
+
+    /// Mirror the current effort into a process-global slot so
+    /// `stream_response` can read it without threading the EffortState
+    /// through every call site.
+    pub fn publish_global(&self) {
+        let mut guard = ACTIVE_EFFORT.write().unwrap_or_else(|e| e.into_inner());
+        *guard = self.api_param().map(str::to_owned);
     }
 
     /// Format current status for display.

@@ -535,10 +535,19 @@ async fn handle_inbound(msg: &Value, pending: &PendingRequests) {
         return;
     }
 
-    // Notification — currently only `notifications/tools/list_changed` is
-    // interesting and the registry handles its own refresh outside this
-    // module. TODO: route `tools/list_changed` back to the registry via a
-    // shared channel once the channels integration lands.
+    // Notification path. The interesting one is
+    // `notifications/tools/list_changed` — when an MCP server's tool
+    // catalog mutates (server-side hot-reload, plugin install), we
+    // refresh the catalog and emit a UI signal so the user knows.
+    if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
+        if method == "notifications/tools/list_changed" {
+            crate::mcp::registry::request_refresh();
+            tracing::info!(
+                target: "jfc::mcp",
+                "received notifications/tools/list_changed — registry refresh requested"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

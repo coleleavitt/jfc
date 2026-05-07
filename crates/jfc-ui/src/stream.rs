@@ -1004,6 +1004,20 @@ pub async fn stream_response(
         String::new()
     };
 
+    // Auto-dispatch nudge — surfaces every agent's `keyTrigger` to
+    // the leader so the model proactively fires Explore / Plan /
+    // verification without the user having to ask. v132 + oh-my-
+    // opencode parity: "Default Bias: DELEGATE" + Intent → Dispatch
+    // routing table. Only the built-in agents are consulted here;
+    // user-defined `.claude/agents/*.md` already merge into the same
+    // list via `load_all_agents`, so their `keyTrigger` frontmatter
+    // also takes effect.
+    let dispatch_section = {
+        let cwd_for_agents = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let agents = crate::agents::load_agents(&cwd_for_agents);
+        crate::agents::render_dispatch_section(&agents)
+    };
+
     let diagnostics_block = {
         let diags = crate::diagnostics::global_snapshot();
         crate::diagnostics::render_for_prompt(&diags).unwrap_or_default()
@@ -1055,6 +1069,7 @@ Do not use a colon before tool calls.";
          use it consistently on all non-trivial work.\n\n\
          ## Available skills\n\n\
          {skills_listing}\n\n\
+         {dispatch_section}\n\n\
          ## Current diagnostics\n\n\
          {diagnostics_block}\n\n\
          {tool_guidance}\n\n\
@@ -1125,7 +1140,70 @@ Do not use a colon before tool calls.";
         if let Some(block) = crate::tools::render_pending_auto_context(&cwd_path) {
             system_prompt.push_str(&block);
         }
+
+        // v132 auto-context: branch / dirty / recent commits. The git
+        // tooling already exists in `git_context.rs`; this is the wire-
+        // in so the model doesn't have to spend a turn running git
+        // status / git log for trivial orientation. Cheap (<50ms) and
+        // bounded (5 commits), so we run it every turn.
+        let git_ctx = crate::git_context::get_git_context();
+        if git_ctx.current_branch.is_some() || !git_ctx.recent_commits.is_empty() {
+            system_prompt.push_str("\n\n");
+            system_prompt.push_str(&git_ctx.to_prompt_string());
+        }
+
+        // v132 env fingerprint — toolchain versions so the model knows
+        // the active rustc/cargo/node/python without burning a turn on
+        // `--version` calls. Cached per process, so this is zero-cost
+        // after the first stream.
+        if let Some(env_block) = crate::env_context::get().to_prompt_string() {
+            system_prompt.push_str(&env_block);
+        }
     }
+    // v132 feature-gate framework: append a section listing any
+    // gates that diverge from their default. Suppressed when every
+    // gate is at its ship default to avoid prompt churn.
+    if let Some(gates) = crate::feature_gates::system_prompt_section() {
+        system_prompt.push_str(&gates);
+    }
+
+    // v132 Marsh: drain any bash chunks the streaming tool buffered
+    // since the last outbound prompt and prepend them as a
+    // `<system-reminder>` so the model sees what shell commands
+    // printed in real time. Skipped when the gate is off (default).
+    if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::Marsh) {
+        let chunks = crate::feature_gates::marsh_drain();
+        if !chunks.is_empty() {
+            let body = chunks.join("\n");
+            let preview: String = body.chars().take(8_000).collect();
+            system_prompt.push_str(&format!(
+                "\n\n{}",
+                crate::system_reminder::format(&format!(
+                    "Bash subprocess output captured since last turn:\n```\n{preview}\n```"
+                ))
+            ));
+        }
+    }
+
+    // v132 investigate-first guidance (the `harrier` gate). Nudges
+    // the model to spend up to ~1 minute on read-only investigation
+    // before asking a clarifying question, when the question is
+    // bounded and concrete. Skipped if `harrier` is disabled.
+    if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::Harrier) {
+        system_prompt.push_str(
+            "\n\n## Investigate before asking\n\
+             When the user's request is concrete and bounded (a specific \
+             file, a named symbol, a known feature area), spend up to ~1 \
+             minute on read-only investigation (Read / Grep / Glob / git \
+             log) **before** asking a clarifying question. The user almost \
+             always prefers a self-answered question over a back-and-forth \
+             — they brought the question to you to save themselves the \
+             investigation. Only escalate to AskUserQuestion when the \
+             investigation surfaces multiple incompatible interpretations \
+             that would meaningfully change the plan.",
+        );
+    }
+
     // OutputStyle suffix (v132 brief/verbose/explanatory/learning).
     // Read from the process-global handle so /output-style takes
     // effect on the next turn without having to thread state through
@@ -1157,12 +1235,61 @@ Do not use a colon before tool calls.";
         "preparing stream request"
     );
     let max_out = max_output_tokens_for(model.as_str());
-    let advertised_tools = tools::all_tool_defs_with_mcp().await;
+    let mut advertised_tools = tools::all_tool_defs_with_mcp().await;
+
+    // v132 pre-flight permission scan: when the user has explicit Deny
+    // rules in `.jfc/permissions.toml`, drop those tools from the
+    // catalog before sending. The model never sees them, never tries to
+    // call them, and the user never sees a denied tool error after the
+    // fact. Skipped when no rules are configured (catalog passes through
+    // unchanged) so default behavior is identical.
+    #[cfg(feature = "permission-automation")]
+    {
+        let cwd_for_perms = std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let cfg = crate::config::feature_config::FeatureConfig::load(&cwd_for_perms);
+        let rules = crate::permissions::RuleSet::from_config(&cfg);
+        let before = advertised_tools.len();
+        let mut suppressed: Vec<String> = Vec::new();
+        advertised_tools.retain(|t| {
+            let decision = crate::permissions::check_tool_permission(&rules, &t.name, None);
+            if matches!(decision.action, crate::permissions::PermissionAction::Deny) {
+                suppressed.push(t.name.clone());
+                false
+            } else {
+                true
+            }
+        });
+        if !suppressed.is_empty() {
+            tracing::info!(
+                target: "jfc::stream::permissions",
+                suppressed_count = suppressed.len(),
+                tools = ?suppressed,
+                "pre-flight: suppressed denied tools from catalog"
+            );
+            // Tell the model what's missing so it doesn't waste a turn
+            // trying to use it.
+            system_prompt.push_str(&format!(
+                "\n\n## Tools suppressed by policy\n\nThe following tools \
+                 are denied by `.jfc/permissions.toml` and are NOT available \
+                 this session: {}.\n",
+                suppressed.join(", "),
+            ));
+        }
+        let _ = before;
+    }
     let opts = {
-        let base = StreamOptions::new(model.clone())
+        let mut base = StreamOptions::new(model.clone())
             .system(system_prompt)
             .tools(advertised_tools)
             .max_tokens(max_out);
+        // v132 reasoning-effort pin. Read from the process-global slot
+        // populated by `EffortState::publish_global`. Skipped when no
+        // session pin is set (server picks default) or when the model
+        // doesn't accept the parameter (provider serializer drops it).
+        if let Some(effort) = crate::effort::active_global() {
+            base = base.reasoning_effort(effort);
+        }
         if supports_adaptive {
             base.adaptive()
         } else if has_thinking_support {
@@ -1174,6 +1301,18 @@ Do not use a colon before tool calls.";
             base
         }
     };
+
+    // v132 BeforeStream hook fires after the prompt is fully assembled
+    // but before the network call. Handlers that want to inject system
+    // reminders, gate on cost budgets, or pre-compact the context can
+    // do so here. Default registry is Logger-only so production behavior
+    // is byte-for-byte identical when no user hooks are configured.
+    crate::hooks::fire(
+        crate::hooks::HookPoint::BeforeStream,
+        &crate::hooks::HookContext::for_session("stream")
+            .with_extra("model", model.as_str().to_string())
+            .with_extra("message_count", messages.len().to_string()),
+    );
 
     let mut stream = match provider.stream(messages.clone(), &opts).await {
         Ok(s) => {
@@ -1206,6 +1345,30 @@ Do not use a colon before tool calls.";
                         return;
                     }
                 }
+            } else if err_lower.contains("prompt is too long")
+                || err_lower.contains("prompt_too_long")
+                || err_lower.contains("input length")
+                || err_lower.contains("max_tokens")
+                || err_lower.contains("context window")
+            {
+                // v132 mid-stream compaction trigger. The pre-submit
+                // path catches the obvious cases via `compact_level`,
+                // but estimator drift means the API can still reject
+                // a turn with prompt_too_long. Surface a system-level
+                // signal so the main loop fires `/compact` and re-
+                // queues the same prompt; the user sees a brief toast
+                // instead of a hard failure.
+                tracing::warn!(
+                    target: "jfc::stream",
+                    error = %e,
+                    "stream rejected: prompt too long — requesting auto-compact"
+                );
+                let _ = tx
+                    .send(AppEvent::StreamError(format!(
+                        "auto-compact: {e}"
+                    )))
+                    .await;
+                return;
             } else {
                 tracing::error!(target: "jfc::stream", error = %e, "stream open failed");
                 let _ = tx.send(AppEvent::StreamError(e.to_string())).await;
@@ -1388,6 +1551,17 @@ Do not use a colon before tool calls.";
         ?stop_reason,
         "stream finished — sending StreamDone"
     );
+
+    // v132 AfterStream hook — fires after the model finished streaming
+    // but before the StreamDone AppEvent is sent. Handlers that want
+    // to surface end-of-turn cost, run telemetry batching, or trigger
+    // session auto-naming can land here.
+    crate::hooks::fire(
+        crate::hooks::HookPoint::AfterStream,
+        &crate::hooks::HookContext::for_session("stream")
+            .with_extra("stop_reason", format!("{stop_reason:?}")),
+    );
+
     let _ = tx.send(AppEvent::StreamDone(stop_reason)).await;
 }
 
