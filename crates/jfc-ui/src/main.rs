@@ -37,6 +37,7 @@ mod toast;
 mod tools;
 mod types;
 mod git_context;
+mod github;
 mod worktrees;
 
 #[cfg(feature = "background-agents")]
