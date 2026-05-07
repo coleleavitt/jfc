@@ -459,21 +459,37 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
             Ok((text, tokens)) => {
                 let (patch, explanation) = split_patch_and_explanation(&text);
                 let summary = format!("{} bytes patch, {} tokens", patch.len(), tokens);
-                self.emit_completed(&task_id, &summary, started_at.elapsed().as_millis() as u64);
-                Ok(jfc_economy::types::Solution {
+                let mut solution = jfc_economy::types::Solution {
                     agent_id: prompt.agent_id,
-                    bounty_id: prompt.bounty_id,
+                    bounty_id: prompt.bounty_id.clone(),
                     patch,
                     explanation,
                     self_assessment: 0.5,
                     tokens_consumed: tokens,
-                    // We can't run cargo here without spawning a subprocess
-                    // in the worktree — defer mechanistic verification to
-                    // the orchestrator's settlement phase. Mark unknown.
                     compiles: None,
                     tests_pass: None,
                     suspicious: false,
-                })
+                };
+
+                if let Some(worktree) = prompt.worktree.as_ref() {
+                    let verification =
+                        verify_bounty_solution(worktree, &prompt.bounty_id, &solution).await;
+                    solution.compiles = Some(verification.passed);
+                    solution.tests_pass = Some(verification.passed);
+                    solution.suspicious = !verification.passed;
+                    solution
+                        .explanation
+                        .push_str("\n\nMechanistic verification: ");
+                    solution.explanation.push_str(&verification.summary);
+                } else {
+                    solution.suspicious = true;
+                    solution.explanation.push_str(
+                        "\n\nMechanistic verification: no solver worktree was available; solution cannot be accepted automatically.",
+                    );
+                }
+
+                self.emit_completed(&task_id, &summary, started_at.elapsed().as_millis() as u64);
+                Ok(solution)
             }
             Err(e) => {
                 self.emit_failed(&task_id, &e);
@@ -770,6 +786,119 @@ pub(crate) fn apply_winning_solution(
             audit_dir.display()
         ),
     }
+}
+
+#[derive(Debug)]
+struct MechanisticVerification {
+    passed: bool,
+    summary: String,
+}
+
+async fn verify_bounty_solution(
+    worktree: &std::path::Path,
+    bounty_id: &str,
+    solution: &jfc_economy::types::Solution,
+) -> MechanisticVerification {
+    let applied = apply_winning_solution(worktree, bounty_id, Some(solution));
+    let summary = applied.summary.to_lowercase();
+    if applied.files.is_empty()
+        || summary.contains("failed to")
+        || summary.contains("audit-only")
+        || summary.contains("audit copy")
+        || summary.contains("no concrete file changes")
+    {
+        return MechanisticVerification {
+            passed: false,
+            summary: format!(
+                "patch application failed or produced no concrete project files ({})",
+                applied.summary
+            ),
+        };
+    }
+
+    let Some((program, args, label)) = verification_command(worktree) else {
+        return MechanisticVerification {
+            passed: false,
+            summary: format!(
+                "patch applied to {}; no mechanistic build/test command was detected",
+                applied
+                    .files
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        };
+    };
+
+    let mut command = tokio::process::Command::new(program);
+    command
+        .args(args)
+        .current_dir(worktree)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    match tokio::time::timeout(std::time::Duration::from_secs(120), command.output()).await {
+        Ok(Ok(output)) if output.status.success() => MechanisticVerification {
+            passed: true,
+            summary: format!("{label} passed after applying solution"),
+        },
+        Ok(Ok(output)) => {
+            let mut output_text = String::from_utf8_lossy(&output.stderr).to_string();
+            if output_text.trim().is_empty() {
+                output_text = String::from_utf8_lossy(&output.stdout).to_string();
+            }
+            MechanisticVerification {
+                passed: false,
+                summary: format!(
+                    "{label} failed with status {}; output: {}",
+                    output.status,
+                    truncate_for_verification(output_text.trim(), 800)
+                ),
+            }
+        }
+        Ok(Err(e)) => MechanisticVerification {
+            passed: false,
+            summary: format!("failed to run {label}: {e}"),
+        },
+        Err(_) => MechanisticVerification {
+            passed: false,
+            summary: format!("{label} timed out after 120s"),
+        },
+    }
+}
+
+fn verification_command(
+    root: &std::path::Path,
+) -> Option<(&'static str, &'static [&'static str], &'static str)> {
+    if root.join("build.zig").exists() {
+        return Some(("zig", &["build"], "zig build"));
+    }
+    if root.join("Cargo.toml").exists() {
+        return Some(("cargo", &["test", "--quiet"], "cargo test --quiet"));
+    }
+    if root.join("package.json").exists() {
+        return Some(("npm", &["test", "--", "--runInBand"], "npm test"));
+    }
+    if root.join("go.mod").exists() {
+        return Some(("go", &["test", "./..."], "go test ./..."));
+    }
+    if root.join("pyproject.toml").exists() || root.join("pytest.ini").exists() {
+        return Some(("python", &["-m", "pytest"], "python -m pytest"));
+    }
+    None
+}
+
+fn truncate_for_verification(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_owned();
+    }
+
+    let mut end = max;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}...", &text[..end])
 }
 
 /// Recognise our explicit file-block format. Format:
@@ -4465,13 +4594,14 @@ mod tests {
         let id = orch
             .post_bounty("test".into(), 500, "cargo test".into(), Some(1))
             .expect("post_bounty");
-        let outcome = orch
+        let err = orch
             .run_bounty_cycle(&id, &ErroringInvoker, &StubSwarm, 1, 1)
             .await
-            .expect("cycle should still settle (no winner)");
-        // No winner because all solvers failed; settlement still produced.
-        assert!(outcome.settlement.winner.is_none());
-        assert!(outcome.winning_solution.is_none());
+            .expect_err("cycle must fail when no verified solution exists");
+        assert!(
+            err.to_string()
+                .contains("no mechanically verified solution")
+        );
     }
 
     // Normal: register_active_provider snapshot round-trip — the
@@ -4721,6 +4851,39 @@ mod tests {
         let res = apply_winning_solution(tmp.path(), "no_winner", None);
         assert!(res.files.is_empty());
         assert!(res.summary.contains("No winning solution"));
+    }
+
+    // Regression: a bounty solution must not be accepted just because it
+    // wrote files. The solver worktree has to pass its detected build/test
+    // command; otherwise validators can rubber-stamp a broken patch.
+    #[tokio::test]
+    async fn verify_bounty_solution_rejects_broken_zig_build_robust() {
+        use jfc_economy::types::{AgentId, Solution};
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let cwd = tmp.path();
+        std::fs::create_dir_all(cwd.join("src")).expect("src dir");
+        std::fs::write(cwd.join("build.zig"), "this is not zig syntax\n").expect("build.zig");
+
+        let sol = Solution {
+            agent_id: AgentId::new("solver"),
+            bounty_id: "zig_bounty".into(),
+            patch: "===FILE: src/main.zig===\npub fn main() void {}\n===END===\n".into(),
+            explanation: "wrote zig app".into(),
+            self_assessment: 0.5,
+            tokens_consumed: 10,
+            compiles: None,
+            tests_pass: None,
+            suspicious: false,
+        };
+
+        let verification = verify_bounty_solution(cwd, "zig_bounty", &sol).await;
+        assert!(!verification.passed, "broken zig build must fail");
+        assert!(
+            verification.summary.contains("zig build failed"),
+            "summary={}",
+            verification.summary
+        );
     }
 
     // Normal: querying records the query in history; snapshot returns

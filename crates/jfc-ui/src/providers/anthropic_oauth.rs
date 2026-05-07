@@ -1606,7 +1606,7 @@ mod tests {
         let (_tmp, path) =
             temp_store(r#"{"accounts":[{"name":"primary","refreshToken":"rt"}],"activeIndex":0}"#);
         let p = AnthropicOAuthProvider {
-            client: reqwest::Client::new(),
+            client: crate::providers::http::streaming_client(),
             store_path: path,
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
@@ -1620,7 +1620,7 @@ mod tests {
     #[test]
     fn has_usable_config_false_when_store_missing_robust() {
         let p = AnthropicOAuthProvider {
-            client: reqwest::Client::new(),
+            client: crate::providers::http::streaming_client(),
             store_path: PathBuf::from("/tmp/jfc-nonexistent-anthropic-store.json"),
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
@@ -1637,7 +1637,7 @@ mod tests {
             r#"{"accounts":[{"name":"x","refreshToken":"rt","enabled":false}],"activeIndex":0}"#,
         );
         let p = AnthropicOAuthProvider {
-            client: reqwest::Client::new(),
+            client: crate::providers::http::streaming_client(),
             store_path: path,
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),

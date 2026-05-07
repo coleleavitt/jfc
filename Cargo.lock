@@ -1415,12 +1415,12 @@ name = "jfc-economy"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "futures",
  "jfc-graph",
  "serde",
  "serde_json",
  "serde_yaml",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
  "uuid",
 ]
