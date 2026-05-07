@@ -715,21 +715,42 @@ impl Provider for AnthropicOAuthProvider {
         let body_str = serde_json::to_string(&body_value)?;
         let attested_body = compute_body_attestation(&body_str);
 
-        let resp = self
-            .client
-            .post(API_URL)
-            .header("authorization", format!("Bearer {access_token}"))
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("anthropic-beta", ANTHROPIC_BETA)
-            .header("content-type", "application/json")
-            .header("user-agent", user_agent)
-            .header("x-app", "cli")
-            .header("anthropic-client-platform", "cli")
-            .header("anthropic-dangerous-direct-browser-access", "true")
-            .body(attested_body)
-            .send()
-            .await?;
+        let send_started = std::time::Instant::now();
+        let resp = match super::http::send_with_retry("anthropic_oauth.stream", || {
+            self.client
+                .post(API_URL)
+                .header("authorization", format!("Bearer {access_token}"))
+                .header("anthropic-version", ANTHROPIC_VERSION)
+                .header("anthropic-beta", ANTHROPIC_BETA)
+                .header("content-type", "application/json")
+                .header("user-agent", user_agent.clone())
+                .header("x-app", "cli")
+                .header("anthropic-client-platform", "cli")
+                .header("anthropic-dangerous-direct-browser-access", "true")
+                .body(attested_body.clone())
+                .send()
+        })
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                let cause = super::http::classify_send_error(&e);
+                tracing::warn!(
+                    target: "jfc::provider::anthropic_oauth",
+                    error = %e,
+                    cause = cause,
+                    "stream: send failed (after retries)"
+                );
+                anyhow::bail!(
+                    "Anthropic OAuth request failed: {cause} ({e})."
+                );
+            }
+        };
 
+        super::http::report_first_byte_latency(
+            "anthropic_oauth.stream",
+            send_started.elapsed(),
+        );
         let status = resp.status();
         tracing::info!(
             target: "jfc::provider::anthropic_oauth",
@@ -755,7 +776,8 @@ impl Provider for AnthropicOAuthProvider {
                      Pin a model you have access to (Ctrl+M)."
                 );
             }
-            anyhow::bail!("Anthropic API error {status}: {text}");
+            let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+            anyhow::bail!("Anthropic API error {status}: {friendly}\n  raw: {text}");
         }
 
         Ok(sse::into_event_stream(resp))

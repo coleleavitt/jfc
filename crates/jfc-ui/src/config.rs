@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 
 /// Top-level config. `default` applies to the primary chat agent and any agent
 /// not listed under `[agents.*]`; per-agent entries override individual fields.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default)]
     pub default: AgentConfig,
@@ -65,6 +65,87 @@ pub struct Config {
     /// Experimental feature flags.
     #[serde(default)]
     pub experimental: Option<ExperimentalConfig>,
+    /// UI theme name (matches `Theme::by_name`). When omitted, jfc
+    /// boots with the built-in dark theme. The `/theme <name>`
+    /// command writes back to this field so the user's choice
+    /// persists across restarts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+    /// Output style for assistant replies. One of: `default`,
+    /// `brief`, `verbose`, `explanatory`, `learning`. Each style
+    /// appends a suffix to the system prompt that nudges the model
+    /// toward a different verbosity / scaffolding shape.
+    /// `/output-style <name>` writes back to this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_style: Option<String>,
+    /// Slate dynamic model routing toggle. Default `false` (legacy
+    /// "use the pinned model for every turn" behavior). When `true`, each
+    /// user turn passes through `slate::SlateRouter::route` before the
+    /// stream call — see `crates/jfc-ui/src/slate.rs`.
+    #[serde(default)]
+    pub slate_enabled: bool,
+    /// Per-`QueryClass` routing rules. Only consulted when `slate_enabled`.
+    /// `None` = no rules, every classified query falls through to the
+    /// pinned default model.
+    #[serde(default)]
+    pub slate_rules: Option<Vec<SlateRuleConfig>>,
+    /// Enable two-phase memory recall (v132 `bt1`/`xt1`). When true (default)
+    /// the stream-prep step issues two extra LLM calls per user turn — a
+    /// "select" pass over memory filenames, then a "synthesize" pass over the
+    /// chosen memories — and injects the synthesized facts as a
+    /// `<system-reminder>` block. Worth ~150-600 extra prompt tokens for the
+    /// recall calls; the savings come from injecting only the facts that
+    /// matter into the main turn instead of every memory file.
+    #[serde(default = "default_memory_recall_enabled")]
+    pub memory_recall_enabled: bool,
+}
+
+fn default_memory_recall_enabled() -> bool {
+    true
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        // Hand-rolled rather than derive because `memory_recall_enabled`
+        // defaults to `true` - `bool::default()` is `false` and the derived
+        // impl would silently turn the recall pass off for every fresh
+        // config. Every other field uses the derive-equivalent default.
+        Self {
+            default: AgentConfig::default(),
+            agents: HashMap::new(),
+            categories: HashMap::new(),
+            permission_automation: None,
+            background_task: None,
+            argus_auto_review: None,
+            mcp: HashMap::new(),
+            disabled_agents: Vec::new(),
+            disabled_tools: Vec::new(),
+            experimental: None,
+            theme: None,
+            output_style: None,
+            slate_enabled: false,
+            slate_rules: None,
+            memory_recall_enabled: default_memory_recall_enabled(),
+        }
+    }
+}
+
+/// TOML form of a `slate::RoutingRule`. Lives here (not in `slate.rs`) so the
+/// schema sits next to the rest of the config schema; the routing logic
+/// converts these into `slate::RoutingRule` values at startup via
+/// `slate_rules_from_config`. Splitting along this seam keeps `slate.rs`
+/// independent of TOML / serde details and lets it stay testable in pure
+/// Rust without a config fixture.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SlateRuleConfig {
+    /// One of: `"trivial"`, `"exploration"`, `"code-edit"`, `"refactor"`,
+    /// `"research"`, `"long-context"`. Unknown values are skipped at load
+    /// time with a warning (no hard error — the user keeps a working
+    /// router minus the bad rule).
+    pub query_class: String,
+    pub model: String,
+    #[serde(default)]
+    pub fallback_model: Option<String>,
 }
 
 /// Category-based model routing.
@@ -161,6 +242,12 @@ pub struct ExperimentalConfig {
     pub hashline_edit: bool,
     #[serde(default)]
     pub model_fallback: bool,
+    /// Enable the speculation engine: pre-run Write/Edit/MultiEdit/Bash
+    /// tools inside an isolated `/tmp/jfc-speculation` overlay before the
+    /// user approves them, so commit-on-approve feels instantaneous.
+    /// Default off; opt-in until the engine has soaked in production.
+    #[serde(default)]
+    pub speculation_enabled: bool,
 }
 
 /// Feature configuration loaded from `.jfc/features.toml`.
@@ -504,6 +591,70 @@ pub fn load() -> Config {
     }
 }
 
+/// Persist a chosen theme name to `~/.config/jfc/config.toml`,
+/// preserving every other field the user has set. Returns the path
+/// that was written, or an error string suitable for a toast.
+///
+/// We re-read the file (so we don't clobber concurrent edits the
+/// user made by hand), update only the `theme` key, and serialize
+/// back. When the file or its parent directory don't exist yet we
+/// create them — first-time `/theme <name>` should Just Work without
+/// the user having to `mkdir -p ~/.config/jfc/` themselves.
+pub fn save_theme(theme_name: &str) -> Result<std::path::PathBuf, String> {
+    save_theme_to(&config_path(), theme_name)
+}
+
+/// Test-friendly inner helper. Reads the file at `path` (treating
+/// missing/empty as a fresh `Config::default()`), updates the theme
+/// field, and writes the result back. Refuses to overwrite an
+/// unparseable file so a user typo doesn't get silently clobbered.
+pub fn save_theme_to(
+    path: &std::path::Path,
+    theme_name: &str,
+) -> Result<std::path::PathBuf, String> {
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        tracing::warn!(
+            target: "jfc::config",
+            path = %path.display(),
+            error = %e,
+            "save_theme: cannot create parent dir"
+        );
+        return Err(format!("cannot create {}: {e}", parent.display()));
+    }
+    let mut cfg: Config = match std::fs::read_to_string(path) {
+        Ok(s) if !s.trim().is_empty() => match toml::from_str(&s) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(
+                    target: "jfc::config",
+                    path = %path.display(),
+                    error = %e,
+                    "save_theme: refusing to overwrite unparseable config"
+                );
+                return Err(format!(
+                    "{} is not valid TOML — fix it first ({e})",
+                    path.display()
+                ));
+            }
+        },
+        _ => Config::default(),
+    };
+    cfg.theme = Some(theme_name.to_string());
+    let serialized = toml::to_string_pretty(&cfg)
+        .map_err(|e| format!("serialize failed: {e}"))?;
+    std::fs::write(path, serialized)
+        .map_err(|e| format!("write {} failed: {e}", path.display()))?;
+    tracing::info!(
+        target: "jfc::config",
+        path = %path.display(),
+        theme = %theme_name,
+        "save_theme: persisted theme"
+    );
+    Ok(path.to_path_buf())
+}
+
 /// Resolve a prompt value that may be a `file://` URI.
 /// If it starts with `file://`, read the file contents.
 /// Otherwise return the string as-is.
@@ -578,12 +729,127 @@ pub fn agent_disallowed<'a>(cfg: &'a Config, agent_name: &str) -> &'a [String] {
         .unwrap_or(&[])
 }
 
+/// Convert the TOML-form rules from a `Config` into the runtime
+/// `slate::RoutingRule` values consumed by `SlateRouter`. Unknown
+/// `query_class` values are dropped with a `tracing::warn!` so a typo doesn't
+/// silently disable routing for a different class. Returns an empty `Vec`
+/// when `slate_rules` is `None` or empty.
+pub fn slate_rules_from_config(cfg: &Config) -> Vec<crate::slate::RoutingRule> {
+    let Some(ref rules) = cfg.slate_rules else {
+        return Vec::new();
+    };
+    rules
+        .iter()
+        .filter_map(|r| match r.query_class.as_str() {
+            "trivial" => Some(crate::slate::QueryClass::Trivial),
+            "exploration" => Some(crate::slate::QueryClass::Exploration),
+            "code-edit" => Some(crate::slate::QueryClass::CodeEdit),
+            "refactor" => Some(crate::slate::QueryClass::Refactor),
+            "research" => Some(crate::slate::QueryClass::Research),
+            "long-context" => Some(crate::slate::QueryClass::LongContext),
+            other => {
+                tracing::warn!(
+                    target: "jfc::slate",
+                    query_class = other,
+                    "unknown slate query_class — rule dropped"
+                );
+                None
+            }
+        }
+        .map(|class| {
+            let mut rule = crate::slate::RoutingRule::new(class, r.model.clone());
+            if let Some(ref fb) = r.fallback_model {
+                rule = rule.with_fallback(fb.clone());
+            }
+            rule
+        }))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn parse(src: &str) -> Config {
         toml::from_str::<Config>(src).expect("expected valid toml")
+    }
+
+    // Normal: save_theme_to writes the field to a fresh file.
+    #[test]
+    fn save_theme_to_creates_new_file_normal() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("nested").join("config.toml");
+        save_theme_to(&path, "dracula").expect("write");
+        assert!(path.exists(), "save_theme_to should create the file");
+        let raw = std::fs::read_to_string(&path).expect("read");
+        let parsed: Config = toml::from_str(&raw).expect("parse");
+        assert_eq!(parsed.theme.as_deref(), Some("dracula"));
+    }
+
+    // Normal: save_theme_to preserves existing fields. The user's
+    // model + agent block must survive a theme write — otherwise
+    // `/theme dracula` would silently destroy their config.
+    #[test]
+    fn save_theme_to_preserves_other_fields_normal() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"
+[default]
+model = "anthropic/claude-opus-4-7"
+
+[agents.researcher]
+model = "openai/gpt-5"
+"#,
+        )
+        .unwrap();
+        save_theme_to(&path, "tokyo-night").expect("write");
+        let cfg: Config =
+            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(cfg.theme.as_deref(), Some("tokyo-night"));
+        assert_eq!(cfg.default.model.as_deref(), Some("anthropic/claude-opus-4-7"));
+        assert!(cfg.agents.contains_key("researcher"));
+    }
+
+    // Robust: a corrupted config must not get silently overwritten.
+    // Returning an error gives the toast layer something to surface.
+    #[test]
+    fn save_theme_to_refuses_to_overwrite_broken_file_robust() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "this = is not [ valid toml").unwrap();
+        let res = save_theme_to(&path, "dark");
+        assert!(res.is_err(), "should refuse to overwrite invalid TOML");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            raw.contains("not [ valid"),
+            "original contents must be preserved"
+        );
+    }
+
+    // Normal: an empty file is treated as a fresh config — first-run
+    // /theme should land in a clean file and parse afterwards.
+    #[test]
+    fn save_theme_to_treats_empty_file_as_fresh_normal() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "").unwrap();
+        save_theme_to(&path, "nord").expect("write");
+        let cfg: Config =
+            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(cfg.theme.as_deref(), Some("nord"));
+    }
+
+    // Normal: theme field round-trips through serde.
+    #[test]
+    fn theme_field_roundtrips_normal() {
+        let mut cfg = Config::default();
+        cfg.theme = Some("monokai".into());
+        let s = toml::to_string(&cfg).expect("serialize");
+        assert!(s.contains("theme"));
+        let back: Config = toml::from_str(&s).expect("parse");
+        assert_eq!(back.theme.as_deref(), Some("monokai"));
     }
 
     #[test]
@@ -947,6 +1213,69 @@ reason = "no shell access"
     fn resolve_prompt_plain_string_normal() {
         let resolved = resolve_prompt("Just a plain prompt", None);
         assert_eq!(resolved, "Just a plain prompt");
+    }
+
+    #[test]
+    fn parse_slate_rules_normal() {
+        let cfg = parse(
+            r#"
+slate_enabled = true
+
+[[slate_rules]]
+query_class = "trivial"
+model = "claude-haiku-4-5"
+
+[[slate_rules]]
+query_class = "refactor"
+model = "claude-opus-4-7"
+fallback_model = "claude-sonnet-4-6"
+"#,
+        );
+        assert!(cfg.slate_enabled);
+        let rules = cfg.slate_rules.as_ref().expect("rules present");
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].query_class, "trivial");
+        assert_eq!(rules[0].model, "claude-haiku-4-5");
+        assert!(rules[0].fallback_model.is_none());
+        assert_eq!(rules[1].fallback_model.as_deref(), Some("claude-sonnet-4-6"));
+
+        // Conversion path: TOML rules → runtime RoutingRule list.
+        let rt = slate_rules_from_config(&cfg);
+        assert_eq!(rt.len(), 2);
+        assert_eq!(rt[0].query_class, crate::slate::QueryClass::Trivial);
+        assert_eq!(rt[1].query_class, crate::slate::QueryClass::Refactor);
+        assert_eq!(rt[1].fallback_model.as_deref(), Some("claude-sonnet-4-6"));
+    }
+
+    #[test]
+    fn parse_slate_unknown_class_dropped_robust() {
+        let cfg = parse(
+            r#"
+slate_enabled = true
+
+[[slate_rules]]
+query_class = "trivial"
+model = "haiku"
+
+[[slate_rules]]
+query_class = "not-a-real-class"
+model = "garbage"
+"#,
+        );
+        // Both rules parse at the TOML layer; the unknown one is filtered
+        // out at the conversion layer.
+        assert_eq!(cfg.slate_rules.as_ref().unwrap().len(), 2);
+        let rt = slate_rules_from_config(&cfg);
+        assert_eq!(rt.len(), 1);
+        assert_eq!(rt[0].query_class, crate::slate::QueryClass::Trivial);
+    }
+
+    #[test]
+    fn slate_disabled_by_default_robust() {
+        let cfg = Config::default();
+        assert!(!cfg.slate_enabled);
+        assert!(cfg.slate_rules.is_none());
+        assert!(slate_rules_from_config(&cfg).is_empty());
     }
 
     #[test]

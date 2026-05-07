@@ -121,15 +121,41 @@ impl Provider for OpenAIProvider {
         messages: Vec<ProviderMessage>,
         options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
-        let resp = self
-            .client
-            .post(self.chat_url())
-            .bearer_auth(&self.api_key)
-            .json(&super::openwebui::build_body(messages, options))
-            .send()
-            .await?
-            .error_for_status()?;
-
+        let body = super::openwebui::build_body(messages, options);
+        let url = self.chat_url();
+        let send_started = std::time::Instant::now();
+        let resp = match super::http::send_with_retry("openai.chat/completions", || {
+            self.client
+                .post(&url)
+                .bearer_auth(&self.api_key)
+                .json(&body)
+                .send()
+        })
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                let cause = super::http::classify_send_error(&e);
+                tracing::warn!(
+                    target: "jfc::provider::openai",
+                    url = %url,
+                    error = %e,
+                    cause = cause,
+                    "POST chat/completions failed before response (after retries)"
+                );
+                anyhow::bail!("OpenAI request failed: {cause} ({e})");
+            }
+        };
+        super::http::report_first_byte_latency(
+            "openai.chat/completions",
+            send_started.elapsed(),
+        );
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+            anyhow::bail!("OpenAI API error {status}: {friendly}\n  raw: {text}");
+        }
         Ok(super::openwebui::openai_compatible_event_stream(resp))
     }
 

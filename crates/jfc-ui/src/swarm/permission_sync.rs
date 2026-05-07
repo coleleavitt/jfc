@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Permission synchronization between swarm workers and the team leader.
 //!
 //! When a worker agent encounters a tool that requires user approval, it sends

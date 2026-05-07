@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Parser for inline `<tool_call>` / `<tool_result>` XML-ish tags that some
 //! backends (notably OpenWebUI's tool-running shim and some
 //! Anthropic-on-third-party gateways) stream interleaved with assistant text.

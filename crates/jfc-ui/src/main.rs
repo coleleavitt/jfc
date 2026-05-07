@@ -1,3 +1,4 @@
+mod advisor;
 mod agents;
 mod app;
 
@@ -16,7 +17,9 @@ mod input;
 mod lsp_client;
 mod lsp_rpc;
 mod markdown;
+mod mcp;
 mod memory;
+mod memory_recall;
 mod mentions;
 mod message_view;
 mod notifications;
@@ -28,15 +31,20 @@ mod render_cache;
 mod scheduler;
 mod session;
 mod slash_commands;
+mod slate;
+mod speculation;
 mod spinner;
 mod stream;
 mod swarm;
 mod tasks;
+mod output_style;
+mod system_reminder;
 mod theme;
 mod toast;
 mod tools;
 mod types;
 mod git_context;
+mod github;
 mod worktrees;
 
 #[cfg(feature = "background-agents")]
@@ -55,7 +63,7 @@ mod sandbox;
 
 use std::{io, sync::Arc, time::Duration};
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crossterm::{
     cursor::SetCursorStyle,
     event::{
@@ -75,7 +83,10 @@ use tokio::sync::mpsc;
 
 use app::{App, AppEvent, PendingApproval, SPINNER, TICK_MS};
 use provider::{ModelId, ModelSpec, Provider, ProviderId};
-use providers::{AnthropicOAuthProvider, AnthropicProvider, OpenAIProvider, OpenWebUIProvider};
+use providers::{
+    AnthropicOAuthProvider, AnthropicProvider, BedrockProvider, OpenAIProvider, OpenWebUIProvider,
+    VertexProvider,
+};
 use types::*;
 
 /// JFC - A TUI assistant for code exploration and development
@@ -97,6 +108,39 @@ struct Cli {
     /// Model to use (overrides ANTHROPIC_MODEL env var)
     #[arg(long, short = 'm', value_name = "MODEL")]
     model: Option<String>,
+
+    /// Subcommand. When omitted, jfc launches the interactive TUI.
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+/// Top-level subcommands. Currently only the daemon family — leaving the
+/// TUI to be the default invocation keeps `jfc` ergonomic for humans.
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Manage the background daemon (cron jobs + scheduled wakeups).
+    Daemon {
+        #[command(subcommand)]
+        sub: DaemonSubcommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum DaemonSubcommand {
+    /// Run the daemon in the foreground (cron + wakeup poll loop).
+    /// Use `&` or `nohup` from the shell to background it.
+    Start,
+    /// Stop the running daemon (SIGTERM the PID file).
+    Stop,
+    /// Print daemon health + session/cron/wakeup counts.
+    Status,
+    /// List registered cron jobs and pending wakeups.
+    List,
+    /// Manually fire a cron job by ID once.
+    Fire {
+        /// Cron job ID returned by `daemon list` (e.g. `cron-abcd1234`).
+        id: String,
+    },
 }
 
 /// Session to load at startup based on CLI args
@@ -135,6 +179,13 @@ async fn main() -> anyhow::Result<()> {
     // is `info` which lights up the high-signal #[instrument] spans we
     // sprinkled across providers, the classifier, and the tool dispatcher.
     let _trace_guard = init_tracing();
+
+    // Subcommand dispatch must run before any TUI setup — `daemon start`
+    // expects a clean stdout, and `daemon status / list / stop / fire`
+    // print plain text rather than entering the alt-screen.
+    if let Some(cmd) = cli.command {
+        return run_subcommand(cmd).await;
+    }
 
     let init = build_providers();
     let providers = init.providers;
@@ -193,6 +244,49 @@ async fn main() -> anyhow::Result<()> {
     terminal.show_cursor()?;
 
     result
+}
+
+/// Dispatch `jfc <subcommand>`. Pure CLI — no terminal raw-mode, no TUI.
+async fn run_subcommand(cmd: Command) -> anyhow::Result<()> {
+    match cmd {
+        Command::Daemon { sub } => run_daemon_subcommand(sub).await,
+    }
+}
+
+async fn run_daemon_subcommand(sub: DaemonSubcommand) -> anyhow::Result<()> {
+    use crate::daemon::{
+        DaemonPaths, fire_cron_cli, list_string, run_daemon, status_string, stop_daemon,
+    };
+    let paths = DaemonPaths::default_user();
+
+    match sub {
+        DaemonSubcommand::Start => {
+            run_daemon(paths)
+                .await
+                .map_err(|e| anyhow::anyhow!("daemon start failed: {e}"))?;
+            Ok(())
+        }
+        DaemonSubcommand::Stop => {
+            stop_daemon(&paths).map_err(|e| anyhow::anyhow!("daemon stop failed: {e}"))?;
+            println!("daemon stopped");
+            Ok(())
+        }
+        DaemonSubcommand::Status => {
+            print!("{}", status_string(&paths));
+            Ok(())
+        }
+        DaemonSubcommand::List => {
+            print!("{}", list_string(&paths));
+            Ok(())
+        }
+        DaemonSubcommand::Fire { id } => {
+            let msg = fire_cron_cli(&paths, &id)
+                .await
+                .map_err(|e| anyhow::anyhow!("fire failed: {e}"))?;
+            println!("{msg}");
+            Ok(())
+        }
+    }
 }
 
 fn install_terminal_panic_hook() {
@@ -409,7 +503,15 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
 
     let provider = app.provider.clone();
     let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
-    let model = app.model.clone();
+    // Slate per-turn routing for the queued-prompt drain path. Mirrors
+    // `input::handle_submit` so a queued prompt sees the same routing as a
+    // freshly typed one — without this, queued submissions silently bypassed
+    // Slate and used `app.model`.
+    let model = if let Some(ref router) = app.slate {
+        router.route(&text, app.model.clone())
+    } else {
+        app.model.clone()
+    };
     let tx = tx.clone();
     let interrupt = app.interrupt_flag.clone();
     tokio::spawn(async move {
@@ -526,6 +628,27 @@ fn build_providers() -> ProvidersInit {
         if std::env::var("OPENWEBUI_BASE_URL").is_ok() {
             prefer.get_or_insert("openwebui");
         }
+    }
+
+    // Bedrock + Vertex: register as candidates when the wizard config is on
+    // disk *and* the relevant CLI is installed. Neither becomes the default
+    // — the user opts in by picking a Bedrock/Vertex model from the picker
+    // or by using a `bedrock/<id>` / `vertex/<id>` qualified ModelSpec.
+    let bedrock = BedrockProvider::new();
+    if bedrock.has_usable_config() {
+        tracing::info!(
+            target: "jfc::startup",
+            "registering Bedrock provider (config + aws CLI present)"
+        );
+        providers.push(Arc::new(bedrock));
+    }
+    let vertex = VertexProvider::new();
+    if vertex.has_usable_config() {
+        tracing::info!(
+            target: "jfc::startup",
+            "registering Vertex provider (config + gcloud CLI present)"
+        );
+        providers.push(Arc::new(vertex));
     }
 
     if providers.is_empty() {
@@ -695,6 +818,50 @@ async fn run(
     tracing::info!(target: "jfc::ui::events", "registered AppEvent sender for non-Task agent paths");
     let mut app = App::new(provider, model);
     app.providers = providers.clone();
+    // Apply the user's persisted theme choice from
+    // ~/.config/jfc/config.toml. Unknown / missing names fall back
+    // silently to the default dark theme set by App::new.
+    if let Some(name) = crate::config::load().theme.as_deref()
+        && let Some(theme) = crate::theme::Theme::by_name(name)
+    {
+        tracing::info!(target: "jfc::ui::theme", theme = %name, "applied persisted theme");
+        app.theme = theme;
+    }
+    if let Some(name) = crate::config::load().output_style.as_deref() {
+        let parsed = crate::output_style::OutputStyle::from_str_loose(name);
+        tracing::info!(
+            target: "jfc::ui::output_style",
+            style = %parsed.name(),
+            "applied persisted output style"
+        );
+        app.output_style = parsed;
+        crate::output_style::set_active(parsed);
+    }
+
+    // Wire the Slate router from config. Default OFF — `slate_enabled = false`
+    // in `~/.config/jfc/config.toml` means `app.slate = None` and every turn
+    // uses the pinned `app.model` (legacy behavior). When ON, each user
+    // submission consults the router to pick a per-turn model based on the
+    // classifier's `QueryClass`. See `crates/jfc-ui/src/slate.rs`.
+    {
+        let cfg = config::load();
+        if cfg.slate_enabled {
+            let rules = config::slate_rules_from_config(&cfg);
+            let rule_count = rules.len();
+            let router = slate::SlateRouter::new(rules);
+            tracing::info!(
+                target: "jfc::slate",
+                rule_count,
+                "slate router enabled"
+            );
+            app.slate = Some(router);
+        } else {
+            tracing::debug!(
+                target: "jfc::slate",
+                "slate router disabled (default) — every turn uses pinned model"
+            );
+        }
+    }
 
     // Handle --continue / --resume flags
     match startup_session {
@@ -894,6 +1061,20 @@ async fn run(
         lsp_client::maybe_spawn_lsp_clients(cwd, tx_lsp);
     }
 
+    // MCP servers from `[mcp.<name>]` config blocks. Spawn happens in
+    // a background task so startup isn't blocked by a slow `npx install`
+    // — the streaming layer pulls advertised tools dynamically via
+    // `tools::all_tool_defs_with_mcp()` so the model sees servers as
+    // soon as they finish handshaking. Gated by `JFC_DISABLE_MCP=1`.
+    {
+        let registry = crate::mcp::McpRegistry::new();
+        crate::tools::register_mcp_registry(registry.clone());
+        let mcp_configs = crate::config::load().mcp;
+        tokio::spawn(async move {
+            crate::mcp::register_servers_from_config(&registry, &mcp_configs).await;
+        });
+    }
+
     app.sync_task_completions();
     draw_synchronized(terminal, &mut app)?;
     // Initial terminal title — updates whenever the model or session
@@ -934,7 +1115,12 @@ async fn run(
 
         let provider = app.provider.clone();
         let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
-        let model = app.model.clone();
+        // Slate per-turn routing for the `--prompt` startup path.
+        let model = if let Some(ref router) = app.slate {
+            router.route(&prompt, app.model.clone())
+        } else {
+            app.model.clone()
+        };
         let tx_clone = tx.clone();
         let interrupt = app.interrupt_flag.clone();
         tokio::spawn(async move {
@@ -1846,6 +2032,56 @@ async fn run(
                         "AppEvent::StreamDone received"
                     );
                     app.is_streaming = false;
+
+                    // OpenWebUI / LiteLLM / some third-party gateways
+                    // leak `<tool_call>` XML into the assistant text
+                    // instead of using OpenAI's `tool_calls` array.
+                    // Detect the leaked markup and surface a toast so
+                    // the user knows their gateway is misconfigured —
+                    // jfc's renderer can't currently dispatch from
+                    // inline markup. Mirrors the pattern v132 uses
+                    // for `tengu_streaming_*` warnings.
+                    if let Some(last) = app.messages.last() {
+                        let text: String = last
+                            .parts
+                            .iter()
+                            .filter_map(|p| {
+                                if let crate::types::MessagePart::Text(t) = p {
+                                    Some(t.as_str())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        if crate::inline_tools::contains_inline_tools(&text) {
+                            let segments = crate::inline_tools::parse(&text);
+                            let tool_calls = segments
+                                .iter()
+                                .filter(|s| matches!(s, crate::inline_tools::Segment::ToolCall { .. }))
+                                .count();
+                            tracing::warn!(
+                                target: "jfc::stream::inline_tools",
+                                tool_calls,
+                                "assistant text contains inline <tool_call> markup — \
+                                 the upstream gateway is emitting tool calls as text, \
+                                 not as the OpenAI `tool_calls` field. They won't \
+                                 dispatch."
+                            );
+                            crate::toast::push_with_cap(
+                                &mut app.toasts,
+                                crate::toast::Toast::new(
+                                    crate::toast::ToastKind::Warning,
+                                    format!(
+                                        "Detected {tool_calls} inline `<tool_call>` block(s) \
+                                         in the response — your OpenWebUI/LiteLLM gateway is \
+                                         emitting tool calls as text, not via OpenAI tool_calls. \
+                                         Check the gateway config."
+                                    ),
+                                ),
+                            );
+                        }
+                    }
                     // v126's "Cooked for Nm Ns" post-turn footer: stamp the
                     // assistant message with a randomized past-tense verb +
                     // formatted duration the moment the stream resolves. The
@@ -2586,6 +2822,22 @@ async fn run(
                     };
                     toast::push_with_cap(&mut app.toasts, toast::Toast::new(toast_kind, toast_msg));
                 }
+                AppEvent::EnterPlanModeRequested { reason } => {
+                    // Model-callable plan mode entry — the EnterPlanMode tool
+                    // emits this. Flip the leader's permission mode and toast
+                    // the reason so the user knows what triggered it.
+                    app.permission_mode = crate::app::PermissionMode::Plan;
+                    let preview: String = reason.chars().take(120).collect();
+                    let body = if preview.is_empty() {
+                        "Entered plan mode (model request)".to_owned()
+                    } else {
+                        format!("Plan mode: {preview}")
+                    };
+                    toast::push_with_cap(
+                        &mut app.toasts,
+                        toast::Toast::new(toast::ToastKind::Info, body),
+                    );
+                }
                 AppEvent::Submit(text) => {
                     // Re-fire after pre-submit compaction. Reuses the same
                     // dispatch path as a typed prompt so message persistence,
@@ -2876,6 +3128,35 @@ async fn run(
                             backend: crate::swarm::types::BackendType::InProcess,
                         },
                     );
+                }
+                AppEvent::ExitPlanModeRequested { plan } => {
+                    // Surface the plan as an assistant transcript
+                    // entry so the user can review it. Then transition
+                    // out of Plan into AcceptEdits so the model can
+                    // proceed with destructive edits in the next turn.
+                    // v132's behaviour is identical: plan text is
+                    // shown, mode flips, agent continues.
+                    tracing::info!(
+                        target: "jfc::ui::plan_mode",
+                        plan_bytes = plan.len(),
+                        from_mode = ?app.permission_mode,
+                        "ExitPlanMode: surfacing plan + transitioning out of Plan"
+                    );
+                    let body = format!(
+                        "**Plan presented (Plan Mode → Accept Edits)**\n\n---\n\n{plan}"
+                    );
+                    app.messages
+                        .push(crate::types::ChatMessage::assistant(body));
+                    if matches!(app.permission_mode, app::PermissionMode::Plan) {
+                        app.permission_mode = app::PermissionMode::AcceptEdits;
+                        crate::toast::push_with_cap(
+                            &mut app.toasts,
+                            crate::toast::Toast::new(
+                                crate::toast::ToastKind::Success,
+                                "Plan approved — mode: Accept Edits",
+                            ),
+                        );
+                    }
                 }
             }
         }

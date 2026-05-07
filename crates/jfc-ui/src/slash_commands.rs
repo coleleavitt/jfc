@@ -24,8 +24,8 @@ pub enum SlashCommand {
     Branch(Option<String>),
     /// /permissions — show current permission mode
     Permissions,
-    /// /memory — list memories
-    Memory,
+    /// /memory [sub] — list memories or manage recall (e.g. `/memory recall on`)
+    Memory(Option<String>),
     /// /hooks — list registered hooks
     Hooks,
     /// /sessions — list saved sessions
@@ -38,6 +38,11 @@ pub enum SlashCommand {
     Worktree(Option<String>),
     /// /daemon [sub] — daemon management (delegated)
     Daemon(Option<String>),
+    /// /mcp [list|restart <name>|logs <name>] — MCP server management
+    Mcp(Option<String>),
+    /// /login [provider] — sign in to a provider (anthropic, claudeai, bedrock,
+    /// vertex, console). Subcommand selects which wizard to drive.
+    Login(Option<String>),
     /// Unknown command
     Unknown(String),
 }
@@ -57,7 +62,8 @@ impl fmt::Display for SlashCommand {
             Self::Branch(Some(b)) => write!(f, "/branch {b}"),
             Self::Branch(None) => write!(f, "/branch"),
             Self::Permissions => write!(f, "/permissions"),
-            Self::Memory => write!(f, "/memory"),
+            Self::Memory(Some(s)) => write!(f, "/memory {s}"),
+            Self::Memory(None) => write!(f, "/memory"),
             Self::Hooks => write!(f, "/hooks"),
             Self::Sessions => write!(f, "/sessions"),
             Self::Help => write!(f, "/help"),
@@ -66,6 +72,10 @@ impl fmt::Display for SlashCommand {
             Self::Worktree(None) => write!(f, "/worktree"),
             Self::Daemon(Some(s)) => write!(f, "/daemon {s}"),
             Self::Daemon(None) => write!(f, "/daemon"),
+            Self::Mcp(Some(s)) => write!(f, "/mcp {s}"),
+            Self::Mcp(None) => write!(f, "/mcp"),
+            Self::Login(Some(p)) => write!(f, "/login {p}"),
+            Self::Login(None) => write!(f, "/login"),
             Self::Unknown(s) => write!(f, "/{s}"),
         }
     }
@@ -91,13 +101,15 @@ pub fn parse_slash_command(input: &str) -> Option<SlashCommand> {
         "resume" | "r" => SlashCommand::Resume(arg),
         "branch" | "br" => SlashCommand::Branch(arg),
         "permissions" | "perms" | "mode" => SlashCommand::Permissions,
-        "memory" | "mem" => SlashCommand::Memory,
+        "memory" | "mem" => SlashCommand::Memory(arg),
         "hooks" => SlashCommand::Hooks,
         "sessions" => SlashCommand::Sessions,
         "help" | "h" | "?" => SlashCommand::Help,
         "exit" | "quit" | "q" => SlashCommand::Exit,
         "worktree" | "wt" => SlashCommand::Worktree(arg),
         "daemon" | "fleet" => SlashCommand::Daemon(arg),
+        "mcp" => SlashCommand::Mcp(arg),
+        "login" => SlashCommand::Login(arg),
         other => SlashCommand::Unknown(other.to_string()),
     };
 
@@ -118,9 +130,12 @@ Available commands:
   /branch [name]   Show current branch or create <name>
   /permissions     Show/change permission mode
   /memory          List project memories
+  /memory recall   Manage two-phase memory recall (on / off / status)
   /hooks           Show registered lifecycle hooks
   /worktree [cmd]  Worktree management (create/list/remove/switch)
+  /mcp [cmd]       MCP server management (list/restart <name>/logs <name>)
   /daemon [cmd]    Daemon management (start/stop/status/run/cron)
+  /login [target]  Sign in: anthropic | claudeai | bedrock | vertex | console
   /help            Show this help
   /exit            Exit the session"
 }
@@ -182,5 +197,55 @@ mod tests {
     fn case_insensitive() {
         assert_eq!(parse_slash_command("/COMPACT"), Some(SlashCommand::Compact));
         assert_eq!(parse_slash_command("/Model foo"), Some(SlashCommand::Model(Some("foo".to_string()))));
+    }
+
+    #[test]
+    fn parse_mcp_no_args_normal() {
+        assert_eq!(parse_slash_command("/mcp"), Some(SlashCommand::Mcp(None)));
+    }
+
+    #[test]
+    fn parse_mcp_with_subcommand_normal() {
+        assert_eq!(
+            parse_slash_command("/mcp list"),
+            Some(SlashCommand::Mcp(Some("list".to_string())))
+        );
+        assert_eq!(
+            parse_slash_command("/mcp restart filesystem"),
+            Some(SlashCommand::Mcp(Some("restart filesystem".to_string())))
+        );
+        assert_eq!(
+            parse_slash_command("/mcp logs git"),
+            Some(SlashCommand::Mcp(Some("logs git".to_string())))
+        );
+    }
+
+    // Normal: bare /login surfaces a None arg so the dispatcher can render
+    // a provider chooser. The named variants route to the provider-specific
+    // wizards (anthropic / claudeai / bedrock / vertex / console).
+    #[test]
+    fn parse_login_normal() {
+        assert_eq!(parse_slash_command("/login"), Some(SlashCommand::Login(None)));
+        assert_eq!(
+            parse_slash_command("/login bedrock"),
+            Some(SlashCommand::Login(Some("bedrock".to_string())))
+        );
+        assert_eq!(
+            parse_slash_command("/login vertex"),
+            Some(SlashCommand::Login(Some("vertex".to_string())))
+        );
+        assert_eq!(
+            parse_slash_command("/login console"),
+            Some(SlashCommand::Login(Some("console".to_string())))
+        );
+    }
+
+    // Robust: /login with extra whitespace round-trips through trim.
+    #[test]
+    fn parse_login_trims_whitespace_robust() {
+        assert_eq!(
+            parse_slash_command("/login   bedrock  "),
+            Some(SlashCommand::Login(Some("bedrock".to_string())))
+        );
     }
 }

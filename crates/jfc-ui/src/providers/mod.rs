@@ -1,15 +1,22 @@
 pub mod anthropic;
 pub mod anthropic_models;
 pub mod anthropic_oauth;
+pub mod bedrock;
+pub mod bedrock_wizard;
 pub mod file_lock;
 mod http;
+pub mod login_dispatch;
 pub mod models_dev;
 pub mod openai;
 pub mod openwebui;
 pub mod retry;
 mod sse;
+pub mod vertex;
+pub mod vertex_wizard;
 
 pub use anthropic::AnthropicProvider;
 pub use anthropic_oauth::AnthropicOAuthProvider;
+pub use bedrock::BedrockProvider;
 pub use openai::OpenAIProvider;
 pub use openwebui::OpenWebUIProvider;
+pub use vertex::VertexProvider;

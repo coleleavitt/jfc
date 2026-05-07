@@ -330,6 +330,14 @@ pub enum ProviderContent {
         name: String,
         input: serde_json::Value,
     },
+    /// Image or PDF attachment carried as base64. Anthropic emits two
+    /// distinct content-block shapes — `image` for PNG/JPEG/GIF/WebP
+    /// and `document` for PDF — but both share the same source struct,
+    /// so we keep one Rust variant and let the provider serializer
+    /// decide. Non-Anthropic providers (OpenAI, OpenWebUI/LiteLLM)
+    /// either reject these or use bespoke shapes; today they're a
+    /// no-op for those providers.
+    Attachment(crate::attachments::Attachment),
 }
 
 #[derive(Debug, Clone)]

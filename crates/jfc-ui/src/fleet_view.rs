@@ -1,9 +1,20 @@
+#![allow(dead_code, unused_imports)]
 //! Fleet view — terminal dashboard showing all agents' statuses.
 //!
 //! Renders a ratatui-based grid of all active/idle/completed agents
 //! with their turn status, tools used, and action needed.
 //!
 //! Used by: `jfc daemon status --live` or `/fleet` slash command.
+//!
+//! ## Wiring status
+//!
+//! `/fleet` slash command (in `input.rs::handle_fleet_command`) now
+//! emits a textual snapshot through this module's data shape.
+//! The full ratatui live-pane view (`render_fleet_view`) still
+//! needs a UI host — currently jfc has no "open a side panel"
+//! affordance. Wiring the live view will follow when that pane
+//! infrastructure lands; until then the helpers stay `dead_code`
+//! to keep warnings quiet.
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},

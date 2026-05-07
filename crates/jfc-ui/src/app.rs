@@ -14,6 +14,7 @@ use crate::context::{ReadDedupCache, ToolContext};
 use crate::provider::{ModelId, ModelInfo, Provider, ProviderId, StopReason};
 use crate::query::QueryCache;
 use crate::render_cache::RenderCache;
+use crate::slate::SlateRouter;
 use crate::tasks::TaskId;
 use crate::theme::Theme;
 use crate::tools::ExecutionResult;
@@ -186,6 +187,16 @@ pub enum AppEvent {
         agent_type: Option<String>,
         cwd: String,
     },
+    /// The model called `ExitPlanMode` and wants the user to see the
+    /// plan + transition out of plan mode.
+    ExitPlanModeRequested {
+        plan: String,
+    },
+    /// Model-callable plan-mode entry. Dispatched by the `EnterPlanMode`
+    /// tool — flips `app.permission_mode` to `PermissionMode::Plan`.
+    EnterPlanModeRequested {
+        reason: String,
+    },
 }
 
 /// Permission modes matching v126 claude-code. Controls how tool execution
@@ -250,7 +261,12 @@ impl PermissionMode {
                 | ToolKind::TaskDone
                 | ToolKind::TeamCreate
                 | ToolKind::TeamDelete
-                | ToolKind::SendMessage => PermissionDecision::Approved,
+                | ToolKind::SendMessage
+                // ExitPlanMode is the *only* way the agent can leave
+                // plan mode programmatically. Auto-approving it lets
+                // the model surface a plan whenever it's ready —
+                // mirrors v132's `ExitPlanMode` contract.
+                | ToolKind::ExitPlanMode => PermissionDecision::Approved,
                 ToolKind::Bash => {
                     let cmd = tool.input.summary().to_lowercase();
                     if is_readonly_bash(&cmd) {
@@ -411,6 +427,10 @@ pub struct BackgroundTask {
 
 pub struct App {
     pub theme: Theme,
+    /// Verbosity / formatting style for assistant replies. Routes
+    /// through `OutputStyle::system_prompt_suffix()` at request-build
+    /// time. `Default` is the no-op (current jfc behaviour).
+    pub output_style: crate::output_style::OutputStyle,
     pub messages: Vec<ChatMessage>,
     pub streaming_text: String,
     pub streaming_reasoning: String,
@@ -816,6 +836,24 @@ pub struct App {
         Option<tokio::sync::mpsc::UnboundedReceiver<crate::swarm::runner::TeammateEvent>>,
     /// Sender side — cloned into each spawned teammate's runner.
     pub teammate_event_tx: tokio::sync::mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
+    /// Slate dynamic model router. `None` when `slate_enabled = false` in the
+    /// loaded config (the common case). When `Some`, callers consult it on
+    /// every user submission to pick a per-turn model — see
+    /// `slate::SlateRouter::route` and `crates/jfc-ui/src/slate.rs`.
+    pub slate: Option<SlateRouter>,
+    /// Advisor session for `/advisor <query>` (see `crate::advisor`).
+    /// `None` until the user invokes `/advisor` for the first time —
+    /// mints lazily so the cost is paid only by users who actually use
+    /// the feature. The session owns its own model id, transcript, and
+    /// token budget; budget exhaustion returns Err and the user must
+    /// reset (e.g. via `/clear`) to get a fresh budget.
+    pub advisor_session: Option<crate::advisor::AdvisorSession>,
+    /// Gate for the `/advisor` slash command. Default OFF per the
+    /// deliverable's "no /advisor command without a config flag" rule.
+    /// Set via the `JFC_ADVISOR_ENABLED=1` env var on startup OR via a
+    /// future config-toml field. When false, the slash command surfaces
+    /// a hint message instead of running.
+    pub advisor_enabled: bool,
 }
 
 impl App {
@@ -837,6 +875,7 @@ impl App {
 
         let mut app = Self {
             theme: Theme::dark(),
+            output_style: crate::output_style::OutputStyle::default(),
             messages: Vec::new(),
             streaming_text: String::new(),
             streaming_reasoning: String::new(),
@@ -962,6 +1001,18 @@ impl App {
             team_context: crate::swarm::TeamContext::default(),
             teammate_event_rx: Some(teammate_rx),
             teammate_event_tx: teammate_tx,
+            // Slate is populated *after* `App::new` from the config (see
+            // `main.rs::run_app`). Constructor default = None so the unit
+            // tests that build a bare `App` don't need to plumb a router.
+            slate: None,
+            advisor_session: None,
+            // Read the env gate once at construction. Tests bypass this
+            // by setting the field directly; users who want it on for a
+            // session export `JFC_ADVISOR_ENABLED=1` before launch.
+            advisor_enabled: std::env::var("JFC_ADVISOR_ENABLED")
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
         };
         // Open the task store with the real session id so tasks persist to disk.
         if let Some(ref sid) = app.current_session_id {

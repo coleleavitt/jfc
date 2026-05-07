@@ -3500,6 +3500,17 @@ const SLASH_COMMANDS: &[(&str, &str)] = &[
     ("/swarm-approve", "approve a pending swarm tool request"),
     ("/swarm-deny", "deny a pending swarm tool request"),
     ("/auto-mode", "toggle the autonomous classifier"),
+    (
+        "/advisor",
+        "ask a parallel advisor without disturbing the main agent",
+    ),
+    ("/install-github-app", "install the Claude GitHub App on this repo"),
+    ("/pr", "show a PR + review comments (`/pr <num>`)"),
+    ("/pr-autofix", "ask the model to fix PR review comments"),
+    (
+        "/setup-github-actions",
+        "scaffold .github/workflows/jfc-review.yml",
+    ),
 ];
 
 /// Returns the `/<prefix>` the user is currently typing, when the
