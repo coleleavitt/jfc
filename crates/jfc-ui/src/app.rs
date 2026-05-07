@@ -14,6 +14,7 @@ use crate::context::{ReadDedupCache, ToolContext};
 use crate::provider::{ModelId, ModelInfo, Provider, ProviderId, StopReason};
 use crate::query::QueryCache;
 use crate::render_cache::RenderCache;
+use crate::slate::SlateRouter;
 use crate::tasks::TaskId;
 use crate::theme::Theme;
 use crate::tools::ExecutionResult;
@@ -834,6 +835,11 @@ pub struct App {
         Option<tokio::sync::mpsc::UnboundedReceiver<crate::swarm::runner::TeammateEvent>>,
     /// Sender side — cloned into each spawned teammate's runner.
     pub teammate_event_tx: tokio::sync::mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
+    /// Slate dynamic model router. `None` when `slate_enabled = false` in the
+    /// loaded config (the common case). When `Some`, callers consult it on
+    /// every user submission to pick a per-turn model — see
+    /// `slate::SlateRouter::route` and `crates/jfc-ui/src/slate.rs`.
+    pub slate: Option<SlateRouter>,
 }
 
 impl App {
@@ -981,6 +987,10 @@ impl App {
             team_context: crate::swarm::TeamContext::default(),
             teammate_event_rx: Some(teammate_rx),
             teammate_event_tx: teammate_tx,
+            // Slate is populated *after* `App::new` from the config (see
+            // `main.rs::run_app`). Constructor default = None so the unit
+            // tests that build a bare `App` don't need to plumb a router.
+            slate: None,
         };
         // Open the task store with the real session id so tasks persist to disk.
         if let Some(ref sid) = app.current_session_id {

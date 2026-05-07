@@ -78,6 +78,35 @@ pub struct Config {
     /// `/output-style <name>` writes back to this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_style: Option<String>,
+    /// Slate dynamic model routing toggle. Default `false` (legacy
+    /// "use the pinned model for every turn" behavior). When `true`, each
+    /// user turn passes through `slate::SlateRouter::route` before the
+    /// stream call — see `crates/jfc-ui/src/slate.rs`.
+    #[serde(default)]
+    pub slate_enabled: bool,
+    /// Per-`QueryClass` routing rules. Only consulted when `slate_enabled`.
+    /// `None` = no rules, every classified query falls through to the
+    /// pinned default model.
+    #[serde(default)]
+    pub slate_rules: Option<Vec<SlateRuleConfig>>,
+}
+
+/// TOML form of a `slate::RoutingRule`. Lives here (not in `slate.rs`) so the
+/// schema sits next to the rest of the config schema; the routing logic
+/// converts these into `slate::RoutingRule` values at startup via
+/// `slate_rules_from_config`. Splitting along this seam keeps `slate.rs`
+/// independent of TOML / serde details and lets it stay testable in pure
+/// Rust without a config fixture.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SlateRuleConfig {
+    /// One of: `"trivial"`, `"exploration"`, `"code-edit"`, `"refactor"`,
+    /// `"research"`, `"long-context"`. Unknown values are skipped at load
+    /// time with a warning (no hard error — the user keeps a working
+    /// router minus the bad rule).
+    pub query_class: String,
+    pub model: String,
+    #[serde(default)]
+    pub fallback_model: Option<String>,
 }
 
 /// Category-based model routing.
@@ -655,6 +684,43 @@ pub fn agent_disallowed<'a>(cfg: &'a Config, agent_name: &str) -> &'a [String] {
         .unwrap_or(&[])
 }
 
+/// Convert the TOML-form rules from a `Config` into the runtime
+/// `slate::RoutingRule` values consumed by `SlateRouter`. Unknown
+/// `query_class` values are dropped with a `tracing::warn!` so a typo doesn't
+/// silently disable routing for a different class. Returns an empty `Vec`
+/// when `slate_rules` is `None` or empty.
+pub fn slate_rules_from_config(cfg: &Config) -> Vec<crate::slate::RoutingRule> {
+    let Some(ref rules) = cfg.slate_rules else {
+        return Vec::new();
+    };
+    rules
+        .iter()
+        .filter_map(|r| match r.query_class.as_str() {
+            "trivial" => Some(crate::slate::QueryClass::Trivial),
+            "exploration" => Some(crate::slate::QueryClass::Exploration),
+            "code-edit" => Some(crate::slate::QueryClass::CodeEdit),
+            "refactor" => Some(crate::slate::QueryClass::Refactor),
+            "research" => Some(crate::slate::QueryClass::Research),
+            "long-context" => Some(crate::slate::QueryClass::LongContext),
+            other => {
+                tracing::warn!(
+                    target: "jfc::slate",
+                    query_class = other,
+                    "unknown slate query_class — rule dropped"
+                );
+                None
+            }
+        }
+        .map(|class| {
+            let mut rule = crate::slate::RoutingRule::new(class, r.model.clone());
+            if let Some(ref fb) = r.fallback_model {
+                rule = rule.with_fallback(fb.clone());
+            }
+            rule
+        }))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1102,6 +1168,69 @@ reason = "no shell access"
     fn resolve_prompt_plain_string_normal() {
         let resolved = resolve_prompt("Just a plain prompt", None);
         assert_eq!(resolved, "Just a plain prompt");
+    }
+
+    #[test]
+    fn parse_slate_rules_normal() {
+        let cfg = parse(
+            r#"
+slate_enabled = true
+
+[[slate_rules]]
+query_class = "trivial"
+model = "claude-haiku-4-5"
+
+[[slate_rules]]
+query_class = "refactor"
+model = "claude-opus-4-7"
+fallback_model = "claude-sonnet-4-6"
+"#,
+        );
+        assert!(cfg.slate_enabled);
+        let rules = cfg.slate_rules.as_ref().expect("rules present");
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].query_class, "trivial");
+        assert_eq!(rules[0].model, "claude-haiku-4-5");
+        assert!(rules[0].fallback_model.is_none());
+        assert_eq!(rules[1].fallback_model.as_deref(), Some("claude-sonnet-4-6"));
+
+        // Conversion path: TOML rules → runtime RoutingRule list.
+        let rt = slate_rules_from_config(&cfg);
+        assert_eq!(rt.len(), 2);
+        assert_eq!(rt[0].query_class, crate::slate::QueryClass::Trivial);
+        assert_eq!(rt[1].query_class, crate::slate::QueryClass::Refactor);
+        assert_eq!(rt[1].fallback_model.as_deref(), Some("claude-sonnet-4-6"));
+    }
+
+    #[test]
+    fn parse_slate_unknown_class_dropped_robust() {
+        let cfg = parse(
+            r#"
+slate_enabled = true
+
+[[slate_rules]]
+query_class = "trivial"
+model = "haiku"
+
+[[slate_rules]]
+query_class = "not-a-real-class"
+model = "garbage"
+"#,
+        );
+        // Both rules parse at the TOML layer; the unknown one is filtered
+        // out at the conversion layer.
+        assert_eq!(cfg.slate_rules.as_ref().unwrap().len(), 2);
+        let rt = slate_rules_from_config(&cfg);
+        assert_eq!(rt.len(), 1);
+        assert_eq!(rt[0].query_class, crate::slate::QueryClass::Trivial);
+    }
+
+    #[test]
+    fn slate_disabled_by_default_robust() {
+        let cfg = Config::default();
+        assert!(!cfg.slate_enabled);
+        assert!(cfg.slate_rules.is_none());
+        assert!(slate_rules_from_config(&cfg).is_empty());
     }
 
     #[test]

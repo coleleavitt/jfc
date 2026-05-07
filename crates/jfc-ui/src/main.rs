@@ -29,6 +29,7 @@ mod render_cache;
 mod scheduler;
 mod session;
 mod slash_commands;
+mod slate;
 mod spinner;
 mod stream;
 mod swarm;
@@ -412,7 +413,15 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
 
     let provider = app.provider.clone();
     let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
-    let model = app.model.clone();
+    // Slate per-turn routing for the queued-prompt drain path. Mirrors
+    // `input::handle_submit` so a queued prompt sees the same routing as a
+    // freshly typed one — without this, queued submissions silently bypassed
+    // Slate and used `app.model`.
+    let model = if let Some(ref router) = app.slate {
+        router.route(&text, app.model.clone())
+    } else {
+        app.model.clone()
+    };
     let tx = tx.clone();
     let interrupt = app.interrupt_flag.clone();
     tokio::spawn(async move {
@@ -718,6 +727,31 @@ async fn run(
         crate::output_style::set_active(parsed);
     }
 
+    // Wire the Slate router from config. Default OFF — `slate_enabled = false`
+    // in `~/.config/jfc/config.toml` means `app.slate = None` and every turn
+    // uses the pinned `app.model` (legacy behavior). When ON, each user
+    // submission consults the router to pick a per-turn model based on the
+    // classifier's `QueryClass`. See `crates/jfc-ui/src/slate.rs`.
+    {
+        let cfg = config::load();
+        if cfg.slate_enabled {
+            let rules = config::slate_rules_from_config(&cfg);
+            let rule_count = rules.len();
+            let router = slate::SlateRouter::new(rules);
+            tracing::info!(
+                target: "jfc::slate",
+                rule_count,
+                "slate router enabled"
+            );
+            app.slate = Some(router);
+        } else {
+            tracing::debug!(
+                target: "jfc::slate",
+                "slate router disabled (default) — every turn uses pinned model"
+            );
+        }
+    }
+
     // Handle --continue / --resume flags
     match startup_session {
         StartupSession::Fresh => {}
@@ -970,7 +1004,12 @@ async fn run(
 
         let provider = app.provider.clone();
         let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
-        let model = app.model.clone();
+        // Slate per-turn routing for the `--prompt` startup path.
+        let model = if let Some(ref router) = app.slate {
+            router.route(&prompt, app.model.clone())
+        } else {
+            app.model.clone()
+        };
         let tx_clone = tx.clone();
         let interrupt = app.interrupt_flag.clone();
         tokio::spawn(async move {
