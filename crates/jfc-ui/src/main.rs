@@ -16,6 +16,7 @@ mod input;
 mod lsp_client;
 mod lsp_rpc;
 mod markdown;
+mod mcp;
 mod memory;
 mod mentions;
 mod message_view;
@@ -32,6 +33,8 @@ mod spinner;
 mod stream;
 mod swarm;
 mod tasks;
+mod output_style;
+mod system_reminder;
 mod theme;
 mod toast;
 mod tools;
@@ -695,6 +698,25 @@ async fn run(
     tracing::info!(target: "jfc::ui::events", "registered AppEvent sender for non-Task agent paths");
     let mut app = App::new(provider, model);
     app.providers = providers.clone();
+    // Apply the user's persisted theme choice from
+    // ~/.config/jfc/config.toml. Unknown / missing names fall back
+    // silently to the default dark theme set by App::new.
+    if let Some(name) = crate::config::load().theme.as_deref()
+        && let Some(theme) = crate::theme::Theme::by_name(name)
+    {
+        tracing::info!(target: "jfc::ui::theme", theme = %name, "applied persisted theme");
+        app.theme = theme;
+    }
+    if let Some(name) = crate::config::load().output_style.as_deref() {
+        let parsed = crate::output_style::OutputStyle::from_str_loose(name);
+        tracing::info!(
+            target: "jfc::ui::output_style",
+            style = %parsed.name(),
+            "applied persisted output style"
+        );
+        app.output_style = parsed;
+        crate::output_style::set_active(parsed);
+    }
 
     // Handle --continue / --resume flags
     match startup_session {
@@ -892,6 +914,20 @@ async fn run(
         let tx_lsp = tx.clone();
         let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
         lsp_client::maybe_spawn_lsp_clients(cwd, tx_lsp);
+    }
+
+    // MCP servers from `[mcp.<name>]` config blocks. Spawn happens in
+    // a background task so startup isn't blocked by a slow `npx install`
+    // — the streaming layer pulls advertised tools dynamically via
+    // `tools::all_tool_defs_with_mcp()` so the model sees servers as
+    // soon as they finish handshaking. Gated by `JFC_DISABLE_MCP=1`.
+    {
+        let registry = crate::mcp::McpRegistry::new();
+        crate::tools::register_mcp_registry(registry.clone());
+        let mcp_configs = crate::config::load().mcp;
+        tokio::spawn(async move {
+            crate::mcp::register_servers_from_config(&registry, &mcp_configs).await;
+        });
     }
 
     app.sync_task_completions();
@@ -1846,6 +1882,56 @@ async fn run(
                         "AppEvent::StreamDone received"
                     );
                     app.is_streaming = false;
+
+                    // OpenWebUI / LiteLLM / some third-party gateways
+                    // leak `<tool_call>` XML into the assistant text
+                    // instead of using OpenAI's `tool_calls` array.
+                    // Detect the leaked markup and surface a toast so
+                    // the user knows their gateway is misconfigured —
+                    // jfc's renderer can't currently dispatch from
+                    // inline markup. Mirrors the pattern v132 uses
+                    // for `tengu_streaming_*` warnings.
+                    if let Some(last) = app.messages.last() {
+                        let text: String = last
+                            .parts
+                            .iter()
+                            .filter_map(|p| {
+                                if let crate::types::MessagePart::Text(t) = p {
+                                    Some(t.as_str())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        if crate::inline_tools::contains_inline_tools(&text) {
+                            let segments = crate::inline_tools::parse(&text);
+                            let tool_calls = segments
+                                .iter()
+                                .filter(|s| matches!(s, crate::inline_tools::Segment::ToolCall { .. }))
+                                .count();
+                            tracing::warn!(
+                                target: "jfc::stream::inline_tools",
+                                tool_calls,
+                                "assistant text contains inline <tool_call> markup — \
+                                 the upstream gateway is emitting tool calls as text, \
+                                 not as the OpenAI `tool_calls` field. They won't \
+                                 dispatch."
+                            );
+                            crate::toast::push_with_cap(
+                                &mut app.toasts,
+                                crate::toast::Toast::new(
+                                    crate::toast::ToastKind::Warning,
+                                    format!(
+                                        "Detected {tool_calls} inline `<tool_call>` block(s) \
+                                         in the response — your OpenWebUI/LiteLLM gateway is \
+                                         emitting tool calls as text, not via OpenAI tool_calls. \
+                                         Check the gateway config."
+                                    ),
+                                ),
+                            );
+                        }
+                    }
                     // v126's "Cooked for Nm Ns" post-turn footer: stamp the
                     // assistant message with a randomized past-tense verb +
                     // formatted duration the moment the stream resolves. The
@@ -2876,6 +2962,35 @@ async fn run(
                             backend: crate::swarm::types::BackendType::InProcess,
                         },
                     );
+                }
+                AppEvent::ExitPlanModeRequested { plan } => {
+                    // Surface the plan as an assistant transcript
+                    // entry so the user can review it. Then transition
+                    // out of Plan into AcceptEdits so the model can
+                    // proceed with destructive edits in the next turn.
+                    // v132's behaviour is identical: plan text is
+                    // shown, mode flips, agent continues.
+                    tracing::info!(
+                        target: "jfc::ui::plan_mode",
+                        plan_bytes = plan.len(),
+                        from_mode = ?app.permission_mode,
+                        "ExitPlanMode: surfacing plan + transitioning out of Plan"
+                    );
+                    let body = format!(
+                        "**Plan presented (Plan Mode → Accept Edits)**\n\n---\n\n{plan}"
+                    );
+                    app.messages
+                        .push(crate::types::ChatMessage::assistant(body));
+                    if matches!(app.permission_mode, app::PermissionMode::Plan) {
+                        app.permission_mode = app::PermissionMode::AcceptEdits;
+                        crate::toast::push_with_cap(
+                            &mut app.toasts,
+                            crate::toast::Toast::new(
+                                crate::toast::ToastKind::Success,
+                                "Plan approved — mode: Accept Edits",
+                            ),
+                        );
+                    }
                 }
             }
         }

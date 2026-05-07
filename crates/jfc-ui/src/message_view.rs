@@ -1201,6 +1201,11 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         ToolKind::PostBounty | ToolKind::RunBounty | ToolKind::MarketStatus => {
             Color::Rgb(255, 215, 100)
         } // gold
+        ToolKind::ExitPlanMode => Color::Rgb(170, 200, 255), // cool blue — same family as the plan-mode indicator
+        ToolKind::MultiEdit => Color::Rgb(160, 230, 170), // mint — same family as Edit
+        ToolKind::AskUserQuestion => Color::Rgb(255, 200, 240), // soft pink — user-facing
+        ToolKind::WebFetch | ToolKind::WebSearch => Color::Rgb(120, 200, 220), // teal — networked tools
+        ToolKind::Mcp(_) => Color::Rgb(190, 170, 240), // soft violet — distinct from native lavender (Glob/Grep)
         ToolKind::Generic(_) => t.text_secondary,
     }
 }
@@ -1466,6 +1471,7 @@ fn render_tool_content_with_skip(
                     buf,
                     skip,
                     tool.expanded,
+                    cmd_str,
                 ),
                 BashCmdKind::PathList if success => render_path_list_output_skip(
                     stdout,
@@ -1497,6 +1503,47 @@ fn render_tool_content_with_skip(
                     skip,
                     tool.expanded,
                 ),
+                BashCmdKind::HexDump if success => render_hex_dump_output_skip(
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    area,
+                    t,
+                    buf,
+                    skip,
+                    tool.expanded,
+                ),
+                BashCmdKind::TabularList if success => render_tabular_list_output_skip(
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    area,
+                    t,
+                    buf,
+                    skip,
+                    tool.expanded,
+                ),
+                // Cargo / make / npm builds: the structured output
+                // (`Compiling X`, `error[E…]`, `warning:`, `Finished`,
+                // `running N tests`, `test foo … ok/FAILED`) deserves
+                // semantic coloring, not the flat ANSI passthrough
+                // command_output gives. Treat exit_code 0 / 101 (test
+                // failure is still informative) as a render trigger.
+                BashCmdKind::CompilerOutput
+                    if !stdout.is_empty()
+                        && exit_code.map(|c| c == 0 || c == 101 || c == 1).unwrap_or(true) =>
+                {
+                    render_compiler_output_skip(
+                        stdout,
+                        stderr,
+                        *exit_code,
+                        area,
+                        t,
+                        buf,
+                        skip,
+                        tool.expanded,
+                    )
+                }
                 _ => {
                     // cat/head/tail path — fall through to the
                     // existing markdown-or-syntect routing.
@@ -1825,6 +1872,83 @@ fn lang_from_path(path: &str) -> Option<String> {
         })
 }
 
+/// Quote-aware tokenizer. Splits `cmd` on whitespace except inside
+/// matched single- or double-quoted segments, which are emitted as
+/// a single token. `awk '{print $1}' file` → `["awk", "'{print $1}'",
+/// "file"]`. Backslashes escape the next char outside quotes. We
+/// keep the quote characters in the returned token so callers can
+/// still detect "this token was quoted" by its leading char.
+fn quote_aware_tokens(cmd: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut chars = cmd.chars().peekable();
+    let mut quote: Option<char> = None;
+    while let Some(c) = chars.next() {
+        match (quote, c) {
+            (None, ws) if ws.is_whitespace() => {
+                if !cur.is_empty() {
+                    out.push(std::mem::take(&mut cur));
+                }
+            }
+            (None, '\'') | (None, '"') => {
+                cur.push(c);
+                quote = Some(c);
+            }
+            (Some(q), c2) if c2 == q => {
+                cur.push(c2);
+                quote = None;
+            }
+            (None, '\\') => {
+                cur.push('\\');
+                if let Some(n) = chars.next() {
+                    cur.push(n);
+                }
+            }
+            _ => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+/// Replace the contents of every single- and double-quoted segment
+/// in `cmd` with spaces, preserving the surrounding quotes and the
+/// original length. Used to make the dangerous-meta-character checks
+/// (`$`, `;`, etc.) quote-aware: `sed -n '1,$p' file` is a perfectly
+/// safe sed call but the `$` lives inside `'…'` so we shouldn't
+/// reject it. Without this, the canonical sed/awk idiom defeats the
+/// language-inference path and the file falls back to plain rendering.
+fn redact_quoted(cmd: &str) -> String {
+    let mut out = String::with_capacity(cmd.len());
+    let mut chars = cmd.chars().peekable();
+    let mut quote: Option<char> = None;
+    while let Some(c) = chars.next() {
+        match (quote, c) {
+            (None, '\'') | (None, '"') => {
+                out.push(c);
+                quote = Some(c);
+            }
+            (Some(q), c2) if c2 == q => {
+                out.push(c2);
+                quote = None;
+            }
+            (Some(_), _) => out.push(' '),
+            (None, '\\') => {
+                // Skip the next char so an escaped quote doesn't
+                // start a fake quoted segment.
+                out.push('\\');
+                if let Some(n) = chars.next() {
+                    out.push(n);
+                }
+            }
+            (None, _) => out.push(c),
+        }
+    }
+    out
+}
+
 /// Recognise `cat <file>` / `head <file>` / `tail <file>` commands
 /// (with or without flags) and return the inferred language. Skips
 /// when the command does anything fancier (pipes, redirects, multi-
@@ -1852,23 +1976,28 @@ fn infer_lang_from_bash(command: &str) -> Option<String> {
     // Reject command-substitution / backticks / lone `&` / `;` —
     // those still indicate the cat is wrapped in something funky
     // and the file-path sniff would lie. `&&` was already split
-    // out so any `&` here is the lone-background form.
-    if trimmed.contains('$')
-        || trimmed.contains('`')
-        || trimmed.contains('&')
-        || trimmed.contains(';')
+    // out so any `&` here is the lone-background form. Check
+    // *outside* quoted strings so `sed -n '1,$p' file.md` (the
+    // canonical "print all lines" idiom) doesn't get rejected for
+    // its quoted `$`.
+    let probe = redact_quoted(trimmed);
+    if probe.contains('$')
+        || probe.contains('`')
+        || probe.contains('&')
+        || probe.contains(';')
     {
         return None;
     }
     // Strip stderr-redirect tokens like `2>/dev/null` or `2>&1`
-    // so the file-path sniff works on the cat side. Splitting on
-    // whitespace and dropping any token starting with `2>` /
-    // `>` covers the common forms.
-    let toks: Vec<&str> = trimmed
-        .split_whitespace()
-        .filter(|t| !t.starts_with("2>") && !t.starts_with(">"))
+    // so the file-path sniff works on the cat side. We tokenize
+    // *quote-aware* so awk's `'{print $1}'` (which contains a
+    // whitespace) stays a single token instead of fragmenting and
+    // confusing the file-path sniff.
+    let toks: Vec<String> = quote_aware_tokens(trimmed)
+        .into_iter()
+        .filter(|t| !t.starts_with("2>") && !t.starts_with('>'))
         .collect();
-    let mut it = toks.into_iter();
+    let mut it = toks.iter().map(|s| s.as_str());
     let verb = it.next()?;
     if !matches!(verb, "cat" | "head" | "tail" | "bat" | "less" | "more"
         | "sed" | "awk" | "perl" | "jq" | "yq" | "python" | "python3" | "node") {
@@ -1889,14 +2018,31 @@ fn infer_lang_from_bash(command: &str) -> Option<String> {
     if matches!(verb, "node") {
         return Some("javascript".to_string());
     }
-    // Pick the first non-flag, non-numeric arg as the file path.
-    // Handles `head -50 file.rs`, `tail -n 100 file.py`, etc.
+    // Pick the file-path argument. For most verbs the first
+    // non-flag/non-numeric token is the file. For sed/awk/perl the
+    // FIRST positional is the script (`'1,$p'`, `'{print}'`, ...);
+    // the file is the next positional. Detect a script positional
+    // by its leading quote character (the tokenizer kept quotes
+    // because we split on whitespace, not via a real shell parser).
+    let script_verb = matches!(verb, "sed" | "awk" | "perl");
+    let mut seen_positional = false;
     let mut file: Option<&str> = None;
     for arg in it {
         if arg.starts_with('-') {
             continue;
         }
         if arg.parse::<i64>().is_ok() {
+            continue;
+        }
+        // For sed/awk/perl: skip the first positional iff it looks
+        // like a script (starts with a quote). A bare path with no
+        // surrounding quotes still wins, so `awk file.txt` works
+        // (degenerate but harmless).
+        if script_verb
+            && !seen_positional
+            && (arg.starts_with('\'') || arg.starts_with('"'))
+        {
+            seen_positional = true;
             continue;
         }
         file = Some(arg);
@@ -1982,7 +2128,8 @@ enum BashCmdKind {
     Grep,
     /// `find` / `ls` / `tree` / `fd` etc. — flat path list.
     PathList,
-    /// `git diff` / `git show` — unified diff with +/- lines.
+    /// `git diff` / `git show` / raw `diff -u` — unified diff with
+    /// `+`/`-`/`@@` lines that should be colored.
     GitDiff,
     /// `git log` — commit metadata + body.
     GitLog,
@@ -1992,6 +2139,11 @@ enum BashCmdKind {
     CompilerOutput,
     /// `curl` — HTTP response (may be JSON/HTML/XML).
     HttpResponse,
+    /// `xxd` / `hexyl` / `od` — hex dump (offset · bytes · ASCII).
+    HexDump,
+    /// `docker ps` / `docker images` / `kubectl get` — fixed-width
+    /// table with a header row and aligned columns.
+    TabularList,
     /// Plain command (default).
     Other,
 }
@@ -2026,12 +2178,15 @@ fn classify_bash_cmd(command: &str) -> BashCmdKind {
     // covered by `&&` (single-`&` daemonization). The earlier
     // version blanket-rejected `&` which broke `cd X && cmd` for
     // every structured tool.
-    if trimmed.contains('$') || trimmed.contains('`') || trimmed.contains(';') {
+    // Quote-aware meta-character check: `sed -n '1,$p' file` is a
+    // benign call and shouldn't be rejected for its quoted `$`.
+    let probe = redact_quoted(trimmed);
+    if probe.contains('$') || probe.contains('`') || probe.contains(';') {
         return BashCmdKind::Other;
     }
     // Reject lone `&` (background) — but `&&` was already split
     // out above, so any `&` left here is the lone form.
-    if trimmed.contains('&') {
+    if probe.contains('&') {
         return BashCmdKind::Other;
     }
     let toks: Vec<&str> = trimmed
@@ -2057,6 +2212,10 @@ fn classify_bash_cmd(command: &str) -> BashCmdKind {
         "grep" | "rg" | "ack" | "ag" => BashCmdKind::Grep,
         "find" | "ls" | "tree" | "fd" | "exa" | "eza" => BashCmdKind::PathList,
         "jq" | "yq" => BashCmdKind::Json,
+        // Raw POSIX `diff` (with -u/--unified) emits the same +/-/@@
+        // shape `git diff` does — share the renderer so coloring
+        // works for ad-hoc `diff -u a b` invocations too.
+        "diff" => BashCmdKind::GitDiff,
         "cargo" => {
             if let Some(sub) = toks.get(1) {
                 match *sub {
@@ -2071,6 +2230,19 @@ fn classify_bash_cmd(command: &str) -> BashCmdKind {
             BashCmdKind::CompilerOutput
         }
         "curl" | "wget" | "httpie" | "http" => BashCmdKind::HttpResponse,
+        "xxd" | "hexyl" | "od" => BashCmdKind::HexDump,
+        // Container / k8s tools — `docker ps`, `docker images`,
+        // `kubectl get …`, `podman ps` — output is always a header
+        // row + fixed-width columns.
+        "docker" | "podman" => match toks.get(1).copied() {
+            Some("ps") | Some("images") | Some("image") | Some("container")
+            | Some("network") | Some("volume") => BashCmdKind::TabularList,
+            _ => BashCmdKind::Other,
+        },
+        "kubectl" | "k9s" | "oc" => match toks.get(1).copied() {
+            Some("get") | Some("describe") | Some("top") => BashCmdKind::TabularList,
+            _ => BashCmdKind::Other,
+        },
         _ => BashCmdKind::Other,
     }
 }
@@ -2256,6 +2428,83 @@ fn parse_grep_with_sep<'a>(raw: &'a str, sep: char, is_context: bool) -> Option<
     })
 }
 
+/// Walk the original command and return the first positional that
+/// looks like a file/directory the user grep'd against. Used by
+/// `render_grep_output_skip` to surface a heading line when grep
+/// emitted path-less `<lineno>:<body>` rows (single-file mode), so
+/// the user can see *which* file is being searched.
+///
+/// Heuristic: skip the verb (`grep`/`rg`/`ack`/`ag`), skip flags
+/// (`-X`, `--long`), skip the value of flag pairs that take an
+/// argument (`-e PAT`, `-f FILE`, `--type rust`), skip what looks
+/// like the regex pattern (the first un-quoted positional). The
+/// next positional is the target file/path. Quote-aware so a
+/// pattern like `"foo("` doesn't get mistaken for a path. Returns
+/// the path with surrounding quotes stripped.
+fn grep_target_file(cmd: &str) -> Option<String> {
+    let toks = quote_aware_tokens(cmd);
+    let mut it = toks.into_iter();
+    let verb = it.next()?;
+    if !matches!(
+        verb.as_str(),
+        "grep" | "rg" | "ack" | "ag" | "ripgrep"
+    ) {
+        return None;
+    }
+    // Flags whose value lives in the *next* token. Skip both.
+    const VALUE_FLAGS: &[&str] = &[
+        "-e", "-f", "-A", "-B", "-C", "-m", "--max-count", "--type", "-t",
+        "--type-not", "-T", "--color", "--colour", "-g", "--glob", "--iglob",
+        "--include", "--exclude", "--exclude-dir", "--threads", "-j",
+    ];
+    // `-e PAT` and `-f FILE` (regex source file) supply the pattern
+    // via a flag value rather than a positional. When we see one of
+    // those we absorb the value AND mark seen_pattern so the next
+    // positional is treated as the target file.
+    const PATTERN_FLAGS: &[&str] = &["-e", "--regexp", "-f", "--file"];
+    let mut seen_pattern = false;
+    while let Some(tok) = it.next() {
+        if tok.starts_with("--") {
+            let key = tok.split('=').next().unwrap_or(&tok);
+            if PATTERN_FLAGS.iter().any(|f| *f == key) {
+                if !tok.contains('=') {
+                    let _ = it.next();
+                }
+                seen_pattern = true;
+                continue;
+            }
+            if !tok.contains('=') && VALUE_FLAGS.iter().any(|f| *f == tok.as_str()) {
+                let _ = it.next();
+            }
+            continue;
+        }
+        if tok.starts_with('-') && tok.len() > 1 && !tok.chars().all(|c| c == '-') {
+            if PATTERN_FLAGS.iter().any(|f| *f == tok.as_str()) {
+                let _ = it.next();
+                seen_pattern = true;
+                continue;
+            }
+            if VALUE_FLAGS.iter().any(|f| *f == tok.as_str()) {
+                let _ = it.next();
+            }
+            continue;
+        }
+        if !seen_pattern {
+            seen_pattern = true;
+            continue;
+        }
+        // First positional after the pattern → target.
+        let unquoted = tok
+            .strip_prefix('\'')
+            .and_then(|s| s.strip_suffix('\''))
+            .or_else(|| tok.strip_prefix('"').and_then(|s| s.strip_suffix('"')))
+            .map(|s| s.to_string())
+            .unwrap_or(tok);
+        return Some(unquoted);
+    }
+    None
+}
+
 /// Render `grep -rn` / `rg` / `ack` output. Handles all the
 /// formats those tools emit (verified against ripgrep's
 /// `crates/printer/src/standard.rs` and GNU grep's `print_sep`):
@@ -2281,6 +2530,7 @@ fn render_grep_output_skip(
     buf: &mut Buffer,
     skip: usize,
     expanded: bool,
+    cmd: &str,
 ) {
     let max_lines = if expanded { 500usize } else { 80usize };
     let mut lines: Vec<Line<'static>> = Vec::new();
@@ -2294,6 +2544,24 @@ fn render_grep_output_skip(
                 Style::default().fg(t.error),
             )));
         }
+    }
+    // Single-file grep (`grep -n PAT file.rs`) emits `<lineno>:body`
+    // with no path prefix on each line. Without a heading the user
+    // can't tell which file they searched — surface the file path
+    // we extracted from the command so each match has context.
+    let first_data = stdout.lines().find(|l| !l.is_empty());
+    let pathless = first_data
+        .map(|l| matches!(parse_grep_line(l), Some(GrepLine::Match { path: "", .. })))
+        .unwrap_or(false);
+    if pathless
+        && let Some(target) = grep_target_file(cmd)
+    {
+        lines.push(Line::from(Span::styled(
+            target,
+            Style::default()
+                .fg(t.accent)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        )));
     }
     let mut total = 0usize;
     for raw in stdout.lines() {
@@ -2791,6 +3059,463 @@ fn render_cat_markdown_output_skip(
     Paragraph::new(lines)
         .style(Style::default().bg(t.bg))
         .wrap(ratatui::widgets::Wrap { trim: false })
+        .scroll((skip as u16, 0))
+        .render(area, buf);
+}
+
+/// Render `xxd` / `hexyl` / `od` hex-dump output. Each input line
+/// has the canonical shape `OFFSET: BYTES  ASCII` (xxd) or hexyl's
+/// boxed table form. We split on the first colon (offset/bytes) and
+/// the doubled-space separator before the ASCII column, color each
+/// region distinctly, and pass everything else through unstyled so
+/// hexyl's box-drawing characters survive intact.
+#[allow(clippy::too_many_arguments)]
+fn render_hex_dump_output_skip(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    area: Rect,
+    t: Theme,
+    buf: &mut Buffer,
+    skip: usize,
+    expanded: bool,
+) {
+    let max_lines = if expanded { 1000usize } else { 200usize };
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if let Some(code) = exit_code
+        && code != 0
+    {
+        lines.push(Line::from(Span::styled(
+            format!("[exit {code}]"),
+            Style::default().fg(t.error),
+        )));
+    }
+    let mut total = 0usize;
+    for raw in stdout.lines() {
+        total += 1;
+        if lines.len() >= max_lines {
+            continue;
+        }
+        // xxd canonical form: `00000000: 4865 6c6c 6f0a                           Hello.`
+        // hexyl decorates with │ │ box separators — let those
+        // pass through styled neutrally.
+        if let Some((offset, rest)) = raw.split_once(':') {
+            // Heuristic for the hex/ASCII split: xxd uses two
+            // consecutive spaces, hexyl uses ` │ ` separators.
+            let (bytes, ascii) = if let Some(idx) = rest.find("  ") {
+                let (a, b) = rest.split_at(idx);
+                (a, b.trim_start())
+            } else if let Some(idx) = rest.find(" │ ") {
+                let (a, b) = rest.split_at(idx);
+                (a, &b[3..])
+            } else {
+                (rest, "")
+            };
+            // Sanity check: real offsets are mostly hex digits.
+            // A non-hex prefix means we're looking at unrelated
+            // output (stderr-style line) — fall back to plain.
+            let looks_offset = !offset.is_empty()
+                && offset.trim_start().chars().all(|c| c.is_ascii_hexdigit());
+            if looks_offset {
+                let mut spans = vec![
+                    Span::styled(
+                        format!("{offset}:"),
+                        Style::default().fg(t.text_muted),
+                    ),
+                    Span::styled(
+                        bytes.to_owned(),
+                        Style::default().fg(t.accent),
+                    ),
+                ];
+                if !ascii.is_empty() {
+                    spans.push(Span::raw("  "));
+                    spans.push(Span::styled(
+                        ascii.to_owned(),
+                        Style::default().fg(t.text_secondary),
+                    ));
+                }
+                lines.push(Line::from(spans));
+                continue;
+            }
+        }
+        // hexyl header / footer / unknown line — keep raw.
+        lines.push(Line::from(Span::styled(
+            raw.to_owned(),
+            Style::default().fg(t.text_muted),
+        )));
+    }
+    if total > max_lines {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "… {} more lines · click or press o to expand",
+                total - max_lines
+            ),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
+        )));
+    }
+    if !stderr.is_empty() {
+        lines.push(Line::from(""));
+        for sl in stderr.lines() {
+            lines.push(Line::from(Span::styled(
+                sl.to_owned(),
+                Style::default().fg(t.error),
+            )));
+        }
+    }
+    Paragraph::new(lines)
+        .style(Style::default().bg(t.bg))
+        .scroll((skip as u16, 0))
+        .render(area, buf);
+}
+
+/// Render `docker ps` / `docker images` / `kubectl get …` and
+/// similar fixed-width tables. The first non-empty stdout line is
+/// the column header (uppercase column names) — bold it and use the
+/// accent color so it pops; body rows alternate between primary and
+/// muted text so wide tables remain scannable. Container/pod state
+/// columns get an extra tint when we recognise the value (`Running`,
+/// `Up …`, `Exited`, `Error`, `CrashLoopBackOff`).
+#[allow(clippy::too_many_arguments)]
+fn render_tabular_list_output_skip(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    area: Rect,
+    t: Theme,
+    buf: &mut Buffer,
+    skip: usize,
+    expanded: bool,
+) {
+    let max_lines = if expanded { 500usize } else { 100usize };
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if let Some(code) = exit_code
+        && code != 0
+    {
+        lines.push(Line::from(Span::styled(
+            format!("[exit {code}]"),
+            Style::default().fg(t.error),
+        )));
+    }
+    let mut header_drawn = false;
+    let mut total = 0usize;
+    for raw in stdout.lines() {
+        total += 1;
+        if lines.len() >= max_lines {
+            continue;
+        }
+        if !header_drawn && !raw.trim().is_empty() {
+            lines.push(Line::from(Span::styled(
+                raw.to_owned(),
+                Style::default()
+                    .fg(t.accent)
+                    .add_modifier(Modifier::BOLD),
+            )));
+            header_drawn = true;
+            continue;
+        }
+        // Tint a status word if we can spot one. We don't try to
+        // parse columns — just look at the line for known tokens.
+        let style = if raw.contains("CrashLoopBackOff")
+            || raw.contains("Error")
+            || raw.contains("Exited")
+        {
+            Style::default().fg(t.error)
+        } else if raw.contains("Running") || raw.starts_with("Up ") || raw.contains(" Up ") {
+            Style::default().fg(t.success)
+        } else if raw.contains("Pending") || raw.contains("ContainerCreating") {
+            Style::default().fg(t.warning)
+        } else {
+            Style::default().fg(t.text_primary)
+        };
+        lines.push(Line::from(Span::styled(raw.to_owned(), style)));
+    }
+    if total > max_lines {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "… {} more lines · click or press o to expand",
+                total - max_lines
+            ),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
+        )));
+    }
+    if !stderr.is_empty() {
+        lines.push(Line::from(""));
+        for sl in stderr.lines() {
+            lines.push(Line::from(Span::styled(
+                sl.to_owned(),
+                Style::default().fg(t.error),
+            )));
+        }
+    }
+    Paragraph::new(lines)
+        .style(Style::default().bg(t.bg))
+        .scroll((skip as u16, 0))
+        .render(area, buf);
+}
+
+/// Render `cargo build` / `cargo test` / `cargo check` / `make` /
+/// `npm run build` output. Routes recognised line shapes to colored
+/// styles so the user can scan a long compile log at a glance:
+///
+///   * `Compiling foo v1.2.3` → muted (info, lots of these scroll by)
+///   * `Finished … in N.NNs` / `Finished` → success green, bold
+///   * `Building [...]` progress bars → accent
+///   * `error[E0123]:` / `error: …` → error red, bold prefix
+///   * `warning:` → warning yellow, bold prefix
+///   * `note:` / `help:` → accent muted
+///   * `--> path:line:col` location markers → accent
+///   * `running N tests` / `test result: ok. N passed` → success
+///   * `test foo::bar ... ok` → success; `... FAILED` → error
+///   * `failures:` block headers → error
+///   * Everything else → text_secondary
+#[allow(clippy::too_many_arguments)]
+fn render_compiler_output_skip(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    area: Rect,
+    t: Theme,
+    buf: &mut Buffer,
+    skip: usize,
+    expanded: bool,
+) {
+    let max_lines = if expanded { 1500usize } else { 300usize };
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if let Some(code) = exit_code
+        && code != 0
+    {
+        let badge_color = if code == 101 || code == 1 {
+            t.error
+        } else {
+            t.warning
+        };
+        lines.push(Line::from(Span::styled(
+            format!("[exit {code}]"),
+            Style::default().fg(badge_color).add_modifier(Modifier::BOLD),
+        )));
+    }
+    let mut total = 0usize;
+    // `cargo` writes status to stderr (Compiling/Finished/warning),
+    // diagnostics to stderr too, and final binary output to stdout.
+    // Walk both streams in order — stderr first (the build log),
+    // then stdout (test output, run output).
+    for raw in stderr.lines().chain(stdout.lines()) {
+        total += 1;
+        if lines.len() >= max_lines {
+            continue;
+        }
+        let trimmed = raw.trim_start();
+        let leading_ws_len = raw.len() - trimmed.len();
+        let leading = if leading_ws_len > 0 {
+            &raw[..leading_ws_len]
+        } else {
+            ""
+        };
+
+        // Build progress: `Compiling foo v1.2.3` / `Building […]`
+        // / `Downloading foo v1`. Use muted color so the dozens of
+        // these don't dominate the log visually.
+        if let Some(pkg) = trimmed.strip_prefix("Compiling ") {
+            let mut spans = vec![
+                Span::raw(leading.to_owned()),
+                Span::styled(
+                    "Compiling ".to_string(),
+                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(pkg.to_owned(), Style::default().fg(t.text_secondary)),
+            ];
+            // Trim line so spans length matches trimmed length
+            let _ = &mut spans;
+            lines.push(Line::from(spans));
+            continue;
+        }
+        for prefix in &[
+            "Checking ", "Building ", "Downloading ", "Updating ", "Verifying ",
+            "Installing ", "Removing ", "Fresh ", "Documenting ",
+        ] {
+            if let Some(rest) = trimmed.strip_prefix(prefix) {
+                lines.push(Line::from(vec![
+                    Span::raw(leading.to_owned()),
+                    Span::styled(
+                        (*prefix).to_string(),
+                        Style::default().fg(t.text_muted),
+                    ),
+                    Span::styled(rest.to_owned(), Style::default().fg(t.text_muted)),
+                ]));
+                continue;
+            }
+        }
+
+        // `Finished` (build success) / `Compiled` etc. — bold green.
+        if trimmed.starts_with("Finished ")
+            || trimmed.starts_with("Compiled ")
+            || trimmed.starts_with("Built ")
+        {
+            lines.push(Line::from(Span::styled(
+                raw.to_owned(),
+                Style::default().fg(t.success).add_modifier(Modifier::BOLD),
+            )));
+            continue;
+        }
+
+        // Errors: `error[E0123]: …` and `error: …`. Color the
+        // prefix red+bold and let the rest of the line read in
+        // primary text so the message is legible.
+        if let Some(rest) = trimmed.strip_prefix("error") {
+            // Match `error[…]:` or `error:` — anything else is text.
+            let after = rest.trim_start_matches(|c: char| c == '[' || c == ']' || c.is_alphanumeric());
+            if rest.is_empty() || rest.starts_with(':') || rest.starts_with('[') || after.starts_with(':') {
+                lines.push(Line::from(vec![
+                    Span::raw(leading.to_owned()),
+                    Span::styled(
+                        format!("error{}", rest.split(':').next().unwrap_or("")),
+                        Style::default().fg(t.error).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        rest.split_once(':')
+                            .map(|(_, after)| format!(":{after}"))
+                            .unwrap_or_default(),
+                        Style::default().fg(t.text_primary),
+                    ),
+                ]));
+                continue;
+            }
+        }
+        if let Some(rest) = trimmed.strip_prefix("warning") {
+            let after = rest.trim_start_matches(|c: char| c == '[' || c == ']' || c.is_alphanumeric());
+            if rest.is_empty() || rest.starts_with(':') || rest.starts_with('[') || after.starts_with(':') {
+                lines.push(Line::from(vec![
+                    Span::raw(leading.to_owned()),
+                    Span::styled(
+                        format!("warning{}", rest.split(':').next().unwrap_or("")),
+                        Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        rest.split_once(':')
+                            .map(|(_, after)| format!(":{after}"))
+                            .unwrap_or_default(),
+                        Style::default().fg(t.text_primary),
+                    ),
+                ]));
+                continue;
+            }
+        }
+        // Diagnostic detail: `note:`, `help:` — softer color.
+        if trimmed.starts_with("note:") || trimmed.starts_with("help:") {
+            lines.push(Line::from(Span::styled(
+                raw.to_owned(),
+                Style::default().fg(t.accent),
+            )));
+            continue;
+        }
+        // Location pointer: `   --> src/foo.rs:12:5`. Pick out the
+        // arrow and color the path/lineno region.
+        if let Some(idx) = raw.find("--> ") {
+            let (before, after) = raw.split_at(idx + 4);
+            lines.push(Line::from(vec![
+                Span::styled(
+                    before.to_owned(),
+                    Style::default().fg(t.text_muted),
+                ),
+                Span::styled(
+                    after.to_owned(),
+                    Style::default().fg(t.accent),
+                ),
+            ]));
+            continue;
+        }
+
+        // `cargo test` results.
+        if trimmed.starts_with("running ")
+            && trimmed.ends_with(" tests")
+            && !trimmed.contains("0 tests")
+        {
+            lines.push(Line::from(Span::styled(
+                raw.to_owned(),
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+            )));
+            continue;
+        }
+        if trimmed.starts_with("test ") {
+            // `test foo::bar ... ok` / `... FAILED` / `... ignored`
+            let style = if trimmed.contains(" ... ok") || trimmed.contains(" ... bench:") {
+                Style::default().fg(t.success)
+            } else if trimmed.contains(" ... FAILED") || trimmed.contains(" ... fail") {
+                Style::default().fg(t.error).add_modifier(Modifier::BOLD)
+            } else if trimmed.contains(" ... ignored") {
+                Style::default().fg(t.text_muted)
+            } else {
+                Style::default().fg(t.text_secondary)
+            };
+            lines.push(Line::from(Span::styled(raw.to_owned(), style)));
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("test result:") {
+            // `test result: ok. N passed; M failed; …`
+            let body_color = if rest.contains(" FAILED") || rest.contains("failed; 0") {
+                if rest.contains("0 failed") {
+                    t.success
+                } else {
+                    t.error
+                }
+            } else if rest.contains(" ok") {
+                t.success
+            } else {
+                t.warning
+            };
+            lines.push(Line::from(vec![
+                Span::raw(leading.to_owned()),
+                Span::styled(
+                    "test result:".to_owned(),
+                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    rest.to_owned(),
+                    Style::default().fg(body_color).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+            continue;
+        }
+        if trimmed.starts_with("failures:") {
+            lines.push(Line::from(Span::styled(
+                raw.to_owned(),
+                Style::default().fg(t.error).add_modifier(Modifier::BOLD),
+            )));
+            continue;
+        }
+
+        // Carat / pipe gutters from the rust diagnostic format —
+        // they hint at code so let them inherit accent.
+        if trimmed.starts_with('|') || trimmed.starts_with('=') || trimmed.starts_with("^") {
+            lines.push(Line::from(Span::styled(
+                raw.to_owned(),
+                Style::default().fg(t.accent),
+            )));
+            continue;
+        }
+
+        lines.push(Line::from(Span::styled(
+            raw.to_owned(),
+            Style::default().fg(t.text_secondary),
+        )));
+    }
+    if total > max_lines {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "… {} more lines · click or press o to expand",
+                total - max_lines
+            ),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
+        )));
+    }
+    Paragraph::new(lines)
+        .style(Style::default().bg(t.bg))
         .scroll((skip as u16, 0))
         .render(area, buf);
 }
@@ -3774,6 +4499,161 @@ mod bash_output_tests {
         assert!(matches!(
             classify_bash_cmd("cat README.md"),
             BashCmdKind::Other
+        ));
+    }
+
+    // Normal: grep_target_file pulls the file argument out so the
+    // renderer can show a heading. Pattern is *not* the target.
+    #[test]
+    fn grep_target_file_extracts_path_normal() {
+        assert_eq!(
+            grep_target_file("grep -n \"sws_headers(\" ~/foo/auth.rs"),
+            Some("~/foo/auth.rs".into())
+        );
+        assert_eq!(
+            grep_target_file("rg \"open(\" --type rust src/"),
+            Some("src/".into())
+        );
+        assert_eq!(
+            grep_target_file("grep -e PAT -B 2 -A 2 file.rs"),
+            Some("file.rs".into())
+        );
+        // Quoted target gets unquoted.
+        assert_eq!(
+            grep_target_file("grep PAT 'file with spaces.rs'"),
+            Some("file with spaces.rs".into())
+        );
+    }
+
+    // Robust: grep_target_file is None when there's no positional
+    // file (recursive grep over cwd, or pattern-only invocation).
+    #[test]
+    fn grep_target_file_none_when_no_target_robust() {
+        // `rg PAT` with no target = search cwd recursively → None
+        assert_eq!(grep_target_file("rg \"foo\""), None);
+        assert_eq!(grep_target_file("grep PAT"), None);
+        // Wrong verb returns None.
+        assert_eq!(grep_target_file("cat file.rs"), None);
+    }
+
+    // Normal: the user's actual reported case — `grep -n "pattern("
+    // file` — must classify as Grep so render_grep_output_skip
+    // fires. The trailing `(` inside the double-quoted pattern was
+    // suspected of confusing the classifier; this test pins the
+    // expected behaviour so a future redact_quoted regression gets
+    // caught.
+    #[test]
+    fn classify_grep_with_paren_inside_quotes_normal() {
+        for cmd in &[
+            "grep -n \"sws_headers(\" ~/foo/auth.rs",
+            "grep -rn \"foo(\" src/",
+            "rg \"open(\" --type rust",
+            "grep \"async fn (\" file.rs",
+        ] {
+            assert!(
+                matches!(classify_bash_cmd(cmd), BashCmdKind::Grep),
+                "{cmd} should classify as Grep"
+            );
+        }
+    }
+
+    // Normal: `sed -n '1,$p' file.md` — the canonical "print all
+    // lines" idiom — must NOT be rejected for the `$` inside its
+    // quoted script. Before redact_quoted() this fell through to
+    // plain rendering and lost markdown formatting.
+    #[test]
+    fn infer_lang_handles_sed_with_dollar_in_quotes_normal() {
+        assert_eq!(
+            infer_lang_from_bash("sed -n '1,$p' README.md").as_deref(),
+            Some("md")
+        );
+        assert_eq!(
+            infer_lang_from_bash("awk '{print $1}' main.rs").as_deref(),
+            Some("rs")
+        );
+    }
+
+    // Robust: an *unquoted* `$` (real command substitution) must
+    // still be rejected — we only ignore `$` that lives inside a
+    // matched quote.
+    #[test]
+    fn infer_lang_rejects_unquoted_dollar_robust() {
+        assert!(infer_lang_from_bash("cat $(which README.md)").is_none());
+        assert!(infer_lang_from_bash("cat $FILE").is_none());
+    }
+
+    // Normal: redact_quoted preserves length and quote chars but
+    // blanks out the contents.
+    #[test]
+    fn redact_quoted_blanks_inside_quotes_normal() {
+        assert_eq!(redact_quoted("sed -n '1,$p' file"), "sed -n '    ' file");
+        assert_eq!(redact_quoted("echo \"$x\""), "echo \"  \"");
+        assert_eq!(redact_quoted("plain text no quotes"), "plain text no quotes");
+    }
+
+    // Normal: hex-dump tools route to HexDump.
+    #[test]
+    fn classify_hex_dump_tools_normal() {
+        for cmd in &["xxd file.bin", "hexyl file.bin", "od -c file.bin"] {
+            assert!(
+                matches!(classify_bash_cmd(cmd), BashCmdKind::HexDump),
+                "{cmd}"
+            );
+        }
+    }
+
+    // Normal: docker / podman list-style subcommands route to TabularList.
+    #[test]
+    fn classify_docker_tabular_normal() {
+        for cmd in &[
+            "docker ps",
+            "docker ps -a",
+            "docker images",
+            "podman ps",
+            "docker container ls",
+            "docker network ls",
+            "docker volume ls",
+        ] {
+            assert!(
+                matches!(classify_bash_cmd(cmd), BashCmdKind::TabularList),
+                "{cmd}"
+            );
+        }
+    }
+
+    // Robust: unknown docker subcommand falls through to Other (so
+    // we don't try to color e.g. `docker run` interactive output).
+    #[test]
+    fn classify_docker_unknown_subcmd_other_robust() {
+        assert!(matches!(classify_bash_cmd("docker run x"), BashCmdKind::Other));
+        assert!(matches!(classify_bash_cmd("docker"), BashCmdKind::Other));
+    }
+
+    // Normal: kubectl get / describe / top all route to TabularList.
+    #[test]
+    fn classify_kubectl_tabular_normal() {
+        for cmd in &[
+            "kubectl get pods",
+            "kubectl get nodes -o wide",
+            "kubectl describe pod x",
+            "kubectl top pod",
+            "oc get routes",
+        ] {
+            assert!(
+                matches!(classify_bash_cmd(cmd), BashCmdKind::TabularList),
+                "{cmd}"
+            );
+        }
+    }
+
+    // Normal: raw `diff -u a b` shares the GitDiff renderer so its
+    // +/-/@@ lines get colored too — fixes the gap where someone
+    // runs `diff -u` outside a git tree.
+    #[test]
+    fn classify_raw_diff_routes_to_gitdiff_normal() {
+        assert!(matches!(
+            classify_bash_cmd("diff -u a.txt b.txt"),
+            BashCmdKind::GitDiff
         ));
     }
 

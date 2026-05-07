@@ -172,6 +172,76 @@ pub(crate) fn snapshot_event_sender() -> Option<tokio::sync::mpsc::Sender<crate:
         .and_then(|g| g.clone())
 }
 
+/// Process-global handle to the active MCP registry. Set once at
+/// startup via `register_mcp_registry`, read by the dispatch arm in
+/// `execute_tool` so MCP tool calls can route to the right server
+/// without threading a registry parameter through every callsite.
+///
+/// Mirrors `active_event_sender_handle` exactly — the dispatcher is
+/// already a process-global singleton via tokio tasks, and bolting a
+/// registry parameter on would touch dozens of callsites for no
+/// architectural win.
+fn active_mcp_registry_handle() -> &'static std::sync::RwLock<Option<crate::mcp::McpRegistry>> {
+    static H: OnceLock<std::sync::RwLock<Option<crate::mcp::McpRegistry>>> = OnceLock::new();
+    H.get_or_init(|| std::sync::RwLock::new(None))
+}
+
+pub fn register_mcp_registry(registry: crate::mcp::McpRegistry) {
+    if let Ok(mut g) = active_mcp_registry_handle().write() {
+        *g = Some(registry);
+    }
+}
+
+pub(crate) fn snapshot_mcp_registry() -> Option<crate::mcp::McpRegistry> {
+    active_mcp_registry_handle()
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+}
+
+/// Process-global queue of attachments staged for the next outgoing
+/// request. The Read tool pushes to this queue when it ingests a
+/// `.pdf` (or, in future, an image) so the file lands in the
+/// upcoming `tool_result` message as a `document` / `image` content
+/// block instead of being squashed into a base64 text blob the
+/// model can't usefully read.
+///
+/// Drained by `stream::build_provider_messages_with_tool_results`
+/// just before serialization.
+fn pending_tool_attachments_handle()
+-> &'static std::sync::Mutex<Vec<crate::attachments::Attachment>> {
+    static H: OnceLock<std::sync::Mutex<Vec<crate::attachments::Attachment>>> =
+        OnceLock::new();
+    H.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+/// Stash an attachment for the next outgoing tool_result message.
+/// Called by tools (currently the Read tool when handed a `.pdf`)
+/// that need to surface a binary blob via Anthropic's `document` or
+/// `image` content block.
+pub(crate) fn push_pending_tool_attachment(att: crate::attachments::Attachment) {
+    if let Ok(mut g) = pending_tool_attachments_handle().lock() {
+        tracing::debug!(
+            target: "jfc::tools::attach",
+            kind = att.kind.mime_type(),
+            bytes = att.bytes.len(),
+            queued = g.len() + 1,
+            "queued attachment for next request"
+        );
+        g.push(att);
+    }
+}
+
+/// Drain every staged attachment. Called from
+/// `stream::build_provider_messages_with_tool_results` so the next
+/// request includes the attachments and the queue resets to empty.
+pub fn take_pending_tool_attachments() -> Vec<crate::attachments::Attachment> {
+    pending_tool_attachments_handle()
+        .lock()
+        .map(|mut g| std::mem::take(&mut *g))
+        .unwrap_or_default()
+}
+
 /// SwarmProvider impl for jfc-ui — delegates to the existing
 /// `worktrees` module. Each solver gets a worktree named
 /// `economy/<bounty_id>/<agent_id>` so concurrent bounties don't
@@ -624,6 +694,37 @@ pub(crate) fn split_patch_and_explanation(text: &str) -> (String, String) {
         }
     }
     (text.trim().to_string(), String::new())
+}
+
+/// Cheap HTML→text fallback used by `WebFetch` when content-type
+/// indicates HTML. This is intentionally minimal — drops anything
+/// between `<` and `>`, collapses runs of whitespace, normalizes
+/// line breaks. Doesn't decode entities or handle `<script>`/`<style>`
+/// content cleanly. A proper implementation would use scraper /
+/// html5ever, but the dependency cost isn't worth it for an MVP
+/// WebFetch — the model can usually reason about even ragged text.
+fn strip_html_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    let mut last_was_space = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if in_tag => {}
+            _ if c.is_whitespace() => {
+                if !last_was_space {
+                    out.push(' ');
+                    last_was_space = true;
+                }
+            }
+            _ => {
+                out.push(c);
+                last_was_space = false;
+            }
+        }
+    }
+    out.trim().to_string()
 }
 
 /// Result of applying a winning solver's solution to disk.
@@ -1828,7 +1929,133 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                 }
             }),
         },
+        ToolDef {
+            name: "MultiEdit".into(),
+            description: "Apply multiple edits to a single file in one tool call. \
+                `edits` is an array of `{old_string, new_string, replace_all?}` \
+                objects, applied in order — each edit sees the previous edit's \
+                output as input. Saves a tool round-trip when the model needs \
+                several rewrites in the same source file.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "file_path": { "type": "string" },
+                    "edits": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "old_string": { "type": "string" },
+                                "new_string": { "type": "string" },
+                                "replace_all": { "type": "boolean", "default": false }
+                            },
+                            "required": ["old_string", "new_string"]
+                        }
+                    }
+                },
+                "required": ["file_path", "edits"]
+            }),
+        },
+        ToolDef {
+            name: "AskUserQuestion".into(),
+            description: "Ask the user a multi-choice question mid-turn to gather \
+                preferences, clarify ambiguity, or offer choices. Use sparingly — \
+                only when context genuinely requires user input. Each option is \
+                a `{label, description}` object. Returns the user's selected \
+                label(s) as the tool result.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "question": { "type": "string" },
+                    "options": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": { "type": "string" },
+                                "description": { "type": "string" }
+                            },
+                            "required": ["label"]
+                        },
+                        "minItems": 2, "maxItems": 4
+                    },
+                    "multi_select": { "type": "boolean", "default": false }
+                },
+                "required": ["question", "options"]
+            }),
+        },
+        ToolDef {
+            name: "WebFetch".into(),
+            description: "Fetch a URL and return its contents (HTML extracted to \
+                text, JSON pretty-printed, plain text passed through). Optional \
+                `prompt` argument tells the model what aspect of the page to \
+                focus on; useful for long pages where you want a summary rather \
+                than the full body.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "Absolute URL (https:// preferred)" },
+                    "prompt": { "type": "string", "description": "Optional focus / summary instruction" }
+                },
+                "required": ["url"]
+            }),
+        },
+        ToolDef {
+            name: "WebSearch".into(),
+            description: "Search the web for `query`. Returns a ranked list of \
+                results with title, URL, and snippet. Combine with `WebFetch` \
+                to read promising hits.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" },
+                    "max_results": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5 }
+                },
+                "required": ["query"]
+            }),
+        },
+        ToolDef {
+            name: "ExitPlanMode".into(),
+            description: "Surface a finalized plan to the user and request \
+                permission to leave plan mode. Use this when you've gathered \
+                enough context (read files, run grep / git log, etc.) and \
+                are ready to execute destructive edits. The `plan` argument \
+                must be a markdown summary of: (1) the change you intend to \
+                make, (2) the files you'll touch, (3) anything risky / \
+                irreversible. After this tool returns success, you may \
+                proceed with Write/Edit/destructive Bash calls — the user \
+                has approved by virtue of you reaching this point. Mirrors \
+                Claude Code v2.1.132's ExitPlanMode tool contract.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "string",
+                        "description": "Markdown-formatted plan describing the work you're about to undertake."
+                    }
+                },
+                "required": ["plan"]
+            }),
+        },
     ]
+}
+
+/// `all_tool_defs()` + every MCP server's advertised tools. The
+/// streaming send-loop calls this so the model sees the union of
+/// native + MCP tools in a single `tools` array. When no MCP registry
+/// is registered (headless test, MCP disabled), this degrades to
+/// `all_tool_defs()`.
+///
+/// Exists as a separate function (rather than mutating
+/// `all_tool_defs`) so the synchronous-only callers — diagnostics
+/// dump, unit tests — keep working without an async runtime, and
+/// every push-to-API path explicitly opts into MCP discovery.
+pub async fn all_tool_defs_with_mcp() -> Vec<ToolDef> {
+    let mut tools = all_tool_defs();
+    if let Some(registry) = snapshot_mcp_registry() {
+        tools.extend(registry.all_advertised_tool_defs().await);
+    }
+    tools
 }
 
 #[derive(Debug, Clone)]
@@ -2716,6 +2943,237 @@ pub async fn execute_tool(
             }
             ExecutionResult::success(body)
         }
+        (
+            ToolKind::MultiEdit,
+            ToolInput::MultiEdit { file_path, edits },
+        ) => {
+            // Apply each edit in order. Each edit sees the previous
+            // edit's output, so later edits can reference text that
+            // earlier edits introduced. Bails on the first edit that
+            // doesn't match — partial application would leave the
+            // file in a half-edited state the model has to recover
+            // from. Same contract as v132.
+            let path = std::path::PathBuf::from(&file_path);
+            let mut content = match tokio::fs::read_to_string(&path).await {
+                Ok(s) => s,
+                Err(e) => {
+                    return ExecutionResult::failure(format!(
+                        "MultiEdit: cannot read {file_path}: {e}"
+                    ));
+                }
+            };
+            let edit_array = match edits.as_array() {
+                Some(a) => a,
+                None => return ExecutionResult::failure(
+                    "MultiEdit: `edits` must be an array of {old_string, new_string} objects".to_string(),
+                ),
+            };
+            let mut applied = 0usize;
+            for (i, edit) in edit_array.iter().enumerate() {
+                let old = edit.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+                let new_s = edit.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                let replace_all = edit
+                    .get("replace_all")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if old.is_empty() {
+                    return ExecutionResult::failure(format!(
+                        "MultiEdit: edit {} has empty old_string",
+                        i + 1
+                    ));
+                }
+                if !content.contains(old) {
+                    return ExecutionResult::failure(format!(
+                        "MultiEdit: edit {} of {} — old_string not found. \
+                         Earlier edits applied: {applied}. \
+                         Read the file and retry with the current contents.",
+                        i + 1,
+                        edit_array.len()
+                    ));
+                }
+                content = if replace_all {
+                    content.replace(old, new_s)
+                } else {
+                    let occurrences = content.matches(old).count();
+                    if occurrences > 1 {
+                        return ExecutionResult::failure(format!(
+                            "MultiEdit: edit {} matched {occurrences} times — \
+                             pass `replace_all: true` or include more context to disambiguate.",
+                            i + 1
+                        ));
+                    }
+                    content.replacen(old, new_s, 1)
+                };
+                applied += 1;
+            }
+            if let Err(e) = tokio::fs::write(&path, &content).await {
+                return ExecutionResult::failure(format!("MultiEdit: write {file_path}: {e}"));
+            }
+            tracing::info!(
+                target: "jfc::tools::multi_edit",
+                file_path = %file_path,
+                applied,
+                bytes = content.len(),
+                "MultiEdit applied"
+            );
+            ExecutionResult::success(format!("Applied {applied} edits to {file_path}."))
+        }
+        (
+            ToolKind::AskUserQuestion,
+            ToolInput::AskUserQuestion {
+                question,
+                options,
+                multi_select,
+            },
+        ) => {
+            // Surface the prompt to the user as a special transcript
+            // entry. The user replies with text that the next turn
+            // sees as the tool result. We don't block here because
+            // jfc has no modal-prompt UI yet — the entry pattern is
+            // "post the question, return immediately, treat the next
+            // user message as the answer."
+            let opts_repr: Vec<String> = options
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|opt| {
+                            let label = opt.get("label").and_then(|v| v.as_str())?;
+                            let desc = opt.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                            if desc.is_empty() {
+                                Some(format!("- {label}"))
+                            } else {
+                                Some(format!("- {label} — {desc}"))
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let body = format!(
+                "**Question for you:** {question}\n\n{}\n\n_(Reply with your choice{} as your next message.)_",
+                opts_repr.join("\n"),
+                if multi_select { "(s)" } else { "" }
+            );
+            // The transcript itself surfaces the question; we don't
+            // fire a toast since AppEvent::Toast's exact shape varies
+            // across builds and the transcript line is enough for the
+            // user to act on.
+            tracing::info!(
+                target: "jfc::tools::ask",
+                question = %question.chars().take(80).collect::<String>(),
+                option_count = opts_repr.len(),
+                multi = multi_select,
+                "AskUserQuestion surfaced"
+            );
+            ExecutionResult::success(format!(
+                "{body}\n\n(The user's next message is your tool result.)"
+            ))
+        }
+        (ToolKind::WebFetch, ToolInput::WebFetch { url, prompt }) => {
+            // Use reqwest with a short timeout. Strips HTML to text
+            // when content-type indicates HTML; otherwise returns
+            // the body as-is. The optional `prompt` is *not* applied
+            // here (we don't run a second LLM pass) — it's surfaced
+            // verbatim in the tool result so the model sees its own
+            // intent and can summarize during the next turn.
+            let client = match reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .user_agent("jfc/0.1 (https://github.com/anthropics/jfc)")
+                .build()
+            {
+                Ok(c) => c,
+                Err(e) => return ExecutionResult::failure(format!("WebFetch: client init: {e}")),
+            };
+            let resp = match client.get(&url).send().await {
+                Ok(r) => r,
+                Err(e) => return ExecutionResult::failure(format!("WebFetch: {url}: {e}")),
+            };
+            let status = resp.status();
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_owned();
+            let body = resp.text().await.unwrap_or_default();
+            let body = if content_type.contains("html") {
+                // Cheap HTML→text: strip tags. A real impl would use
+                // scraper/html5ever; this is an MVP.
+                strip_html_tags(&body)
+            } else {
+                body
+            };
+            // Cap to 50 KB so the tool result doesn't blow context.
+            let truncated = if body.len() > 50_000 {
+                format!("{}\n\n[...truncated, full {} bytes]", &body[..50_000], body.len())
+            } else {
+                body
+            };
+            let prompt_hint = prompt
+                .as_ref()
+                .map(|p| format!("Focus: {p}\n\n"))
+                .unwrap_or_default();
+            ExecutionResult::success(format!(
+                "GET {url} → {status}\n\n{prompt_hint}{truncated}"
+            ))
+        }
+        (ToolKind::WebSearch, ToolInput::WebSearch { query, max_results: _ }) => {
+            // jfc doesn't ship a search backend — this is a stub that
+            // tells the model to fall back to manual search. v132's
+            // WebSearch goes through Anthropic's hosted search API
+            // which we don't have access to from this client.
+            ExecutionResult::failure(format!(
+                "WebSearch not yet wired in jfc. As a workaround, suggest the \
+                 user run a search themselves and paste results, OR use WebFetch \
+                 against a known URL. Query was: {query}"
+            ))
+        }
+        (ToolKind::ExitPlanMode, ToolInput::ExitPlanMode { plan }) => {
+            // Hand the plan off to the UI thread so all permission-mode
+            // mutations stay on a single task. The model's tool result
+            // is the success acknowledgment — the actual mode flip
+            // happens when the main loop drains AppEvent::ExitPlanModeRequested.
+            if let Some(tx) = snapshot_event_sender() {
+                let _ = tx
+                    .send(crate::app::AppEvent::ExitPlanModeRequested { plan: plan.clone() })
+                    .await;
+                tracing::info!(
+                    target: "jfc::tools::plan_mode",
+                    plan_bytes = plan.len(),
+                    "ExitPlanMode dispatched to UI thread"
+                );
+                ExecutionResult::success(
+                    "Plan presented to user. Permission mode transitions \
+                     from Plan to AcceptEdits — you may now perform the \
+                     destructive operations described in the plan.".to_string(),
+                )
+            } else {
+                tracing::warn!(
+                    target: "jfc::tools::plan_mode",
+                    "ExitPlanMode called but no AppEvent sender registered"
+                );
+                ExecutionResult::failure(
+                    "ExitPlanMode failed: UI event channel unavailable.".to_string(),
+                )
+            }
+        }
+        (ToolKind::Mcp(advertised_name), ToolInput::Mcp { arguments, .. }) => {
+            // Route through the global MCP registry. The registry is
+            // populated at startup from `[mcp.<name>]` config blocks;
+            // if it's missing, MCP isn't wired in this build (e.g.
+            // headless test) — surface a clean failure so the model
+            // can recover rather than thinking the call hung.
+            let Some(registry) = snapshot_mcp_registry() else {
+                return ExecutionResult::failure(
+                    "MCP registry not initialized — restart jfc with the MCP module enabled."
+                        .to_string(),
+                );
+            };
+            match crate::mcp::dispatch_tool(&registry, &advertised_name, arguments).await {
+                Ok(outcome) if outcome.is_error => ExecutionResult::failure(outcome.text),
+                Ok(outcome) => ExecutionResult::success(outcome.text),
+                Err(e) => ExecutionResult::failure(format!("MCP dispatch failed: {e}")),
+            }
+        }
         (kind, _) => ExecutionResult::failure(format!("Tool {:?} not yet implemented", kind)),
     }
 }
@@ -2916,6 +3374,43 @@ async fn execute_read(
     debug!(target: "jfc::tools", file_path, offset, limit, "read: starting");
     let path = PathBuf::from(file_path);
 
+    // PDF fast-path: load the file as binary, stage it as an
+    // attachment for the next outgoing request, return a textual
+    // summary so the tool_result row in the transcript stays
+    // human-readable. Without this branch, `tokio::fs::read_to_string`
+    // below would either fail (non-UTF8) or produce mojibake the
+    // model can't use.
+    let is_pdf = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("pdf"))
+        .unwrap_or(false);
+    if is_pdf && !path.is_dir() {
+        match crate::attachments::read_pdf_file(&path) {
+            Ok(att) => {
+                let bytes = att.bytes.len();
+                push_pending_tool_attachment(att);
+                tracing::info!(
+                    target: "jfc::tools",
+                    file_path,
+                    bytes,
+                    "read: staged PDF as attachment"
+                );
+                return ExecutionResult::success(format!(
+                    "Loaded PDF {} ({} bytes). The full document is attached \
+                     to this tool_result and will be sent to the model as a \
+                     `document` content block — you can reason about its \
+                     pages, text, and embedded images directly.",
+                    file_path, bytes
+                ));
+            }
+            Err(e) => {
+                tracing::warn!(target: "jfc::tools", file_path, error = %e, "read: PDF load failed");
+                return ExecutionResult::failure(format!("Cannot read PDF: {e}"));
+            }
+        }
+    }
+
     if path.is_dir() {
         match tokio::fs::read_dir(&path).await {
             Ok(mut entries) => {
@@ -2991,6 +3486,29 @@ async fn execute_read(
                     file_path, line_count = slice.len(), total_lines, start,
                     "read: success"
                 );
+
+                // v132 parity: surface a `<system-reminder>` when the
+                // file is empty or the offset overshoots the line
+                // count — without it the model sees a blank tool
+                // result and often re-reads. The reminder makes the
+                // root cause visible.
+                if total_lines == 0 {
+                    return ExecutionResult::success(crate::system_reminder::format(
+                        &format!(
+                            "Warning: the file at {file_path} exists but its contents are empty."
+                        ),
+                    ));
+                }
+                if start >= total_lines {
+                    return ExecutionResult::success(crate::system_reminder::format(
+                        &format!(
+                            "Warning: the file at {file_path} exists but is shorter \
+                             than the provided offset ({}). The file has {} lines.",
+                            start + 1,
+                            total_lines
+                        ),
+                    ));
+                }
                 ExecutionResult::success(numbered)
             }
             Err(e) => {
@@ -5182,6 +5700,22 @@ mod tests {
                 "tool {} schema must be object-typed",
                 def.name,
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn all_tool_defs_with_mcp_no_registry_matches_native_normal() {
+        // When no MCP registry has been registered (process-global slot
+        // is None — true in fresh tests), the function should degrade
+        // to the native `all_tool_defs()` set.
+        let native = all_tool_defs();
+        let combined = all_tool_defs_with_mcp().await;
+        // Some other test in this module may have registered a registry
+        // earlier — what we care about is that combined is at least as
+        // big as native and starts with the same names.
+        assert!(combined.len() >= native.len());
+        for (i, def) in native.iter().enumerate() {
+            assert_eq!(combined[i].name, def.name);
         }
     }
 

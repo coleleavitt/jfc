@@ -1076,6 +1076,34 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::RunBounty { bounty_id, .. } => SerializedToolInput::Generic {
             summary: format!("RunBounty: {bounty_id}"),
         },
+        ToolInput::ExitPlanMode { plan } => SerializedToolInput::Generic {
+            // Persist the plan body in the session log so /resume
+            // sees it; the generic envelope is fine since plan-mode
+            // approval is in-memory state, not replayable on reload.
+            summary: format!("ExitPlanMode: {plan}"),
+        },
+        ToolInput::MultiEdit { file_path, edits } => SerializedToolInput::Generic {
+            summary: format!(
+                "MultiEdit: {file_path} ({} edits)",
+                edits.as_array().map(|a| a.len()).unwrap_or(0)
+            ),
+        },
+        ToolInput::AskUserQuestion { question, .. } => SerializedToolInput::Generic {
+            summary: format!("AskUserQuestion: {question}"),
+        },
+        ToolInput::WebFetch { url, .. } => SerializedToolInput::Generic {
+            summary: format!("WebFetch: {url}"),
+        },
+        ToolInput::WebSearch { query, .. } => SerializedToolInput::Generic {
+            summary: format!("WebSearch: {query}"),
+        },
+        ToolInput::Mcp { name, arguments } => SerializedToolInput::Generic {
+            // Persist MCP calls as a Generic-shaped row. We don't lose
+            // information because session resume rehydrates ToolInput
+            // via from_value(), which routes mcp__-prefixed names to
+            // the Mcp variant unconditionally.
+            summary: format!("{name}: {arguments}"),
+        },
         ToolInput::Generic { summary } => SerializedToolInput::Generic {
             summary: summary.clone(),
         },

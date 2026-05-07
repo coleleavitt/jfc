@@ -38,6 +38,8 @@ pub enum SlashCommand {
     Worktree(Option<String>),
     /// /daemon [sub] — daemon management (delegated)
     Daemon(Option<String>),
+    /// /mcp [list|restart <name>|logs <name>] — MCP server management
+    Mcp(Option<String>),
     /// Unknown command
     Unknown(String),
 }
@@ -66,6 +68,8 @@ impl fmt::Display for SlashCommand {
             Self::Worktree(None) => write!(f, "/worktree"),
             Self::Daemon(Some(s)) => write!(f, "/daemon {s}"),
             Self::Daemon(None) => write!(f, "/daemon"),
+            Self::Mcp(Some(s)) => write!(f, "/mcp {s}"),
+            Self::Mcp(None) => write!(f, "/mcp"),
             Self::Unknown(s) => write!(f, "/{s}"),
         }
     }
@@ -98,6 +102,7 @@ pub fn parse_slash_command(input: &str) -> Option<SlashCommand> {
         "exit" | "quit" | "q" => SlashCommand::Exit,
         "worktree" | "wt" => SlashCommand::Worktree(arg),
         "daemon" | "fleet" => SlashCommand::Daemon(arg),
+        "mcp" => SlashCommand::Mcp(arg),
         other => SlashCommand::Unknown(other.to_string()),
     };
 
@@ -120,6 +125,7 @@ Available commands:
   /memory          List project memories
   /hooks           Show registered lifecycle hooks
   /worktree [cmd]  Worktree management (create/list/remove/switch)
+  /mcp [cmd]       MCP server management (list/restart <name>/logs <name>)
   /daemon [cmd]    Daemon management (start/stop/status/run/cron)
   /help            Show this help
   /exit            Exit the session"
@@ -182,5 +188,26 @@ mod tests {
     fn case_insensitive() {
         assert_eq!(parse_slash_command("/COMPACT"), Some(SlashCommand::Compact));
         assert_eq!(parse_slash_command("/Model foo"), Some(SlashCommand::Model(Some("foo".to_string()))));
+    }
+
+    #[test]
+    fn parse_mcp_no_args_normal() {
+        assert_eq!(parse_slash_command("/mcp"), Some(SlashCommand::Mcp(None)));
+    }
+
+    #[test]
+    fn parse_mcp_with_subcommand_normal() {
+        assert_eq!(
+            parse_slash_command("/mcp list"),
+            Some(SlashCommand::Mcp(Some("list".to_string())))
+        );
+        assert_eq!(
+            parse_slash_command("/mcp restart filesystem"),
+            Some(SlashCommand::Mcp(Some("restart filesystem".to_string())))
+        );
+        assert_eq!(
+            parse_slash_command("/mcp logs git"),
+            Some(SlashCommand::Mcp(Some("logs git".to_string())))
+        );
     }
 }

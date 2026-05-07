@@ -443,6 +443,30 @@ pub enum ToolKind {
     GraphQuery,
     /// Edit code by symbol handle (semantic editing).
     SymbolEdit,
+    /// v132 parity: invoked by the model to surface a finalized plan
+    /// while in plan mode. The tool result determines whether the
+    /// agent proceeds (approved → mode flips to acceptEdits) or
+    /// stays planning (rejected → mode unchanged + feedback echoed).
+    ExitPlanMode,
+    /// v132 parity: apply multiple edits to one file in a single
+    /// tool call. Saves a tool round-trip when the model needs
+    /// several local rewrites in the same source.
+    MultiEdit,
+    /// v132 parity: ask the user a multi-choice question mid-turn.
+    /// Surfaces a structured prompt; the user's selection is the
+    /// tool result.
+    AskUserQuestion,
+    /// v132 parity: fetch a URL and return its contents.
+    WebFetch,
+    /// v132 parity: web search query → ranked results.
+    WebSearch,
+    /// MCP-advertised tool. The string is the full
+    /// `mcp__<server>__<tool>` advertised name, which
+    /// `mcp::tool_dispatch::dispatch_mcp_tool` unpacks to route the
+    /// call back to the right server. Carrying the namespaced name
+    /// (rather than just the inner tool) keeps display + dispatch
+    /// trivially round-trippable.
+    Mcp(String),
     Generic(String),
 }
 
@@ -590,6 +614,42 @@ pub enum ToolInput {
         /// effect — without validation we don't compute the cascade.
         #[serde(default, rename = "dispatch_cascade")]
         dispatch_cascade: bool,
+    },
+    /// v132 ExitPlanMode tool input — the markdown-formatted plan
+    /// the model wants the user to approve before resuming with
+    /// destructive operations.
+    ExitPlanMode {
+        plan: String,
+    },
+    MultiEdit {
+        file_path: String,
+        /// Each edit is { old_string, new_string, replace_all? }.
+        /// Applied in order; later edits see earlier edits' results.
+        /// Stored as a JSON array since the count is variable.
+        edits: serde_json::Value,
+    },
+    AskUserQuestion {
+        question: String,
+        /// JSON array of `{ label, description }` objects.
+        options: serde_json::Value,
+        multi_select: bool,
+    },
+    WebFetch {
+        url: String,
+        prompt: Option<String>,
+    },
+    WebSearch {
+        query: String,
+        max_results: Option<u32>,
+    },
+    /// Input for an MCP-advertised tool. We don't try to type the
+    /// arguments — each MCP server's `inputSchema` is arbitrary, so we
+    /// keep the raw JSON the model produced and let the server validate.
+    /// `name` carries the full `mcp__server__tool` advertised name so
+    /// dispatch can route on it.
+    Mcp {
+        name: String,
+        arguments: serde_json::Value,
     },
     Generic {
         summary: String,
@@ -887,9 +947,20 @@ impl ToolKind {
             "teammembermode" => Self::TeamMemberMode,
             "graphquery" => Self::GraphQuery,
             "symboledit" => Self::SymbolEdit,
+            "exitplanmode" => Self::ExitPlanMode,
+            "multiedit" => Self::MultiEdit,
+            "askuserquestion" => Self::AskUserQuestion,
+            "webfetch" | "web_fetch" => Self::WebFetch,
+            "websearch" | "web_search" => Self::WebSearch,
             "postbounty" | "post_bounty" => Self::PostBounty,
             "marketstatus" | "market_status" => Self::MarketStatus,
             "runbounty" | "run_bounty" => Self::RunBounty,
+            // MCP-namespaced tools survive normalization because
+            // `name.to_ascii_lowercase().replace('_', "")` strips the
+            // `mcp__server__tool` separators. Match against the *raw*
+            // name's prefix instead so we route to the MCP variant
+            // without losing the server/tool identity.
+            _ if name.starts_with("mcp__") => Self::Mcp(name.to_owned()),
             _ => Self::Generic(name.to_owned()),
         }
     }
@@ -918,9 +989,15 @@ impl ToolKind {
             Self::TeamMemberMode => "TeamMemberMode",
             Self::GraphQuery => "GraphQuery",
             Self::SymbolEdit => "SymbolEdit",
+            Self::ExitPlanMode => "ExitPlanMode",
+            Self::MultiEdit => "MultiEdit",
+            Self::AskUserQuestion => "AskUserQuestion",
+            Self::WebFetch => "WebFetch",
+            Self::WebSearch => "WebSearch",
             Self::PostBounty => "PostBounty",
             Self::RunBounty => "RunBounty",
             Self::MarketStatus => "MarketStatus",
+            Self::Mcp(name) => name.as_str(),
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -949,9 +1026,15 @@ impl ToolKind {
             Self::TeamMemberMode => "TeamMemberMode",
             Self::GraphQuery => "graph_query",
             Self::SymbolEdit => "symbol_edit",
+            Self::ExitPlanMode => "ExitPlanMode",
+            Self::MultiEdit => "MultiEdit",
+            Self::AskUserQuestion => "AskUserQuestion",
+            Self::WebFetch => "WebFetch",
+            Self::WebSearch => "WebSearch",
             Self::PostBounty => "post_bounty",
             Self::RunBounty => "run_bounty",
             Self::MarketStatus => "market_status",
+            Self::Mcp(name) => name.as_str(),
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -1036,6 +1119,30 @@ impl ToolInput {
                 None => "market status".into(),
             },
             Self::RunBounty { bounty_id, .. } => format!("run bounty: {bounty_id}"),
+            Self::ExitPlanMode { plan } => {
+                let head: String = plan.lines().next().unwrap_or("").chars().take(60).collect();
+                format!("exit plan mode: {head}")
+            }
+            Self::MultiEdit { file_path, edits } => {
+                let n = edits.as_array().map(|a| a.len()).unwrap_or(0);
+                format!("{file_path} ({n} edit{})", if n == 1 { "" } else { "s" })
+            }
+            Self::AskUserQuestion { question, .. } => {
+                format!("ask: {}", question.chars().take(60).collect::<String>())
+            }
+            Self::WebFetch { url, .. } => format!("fetch: {url}"),
+            Self::WebSearch { query, .. } => format!("search: {query}"),
+            Self::Mcp { name, arguments } => {
+                // Show the bare tool segment (after `mcp__server__`) plus
+                // a short JSON preview so the chat row reads like
+                // "mcp(read_file): {path:..}". Falls back to the full
+                // namespaced name if split fails.
+                let label = crate::mcp::split_advertised(name)
+                    .map(|(server, tool)| format!("{tool}@{server}"))
+                    .unwrap_or_else(|| name.clone());
+                let preview: String = arguments.to_string().chars().take(60).collect();
+                format!("{label}: {preview}")
+            }
             Self::Generic { summary } => summary.clone(),
         }
     }
@@ -1221,6 +1328,39 @@ impl ToolInput {
                     .and_then(|m| m.get("max_solvers"))
                     .and_then(|v| v.as_u64())
                     .map(|n| n.min(255) as u8),
+            },
+            ToolKind::ExitPlanMode => Self::ExitPlanMode {
+                plan: str_field("plan"),
+            },
+            ToolKind::MultiEdit => Self::MultiEdit {
+                file_path: str_field("file_path"),
+                edits: obj
+                    .and_then(|m| m.get("edits"))
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Array(vec![])),
+            },
+            ToolKind::AskUserQuestion => Self::AskUserQuestion {
+                question: str_field("question"),
+                options: obj
+                    .and_then(|m| m.get("options"))
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Array(vec![])),
+                multi_select: bool_field("multi_select"),
+            },
+            ToolKind::WebFetch => Self::WebFetch {
+                url: str_field("url"),
+                prompt: opt_str_field("prompt"),
+            },
+            ToolKind::WebSearch => Self::WebSearch {
+                query: str_field("query"),
+                max_results: obj
+                    .and_then(|m| m.get("max_results"))
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32),
+            },
+            ToolKind::Mcp(name) => Self::Mcp {
+                name,
+                arguments: v.clone(),
             },
             ToolKind::Generic(_) => Self::Generic {
                 summary: v.to_string(),
@@ -1478,6 +1618,35 @@ impl ToolInput {
                 }
                 v
             }
+            Self::ExitPlanMode { plan } => json!({ "plan": plan }),
+            Self::MultiEdit { file_path, edits } => json!({
+                "file_path": file_path,
+                "edits": edits,
+            }),
+            Self::AskUserQuestion {
+                question,
+                options,
+                multi_select,
+            } => json!({
+                "question": question,
+                "options": options,
+                "multi_select": multi_select,
+            }),
+            Self::WebFetch { url, prompt } => {
+                let mut v = json!({ "url": url });
+                if let Some(p) = prompt {
+                    v["prompt"] = json!(p);
+                }
+                v
+            }
+            Self::WebSearch { query, max_results } => {
+                let mut v = json!({ "query": query });
+                if let Some(n) = max_results {
+                    v["max_results"] = json!(n);
+                }
+                v
+            }
+            Self::Mcp { arguments, .. } => arguments.clone(),
             Self::Generic { summary } => {
                 serde_json::from_str(summary).unwrap_or(json!({ "input": summary }))
             }
@@ -1915,6 +2084,27 @@ mod tests {
     fn from_name_unknown_falls_through_to_generic_robust() {
         match ToolKind::from_name("not_a_real_tool") {
             ToolKind::Generic(s) => assert_eq!(s, "not_a_real_tool"),
+            other => panic!("expected Generic, got {other:?}"),
+        }
+    }
+
+    // MCP-namespaced names route to the Mcp variant carrying the full
+    // advertised name. The dispatcher splits it back into server +
+    // tool at call time.
+    #[test]
+    fn from_name_mcp_prefixed_routes_to_mcp_variant_normal() {
+        match ToolKind::from_name("mcp__filesystem__read_file") {
+            ToolKind::Mcp(s) => assert_eq!(s, "mcp__filesystem__read_file"),
+            other => panic!("expected Mcp, got {other:?}"),
+        }
+    }
+
+    // A name starting with `mcp` (no double underscore) is NOT MCP —
+    // could be a user's custom tool. Must fall through to Generic.
+    #[test]
+    fn from_name_mcp_without_separator_is_generic_robust() {
+        match ToolKind::from_name("mcp_dispatch") {
+            ToolKind::Generic(s) => assert_eq!(s, "mcp_dispatch"),
             other => panic!("expected Generic, got {other:?}"),
         }
     }

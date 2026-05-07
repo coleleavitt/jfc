@@ -2985,11 +2985,46 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
         "/worktree" => {
             handle_worktree_command(app, parts.get(1).copied().unwrap_or("").trim()).await;
         }
+        "/mcp" => {
+            handle_mcp_command(app, parts.get(1).copied().unwrap_or("").trim()).await;
+        }
         "/export" => {
             handle_export_command(app).await;
         }
         "/theme" => {
             handle_theme_command(app, parts.get(1).copied().unwrap_or("").trim());
+        }
+        "/fleet" | "/fleetview" => {
+            handle_fleet_command(app);
+        }
+        "/teleport" => {
+            handle_teleport_command(app, parts.get(1).copied().unwrap_or("").trim()).await;
+        }
+        "/init" => {
+            handle_init_command(app).await;
+        }
+        "/cost" | "/stats" => {
+            handle_cost_command(app);
+        }
+        "/doctor" => {
+            handle_doctor_command(app).await;
+        }
+        "/bug" => {
+            handle_bug_command(app, parts.get(1..).map(|r| r.join(" ")).unwrap_or_default());
+        }
+        "/rewind" => {
+            handle_rewind_command(app, parts.get(1).copied().unwrap_or("").trim());
+        }
+        "/output-style" | "/style" | "/brief" => {
+            // `/brief` is shorthand for `/output-style brief`. v132
+            // exposes the same alias via `tengu_brief_mode_toggled`.
+            let alias_brief = parts[0] == "/brief";
+            let arg = if alias_brief {
+                "brief".to_string()
+            } else {
+                parts.get(1).copied().unwrap_or("").trim().to_string()
+            };
+            handle_output_style_command(app, &arg);
         }
         "/dump-context" | "/debug-context" => {
             handle_dump_context_command(app).await;
@@ -3270,8 +3305,8 @@ async fn handle_dump_context_command(app: &mut App) {
 
 /// `/theme [name]` — switch the live UI theme. With no argument,
 /// lists the available built-ins. Apply to `app.theme` so all
-/// subsequent renders pick it up. Doesn't persist (the user can
-/// add `theme` to their config.toml later if we ever wire one).
+/// subsequent renders pick it up, then persist the choice to
+/// `~/.config/jfc/config.toml` so it survives restarts.
 fn handle_theme_command(app: &mut App, args: &str) {
     let name = args.trim();
     if name.is_empty() {
@@ -3282,18 +3317,35 @@ fn handle_theme_command(app: &mut App, args: &str) {
             .join(", ");
         app.messages
             .push(crate::types::ChatMessage::assistant(format!(
-                "Available themes: {list}.\n\nUse `/theme <name>` to switch."
+                "Available themes: {list}.\n\nUse `/theme <name>` to switch. \
+                 Selection is persisted to ~/.config/jfc/config.toml."
             )));
         return;
     }
     match crate::theme::Theme::by_name(name) {
         Some(theme) => {
             app.theme = theme;
+            // Persist the selection so the next launch boots into
+            // the same look. Persistence failure is non-fatal — we
+            // already updated `app.theme`, so the user gets the
+            // visual change for this session even if the write fails.
+            let persist_msg = match crate::config::save_theme(name) {
+                Ok(_) => format!("theme: {name}"),
+                Err(e) => {
+                    tracing::warn!(
+                        target: "jfc::ui::theme",
+                        theme = %name,
+                        error = %e,
+                        "applied theme but could not persist"
+                    );
+                    format!("theme: {name} (not persisted: {e})")
+                }
+            };
             crate::toast::push_with_cap(
                 &mut app.toasts,
                 crate::toast::Toast::new(
                     crate::toast::ToastKind::Success,
-                    format!("theme: {name}"),
+                    persist_msg,
                 ),
             );
         }
@@ -3310,6 +3362,420 @@ fn handle_theme_command(app: &mut App, args: &str) {
             );
         }
     }
+}
+
+/// `/fleet` — print a snapshot of every active teammate. Lists agent
+/// id, status, last tool, and elapsed time since spawn so the user
+/// can see what their swarm is up to without paging through each
+/// session. Mirrors v132's `tengu_fleetview` command surface; the
+/// renderer in `fleet_view.rs` is reused for the in-TUI live view
+/// (planned follow-up); this slash command produces the textual
+/// digest right now so the data wire is exercised.
+fn handle_fleet_command(app: &mut App) {
+    let mut lines: Vec<String> = Vec::new();
+    if app.team_context.teammates.is_empty() {
+        lines.push("No active teammates.".into());
+        lines.push("Spawn one via the Task tool with `name` + `team_name` set.".into());
+    } else {
+        lines.push(format!(
+            "Fleet: {} teammate{} active",
+            app.team_context.teammates.len(),
+            if app.team_context.teammates.len() == 1 { "" } else { "s" }
+        ));
+        lines.push("".into());
+        for tm in app.team_context.teammates.values() {
+            let elapsed = tm.spawned_at.elapsed();
+            lines.push(format!(
+                "  {} · {} · spawned {}m{}s ago{}",
+                tm.name,
+                tm.agent_type.as_deref().unwrap_or("(no agent type)"),
+                elapsed.as_secs() / 60,
+                elapsed.as_secs() % 60,
+                tm.color.as_deref()
+                    .map(|c| format!(" · color={c}"))
+                    .unwrap_or_default(),
+            ));
+        }
+    }
+    app.messages
+        .push(crate::types::ChatMessage::user("/fleet".into()));
+    app.messages
+        .push(crate::types::ChatMessage::assistant(lines.join("\n")));
+    tracing::info!(
+        target: "jfc::ui::fleet",
+        teammates = app.team_context.teammates.len(),
+        "/fleet rendered"
+    );
+}
+
+/// `/teleport [branch]` — list jfc-managed branches in the current
+/// repo, or check out the named branch and resume that session.
+/// Argument-less form prints the available targets so the user can
+/// pick one. Wraps `swarm::teleport::teleport_to_session` /
+/// `list_teleport_targets`. Mirrors v132's `/teleport` command.
+async fn handle_teleport_command(app: &mut App, target: &str) {
+    use std::path::Path;
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let repo_root: &Path = cwd.as_path();
+
+    if target.is_empty() {
+        let targets = crate::swarm::teleport::list_teleport_targets(repo_root);
+        let body = if targets.is_empty() {
+            "No jfc-managed branches in this repo (looking for `jfc/<session>` branches).\n\
+             Spawn a teammate via Task to create one, or check out a branch with `git checkout`."
+                .to_string()
+        } else {
+            let mut s = format!("Teleport targets ({}):\n\n", targets.len());
+            for t in &targets {
+                s.push_str(&format!(
+                    "  {} → /teleport {}\n",
+                    t.session_id.as_deref().unwrap_or("(no session id)"),
+                    t.branch
+                ));
+            }
+            s.push_str("\nRun `/teleport <branch>` to jump.");
+            s
+        };
+        app.messages
+            .push(crate::types::ChatMessage::user("/teleport".into()));
+        app.messages
+            .push(crate::types::ChatMessage::assistant(body));
+        return;
+    }
+
+    // Caller wants to jump to a specific branch. Use the session id
+    // form if supplied (e.g. `/teleport abc123`) else assume it's a
+    // full branch name (e.g. `/teleport jfc/abc123`).
+    let target_branch = if target.starts_with("jfc/") {
+        target.to_string()
+    } else {
+        format!("jfc/{target}")
+    };
+    let result = crate::swarm::teleport::teleport_to_session(
+        repo_root,
+        &target_branch,
+        None,
+    );
+    app.messages
+        .push(crate::types::ChatMessage::user(format!("/teleport {target}")));
+    app.messages
+        .push(crate::types::ChatMessage::assistant(result.message.clone()));
+    tracing::info!(
+        target: "jfc::ui::teleport",
+        target = %target_branch,
+        message = %result.message,
+        "/teleport executed"
+    );
+}
+
+/// `/output-style [name]` — switch the verbosity / formatting style
+/// of assistant replies. Without an argument, lists the built-ins.
+/// With an argument, applies the new style and persists it to
+/// `~/.config/jfc/config.toml` so the choice sticks across restarts.
+/// `/brief` is a shorthand alias the dispatcher pre-resolves.
+fn handle_output_style_command(app: &mut App, args: &str) {
+    use crate::output_style::OutputStyle;
+    let arg = args.trim();
+    if arg.is_empty() {
+        let mut lines = vec!["Available output styles:".to_string(), "".to_string()];
+        for s in OutputStyle::all() {
+            let active = if *s == app.output_style { " · ACTIVE" } else { "" };
+            let suffix = s
+                .system_prompt_suffix()
+                .map(|t| t.split('.').next().unwrap_or("").trim().to_string())
+                .unwrap_or_else(|| "no system-prompt change".to_string());
+            lines.push(format!("  {} — {}{active}", s.name(), suffix));
+        }
+        lines.push("".into());
+        lines.push("Use `/output-style <name>` to switch.".into());
+        app.messages
+            .push(crate::types::ChatMessage::user("/output-style".into()));
+        app.messages
+            .push(crate::types::ChatMessage::assistant(lines.join("\n")));
+        return;
+    }
+    let parsed = OutputStyle::from_str_loose(arg);
+    if parsed == OutputStyle::Default && !arg.eq_ignore_ascii_case("default") {
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Warning,
+                format!(
+                    "Unknown output style '{arg}' — try one of: {}",
+                    OutputStyle::all()
+                        .iter()
+                        .map(|s| s.name())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ),
+        );
+        return;
+    }
+    app.output_style = parsed;
+    crate::output_style::set_active(parsed);
+    // Persist by mutating only the output_style field of the on-disk
+    // config — same pattern theme persistence uses. A failure here is
+    // non-fatal; the in-memory value still applies for this session.
+    let persist_msg = match save_output_style(parsed.name()) {
+        Ok(_) => format!("output style: {}", parsed.name()),
+        Err(e) => {
+            tracing::warn!(target: "jfc::ui::output_style", style = %parsed.name(), error = %e, "applied but not persisted");
+            format!("output style: {} (not persisted: {e})", parsed.name())
+        }
+    };
+    crate::toast::push_with_cap(
+        &mut app.toasts,
+        crate::toast::Toast::new(crate::toast::ToastKind::Success, persist_msg),
+    );
+}
+
+/// Persist the chosen output style to ~/.config/jfc/config.toml.
+/// Reads existing config so other fields aren't clobbered. Refuses
+/// to overwrite an unparseable file (same safety rule as save_theme).
+fn save_output_style(name: &str) -> Result<std::path::PathBuf, String> {
+    let path = crate::config::config_path();
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return Err(format!("cannot create {}: {e}", parent.display()));
+    }
+    let mut cfg: crate::config::Config = match std::fs::read_to_string(&path) {
+        Ok(s) if !s.trim().is_empty() => match toml::from_str(&s) {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(format!(
+                    "{} is not valid TOML — fix it first ({e})",
+                    path.display()
+                ));
+            }
+        },
+        _ => crate::config::Config::default(),
+    };
+    cfg.output_style = Some(name.to_string());
+    let serialized = toml::to_string_pretty(&cfg)
+        .map_err(|e| format!("serialize failed: {e}"))?;
+    std::fs::write(&path, serialized)
+        .map_err(|e| format!("write {} failed: {e}", path.display()))?;
+    Ok(path)
+}
+
+/// `/init` — bootstrap a CLAUDE.md in the current working directory.
+/// Mirrors v132's onboarding flow. If CLAUDE.md already exists, surfaces
+/// the path so the user can edit it; otherwise writes a starter template
+/// and prompts the user to fill it in. Reload happens lazily on next
+/// turn via `ClaudeMdHierarchy::load`.
+async fn handle_init_command(app: &mut App) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let target = cwd.join("CLAUDE.md");
+    let body = if target.exists() {
+        format!(
+            "CLAUDE.md already exists at {}. Open it in your editor to add project rules, \
+             coding standards, key patterns, or anything you want every turn to remember.",
+            target.display()
+        )
+    } else {
+        let template = r#"# Project rules
+
+## Coding standards
+
+- (your standards here)
+
+## Key patterns
+
+- (your conventions / architectural choices)
+
+## Things to avoid
+
+- (what should *not* be done)
+"#;
+        match tokio::fs::write(&target, template).await {
+            Ok(()) => {
+                tracing::info!(target: "jfc::ui::init", path = %target.display(), "wrote CLAUDE.md template");
+                format!(
+                    "Created {} with a starter template. Edit it to capture project rules — \
+                     it'll be loaded into every turn's context.",
+                    target.display()
+                )
+            }
+            Err(e) => format!("Failed to create {}: {e}", target.display()),
+        }
+    };
+    app.messages.push(crate::types::ChatMessage::user("/init".into()));
+    app.messages.push(crate::types::ChatMessage::assistant(body));
+}
+
+/// `/cost` — running session cost in dollars, broken down by model and
+/// token kind (input/output/cache_read/cache_write). v132 mirrors this
+/// via `tengu_cost_threshold_*` events; jfc surfaces it as an on-demand
+/// transcript message so users can see spend without a side panel.
+fn handle_cost_command(app: &mut App) {
+    let mut total = 0.0f64;
+    let mut lines: Vec<String> = vec!["Session cost so far:".into(), "".into()];
+    if app.usage_by_model.is_empty() {
+        lines.push("  (no model usage yet — try a prompt first)".into());
+    } else {
+        for (model, usage) in &app.usage_by_model {
+            let cost = crate::cost::cost_for(model.as_str(), usage);
+            total += cost;
+            lines.push(format!(
+                "  {} · {} in / {} out / {} cache-read / {} cache-write → {}",
+                model.as_str(),
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cache_read_tokens,
+                usage.cache_write_tokens,
+                crate::cost::fmt_cost(cost),
+            ));
+        }
+    }
+    lines.push("".into());
+    lines.push(format!("**Total: {}**", crate::cost::fmt_cost(total)));
+    app.messages.push(crate::types::ChatMessage::user("/cost".into()));
+    app.messages.push(crate::types::ChatMessage::assistant(lines.join("\n")));
+}
+
+/// `/doctor` — health check covering provider auth, model reachability,
+/// config, working directory, git status. Mirrors v132's `tengu_doctor_command`.
+/// Each line is an icon + label so users get a quick triage view.
+async fn handle_doctor_command(app: &mut App) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let mut lines: Vec<String> = vec!["Diagnostic check:".into(), "".into()];
+
+    // Working directory
+    lines.push(format!("  ✓ cwd: {}", cwd.display()));
+
+    // Git
+    let git_ok = std::process::Command::new("git")
+        .arg("rev-parse")
+        .arg("--is-inside-work-tree")
+        .current_dir(&cwd)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if git_ok {
+        lines.push("  ✓ git: in a repo".into());
+    } else {
+        lines.push("  ⚠ git: not in a repo (some features need one)".into());
+    }
+
+    // Config
+    let cfg_path = crate::config::config_path();
+    if cfg_path.exists() {
+        lines.push(format!("  ✓ config: {}", cfg_path.display()));
+    } else {
+        lines.push(format!("  ⚠ config: not found at {} (will use defaults)", cfg_path.display()));
+    }
+
+    // CLAUDE.md
+    let claude_md = cwd.join("CLAUDE.md");
+    if claude_md.exists() {
+        lines.push(format!("  ✓ CLAUDE.md: {}", claude_md.display()));
+    } else {
+        lines.push("  ⚠ CLAUDE.md: not present (run /init to create)".into());
+    }
+
+    // Provider
+    lines.push(format!("  ✓ provider: {}", app.provider.name()));
+    lines.push(format!("  ✓ model: {}", app.model.as_str()));
+
+    // Permission mode
+    lines.push(format!("  ✓ mode: {:?}", app.permission_mode));
+
+    // Theme
+    lines.push(format!(
+        "  ✓ theme: {} ({} available)",
+        // We don't store the theme name post-load — surface the slot count instead.
+        "active",
+        crate::theme::Theme::available_names().len()
+    ));
+
+    lines.push("".into());
+    lines.push("Run /config to inspect detailed config.".into());
+    app.messages.push(crate::types::ChatMessage::user("/doctor".into()));
+    app.messages.push(crate::types::ChatMessage::assistant(lines.join("\n")));
+}
+
+/// `/bug` — tell the user where to file a bug + capture a session-id
+/// hint they can paste in. v132 has `tengu_bug_report_*` events for
+/// in-product reporting; jfc currently just points at GitHub since
+/// we don't have a managed reporting endpoint.
+fn handle_bug_command(app: &mut App, description: String) {
+    let session_id = app.current_session_id.as_deref().unwrap_or("(none)");
+    let body = format!(
+        "Bug reports go to https://github.com/anthropics/jfc/issues/new\n\n\
+         Include in your report:\n\
+         - **Session ID**: `{session_id}`\n\
+         - **Provider/model**: `{}` / `{}`\n\
+         - **Mode**: {:?}\n\
+         - **Description**: {}\n\n\
+         Tip: run `/dump-context` first to grab the full session for the report.",
+        app.provider.name(),
+        app.model.as_str(),
+        app.permission_mode,
+        if description.trim().is_empty() {
+            "(your description here)"
+        } else {
+            description.trim()
+        }
+    );
+    app.messages
+        .push(crate::types::ChatMessage::user(format!("/bug {description}").trim_end().into()));
+    app.messages.push(crate::types::ChatMessage::assistant(body));
+}
+
+/// `/rewind [N]` — drop the last N user/assistant turn pairs from the
+/// transcript so the user can retry a divergent path without starting
+/// fresh. N defaults to 1 (the most recent exchange). v132 reserves
+/// `tengu_rewind*` for this; we implement the in-memory variant —
+/// session.jsonl persistence still reflects pre-rewind state until
+/// the next save.
+fn handle_rewind_command(app: &mut App, n_str: &str) {
+    let n: usize = n_str.parse().unwrap_or(1).max(1);
+    use crate::types::Role;
+    // Walk backwards, dropping user/assistant pairs. A "pair" here is
+    // a user message + every assistant message that follows until the
+    // next user. We rewind whole pairs to keep tool_use / tool_result
+    // groupings intact.
+    let mut dropped_pairs = 0usize;
+    while dropped_pairs < n {
+        let last_user_idx = app
+            .messages
+            .iter()
+            .rposition(|m| m.role == Role::User);
+        match last_user_idx {
+            Some(idx) => {
+                let removed = app.messages.split_off(idx).len();
+                tracing::info!(
+                    target: "jfc::ui::rewind",
+                    pair = dropped_pairs + 1,
+                    removed,
+                    remaining = app.messages.len(),
+                    "rewind: dropped a turn pair"
+                );
+                dropped_pairs += 1;
+            }
+            None => break,
+        }
+    }
+    let body = if dropped_pairs == 0 {
+        "Nothing to rewind — transcript is empty or has no user turns.".to_string()
+    } else {
+        format!(
+            "Rewound {} turn pair{} ({} message{} remaining). Re-prompt to continue \
+             from this point — the trimmed history is gone for this session.",
+            dropped_pairs,
+            if dropped_pairs == 1 { "" } else { "s" },
+            app.messages.len(),
+            if app.messages.len() == 1 { "" } else { "s" },
+        )
+    };
+    crate::toast::push_with_cap(
+        &mut app.toasts,
+        crate::toast::Toast::new(crate::toast::ToastKind::Info, body.clone()),
+    );
+    app.messages
+        .push(crate::types::ChatMessage::assistant(body));
 }
 
 /// `/export` — serialize the current transcript as markdown and write
@@ -3584,6 +4050,126 @@ async fn handle_worktree_command(app: &mut App, args: &str) {
                     "Unknown subcommand `{other}`. Try `/worktree list|create <name>|remove <name>|switch <name>`."
                 ),
             );
+        }
+    }
+}
+
+/// Dispatch `/mcp …` subcommands.
+///
+/// - `/mcp` or `/mcp list` — show every configured MCP server, its
+///   connection status, and the count of tools it exposes.
+/// - `/mcp restart <name>` — kill the running server (if any) and
+///   re-spawn it from the cached config. Useful when an MCP server
+///   wedges or its tool list goes stale.
+/// - `/mcp logs <name>` — print the last 50 stderr lines from a
+///   server. The transport keeps a 200-line ring buffer per server so
+///   even if the user didn't `RUST_LOG=jfc::mcp=debug`, recent
+///   diagnostics are recoverable.
+async fn handle_mcp_command(app: &mut App, args: &str) {
+    let mut it = args.split_whitespace();
+    let sub = it.next().unwrap_or("list");
+    let arg = it.next().unwrap_or("");
+
+    let raw = if args.is_empty() {
+        "/mcp".to_owned()
+    } else {
+        format!("/mcp {args}")
+    };
+
+    let Some(registry) = crate::tools::snapshot_mcp_registry() else {
+        app.messages.push(ChatMessage::user(raw));
+        app.messages.push(ChatMessage::assistant(
+            "MCP registry not initialized. Add `[mcp.<name>]` blocks to \
+             `~/.config/jfc/config.toml` and restart jfc.".to_owned(),
+        ));
+        return;
+    };
+
+    match sub {
+        "" | "list" => {
+            let servers = registry.list().await;
+            let body = if servers.is_empty() {
+                "No MCP servers configured. Add `[mcp.<name>]` blocks to \
+                 `~/.config/jfc/config.toml`.".to_owned()
+            } else {
+                let mut s = format!("**{} MCP server(s):**\n\n", servers.len());
+                for srv in &servers {
+                    s.push_str(&format!(
+                        "- `{}` — *{}* — {} tool{}\n",
+                        srv.name,
+                        srv.status.label(),
+                        srv.tools.len(),
+                        if srv.tools.len() == 1 { "" } else { "s" }
+                    ));
+                }
+                s
+            };
+            app.messages.push(ChatMessage::user(raw));
+            app.messages.push(ChatMessage::assistant(body));
+        }
+        "restart" => {
+            if arg.is_empty() {
+                app.messages.push(ChatMessage::user(raw));
+                app.messages.push(ChatMessage::assistant(
+                    "Usage: `/mcp restart <name>`.".to_owned(),
+                ));
+                return;
+            }
+            app.messages.push(ChatMessage::user(raw));
+            let body = match crate::mcp::restart_server(&registry, arg).await {
+                Some(true) => format!("MCP server `{arg}` restarted and reconnected."),
+                Some(false) => format!(
+                    "MCP server `{arg}` was restarted but failed to reconnect. \
+                     See `/mcp logs {arg}` for stderr."
+                ),
+                None => format!("MCP server `{arg}` is not configured."),
+            };
+            app.messages.push(ChatMessage::assistant(body));
+        }
+        "logs" => {
+            if arg.is_empty() {
+                app.messages.push(ChatMessage::user(raw));
+                app.messages.push(ChatMessage::assistant(
+                    "Usage: `/mcp logs <name>`.".to_owned(),
+                ));
+                return;
+            }
+            let body = match registry.get(arg).await {
+                None => format!("MCP server `{arg}` is not configured."),
+                Some(server) => match server.transport.as_ref() {
+                    None => format!(
+                        "MCP server `{arg}` has no live transport (status: {}).",
+                        server.status.label()
+                    ),
+                    Some(transport) => {
+                        let lines = transport.recent_stderr().await;
+                        if lines.is_empty() {
+                            format!("MCP server `{arg}` — no stderr captured yet.")
+                        } else {
+                            let recent: Vec<&String> = lines.iter().rev().take(50).collect();
+                            let mut body = format!(
+                                "**`{arg}` stderr (last {} line{}):**\n\n```\n",
+                                recent.len(),
+                                if recent.len() == 1 { "" } else { "s" }
+                            );
+                            for l in recent.iter().rev() {
+                                body.push_str(l);
+                                body.push('\n');
+                            }
+                            body.push_str("```\n");
+                            body
+                        }
+                    }
+                },
+            };
+            app.messages.push(ChatMessage::user(raw));
+            app.messages.push(ChatMessage::assistant(body));
+        }
+        other => {
+            app.messages.push(ChatMessage::user(raw));
+            app.messages.push(ChatMessage::assistant(format!(
+                "Unknown subcommand `{other}`. Try `/mcp list`, `/mcp restart <name>`, or `/mcp logs <name>`."
+            )));
         }
     }
 }

@@ -240,6 +240,13 @@ pub(crate) fn render_message_as_text(msg: &crate::provider::ProviderMessage) -> 
                     content.len()
                 ));
             }
+            ProviderContent::Attachment(att) => {
+                out.push_str(&format!(
+                    "\n  <attachment kind=\"{}\" bytes=\"{}\"/>",
+                    att.kind.mime_type(),
+                    att.bytes.len()
+                ));
+            }
         }
     }
     out
@@ -391,6 +398,11 @@ pub(crate) fn estimate_provider_message_bytes(msg: &crate::provider::ProviderMes
                 name.len() + serde_json::to_string(input).map(|s| s.len()).unwrap_or(0)
             }
             ProviderContent::ToolResult { content, .. } => content.len(),
+            // Attachments are base64-encoded on the wire — that's
+            // ~4/3 the raw byte size. Use the raw size as a lower
+            // bound for budget purposes; over-estimating is safer
+            // than under-estimating since this drives compaction.
+            ProviderContent::Attachment(att) => att.bytes.len() * 4 / 3,
         })
         .sum::<usize>()
         + 16
@@ -1054,6 +1066,19 @@ Do not use a colon before tool calls.";
             system_prompt.push_str(&block);
         }
     }
+    // OutputStyle suffix (v132 brief/verbose/explanatory/learning).
+    // Read from the process-global handle so /output-style takes
+    // effect on the next turn without having to thread state through
+    // every caller. Default is no-op so existing turns are byte-for-
+    // byte identical.
+    if let Some(suffix) = crate::output_style::active().system_prompt_suffix() {
+        system_prompt.push_str(suffix);
+        tracing::debug!(
+            target: "jfc::stream",
+            style = %crate::output_style::active().name(),
+            "appended OutputStyle suffix to system prompt"
+        );
+    }
     // Thinking is a 3-way choice: adaptive (4.6+ Anthropic-native),
     // legacy budget_tokens (older Anthropic-native + select deployments),
     // or off. Proxy-routed model IDs (bedrock-*, vertex-*, etc.) default
@@ -1072,10 +1097,11 @@ Do not use a colon before tool calls.";
         "preparing stream request"
     );
     let max_out = max_output_tokens_for(model.as_str());
+    let advertised_tools = tools::all_tool_defs_with_mcp().await;
     let opts = {
         let base = StreamOptions::new(model.clone())
             .system(system_prompt)
-            .tools(tools::all_tool_defs())
+            .tools(advertised_tools)
             .max_tokens(max_out);
         if supports_adaptive {
             base.adaptive()
@@ -2153,14 +2179,121 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
             });
         }
     }
+    // Drain attachments staged by tool dispatchers (currently: PDFs
+    // ingested by Read). Append them to the LAST user-role message
+    // — that's the tool_results message we just emitted in the loop
+    // above when a Read tool just ran, or the user's prompt when no
+    // tool fired. Skipping the append here would silently lose the
+    // PDF, so this is the load-bearing wire.
+    let pending = crate::tools::take_pending_tool_attachments();
+    let pending_count = pending.len();
+    if !pending.is_empty() {
+        let attached: Vec<ProviderContent> = pending
+            .into_iter()
+            .map(ProviderContent::Attachment)
+            .collect();
+        // Find the last user message and append; if none exists,
+        // create one (defensive — `ensure_user_last` enforces this
+        // anyway, but doing it eagerly keeps the message structure
+        // predictable).
+        if let Some(last_user) = out
+            .iter_mut()
+            .rfind(|m| matches!(m.role, ProviderRole::User))
+        {
+            last_user.content.extend(attached);
+        } else {
+            out.push(ProviderMessage {
+                role: ProviderRole::User,
+                content: attached,
+            });
+        }
+    }
     tracing::debug!(
         target: "jfc::stream",
         input_messages = msgs.len(),
         output_messages = out.len(),
-        tool_use_count, tool_result_count, abandoned_count,
+        tool_use_count, tool_result_count, abandoned_count, pending_count,
         "build_provider_messages_with_tool_results"
     );
     ensure_user_last(out)
+}
+
+#[cfg(test)]
+mod pdf_attachment_drain_tests {
+    use super::*;
+    use crate::types::ChatMessage;
+
+    /// Test-isolation lock so this module's tests serialize their
+    /// access to the process-global pending-attachments queue.
+    /// Otherwise running two tests in parallel would leak state
+    /// between them and break the queue-empty assertions.
+    fn drain_test_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> =
+            std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    /// Normal: when a PDF is staged via push_pending_tool_attachment,
+    /// build_provider_messages_with_tool_results drains the queue
+    /// and appends an Attachment content block to the LAST user
+    /// message. Without this glue the model never sees the PDF.
+    #[test]
+    fn pending_pdf_lands_in_last_user_message_normal() {
+        let _guard = drain_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        let _ = crate::tools::take_pending_tool_attachments();
+
+        let pdf = crate::attachments::Attachment {
+            kind: crate::attachments::AttachmentKind::ApplicationPdf,
+            bytes: b"%PDF-1.7\nfake".to_vec(),
+        };
+        crate::tools::push_pending_tool_attachment(pdf);
+
+        let msgs = vec![ChatMessage::user("read this please".to_string())];
+        let provider_msgs = build_provider_messages_with_tool_results(&msgs);
+        let last_user = provider_msgs
+            .iter()
+            .rfind(|m| matches!(m.role, ProviderRole::User))
+            .expect("must have a user message");
+        let attachment_count = last_user
+            .content
+            .iter()
+            .filter(|c| matches!(c, ProviderContent::Attachment(_)))
+            .count();
+        assert_eq!(
+            attachment_count, 1,
+            "expected exactly one attachment on the last user message"
+        );
+    }
+
+    /// Robust: a second build_provider_messages_with_tool_results
+    /// call AFTER the drain must NOT see the PDF again — the queue
+    /// should be empty so the same attachment doesn't replay every
+    /// turn (which would balloon token cost and produce duplicate
+    /// document blocks).
+    #[test]
+    fn drain_clears_pending_queue_robust() {
+        let _guard = drain_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        let _ = crate::tools::take_pending_tool_attachments();
+
+        let pdf = crate::attachments::Attachment {
+            kind: crate::attachments::AttachmentKind::ApplicationPdf,
+            bytes: b"%PDF-1.7\n".to_vec(),
+        };
+        crate::tools::push_pending_tool_attachment(pdf);
+
+        let msgs = vec![ChatMessage::user("first".to_string())];
+        let _first_round = build_provider_messages_with_tool_results(&msgs);
+        let second_round = build_provider_messages_with_tool_results(&msgs);
+        let attachment_count = second_round
+            .iter()
+            .flat_map(|m| m.content.iter())
+            .filter(|c| matches!(c, ProviderContent::Attachment(_)))
+            .count();
+        assert_eq!(
+            attachment_count, 0,
+            "second build must not replay the drained attachment"
+        );
+    }
 }
 
 #[cfg(test)]
