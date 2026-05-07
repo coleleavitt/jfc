@@ -29,6 +29,10 @@ fn graph_session_cache() -> &'static std::sync::Mutex<
 /// Get-or-build a cached `GraphSession` for `cwd`. Cheap on cache hit
 /// (one HashMap lookup); first call per workspace pays the full
 /// tree-sitter parse cost.
+///
+/// Graph building and analysis (tarjan_scc, page_rank, etc.) can recurse
+/// deeply on large codebases. We spawn the build on a dedicated thread
+/// with a 64MB stack to avoid overflowing tokio's 8MB worker threads.
 fn get_or_build_graph_session(cwd: &std::path::Path) -> Arc<jfc_graph::session::GraphSession> {
     let key = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
     let mut cache = graph_session_cache()
@@ -37,8 +41,27 @@ fn get_or_build_graph_session(cwd: &std::path::Path) -> Arc<jfc_graph::session::
     if let Some(existing) = cache.get(&key) {
         return Arc::clone(existing);
     }
-    let session = Arc::new(jfc_graph::session::GraphSession::from_directory(&key));
-    cache.insert(key.clone(), Arc::clone(&session));
+    // Drop the lock before spawning the build thread — the build can take
+    // seconds on large workspaces and we don't want to hold the mutex.
+    drop(cache);
+
+    let key_clone = key.clone();
+    let session = std::thread::Builder::new()
+        .name("graph-build".into())
+        .stack_size(64 * 1024 * 1024) // 64MB — handles 10K+ node graphs
+        .spawn(move || Arc::new(jfc_graph::session::GraphSession::from_directory(&key_clone)))
+        .expect("failed to spawn graph-build thread")
+        .join()
+        .expect("graph-build thread panicked");
+
+    let mut cache = graph_session_cache()
+        .lock()
+        .expect("graph cache mutex poisoned");
+    // Double-check: another thread may have built it while we were building.
+    if let Some(existing) = cache.get(&key) {
+        return Arc::clone(existing);
+    }
+    cache.insert(key, Arc::clone(&session));
     session
 }
 

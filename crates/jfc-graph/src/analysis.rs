@@ -452,12 +452,6 @@ pub fn critical_nodes(graph: &CodeGraph) -> Vec<NodeId> {
         return vec![];
     }
 
-    // O(V × (V + E)) — same stack overflow risk as bridge_edges on large graphs.
-    if node_count > 500 {
-        tracing::debug!(node_count, "critical_nodes: graph too large for brute-force, skipping");
-        return Vec::new();
-    }
-
     let base_components = count_components(graph);
     let mut articulation_points = Vec::new();
 
@@ -515,22 +509,6 @@ pub struct BridgeEdge {
 /// Uses brute-force edge removal + component recount. O(E * (V + E)).
 pub fn bridge_edges(graph: &CodeGraph) -> Vec<BridgeEdge> {
     let inner = graph.inner();
-    let node_count = inner.node_count();
-    let edge_count = inner.edge_count();
-
-    // Guard: this is O(E × (V + E)). On graphs with >500 nodes the brute-force
-    // approach risks stack overflow on tokio's 8MB worker threads. Return empty
-    // rather than crash — callers should check graph size or use a different
-    // algorithm for large graphs.
-    if node_count > 500 || edge_count > 2000 {
-        tracing::debug!(
-            node_count,
-            edge_count,
-            "bridge_edges: graph too large for brute-force, skipping"
-        );
-        return Vec::new();
-    }
-
     let base = count_components(graph);
     let mut bridges = Vec::new();
 

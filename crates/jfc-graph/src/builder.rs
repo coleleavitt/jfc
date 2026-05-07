@@ -87,9 +87,6 @@ impl GraphBuilder {
                 | "venv"
                 | ".venv"
                 | "research"
-                | ".sisyphus"
-                | "testdata"
-                | "fixtures"
         )
     }
 
