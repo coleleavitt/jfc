@@ -44,6 +44,7 @@ eventsource-stream = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 async-trait = "0.1"
+thiserror = { workspace = true }
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
