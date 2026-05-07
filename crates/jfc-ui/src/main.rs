@@ -43,6 +43,7 @@ mod hashline;
 mod hooks;
 #[cfg(feature = "intent-gate")]
 mod intent;
+mod daemon;
 #[cfg(feature = "permission-automation")]
 mod permissions;
 #[cfg(feature = "landlock-sandbox")]
