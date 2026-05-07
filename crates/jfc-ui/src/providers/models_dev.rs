@@ -183,7 +183,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "hits live network — run with cargo test -- --ignored"]
     async fn live_anthropic_catalog_has_current_flagship_normal() {
-        let client = reqwest::Client::new();
+        let client = crate::providers::http::streaming_client();
         let models = fetch_provider_models(&client, "anthropic", "anthropic")
             .await
             .expect("models.dev fetch");
@@ -207,7 +207,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "hits live network — run with cargo test -- --ignored"]
     async fn live_provider_tag_is_stamped_normal() {
-        let client = reqwest::Client::new();
+        let client = crate::providers::http::streaming_client();
         let models = fetch_provider_models(&client, "anthropic", "anthropic-oauth")
             .await
             .expect("models.dev fetch");
@@ -219,7 +219,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "hits live network — run with cargo test -- --ignored"]
     async fn live_unknown_provider_id_errors_robust() {
-        let client = reqwest::Client::new();
+        let client = crate::providers::http::streaming_client();
         let result = fetch_provider_models(&client, "this-provider-does-not-exist", "x").await;
         assert!(result.is_err(), "expected Err for unknown provider");
     }

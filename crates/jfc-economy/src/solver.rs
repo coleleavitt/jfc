@@ -92,7 +92,11 @@ impl SolverPool {
 
     /// Rank solutions by mechanistic signals only (compiles, tests, suspicious, cost).
     pub fn rank_solutions(&self) -> Vec<&Solution> {
-        let mut solutions = self.completed_solutions();
+        let mut solutions: Vec<&Solution> = self
+            .completed_solutions()
+            .into_iter()
+            .filter(|solution| solution_is_mechanically_accepted(solution))
+            .collect();
         solutions.sort_by(|a, b| {
             let a_score = solution_score(a);
             let b_score = solution_score(b);
@@ -119,6 +123,14 @@ impl Default for SolverPool {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn solution_is_mechanically_accepted(s: &Solution) -> bool {
+    if s.suspicious || s.compiles == Some(false) || s.tests_pass == Some(false) {
+        return false;
+    }
+
+    s.compiles == Some(true) || s.tests_pass == Some(true)
 }
 
 /// Score a solution by mechanistic signals (higher = better).
@@ -181,7 +193,9 @@ mod tests {
 
         assert_eq!(pool.get(&id).unwrap().status, SolverStatus::Pending);
 
-        pool.get_mut(&id).unwrap().start(Some(PathBuf::from("/tmp/wt")));
+        pool.get_mut(&id)
+            .unwrap()
+            .start(Some(PathBuf::from("/tmp/wt")));
         assert_eq!(pool.get(&id).unwrap().status, SolverStatus::Executing);
         assert_eq!(pool.active_count(), 1);
 
@@ -208,29 +222,42 @@ mod tests {
         // Solver A: compiles, tests pass
         let id_a = pool.spawn("b1").id.clone();
         pool.get_mut(&id_a).unwrap().start(None);
-        pool.get_mut(&id_a)
-            .unwrap()
-            .submit(make_solution("a", "b1", Some(true), Some(true), false, 500));
+        pool.get_mut(&id_a).unwrap().submit(make_solution(
+            "a",
+            "b1",
+            Some(true),
+            Some(true),
+            false,
+            500,
+        ));
 
         // Solver B: compiles, tests fail
         let id_b = pool.spawn("b1").id.clone();
         pool.get_mut(&id_b).unwrap().start(None);
-        pool.get_mut(&id_b)
-            .unwrap()
-            .submit(make_solution("b", "b1", Some(true), Some(false), false, 500));
+        pool.get_mut(&id_b).unwrap().submit(make_solution(
+            "b",
+            "b1",
+            Some(true),
+            Some(false),
+            false,
+            500,
+        ));
 
         // Solver C: doesn't compile
         let id_c = pool.spawn("b1").id.clone();
         pool.get_mut(&id_c).unwrap().start(None);
-        pool.get_mut(&id_c)
-            .unwrap()
-            .submit(make_solution("c", "b1", Some(false), Some(false), false, 500));
+        pool.get_mut(&id_c).unwrap().submit(make_solution(
+            "c",
+            "b1",
+            Some(false),
+            Some(false),
+            false,
+            500,
+        ));
 
         let ranked = pool.rank_solutions();
-        assert_eq!(ranked.len(), 3);
+        assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].agent_id.0, "agent_a");
-        assert_eq!(ranked[1].agent_id.0, "agent_b");
-        assert_eq!(ranked[2].agent_id.0, "agent_c");
     }
 
     #[test]
@@ -240,19 +267,47 @@ mod tests {
         // Clean solution
         let id_clean = pool.spawn("b1").id.clone();
         pool.get_mut(&id_clean).unwrap().start(None);
-        pool.get_mut(&id_clean)
-            .unwrap()
-            .submit(make_solution("clean", "b1", Some(true), Some(true), false, 500));
+        pool.get_mut(&id_clean).unwrap().submit(make_solution(
+            "clean",
+            "b1",
+            Some(true),
+            Some(true),
+            false,
+            500,
+        ));
 
         // Suspicious solution (same signals otherwise)
         let id_sus = pool.spawn("b1").id.clone();
         pool.get_mut(&id_sus).unwrap().start(None);
-        pool.get_mut(&id_sus)
-            .unwrap()
-            .submit(make_solution("sus", "b1", Some(true), Some(true), true, 500));
+        pool.get_mut(&id_sus).unwrap().submit(make_solution(
+            "sus",
+            "b1",
+            Some(true),
+            Some(true),
+            true,
+            500,
+        ));
 
         let ranked = pool.rank_solutions();
+        assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].agent_id.0, "agent_clean");
-        assert_eq!(ranked[1].agent_id.0, "agent_sus");
+    }
+
+    #[test]
+    fn test_unverified_solution_is_not_ranked() {
+        let mut pool = SolverPool::new();
+
+        let id = pool.spawn("b1").id.clone();
+        pool.get_mut(&id).unwrap().start(None);
+        pool.get_mut(&id).unwrap().submit(make_solution(
+            "unverified",
+            "b1",
+            None,
+            None,
+            false,
+            500,
+        ));
+
+        assert!(pool.rank_solutions().is_empty());
     }
 }

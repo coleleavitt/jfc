@@ -69,7 +69,9 @@ impl MarketOrchestrator {
             });
         }
         let deadline = std::time::Duration::from_secs(300);
-        let id = self.bounties.post(description, reward, criteria, deadline, max);
+        let id = self
+            .bounties
+            .post(description, reward, criteria, deadline, max);
         self.bounties
             .transition(&id, MarketState::Open)
             .map_err(OrchestratorError::Bounty)?;
@@ -131,7 +133,9 @@ impl MarketOrchestrator {
         let bounty = self
             .bounties
             .get(bounty_id)
-            .ok_or_else(|| OrchestratorError::CharterViolation(format!("unknown bounty: {bounty_id}")))?
+            .ok_or_else(|| {
+                OrchestratorError::CharterViolation(format!("unknown bounty: {bounty_id}"))
+            })?
             .clone();
         tracing::info!(
             target: "jfc::economy::cycle",
@@ -148,8 +152,8 @@ impl MarketOrchestrator {
             .min(self.charter.max_solvers as usize)
             .min(bounty.max_solvers as usize)
             .max(1);
-        let actual_validators = (n_validators_per_solution as usize)
-            .min(self.charter.max_validators as usize);
+        let actual_validators =
+            (n_validators_per_solution as usize).min(self.charter.max_validators as usize);
 
         // 1. Spawn solver pool entries + worktrees, build prompts.
         let mut prompts: Vec<SolverPrompt> = Vec::with_capacity(actual_solvers);
@@ -164,8 +168,7 @@ impl MarketOrchestrator {
             // Per-solver budget: split bounty reward evenly minus
             // a buffer for validators. Conservative cap so a single
             // solver can't burn the whole pool.
-            let per_solver_budget =
-                (bounty.reward / (actual_solvers as u64 + 1)).max(1);
+            let per_solver_budget = (bounty.reward / (actual_solvers as u64 + 1)).max(1);
             prompts.push(SolverPrompt {
                 bounty_id: bounty_id.to_string(),
                 bounty_description: bounty.description.clone(),
@@ -238,8 +241,12 @@ impl MarketOrchestrator {
         self.bounties
             .transition(bounty_id, MarketState::Validating)
             .map_err(OrchestratorError::Bounty)?;
-        let solutions: Vec<crate::types::Solution> =
-            self.solvers.completed_solutions().into_iter().cloned().collect();
+        let solutions: Vec<crate::types::Solution> = self
+            .solvers
+            .completed_solutions()
+            .into_iter()
+            .cloned()
+            .collect();
         tracing::debug!(
             target: "jfc::economy::cycle",
             bounty_id = %bounty_id,
@@ -266,12 +273,8 @@ impl MarketOrchestrator {
                 };
                 match invoker.invoke_validator(prompt).await {
                     Ok(outcome) => {
-                        self.ledger.record_usage(
-                            &validator_id,
-                            "stub",
-                            outcome.tokens_consumed,
-                            0,
-                        );
+                        self.ledger
+                            .record_usage(&validator_id, "stub", outcome.tokens_consumed, 0);
                         // Drive the sealed-validation session through
                         // its three rounds. Early-termination path
                         // (high confidence + no flaw) is handled
@@ -316,9 +319,8 @@ impl MarketOrchestrator {
                         // a runnable test_code?" — v131 PROClaim
                         // pattern.
                         if !session.is_complete() {
-                            let _ = session.submit_defense(
-                                "(no defense in this iteration)".to_string(),
-                            );
+                            let _ = session
+                                .submit_defense("(no defense in this iteration)".to_string());
                             let test_fails = outcome.test_code.is_some();
                             let _ = session.adjudicate(test_fails);
                         }
@@ -344,6 +346,16 @@ impl MarketOrchestrator {
             }
         }
 
+        let winning_solution = self.solvers.rank_solutions().first().map(|s| (*s).clone());
+        if winning_solution.is_none() {
+            self.bounties
+                .transition(bounty_id, MarketState::Failed)
+                .map_err(OrchestratorError::Bounty)?;
+            return Err(OrchestratorError::CharterViolation(
+                "no mechanically verified solution survived validation".into(),
+            ));
+        }
+
         // 5. Settle.
         self.bounties
             .transition(bounty_id, MarketState::Settling)
@@ -353,16 +365,11 @@ impl MarketOrchestrator {
         // to actually write the work to disk — without it, the cycle
         // looks done but the user sees no files (the bug from the
         // 2026-05-06 screenshot).
-        let winning_solution = self
-            .solvers
-            .rank_solutions()
-            .first()
-            .map(|s| (*s).clone());
-        let settlement = self
-            .settle_bounty(bounty_id)
-            .ok_or_else(|| OrchestratorError::CharterViolation(
-                "settle returned None — bounty disappeared mid-cycle".into()
-            ))?;
+        let settlement = self.settle_bounty(bounty_id).ok_or_else(|| {
+            OrchestratorError::CharterViolation(
+                "settle returned None — bounty disappeared mid-cycle".into(),
+            )
+        })?;
         self.bounties
             .transition(bounty_id, MarketState::Complete)
             .map_err(OrchestratorError::Bounty)?;
@@ -382,10 +389,7 @@ impl MarketOrchestrator {
     }
 
     /// Access the settlement engine (stateless, so just delegates).
-    pub fn settle_bounty(
-        &mut self,
-        bounty_id: &str,
-    ) -> Option<crate::types::Settlement> {
+    pub fn settle_bounty(&mut self, bounty_id: &str) -> Option<crate::types::Settlement> {
         let bounty = self.bounties.get(bounty_id)?;
         let reward = bounty.reward;
 

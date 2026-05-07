@@ -495,8 +495,8 @@ mod tests {
     }
 
     /// Verify SwarmProvider is object-safe (can be used as trait object).
-    #[test]
-    fn test_swarm_provider_object_safety() {
+    #[tokio::test]
+    async fn test_swarm_provider_object_safety() {
         struct MockSwarm;
         #[async_trait::async_trait]
         impl SwarmProvider for MockSwarm {
@@ -509,7 +509,7 @@ mod tests {
 
         let provider: Box<dyn SwarmProvider> = Box::new(MockSwarm);
         let agent = AgentId("test".into());
-        let path = futures::executor::block_on(provider.create_worktree("bounty-1", &agent));
+        let path = provider.create_worktree("bounty-1", &agent).await;
         assert_eq!(path, Some(PathBuf::from("/tmp/mock")));
     }
 }
