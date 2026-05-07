@@ -452,35 +452,31 @@ pub enum ToolKind {
     GraphQuery,
     /// Edit code by symbol handle (semantic editing).
     SymbolEdit,
-    /// v132 parity: invoked by the model to surface a finalized plan
-    /// while in plan mode. The tool result determines whether the
-    /// agent proceeds (approved → mode flips to acceptEdits) or
-    /// stays planning (rejected → mode unchanged + feedback echoed).
+    /// v132 parity: invoked by the model to surface a finalized plan.
     ExitPlanMode,
-    /// v132 parity: apply multiple edits to one file in a single
-    /// tool call.
     MultiEdit,
-    /// v132 parity: ask the user a multi-choice question mid-turn.
     AskUserQuestion,
-    /// v132 parity: fetch a URL and return its contents.
     WebFetch,
-    /// v132 parity: web search query → ranked results.
     WebSearch,
-    /// MCP-advertised tool. The string is the full
-    /// `mcp__<server>__<tool>` advertised name.
+    /// MCP-advertised tool, full `mcp__server__tool` name.
     Mcp(String),
-    /// Register a new cron job with the local daemon.
     CronCreate,
-    /// List active cron jobs registered with the local daemon.
     CronList,
-    /// Delete a cron job by ID.
     CronDelete,
-    /// Schedule a one-shot wakeup that re-posts a prompt to the
-    /// conversation after `delay_seconds`. Persisted across restarts.
     ScheduleWakeup,
-    /// Spawn a long-running command and stream stdout until a regex
-    /// matches OR a 60s timeout fires.
     Monitor,
+    /// Query LSP for hover/definition/references.
+    Lsp,
+    /// Send a desktop notification.
+    PushNotification,
+    /// Hit a webhook URL pre-registered in triggers.toml.
+    RemoteTrigger,
+    /// Model-callable: enter plan mode.
+    EnterPlanMode,
+    EnterWorktree,
+    ExitWorktree,
+    NotebookRead,
+    NotebookEdit,
     Generic(String),
 }
 
@@ -629,7 +625,6 @@ pub enum ToolInput {
         #[serde(default, rename = "dispatch_cascade")]
         dispatch_cascade: bool,
     },
-    /// v132 ExitPlanMode tool input.
     ExitPlanMode {
         plan: String,
     },
@@ -650,33 +645,59 @@ pub enum ToolInput {
         query: String,
         max_results: Option<u32>,
     },
-    /// Input for an MCP-advertised tool. The arguments are raw JSON.
     Mcp {
         name: String,
         arguments: serde_json::Value,
     },
-    /// `CronCreate { schedule, command, description }`.
     CronCreate {
         schedule: String,
         command: String,
         description: String,
     },
-    /// `CronList { }` — no inputs.
     CronList,
-    /// `CronDelete { id }`.
     CronDelete {
         id: String,
     },
-    /// `ScheduleWakeup { delay_seconds, prompt, reason }`.
     ScheduleWakeup {
         delay_seconds: u32,
         prompt: String,
         reason: String,
     },
-    /// `Monitor { command, until }`.
     Monitor {
         command: String,
         until: String,
+    },
+    Lsp {
+        kind: String,
+        file: String,
+        line: u32,
+        column: u32,
+    },
+    PushNotification {
+        message: String,
+        title: Option<String>,
+    },
+    RemoteTrigger {
+        trigger_id: String,
+        #[serde(default)]
+        payload: Option<serde_json::Value>,
+    },
+    EnterPlanMode {
+        reason: String,
+    },
+    EnterWorktree {
+        name: String,
+        branch: Option<String>,
+    },
+    ExitWorktree,
+    NotebookRead {
+        path: String,
+    },
+    NotebookEdit {
+        path: String,
+        cell_id: String,
+        new_source: String,
+        edit_mode: Option<String>,
     },
     Generic {
         summary: String,
@@ -987,9 +1008,16 @@ impl ToolKind {
             "crondelete" | "cron_delete" => Self::CronDelete,
             "schedulewakeup" | "schedule_wakeup" => Self::ScheduleWakeup,
             "monitor" => Self::Monitor,
-            // MCP-namespaced tools route to the Mcp variant carrying
-            // the full `mcp__server__tool` name. Goes last so it
-            // doesn't shadow specific matches.
+            "lsp" => Self::Lsp,
+            "pushnotification" | "push_notification" => Self::PushNotification,
+            "remotetrigger" | "remote_trigger" => Self::RemoteTrigger,
+            "enterplanmode" | "enter_plan_mode" => Self::EnterPlanMode,
+            "enterworktree" | "enter_worktree" => Self::EnterWorktree,
+            "exitworktree" | "exit_worktree" => Self::ExitWorktree,
+            "notebookread" | "notebook_read" => Self::NotebookRead,
+            "notebookedit" | "notebook_edit" => Self::NotebookEdit,
+            // MCP-namespaced tools route to the Mcp variant. Goes last
+            // so it doesn't shadow specific matches.
             _ if name.starts_with("mcp__") => Self::Mcp(name.to_owned()),
             _ => Self::Generic(name.to_owned()),
         }
@@ -1033,6 +1061,14 @@ impl ToolKind {
             Self::CronDelete => "CronDelete",
             Self::ScheduleWakeup => "ScheduleWakeup",
             Self::Monitor => "Monitor",
+            Self::Lsp => "LSP",
+            Self::PushNotification => "PushNotification",
+            Self::RemoteTrigger => "RemoteTrigger",
+            Self::EnterPlanMode => "EnterPlanMode",
+            Self::EnterWorktree => "EnterWorktree",
+            Self::ExitWorktree => "ExitWorktree",
+            Self::NotebookRead => "NotebookRead",
+            Self::NotebookEdit => "NotebookEdit",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -1075,6 +1111,14 @@ impl ToolKind {
             Self::CronDelete => "CronDelete",
             Self::ScheduleWakeup => "ScheduleWakeup",
             Self::Monitor => "Monitor",
+            Self::Lsp => "LSP",
+            Self::PushNotification => "PushNotification",
+            Self::RemoteTrigger => "RemoteTrigger",
+            Self::EnterPlanMode => "EnterPlanMode",
+            Self::EnterWorktree => "EnterWorktree",
+            Self::ExitWorktree => "ExitWorktree",
+            Self::NotebookRead => "NotebookRead",
+            Self::NotebookEdit => "NotebookEdit",
             Self::Generic(name) => name.as_str(),
         }
     }
@@ -1179,21 +1223,33 @@ impl ToolInput {
                 let preview: String = arguments.to_string().chars().take(60).collect();
                 format!("{label}: {preview}")
             }
-            Self::CronCreate {
-                schedule,
-                description,
-                ..
-            } => format!("cron `{schedule}`: {description}"),
+            Self::CronCreate { schedule, description, .. } => format!("cron `{schedule}`: {description}"),
             Self::CronList => "list cron jobs".into(),
             Self::CronDelete { id } => format!("delete cron: {id}"),
-            Self::ScheduleWakeup {
-                delay_seconds,
-                reason,
-                ..
-            } => format!("wake in {delay_seconds}s: {reason}"),
+            Self::ScheduleWakeup { delay_seconds, reason, .. } => format!("wake in {delay_seconds}s: {reason}"),
             Self::Monitor { command, until } => {
                 let preview: String = command.chars().take(40).collect();
                 format!("monitor `{preview}` until /{until}/")
+            }
+            Self::Lsp { kind, file, line, .. } => format!("lsp {kind} {file}:{line}"),
+            Self::PushNotification { message, title } => match title {
+                Some(t) if !t.is_empty() => format!("{t}: {message}"),
+                _ => message.clone(),
+            },
+            Self::RemoteTrigger { trigger_id, .. } => format!("trigger: {trigger_id}"),
+            Self::EnterPlanMode { reason } => {
+                let preview: String = reason.chars().take(60).collect();
+                format!("enter plan mode: {preview}")
+            }
+            Self::EnterWorktree { name, branch } => match branch {
+                Some(b) => format!("enter worktree {name} ({b})"),
+                None => format!("enter worktree {name}"),
+            },
+            Self::ExitWorktree => "exit worktree".into(),
+            Self::NotebookRead { path } => path.clone(),
+            Self::NotebookEdit { path, cell_id, edit_mode, .. } => {
+                let mode = edit_mode.as_deref().unwrap_or("replace");
+                format!("notebook {mode} {path}#{cell_id}")
             }
             Self::Generic { summary } => summary.clone(),
         }
@@ -1435,6 +1491,37 @@ impl ToolInput {
             ToolKind::Monitor => Self::Monitor {
                 command: str_field("command"),
                 until: str_field("until"),
+            },
+            ToolKind::Lsp => Self::Lsp {
+                kind: str_field("kind"),
+                file: str_field("file"),
+                line: obj.and_then(|m| m.get("line")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                column: obj.and_then(|m| m.get("column")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            },
+            ToolKind::PushNotification => Self::PushNotification {
+                message: str_field("message"),
+                title: opt_str_field("title"),
+            },
+            ToolKind::RemoteTrigger => Self::RemoteTrigger {
+                trigger_id: str_field("trigger_id"),
+                payload: obj.and_then(|m| m.get("payload")).cloned(),
+            },
+            ToolKind::EnterPlanMode => Self::EnterPlanMode {
+                reason: str_field("reason"),
+            },
+            ToolKind::EnterWorktree => Self::EnterWorktree {
+                name: str_field("name"),
+                branch: opt_str_field("branch"),
+            },
+            ToolKind::ExitWorktree => Self::ExitWorktree,
+            ToolKind::NotebookRead => Self::NotebookRead {
+                path: str_field("path"),
+            },
+            ToolKind::NotebookEdit => Self::NotebookEdit {
+                path: str_field("path"),
+                cell_id: str_field("cell_id"),
+                new_source: str_field("new_source"),
+                edit_mode: opt_str_field("edit_mode"),
             },
             ToolKind::Generic(_) => Self::Generic {
                 summary: v.to_string(),
@@ -1745,6 +1832,57 @@ impl ToolInput {
                 "command": command,
                 "until": until,
             }),
+            Self::Lsp {
+                kind,
+                file,
+                line,
+                column,
+            } => {
+                json!({ "kind": kind, "file": file, "line": line, "column": column })
+            }
+            Self::PushNotification { message, title } => {
+                let mut v = json!({ "message": message });
+                if let Some(t) = title {
+                    v["title"] = json!(t);
+                }
+                v
+            }
+            Self::RemoteTrigger {
+                trigger_id,
+                payload,
+            } => {
+                let mut v = json!({ "trigger_id": trigger_id });
+                if let Some(p) = payload {
+                    v["payload"] = p.clone();
+                }
+                v
+            }
+            Self::EnterPlanMode { reason } => json!({ "reason": reason }),
+            Self::EnterWorktree { name, branch } => {
+                let mut v = json!({ "name": name });
+                if let Some(b) = branch {
+                    v["branch"] = json!(b);
+                }
+                v
+            }
+            Self::ExitWorktree => json!({}),
+            Self::NotebookRead { path } => json!({ "path": path }),
+            Self::NotebookEdit {
+                path,
+                cell_id,
+                new_source,
+                edit_mode,
+            } => {
+                let mut v = json!({
+                    "path": path,
+                    "cell_id": cell_id,
+                    "new_source": new_source,
+                });
+                if let Some(m) = edit_mode {
+                    v["edit_mode"] = json!(m);
+                }
+                v
+            }
             Self::Generic { summary } => {
                 serde_json::from_str(summary).unwrap_or(json!({ "input": summary }))
             }
@@ -2187,8 +2325,7 @@ mod tests {
     }
 
     // MCP-namespaced names route to the Mcp variant carrying the full
-    // advertised name. The dispatcher splits it back into server +
-    // tool at call time.
+    // advertised name.
     #[test]
     fn from_name_mcp_prefixed_routes_to_mcp_variant_normal() {
         match ToolKind::from_name("mcp__filesystem__read_file") {
@@ -2197,13 +2334,178 @@ mod tests {
         }
     }
 
-    // A name starting with `mcp` (no double underscore) is NOT MCP —
-    // could be a user's custom tool. Must fall through to Generic.
     #[test]
     fn from_name_mcp_without_separator_is_generic_robust() {
         match ToolKind::from_name("mcp_dispatch") {
             ToolKind::Generic(s) => assert_eq!(s, "mcp_dispatch"),
             other => panic!("expected Generic, got {other:?}"),
+        }
+    }
+
+    // The 8 v2.1.132 tools must all parse from PascalCase and snake_case.
+    #[test]
+    fn from_name_resolves_v2_1_132_tools_normal() {
+        assert!(matches!(ToolKind::from_name("LSP"), ToolKind::Lsp));
+        assert!(matches!(ToolKind::from_name("lsp"), ToolKind::Lsp));
+        assert!(matches!(
+            ToolKind::from_name("PushNotification"),
+            ToolKind::PushNotification
+        ));
+        assert!(matches!(
+            ToolKind::from_name("push_notification"),
+            ToolKind::PushNotification
+        ));
+        assert!(matches!(
+            ToolKind::from_name("RemoteTrigger"),
+            ToolKind::RemoteTrigger
+        ));
+        assert!(matches!(
+            ToolKind::from_name("remote_trigger"),
+            ToolKind::RemoteTrigger
+        ));
+        assert!(matches!(
+            ToolKind::from_name("EnterPlanMode"),
+            ToolKind::EnterPlanMode
+        ));
+        assert!(matches!(
+            ToolKind::from_name("EnterWorktree"),
+            ToolKind::EnterWorktree
+        ));
+        assert!(matches!(
+            ToolKind::from_name("ExitWorktree"),
+            ToolKind::ExitWorktree
+        ));
+        assert!(matches!(
+            ToolKind::from_name("NotebookRead"),
+            ToolKind::NotebookRead
+        ));
+        assert!(matches!(
+            ToolKind::from_name("NotebookEdit"),
+            ToolKind::NotebookEdit
+        ));
+    }
+
+    #[test]
+    fn label_v2_1_132_tools_normal() {
+        assert_eq!(ToolKind::Lsp.label(), "LSP");
+        assert_eq!(ToolKind::PushNotification.label(), "PushNotification");
+        assert_eq!(ToolKind::RemoteTrigger.label(), "RemoteTrigger");
+        assert_eq!(ToolKind::EnterPlanMode.label(), "EnterPlanMode");
+        assert_eq!(ToolKind::EnterWorktree.label(), "EnterWorktree");
+        assert_eq!(ToolKind::ExitWorktree.label(), "ExitWorktree");
+        assert_eq!(ToolKind::NotebookRead.label(), "NotebookRead");
+        assert_eq!(ToolKind::NotebookEdit.label(), "NotebookEdit");
+    }
+
+    #[test]
+    fn api_name_v2_1_132_tools_normal() {
+        assert_eq!(ToolKind::Lsp.api_name(), "LSP");
+        assert_eq!(ToolKind::PushNotification.api_name(), "PushNotification");
+        assert_eq!(ToolKind::RemoteTrigger.api_name(), "RemoteTrigger");
+        assert_eq!(ToolKind::EnterPlanMode.api_name(), "EnterPlanMode");
+        assert_eq!(ToolKind::EnterWorktree.api_name(), "EnterWorktree");
+        assert_eq!(ToolKind::ExitWorktree.api_name(), "ExitWorktree");
+        assert_eq!(ToolKind::NotebookRead.api_name(), "NotebookRead");
+        assert_eq!(ToolKind::NotebookEdit.api_name(), "NotebookEdit");
+    }
+
+    /// The summary string is what shows in the tool row's right column.
+    /// Each new tool needs a non-empty, distinguishable summary so the UI
+    /// doesn't show identical placeholder strings for multiple calls.
+    #[test]
+    fn summary_v2_1_132_tools_normal() {
+        let lsp = ToolInput::Lsp {
+            kind: "hover".into(),
+            file: "/tmp/x.rs".into(),
+            line: 12,
+            column: 4,
+        };
+        assert!(lsp.summary().contains("hover"), "{}", lsp.summary());
+        assert!(lsp.summary().contains("/tmp/x.rs:12"), "{}", lsp.summary());
+
+        let pn = ToolInput::PushNotification {
+            message: "hi".into(),
+            title: Some("CI".into()),
+        };
+        assert_eq!(pn.summary(), "CI: hi");
+
+        let rt = ToolInput::RemoteTrigger {
+            trigger_id: "deploy".into(),
+            payload: None,
+        };
+        assert_eq!(rt.summary(), "trigger: deploy");
+
+        let pm = ToolInput::EnterPlanMode {
+            reason: "double check".into(),
+        };
+        assert!(pm.summary().contains("double check"), "{}", pm.summary());
+
+        let ew = ToolInput::EnterWorktree {
+            name: "feat".into(),
+            branch: Some("dev".into()),
+        };
+        assert!(ew.summary().contains("feat"), "{}", ew.summary());
+        assert!(ew.summary().contains("dev"), "{}", ew.summary());
+
+        assert_eq!(ToolInput::ExitWorktree.summary(), "exit worktree");
+
+        let nr = ToolInput::NotebookRead {
+            path: "/tmp/n.ipynb".into(),
+        };
+        assert_eq!(nr.summary(), "/tmp/n.ipynb");
+
+        let ne = ToolInput::NotebookEdit {
+            path: "/tmp/n.ipynb".into(),
+            cell_id: "c1".into(),
+            new_source: "x".into(),
+            edit_mode: Some("insert".into()),
+        };
+        assert!(ne.summary().contains("insert"), "{}", ne.summary());
+        assert!(ne.summary().contains("c1"), "{}", ne.summary());
+    }
+
+    /// from_value/to_value round-trip for each new tool's parameters.
+    #[test]
+    fn from_value_to_value_round_trip_v2_1_132_robust() {
+        let cases: Vec<(&str, serde_json::Value)> = vec![
+            (
+                "LSP",
+                serde_json::json!({"kind": "definition", "file": "/a/b.rs", "line": 3, "column": 7}),
+            ),
+            (
+                "PushNotification",
+                serde_json::json!({"message": "ok", "title": "build"}),
+            ),
+            (
+                "RemoteTrigger",
+                serde_json::json!({"trigger_id": "deploy", "payload": {"k": "v"}}),
+            ),
+            ("EnterPlanMode", serde_json::json!({"reason": "audit"})),
+            (
+                "EnterWorktree",
+                serde_json::json!({"name": "feat", "branch": "main"}),
+            ),
+            ("ExitWorktree", serde_json::json!({})),
+            ("NotebookRead", serde_json::json!({"path": "/tmp/x.ipynb"})),
+            (
+                "NotebookEdit",
+                serde_json::json!({
+                    "path": "/tmp/x.ipynb",
+                    "cell_id": "c1",
+                    "new_source": "y = 2",
+                    "edit_mode": "replace",
+                }),
+            ),
+        ];
+        for (name, v) in cases {
+            let parsed = ToolInput::from_value(name, v.clone());
+            let back = parsed.to_value();
+            for (k, vv) in v.as_object().unwrap() {
+                assert_eq!(
+                    &back[k], vv,
+                    "round-trip lost field {k} for {name}: back={back}"
+                );
+            }
         }
     }
 

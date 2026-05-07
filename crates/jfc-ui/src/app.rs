@@ -188,13 +188,14 @@ pub enum AppEvent {
         cwd: String,
     },
     /// The model called `ExitPlanMode` and wants the user to see the
-    /// plan + transition out of plan mode. Carries the markdown plan
-    /// body so the main loop can render it as a labeled assistant
-    /// message and flip `app.permission_mode` to AcceptEdits. The
-    /// tool dispatcher emits this; the UI thread owns the mode
-    /// mutation so all state changes stay on one task.
+    /// plan + transition out of plan mode.
     ExitPlanModeRequested {
         plan: String,
+    },
+    /// Model-callable plan-mode entry. Dispatched by the `EnterPlanMode`
+    /// tool — flips `app.permission_mode` to `PermissionMode::Plan`.
+    EnterPlanModeRequested {
+        reason: String,
     },
 }
 
