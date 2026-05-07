@@ -921,13 +921,15 @@ async fn run(
             .current_session_id
             .clone()
             .unwrap_or_else(session::generate_session_id);
-        session::save_session(
-            &session_id,
-            &app.messages,
-            Some(app.cwd.as_str()),
-            Some(app.model.as_str()),
-        )
-        .await;
+        {
+            let sid = session_id.clone();
+            let msgs = app.messages.clone();
+            let cwd = app.cwd.clone();
+            let model = app.model.clone();
+            tokio::spawn(async move {
+                session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
+            });
+        }
         app.current_session_id = Some(session_id);
 
         let provider = app.provider.clone();
@@ -1938,13 +1940,13 @@ async fn run(
 
                     // Auto-save session after each assistant turn completes
                     if let Some(ref session_id) = app.current_session_id {
-                        session::save_session(
-                            session_id,
-                            &app.messages,
-                            Some(app.cwd.as_str()),
-                            Some(app.model.as_str()),
-                        )
-                        .await;
+                        let sid = session_id.clone();
+                        let msgs = app.messages.clone();
+                        let cwd = app.cwd.clone();
+                        let model = app.model.clone();
+                        tokio::spawn(async move {
+                            session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
+                        });
                         app.last_session_save_at = Some(std::time::Instant::now());
                     }
                     // v126 queued-prompt drain on plain end_turn: model finished
@@ -2228,13 +2230,13 @@ async fn run(
                     // saves on every state mutation; jfc previously only saved
                     // at submit + StreamDone, missing the post-tool state.
                     if let Some(ref session_id) = app.current_session_id {
-                        session::save_session(
-                            session_id,
-                            &app.messages,
-                            Some(app.cwd.as_str()),
-                            Some(app.model.as_str()),
-                        )
-                        .await;
+                        let sid = session_id.clone();
+                        let msgs = app.messages.clone();
+                        let cwd = app.cwd.clone();
+                        let model = app.model.clone();
+                        tokio::spawn(async move {
+                            session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
+                        });
                     }
                 }
                 AppEvent::AllToolsComplete => {
@@ -2618,13 +2620,13 @@ async fn run(
                     );
                     // Persist so a session reload doesn't lose the message.
                     if let Some(ref session_id) = app.current_session_id {
-                        session::save_session(
-                            session_id,
-                            &app.messages,
-                            Some(app.cwd.as_str()),
-                            Some(app.model.as_str()),
-                        )
-                        .await;
+                        let sid = session_id.clone();
+                        let msgs = app.messages.clone();
+                        let cwd = app.cwd.clone();
+                        let model = app.model.clone();
+                        tokio::spawn(async move {
+                            session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
+                        });
                     }
                 }
                 AppEvent::AgentChunk { task_id, text } => {
