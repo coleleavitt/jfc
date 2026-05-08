@@ -39,11 +39,10 @@ struct CacheEntry {
 pub struct RenderCache {
     map: HashMap<(u64, u16), CacheEntry>,
     generation: u64,
-    /// Dedicated single-slot cache for the actively-streaming message. Keyed on
-    /// `(message_index, width)` rather than content hash, so it doesn't thrash
-    /// the LRU as text grows each frame. Replaced in-place on every streaming
-    /// render; cleared on `StreamDone` so the next render populates the main
-    /// content-addressed cache via the full syntect pipeline.
+    /// Dedicated single-slot cache for the actively-streaming message. Kept out
+    /// of the main LRU so growing content doesn't leave one dead cache entry per
+    /// stream chunk. The text hash still participates in the key so appends
+    /// invalidate the slot immediately.
     streaming_slot: Option<StreamingEntry>,
 }
 
@@ -51,6 +50,7 @@ pub struct RenderCache {
 struct StreamingEntry {
     message_idx: usize,
     width: u16,
+    text_hash: u64,
     lines: Vec<Line<'static>>,
     wrapped_line_count: usize,
 }
@@ -168,20 +168,36 @@ impl RenderCache {
 
     /// Store rendered lines for the actively-streaming message. Replaces any
     /// previous streaming content in-place without touching the main LRU map.
-    pub fn set_streaming(&mut self, message_idx: usize, width: u16, lines: Vec<Line<'static>>) {
+    pub fn set_streaming(
+        &mut self,
+        message_idx: usize,
+        width: u16,
+        text: &str,
+        lines: Vec<Line<'static>>,
+    ) {
         let wrapped_line_count = compute_wrapped_line_count(&lines, width);
         self.streaming_slot = Some(StreamingEntry {
             message_idx,
             width,
+            text_hash: hash_text(text),
             lines,
             wrapped_line_count,
         });
     }
 
-    /// Retrieve the streaming slot if it matches the given message index and width.
-    pub fn get_streaming(&self, message_idx: usize, width: u16) -> Option<&[Line<'static>]> {
+    /// Retrieve the streaming slot if it matches the given message index, width,
+    /// and current text content.
+    pub fn get_streaming(
+        &self,
+        message_idx: usize,
+        width: u16,
+        text: &str,
+    ) -> Option<&[Line<'static>]> {
         self.streaming_slot.as_ref().and_then(|entry| {
-            if entry.message_idx == message_idx && entry.width == width {
+            if entry.message_idx == message_idx
+                && entry.width == width
+                && entry.text_hash == hash_text(text)
+            {
                 Some(entry.lines.as_slice())
             } else {
                 None
@@ -361,6 +377,29 @@ mod tests {
         cache.clear();
         assert!(cache.get("k", 80).is_none());
         assert_eq!(cache.line_count("k", 80), None);
+    }
+
+    // Regression: the streaming slot must be reusable within a single frame,
+    // but appending text must invalidate it before the next frame.
+    #[test]
+    fn streaming_slot_invalidates_when_text_changes_regression() {
+        let mut cache = RenderCache::new();
+        cache.set_streaming(7, 80, "partial", vec![Line::from("partial")]);
+
+        assert!(cache.get_streaming(7, 80, "partial").is_some());
+        assert!(cache.get_streaming(7, 80, "partial plus more").is_none());
+    }
+
+    // Normal: stream completion drops the single-slot cache so the final
+    // rendered message can enter the full content-addressed cache path.
+    #[test]
+    fn clear_streaming_drops_streaming_slot_normal() {
+        let mut cache = RenderCache::new();
+        cache.set_streaming(7, 80, "partial", vec![Line::from("partial")]);
+
+        cache.clear_streaming();
+
+        assert!(cache.get_streaming(7, 80, "partial").is_none());
     }
 
     // Normal: `get` updates the generation so a recently-touched entry is

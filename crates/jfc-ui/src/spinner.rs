@@ -22,7 +22,7 @@
 //! * Fermenting… (5m 10s · ↓ 14.6k tokens · almost done thinking)
 //! ```
 
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
 
 /// Pre-computed status row split into the four logical pieces the
 /// renderer needs to color independently. The shimmer animation only
@@ -48,14 +48,17 @@ pub struct StatusSegments {
 /// every shimmer/pulse/sweep helper in this module so a single
 /// `JFC_REDUCED_MOTION=1` flips the whole UI to a still image. Mirrors
 /// v126's `reducedMotion` prop threaded through every animated
-/// component (cli.js around `useReducedMotion`). The env var is read
-/// once per call rather than cached so toggling it mid-session via a
-/// terminal restart works without a binary rebuild.
+/// component (cli.js around `useReducedMotion`). The env var is cached
+/// because render code calls this on every frame and a running process's
+/// environment is not a live configuration channel.
 pub fn reduced_motion() -> bool {
-    matches!(
-        std::env::var("JFC_REDUCED_MOTION").as_deref(),
-        Ok("1") | Ok("true") | Ok("yes")
-    )
+    static REDUCED_MOTION: OnceLock<bool> = OnceLock::new();
+    *REDUCED_MOTION.get_or_init(|| {
+        matches!(
+            std::env::var("JFC_REDUCED_MOTION").as_deref(),
+            Ok("1") | Ok("true") | Ok("yes")
+        )
+    })
 }
 
 /// Linear-interpolate between two RGB triples with `t ∈ [0, 1]`.

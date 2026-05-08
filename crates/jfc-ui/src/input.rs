@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::app::{App, AppEvent, ApprovalChoice};
 use crate::stream;
+use crate::theme::Theme;
 use crate::types::*;
 
 /// No-op: approvable tools are already inserted into the assistant message at
@@ -28,6 +29,46 @@ fn input_line_char_len(app: &App, line: usize) -> usize {
         .get(line)
         .map(|line| line.chars().count())
         .unwrap_or_default()
+}
+
+pub(crate) fn filtered_theme_choices(app: &App) -> Vec<&'static crate::theme::ThemeChoice> {
+    let query = app.theme_picker_input.trim().to_ascii_lowercase();
+    Theme::choices()
+        .iter()
+        .filter(|choice| {
+            query.is_empty()
+                || choice.name.contains(&query)
+                || choice.label.to_ascii_lowercase().contains(&query)
+                || choice.description.to_ascii_lowercase().contains(&query)
+                || choice.aliases.iter().any(|alias| alias.contains(&query))
+        })
+        .collect()
+}
+
+fn apply_theme(app: &mut App, name: &str) {
+    if let Some(choice) = Theme::choice_by_name(name) {
+        if let Some(theme) = Theme::by_name(choice.name) {
+            app.theme = theme;
+            app.render_cache.borrow_mut().clear();
+            if let Err(err) = crate::config::save_theme(choice.name) {
+                crate::toast::push_with_cap(
+                    &mut app.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Warning,
+                        format!("theme: {} (not persisted: {err})", choice.label),
+                    ),
+                );
+            } else {
+                crate::toast::push_with_cap(
+                    &mut app.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Success,
+                        format!("theme: {}", choice.label),
+                    ),
+                );
+            }
+        }
+    }
 }
 
 fn cursor_index(value: usize) -> u16 {
@@ -753,6 +794,59 @@ pub async fn handle_key(
             KeyCode::Backspace => {
                 app.palette_input.pop();
                 app.palette_selected = 0;
+            }
+            _ => {}
+        }
+        return Ok(false);
+    }
+
+    if app.show_theme_picker {
+        let total = filtered_theme_choices(app).len();
+        match key.code {
+            KeyCode::Esc => {
+                app.show_theme_picker = false;
+                app.theme_picker_input.clear();
+                app.theme_picker_selected = 0;
+            }
+            KeyCode::Enter => {
+                let filtered = filtered_theme_choices(app);
+                if let Some(choice) = filtered.get(app.theme_picker_selected) {
+                    let name = choice.name;
+                    apply_theme(app, name);
+                    app.show_theme_picker = false;
+                    app.theme_picker_input.clear();
+                    app.theme_picker_selected = 0;
+                }
+            }
+            KeyCode::Up if app.theme_picker_selected > 0 => {
+                app.theme_picker_selected -= 1;
+            }
+            KeyCode::Down => {
+                let max = total.saturating_sub(1);
+                if app.theme_picker_selected < max {
+                    app.theme_picker_selected += 1;
+                }
+            }
+            KeyCode::Home => app.theme_picker_selected = 0,
+            KeyCode::End => app.theme_picker_selected = total.saturating_sub(1),
+            KeyCode::Char('j') if app.theme_picker_input.is_empty() => {
+                let max = total.saturating_sub(1);
+                if app.theme_picker_selected < max {
+                    app.theme_picker_selected += 1;
+                }
+            }
+            KeyCode::Char('k')
+                if app.theme_picker_input.is_empty() && app.theme_picker_selected > 0 =>
+            {
+                app.theme_picker_selected -= 1;
+            }
+            KeyCode::Char(c) => {
+                app.theme_picker_input.push(c);
+                app.theme_picker_selected = 0;
+            }
+            KeyCode::Backspace => {
+                app.theme_picker_input.pop();
+                app.theme_picker_selected = 0;
             }
             _ => {}
         }
@@ -3688,6 +3782,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                  - `/continue` (or `/c`) — Resume most recent session\n\
                  - `/resume <id>` — Resume a specific session by id\n\
                  - `/sessions` — List all saved sessions\n\
+                 - `/theme [name]` — Open theme picker or switch/persist a theme\n\
                  - `/auto-mode on` — Enable v126-style LLM tool classifier (no user prompts)\n\
                  - `/auto-mode off` — Disable auto-mode, restore manual approval\n\
                  - `/auto-mode status` — Show current state + rule sources\n\
@@ -4211,9 +4306,6 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
         "/mcp" => {
             handle_mcp_command(app, parts.get(1).copied().unwrap_or("").trim()).await;
         }
-        "/export" => {
-            handle_export_command(app).await;
-        }
         "/theme" => {
             handle_theme_command(app, parts.get(1).copied().unwrap_or("").trim());
         }
@@ -4228,9 +4320,6 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
         }
         "/cost" | "/stats" => {
             handle_cost_command(app);
-        }
-        "/doctor" => {
-            handle_doctor_command(app).await;
         }
         "/bug" => {
             handle_bug_command(app, parts.get(1..).map(|r| r.join(" ")).unwrap_or_default());
@@ -4544,59 +4633,19 @@ async fn handle_dump_context_command(app: &mut App) {
 }
 
 /// `/theme [name]` — switch the live UI theme. With no argument,
-/// lists the available built-ins. Apply to `app.theme` so all
+/// opens an interactive picker. Apply to `app.theme` so all
 /// subsequent renders pick it up, then persist the choice to
 /// `~/.config/jfc/config.toml` so it survives restarts.
 fn handle_theme_command(app: &mut App, args: &str) {
     let name = args.trim();
     if name.is_empty() {
-        let list = crate::theme::Theme::available_names()
-            .iter()
-            .copied()
-            .collect::<Vec<_>>()
-            .join(", ");
-        app.messages
-            .push(crate::types::ChatMessage::assistant(format!(
-                "Available themes: {list}.\n\nUse `/theme <name>` to switch. \
-                 Selection is persisted to ~/.config/jfc/config.toml."
-            )));
+        app.show_theme_picker = true;
+        app.theme_picker_input.clear();
+        app.theme_picker_selected = 0;
         return;
     }
-    match crate::theme::Theme::by_name(name) {
-        Some(theme) => {
-            app.theme = theme;
-            // The render cache stores `Vec<Line<'static>>` produced by
-            // `markdown::to_lines(text, &theme, width)` with syntect highlight
-            // colors baked in. Without this invalidation the user would see
-            // stale colors from the previous theme until each entry is
-            // naturally evicted; for static transcript content the staleness
-            // would persist until session reload.
-            tracing::debug!(target: "jfc::render::cache", "theme switch — invalidating cache");
-            app.render_cache.borrow_mut().clear();
-            // Persist the selection so the next launch boots into
-            // the same look. Persistence failure is non-fatal — we
-            // already updated `app.theme`, so the user gets the
-            // visual change for this session even if the write fails.
-            let persist_msg = match crate::config::save_theme(name) {
-                Ok(_) => format!("theme: {name}"),
-                Err(e) => {
-                    tracing::warn!(
-                        target: "jfc::ui::theme",
-                        theme = %name,
-                        error = %e,
-                        "applied theme but could not persist"
-                    );
-                    format!("theme: {name} (not persisted: {e})")
-                }
-            };
-            crate::toast::push_with_cap(
-                &mut app.toasts,
-                crate::toast::Toast::new(
-                    crate::toast::ToastKind::Success,
-                    persist_msg,
-                ),
-            );
-        }
+    match crate::theme::Theme::choice_by_name(name) {
+        Some(choice) => apply_theme(app, choice.name),
         None => {
             crate::toast::push_with_cap(
                 &mut app.toasts,
@@ -4883,67 +4932,6 @@ fn handle_cost_command(app: &mut App) {
     app.messages.push(crate::types::ChatMessage::assistant(lines.join("\n")));
 }
 
-/// `/doctor` — health check covering provider auth, model reachability,
-/// config, working directory, git status. Mirrors v132's `tengu_doctor_command`.
-/// Each line is an icon + label so users get a quick triage view.
-async fn handle_doctor_command(app: &mut App) {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let mut lines: Vec<String> = vec!["Diagnostic check:".into(), "".into()];
-
-    // Working directory
-    lines.push(format!("  ✓ cwd: {}", cwd.display()));
-
-    // Git
-    let git_ok = std::process::Command::new("git")
-        .arg("rev-parse")
-        .arg("--is-inside-work-tree")
-        .current_dir(&cwd)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if git_ok {
-        lines.push("  ✓ git: in a repo".into());
-    } else {
-        lines.push("  ⚠ git: not in a repo (some features need one)".into());
-    }
-
-    // Config
-    let cfg_path = crate::config::config_path();
-    if cfg_path.exists() {
-        lines.push(format!("  ✓ config: {}", cfg_path.display()));
-    } else {
-        lines.push(format!("  ⚠ config: not found at {} (will use defaults)", cfg_path.display()));
-    }
-
-    // CLAUDE.md
-    let claude_md = cwd.join("CLAUDE.md");
-    if claude_md.exists() {
-        lines.push(format!("  ✓ CLAUDE.md: {}", claude_md.display()));
-    } else {
-        lines.push("  ⚠ CLAUDE.md: not present (run /init to create)".into());
-    }
-
-    // Provider
-    lines.push(format!("  ✓ provider: {}", app.provider.name()));
-    lines.push(format!("  ✓ model: {}", app.model.as_str()));
-
-    // Permission mode
-    lines.push(format!("  ✓ mode: {:?}", app.permission_mode));
-
-    // Theme
-    lines.push(format!(
-        "  ✓ theme: {} ({} available)",
-        // We don't store the theme name post-load — surface the slot count instead.
-        "active",
-        crate::theme::Theme::available_names().len()
-    ));
-
-    lines.push("".into());
-    lines.push("Run /config to inspect detailed config.".into());
-    app.messages.push(crate::types::ChatMessage::user("/doctor".into()));
-    app.messages.push(crate::types::ChatMessage::assistant(lines.join("\n")));
-}
-
 /// `/bug` — tell the user where to file a bug + capture a session-id
 /// hint they can paste in. v132 has `tengu_bug_report_*` events for
 /// in-product reporting; jfc currently just points at GitHub since
@@ -5028,161 +5016,6 @@ fn handle_rewind_command(app: &mut App, n_str: &str) {
     );
     app.messages
         .push(crate::types::ChatMessage::assistant(body));
-}
-
-/// `/export` — serialize the current transcript as markdown and write
-/// it to `~/.config/jfc/exports/{session-id}_{timestamp}.md`. Useful
-/// for sharing a session, archiving long-running work, or feeding
-/// the transcript into other tooling. Tool calls render as fenced
-/// code blocks with their kind in the language slot. Tool results
-/// are nested under their tool. Mirrors v126's `/export` command.
-async fn handle_export_command(app: &mut App) {
-    use crate::types::{MessagePart, Role, ToolOutput};
-    let dir = dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("jfc")
-        .join("exports");
-    if let Err(e) = tokio::fs::create_dir_all(&dir).await {
-        crate::toast::push_with_cap(
-            &mut app.toasts,
-            crate::toast::Toast::new(
-                crate::toast::ToastKind::Error,
-                format!("export: cannot create dir: {e}"),
-            ),
-        );
-        return;
-    }
-    let session_id = app
-        .current_session_id
-        .as_ref()
-        .map(|s| s.as_str().to_owned())
-        .unwrap_or_else(|| "untitled".to_owned());
-    let stamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-    let path = dir.join(format!("{session_id}_{stamp}.md"));
-
-    let mut out = String::new();
-    out.push_str(&format!("# {session_id}\n\n"));
-    out.push_str(&format!("- model: `{}`\n", app.model));
-    out.push_str(&format!("- cwd: `{}`\n", app.cwd));
-    out.push_str(&format!(
-        "- exported: {}\n\n---\n\n",
-        chrono::Utc::now().to_rfc3339()
-    ));
-
-    for msg in &app.messages {
-        let role = match msg.role {
-            Role::User => "user",
-            Role::Assistant => "assistant",
-        };
-        out.push_str(&format!("## {role}\n\n"));
-        for part in &msg.parts {
-            match part {
-                MessagePart::Text(s) => {
-                    out.push_str(s);
-                    out.push_str("\n\n");
-                }
-                MessagePart::Reasoning(s) => {
-                    out.push_str("> _reasoning:_\n>\n");
-                    for line in s.lines() {
-                        out.push_str("> ");
-                        out.push_str(line);
-                        out.push('\n');
-                    }
-                    out.push('\n');
-                }
-                MessagePart::Tool(tc) => {
-                    out.push_str(&format!(
-                        "**{}** `{}`\n\n",
-                        tc.kind.label(),
-                        tc.input.summary()
-                    ));
-                    let body = match &tc.output {
-                        ToolOutput::Text(s) => s.clone(),
-                        ToolOutput::LargeText(lt) => lt.content.clone(),
-                        ToolOutput::Command {
-                            stdout,
-                            stderr,
-                            exit_code,
-                        } => {
-                            format!(
-                                "exit: {}\nstdout:\n{}\nstderr:\n{}",
-                                exit_code.unwrap_or(-1),
-                                stdout,
-                                stderr,
-                            )
-                        }
-                        ToolOutput::FileContent { path, content, .. } => {
-                            format!("// {}\n{}", path, content)
-                        }
-                        ToolOutput::FileList(files) => files.join("\n"),
-                        ToolOutput::Diff(d) => {
-                            format!(
-                                "// diff: +{}/-{} in {}",
-                                d.additions, d.deletions, d.file_path
-                            )
-                        }
-                        ToolOutput::Empty => String::new(),
-                    };
-                    if !body.is_empty() {
-                        out.push_str("```\n");
-                        out.push_str(&body);
-                        if !body.ends_with('\n') {
-                            out.push('\n');
-                        }
-                        out.push_str("```\n\n");
-                    }
-                }
-                MessagePart::TaskStatus(ts) => {
-                    out.push_str(&format!("- task: {}\n\n", ts.description));
-                }
-                MessagePart::CompactBoundary { pre_tokens } => {
-                    out.push_str(&format!(
-                        "\n---\n_(compaction at ~{} tokens)_\n---\n\n",
-                        pre_tokens
-                    ));
-                }
-                MessagePart::Advisor(s) => {
-                    // Quote-block the advisor reply so the export marks it as
-                    // out-of-band guidance, not part of the main agent's
-                    // turn. Mirrors how Reasoning is exported.
-                    out.push_str("> _advisor:_\n>\n");
-                    for line in s.lines() {
-                        out.push_str("> ");
-                        out.push_str(line);
-                        out.push('\n');
-                    }
-                    out.push('\n');
-                }
-            }
-        }
-        out.push_str("\n");
-    }
-
-    match tokio::fs::write(&path, out).await {
-        Ok(_) => {
-            crate::toast::push_with_cap(
-                &mut app.toasts,
-                crate::toast::Toast::new(
-                    crate::toast::ToastKind::Success,
-                    format!("exported to {}", path.display()),
-                ),
-            );
-            app.messages
-                .push(crate::types::ChatMessage::assistant(format!(
-                    "Session exported to `{}`",
-                    path.display()
-                )));
-        }
-        Err(e) => {
-            crate::toast::push_with_cap(
-                &mut app.toasts,
-                crate::toast::Toast::new(
-                    crate::toast::ToastKind::Error,
-                    format!("export failed: {e}"),
-                ),
-            );
-        }
-    }
 }
 
 /// `switch` cannot teleport the running session into a different checkout —
@@ -5482,6 +5315,14 @@ async fn execute_palette_action(app: &mut App, label: &str) {
             app.model_picker_selected = 0;
             app.model_picker_models = collect_all_models(app);
         }
+        "Open Theme Picker (/theme)" => {
+            app.show_theme_picker = true;
+            app.theme_picker_input.clear();
+            app.theme_picker_selected = 0;
+        }
+        "Use Catppuccin Theme (/theme catppuccin)" => apply_theme(app, "catppuccin"),
+        "Use Tokyo Night Theme (/theme tokyo-night)" => apply_theme(app, "tokyo-night"),
+        "Use Gruvbox Theme (/theme gruvbox)" => apply_theme(app, "gruvbox"),
         "Toggle Thinking (Ctrl+O)" => {
             // Thinking toggle is a per-message expand/collapse — flip the
             // most recent reasoning row if there is one, otherwise no-op.
@@ -5499,6 +5340,11 @@ async fn execute_palette_action(app: &mut App, label: &str) {
         "Show Help (/help)" => {
             run_slash_command(app, "/help").await;
         }
+        other if other.starts_with("Run /") => {
+            if let Some(command) = other.strip_prefix("Run ") {
+                run_slash_command(app, command).await;
+            }
+        }
         _ => {}
     }
 }
@@ -5514,9 +5360,26 @@ pub fn palette_items(app: &App) -> Vec<&'static str> {
         "Toggle Sessions Sidebar (Ctrl+B)",
         "Toggle Info Sidebar (Ctrl+S)",
         "Open Model Picker (Ctrl+M)",
+        "Open Theme Picker (/theme)",
+        "Use Catppuccin Theme (/theme catppuccin)",
+        "Use Tokyo Night Theme (/theme tokyo-night)",
+        "Use Gruvbox Theme (/theme gruvbox)",
         "Toggle Thinking (Ctrl+O)",
         "Show Tasks (/tasks)",
         "Show Help (/help)",
+        "Run /sessions",
+        "Run /config",
+        "Run /doctor",
+        "Run /diff",
+        "Run /memory",
+        "Run /skills",
+        "Run /agents",
+        "Run /claude-md",
+        "Run /market",
+        "Run /cascade",
+        "Run /graph-history",
+        "Run /timeline",
+        "Run /export",
     ];
     if app.palette_input.is_empty() {
         all.to_vec()
@@ -7731,10 +7594,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn slash_theme_lists_when_no_arg_robust() {
+    async fn slash_theme_opens_picker_when_no_arg_robust() {
         let mut app = test_app();
         run_slash_command(&mut app, "/theme").await;
-        assert!(!app.messages.is_empty());
+        assert!(app.show_theme_picker);
+        assert!(app.theme_picker_input.is_empty());
+        assert_eq!(app.theme_picker_selected, 0);
     }
 
     #[tokio::test]

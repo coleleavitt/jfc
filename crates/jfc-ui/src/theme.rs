@@ -27,6 +27,111 @@ pub struct Theme {
     pub reasoning_fg: Color,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ThemeChoice {
+    pub name: &'static str,
+    pub label: &'static str,
+    pub description: &'static str,
+    pub aliases: &'static [&'static str],
+}
+
+const THEME_CHOICES: &[ThemeChoice] = &[
+    ThemeChoice {
+        name: "dark",
+        label: "Dark",
+        description: "Neutral dark default with high-contrast accents.",
+        aliases: &[],
+    },
+    ThemeChoice {
+        name: "light",
+        label: "Light",
+        description: "Bright daytime palette with softer contrast.",
+        aliases: &[],
+    },
+    ThemeChoice {
+        name: "solarized",
+        label: "Solarized Dark",
+        description: "Classic low-contrast blue/green terminal palette.",
+        aliases: &["solarized-dark"],
+    },
+    ThemeChoice {
+        name: "catppuccin",
+        label: "Catppuccin Mocha",
+        description: "Soft pastel Mocha-inspired palette.",
+        aliases: &["catppuccin-mocha", "catpuccin", "cat", "mocha"],
+    },
+    ThemeChoice {
+        name: "tokyo-night",
+        label: "Tokyo Night",
+        description: "Cool blue/purple low-glare editor palette.",
+        aliases: &["tokyo", "tokyonight"],
+    },
+    ThemeChoice {
+        name: "dracula",
+        label: "Dracula",
+        description: "Purple terminal classic with bright accents.",
+        aliases: &[],
+    },
+    ThemeChoice {
+        name: "nord",
+        label: "Nord",
+        description: "Arctic blue-gray palette.",
+        aliases: &[],
+    },
+    ThemeChoice {
+        name: "gruvbox",
+        label: "Gruvbox Dark",
+        description: "Retro warm contrast with amber and aqua.",
+        aliases: &["gruvbox-dark"],
+    },
+    ThemeChoice {
+        name: "monokai",
+        label: "Monokai",
+        description: "High-energy dark palette with saturated syntax colors.",
+        aliases: &[],
+    },
+    ThemeChoice {
+        name: "ayu",
+        label: "Ayu Dark",
+        description: "Warm amber-on-charcoal editor palette.",
+        aliases: &["ayu-dark"],
+    },
+    ThemeChoice {
+        name: "rose-pine",
+        label: "Rose Pine",
+        description: "Muted rose and pine palette.",
+        aliases: &["rosepine", "rose_pine"],
+    },
+    ThemeChoice {
+        name: "one-dark",
+        label: "One Dark",
+        description: "Atom-style balanced dark theme.",
+        aliases: &["onedark", "atom", "atom-one-dark"],
+    },
+    ThemeChoice {
+        name: "github-light",
+        label: "GitHub Light",
+        description: "Clean high-readability light theme.",
+        aliases: &["github"],
+    },
+];
+
+const AVAILABLE_THEME_NAMES: &[&str] = &[
+    "dark",
+    "light",
+    "solarized",
+    "catppuccin",
+    "tokyo-night",
+    "dracula",
+    "nord",
+    "gruvbox",
+    "monokai",
+    "ayu",
+    "rose-pine",
+    "one-dark",
+    "github-light",
+];
+
 impl Theme {
     /// Default dark theme — high-contrast indigo/blue accents.
     pub fn dark() -> Self {
@@ -398,20 +503,20 @@ impl Theme {
     /// and accepts aliases (`solarized` ↔ `solarized-dark`,
     /// `catppuccin` ↔ `catppuccin-mocha`, `tokyo` ↔ `tokyo-night`).
     pub fn by_name(name: &str) -> Option<Self> {
-        match name.to_ascii_lowercase().as_str() {
+        match Self::choice_by_name(name)?.name {
             "dark" => Some(Self::dark()),
             "light" => Some(Self::light()),
-            "solarized" | "solarized-dark" => Some(Self::solarized_dark()),
-            "catppuccin" | "catppuccin-mocha" => Some(Self::catppuccin()),
-            "tokyo" | "tokyo-night" | "tokyonight" => Some(Self::tokyo_night()),
+            "solarized" => Some(Self::solarized_dark()),
+            "catppuccin" => Some(Self::catppuccin()),
+            "tokyo-night" => Some(Self::tokyo_night()),
             "dracula" => Some(Self::dracula()),
             "nord" => Some(Self::nord()),
-            "gruvbox" | "gruvbox-dark" => Some(Self::gruvbox_dark()),
+            "gruvbox" => Some(Self::gruvbox_dark()),
             "monokai" => Some(Self::monokai()),
-            "ayu" | "ayu-dark" => Some(Self::ayu_dark()),
-            "rose-pine" | "rosepine" | "rose_pine" => Some(Self::rose_pine()),
-            "one-dark" | "onedark" | "atom" | "atom-one-dark" => Some(Self::one_dark()),
-            "github" | "github-light" => Some(Self::github_light()),
+            "ayu" => Some(Self::ayu_dark()),
+            "rose-pine" => Some(Self::rose_pine()),
+            "one-dark" => Some(Self::one_dark()),
+            "github-light" => Some(Self::github_light()),
             _ => None,
         }
     }
@@ -419,21 +524,18 @@ impl Theme {
     /// Canonical names for `/theme` listing. Aliases are NOT included
     /// — users see one entry per visually distinct palette.
     pub fn available_names() -> &'static [&'static str] {
-        &[
-            "dark",
-            "light",
-            "solarized",
-            "catppuccin",
-            "tokyo-night",
-            "dracula",
-            "nord",
-            "gruvbox",
-            "monokai",
-            "ayu",
-            "rose-pine",
-            "one-dark",
-            "github-light",
-        ]
+        AVAILABLE_THEME_NAMES
+    }
+
+    pub fn choices() -> &'static [ThemeChoice] {
+        THEME_CHOICES
+    }
+
+    pub fn choice_by_name(name: &str) -> Option<&'static ThemeChoice> {
+        let normalized = name.trim().to_ascii_lowercase();
+        THEME_CHOICES.iter().find(|choice| {
+            choice.name == normalized || choice.aliases.iter().any(|alias| *alias == normalized)
+        })
     }
 }
 

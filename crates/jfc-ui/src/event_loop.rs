@@ -575,6 +575,7 @@ pub(crate) async fn run(
     // unnecessary `Backend::flush` is a synchronous stdout write.
     const FRAME_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
     let mut last_draw = std::time::Instant::now();
+    let mut pending_draw = false;
 
     'main_loop: loop {
         // Burst-recv: block on the first event, then drain everything currently
@@ -591,7 +592,7 @@ pub(crate) async fn run(
         // Track whether any event in this burst dirties the screen. Pure Tick
         // events with no streaming/animation skip the draw entirely — eliminates
         // ~12.5 idle redraws per second.
-        let mut needs_draw = false;
+        let mut needs_draw = std::mem::take(&mut pending_draw);
         let mut should_quit = false;
 
         for ev in events {
@@ -1606,6 +1607,7 @@ pub(crate) async fn run(
                         "AppEvent::StreamDone received"
                     );
                     app.is_streaming = false;
+                    app.render_cache.borrow_mut().clear_streaming();
 
                     // OpenWebUI / LiteLLM / some third-party gateways
                     // leak `<tool_call>` XML into the assistant text
@@ -1993,6 +1995,7 @@ pub(crate) async fn run(
                     app.thinking_ended_at = None;
                     app.streaming_text.clear();
                     app.streaming_reasoning.clear();
+                    app.render_cache.borrow_mut().clear_streaming();
                     app.streaming_response_bytes = 0;
                     app.streaming_assistant_idx = None;
                     // Clear the turn clock and any pending tool calls so the
@@ -3011,6 +3014,13 @@ pub(crate) async fn run(
                 Ok(())
             })?;
             last_draw = std::time::Instant::now();
+        } else if needs_draw {
+            // Preserve dirty state across the frame cap. Without this, a final
+            // StreamDone/TaskCompleted event that lands immediately after a
+            // draw can be skipped, then the following idle Tick does not dirty
+            // the screen because streaming has ended. The user only sees the
+            // completed state after pressing a key.
+            pending_draw = true;
         }
     }
 

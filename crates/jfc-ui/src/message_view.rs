@@ -589,12 +589,21 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
                     let lines = if is_streaming_placeholder {
                         // Streaming fast path: recompute every frame without
                         // syntect. Cost is ~5µs/KB (pulldown-cmark only) vs
-                        // ~200µs/KB with syntect highlighting. We deliberately
-                        // bypass the main render cache here — the text mutates
-                        // each frame, so caching by content hash would only
-                        // ever miss and bloat the LRU.
+                        // ~200µs/KB with syntect highlighting. The streaming
+                        // slot avoids doing that work twice per frame: scroll
+                        // math and rendering both call build_render_items with
+                        // the same placeholder body before the next stream
+                        // chunk can mutate it.
                         let theme = t;
-                        markdown::to_lines_streaming(text, &theme, inner_w)
+                        let width = inner_w as u16;
+                        let mut cache = app.render_cache.borrow_mut();
+                        if let Some(lines) = cache.get_streaming(idx, width, text) {
+                            lines.to_vec()
+                        } else {
+                            let lines = markdown::to_lines_streaming(text, &theme, inner_w);
+                            cache.set_streaming(idx, width, text, lines.clone());
+                            lines
+                        }
                     } else {
                         let mut cache = app.render_cache.borrow_mut();
                         let width = inner_w as u16;
