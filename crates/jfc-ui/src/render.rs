@@ -4624,7 +4624,7 @@ fn approval(f: &mut Frame, app: &App) {
     // Mutating-tool kinds get the wider modal with a diff preview pane below
     // the choices. Read-only tools (Bash, Glob/Grep with side effects deferred
     // to the bash kind) keep the compact original layout.
-    let preview = build_diff_preview(&pending.tool);
+    let preview = build_diff_preview(&pending.tool, &t);
     let has_preview = preview.is_some();
 
     let (width, height) = if has_preview {
@@ -4699,7 +4699,7 @@ fn approval(f: &mut Frame, app: &App) {
             rows[0],
         );
 
-        render_choice_list(f, app, pending, rows[1]);
+        render_choice_list(f, app, pending, rows[1], &t);
 
         let preview_lines = preview.unwrap();
         let preview_block = Block::default()
@@ -4733,15 +4733,13 @@ fn approval(f: &mut Frame, app: &App) {
             ]),
             chunks[0],
         );
-        render_choice_list(f, app, pending, chunks[1]);
+        render_choice_list(f, app, pending, chunks[1], &t);
     }
 }
 
 /// Produce a diff/content preview for the pending tool, when applicable. Returns
 /// `None` for tools whose effects can't be summarized as a diff (Bash, Read).
-fn build_diff_preview(tool: &ToolCall) -> Option<Vec<Line<'static>>> {
-    let theme = Theme::dark();
-    let t = &theme;
+fn build_diff_preview(tool: &ToolCall, t: &Theme) -> Option<Vec<Line<'static>>> {
     match &tool.input {
         ToolInput::Edit {
             file_path,
@@ -4842,17 +4840,17 @@ fn render_choice_list(
     _app: &App,
     pending: &crate::app::PendingApproval,
     area: Rect,
+    t: &Theme,
 ) {
-    let t = Theme::dark();
     let items: Vec<ListItem> = ApprovalChoice::ALL
         .iter()
         .enumerate()
         .map(|(i, choice)| {
             let style = if i == pending.selected {
                 Style::default()
-                    .fg(t.warning)
+                    .fg(t.bg)
                     .add_modifier(Modifier::BOLD)
-                    .bg(t.surface_raised)
+                    .bg(t.warning)
             } else {
                 Style::default().fg(t.text_primary)
             };
