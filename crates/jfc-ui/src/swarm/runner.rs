@@ -666,8 +666,18 @@ async fn run_single_turn(
         };
 
         let mut response_text = String::new();
-        let mut tool_calls: Vec<(String, String, ToolKind, ToolInput, serde_json::Value)> =
-            Vec::new();
+        // (id, name, kind, input, raw_input, validation_error)
+        // — `validation_error` is `Some` when the model's JSON failed
+        // shape validation; we then skip execution and ship the error
+        // back as a tool_result so the model sees what went wrong.
+        let mut tool_calls: Vec<(
+            String,
+            String,
+            ToolKind,
+            ToolInput,
+            serde_json::Value,
+            Option<String>,
+        )> = Vec::new();
         let mut stop_reason = StopReason::EndTurn;
 
         futures::pin_mut!(stream);
@@ -717,13 +727,37 @@ async fn run_single_turn(
                     let input_value: serde_json::Value =
                         serde_json::from_str(&input_json).unwrap_or_default();
                     let kind = ToolKind::from_name(&tool_name);
-                    let parsed_input = ToolInput::from_value(&tool_name, input_value.clone());
+                    let (parsed_input, validation_err) =
+                        match ToolInput::from_value(&tool_name, input_value.clone()) {
+                            Ok(parsed) => (parsed, None),
+                            Err(err) => {
+                                let msg = err.to_string();
+                                warn!(
+                                    target: "jfc::swarm::runner",
+                                    tool_name = %tool_name,
+                                    error = %msg,
+                                    "tool input shape validation failed — failing tool"
+                                );
+                                // Stub the parsed input with a Generic so
+                                // the assistant turn we replay to the
+                                // provider still echoes a coherent shape;
+                                // the validation_err flag short-circuits
+                                // execution below.
+                                (
+                                    crate::types::ToolInput::Generic {
+                                        summary: input_value.to_string(),
+                                    },
+                                    Some(msg),
+                                )
+                            }
+                        };
                     tool_calls.push((
                         tool_use_id,
                         tool_name.clone(),
                         kind,
                         parsed_input,
                         input_value,
+                        validation_err,
                     ));
                     last_tool_name = Some(tool_name);
                 }
@@ -749,7 +783,7 @@ async fn run_single_turn(
         if !response_text.is_empty() {
             assistant_content.push(ProviderContent::Text(response_text.clone()));
         }
-        for (id, name, _, _, input_val) in &tool_calls {
+        for (id, name, _, _, input_val, _) in &tool_calls {
             assistant_content.push(ProviderContent::ToolUse {
                 id: id.clone(),
                 name: name.clone(),
@@ -772,8 +806,20 @@ async fn run_single_turn(
         let cwd = std::env::current_dir().unwrap_or_default();
         let mut tool_results: Vec<ProviderContent> = Vec::new();
 
-        for (id, name, kind, input, raw_input) in &tool_calls {
+        for (id, name, kind, input, raw_input, validation_err) in &tool_calls {
             total_tools += 1;
+
+            // If shape validation failed during streaming, short-circuit
+            // with an error tool_result so the model can self-correct on
+            // the next turn rather than us silently executing a stub.
+            if let Some(err) = validation_err {
+                tool_results.push(ProviderContent::ToolResult {
+                    tool_use_id: id.clone(),
+                    content: format!("Tool input rejected: {err}"),
+                    is_error: true,
+                });
+                continue;
+            }
 
             // Emit progress
             let _ = event_tx.send(TeammateEvent::Progress {
@@ -1259,6 +1305,7 @@ mod tests {
             Ok(Box::pin(stream))
         }
     }
+    impl crate::provider::seal::Sealed for StubProvider {}
 
     #[tokio::test(flavor = "current_thread")]
     async fn start_teammate_completes_after_endturn_normal() {
@@ -1367,6 +1414,7 @@ mod tests {
             Ok(Box::pin(stream::iter(next.into_iter().map(Ok))))
         }
     }
+    impl crate::provider::seal::Sealed for ScriptedProvider {}
 
     #[tokio::test(flavor = "current_thread")]
     async fn start_teammate_executes_tool_then_endturn_normal() {

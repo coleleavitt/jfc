@@ -173,10 +173,19 @@ mod cumulative_usage_tests {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
     User,
     Assistant,
+}
+
+impl std::fmt::Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::User => f.write_str("user"),
+            Self::Assistant => f.write_str("assistant"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -260,24 +269,150 @@ pub struct ToolUndoEntry {
     pub op_label: String,
 }
 
+/// Tri-state display mode for a tool block. Replaces three independent
+/// bools (`is_collapsed`, `expanded`, `pinned`) so mutually-exclusive
+/// states like "collapsed teaser" + "expanded with raised cap" are
+/// unrepresentable-by-construction instead of relying on unchecked
+/// invariants every renderer + toggle had to obey by hand. `pinned`
+/// is associated only with the variants where it makes sense
+/// (Default, Expanded) — the Collapsed teaser is never pinned because
+/// pinning would make it expand on the next render anyway, so a
+/// `Collapsed { pinned: true }` would be incoherent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolDisplayState {
+    /// Default rendering: full content, capped at 80 lines (the
+    /// preview cap). The user has not asked for either a one-line
+    /// teaser or a raised cap. `pinned=true` resists auto-collapse
+    /// (e.g. on huge LargeText results) and surfaces the 📌 glyph.
+    Default { pinned: bool },
+    /// One-line teaser only ("▶ N reads · click to expand").
+    /// Set on huge outputs (LargeText that exceed COLLAPSE_LINES /
+    /// COLLAPSE_BYTES) that would otherwise dominate the chat, and
+    /// on grouped tool runs the user has not opted into.
+    Collapsed,
+    /// Full content with the cap raised from 80 to 500. Entered via
+    /// `Ctrl+O` / `o` / click on the title. `pinned=true` means the
+    /// user double-clicked to lock it expanded — only another
+    /// double-click can flip it off, so the long Read they wanted to
+    /// keep visible while scrolling doesn't silently re-collapse.
+    Expanded { pinned: bool },
+}
+
+impl ToolDisplayState {
+    /// Default rendering, no pin. The construction default for new
+    /// tool calls.
+    pub const DEFAULT: Self = Self::Default { pinned: false };
+
+    pub fn is_collapsed(&self) -> bool {
+        matches!(self, Self::Collapsed)
+    }
+
+    pub fn is_expanded(&self) -> bool {
+        matches!(self, Self::Expanded { .. })
+    }
+
+    pub fn is_pinned(&self) -> bool {
+        matches!(
+            self,
+            Self::Default { pinned: true } | Self::Expanded { pinned: true }
+        )
+    }
+
+    /// Single source of truth for the renderer's per-row line cap.
+    /// Expanded variants raise the cap to 500; everything else uses
+    /// the 80-line preview cap. Note: per-output-kind caps in
+    /// message_view (e.g. grep at 200/1000) still scale around
+    /// `is_expanded()` — the leaf producers keep their own kind-
+    /// specific multipliers — but for the generic text/file paths
+    /// this is the canonical decision.
+    pub fn cap_lines(&self) -> usize {
+        if self.is_expanded() { 500 } else { 80 }
+    }
+
+    /// Toggle expanded ↔ default behind `o` / `Ctrl+O` /
+    /// click-on-title. A pinned-expanded tool collapses back to a
+    /// pinned-default; a pinned-default expands to pinned-expanded.
+    /// Collapsed (huge LargeText teaser) is left alone — the caller
+    /// uses `toggle_collapsed` for that arm so the two-level expand
+    /// (teaser ⇄ body, body ⇄ raised-cap) stays distinct.
+    pub fn toggle_expanded(&mut self) {
+        *self = match *self {
+            Self::Default { pinned } => Self::Expanded { pinned },
+            Self::Expanded { pinned } => Self::Default { pinned },
+            Self::Collapsed => Self::Default { pinned: false },
+        };
+    }
+
+    /// Toggle the pin glyph on Default + Expanded. Pinning forces
+    /// the Expanded state (the renderer needs a body to put the pin
+    /// next to); unpinning leaves the cap state alone. Collapsed
+    /// can't be pinned by construction, so a pin on a Collapsed
+    /// teaser promotes it to a pinned-Expanded body.
+    pub fn toggle_pinned(&mut self) {
+        *self = match *self {
+            Self::Default { pinned } => {
+                if pinned {
+                    Self::Default { pinned: false }
+                } else {
+                    Self::Expanded { pinned: true }
+                }
+            }
+            Self::Expanded { pinned } => Self::Expanded { pinned: !pinned },
+            Self::Collapsed => Self::Expanded { pinned: true },
+        };
+    }
+
+    /// Force the teaser state (used when a huge LargeText result
+    /// arrives — the dispatcher collapses by default so the chat
+    /// isn't drowned).
+    pub fn collapse(&mut self) {
+        *self = Self::Collapsed;
+    }
+
+    /// Toggle between teaser (Collapsed) and body
+    /// (Default { pinned: false }). Used by `o` on huge LargeText
+    /// outputs where the two-level expand model pivots around
+    /// teaser ⇄ body rather than body ⇄ raised-cap.
+    pub fn toggle_collapsed(&mut self) {
+        *self = match *self {
+            Self::Collapsed => Self::Default { pinned: false },
+            // From a body state, the user wanted to fold it back to
+            // a teaser. Pin status is dropped intentionally — a
+            // teaser is never pinned (see enum doc comment).
+            Self::Default { .. } | Self::Expanded { .. } => Self::Collapsed,
+        };
+    }
+}
+
+impl Default for ToolDisplayState {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ToolCall {
-    pub id: String,
+    pub id: crate::ids::ToolId,
     pub kind: ToolKind,
-    pub status: ToolStatus,
+    /// Lifecycle status for this tool. Direct assignment is still
+    /// permitted because in-flight migration of the codebase requires
+    /// it, but new code SHOULD use the [`Self::mark_running`] /
+    /// [`Self::mark_completed`] / [`Self::mark_failed`] /
+    /// [`Self::mark_cancelled`] transition methods, which validate the
+    /// before-state and refuse invalid jumps (e.g. Failed → Running).
+    /// The methods centralize the "what state did we come from?"
+    /// invariant so no future caller can silently resurrect a
+    /// terminal tool.
+    pub status: ExecutionStatus,
     pub input: ToolInput,
     pub output: ToolOutput,
-    /// True when the tool block renders as a single-line collapsed
-    /// header (set on huge outputs that would otherwise dominate the
-    /// chat). Distinct from `expanded`: this is the *minimal* state.
-    pub is_collapsed: bool,
-    /// True when the user has explicitly expanded the tool to full
-    /// content via `Ctrl+O` (or click). False = preview-cap state
-    /// (first `TOOL_PREVIEW_LINES` rows + a `… N more` truncation
-    /// row). Mirrors v126's per-tool expand/collapse affordance —
-    /// long stdout, multi-hunk diffs, and big file reads all start
-    /// preview-only so they don't drown out the rest of the chat.
-    pub expanded: bool,
+    /// Tri-state display mode (collapsed teaser / default body /
+    /// expanded body), with an orthogonal pin flag baked into the
+    /// states where it's meaningful. Replaces three separate bools
+    /// (`is_collapsed`, `expanded`, `pinned`) so the renderer can't
+    /// be handed a contradictory pair like "collapsed AND expanded".
+    /// See [`ToolDisplayState`] for the variants and their helpers.
+    pub display: ToolDisplayState,
     /// Wall-clock millis between the tool's dispatch and its result
     /// landing. `None` while the tool is in flight. Set by the
     /// `ToolResult` handler in `main.rs`. Surfaced in the title as
@@ -289,32 +424,139 @@ pub struct ToolCall {
     /// completion. Not persisted (recomputing the duration after a
     /// session reload is meaningless), so this isn't serialized.
     pub started_at: Option<std::time::Instant>,
-    /// True when the user has double-clicked the tool to pin it
-    /// expanded. The renderer adds a small 📌 glyph to the title
-    /// and the click handler resists toggling it off — only an
-    /// explicit double-click can unpin. Without this, a long Read
-    /// the user wants to keep visible while scrolling around can
-    /// silently re-collapse.
-    pub pinned: bool,
 }
 
-/// The lifecycle state of a spawned sub-agent task.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum TaskLifecycle {
+impl ToolCall {
+    /// Construct a fresh ToolCall in the `Pending` state. Use this
+    /// from the stream layer where a tool is just leaving the model
+    /// and hasn't been dispatched yet — guarantees the start state is
+    /// always a sane `Pending`, never accidentally `Running` or
+    /// `Completed`.
+    pub fn new_pending(
+        id: crate::ids::ToolId,
+        kind: ToolKind,
+        input: ToolInput,
+    ) -> Self {
+        Self {
+            id,
+            kind,
+            status: ExecutionStatus::Pending,
+            input,
+            output: ToolOutput::Empty,
+            display: ToolDisplayState::DEFAULT,
+            elapsed_ms: None,
+            started_at: Some(std::time::Instant::now()),
+        }
+    }
+
+    /// Construct a ToolCall that's already in the `Failed` terminal
+    /// state — used by the stream layer when malformed provider input
+    /// (bad JSON, schema mismatch) means we never even get to dispatch
+    /// the tool. The output carries the diagnostic that will be
+    /// shipped back to the model as the tool_result.
+    pub fn new_failed(
+        id: crate::ids::ToolId,
+        kind: ToolKind,
+        input: ToolInput,
+        output: ToolOutput,
+    ) -> Self {
+        Self {
+            id,
+            kind,
+            status: ExecutionStatus::Failed,
+            input,
+            output,
+            display: ToolDisplayState::DEFAULT,
+            elapsed_ms: None,
+            started_at: None,
+        }
+    }
+
+    /// Pending → Running. Returns Err if the tool is already in a
+    /// terminal state (Completed/Failed/Cancelled). Idempotent on
+    /// Running.
+    pub fn mark_running(&mut self) -> Result<(), InvalidToolTransition> {
+        self.try_transition_to(ExecutionStatus::Running)
+    }
+
+    /// {Pending|Running} → Completed. Returns Err on terminal state.
+    /// Idempotent on Completed.
+    pub fn mark_completed(&mut self) -> Result<(), InvalidToolTransition> {
+        self.try_transition_to(ExecutionStatus::Completed)
+    }
+
+    /// {Pending|Running} → Failed. Returns Err if the tool is already
+    /// in a different terminal state (Completed/Cancelled).
+    pub fn mark_failed(&mut self) -> Result<(), InvalidToolTransition> {
+        self.try_transition_to(ExecutionStatus::Failed)
+    }
+
+    /// {Pending|Running} → Cancelled. Returns Err on a different
+    /// terminal state. Used when the user denies a tool or moves on
+    /// before it dispatches.
+    pub fn mark_cancelled(&mut self) -> Result<(), InvalidToolTransition> {
+        self.try_transition_to(ExecutionStatus::Cancelled)
+    }
+
+    fn try_transition_to(
+        &mut self,
+        target: ExecutionStatus,
+    ) -> Result<(), InvalidToolTransition> {
+        if !self.status.allows_transition_to(target) {
+            return Err(InvalidToolTransition {
+                from: self.status,
+                to: target,
+            });
+        }
+        self.status = target;
+        Ok(())
+    }
+}
+
+/// Canonical lifecycle for both Tool and Task execution. The two used
+/// to be separate (`ToolStatus` had four variants — Pending/Running/
+/// Complete/Failed; `TaskLifecycle` had six — Pending/Running/Idle/
+/// Completed/Failed/Cancelled) and required hand-coded mapping in
+/// both directions. They encoded the same concept with subtly
+/// different variants, so we unify on this single enum and keep the
+/// old type names as aliases for documentation purposes (see
+/// [`ToolStatus`] and [`TaskLifecycle`] below).
+///
+/// Variant choices:
+/// - `Idle` was Task-only (a teammate finished its turn but is still
+///   waiting for new input). Tools never enter `Idle`; helpers like
+///   [`Self::is_alive`] still treat it correctly there.
+/// - `Completed` is canonical (more standard English than `Complete`,
+///   which was the Tool-only legacy name). Wire-format readers in
+///   `session.rs` accept both spellings for backward compat — see the
+///   test `execution_status_serde_back_compat_normal`.
+/// - `Cancelled` was Task-only; surfacing it on tools too lets the
+///   classifier/permission layer mark a denied tool as Cancelled
+///   instead of Failed where appropriate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ExecutionStatus {
     Pending,
     Running,
-    /// Teammate finished its turn but is still alive — waiting for the next
-    /// inbound message before it picks up again. Distinct from Running so
-    /// the task panel can stop its "Receiving output…" spinner without
-    /// having to mark the task terminal (the agent could resume on the
-    /// next SendMessage).
+    /// Started but quiescent — formerly Task-only. Distinct from
+    /// `Running` so the task panel can stop its "Receiving output…"
+    /// spinner without having to mark the task terminal (the agent
+    /// could resume on the next SendMessage). Tools never enter this
+    /// state in practice; if one does, treat it as a programmer error
+    /// and log via tracing rather than panic.
     Idle,
     Completed,
     Failed,
     Cancelled,
 }
 
-impl TaskLifecycle {
+/// Documentation alias — used to be a separate enum. Same wire format
+/// as before for the on-disk session journal (see `session.rs`).
+pub type TaskLifecycle = ExecutionStatus;
+/// Documentation alias — used to be a separate enum. The legacy
+/// `ToolStatus::Completed` variant is now [`ExecutionStatus::Completed`].
+pub type ToolStatus = ExecutionStatus;
+
+impl ExecutionStatus {
     pub fn label(self) -> &'static str {
         match self {
             Self::Pending => "pending",
@@ -330,17 +572,38 @@ impl TaskLifecycle {
         matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
     }
 
-    /// Counts as "alive" for fan-out / agent-count purposes. Running and
-    /// Idle teammates both still belong on the agent fan even though
-    /// only Running ones are actively producing output.
+    /// Counts as "alive" for fan-out / agent-count purposes. Running
+    /// and Idle teammates both still belong on the agent fan even
+    /// though only Running ones are actively producing output.
     pub fn is_alive(self) -> bool {
         matches!(self, Self::Pending | Self::Running | Self::Idle)
+    }
+
+    /// Returns true if a transition from `self` to `target` is
+    /// well-formed. Used by [`ToolCall`]'s `mark_*` helpers to refuse
+    /// invalid jumps like Failed→Running. Idempotent same-state
+    /// transitions (e.g. Running→Running) are allowed because the
+    /// stream layer occasionally re-asserts state on retry.
+    pub fn allows_transition_to(self, target: Self) -> bool {
+        if self == target {
+            return true;
+        }
+        // Terminal states never transition out.
+        if self.is_terminal() {
+            return false;
+        }
+        // From any non-terminal state, any other state is reachable —
+        // the strict ordering (Pending → Running → terminal) is too
+        // restrictive for real provider streams, which sometimes
+        // collapse Pending and skip directly to Completed when a tool
+        // was approved + executed faster than the UI can poll.
+        true
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct TaskStatusPart {
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub description: String,
     pub status: TaskLifecycle,
     pub summary: Option<String>,
@@ -488,15 +751,33 @@ pub enum ToolKind {
     ExitWorktree,
     NotebookRead,
     NotebookEdit,
+    /// Deliberately-named generic tool wrapping a string label —
+    /// used by sample harnesses and code that constructs a ToolKind
+    /// for a tool whose semantics we know but don't represent as a
+    /// first-class variant. Kept distinct from `UnknownTool` so the
+    /// "we got a name we don't recognize" path is grep-able and
+    /// can deny-by-default in permission checks.
     Generic(String),
+    /// A model-advertised tool name that did not match any known
+    /// variant in [`ToolKind::from_name`]. Distinct from `Generic`
+    /// (which is for deliberately-named tools we just don't represent
+    /// as first-class variants) so that adding a new `ToolKind::Foo`
+    /// variant is a compile error at every match site instead of a
+    /// silent dispatch to `Generic("Foo")` until someone notices.
+    /// Always denied by permission checks — we won't dispatch a tool
+    /// we don't understand.
+    UnknownTool { advertised_name: String },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ToolStatus {
-    Pending,
-    Running,
-    Complete,
-    Failed,
+/// Returned by [`ToolCall::mark_running`] and friends when the caller
+/// asked for a state transition that the lifecycle enum forbids
+/// (e.g. Failed → Running, or any movement out of a terminal state).
+/// The Display impl produces a one-line message suitable for logging.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[error("invalid ToolCall status transition: {from:?} → {to:?}")]
+pub struct InvalidToolTransition {
+    pub from: ExecutionStatus,
+    pub to: ExecutionStatus,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -589,6 +870,12 @@ pub enum ToolInput {
     GraphQuery {
         query: String,
         max_tokens: Option<usize>,
+        /// Whether to append a `--- handles ---` footer of structured
+        /// `kind:qualified_name` handles for chaining. `None` defaults to
+        /// `true` at dispatch time. `#[serde(default)]` so older
+        /// serialized sessions (which never set this field) still round-trip.
+        #[serde(default)]
+        include_handles: Option<bool>,
     },
     PostBounty {
         description: String,
@@ -973,6 +1260,204 @@ impl ChatMessage {
     }
 }
 
+/// Variants of the "messages alternate user/assistant" invariant. Each
+/// carries enough context (an index, a role, optionally a `ToolId`) for
+/// a tracing log to point at the offending entry.
+///
+/// Surfacing the variant is the entire point — the violation is the
+/// signal. Auto-fixing in flight masks other bugs, so the validator
+/// never mutates the slice. See `validate_turn_invariants`.
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+pub enum TurnInvariantError {
+    /// Two adjacent `Role::User` messages. Triggered by a queue drain
+    /// that pushed a new user prompt without first consuming the prior
+    /// assistant turn (or by a corrupt session.json).
+    #[error("two consecutive user messages at index {at_index}")]
+    ConsecutiveUser { at_index: usize },
+    /// Two adjacent `Role::Assistant` messages — the structural shape
+    /// of the plan-continuation phantom-assistant bug.
+    #[error("two consecutive assistant messages at index {at_index}")]
+    ConsecutiveAssistant { at_index: usize },
+    /// A non-streaming message has zero textual content and no tool
+    /// activity. Empty assistant placeholders mid-stream are allowed
+    /// by skipping the LAST assistant slot when validating (see
+    /// `validate_turn_invariants_inner`'s `allow_streaming_tail`
+    /// flag).
+    #[error("empty {role} message at index {at_index}")]
+    EmptyMessage { at_index: usize, role: Role },
+    /// A `MessagePart::Tool` that's still `Pending`/`Running` after a
+    /// later turn was added — the tool_use is structurally orphaned
+    /// because the model has moved on without a result.
+    #[error(
+        "orphan tool_use {tool_id} at index {at_index} (no matching tool_result before next turn)"
+    )]
+    OrphanToolUse {
+        tool_id: crate::ids::ToolId,
+        at_index: usize,
+    },
+    /// A `MessagePart::Tool` carrying a resolved (`Complete`/`Failed`)
+    /// status on a `Role::User` message. Tool calls live on assistant
+    /// messages; finding one user-side means deserialization or the
+    /// stream pipeline routed something to the wrong message.
+    #[error(
+        "orphan tool_result {tool_id} at index {at_index} (tool part on a user message)"
+    )]
+    OrphanToolResult {
+        tool_id: crate::ids::ToolId,
+        at_index: usize,
+    },
+    /// The first message in the slice has `Role::Assistant`. Outside
+    /// of system-injected boundary markers (`compact_boundary`, which
+    /// uses `Role::User`), every legitimate session opens with a user
+    /// prompt.
+    #[error("leading assistant message at index 0 (role={role})")]
+    LeadingAssistant { role: Role },
+}
+
+/// Walk a message slice and report the first `TurnInvariantError` that
+/// breaks the user/assistant alternation invariant.
+///
+/// ## What's checked
+/// - First message must be `Role::User` (system-injected boundaries
+///   always materialize as user-role; see `ChatMessage::compact_boundary`).
+/// - No two adjacent messages share a role.
+/// - No message is fully empty (no text, no tool, no boundary, no
+///   advisor side-channel) — except an *assistant streaming
+///   placeholder* (the last message in the slice when streaming,
+///   carrying just an empty `MessagePart::Text("")`).
+/// - Every `MessagePart::Tool` whose status is `Pending`/`Running`
+///   must sit on the most-recent assistant message, otherwise it's an
+///   orphaned tool_use the model has already moved past.
+/// - No `MessagePart::Tool` may sit on a `Role::User` message — tool
+///   calls always belong to assistant turns.
+///
+/// ## What's NOT checked (intentional)
+/// - Compact-boundary messages: `compact_boundary` produces a User
+///   message that may be followed by another User reply describing
+///   the resumed task. The single permitted exception is "first
+///   message after a CompactBoundary may be User even if the prior
+///   was also User."
+/// - Tool ID uniqueness: provider IDs occasionally collide on retry;
+///   that's a separate pathology owned by `tools::dedupe`.
+pub fn validate_turn_invariants(
+    messages: &[ChatMessage],
+) -> Result<(), TurnInvariantError> {
+    validate_turn_invariants_inner(messages, /* allow_streaming_tail = */ false)
+}
+
+/// Inner form that allows the trailing message to be a (possibly empty)
+/// assistant streaming placeholder. Used when we're about to push a
+/// fresh assistant slot in `continue_agentic_loop`/`drain_queued_prompts`
+/// and want to confirm the *prior* state was sound — the placeholder
+/// itself is a known-empty stub the next stream tick will fill.
+pub(crate) fn validate_turn_invariants_inner(
+    messages: &[ChatMessage],
+    allow_streaming_tail: bool,
+) -> Result<(), TurnInvariantError> {
+    if messages.is_empty() {
+        return Ok(());
+    }
+
+    // 1) Leading-assistant check. The plan-continuation bug's UI
+    // symptom was a session that opened "blank assistant → real user"
+    // because of a phantom slot — catch that shape immediately.
+    let first = &messages[0];
+    if first.role == Role::Assistant && !first.is_compact_boundary() {
+        return Err(TurnInvariantError::LeadingAssistant { role: first.role });
+    }
+
+    // 2) Pairwise alternation + emptiness checks.
+    let last_idx = messages.len() - 1;
+    for (i, m) in messages.iter().enumerate() {
+        // Alternation against the previous message.
+        if i > 0 {
+            let prev = &messages[i - 1];
+            if prev.role == m.role {
+                // CompactBoundary is a system-injected user-role message
+                // that may legitimately be followed by another user
+                // message describing the resumed task. Skip the
+                // alternation check across that exact seam.
+                let either_is_boundary =
+                    prev.is_compact_boundary() || m.is_compact_boundary();
+                if !either_is_boundary {
+                    return Err(match m.role {
+                        Role::User => TurnInvariantError::ConsecutiveUser {
+                            at_index: i,
+                        },
+                        Role::Assistant => TurnInvariantError::ConsecutiveAssistant {
+                            at_index: i,
+                        },
+                    });
+                }
+            }
+        }
+
+        // Emptiness check. A message is "empty" if it carries no
+        // text/reasoning, no tool, no advisor reply, and no compact
+        // boundary marker. The streaming-placeholder exception lets
+        // us stage an empty assistant slot just before stream_response
+        // starts pumping tokens into it.
+        let has_content = m.parts.iter().any(|p| match p {
+            MessagePart::Text(s) | MessagePart::Reasoning(s) | MessagePart::Advisor(s) => {
+                !s.is_empty()
+            }
+            MessagePart::Tool(_)
+            | MessagePart::TaskStatus(_)
+            | MessagePart::CompactBoundary { .. } => true,
+        });
+        let is_streaming_tail = allow_streaming_tail
+            && i == last_idx
+            && m.role == Role::Assistant;
+        if !has_content && !is_streaming_tail {
+            return Err(TurnInvariantError::EmptyMessage {
+                at_index: i,
+                role: m.role,
+            });
+        }
+
+        // Tool-routing check: tool parts only belong on assistant
+        // messages. A `MessagePart::Tool` on a User-role message is
+        // structurally a misrouted tool_result.
+        if m.role == Role::User {
+            for part in &m.parts {
+                if let MessagePart::Tool(tc) = part {
+                    return Err(TurnInvariantError::OrphanToolResult {
+                        tool_id: tc.id.clone(),
+                        at_index: i,
+                    });
+                }
+            }
+        }
+    }
+
+    // 3) Orphan tool_use detection. A Pending/Running tool on any
+    // assistant message that's NOT the last one is orphaned — the
+    // turn rolled forward without a tool_result. The tail assistant
+    // is allowed to have in-flight tools (it's still streaming /
+    // awaiting approval).
+    for (i, m) in messages.iter().enumerate() {
+        if m.role != Role::Assistant {
+            continue;
+        }
+        let is_tail = i == last_idx;
+        if is_tail {
+            continue;
+        }
+        for part in &m.parts {
+            if let MessagePart::Tool(tc) = part {
+                if matches!(tc.status, ToolStatus::Pending | ToolStatus::Running) {
+                    return Err(TurnInvariantError::OrphanToolUse {
+                        tool_id: tc.id.clone(),
+                        at_index: i,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 impl ToolKind {
     pub fn from_name(name: &str) -> Self {
         // Normalize: lowercase + strip underscores. v126's native names
@@ -1030,7 +1515,18 @@ impl ToolKind {
             // MCP-namespaced tools route to the Mcp variant. Goes last
             // so it doesn't shadow specific matches.
             _ if name.starts_with("mcp__") => Self::Mcp(name.to_owned()),
-            _ => Self::Generic(name.to_owned()),
+            // Anything else is a model-advertised tool name we don't
+            // recognize. Route to `UnknownTool` rather than the old
+            // silent `Generic` fallback — the goal is for adding a new
+            // `ToolKind::Foo` variant to be a compile error at every
+            // match site (so dispatch wires up correctly) instead of a
+            // silent dispatch to `Generic("Foo")` until someone notices.
+            // Permission checks (see `auto_approves`) deny UnknownTool
+            // in every mode, so a typo or hallucinated tool name fails
+            // loudly instead of getting routed to "not yet implemented".
+            _ => Self::UnknownTool {
+                advertised_name: name.to_owned(),
+            },
         }
     }
 
@@ -1081,6 +1577,10 @@ impl ToolKind {
             Self::NotebookRead => "NotebookRead",
             Self::NotebookEdit => "NotebookEdit",
             Self::Generic(name) => name.as_str(),
+            // The advertised name is what the model sent us — surface it
+            // verbatim so logs and the transcript identify which name we
+            // refused to dispatch.
+            Self::UnknownTool { advertised_name } => advertised_name.as_str(),
         }
     }
 
@@ -1131,19 +1631,41 @@ impl ToolKind {
             Self::NotebookRead => "NotebookRead",
             Self::NotebookEdit => "NotebookEdit",
             Self::Generic(name) => name.as_str(),
+            // Round-trip the advertised name on the wire so a session
+            // resumed from disk re-parses to the same UnknownTool kind.
+            Self::UnknownTool { advertised_name } => advertised_name.as_str(),
         }
     }
 }
 
-impl ToolStatus {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Running => "running",
-            Self::Complete => "done",
-            Self::Failed => "failed",
-        }
-    }
+/// Errors returned by [`ToolInput::from_value`] when the provider-supplied
+/// JSON for a tool call doesn't match the tool's expected shape. The
+/// `Display` impl produces a one-line message suitable for shipping back
+/// to the model in a `tool_result` block — see `stream.rs`'s ToolDone
+/// handler for the wiring.
+///
+/// This is the "validate at the boundary" half of the parsing strategy:
+/// we accept untrusted JSON exactly once, here, and either build a typed
+/// `ToolInput` or refuse with a precise reason. Downstream code never
+/// has to defensively re-check fields.
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+pub enum ToolInputError {
+    #[error("tool `{tool}`: missing required field `{field}`")]
+    MissingField {
+        tool: String,
+        field: &'static str,
+    },
+    #[error(
+        "tool `{tool}`: field `{field}` has wrong type (expected {expected}, got {got})"
+    )]
+    WrongType {
+        tool: String,
+        field: &'static str,
+        expected: &'static str,
+        got: &'static str,
+    },
+    #[error("tool `{tool}`: invalid input — {reason}")]
+    InvalidShape { tool: String, reason: String },
 }
 
 impl ToolInput {
@@ -1266,16 +1788,57 @@ impl ToolInput {
         }
     }
 
-    pub fn from_value(tool_name: &str, v: serde_json::Value) -> Self {
+    /// Boundary-validating constructor: each tool variant explicitly checks
+    /// its required fields. Returns `Err` rather than silently substituting
+    /// empty strings — the caller (stream.rs) emits a `Failed` tool result
+    /// so the model sees the validation error in its `tool_result` block.
+    ///
+    /// "Validate at construction, trust thereafter." Once a `ToolInput` is
+    /// built, downstream code can rely on required string fields actually
+    /// being string-typed. `Bash::command` additionally must be non-empty.
+    pub fn from_value(
+        tool_name: &str,
+        v: serde_json::Value,
+    ) -> Result<Self, ToolInputError> {
         let obj = match &v {
             serde_json::Value::Object(m) => Some(m),
             _ => None,
         };
-        let str_field = |key: &str| -> String {
-            obj.and_then(|m| m.get(key))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_owned()
+        let json_type_name = |val: &serde_json::Value| -> &'static str {
+            match val {
+                serde_json::Value::Null => "null",
+                serde_json::Value::Bool(_) => "bool",
+                serde_json::Value::Number(_) => "number",
+                serde_json::Value::String(_) => "string",
+                serde_json::Value::Array(_) => "array",
+                serde_json::Value::Object(_) => "object",
+            }
+        };
+        let tool = || tool_name.to_owned();
+        // Required string field: must be present, must be a JSON string,
+        // must not be `null`. Empty-string is allowed at this layer (the
+        // executor / modal warning handles that case for Write::content,
+        // and `Bash::command` is checked separately below).
+        let req_str = |key: &'static str| -> Result<String, ToolInputError> {
+            let Some(m) = obj else {
+                return Err(ToolInputError::InvalidShape {
+                    tool: tool(),
+                    reason: "tool input was not a JSON object".into(),
+                });
+            };
+            match m.get(key) {
+                None | Some(serde_json::Value::Null) => Err(ToolInputError::MissingField {
+                    tool: tool(),
+                    field: key,
+                }),
+                Some(serde_json::Value::String(s)) => Ok(s.clone()),
+                Some(other) => Err(ToolInputError::WrongType {
+                    tool: tool(),
+                    field: key,
+                    expected: "string",
+                    got: json_type_name(other),
+                }),
+            }
         };
         let opt_str_field = |key: &str| -> Option<String> {
             obj.and_then(|m| m.get(key))
@@ -1289,43 +1852,69 @@ impl ToolInput {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
         };
-        match ToolKind::from_name(tool_name) {
+        // The Generic + Mcp + UnknownTool arms accept arbitrary shapes,
+        // so don't require the input to be a JSON object. Every other
+        // arm does.
+        let kind = ToolKind::from_name(tool_name);
+        let needs_object = !matches!(
+            kind,
+            ToolKind::Generic(_) | ToolKind::Mcp(_) | ToolKind::UnknownTool { .. }
+        );
+        if needs_object && obj.is_none() {
+            return Err(ToolInputError::InvalidShape {
+                tool: tool(),
+                reason: format!(
+                    "tool input must be a JSON object, got {}",
+                    json_type_name(&v)
+                ),
+            });
+        }
+        let parsed = match kind {
             ToolKind::Edit => Self::Edit {
-                file_path: str_field("file_path"),
-                old_string: str_field("old_string"),
-                new_string: str_field("new_string"),
+                file_path: req_str("file_path")?,
+                old_string: req_str("old_string")?,
+                new_string: req_str("new_string")?,
                 replacement: ReplacementMode::from_replace_all(bool_field("replace_all")),
             },
             ToolKind::Write => Self::Write {
-                file_path: str_field("file_path"),
-                content: str_field("content"),
+                file_path: req_str("file_path")?,
+                content: req_str("content")?,
             },
             ToolKind::Read => Self::Read {
-                file_path: str_field("file_path"),
+                file_path: req_str("file_path")?,
                 offset: opt_u64_field("offset"),
                 limit: opt_u64_field("limit"),
             },
-            ToolKind::Bash => Self::Bash {
-                command: str_field("command"),
-                timeout: opt_u64_field("timeout"),
-                workdir: opt_str_field("workdir"),
-            },
+            ToolKind::Bash => {
+                let command = req_str("command")?;
+                if command.is_empty() {
+                    return Err(ToolInputError::InvalidShape {
+                        tool: tool(),
+                        reason: "Bash command must not be empty".into(),
+                    });
+                }
+                Self::Bash {
+                    command,
+                    timeout: opt_u64_field("timeout"),
+                    workdir: opt_str_field("workdir"),
+                }
+            }
             ToolKind::Glob => Self::Glob {
-                pattern: str_field("pattern"),
+                pattern: req_str("pattern")?,
                 path: opt_str_field("path"),
             },
             ToolKind::Grep => Self::Grep {
-                pattern: str_field("pattern"),
+                pattern: req_str("pattern")?,
                 path: opt_str_field("path"),
                 glob: opt_str_field("glob"),
                 output_mode: opt_str_field("output_mode"),
             },
             ToolKind::Search => Self::Search {
-                query: str_field("query"),
+                query: req_str("query")?,
                 path: opt_str_field("path"),
             },
             ToolKind::ApplyPatch => Self::ApplyPatch {
-                patch: str_field("patch"),
+                patch: req_str("patch")?,
             },
             ToolKind::TaskCreate => {
                 let blocked_by = obj
@@ -1338,14 +1927,14 @@ impl ToolInput {
                     })
                     .unwrap_or_default();
                 Self::TaskCreate {
-                    subject: str_field("subject"),
-                    description: str_field("description"),
+                    subject: req_str("subject")?,
+                    description: req_str("description")?,
                     active_form: opt_str_field("active_form"),
                     blocked_by,
                 }
             }
             ToolKind::TaskUpdate => Self::TaskUpdate {
-                task_id: str_field("task_id"),
+                task_id: req_str("task_id")?,
                 status: opt_str_field("status"),
                 subject: opt_str_field("subject"),
                 description: opt_str_field("description"),
@@ -1356,11 +1945,11 @@ impl ToolInput {
                 owner_filter: opt_str_field("owner_filter"),
             },
             ToolKind::TaskDone => Self::TaskDone {
-                task_id: str_field("task_id"),
+                task_id: req_str("task_id")?,
             },
             ToolKind::Task => Self::Task(TaskInput {
-                description: str_field("description"),
-                prompt: str_field("prompt"),
+                description: req_str("description")?,
+                prompt: req_str("prompt")?,
                 subagent_type: opt_str_field("subagent_type"),
                 category: opt_str_field("category"),
                 run_in_background: bool_field("run_in_background"),
@@ -1371,64 +1960,71 @@ impl ToolInput {
                 isolation: opt_str_field("isolation"),
             }),
             ToolKind::Skill => Self::Skill {
-                name: str_field("name"),
+                name: req_str("name")?,
                 args: opt_str_field("args"),
             },
             ToolKind::MemoryCreate => Self::MemoryCreate {
-                level: str_field("level"),
-                memory_type: str_field("memory_type"),
-                scope: str_field("scope"),
-                body: str_field("body"),
+                level: req_str("level")?,
+                memory_type: req_str("memory_type")?,
+                scope: req_str("scope")?,
+                body: req_str("body")?,
             },
             ToolKind::MemoryDelete => Self::MemoryDelete {
-                path: str_field("path"),
+                path: req_str("path")?,
             },
             ToolKind::TeamCreate => Self::TeamCreate {
-                team_name: str_field("team_name"),
-                description: v
-                    .get("description")
-                    .and_then(|d| d.as_str())
-                    .map(str::to_owned),
+                team_name: req_str("team_name")?,
+                description: opt_str_field("description"),
             },
             ToolKind::TeamDelete => Self::TeamDelete,
-            ToolKind::SendMessage => Self::SendMessage {
-                to: str_field("to"),
-                message: v
-                    .get("message")
-                    .map(|m| {
-                        if let Some(s) = m.as_str() {
-                            s.to_owned()
-                        } else {
-                            m.to_string()
-                        }
-                    })
-                    .unwrap_or_default(),
-                summary: v.get("summary").and_then(|s| s.as_str()).map(str::to_owned),
-            },
+            ToolKind::SendMessage => {
+                // SendMessage's `message` accepts a string OR an object —
+                // when an object arrives we serialize it to a JSON string
+                // for the body. Treat missing/null as a validation error.
+                let to = req_str("to")?;
+                let message = match obj.and_then(|m| m.get("message")) {
+                    None | Some(serde_json::Value::Null) => {
+                        return Err(ToolInputError::MissingField {
+                            tool: tool(),
+                            field: "message",
+                        });
+                    }
+                    Some(serde_json::Value::String(s)) => s.clone(),
+                    Some(other) => other.to_string(),
+                };
+                Self::SendMessage {
+                    to,
+                    message,
+                    summary: opt_str_field("summary"),
+                }
+            }
             ToolKind::TeamMemberMode => Self::TeamMemberMode {
-                member_name: str_field("member_name"),
-                mode: str_field("mode"),
+                member_name: req_str("member_name")?,
+                mode: req_str("mode")?,
             },
             ToolKind::GraphQuery => Self::GraphQuery {
-                query: str_field("query"),
+                query: req_str("query")?,
                 max_tokens: obj
                     .and_then(|m| m.get("max_tokens"))
                     .and_then(|v| v.as_u64())
                     .map(|v| v as usize),
+                include_handles: obj
+                    .and_then(|m| m.get("include_handles"))
+                    .and_then(|v| v.as_bool()),
             },
             ToolKind::SymbolEdit => Self::SymbolEdit {
-                handle: str_field("handle"),
-                new_content: str_field("new_content"),
+                handle: req_str("handle")?,
+                new_content: req_str("new_content")?,
                 validate: bool_field("validate"),
                 dispatch_cascade: bool_field("dispatch_cascade"),
             },
             ToolKind::PostBounty => Self::PostBounty {
-                description: str_field("description"),
+                description: req_str("description")?,
                 budget: obj
                     .and_then(|m| m.get("budget"))
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0),
-                acceptance_criteria: str_field("acceptance_criteria"),
+                acceptance_criteria: req_str("acceptance_criteria")?,
                 max_solvers: obj
                     .and_then(|m| m.get("max_solvers"))
                     .and_then(|v| v.as_u64())
@@ -1436,30 +2032,27 @@ impl ToolInput {
                 auto_dispatch: bool_field("auto_dispatch"),
             },
             ToolKind::MarketStatus => Self::MarketStatus {
-                bounty_id: obj
-                    .and_then(|m| m.get("bounty_id"))
-                    .and_then(|v| v.as_str())
-                    .map(str::to_owned),
+                bounty_id: opt_str_field("bounty_id"),
             },
             ToolKind::RunBounty => Self::RunBounty {
-                bounty_id: str_field("bounty_id"),
+                bounty_id: req_str("bounty_id")?,
                 max_solvers: obj
                     .and_then(|m| m.get("max_solvers"))
                     .and_then(|v| v.as_u64())
                     .map(|n| n.min(255) as u8),
             },
             ToolKind::ExitPlanMode => Self::ExitPlanMode {
-                plan: str_field("plan"),
+                plan: req_str("plan")?,
             },
             ToolKind::MultiEdit => Self::MultiEdit {
-                file_path: str_field("file_path"),
+                file_path: req_str("file_path")?,
                 edits: obj
                     .and_then(|m| m.get("edits"))
                     .cloned()
                     .unwrap_or(serde_json::Value::Array(vec![])),
             },
             ToolKind::AskUserQuestion => Self::AskUserQuestion {
-                question: str_field("question"),
+                question: req_str("question")?,
                 options: obj
                     .and_then(|m| m.get("options"))
                     .cloned()
@@ -1467,11 +2060,11 @@ impl ToolInput {
                 multi_select: bool_field("multi_select"),
             },
             ToolKind::WebFetch => Self::WebFetch {
-                url: str_field("url"),
+                url: req_str("url")?,
                 prompt: opt_str_field("prompt"),
             },
             ToolKind::WebSearch => Self::WebSearch {
-                query: str_field("query"),
+                query: req_str("query")?,
                 max_results: obj
                     .and_then(|m| m.get("max_results"))
                     .and_then(|v| v.as_u64())
@@ -1482,13 +2075,13 @@ impl ToolInput {
                 arguments: v.clone(),
             },
             ToolKind::CronCreate => Self::CronCreate {
-                schedule: str_field("schedule"),
-                command: str_field("command"),
-                description: str_field("description"),
+                schedule: req_str("schedule")?,
+                command: req_str("command")?,
+                description: req_str("description")?,
             },
             ToolKind::CronList => Self::CronList,
             ToolKind::CronDelete => Self::CronDelete {
-                id: str_field("id"),
+                id: req_str("id")?,
             },
             ToolKind::ScheduleWakeup => Self::ScheduleWakeup {
                 delay_seconds: obj
@@ -1496,48 +2089,56 @@ impl ToolInput {
                     .and_then(|v| v.as_u64())
                     .map(|n| n.min(u32::MAX as u64) as u32)
                     .unwrap_or(0),
-                prompt: str_field("prompt"),
-                reason: str_field("reason"),
+                prompt: req_str("prompt")?,
+                reason: req_str("reason")?,
             },
             ToolKind::Monitor => Self::Monitor {
-                command: str_field("command"),
-                until: str_field("until"),
+                command: req_str("command")?,
+                until: req_str("until")?,
             },
             ToolKind::Lsp => Self::Lsp {
-                kind: str_field("kind"),
-                file: str_field("file"),
+                kind: req_str("kind")?,
+                file: req_str("file")?,
                 line: obj.and_then(|m| m.get("line")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
                 column: obj.and_then(|m| m.get("column")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
             },
             ToolKind::PushNotification => Self::PushNotification {
-                message: str_field("message"),
+                message: req_str("message")?,
                 title: opt_str_field("title"),
             },
             ToolKind::RemoteTrigger => Self::RemoteTrigger {
-                trigger_id: str_field("trigger_id"),
+                trigger_id: req_str("trigger_id")?,
                 payload: obj.and_then(|m| m.get("payload")).cloned(),
             },
             ToolKind::EnterPlanMode => Self::EnterPlanMode {
-                reason: str_field("reason"),
+                reason: req_str("reason")?,
             },
             ToolKind::EnterWorktree => Self::EnterWorktree {
-                name: str_field("name"),
+                name: req_str("name")?,
                 branch: opt_str_field("branch"),
             },
             ToolKind::ExitWorktree => Self::ExitWorktree,
             ToolKind::NotebookRead => Self::NotebookRead {
-                path: str_field("path"),
+                path: req_str("path")?,
             },
             ToolKind::NotebookEdit => Self::NotebookEdit {
-                path: str_field("path"),
-                cell_id: str_field("cell_id"),
-                new_source: str_field("new_source"),
+                path: req_str("path")?,
+                cell_id: req_str("cell_id")?,
+                new_source: req_str("new_source")?,
                 edit_mode: opt_str_field("edit_mode"),
             },
             ToolKind::Generic(_) => Self::Generic {
                 summary: v.to_string(),
             },
-        }
+            // Unknown tools have no typed schema — preserve the raw JSON
+            // in a Generic input so the transcript can render a summary.
+            // Permission layer denies dispatch separately, so this never
+            // actually executes.
+            ToolKind::UnknownTool { .. } => Self::Generic {
+                summary: v.to_string(),
+            },
+        };
+        Ok(parsed)
     }
 
     pub fn to_value(&self) -> serde_json::Value {
@@ -1731,10 +2332,17 @@ impl ToolInput {
             Self::TeamMemberMode { member_name, mode } => {
                 json!({ "member_name": member_name, "mode": mode })
             }
-            Self::GraphQuery { query, max_tokens } => {
+            Self::GraphQuery {
+                query,
+                max_tokens,
+                include_handles,
+            } => {
                 let mut v = json!({ "query": query });
                 if let Some(mt) = max_tokens {
                     v["max_tokens"] = json!(mt);
+                }
+                if let Some(ih) = include_handles {
+                    v["include_handles"] = json!(ih);
                 }
                 v
             }
@@ -1917,7 +2525,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
         MessagePart::Tool(ToolCall {
             id: "edit-1".into(),
             kind: ToolKind::Edit,
-            status: ToolStatus::Complete,
+            status: ToolStatus::Completed,
             input: ToolInput::Edit {
                 file_path: "crates/jfc-ui/src/tools.rs".into(),
                 old_string: "let timeout = timeout_ms.unwrap_or(120_000);".into(),
@@ -1925,16 +2533,14 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                 replacement: ReplacementMode::FirstOnly,
             },
             output: ToolOutput::Diff(diff),
-            is_collapsed: false,
-            expanded: false,
+            display: ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "bash-1".into(),
             kind: ToolKind::Bash,
-            status: ToolStatus::Complete,
+            status: ToolStatus::Completed,
             input: ToolInput::Bash {
                 command: "cargo check -p jfc-ui".into(),
                 timeout: None,
@@ -1946,16 +2552,14 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                 stderr: String::new(),
                 exit_code: Some(0),
             },
-            is_collapsed: false,
-            expanded: false,
+            display: ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "read-1".into(),
             kind: ToolKind::Read,
-            status: ToolStatus::Complete,
+            status: ToolStatus::Completed,
             input: ToolInput::Read {
                 file_path: "crates/jfc-ui/src/main.rs".into(),
                 offset: Some(1),
@@ -1967,11 +2571,9 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                 content: "mod app;\nmod context;\n\nuse std::sync::Arc;\nuse tokio::sync::mpsc;"
                     .into(),
             },
-            is_collapsed: true,
-            expanded: false,
+            display: ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "write-1".into(),
@@ -1982,11 +2584,9 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                 content: "pub enum MessagePart { Text(String), Tool(ToolCall) }".into(),
             },
             output: ToolOutput::Text("Waiting for approval".into()),
-            is_collapsed: true,
-            expanded: false,
+            display: ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "search-1".into(),
@@ -2001,16 +2601,14 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                 "packages/ui/src/components/diff-changes.tsx".into(),
                 "packages/opencode/src/tool/edit.ts".into(),
             ]),
-            is_collapsed: true,
-            expanded: false,
+            display: ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "patch-1".into(),
             kind: ToolKind::ApplyPatch,
-            status: ToolStatus::Complete,
+            status: ToolStatus::Completed,
             input: ToolInput::ApplyPatch {
                 patch: "*** Begin Patch\n*** Update File: crates/jfc-ui/src/main.rs".into(),
             },
@@ -2021,11 +2619,9 @@ pub fn sample_tool_harness_message() -> ChatMessage {
 +enum MessagePart;
 "#,
             )),
-            is_collapsed: true,
-            expanded: false,
+            display: ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }),
         MessagePart::Tool(ToolCall {
             id: "generic-1".into(),
@@ -2035,11 +2631,9 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                 summary: "OpenClaude remote lookup".into(),
             },
             output: ToolOutput::Empty,
-            is_collapsed: true,
-            expanded: false,
+            display: ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }),
     ])
 }
@@ -2325,13 +2919,18 @@ mod tests {
         }
     }
 
-    // Truly unknown names still fall through to Generic — we don't want
-    // to silently swallow a typo and dispatch the wrong tool.
+    // Truly unknown names route to UnknownTool — distinct from Generic
+    // (which is for deliberately-named tools whose semantics we know
+    // but don't represent as first-class variants). The variant exists
+    // so adding a new ToolKind::Foo is a compile error at every match
+    // site instead of a silent dispatch to Generic("Foo").
     #[test]
-    fn from_name_unknown_falls_through_to_generic_robust() {
+    fn from_name_unknown_falls_through_to_unknown_tool_robust() {
         match ToolKind::from_name("not_a_real_tool") {
-            ToolKind::Generic(s) => assert_eq!(s, "not_a_real_tool"),
-            other => panic!("expected Generic, got {other:?}"),
+            ToolKind::UnknownTool { advertised_name } => {
+                assert_eq!(advertised_name, "not_a_real_tool")
+            }
+            other => panic!("expected UnknownTool, got {other:?}"),
         }
     }
 
@@ -2346,10 +2945,14 @@ mod tests {
     }
 
     #[test]
-    fn from_name_mcp_without_separator_is_generic_robust() {
+    fn from_name_mcp_without_separator_is_unknown_tool_robust() {
+        // Without the `mcp__` prefix the name is just an unknown tool,
+        // not an MCP-routed call.
         match ToolKind::from_name("mcp_dispatch") {
-            ToolKind::Generic(s) => assert_eq!(s, "mcp_dispatch"),
-            other => panic!("expected Generic, got {other:?}"),
+            ToolKind::UnknownTool { advertised_name } => {
+                assert_eq!(advertised_name, "mcp_dispatch")
+            }
+            other => panic!("expected UnknownTool, got {other:?}"),
         }
     }
 
@@ -2509,7 +3112,8 @@ mod tests {
             ),
         ];
         for (name, v) in cases {
-            let parsed = ToolInput::from_value(name, v.clone());
+            let parsed = ToolInput::from_value(name, v.clone())
+                .unwrap_or_else(|e| panic!("from_value failed for {name}: {e}"));
             let back = parsed.to_value();
             for (k, vv) in v.as_object().unwrap() {
                 assert_eq!(
@@ -2573,13 +3177,159 @@ mod tests {
     }
 
     // ─── ToolStatus ───────────────────────────────────────────────────────
+    //
+    // ToolStatus is now a type alias for ExecutionStatus (the unified
+    // lifecycle enum). Labels follow the canonical ExecutionStatus
+    // names: Completed → "completed" (not "done", which was the old
+    // Tool-only spelling — UI sites that want the friendlier word can
+    // map it themselves).
 
     #[test]
     fn tool_status_labels_normal() {
         assert_eq!(ToolStatus::Pending.label(), "pending");
         assert_eq!(ToolStatus::Running.label(), "running");
-        assert_eq!(ToolStatus::Complete.label(), "done");
+        assert_eq!(ToolStatus::Completed.label(), "completed");
         assert_eq!(ToolStatus::Failed.label(), "failed");
+    }
+
+    #[test]
+    fn tool_status_alias_equals_task_lifecycle_normal() {
+        // Both names alias the same underlying ExecutionStatus enum.
+        // Exercising equality across the alias names guards against a
+        // future "let's split them again" regression.
+        let a: ToolStatus = ToolStatus::Completed;
+        let b: TaskLifecycle = TaskLifecycle::Completed;
+        assert_eq!(a, b);
+    }
+
+    // ─── ExecutionStatus transitions ──────────────────────────────────────
+
+    #[test]
+    fn execution_status_is_terminal_complete_normal() {
+        assert!(ExecutionStatus::Completed.is_terminal());
+        assert!(ExecutionStatus::Failed.is_terminal());
+        assert!(ExecutionStatus::Cancelled.is_terminal());
+        assert!(!ExecutionStatus::Pending.is_terminal());
+        assert!(!ExecutionStatus::Running.is_terminal());
+        assert!(!ExecutionStatus::Idle.is_terminal());
+    }
+
+    #[test]
+    fn execution_status_allows_transition_normal() {
+        // Forward edges from non-terminal states: any move is OK,
+        // including the Idle exit (Tasks legitimately go Idle → Running
+        // when a teammate picks up new mail).
+        assert!(ExecutionStatus::Pending.allows_transition_to(ExecutionStatus::Running));
+        assert!(ExecutionStatus::Running.allows_transition_to(ExecutionStatus::Completed));
+        assert!(ExecutionStatus::Idle.allows_transition_to(ExecutionStatus::Running));
+        // Terminal lock-in: nothing leaves Failed/Completed/Cancelled.
+        assert!(!ExecutionStatus::Failed.allows_transition_to(ExecutionStatus::Running));
+        assert!(!ExecutionStatus::Completed.allows_transition_to(ExecutionStatus::Failed));
+        assert!(!ExecutionStatus::Cancelled.allows_transition_to(ExecutionStatus::Pending));
+        // Idempotent same-state transitions are allowed (the stream
+        // layer occasionally re-asserts the same status on retry).
+        assert!(ExecutionStatus::Completed.allows_transition_to(ExecutionStatus::Completed));
+        assert!(ExecutionStatus::Failed.allows_transition_to(ExecutionStatus::Failed));
+    }
+
+    fn fixture_pending_tool() -> ToolCall {
+        ToolCall::new_pending(
+            crate::ids::ToolId::from("test-tool-1".to_owned()),
+            ToolKind::Bash,
+            ToolInput::Bash {
+                command: "ls".into(),
+                timeout: None,
+                workdir: None,
+            },
+        )
+    }
+
+    #[test]
+    fn tool_call_pending_to_running_normal() {
+        let mut tc = fixture_pending_tool();
+        assert_eq!(tc.status, ExecutionStatus::Pending);
+        assert!(tc.mark_running().is_ok());
+        assert_eq!(tc.status, ExecutionStatus::Running);
+    }
+
+    #[test]
+    fn tool_call_pending_to_running_to_completed_normal() {
+        let mut tc = fixture_pending_tool();
+        tc.mark_running().expect("Pending → Running should succeed");
+        tc.mark_completed()
+            .expect("Running → Completed should succeed");
+        assert_eq!(tc.status, ExecutionStatus::Completed);
+    }
+
+    #[test]
+    fn tool_call_pending_directly_to_completed_normal() {
+        // Some provider streams collapse Pending and skip directly to
+        // Completed when a tool was approved + executed faster than
+        // the UI can poll. The transition rules allow this.
+        let mut tc = fixture_pending_tool();
+        tc.mark_completed().expect("Pending → Completed should succeed");
+        assert_eq!(tc.status, ExecutionStatus::Completed);
+    }
+
+    #[test]
+    fn tool_call_failed_to_running_returns_err_robust() {
+        let mut tc = fixture_pending_tool();
+        tc.mark_failed().unwrap();
+        let err = tc
+            .mark_running()
+            .expect_err("Failed → Running must be refused");
+        assert_eq!(err.from, ExecutionStatus::Failed);
+        assert_eq!(err.to, ExecutionStatus::Running);
+        // Status stays at Failed — refused transitions don't mutate.
+        assert_eq!(tc.status, ExecutionStatus::Failed);
+    }
+
+    #[test]
+    fn tool_call_completed_to_failed_returns_err_robust() {
+        let mut tc = fixture_pending_tool();
+        tc.mark_completed().unwrap();
+        let err = tc
+            .mark_failed()
+            .expect_err("Completed → Failed must be refused");
+        assert_eq!(err.from, ExecutionStatus::Completed);
+        assert_eq!(err.to, ExecutionStatus::Failed);
+        assert_eq!(tc.status, ExecutionStatus::Completed);
+    }
+
+    #[test]
+    fn tool_call_cancel_from_pending_normal() {
+        let mut tc = fixture_pending_tool();
+        tc.mark_cancelled().expect("Pending → Cancelled should succeed");
+        assert_eq!(tc.status, ExecutionStatus::Cancelled);
+        // Now terminal — further transitions refused.
+        assert!(tc.mark_completed().is_err());
+    }
+
+    #[test]
+    fn tool_call_idempotent_same_state_normal() {
+        // Re-asserting the same status doesn't error — protects the
+        // stream layer from spurious "you already said Running" panics
+        // when the provider replays an event mid-stream.
+        let mut tc = fixture_pending_tool();
+        tc.mark_running().unwrap();
+        tc.mark_running().expect("Running → Running is idempotent");
+        assert_eq!(tc.status, ExecutionStatus::Running);
+    }
+
+    #[test]
+    fn tool_call_new_failed_constructor_normal() {
+        // new_failed lands directly in the terminal Failed state for
+        // the malformed-input path (stream.rs ToolDone handler).
+        let tc = ToolCall::new_failed(
+            crate::ids::ToolId::from("toolu_x".to_owned()),
+            ToolKind::Bash,
+            ToolInput::Generic {
+                summary: "(empty input for Bash)".into(),
+            },
+            ToolOutput::Text("bad JSON".into()),
+        );
+        assert_eq!(tc.status, ExecutionStatus::Failed);
+        assert!(matches!(tc.output, ToolOutput::Text(_)));
     }
 
     // ─── ReplacementMode ──────────────────────────────────────────────────
@@ -2996,7 +3746,7 @@ mod tests {
             "new_string": "fn new",
             "replace_all": true,
         });
-        let input = ToolInput::from_value("Edit", v);
+        let input = ToolInput::from_value("Edit", v).expect("valid Edit input");
         match input {
             ToolInput::Edit {
                 file_path,
@@ -3013,7 +3763,7 @@ mod tests {
     #[test]
     fn tool_input_from_value_read_optional_fields_normal() {
         let v = serde_json::json!({"file_path": "x", "offset": 10, "limit": 50});
-        let input = ToolInput::from_value("Read", v);
+        let input = ToolInput::from_value("Read", v).expect("valid Read input");
         match input {
             ToolInput::Read {
                 file_path,
@@ -3040,7 +3790,7 @@ mod tests {
             "mode": "plan",
             "isolation": "worktree",
         });
-        let input = ToolInput::from_value("Task", v);
+        let input = ToolInput::from_value("Task", v).expect("valid Task input");
         match input {
             ToolInput::Task(ti) => {
                 assert_eq!(ti.description, "deploy");
@@ -3063,7 +3813,8 @@ mod tests {
             "description": "release v1",
             "blocked_by": ["t1", "t2"],
         });
-        let input = ToolInput::from_value("TaskCreate", v);
+        let input =
+            ToolInput::from_value("TaskCreate", v).expect("valid TaskCreate input");
         match input {
             ToolInput::TaskCreate { blocked_by, .. } => {
                 assert_eq!(blocked_by.len(), 2);
@@ -3082,7 +3833,8 @@ mod tests {
             "message": {"kind": "ping", "n": 42},
             "summary": "ping",
         });
-        let input = ToolInput::from_value("SendMessage", v);
+        let input = ToolInput::from_value("SendMessage", v)
+            .expect("valid SendMessage input");
         match input {
             ToolInput::SendMessage { to, message, .. } => {
                 assert_eq!(to, "alice");
@@ -3097,7 +3849,8 @@ mod tests {
     #[test]
     fn tool_input_from_value_unknown_kind_falls_through_to_generic_robust() {
         let v = serde_json::json!({"foo": "bar"});
-        let input = ToolInput::from_value("not_a_real_tool", v);
+        let input = ToolInput::from_value("not_a_real_tool", v)
+            .expect("Generic accepts any shape");
         match input {
             ToolInput::Generic { summary } => {
                 // Generic stores the original JSON as a string.
@@ -3108,25 +3861,106 @@ mod tests {
         }
     }
 
+    /// Inverted from the prior `..._handles_missing_fields_robust` test,
+    /// which asserted that missing fields silently defaulted to empty
+    /// strings. That behavior shipped a real bug: a malformed Write
+    /// tool-use with `{"content": null}` got dispatched as
+    /// `Write { file_path: "", content: "" }` and tried to truncate a
+    /// real file. The boundary is now strict — missing required fields
+    /// produce a typed `ToolInputError::MissingField` so the stream
+    /// loop emits a `Failed` tool_result the model can react to.
     #[test]
-    fn tool_input_from_value_handles_missing_fields_robust() {
-        // Required fields missing default to empty strings — the executor
-        // surfaces an error later, but parsing must not panic.
+    fn tool_input_from_value_rejects_missing_fields_robust() {
         let v = serde_json::json!({});
-        let input = ToolInput::from_value("Edit", v);
-        match input {
-            ToolInput::Edit {
-                file_path,
-                old_string,
-                new_string,
-                replacement,
-            } => {
-                assert!(file_path.is_empty());
-                assert!(old_string.is_empty());
-                assert!(new_string.is_empty());
-                assert!(!replacement.replace_all());
+        let err = ToolInput::from_value("Edit", v)
+            .expect_err("Edit with empty payload must fail validation");
+        match err {
+            ToolInputError::MissingField { tool, field } => {
+                assert_eq!(tool, "Edit");
+                // file_path is the first required field checked.
+                assert_eq!(field, "file_path");
             }
-            _ => panic!("expected Edit"),
+            other => panic!("expected MissingField, got {other:?}"),
+        }
+    }
+
+    /// The original symptom: provider sends `{"content": null}` for a
+    /// Write tool. Old behavior coerced this into `content: ""` and
+    /// happily queued an empty-content overwrite for user approval.
+    /// New behavior rejects with `MissingField` (we treat null the same
+    /// as absent at the boundary).
+    #[test]
+    fn tool_input_from_value_rejects_write_with_null_content_robust() {
+        let v = serde_json::json!({"file_path": "/etc/passwd", "content": null});
+        let err = ToolInput::from_value("Write", v)
+            .expect_err("Write with null content must fail");
+        assert_eq!(
+            err,
+            ToolInputError::MissingField {
+                tool: "Write".into(),
+                field: "content",
+            }
+        );
+    }
+
+    /// Bash::command must be present AND non-empty — an empty bash
+    /// command can't do anything useful and frequently signals the
+    /// model truncated mid-call.
+    #[test]
+    fn tool_input_from_value_rejects_bash_with_empty_command_robust() {
+        let v = serde_json::json!({"command": ""});
+        let err = ToolInput::from_value("Bash", v)
+            .expect_err("Bash with empty command must fail");
+        match err {
+            ToolInputError::InvalidShape { tool, reason } => {
+                assert_eq!(tool, "Bash");
+                assert!(
+                    reason.contains("must not be empty"),
+                    "expected non-empty hint, got: {reason}"
+                );
+            }
+            other => panic!("expected InvalidShape, got {other:?}"),
+        }
+    }
+
+    /// Read::file_path is required — Read with an empty payload should
+    /// surface `MissingField{tool: "Read", field: "file_path"}` rather
+    /// than silently building `Read { file_path: "" }`.
+    #[test]
+    fn tool_input_from_value_rejects_read_missing_file_path_robust() {
+        let v = serde_json::json!({"offset": 0, "limit": 100});
+        let err = ToolInput::from_value("Read", v)
+            .expect_err("Read with no file_path must fail");
+        assert_eq!(
+            err,
+            ToolInputError::MissingField {
+                tool: "Read".into(),
+                field: "file_path",
+            }
+        );
+    }
+
+    /// Wrong-typed required field (a number where a string is expected)
+    /// must surface `WrongType` so the diagnostic message tells the
+    /// model exactly what shape is expected.
+    #[test]
+    fn tool_input_from_value_rejects_wrong_typed_field_robust() {
+        let v = serde_json::json!({"file_path": 42, "content": "hi"});
+        let err = ToolInput::from_value("Write", v)
+            .expect_err("file_path must be a string");
+        match err {
+            ToolInputError::WrongType {
+                tool,
+                field,
+                expected,
+                got,
+            } => {
+                assert_eq!(tool, "Write");
+                assert_eq!(field, "file_path");
+                assert_eq!(expected, "string");
+                assert_eq!(got, "number");
+            }
+            other => panic!("expected WrongType, got {other:?}"),
         }
     }
 
@@ -3437,5 +4271,206 @@ mod tests {
     #[test]
     fn truncate_lines_empty_input_robust() {
         assert_eq!(truncate_lines("", 5), "");
+    }
+
+    // ─── validate_turn_invariants ─────────────────────────────────────────
+
+    fn pending_tool_call(id: &str) -> ToolCall {
+        ToolCall {
+            id: id.into(),
+            kind: ToolKind::Bash,
+            status: ToolStatus::Pending,
+            input: ToolInput::Bash {
+                command: "ls".into(),
+                timeout: None,
+                workdir: None,
+            },
+            output: ToolOutput::Empty,
+            display: ToolDisplayState::DEFAULT,
+            elapsed_ms: None,
+            started_at: None,
+        }
+    }
+
+    fn complete_tool_call(id: &str) -> ToolCall {
+        ToolCall {
+            status: ToolStatus::Completed,
+            output: ToolOutput::Text("ok".into()),
+            ..pending_tool_call(id)
+        }
+    }
+
+    /// Normal: a healthy alternating user/assistant transcript passes
+    /// validation cleanly. Empty inputs are also accepted.
+    #[test]
+    fn validate_turn_invariants_accepts_alternating_transcript_normal() {
+        assert!(validate_turn_invariants(&[]).is_ok());
+        let msgs = vec![
+            ChatMessage::user("hi".into()),
+            ChatMessage::assistant("hey".into()),
+            ChatMessage::user("more".into()),
+            ChatMessage::assistant("ok".into()),
+        ];
+        validate_turn_invariants(&msgs).expect("alternating transcript is valid");
+    }
+
+    /// Robust: two adjacent user messages surface ConsecutiveUser at the
+    /// SECOND user's index — that's the position the queue-drain bug
+    /// would land at.
+    #[test]
+    fn validate_turn_invariants_flags_consecutive_user_robust() {
+        let msgs = vec![
+            ChatMessage::user("first".into()),
+            ChatMessage::user("second".into()),
+        ];
+        let err = validate_turn_invariants(&msgs).expect_err("must flag consecutive user");
+        assert_eq!(err, TurnInvariantError::ConsecutiveUser { at_index: 1 });
+    }
+
+    /// Robust: this is the structural shape of the plan-continuation
+    /// phantom-assistant bug — two assistant messages back-to-back.
+    #[test]
+    fn validate_turn_invariants_flags_consecutive_assistant_robust() {
+        let msgs = vec![
+            ChatMessage::user("hi".into()),
+            ChatMessage::assistant("a".into()),
+            ChatMessage::assistant("b".into()),
+        ];
+        let err = validate_turn_invariants(&msgs)
+            .expect_err("must flag consecutive assistant");
+        assert_eq!(
+            err,
+            TurnInvariantError::ConsecutiveAssistant { at_index: 2 }
+        );
+    }
+
+    /// Robust: a fully empty user message (no text, no tools, no
+    /// boundary) trips EmptyMessage. The streaming-tail exception
+    /// only applies to assistants, so a user-empty must always fail.
+    #[test]
+    fn validate_turn_invariants_flags_empty_user_robust() {
+        let msgs = vec![ChatMessage {
+            role: Role::User,
+            parts: vec![MessagePart::Text(String::new())],
+            agent_name: None,
+            model_name: None,
+            cost_tier: None,
+            elapsed: None,
+            usage: None,
+        }];
+        let err = validate_turn_invariants(&msgs).expect_err("empty user must fail");
+        assert_eq!(
+            err,
+            TurnInvariantError::EmptyMessage {
+                at_index: 0,
+                role: Role::User,
+            }
+        );
+    }
+
+    /// Normal: an empty assistant message at the tail of the slice
+    /// is allowed when `allow_streaming_tail = true` — that's the
+    /// placeholder slot `continue_agentic_loop` stages right before
+    /// the stream starts pumping.
+    #[test]
+    fn validate_turn_invariants_streaming_tail_allowed_normal() {
+        let msgs = vec![
+            ChatMessage::user("hi".into()),
+            ChatMessage::assistant(String::new()),
+        ];
+        // Strict mode rejects the empty placeholder.
+        let err = validate_turn_invariants(&msgs)
+            .expect_err("strict mode rejects empty tail");
+        assert!(matches!(err, TurnInvariantError::EmptyMessage { .. }));
+        // Permissive mode accepts it (the streaming pipeline is about
+        // to fill it in).
+        validate_turn_invariants_inner(&msgs, /* allow_streaming_tail = */ true)
+            .expect("streaming-tail mode accepts empty trailing assistant");
+    }
+
+    /// Robust: a Pending tool on a non-tail assistant message means
+    /// the model rolled forward without a tool_result — surface as
+    /// OrphanToolUse carrying the tool id and index.
+    #[test]
+    fn validate_turn_invariants_flags_orphan_tool_use_robust() {
+        let msgs = vec![
+            ChatMessage::user("run it".into()),
+            ChatMessage::assistant_parts(vec![MessagePart::Tool(pending_tool_call(
+                "tool_42",
+            ))]),
+            ChatMessage::user("never mind".into()),
+            ChatMessage::assistant("ok".into()),
+        ];
+        let err =
+            validate_turn_invariants(&msgs).expect_err("must flag orphan tool_use");
+        match err {
+            TurnInvariantError::OrphanToolUse { tool_id, at_index } => {
+                assert_eq!(tool_id, crate::ids::ToolId::new("tool_42"));
+                assert_eq!(at_index, 1);
+            }
+            other => panic!("expected OrphanToolUse, got {other:?}"),
+        }
+    }
+
+    /// Robust: a Tool part on a Role::User message is structurally
+    /// misrouted — tool calls always belong to assistant turns.
+    #[test]
+    fn validate_turn_invariants_flags_tool_on_user_role_robust() {
+        let msgs = vec![ChatMessage {
+            role: Role::User,
+            parts: vec![
+                MessagePart::Text("hi".into()),
+                MessagePart::Tool(complete_tool_call("tool_99")),
+            ],
+            agent_name: None,
+            model_name: None,
+            cost_tier: None,
+            elapsed: None,
+            usage: None,
+        }];
+        let err = validate_turn_invariants(&msgs)
+            .expect_err("tool part on user role must fail");
+        match err {
+            TurnInvariantError::OrphanToolResult { tool_id, at_index } => {
+                assert_eq!(tool_id, crate::ids::ToolId::new("tool_99"));
+                assert_eq!(at_index, 0);
+            }
+            other => panic!("expected OrphanToolResult, got {other:?}"),
+        }
+    }
+
+    /// Robust: a transcript that opens with an Assistant message
+    /// (without a system-injected boundary) is the visual symptom of
+    /// the phantom-leading-slot bug. Surface as LeadingAssistant.
+    #[test]
+    fn validate_turn_invariants_flags_leading_assistant_robust() {
+        let msgs = vec![
+            ChatMessage::assistant("oops, I went first".into()),
+            ChatMessage::user("hi".into()),
+        ];
+        let err = validate_turn_invariants(&msgs)
+            .expect_err("leading assistant must fail");
+        assert_eq!(
+            err,
+            TurnInvariantError::LeadingAssistant {
+                role: Role::Assistant,
+            }
+        );
+    }
+
+    /// Normal: a CompactBoundary is a legitimate Role::User message
+    /// that may be followed by another User-role reply describing the
+    /// resumed task. The validator must accept that exact seam.
+    #[test]
+    fn validate_turn_invariants_compact_boundary_seam_allowed_normal() {
+        let msgs = vec![
+            ChatMessage::user("first round".into()),
+            ChatMessage::assistant("ok".into()),
+            ChatMessage::compact_boundary("summary text", 12_000),
+            ChatMessage::user("continue from here".into()),
+            ChatMessage::assistant("resuming".into()),
+        ];
+        validate_turn_invariants(&msgs)
+            .expect("compact boundary may sit between two user messages");
     }
 }

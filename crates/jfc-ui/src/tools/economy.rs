@@ -167,7 +167,7 @@ impl EconomyAgentInvoker {
                     if let (Some(tx), Some(id)) = (&self.event_tx, task_id) {
                         let _ = tx
                             .send(crate::app::AppEvent::AgentChunk {
-                                task_id: id.to_owned(),
+                                task_id: crate::ids::TaskId::from(id),
                                 text: delta.clone(),
                             })
                             .await;
@@ -189,7 +189,7 @@ impl EconomyAgentInvoker {
                     if let (Some(tx), Some(id)) = (&self.event_tx, task_id) {
                         // TaskProgress is non-critical; next progress update supersedes.
                         let _ = tx.try_send(crate::app::AppEvent::TaskProgress {
-                            task_id: id.to_owned(),
+                            task_id: crate::ids::TaskId::from(id),
                             last_tool: None,
                             elapsed_ms: 0,
                             tool_use_count: None,
@@ -224,7 +224,7 @@ impl EconomyAgentInvoker {
             // start), so a full buffer indicates the UI is genuinely overwhelmed
             // — log and continue rather than block this sync path.
             if let Err(e) = tx.try_send(crate::app::AppEvent::TaskStarted {
-                task_id: task_id.to_owned(),
+                task_id: crate::ids::TaskId::from(task_id),
                 description: description.to_owned(),
             }) {
                 tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskStarted dropped: channel full");
@@ -235,7 +235,7 @@ impl EconomyAgentInvoker {
     fn emit_completed(&self, task_id: &str, summary: &str, elapsed_ms: u64) {
         if let Some(tx) = &self.event_tx {
             if let Err(e) = tx.try_send(crate::app::AppEvent::TaskCompleted {
-                task_id: task_id.to_owned(),
+                task_id: crate::ids::TaskId::from(task_id),
                 summary: summary.to_owned(),
                 elapsed_ms,
             }) {
@@ -247,7 +247,7 @@ impl EconomyAgentInvoker {
     fn emit_failed(&self, task_id: &str, error: &str) {
         if let Some(tx) = &self.event_tx {
             if let Err(e) = tx.try_send(crate::app::AppEvent::TaskFailed {
-                task_id: task_id.to_owned(),
+                task_id: crate::ids::TaskId::from(task_id),
                 error: error.to_owned(),
             }) {
                 tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskFailed dropped: channel full");

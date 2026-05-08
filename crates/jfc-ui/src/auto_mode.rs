@@ -423,11 +423,9 @@ mod tests {
                 workdir: None,
             },
             output: ToolOutput::Empty,
-            is_collapsed: true,
-            expanded: false,
+            display: crate::types::ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }
     }
 
@@ -688,6 +686,7 @@ mod tests {
                 .expect("FakeProvider::complete called more than once")
         }
     }
+    impl crate::provider::seal::Sealed for FakeProvider {}
 
     // Normal: when the fake provider returns an "allow" decision, classify
     // surfaces it.

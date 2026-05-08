@@ -508,7 +508,22 @@ pub async fn compact(
                     preserve_count = (preserve_count + step).min(total_groups - 1);
                     continue;
                 }
-                let formatted = format_compact_summary(&response.content);
+                // `format_compact_summary` returns `None` when it detects a
+                // truncated tag (e.g. `<summary>` with no matching close, or
+                // `<analysis>` with no close). A truncated stream would
+                // otherwise leak draft scratchpad content into the boundary
+                // summary, so we treat it as a streaming failure and retry.
+                let Some(formatted) = format_compact_summary(&response.content) else {
+                    warn!(
+                        target: "jfc::compact",
+                        len = response.content.len(),
+                        response_preview = %&response.content[..response.content.len().min(300)],
+                        "summary response had unmatched tags (likely truncated stream) — retrying with larger preserve"
+                    );
+                    let step = token_gap_step(last_token_gap, &group_tokens, split_point);
+                    preserve_count = (preserve_count + step).min(total_groups - 1);
+                    continue;
+                };
                 debug!(
                     target: "jfc::compact",
                     formatted_len = formatted.len(),
@@ -681,12 +696,33 @@ fn is_usable_summary(text: &str) -> bool {
     // *as content*. Without this short-circuit a legitimate 16k-char
     // summary got rejected because the body discussed those error
     // strings — the bug shown in the user's compaction log.
-    let has_summary_tag = trimmed.contains("<summary>") || trimmed.contains("<analysis>");
-    if has_summary_tag {
+    //
+    // Invariant: if an opening tag is present, the matching closing tag
+    // must also be present. A truncated mid-stream response (e.g. the
+    // provider hung up after `<summary>` but before `</summary>`) would
+    // otherwise pass this gate and be treated as a valid boundary by
+    // `format_compact_summary`, leaking draft scratchpad content. Reject
+    // any half-open tag pair so the compaction loop retries with a
+    // larger preserve count instead.
+    let has_open_summary = trimmed.contains("<summary>");
+    let has_close_summary = trimmed.contains("</summary>");
+    let has_open_analysis = trimmed.contains("<analysis>");
+    let has_close_analysis = trimmed.contains("</analysis>");
+    if (has_open_summary && !has_close_summary) || (has_open_analysis && !has_close_analysis) {
+        debug!(
+            target: "jfc::compact",
+            has_open_summary, has_close_summary,
+            has_open_analysis, has_close_analysis,
+            text_len = trimmed.len(),
+            "is_usable_summary: rejected — half-open tag pair (likely truncated stream)"
+        );
+        return false;
+    }
+    if has_open_summary || has_open_analysis {
         trace!(
             target: "jfc::compact",
             text_len = trimmed.len(),
-            "is_usable_summary: accepted (summary/analysis tag present)"
+            "is_usable_summary: accepted (summary/analysis tag present and closed)"
         );
         return true;
     }
@@ -891,10 +927,49 @@ an <analysis> block followed by a <summary> block.";
 
 /// Strip `<analysis>...</analysis>` and extract content from `<summary>...</summary>`.
 /// Mirrors v126's `formatCompactSummary()` in prompt.ts:293-313.
-fn format_compact_summary(raw: &str) -> String {
+///
+/// Returns `None` when the input contains a half-open tag pair (e.g. an
+/// `<analysis>` opening tag without a matching `</analysis>`, or a
+/// `<summary>` opening tag without `</summary>`). A truncated mid-stream
+/// response would otherwise leak the draft scratchpad into the final
+/// boundary summary or yield no extracted content at all — both violate
+/// the "strip analysis, keep summary" contract. The compaction loop
+/// treats `None` as a streaming failure and retries with a larger
+/// preserve count.
+///
+/// Inputs that contain neither `<analysis>` nor `<summary>` (an LLM that
+/// ignored the format instructions but produced usable plaintext) are
+/// returned trimmed and unmodified.
+fn format_compact_summary(raw: &str) -> Option<String> {
+    // Detect truncation BEFORE any rewriting. We treat an opening tag
+    // without a matching closing tag as a streaming failure rather than
+    // (a) silently dropping the open tag, or (b) consuming everything
+    // after it as analysis. Both alternatives risk corrupting the
+    // boundary message — option (b) silently strips real summary
+    // content, option (a) leaks scratchpad text. Returning `None` so
+    // the caller retries is the only safe choice.
+    if raw.contains("<analysis>") && !raw.contains("</analysis>") {
+        warn!(
+            target: "jfc::compact",
+            raw_len = raw.len(),
+            "format_compact_summary: <analysis> opened but never closed — treating as truncation"
+        );
+        return None;
+    }
+    if raw.contains("<summary>") && !raw.contains("</summary>") {
+        warn!(
+            target: "jfc::compact",
+            raw_len = raw.len(),
+            "format_compact_summary: <summary> opened but never closed — treating as truncation"
+        );
+        return None;
+    }
+
     let mut result = raw.to_string();
 
-    // Strip analysis section — it's a drafting scratchpad
+    // Strip analysis section — it's a drafting scratchpad. The
+    // truncation guard above already rejected unmatched opens, so the
+    // inner `if let` only executes for properly paired tags.
     if let Some(start) = result.find("<analysis>") {
         if let Some(end) = result.find("</analysis>") {
             let end_tag_end = end + "</analysis>".len();
@@ -908,7 +983,8 @@ fn format_compact_summary(raw: &str) -> String {
         }
     }
 
-    // Extract summary content
+    // Extract summary content. Same guarantee as above — if an opening
+    // tag is present, the closing tag is too.
     if let Some(start) = result.find("<summary>") {
         if let Some(end) = result.find("</summary>") {
             let content_start = start + "<summary>".len();
@@ -927,7 +1003,7 @@ fn format_compact_summary(raw: &str) -> String {
         result = result.replace("\n\n\n", "\n\n");
     }
 
-    result.trim().to_string()
+    Some(result.trim().to_string())
 }
 
 #[cfg(test)]
@@ -1272,7 +1348,7 @@ mod level_tests {
     #[test]
     fn format_compact_summary_strips_analysis_normal() {
         let raw = "<analysis>\nDraft notes here.\n</analysis>\n<summary>\nFinal summary text.\n</summary>";
-        let formatted = format_compact_summary(raw);
+        let formatted = format_compact_summary(raw).expect("matched tags should yield Some");
         assert!(!formatted.contains("Draft notes"));
         assert!(formatted.starts_with("Summary:"));
         assert!(formatted.contains("Final summary text."));
@@ -1282,7 +1358,7 @@ mod level_tests {
     #[test]
     fn format_compact_summary_passes_through_untagged_robust() {
         let raw = "  Just a plain summary, no tags.  ";
-        let formatted = format_compact_summary(raw);
+        let formatted = format_compact_summary(raw).expect("untagged input should yield Some");
         assert_eq!(formatted, "Just a plain summary, no tags.");
     }
 
@@ -1290,10 +1366,49 @@ mod level_tests {
     #[test]
     fn format_compact_summary_collapses_triple_newlines_robust() {
         let raw = "first\n\n\nsecond";
-        let formatted = format_compact_summary(raw);
+        let formatted = format_compact_summary(raw).expect("untagged input should yield Some");
         assert!(!formatted.contains("\n\n\n"));
         assert!(formatted.contains("first"));
         assert!(formatted.contains("second"));
+    }
+
+    // Regression: an `<analysis>` opening tag with no closing tag (a
+    // truncated mid-stream response) must NOT be silently passed through —
+    // it would either leak scratchpad content or strip the rest of the
+    // body. Returning `None` lets the compaction retry loop surface a new
+    // request with a larger preserve count.
+    #[test]
+    fn format_compact_summary_rejects_unclosed_analysis_robust() {
+        let raw = "<analysis>\nDraft notes that never finished";
+        assert!(format_compact_summary(raw).is_none());
+    }
+
+    // Regression: same contract for the `<summary>` half-open case.
+    #[test]
+    fn format_compact_summary_rejects_unclosed_summary_robust() {
+        let raw = "<analysis>\nok\n</analysis>\n<summary>\nTruncated summary text";
+        assert!(format_compact_summary(raw).is_none());
+    }
+
+    // Regression: `is_usable_summary` rejects half-open tags before the
+    // formatter ever sees them, so the compaction loop bails on the
+    // earlier gate without paying for the formatter call.
+    #[test]
+    fn is_usable_summary_rejects_unclosed_summary_tag_robust() {
+        let body = "<summary>\nTruncated mid-stream";
+        assert!(
+            !is_usable_summary(body),
+            "half-open <summary> must be rejected at the gate"
+        );
+    }
+
+    #[test]
+    fn is_usable_summary_rejects_unclosed_analysis_tag_robust() {
+        let body = "<analysis>\nDraft scratchpad cut off";
+        assert!(
+            !is_usable_summary(body),
+            "half-open <analysis> must be rejected at the gate"
+        );
     }
 
     // Normal: parse_actual_tokens picks the FIRST integer >10_000 from
@@ -1408,7 +1523,7 @@ mod level_tests {
     #[test]
     fn format_compact_summary_extracts_inner_summary_normal() {
         let raw = "Some preamble.\n<summary>\n  inner content  \n</summary>\nignored after";
-        let formatted = format_compact_summary(raw);
+        let formatted = format_compact_summary(raw).expect("matched tags should yield Some");
         assert!(formatted.starts_with("Summary:"));
         assert!(formatted.contains("inner content"));
     }

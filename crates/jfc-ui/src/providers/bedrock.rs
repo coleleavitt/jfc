@@ -197,6 +197,8 @@ impl Default for BedrockProvider {
     }
 }
 
+impl crate::provider::seal::Sealed for BedrockProvider {}
+
 #[async_trait]
 impl Provider for BedrockProvider {
     fn name(&self) -> &str {

@@ -650,6 +650,8 @@ fn build_body(
     body
 }
 
+impl crate::provider::seal::Sealed for AnthropicOAuthProvider {}
+
 #[async_trait]
 impl Provider for AnthropicOAuthProvider {
     fn name(&self) -> &str {

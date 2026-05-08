@@ -397,6 +397,7 @@ mod tests {
                 .expect("FakeProvider::complete called more than once")
         }
     }
+    impl crate::provider::seal::Sealed for FakeProvider {}
 
     // ─── Normal path ─────────────────────────────────────────────────────
 
@@ -644,6 +645,7 @@ mod tests {
                 })
             }
         }
+        impl crate::provider::seal::Sealed for ZeroUsageProvider {}
         let mut session = AdvisorSession::new("test-model").with_budget(10_000);
         let _ = ask_advisor(&ZeroUsageProvider, &mut session, "hi".into(), &[])
             .await

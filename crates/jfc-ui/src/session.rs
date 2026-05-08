@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
+use crate::ids::SessionId;
 use crate::types::{
     ChatMessage, DiffHunk, DiffLine, DiffLineKind, DiffView, LargeText, MessagePart,
     ReplacementMode, Role, TaskInput, TaskLifecycle, TaskStatusPart, ToolCall, ToolInput, ToolKind,
-    ToolOutput, ToolStatus,
+    ToolOutput, ToolStatus, validate_turn_invariants,
 };
 
 /// Session metadata stored alongside messages
@@ -78,6 +79,14 @@ pub enum SerializedPart {
         id: String,
         kind: String,
         status: String,
+        /// Legacy on-disk field — kept for backward compatibility.
+        /// Old session files wrote `is_collapsed: bool`; new writes
+        /// emit it as `tc.display.is_collapsed()`. Loading
+        /// reconstructs the new `ToolDisplayState`: `is_collapsed=true`
+        /// → `Collapsed`, otherwise → `Default { pinned: false }`.
+        /// `expanded` and `pinned` were never persisted (stale on
+        /// reload), so the migration here is one-way and lossless for
+        /// the only state we ever stored.
         #[serde(default)]
         is_collapsed: bool,
         /// Optional + serde(default): old session files (pre-tool-input
@@ -424,9 +433,9 @@ pub fn sessions_dir() -> PathBuf {
         .join("sessions")
 }
 
-pub fn generate_session_id() -> String {
+pub fn generate_session_id() -> SessionId {
     let now = chrono::Utc::now();
-    let id = format!("ses_{}", now.format("%Y%m%d_%H%M%S"));
+    let id = SessionId::new(format!("ses_{}", now.format("%Y%m%d_%H%M%S")));
     debug!(target: "jfc::session", %id, "generated session id");
     id
 }
@@ -454,11 +463,27 @@ fn extract_first_prompt(messages: &[ChatMessage]) -> Option<String> {
 
 #[tracing::instrument(target = "jfc::session", skip(messages), fields(n = messages.len()))]
 pub async fn save_session(
-    session_id: &str,
+    session_id: &SessionId,
     messages: &[ChatMessage],
     cwd: Option<&str>,
     model: Option<&str>,
 ) {
+    // Surface invariant breakage at the save boundary. We deliberately
+    // do NOT block the save — corrupt state is itself debugging signal,
+    // and silently dropping the write would hide the very symptom we
+    // want to study post-mortem. The warn lands in the trace log with
+    // enough context (session id, error variant) to reconstruct what
+    // shape went wrong.
+    let session_id_str = session_id.as_str();
+    if let Err(err) = validate_turn_invariants(messages) {
+        warn!(
+            target: "jfc::session::invariants",
+            session_id = session_id_str,
+            error = %err,
+            message_count = messages.len(),
+            "save_session: turn-invariant violation (saving anyway for forensics)"
+        );
+    }
     let dir = sessions_dir();
     if tokio::fs::create_dir_all(&dir).await.is_err() {
         warn!(target: "jfc::session", "failed to create sessions directory");
@@ -466,7 +491,7 @@ pub async fn save_session(
     }
 
     let now = chrono::Utc::now();
-    let path = dir.join(format!("{session_id}.json"));
+    let path = dir.join(format!("{session_id_str}.json"));
 
     // Try to load existing session to preserve created_at + cwd + title
     // (so resaving doesn't reset them on every turn). cwd is pinned at
@@ -499,7 +524,7 @@ pub async fn save_session(
         .or_else(|| prior.as_ref().and_then(|s| s.model.clone()));
 
     let serialized = SerializedSession {
-        id: session_id.to_owned(),
+        id: session_id_str.to_owned(),
         created_at,
         updated_at: Some(now.to_rfc3339()),
         first_prompt: extract_first_prompt(messages),
@@ -511,20 +536,21 @@ pub async fn save_session(
 
     if let Ok(json) = serde_json::to_string_pretty(&serialized) {
         let _ = tokio::fs::write(&path, json).await;
-        info!(target: "jfc::session", session_id, message_count = messages.len(), path = %path.display(), "session saved");
+        info!(target: "jfc::session", session_id = session_id_str, message_count = messages.len(), path = %path.display(), "session saved");
     } else {
-        warn!(target: "jfc::session", session_id, "failed to serialize session");
+        warn!(target: "jfc::session", session_id = session_id_str, "failed to serialize session");
     }
 }
 
-pub async fn load_session(session_id: &str) -> Option<Vec<ChatMessage>> {
-    debug!(target: "jfc::session", session_id, "loading session");
-    let path = sessions_dir().join(format!("{session_id}.json"));
+pub async fn load_session(session_id: &SessionId) -> Option<Vec<ChatMessage>> {
+    let session_id_str = session_id.as_str();
+    debug!(target: "jfc::session", session_id = session_id_str, "loading session");
+    let path = sessions_dir().join(format!("{session_id_str}.json"));
     let content = tokio::fs::read_to_string(&path).await.ok()?;
     let session: SerializedSession = match serde_json::from_str(&content) {
         Ok(s) => s,
         Err(e) => {
-            warn!(target: "jfc::session", session_id, error = %e, "failed to parse session file");
+            warn!(target: "jfc::session", session_id = session_id_str, error = %e, "failed to parse session file");
             return None;
         }
     };
@@ -534,16 +560,31 @@ pub async fn load_session(session_id: &str) -> Option<Vec<ChatMessage>> {
         .into_iter()
         .map(deserialize_message)
         .collect();
-    debug!(target: "jfc::session", session_id, message_count, "session loaded");
+    // Record any pre-existing invariant violation BEFORE callers run
+    // their own sanitizers. The plan-continuation phantom-assistant
+    // bug only surfaced after the renderer composed two layers of
+    // truth — the validator gives us a single tracing line that says
+    // "this session arrived broken from disk."
+    if let Err(err) = validate_turn_invariants(&messages) {
+        warn!(
+            target: "jfc::session::invariants",
+            session_id = session_id_str,
+            error = %err,
+            message_count,
+            "load_session: persisted transcript violates turn invariants"
+        );
+    }
+    debug!(target: "jfc::session", session_id = session_id_str, message_count, "session loaded");
     Some(messages)
 }
 
 /// Load session messages AND the model that was active. Used by `/continue`
 /// to restore the model selection.
 pub async fn load_session_with_model(
-    session_id: &str,
+    session_id: &SessionId,
 ) -> Option<(Vec<ChatMessage>, Option<String>)> {
-    let path = sessions_dir().join(format!("{session_id}.json"));
+    let session_id_str = session_id.as_str();
+    let path = sessions_dir().join(format!("{session_id_str}.json"));
     let content = tokio::fs::read_to_string(&path).await.ok()?;
     let session: SerializedSession = serde_json::from_str(&content).ok()?;
     let model = session.model.clone();
@@ -552,6 +593,15 @@ pub async fn load_session_with_model(
         .into_iter()
         .map(deserialize_message)
         .collect();
+    if let Err(err) = validate_turn_invariants(&messages) {
+        warn!(
+            target: "jfc::session::invariants",
+            session_id = session_id_str,
+            error = %err,
+            message_count = messages.len(),
+            "load_session_with_model: persisted transcript violates turn invariants"
+        );
+    }
     Some((messages, model))
 }
 
@@ -564,20 +614,21 @@ pub async fn load_session_with_model(
 /// and the picker dropped it from the sidebar. Now we deserialize a
 /// lightweight `SessionMetaShallow` that treats `messages` as opaque
 /// JSON values; the Tool-input shape never gates picker visibility.
-pub async fn load_session_metadata(session_id: &str) -> Option<SessionMetadata> {
-    let path = sessions_dir().join(format!("{session_id}.json"));
+pub async fn load_session_metadata(session_id: &SessionId) -> Option<SessionMetadata> {
+    let session_id_str = session_id.as_str();
+    let path = sessions_dir().join(format!("{session_id_str}.json"));
     let content = tokio::fs::read_to_string(&path).await.ok()?;
     let shallow: SessionMetaShallow = match serde_json::from_str(&content) {
         Ok(s) => s,
         Err(e) => {
-            warn!(target: "jfc::session", session_id, error = %e, "failed to parse session metadata");
+            warn!(target: "jfc::session", session_id = session_id_str, error = %e, "failed to parse session metadata");
             return None;
         }
     };
     let message_count = shallow.messages.len();
-    debug!(target: "jfc::session", session_id, message_count, "loaded session metadata");
+    debug!(target: "jfc::session", session_id = session_id_str, message_count, "loaded session metadata");
     Some(SessionMetadata {
-        id: shallow.id,
+        id: SessionId::new(shallow.id),
         created_at: shallow.created_at,
         updated_at: shallow.updated_at,
         first_prompt: shallow.first_prompt,
@@ -610,7 +661,7 @@ struct SessionMetaShallow {
 
 #[derive(Debug, Clone)]
 pub struct SessionMetadata {
-    pub id: String,
+    pub id: SessionId,
     pub created_at: String,
     pub updated_at: Option<String>,
     pub first_prompt: Option<String>,
@@ -645,7 +696,7 @@ impl SessionMetadata {
             }
         }
         // Fallback: pretty-print the timestamp from the id.
-        format_session_id_timestamp(&self.id)
+        format_session_id_timestamp(self.id.as_str())
     }
 
     /// Best timestamp to compare/display: prefers `updated_at`, falls back
@@ -791,21 +842,21 @@ pub fn cwd_mismatch_message(session_cwd: Option<&str>, current_cwd: &str) -> Opt
     ))
 }
 
-pub async fn list_sessions() -> Vec<String> {
+pub async fn list_sessions() -> Vec<SessionId> {
     let dir = sessions_dir();
     debug!(target: "jfc::session", dir = %dir.display(), "listing sessions");
     let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
         debug!(target: "jfc::session", dir = %dir.display(), "sessions directory not readable");
         return vec![];
     };
-    let mut ids: Vec<String> = Vec::new();
+    let mut ids: Vec<SessionId> = Vec::new();
     while let Ok(Some(entry)) = entries.next_entry().await {
         let name = entry.file_name().to_string_lossy().to_string();
         if let Some(id) = name.strip_suffix(".json") {
-            ids.push(id.to_owned());
+            ids.push(SessionId::new(id));
         }
     }
-    ids.sort_by(|a, b| b.cmp(a)); // newest first
+    ids.sort_by(|a, b| b.as_str().cmp(a.as_str())); // newest first
     debug!(target: "jfc::session", count = ids.len(), "sessions listed");
     ids
 }
@@ -849,7 +900,7 @@ pub async fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMeta
 /// without reading metadata for each. Use when the caller only needs
 /// the IDs (e.g. /resume autocomplete) — saves the per-session JSON
 /// read.
-pub async fn list_session_ids_only() -> Vec<String> {
+pub async fn list_session_ids_only() -> Vec<SessionId> {
     list_sessions().await
 }
 
@@ -857,7 +908,7 @@ pub async fn list_session_ids_only() -> Vec<String> {
 /// (cli.js:480735-480741) and codex-rs default behavior — `--continue`
 /// in project A doesn't accidentally resume a session from project B.
 /// Pass `None` for the legacy globally-most-recent behavior.
-pub async fn most_recent_session_for_cwd(cwd: Option<&str>) -> Option<String> {
+pub async fn most_recent_session_for_cwd(cwd: Option<&str>) -> Option<SessionId> {
     let result = list_sessions_filtered(cwd)
         .await
         .into_iter()
@@ -868,7 +919,7 @@ pub async fn most_recent_session_for_cwd(cwd: Option<&str>) -> Option<String> {
 }
 
 /// Globally most-recent session id (legacy callers + `--global` flag).
-pub async fn most_recent_session() -> Option<String> {
+pub async fn most_recent_session() -> Option<SessionId> {
     let result = list_sessions().await.into_iter().next();
     debug!(target: "jfc::session", found = result.is_some(), "most recent session (global)");
     result
@@ -878,21 +929,22 @@ pub async fn most_recent_session() -> Option<String> {
 /// silently on I/O failures — title is cosmetic, shouldn't block the
 /// chat. Mirrors v126's `customTitle` field (cli.js:39786) which sits
 /// atop the title precedence chain.
-pub async fn set_session_title(session_id: &str, title: &str) {
-    debug!(target: "jfc::session", session_id, "setting session title");
-    let path = sessions_dir().join(format!("{session_id}.json"));
+pub async fn set_session_title(session_id: &SessionId, title: &str) {
+    let session_id_str = session_id.as_str();
+    debug!(target: "jfc::session", session_id = session_id_str, "setting session title");
+    let path = sessions_dir().join(format!("{session_id_str}.json"));
     let Ok(content) = tokio::fs::read_to_string(&path).await else {
-        warn!(target: "jfc::session", session_id, "cannot read session file for title update");
+        warn!(target: "jfc::session", session_id = session_id_str, "cannot read session file for title update");
         return;
     };
     let Ok(mut session) = serde_json::from_str::<SerializedSession>(&content) else {
-        warn!(target: "jfc::session", session_id, "cannot parse session file for title update");
+        warn!(target: "jfc::session", session_id = session_id_str, "cannot parse session file for title update");
         return;
     };
     session.title = Some(title.to_owned());
     if let Ok(json) = serde_json::to_string_pretty(&session) {
         let _ = tokio::fs::write(&path, json).await;
-        info!(target: "jfc::session", session_id, "session title updated");
+        info!(target: "jfc::session", session_id = session_id_str, "session title updated");
     }
 }
 
@@ -916,15 +968,18 @@ fn serialize_part(part: &MessagePart) -> SerializedPart {
         MessagePart::Text(t) => SerializedPart::Text { content: t.clone() },
         MessagePart::Reasoning(t) => SerializedPart::Reasoning { content: t.clone() },
         MessagePart::Tool(tc) => SerializedPart::Tool {
-            id: tc.id.clone(),
+            id: tc.id.as_str().to_owned(),
             kind: tc.kind.label().to_owned(),
             status: serialize_tool_status(tc.status),
-            is_collapsed: tc.is_collapsed,
+            // Persist only the teaser bit — the only display state
+            // worth surviving a session reload (see
+            // `SerializedPart::Tool::is_collapsed` doc comment).
+            is_collapsed: tc.display.is_collapsed(),
             input: Some(serialize_tool_input(&tc.input)),
             output: Some(serialize_tool_output(&tc.output)),
         },
         MessagePart::TaskStatus(ts) => SerializedPart::TaskStatus {
-            task_id: ts.task_id.clone(),
+            task_id: ts.task_id.as_str().to_owned(),
             description: ts.description.clone(),
             status: serialize_task_lifecycle(ts.status),
             summary: ts.summary.clone(),
@@ -939,11 +994,21 @@ fn serialize_part(part: &MessagePart) -> SerializedPart {
 }
 
 fn serialize_tool_status(status: ToolStatus) -> String {
+    // ToolStatus is now an alias for ExecutionStatus, which has two
+    // extra variants (Idle, Cancelled) that tools didn't historically
+    // produce. Map them to the closest tool-shaped value so legacy
+    // session readers (which only know about pending/running/complete/
+    // failed) still see something sensible:
+    //   - Idle → "running" (the tool is still in flight, just quiet)
+    //   - Cancelled → "failed" (denied / abandoned tools surface as
+    //     failures from the model's perspective)
+    // Wire format remains "complete" for Completed (NOT "completed")
+    // — preserves backward compatibility with on-disk session JSON.
     match status {
         ToolStatus::Pending => "pending".into(),
-        ToolStatus::Running => "running".into(),
-        ToolStatus::Complete => "complete".into(),
-        ToolStatus::Failed => "failed".into(),
+        ToolStatus::Running | ToolStatus::Idle => "running".into(),
+        ToolStatus::Completed => "complete".into(),
+        ToolStatus::Failed | ToolStatus::Cancelled => "failed".into(),
     }
 }
 
@@ -1100,7 +1165,9 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::TeamMemberMode { member_name, mode } => SerializedToolInput::Generic {
             summary: format!("TeamMemberMode {member_name}: {mode}"),
         },
-        ToolInput::GraphQuery { query, max_tokens } => SerializedToolInput::Generic {
+        ToolInput::GraphQuery {
+            query, max_tokens, ..
+        } => SerializedToolInput::Generic {
             summary: format!(
                 "GraphQuery(budget={}): {}",
                 max_tokens.unwrap_or(4000),
@@ -1300,7 +1367,7 @@ fn deserialize_part(part: SerializedPart) -> MessagePart {
             input,
             output,
         } => MessagePart::Tool(ToolCall {
-            id,
+            id: crate::ids::ToolId::from(id),
             kind: ToolKind::from_name(&kind),
             status: deserialize_tool_status(&status),
             // Tolerate missing input/output on legacy session files.
@@ -1320,19 +1387,24 @@ fn deserialize_part(part: SerializedPart) -> MessagePart {
                 Some(o) => deserialize_tool_output(o),
                 None => ToolOutput::Empty,
             },
-            is_collapsed,
-            // Loaded sessions always come back in preview mode — the user
-            // can re-expand whatever they need with Ctrl+O. Storing the
-            // expanded flag in the on-disk format would persist UI
-            // chrome state we don't want to roundtrip.
-            expanded: false,
+            // Reconstruct the tri-state from the legacy on-disk
+            // `is_collapsed` bool. Expanded + pinned were never
+            // persisted (storing UI chrome state in the on-disk
+            // format would round-trip stale state), so loaded sessions
+            // always come back as either Collapsed (huge teaser
+            // preserved) or Default. The user can re-expand or re-pin
+            // with `o` / Ctrl+O / double-click.
+            display: if is_collapsed {
+                crate::types::ToolDisplayState::Collapsed
+            } else {
+                crate::types::ToolDisplayState::DEFAULT
+            },
             // elapsed_ms could in principle round-trip, but it's
             // cosmetic — leave None on resume so we don't lock in a
             // stale duration. started_at is meaningless after a
             // reload (would always say "elapsed since session-load").
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }),
         SerializedPart::TaskStatus {
             task_id,
@@ -1342,7 +1414,7 @@ fn deserialize_part(part: SerializedPart) -> MessagePart {
             error,
             elapsed_ms,
         } => MessagePart::TaskStatus(TaskStatusPart {
-            task_id,
+            task_id: crate::ids::TaskId::from(task_id),
             description,
             status: deserialize_task_lifecycle(&status),
             summary,
@@ -1357,12 +1429,21 @@ fn deserialize_part(part: SerializedPart) -> MessagePart {
 }
 
 fn deserialize_tool_status(status: &str) -> ToolStatus {
+    // Backward-compat: legacy sessions wrote "complete" (Tool's
+    // pre-unification spelling). Also accept "completed" / "idle" /
+    // "cancelled" so a future serializer that emits the canonical
+    // ExecutionStatus names stays readable. Falls back to Completed
+    // (rather than Pending) on unknown — a tool that landed on disk
+    // without a recognized state is almost certainly done by the
+    // time a session reload reads it.
     match status {
         "pending" => ToolStatus::Pending,
         "running" => ToolStatus::Running,
-        "complete" | "Complete" => ToolStatus::Complete,
+        "idle" => ToolStatus::Idle,
+        "complete" | "Complete" | "completed" | "Completed" => ToolStatus::Completed,
         "failed" | "Failed" => ToolStatus::Failed,
-        _ => ToolStatus::Complete,
+        "cancelled" | "Cancelled" => ToolStatus::Cancelled,
+        _ => ToolStatus::Completed,
     }
 }
 
@@ -1737,7 +1818,7 @@ mod tests {
 
     fn make_session(id: &str, cwd: Option<&str>, prompt: Option<&str>) -> SessionMetadata {
         SessionMetadata {
-            id: id.to_owned(),
+            id: SessionId::new(id),
             created_at: "2026-05-04T19:46:49Z".to_owned(),
             updated_at: Some("2026-05-04T19:46:49Z".to_owned()),
             first_prompt: prompt.map(str::to_owned),
@@ -1882,7 +1963,7 @@ mod cwd_filter_tests {
         prompt: Option<&str>,
     ) -> SessionMetadata {
         SessionMetadata {
-            id: id.to_string(),
+            id: SessionId::new(id),
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: None,
             first_prompt: prompt.map(str::to_owned),
@@ -2076,13 +2157,13 @@ mod disk_io_tests {
             ChatMessage::user("first user prompt".into()),
             ChatMessage::assistant("first reply".into()),
         ];
-        let id = "ses_20260506_120000";
-        save_session(id, &messages, Some("/tmp/test"), Some("test-model")).await;
+        let id = SessionId::new("ses_20260506_120000");
+        save_session(&id, &messages, Some("/tmp/test"), Some("test-model")).await;
         // The file should exist on disk now.
-        let path = sessions_dir().join(format!("{id}.json"));
+        let path = sessions_dir().join(format!("{}.json", id.as_str()));
         assert!(path.exists(), "session file written");
 
-        let loaded = load_session(id).await.expect("loadable");
+        let loaded = load_session(&id).await.expect("loadable");
         assert_eq!(loaded.len(), 2);
         assert!(loaded[0].role_is_user());
     }
@@ -2092,9 +2173,9 @@ mod disk_io_tests {
     async fn load_session_with_model_normal() {
         let _g = TempConfigHome::new();
         let messages = vec![ChatMessage::user("hi".into())];
-        let id = "ses_20260506_120100";
-        save_session(id, &messages, Some("/tmp/proj"), Some("opus-4-7")).await;
-        let (loaded, model) = load_session_with_model(id).await.expect("loadable");
+        let id = SessionId::new("ses_20260506_120100");
+        save_session(&id, &messages, Some("/tmp/proj"), Some("opus-4-7")).await;
+        let (loaded, model) = load_session_with_model(&id).await.expect("loadable");
         assert_eq!(loaded.len(), 1);
         assert_eq!(model.as_deref(), Some("opus-4-7"));
     }
@@ -2104,13 +2185,14 @@ mod disk_io_tests {
     #[tokio::test]
     async fn load_session_missing_returns_none_robust() {
         let _g = TempConfigHome::new();
-        assert!(load_session("ses_does_not_exist").await.is_none());
+        let missing = SessionId::new("ses_does_not_exist");
+        assert!(load_session(&missing).await.is_none());
         assert!(
-            load_session_with_model("ses_does_not_exist")
+            load_session_with_model(&missing)
                 .await
                 .is_none()
         );
-        assert!(load_session_metadata("ses_does_not_exist").await.is_none());
+        assert!(load_session_metadata(&missing).await.is_none());
     }
 
     // Normal: load_session_metadata reports the same first_prompt and
@@ -2122,9 +2204,9 @@ mod disk_io_tests {
             ChatMessage::user("Refactor the renderer".into()),
             ChatMessage::assistant("Plan: …".into()),
         ];
-        let id = "ses_20260506_120200";
-        save_session(id, &messages, Some("/tmp/proj"), None).await;
-        let meta = load_session_metadata(id).await.expect("metadata loads");
+        let id = SessionId::new("ses_20260506_120200");
+        save_session(&id, &messages, Some("/tmp/proj"), None).await;
+        let meta = load_session_metadata(&id).await.expect("metadata loads");
         assert_eq!(meta.id, id);
         assert_eq!(meta.first_prompt.as_deref(), Some("Refactor the renderer"));
         assert_eq!(meta.message_count, 2);
@@ -2140,7 +2222,7 @@ mod disk_io_tests {
         std::fs::create_dir_all(&dir).expect("dir");
         let path = dir.join("ses_corrupted.json");
         std::fs::write(&path, "{ this is not json").expect("write garbage");
-        assert!(load_session_metadata("ses_corrupted").await.is_none());
+        assert!(load_session_metadata(&SessionId::new("ses_corrupted")).await.is_none());
     }
 
     // Normal: list_sessions returns all known ids, newest-first by id sort
@@ -2149,16 +2231,16 @@ mod disk_io_tests {
     async fn list_sessions_returns_all_sorted_newest_first_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("hi".into())];
-        save_session("ses_20260101_000000", &m, None, None).await;
-        save_session("ses_20260601_000000", &m, None, None).await;
-        save_session("ses_20260301_000000", &m, None, None).await;
+        save_session(&SessionId::new("ses_20260101_000000"), &m, None, None).await;
+        save_session(&SessionId::new("ses_20260601_000000"), &m, None, None).await;
+        save_session(&SessionId::new("ses_20260301_000000"), &m, None, None).await;
         let ids = list_sessions().await;
         assert_eq!(
             ids,
             vec![
-                "ses_20260601_000000".to_owned(),
-                "ses_20260301_000000".to_owned(),
-                "ses_20260101_000000".to_owned(),
+                SessionId::new("ses_20260601_000000"),
+                SessionId::new("ses_20260301_000000"),
+                SessionId::new("ses_20260101_000000"),
             ],
         );
     }
@@ -2178,9 +2260,9 @@ mod disk_io_tests {
     async fn list_sessions_filtered_includes_matching_and_legacy_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("hi".into())];
-        save_session("ses_20260101_000000", &m, Some("/projA"), None).await;
-        save_session("ses_20260201_000000", &m, Some("/projB"), None).await;
-        save_session("ses_20260301_000000", &m, Some("/projA"), None).await;
+        save_session(&SessionId::new("ses_20260101_000000"), &m, Some("/projA"), None).await;
+        save_session(&SessionId::new("ses_20260201_000000"), &m, Some("/projB"), None).await;
+        save_session(&SessionId::new("ses_20260301_000000"), &m, Some("/projA"), None).await;
 
         let only_a = list_sessions_filtered(Some("/projA")).await;
         let ids: Vec<&str> = only_a.iter().map(|s| s.id.as_str()).collect();
@@ -2198,11 +2280,11 @@ mod disk_io_tests {
     async fn most_recent_session_for_cwd_returns_top_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("hi".into())];
-        save_session("ses_20260101_000000", &m, Some("/proj"), None).await;
-        save_session("ses_20260301_000000", &m, Some("/proj"), None).await;
-        save_session("ses_20260201_000000", &m, Some("/other"), None).await;
+        save_session(&SessionId::new("ses_20260101_000000"), &m, Some("/proj"), None).await;
+        save_session(&SessionId::new("ses_20260301_000000"), &m, Some("/proj"), None).await;
+        save_session(&SessionId::new("ses_20260201_000000"), &m, Some("/other"), None).await;
         let top = most_recent_session_for_cwd(Some("/proj")).await;
-        assert_eq!(top.as_deref(), Some("ses_20260301_000000"));
+        assert_eq!(top.as_ref().map(|s| s.as_str()), Some("ses_20260301_000000"));
     }
 
     // Robust: most_recent_session (global) returns the newest id regardless
@@ -2211,10 +2293,10 @@ mod disk_io_tests {
     async fn most_recent_session_global_robust() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("hi".into())];
-        save_session("ses_20260101_000000", &m, None, None).await;
-        save_session("ses_20260601_000000", &m, None, None).await;
+        save_session(&SessionId::new("ses_20260101_000000"), &m, None, None).await;
+        save_session(&SessionId::new("ses_20260601_000000"), &m, None, None).await;
         let top = most_recent_session().await;
-        assert_eq!(top.as_deref(), Some("ses_20260601_000000"));
+        assert_eq!(top.as_ref().map(|s| s.as_str()), Some("ses_20260601_000000"));
     }
 
     // Normal: set_session_title writes a custom title that overrides
@@ -2223,10 +2305,10 @@ mod disk_io_tests {
     async fn set_session_title_persists_and_overrides_first_prompt_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("Original prompt".into())];
-        let id = "ses_20260506_140000";
-        save_session(id, &m, Some("/tmp"), None).await;
-        set_session_title(id, "My custom title").await;
-        let meta = load_session_metadata(id).await.expect("loaded");
+        let id = SessionId::new("ses_20260506_140000");
+        save_session(&id, &m, Some("/tmp"), None).await;
+        set_session_title(&id, "My custom title").await;
+        let meta = load_session_metadata(&id).await.expect("loaded");
         assert_eq!(meta.title.as_deref(), Some("My custom title"));
         assert_eq!(meta.display_title(), "My custom title");
     }
@@ -2237,8 +2319,9 @@ mod disk_io_tests {
     async fn set_session_title_missing_session_is_noop_robust() {
         let _g = TempConfigHome::new();
         // Don't save — target doesn't exist.
-        set_session_title("ses_nope", "ignored").await;
-        assert!(load_session_metadata("ses_nope").await.is_none());
+        let nope = SessionId::new("ses_nope");
+        set_session_title(&nope, "ignored").await;
+        assert!(load_session_metadata(&nope).await.is_none());
     }
 
     // Normal: when re-saving an existing session, the original created_at
@@ -2247,9 +2330,9 @@ mod disk_io_tests {
     async fn save_session_preserves_created_at_and_cwd_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("first".into())];
-        let id = "ses_20260506_141500";
-        save_session(id, &m, Some("/orig"), None).await;
-        let meta1 = load_session_metadata(id).await.expect("first save");
+        let id = SessionId::new("ses_20260506_141500");
+        save_session(&id, &m, Some("/orig"), None).await;
+        let meta1 = load_session_metadata(&id).await.expect("first save");
         let created_at = meta1.created_at.clone();
 
         // Re-save with a different cwd — should NOT migrate.
@@ -2257,8 +2340,8 @@ mod disk_io_tests {
             ChatMessage::user("first".into()),
             ChatMessage::assistant("reply".into()),
         ];
-        save_session(id, &m2, Some("/elsewhere"), None).await;
-        let meta2 = load_session_metadata(id).await.expect("second save");
+        save_session(&id, &m2, Some("/elsewhere"), None).await;
+        let meta2 = load_session_metadata(&id).await.expect("second save");
         assert_eq!(meta2.created_at, created_at);
         assert_eq!(meta2.cwd.as_deref(), Some("/orig"));
         assert_eq!(meta2.message_count, 2);
@@ -2273,7 +2356,7 @@ mod disk_io_tests {
         let tool = ToolCall {
             id: "tool-1".into(),
             kind: ToolKind::Bash,
-            status: ToolStatus::Complete,
+            status: ToolStatus::Completed,
             input: ToolInput::Bash {
                 command: "echo hi".into(),
                 timeout: Some(30_000),
@@ -2284,19 +2367,17 @@ mod disk_io_tests {
                 stderr: String::new(),
                 exit_code: Some(0),
             },
-            is_collapsed: true,
-            expanded: false,
+            display: crate::types::ToolDisplayState::Collapsed,
             elapsed_ms: Some(123),
             started_at: None,
-            pinned: false,
         };
         let messages = vec![
             ChatMessage::user("run a command".into()),
             ChatMessage::assistant_parts(vec![crate::types::MessagePart::Tool(tool)]),
         ];
-        let id = "ses_20260506_142000";
-        save_session(id, &messages, Some("/tmp"), Some("opus")).await;
-        let loaded = load_session(id).await.expect("loaded");
+        let id = SessionId::new("ses_20260506_142000");
+        save_session(&id, &messages, Some("/tmp"), Some("opus")).await;
+        let loaded = load_session(&id).await.expect("loaded");
         assert_eq!(loaded.len(), 2);
         let tool_part = loaded[1]
             .parts
@@ -2327,9 +2408,10 @@ mod disk_io_tests {
                     }
                     _ => panic!("expected Command output"),
                 }
-                // is_collapsed survives, expanded does not (per design).
-                assert!(tc.is_collapsed);
-                assert!(!tc.expanded);
+                // Collapsed survives, expanded/pinned do not (per design).
+                assert!(tc.display.is_collapsed());
+                assert!(!tc.display.is_expanded());
+                assert!(!tc.display.is_pinned());
             }
             _ => unreachable!(),
         }
@@ -2352,7 +2434,7 @@ mod disk_io_tests {
         let mp = deserialize_part(part);
         match mp {
             crate::types::MessagePart::Tool(tc) => {
-                assert_eq!(tc.status, ToolStatus::Complete);
+                assert_eq!(tc.status, ToolStatus::Completed);
                 // Default reconstructed Bash stub — empty command.
                 assert!(matches!(tc.input, ToolInput::Bash { .. }));
                 assert!(matches!(tc.output, ToolOutput::Empty));

@@ -140,6 +140,9 @@ pub async fn execute_batches(
                     kinds = ?calls.iter().map(|c| &c.kind).collect::<Vec<_>>(),
                     "executing parallel batch",
                 );
+                // Track each spawned task's identity outside the future so a
+                // JoinError (panic / cancel) still carries enough context to
+                // log which tool failed.
                 let mut handles = Vec::with_capacity(calls.len());
                 for call in calls {
                     let id = call.id.clone();
@@ -149,9 +152,11 @@ pub async fn execute_batches(
                     let dedup = Arc::clone(&dedup);
                     let ts = task_store.clone();
                     let atn = active_team_name.clone();
-                    handles.push(tokio::spawn(async move {
+                    let task_kind = kind.clone();
+                    let task_id = id.clone();
+                    let handle = tokio::spawn(async move {
                         let result = tools::execute_tool(
-                            kind.clone(),
+                            task_kind,
                             input,
                             cwd,
                             Some(dedup),
@@ -159,18 +164,16 @@ pub async fn execute_batches(
                             atn.as_deref(),
                         )
                         .await;
-                        (
-                            kind,
-                            ToolExecution {
-                                tool_id: id,
-                                result,
-                            },
-                        )
-                    }));
+                        ToolExecution {
+                            tool_id: task_id.as_str().to_owned(),
+                            result,
+                        }
+                    });
+                    handles.push((id, kind, handle));
                 }
-                for handle in handles {
+                for (id, kind, handle) in handles {
                     match handle.await {
-                        Ok((kind, exec)) => {
+                        Ok(exec) => {
                             info!(
                                 target: "jfc::scheduler",
                                 tool_id = %exec.tool_id,
@@ -179,17 +182,28 @@ pub async fn execute_batches(
                                 output_len = exec.result.output.len(),
                                 "tool completed",
                             );
-                            let _ = tx
+                            if tx
                                 .send(AppEvent::ToolResult {
-                                    tool_id: exec.tool_id.clone(),
+                                    tool_id: id.clone(),
                                     result: exec.result.clone(),
                                 })
-                                .await;
+                                .await
+                                .is_err()
+                            {
+                                warn!(
+                                    target: "jfc::scheduler",
+                                    tool_id = %exec.tool_id,
+                                    kind = ?kind,
+                                    "app event channel closed — dropping tool result",
+                                );
+                            }
                             all_results.push(exec);
                         }
                         Err(err) => {
                             warn!(
                                 target: "jfc::scheduler",
+                                tool_id = %id,
+                                tool_kind = ?kind,
                                 error = %err,
                                 "parallel tool task panicked or was cancelled",
                             );
@@ -224,14 +238,23 @@ pub async fn execute_batches(
                     output_len = result.output.len(),
                     "tool completed",
                 );
-                let _ = tx
+                if tx
                     .send(AppEvent::ToolResult {
                         tool_id: id.clone(),
                         result: result.clone(),
                     })
-                    .await;
+                    .await
+                    .is_err()
+                {
+                    warn!(
+                        target: "jfc::scheduler",
+                        tool_id = %id,
+                        tool_kind = ?kind,
+                        "app event channel closed — dropping tool result",
+                    );
+                }
                 all_results.push(ToolExecution {
-                    tool_id: id,
+                    tool_id: id.as_str().to_owned(),
                     result,
                 });
             }
@@ -248,18 +271,16 @@ mod tests {
 
     fn make_call(kind: ToolKind, id: &str) -> ToolCall {
         ToolCall {
-            id: id.to_owned(),
+            id: crate::ids::ToolId::from(id),
             kind,
             status: ToolStatus::Pending,
             input: ToolInput::Generic {
                 summary: String::new(),
             },
             output: ToolOutput::Empty,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }
     }
 
@@ -415,7 +436,7 @@ mod tests {
 
     fn read_call(id: &str, path: &str) -> ToolCall {
         ToolCall {
-            id: id.to_owned(),
+            id: crate::ids::ToolId::from(id),
             kind: ToolKind::Read,
             status: ToolStatus::Pending,
             input: crate::types::ToolInput::Read {
@@ -424,17 +445,15 @@ mod tests {
                 limit: None,
             },
             output: ToolOutput::Empty,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }
     }
 
     fn glob_call(id: &str, pattern: &str) -> ToolCall {
         ToolCall {
-            id: id.to_owned(),
+            id: crate::ids::ToolId::from(id),
             kind: ToolKind::Glob,
             status: ToolStatus::Pending,
             input: crate::types::ToolInput::Glob {
@@ -442,11 +461,9 @@ mod tests {
                 path: None,
             },
             output: ToolOutput::Empty,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }
     }
 

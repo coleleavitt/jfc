@@ -49,13 +49,12 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::Mutex;
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio::sync::oneshot;
 
@@ -65,7 +64,45 @@ use crate::lsp_rpc;
 /// Re-export from jfc-graph for convenience.
 pub use jfc_graph::enrichment::LspLocation;
 
+/// Pending request map. Uses a `std::sync::Mutex` (not `tokio::sync::Mutex`)
+/// because the only critical sections are HashMap insert / remove — no
+/// awaits while the lock is held — and we need to lock from a sync `Drop`
+/// impl on `PendingGuard` for exception-safe cleanup. Switching to the std
+/// mutex avoids spawning a runtime task per drop.
 type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>;
+
+/// RAII guard that removes its `(id)` entry from the pending-requests
+/// map on drop. Constructed by `send_request` immediately after inserting
+/// the oneshot sender. Cleanup runs **exactly once** regardless of which
+/// `tokio::select!` arm wins (response arrived, timeout fired, future
+/// cancelled, etc.) and regardless of which order the reader and
+/// `send_request` see the response — `HashMap::remove` is idempotent on
+/// a missing key.
+///
+/// Without this guard, the previous code had two separate cleanup paths
+/// (the `is_err()` branch on send-failure, and the timeout branch in the
+/// outer match) and a third implicit path (the reader removing the entry
+/// when the response arrived). A late response arriving *after* the
+/// caller's timeout used to leave a stale entry until the reader saw the
+/// matching id; if no matching id ever arrived (e.g. server crash), the
+/// `oneshot::Sender` would leak inside the map until the whole client
+/// dropped.
+struct PendingGuard {
+    pending: PendingRequests,
+    id: u64,
+}
+
+impl Drop for PendingGuard {
+    fn drop(&mut self) {
+        // Best-effort cleanup. A poisoned mutex means a different thread
+        // panicked while holding the lock — we don't have a recovery
+        // story here, so we just skip cleanup. The map will be dropped
+        // when the whole client tears down.
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.remove(&self.id);
+        }
+    }
+}
 
 pub struct LspClient {
     stdin_tx: UnboundedSender<Vec<u8>>,
@@ -80,6 +117,17 @@ impl LspClient {
 
     /// Send a JSON-RPC request and await the response (5s timeout).
     /// Returns `None` on timeout or channel failure.
+    ///
+    /// Cleanup of the `pending` map entry is owned by a `PendingGuard`
+    /// RAII handle so it runs exactly once regardless of which exit path
+    /// fires:
+    ///   - send-failure return,
+    ///   - response received,
+    ///   - timeout,
+    ///   - future cancelled by the caller's runtime.
+    /// This eliminates the previous race where a response arriving
+    /// *after* timeout and a reader-task removal could either double-
+    /// process or leave a stale `oneshot::Sender` sitting in the map.
     pub async fn send_request(&self, method: &str, params: Value) -> Option<Value> {
         let id = self.next_id();
         let msg = json!({
@@ -91,23 +139,40 @@ impl LspClient {
 
         let (tx, rx) = oneshot::channel();
         {
-            let mut pending = self.pending.lock().await;
+            let mut pending = match self.pending.lock() {
+                Ok(g) => g,
+                Err(_) => return None,
+            };
             pending.insert(id, tx);
         }
+        // Guard takes ownership of the (id) entry's lifecycle. Once
+        // created, every return path below — including panics — will run
+        // its `Drop` and clean up the map exactly once.
+        let _guard = PendingGuard {
+            pending: Arc::clone(&self.pending),
+            id,
+        };
 
         if self.stdin_tx.send(lsp_rpc::encode(&msg)).is_err() {
-            let mut pending = self.pending.lock().await;
-            pending.remove(&id);
             return None;
         }
 
-        match tokio::time::timeout(tokio::time::Duration::from_secs(5), rx).await {
-            Ok(Ok(val)) => Some(val),
-            _ => {
-                let mut pending = self.pending.lock().await;
-                pending.remove(&id);
-                None
-            }
+        // `select!` between the response and the timeout. Either arm
+        // returns the value (or `None`) directly; the guard cleans up
+        // the map on drop. Important: the reader task will *also* try
+        // to `remove()` the entry when the matching response arrives
+        // — that's idempotent and ordering-independent because
+        // `HashMap::remove` on a missing key is a no-op. A late
+        // response landing after timeout finds the slot already gone
+        // (the guard removed it during unwind) and the reader's send
+        // silently fails on the closed oneshot, which is the desired
+        // outcome.
+        tokio::select! {
+            recv = rx => match recv {
+                Ok(val) => Some(val),
+                Err(_) => None, // sender dropped (server exited / reader dropped tx)
+            },
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(5)) => None,
         }
     }
 
@@ -398,11 +463,16 @@ async fn handle_inbound(
             }
         }
 
-        // Route to pending request map.
-        let mut guard = pending.lock().await;
-        if let Some(tx) = guard.remove(&id) {
-            let result = msg.get("result").cloned().unwrap_or(Value::Null);
-            let _ = tx.send(result);
+        // Route to pending request map. Lock failure (poisoned mutex)
+        // means another thread panicked while holding it; in that case
+        // we drop the response — the caller's `send_request` will hit
+        // its timeout, the `PendingGuard` won't be able to clean up
+        // either, but the whole client is in trouble at that point.
+        if let Ok(mut guard) = pending.lock() {
+            if let Some(tx) = guard.remove(&id) {
+                let result = msg.get("result").cloned().unwrap_or(Value::Null);
+                let _ = tx.send(result);
+            }
         }
         return;
     }
@@ -748,5 +818,124 @@ mod tests {
         let p = std::env::temp_dir().join(format!("jfc-lsp-test-{}-{}", std::process::id(), nanos));
         std::fs::create_dir_all(&p).unwrap();
         TmpDir(p)
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Pending-map cleanup race regression tests
+    //
+    // These exercise the invariant that `pending` never leaks an entry,
+    // regardless of which order the reader's "response arrived" path and
+    // the caller's "timeout" path run. The previous code had three
+    // separate cleanup sites (send-failure, timeout, reader); the
+    // RAII `PendingGuard` consolidates them.
+    // ──────────────────────────────────────────────────────────────────
+
+    /// Helper: insert a oneshot sender into `pending` under `id`,
+    /// mirroring what `send_request` does just before constructing its
+    /// `PendingGuard`.
+    fn insert_pending(pending: &PendingRequests, id: u64) -> oneshot::Receiver<Value> {
+        let (tx, rx) = oneshot::channel();
+        pending.lock().unwrap().insert(id, tx);
+        rx
+    }
+
+    /// Race order A: response arrives FIRST, then the request future is
+    /// cancelled / dropped (simulating "timeout fires after the value is
+    /// already received but before the caller polls again").
+    /// Expected: map is empty (reader removed it), receiver got the
+    /// value, dropping the guard is a no-op (idempotent remove).
+    #[tokio::test]
+    async fn pending_cleanup_response_then_timeout_robust() {
+        let pending: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
+        let id = 42;
+        let rx = insert_pending(&pending, id);
+        let guard = PendingGuard {
+            pending: Arc::clone(&pending),
+            id,
+        };
+
+        // Reader path: response arrives, removes entry, sends value.
+        {
+            let mut g = pending.lock().unwrap();
+            if let Some(tx) = g.remove(&id) {
+                let _ = tx.send(json!({"ok": true}));
+            }
+        }
+
+        let val = rx.await.expect("response should be delivered");
+        assert_eq!(val, json!({"ok": true}));
+
+        // Map is already empty; dropping the guard must not panic and
+        // must leave the map empty.
+        drop(guard);
+        assert!(
+            pending.lock().unwrap().is_empty(),
+            "pending must remain empty after guard drop following an arrived response"
+        );
+    }
+
+    /// Race order B: timeout fires FIRST (caller's future is dropped),
+    /// then the response arrives late from the reader.
+    /// Expected: guard's `Drop` removed the entry on cancellation, so
+    /// the late reader finds `None` for `id` and silently does nothing.
+    /// No leaked sender, no double-removal panic.
+    #[tokio::test]
+    async fn pending_cleanup_timeout_then_late_response_robust() {
+        let pending: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
+        let id = 99;
+        let _rx = insert_pending(&pending, id);
+        // Sanity: entry exists.
+        assert_eq!(pending.lock().unwrap().len(), 1);
+
+        // Caller's future drops (simulating timeout / cancellation):
+        // the guard's Drop runs and clears the entry.
+        {
+            let _guard = PendingGuard {
+                pending: Arc::clone(&pending),
+                id,
+            };
+            // _guard goes out of scope here, triggering cleanup.
+        }
+        assert!(
+            pending.lock().unwrap().is_empty(),
+            "PendingGuard::drop must remove the entry on the cancellation path"
+        );
+
+        // Reader path runs late: response with same id arrives. It
+        // tries `remove`, finds nothing, no panic.
+        let mut g = pending.lock().unwrap();
+        assert!(g.remove(&id).is_none(), "late remove must be a no-op");
+    }
+
+    /// Stress: many concurrent (insert + guard-drop) cycles must leave
+    /// the map empty and never panic, even when interleaved with reader
+    /// removals on the same ids.
+    #[tokio::test]
+    async fn pending_cleanup_concurrent_races_robust() {
+        let pending: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
+        let mut handles = Vec::with_capacity(50);
+        for id in 0..50u64 {
+            let pending = Arc::clone(&pending);
+            handles.push(tokio::spawn(async move {
+                let _rx = insert_pending(&pending, id);
+                // Half the tasks simulate a reader removing first,
+                // half let the guard remove on drop.
+                if id % 2 == 0 {
+                    let _ = pending.lock().unwrap().remove(&id);
+                }
+                let _guard = PendingGuard {
+                    pending: Arc::clone(&pending),
+                    id,
+                };
+                // Guard drops at end of scope.
+            }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+        assert!(
+            pending.lock().unwrap().is_empty(),
+            "all 50 entries must be cleaned up"
+        );
     }
 }

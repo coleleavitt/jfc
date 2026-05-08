@@ -95,7 +95,7 @@ pub(super) async fn execute_bash_inner(
                                 stdout_buf.push('\n');
                                 // Send chunk to UI (non-blocking)
                                 let _ = tx.try_send(crate::app::AppEvent::ToolOutputChunk {
-                                    tool_id: tool_id.clone(),
+                                    tool_id: crate::ids::ToolId::from(tool_id.clone()),
                                     chunk: safe,
                                 });
                             }

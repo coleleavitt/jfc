@@ -8,11 +8,12 @@ description = "Graph-based context engine for semantic code analysis"
 
 [dependencies]
 petgraph = { version = "0.8", features = ["serde-1"] }
-tree-sitter = "0.25"
+# Pinned: tree-sitter grammars depend on AST shape; floating minor risks graph divergence across builds.
+tree-sitter = "=0.25.10"
 tree-sitter-rust = "0.24"
 serde = { workspace = true }
 serde_json = { workspace = true }
-bincode = "2"
+bincode = { version = "2", features = ["serde"] }
 ignore = "0.4"
 thiserror = { workspace = true }
 tracing = { workspace = true }

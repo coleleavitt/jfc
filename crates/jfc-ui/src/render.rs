@@ -340,7 +340,8 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     let title = app
         .current_session_id
-        .as_deref()
+        .as_ref()
+        .map(|s| s.as_str())
         .unwrap_or("untitled")
         .to_owned();
     lines.push(Line::from(vec![Span::styled(
@@ -1549,7 +1550,7 @@ fn sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 /// Return the user-visible session id list, in the order rendered by the
 /// sidebar (this-project first, then others). Used by Up/Down/Enter so
 /// keyboard navigation matches what the user sees.
-pub fn ordered_sidebar_sessions(app: &App) -> Vec<String> {
+pub fn ordered_sidebar_sessions(app: &App) -> Vec<crate::ids::SessionId> {
     let cwd = app.cwd.clone();
     let (this_project, other) =
         crate::session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
@@ -1602,7 +1603,7 @@ fn session_row(
     now: &chrono::DateTime<chrono::Utc>,
     t: Theme,
 ) -> ListItem<'static> {
-    let is_active = app.current_session_id.as_deref() == Some(s.id.as_str());
+    let is_active = app.current_session_id.as_ref() == Some(&s.id);
     let bullet = if is_active { "▣ " } else { "  " };
     let title = s.display_title();
     let cwd_label = crate::session::shorten_cwd(s.cwd.as_deref());
@@ -1941,7 +1942,7 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
         Some(bt) => {
             let title = format!(
                 " {} · {} ",
-                &bt.task_id[..bt.task_id.len().min(12)],
+                &bt.task_id.as_str()[..bt.task_id.as_str().len().min(12)],
                 bt.description
             );
             // Look up per-task expansion state. Empty set means
@@ -2684,7 +2685,7 @@ fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     if active.is_empty() {
         return;
     }
-    active.sort_by_key(|bt| bt.task_id.clone());
+    active.sort_by_key(|bt| bt.task_id.as_str().to_owned());
 
     let mut lines: Vec<Line> = Vec::new();
     // Leader row (mirrors the team-tree shape so the visual is consistent).
@@ -2818,7 +2819,7 @@ fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
         let bt = app
             .background_tasks
             .values()
-            .find(|bt| bt.task_id.contains(&info.name));
+            .find(|bt| bt.task_id.as_str().contains(&info.name));
         let bt_status = bt.map(|bt| bt.status);
         let activity = bt.and_then(|bt| bt.last_tool.clone());
 
@@ -5122,6 +5123,7 @@ mod pure_helper_tests {
             Ok(Box::pin(futures::stream::empty()))
         }
     }
+    impl crate::provider::seal::Sealed for TestProvider {}
 
     fn fake_app() -> App {
         App::new(Arc::new(TestProvider), "test-model")
@@ -5418,11 +5420,9 @@ mod pure_helper_tests {
                 workdir: None,
             },
             output: ToolOutput::Empty,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         };
         app.messages.push(ChatMessage {
             role: Role::Assistant,
@@ -5823,7 +5823,7 @@ mod pure_helper_tests {
         let tool = ToolCall {
             id: "t1".into(),
             kind: ToolKind::Edit,
-            status: ToolStatus::Complete,
+            status: ToolStatus::Completed,
             input: ToolInput::Edit {
                 file_path: "src/foo.rs".into(),
                 old_string: "".into(),
@@ -5831,11 +5831,9 @@ mod pure_helper_tests {
                 replacement: ReplacementMode::FirstOnly,
             },
             output: ToolOutput::Diff(diff),
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         };
         app.messages.push(ChatMessage {
             role: Role::Assistant,
@@ -5859,9 +5857,9 @@ mod pure_helper_tests {
         let mut app = fake_app();
         for (i, (a, d)) in [(5, 1), (10, 3)].into_iter().enumerate() {
             let tool = ToolCall {
-                id: format!("t{i}"),
+                id: crate::ids::ToolId::from(format!("t{i}")),
                 kind: ToolKind::Edit,
-                status: ToolStatus::Complete,
+                status: ToolStatus::Completed,
                 input: ToolInput::Edit {
                     file_path: "src/foo.rs".into(),
                     old_string: "".into(),
@@ -5874,11 +5872,9 @@ mod pure_helper_tests {
                     additions: a,
                     deletions: d,
                 }),
-                is_collapsed: false,
-                expanded: false,
+                display: crate::types::ToolDisplayState::DEFAULT,
                 elapsed_ms: None,
                 started_at: None,
-                pinned: false,
             };
             app.messages.push(ChatMessage {
                 role: Role::Assistant,

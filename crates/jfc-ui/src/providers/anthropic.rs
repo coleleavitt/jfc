@@ -140,6 +140,8 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
     body
 }
 
+impl crate::provider::seal::Sealed for AnthropicProvider {}
+
 #[async_trait]
 impl Provider for AnthropicProvider {
     fn name(&self) -> &str {

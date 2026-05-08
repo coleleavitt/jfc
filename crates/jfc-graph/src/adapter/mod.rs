@@ -31,7 +31,41 @@ pub trait LanguageAdapter: Send + Sync {
     fn file_extensions(&self) -> &[&str];
 
     /// Parse a file into a tree-sitter Tree.
+    ///
+    /// Returns [`AdapterError::SyntaxError`] if tree-sitter produced any
+    /// `ERROR` (or `MISSING`) nodes. Callers who want a best-effort partial
+    /// tree even on syntax errors should use [`Self::parse_file_lenient`].
     fn parse_file(&self, path: &Path, content: &str) -> Result<ParsedFile, AdapterError>;
+
+    /// Parse a file, returning a [`ParseOutcome`] that carries both the tree
+    /// and (if applicable) a [`AdapterError::SyntaxError`].
+    ///
+    /// This is the preferred entry point for the [`crate::builder::GraphBuilder`]:
+    /// it lets the builder index a partial graph from broken files while
+    /// surfacing the syntax error to the caller, instead of silently dropping
+    /// the whole file.
+    ///
+    /// The default implementation calls `parse_file` and flattens the error
+    /// case — adapters that produce a tree before validating can override
+    /// this for better partial-recovery semantics.
+    fn parse_file_lenient(
+        &self,
+        path: &Path,
+        content: &str,
+    ) -> Result<ParseOutcome, AdapterError> {
+        match self.parse_file(path, content) {
+            Ok(parsed) => Ok(ParseOutcome::ok(parsed)),
+            // Only `SyntaxError` is recoverable here — the tree was produced,
+            // we just want the caller to know it has ERROR nodes. Hard
+            // failures (e.g. tree-sitter returned None) bubble up unchanged.
+            Err(AdapterError::SyntaxError { .. }) => {
+                // Default impl can't recover the partial tree without
+                // re-parsing — call sites that care should override.
+                self.parse_file(path, content).map(ParseOutcome::ok)
+            }
+            Err(other) => Err(other),
+        }
+    }
 
     /// Extract nodes (functions, structs, etc.) from a parsed file.
     fn extract_nodes(&self, parsed: &ParsedFile) -> Vec<NodeData>;
@@ -52,6 +86,102 @@ pub enum AdapterError {
 
     #[error("unsupported file extension: {ext}")]
     UnsupportedExtension { ext: String },
+
+    /// Tree-sitter produced a tree containing one or more `ERROR` nodes —
+    /// the source has syntax errors and the parsed graph is partial.
+    ///
+    /// The adapter still surfaces a usable `ParsedFile` to the caller via
+    /// `ParseOutcome::Partial`, but standalone callers (anything that
+    /// expects `Result<ParsedFile, _>`) get this error so silent corruption
+    /// becomes impossible.
+    #[error("syntax error in {path} at bytes {start}..{end}: {summary}")]
+    SyntaxError {
+        path: PathBuf,
+        start: usize,
+        end: usize,
+        summary: String,
+    },
+}
+
+/// Result of parsing — either a clean tree, or a tree plus a syntax error.
+///
+/// The builder uses this to drive a continue-with-partial-graph policy:
+/// syntax errors are collected per-file rather than aborting the whole
+/// indexing pass.
+pub struct ParseOutcome {
+    pub parsed: ParsedFile,
+    pub error: Option<AdapterError>,
+}
+
+impl ParseOutcome {
+    pub fn ok(parsed: ParsedFile) -> Self {
+        Self {
+            parsed,
+            error: None,
+        }
+    }
+
+    pub fn partial(parsed: ParsedFile, error: AdapterError) -> Self {
+        Self {
+            parsed,
+            error: Some(error),
+        }
+    }
+}
+
+/// Walk a tree-sitter tree to find the first ERROR (or MISSING) node and
+/// summarise it for a typed [`AdapterError::SyntaxError`].
+///
+/// Returns `None` if the tree is clean.
+pub fn first_syntax_error(
+    tree: &tree_sitter::Tree,
+    path: &Path,
+    source: &str,
+) -> Option<AdapterError> {
+    if !tree.root_node().has_error() {
+        return None;
+    }
+
+    // DFS for the first node with `is_error()` or `is_missing()`.
+    let mut stack: Vec<tree_sitter::Node<'_>> = vec![tree.root_node()];
+    while let Some(node) = stack.pop() {
+        if node.is_error() || node.is_missing() {
+            let range = node.byte_range();
+            let snippet = source
+                .get(range.start..range.end.min(range.start + 80))
+                .unwrap_or("")
+                .replace('\n', " ");
+            let summary = if node.is_missing() {
+                format!("missing `{}`", node.kind())
+            } else if snippet.is_empty() {
+                format!(
+                    "ERROR node ({} at line {})",
+                    node.kind(),
+                    node.start_position().row + 1
+                )
+            } else {
+                format!("ERROR near `{snippet}`")
+            };
+            return Some(AdapterError::SyntaxError {
+                path: path.to_path_buf(),
+                start: range.start,
+                end: range.end,
+                summary,
+            });
+        }
+        // Push children for DFS — but only descend if the subtree contains errors,
+        // to keep this O(error-locality) rather than O(tree size).
+        if node.has_error() {
+            let mut cursor = node.walk();
+            let children: Vec<_> = node.children(&mut cursor).collect();
+            // Reverse so the leftmost child is popped first (DFS in source order).
+            for child in children.into_iter().rev() {
+                stack.push(child);
+            }
+        }
+    }
+
+    None
 }
 
 /// Registry that maps file extensions to language adapters.

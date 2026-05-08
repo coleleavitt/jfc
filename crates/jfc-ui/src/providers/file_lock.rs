@@ -21,6 +21,30 @@ const LOCK_STALE: Duration = Duration::from_secs(30);
 const LOCK_INITIAL_RETRY_MS: u64 = 10;
 const LOCK_MAX_RETRY_MS: u64 = 200;
 
+/// Errors raised while acquiring a [`FileLock`]. `Acquire` chains the
+/// underlying `std::io::Error` via `#[from]` so callers can match on
+/// `ErrorKind` (e.g. permission denied vs disk full) rather than parsing
+/// a stringified message. `thiserror` auto-generates an
+/// `impl From<FileLockError> for anyhow::Error`, so call sites that still
+/// use `anyhow::Result` can just `?`-bubble these.
+#[derive(Debug, thiserror::Error)]
+pub enum FileLockError {
+    /// Underlying IO operation (open, rename, write) failed.
+    #[error("file lock IO error: {0}")]
+    Acquire(#[from] std::io::Error),
+    /// Existing lock file's holder was unreachable but its mtime was
+    /// newer than [`LOCK_STALE`] — neither alive nor expired.
+    #[error("lock at is stale (age {age:?}) but cleanup failed")]
+    Stale { age: Duration },
+    /// Exceeded the [`LOCK_TIMEOUT`] retry budget.
+    #[error("failed to acquire lock at {path} after waiting {waited:?}")]
+    Timeout { path: PathBuf, waited: Duration },
+    /// Catch-all for inconsistencies that aren't cleanly an IO error
+    /// (e.g. corrupted lock token, race between stale-clear and rename).
+    #[error("lock state poisoned: {reason}")]
+    Poisoned { reason: String },
+}
+
 /// A held file lock. Dropping it releases the lock.
 pub struct FileLock {
     lock_path: PathBuf,
@@ -30,17 +54,16 @@ pub struct FileLock {
 impl FileLock {
     /// Acquire the lock at `lock_path`. Blocks up to 10s with exponential
     /// backoff + jitter. Returns the held lock guard.
-    pub async fn acquire(lock_path: &Path) -> anyhow::Result<Self> {
+    pub async fn acquire(lock_path: &Path) -> Result<Self, FileLockError> {
         let start = Instant::now();
         let pid = std::process::id();
 
         loop {
             if start.elapsed() >= LOCK_TIMEOUT {
-                anyhow::bail!(
-                    "Failed to acquire lock at {} after {}ms",
-                    lock_path.display(),
-                    LOCK_TIMEOUT.as_millis()
-                );
+                return Err(FileLockError::Timeout {
+                    path: lock_path.to_path_buf(),
+                    waited: LOCK_TIMEOUT,
+                });
             }
 
             let token = format!(
@@ -115,11 +138,7 @@ impl FileLock {
                     continue;
                 }
                 Err(e) => {
-                    return Err(anyhow::anyhow!(
-                        "Failed to create lock file {}: {}",
-                        lock_path.display(),
-                        e
-                    ));
+                    return Err(FileLockError::Acquire(e));
                 }
             }
         }

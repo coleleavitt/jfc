@@ -465,6 +465,7 @@ fn dispatch_approved_tool(app: &App, tool: ToolCall, tx: &mpsc::Sender<AppEvent>
         Arc::clone(&app.provider),
         app.model.clone(),
         app.teammate_event_tx.clone(),
+        app.cancel_token.clone(),
     );
 }
 
@@ -513,6 +514,7 @@ fn advance_approval_queue(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
             Arc::clone(&app.provider),
             app.model.clone(),
             app.teammate_event_tx.clone(),
+            app.cancel_token.clone(),
         );
     }
 }
@@ -1696,25 +1698,25 @@ pub async fn handle_key(
                 for msg in messages.iter_mut().rev() {
                     for part in msg.parts.iter_mut().rev() {
                         if let MessagePart::Tool(tc) = part {
-                            // Two-level expand: huge LargeText flips
-                            // `is_collapsed` (1-row teaser ⇄ body), all
-                            // other tools flip `expanded` (80-line cap
-                            // ⇄ 500-line cap). The user gets a single
-                            // `o` shortcut that scales: small Read →
-                            // expand to full, huge Bash dump → expand
-                            // teaser to body.
+                            // Two-level expand: huge LargeText pivots
+                            // teaser ⇄ body (`toggle_collapsed`); all
+                            // other tools pivot 80-line cap ⇄ 500-line
+                            // cap (`toggle_expanded`). The user gets a
+                            // single `o` shortcut that scales: small
+                            // Read → expand to full, huge Bash dump →
+                            // expand teaser to body.
                             match &tc.output {
                                 ToolOutput::LargeText(lt)
                                     if lt.line_count > crate::types::LargeText::COLLAPSE_LINES
                                         || lt.content.len()
                                             > crate::types::LargeText::COLLAPSE_BYTES =>
                                 {
-                                    tc.is_collapsed = !tc.is_collapsed;
+                                    tc.display.toggle_collapsed();
                                     break 'toggle;
                                 }
                                 ToolOutput::Empty => {}
                                 _ => {
-                                    tc.expanded = !tc.expanded;
+                                    tc.display.toggle_expanded();
                                     break 'toggle;
                                 }
                             }
@@ -1827,6 +1829,12 @@ pub async fn handle_key(
                 if recent {
                     app.interrupt_flag
                         .store(true, std::sync::atomic::Ordering::SeqCst);
+                    // wg-async: cancel the per-turn token so any spawned
+                    // task that wired its `select!` against `cancelled()`
+                    // unwinds in the next tokio scheduler tick — no
+                    // polling latency. Legacy AtomicBool-only callers
+                    // still observe the flag above.
+                    app.cancel_token.cancel();
                     app.last_esc_at = None;
                     // v132: SIGTERM any in-flight bash subprocesses so the
                     // user's resources aren't held by a runaway script
@@ -2131,7 +2139,8 @@ async fn handle_submit(
     // are configured.
     let session_id_for_hook = app
         .current_session_id
-        .clone()
+        .as_ref()
+        .map(|s| s.as_str().to_owned())
         .unwrap_or_else(|| "<no-session>".to_owned());
     let hook_action = crate::hooks::fire(
         crate::hooks::HookPoint::OnUserPromptSubmit,
@@ -2428,6 +2437,44 @@ async fn handle_submit(
     let assistant_idx = app.messages.len() + 1;
     app.messages.push(ChatMessage::user(text.clone()));
     app.tool_ctx.total_user_turns += 1;
+
+    // Auto graph-context injection: when the prompt smells like an
+    // impact-analysis / refactor-risk / dependency-trace / entrypoint
+    // question, run a cheap structural query against the workspace
+    // graph and append the result as a `<system-reminder>` so the
+    // model sees the structural context up-front instead of having to
+    // remember to fire `graph_query` itself. Opt out via
+    // `JFC_GRAPH_AUTO_CONTEXT=0`. The helper is a no-op for
+    // non-graph intents and disabled-flag cases. We do NOT push the
+    // assistant placeholder yet — `append_to_last_user` walks
+    // `messages.iter_mut().rfind(|m| m.role == Role::User)`, so the
+    // freshly-pushed user message at the tail is its target.
+    //
+    // Gated behind the `intent-gate` cargo feature for symmetry with
+    // the `mod intent` declaration in `main.rs`. Without the gate the
+    // intent module is configured-out and `crate::intent::...` paths
+    // fail to resolve at compile time — see Cargo.toml `[features]`.
+    #[cfg(feature = "intent-gate")]
+    {
+        let intent_for_inject = crate::intent::classify(&text).intent;
+        if crate::intent::is_graph_intent(intent_for_inject) {
+            let cwd = std::path::PathBuf::from(&app.cwd);
+            let injected = crate::intent::auto_inject_graph_context(
+                &mut app.messages,
+                intent_for_inject,
+                &text,
+                &cwd,
+            );
+            if injected {
+                tracing::info!(
+                    target: "jfc::intent::auto_ctx",
+                    intent = ?intent_for_inject,
+                    "auto graph-context injected"
+                );
+            }
+        }
+    }
+
     app.messages.push(ChatMessage::assistant(String::new()));
     app.streaming_text.clear();
     app.streaming_reasoning.clear();
@@ -2492,6 +2539,11 @@ async fn handle_submit(
     // Fresh user submission resets any prior interrupt state — the user
     // moved on, so the next stream should run unchecked.
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
+    // Mint a fresh cancel token. A token's `cancelled` is sticky, so a
+    // previously cancelled turn would poison the next one if we reused
+    // it. wg-async pattern: each unit of work gets its own token.
+    app.cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel = app.cancel_token.clone();
 
     tracing::info!(
         target: "jfc::input",
@@ -2503,8 +2555,10 @@ async fn handle_submit(
         "spawning stream_response"
     );
 
+    // wg-async: stream_response holds the SSE connection + tx sender —
+    // cancel has to thread through so ESC×2 can drop them coherently.
     tokio::spawn(async move {
-        crate::stream::stream_response(provider, messages, model, tx, interrupt).await;
+        crate::stream::stream_response(provider, messages, model, tx, interrupt, cancel).await;
     });
 
     Ok(())
@@ -2728,7 +2782,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             if let Some(session_id) = session_id {
                 if let Some(messages) = crate::session::load_session(&session_id).await {
                     app.messages = messages;
-                    app.switch_session(Some(session_id.clone()));
+                    let session_id_for_msg = session_id.clone();
+                    app.switch_session(Some(session_id));
                     app.streaming_text.clear();
                     app.streaming_reasoning.clear();
                     app.streaming_response_bytes = 0;
@@ -2736,7 +2791,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     app.scroll_to_bottom();
                     let scope = if want_global { "any cwd" } else { "this cwd" };
                     app.messages.push(ChatMessage::assistant(format!(
-                        "**Resumed session `{session_id}`** ({scope}) — {} message(s) loaded.",
+                        "**Resumed session `{session_id_for_msg}`** ({scope}) — {} message(s) loaded.",
                         app.messages.len() - 1
                     )));
                 } else {
@@ -2792,7 +2847,9 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                         "**Usage:** `/resume <session_id>`\n\n**Available sessions:**\n{list}{more}"
                     )));
                 }
-            } else if let Some(messages) = crate::session::load_session(session_id).await {
+            } else {
+                let typed_session_id = crate::ids::SessionId::new(session_id);
+                if let Some(messages) = crate::session::load_session(&typed_session_id).await {
                 let msg_count = messages.len();
                 // Compare the loaded session's recorded cwd against the
                 // current process cwd before mutating app state. The
@@ -2800,7 +2857,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 // informational so the user notices they may be
                 // pointing at the wrong project.
                 if !force {
-                    let session_cwd = crate::session::load_session_metadata(session_id)
+                    let session_cwd = crate::session::load_session_metadata(&typed_session_id)
                         .await
                         .and_then(|m| m.cwd);
                     let current_cwd = std::env::current_dir()
@@ -2816,19 +2873,20 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     }
                 }
                 app.messages = messages;
-                app.switch_session(Some(session_id.to_owned()));
+                app.switch_session(Some(typed_session_id.clone()));
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
                 app.streaming_response_bytes = 0;
                 app.streaming_assistant_idx = None;
                 app.scroll_to_bottom();
                 app.messages.push(ChatMessage::assistant(format!(
-                    "**Resumed session `{session_id}`** — {msg_count} message(s) loaded."
+                    "**Resumed session `{typed_session_id}`** — {msg_count} message(s) loaded."
                 )));
             } else {
                 app.messages.push(ChatMessage::assistant(format!(
-                    "**Error:** Session `{session_id}` not found."
+                    "**Error:** Session `{typed_session_id}` not found."
                 )));
+            }
             }
         }
         "/sessions" => {
@@ -2846,7 +2904,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     } else {
                         prompt.to_string()
                     };
-                    let current = app.current_session_id.as_deref() == Some(&s.id);
+                    let current = app.current_session_id.as_ref() == Some(&s.id);
                     let marker = if current { " ← current" } else { "" };
                     body.push_str(&format!(
                         "{}. `{}`{} — {} msg(s)\n   {}\n",
@@ -3219,12 +3277,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                             body.push_str(&format!(
                                 "- **Tool: {}** ({})\n",
                                 tc.kind.label(),
-                                match tc.status {
-                                    crate::types::ToolStatus::Pending => "pending",
-                                    crate::types::ToolStatus::Running => "running",
-                                    crate::types::ToolStatus::Complete => "complete",
-                                    crate::types::ToolStatus::Failed => "failed",
-                                }
+                                tc.status.label()
                             ));
                             body.push_str(&format!("  Input: {}\n", tc.input.summary()));
                             body.push('\n');
@@ -3942,7 +3995,14 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     let blocks = if t.blocked_by.is_empty() {
                         String::new()
                     } else {
-                        format!(" · blocked by {}", t.blocked_by.join(","))
+                        format!(
+                            " · blocked by {}",
+                            t.blocked_by
+                                .iter()
+                                .map(|id| id.as_str())
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        )
                     };
                     s.push_str(&format!(
                         "{} `{}` {}{}{}\n",
@@ -4362,8 +4422,13 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 let tx_stream = tx.clone();
                 let interrupt = app.interrupt_flag.clone();
                 interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
+                app.cancel_token = tokio_util::sync::CancellationToken::new();
+                let cancel = app.cancel_token.clone();
+                // wg-async: retry path mints a fresh cancel token for the
+                // new stream so the old (possibly cancelled) one can't
+                // racially interrupt the retry.
                 tokio::spawn(async move {
-                    crate::stream::stream_response(provider, messages, model, tx_stream, interrupt)
+                    crate::stream::stream_response(provider, messages, model, tx_stream, interrupt, cancel)
                         .await;
                 });
                 return;
@@ -4500,6 +4565,14 @@ fn handle_theme_command(app: &mut App, args: &str) {
     match crate::theme::Theme::by_name(name) {
         Some(theme) => {
             app.theme = theme;
+            // The render cache stores `Vec<Line<'static>>` produced by
+            // `markdown::to_lines(text, &theme, width)` with syntect highlight
+            // colors baked in. Without this invalidation the user would see
+            // stale colors from the previous theme until each entry is
+            // naturally evicted; for static transcript content the staleness
+            // would persist until session reload.
+            tracing::debug!(target: "jfc::render::cache", "theme switch — invalidating cache");
+            app.render_cache.borrow_mut().clear();
             // Persist the selection so the next launch boots into
             // the same look. Persistence failure is non-fatal — we
             // already updated `app.theme`, so the user gets the
@@ -4876,7 +4949,11 @@ async fn handle_doctor_command(app: &mut App) {
 /// in-product reporting; jfc currently just points at GitHub since
 /// we don't have a managed reporting endpoint.
 fn handle_bug_command(app: &mut App, description: String) {
-    let session_id = app.current_session_id.as_deref().unwrap_or("(none)");
+    let session_id = app
+        .current_session_id
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or("(none)");
     let body = format!(
         "Bug reports go to https://github.com/anthropics/jfc/issues/new\n\n\
          Include in your report:\n\
@@ -4977,7 +5054,8 @@ async fn handle_export_command(app: &mut App) {
     }
     let session_id = app
         .current_session_id
-        .clone()
+        .as_ref()
+        .map(|s| s.as_str().to_owned())
         .unwrap_or_else(|| "untitled".to_owned());
     let stamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
     let path = dir.join(format!("{session_id}_{stamp}.md"));
@@ -5778,8 +5856,11 @@ async fn handle_pr_autofix(
     let tx_stream = tx.clone();
     let interrupt = app.interrupt_flag.clone();
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
+    app.cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel = app.cancel_token.clone();
+    // wg-async: retry / continuation path — fresh cancel token per spawn.
     tokio::spawn(async move {
-        crate::stream::stream_response(provider, messages, model, tx_stream, interrupt).await;
+        crate::stream::stream_response(provider, messages, model, tx_stream, interrupt, cancel).await;
     });
 }
 
@@ -5832,6 +5913,7 @@ mod tests {
             Ok(Box::pin(futures::stream::empty()))
         }
     }
+    impl crate::provider::seal::Sealed for TestProvider {}
 
     /// Test fixture: a fresh `App` plus a paired `(tx, rx)` so tests can both
     /// drive `handle_key` and inspect the AppEvents it emits. Pulled out so
@@ -5882,11 +5964,9 @@ mod tests {
             status: ToolStatus::Pending,
             input,
             output: ToolOutput::Empty,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }
     }
 
@@ -6031,7 +6111,7 @@ mod tests {
         let msg = ChatMessage::assistant_parts(vec![MessagePart::Tool(ToolCall {
             id: "t1".into(),
             kind: ToolKind::Bash,
-            status: ToolStatus::Complete,
+            status: ToolStatus::Completed,
             input: ToolInput::Bash {
                 command: "echo".into(),
                 timeout: None,
@@ -6042,11 +6122,9 @@ mod tests {
                 stderr: String::new(),
                 exit_code: Some(0),
             },
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         })]);
         let paths = collect_recent_paths(&[msg]);
         assert_eq!(paths.len(), 1);
@@ -6516,11 +6594,9 @@ mod tests {
                         workdir: None,
                     },
                     output: ToolOutput::Empty,
-                    is_collapsed: false,
-                    expanded: false,
+                    display: crate::types::ToolDisplayState::DEFAULT,
                     elapsed_ms: None,
                     started_at: None,
-                    pinned: false,
                 },
             )]));
         app.jump_armed = true;
@@ -7175,18 +7251,16 @@ mod tests {
                 ToolCall {
                     id: "t".into(),
                     kind: ToolKind::Read,
-                    status: ToolStatus::Complete,
+                    status: ToolStatus::Completed,
                     input: ToolInput::Read {
                         file_path: "x".into(),
                         offset: None,
                         limit: None,
                     },
                     output: ToolOutput::Text("hi".into()),
-                    is_collapsed: false,
-                    expanded: false,
+                    display: crate::types::ToolDisplayState::DEFAULT,
                     elapsed_ms: None,
                     started_at: None,
-                    pinned: false,
                 },
             )]));
         let (tx, _rx) = channel();
@@ -7196,7 +7270,7 @@ mod tests {
         let MessagePart::Tool(tc) = &app.messages[0].parts[0] else {
             panic!("tool not found")
         };
-        assert!(tc.expanded);
+        assert!(tc.display.is_expanded());
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -7671,6 +7745,65 @@ mod tests {
         assert!(!app.toasts.is_empty());
     }
 
+    // Regression: switching the theme MUST invalidate the render cache.
+    // Without invalidation, cached lines carry baked-in syntect highlight
+    // colors from the previous theme and the user sees stale colors until
+    // each entry is naturally evicted by the LRU. For static transcript
+    // content that staleness would persist until session reload.
+    //
+    // We exercise the bug by populating the cache, switching the theme via
+    // the same `/theme` slash-command path the user types, then re-rendering
+    // the same `(text, width)` key. The closure passed to
+    // `get_or_insert_with` runs only on a cache miss, so a post-switch
+    // closure invocation proves the entry was invalidated.
+    #[tokio::test]
+    async fn slash_theme_invalidates_render_cache_regression() {
+        let mut app = test_app();
+        let text = "hello **world**";
+        let width: u16 = 80;
+
+        // Prime the cache.
+        {
+            let mut cache = app.render_cache.borrow_mut();
+            let _ = cache.get_or_insert_with(text, width, |t, _w| {
+                vec![ratatui::text::Line::from(t.to_owned())]
+            });
+            assert_eq!(cache.len(), 1, "prime should populate exactly one entry");
+        }
+
+        // Switch theme via the public command surface (mirrors what a user
+        // actually types). `dark` is always available, even if the test
+        // App already starts on it — `Theme::by_name("light")` is the
+        // visually distinct case.
+        run_slash_command(&mut app, "/theme light").await;
+
+        // Post-switch: the cache must be empty so the next render runs the
+        // syntect pipeline against the new theme.
+        {
+            let cache = app.render_cache.borrow();
+            assert_eq!(
+                cache.len(),
+                0,
+                "theme switch should have cleared the render cache"
+            );
+        }
+
+        // Stronger assertion: the closure runs again (cache miss) for the
+        // exact same (text, width) key it was primed with.
+        let mut closure_invocations = 0u32;
+        {
+            let mut cache = app.render_cache.borrow_mut();
+            let _ = cache.get_or_insert_with(text, width, |t, _w| {
+                closure_invocations += 1;
+                vec![ratatui::text::Line::from(t.to_owned())]
+            });
+        }
+        assert_eq!(
+            closure_invocations, 1,
+            "post-theme-switch render must miss the cache and rebuild lines"
+        );
+    }
+
     #[tokio::test]
     async fn slash_export_creates_file_robust() {
         let mut app = test_app();
@@ -7690,7 +7823,7 @@ mod tests {
     #[tokio::test]
     async fn slash_rename_robust_no_args_with_session() {
         let mut app = test_app();
-        app.current_session_id = Some("ses_test".into());
+        app.current_session_id = Some(crate::ids::SessionId::new("ses_test"));
         run_slash_command(&mut app, "/rename").await;
         assert!(!app.messages.is_empty());
     }

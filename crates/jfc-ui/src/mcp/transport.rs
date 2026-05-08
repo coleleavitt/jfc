@@ -84,33 +84,27 @@ pub fn try_parse(buf: &[u8]) -> Result<Option<(Value, usize)>, FrameError> {
         return Ok(None);
     }
     let body = &buf[body_start..body_end];
-    let value: Value =
-        serde_json::from_slice(body).map_err(|e| FrameError::Json(e.to_string()))?;
+    let value: Value = serde_json::from_slice(body)?;
     Ok(Some((value, body_end)))
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Framing-layer parse failures. The `Json` variant chains the underlying
+/// `serde_json::Error` via `#[from]` so callers retain the source — useful
+/// for distinguishing `io`, `syntax`, `data`, and `eof` categories rather
+/// than string-matching on a flattened message.
+#[derive(Debug, thiserror::Error)]
 pub enum FrameError {
+    #[error("MCP header was not valid UTF-8")]
     HeaderNotUtf8,
+    #[error("MCP header missing Content-Length")]
     MissingContentLength,
+    #[error("MCP header had bad Content-Length")]
     InvalidContentLength,
+    #[error("MCP body exceeds maximum buffer size")]
     OversizedBody,
-    Json(String),
+    #[error("MCP body JSON parse error: {0}")]
+    Json(#[from] serde_json::Error),
 }
-
-impl std::fmt::Display for FrameError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::HeaderNotUtf8 => f.write_str("MCP header was not valid UTF-8"),
-            Self::MissingContentLength => f.write_str("MCP header missing Content-Length"),
-            Self::InvalidContentLength => f.write_str("MCP header had bad Content-Length"),
-            Self::OversizedBody => f.write_str("MCP body exceeds maximum buffer size"),
-            Self::Json(e) => write!(f, "MCP body JSON parse error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for FrameError {}
 
 fn find_header_end(buf: &[u8]) -> Option<usize> {
     if let Some(i) = find_subslice(buf, b"\r\n\r\n") {
@@ -602,13 +596,19 @@ mod tests {
     #[test]
     fn missing_content_length_is_error_robust() {
         let bad = b"X-Header: 1\r\n\r\n{}";
-        assert_eq!(try_parse(bad).unwrap_err(), FrameError::MissingContentLength);
+        assert!(matches!(
+            try_parse(bad).unwrap_err(),
+            FrameError::MissingContentLength
+        ));
     }
 
     #[test]
     fn bad_content_length_is_error_robust() {
         let bad = b"Content-Length: not-a-number\r\n\r\n{}";
-        assert_eq!(try_parse(bad).unwrap_err(), FrameError::InvalidContentLength);
+        assert!(matches!(
+            try_parse(bad).unwrap_err(),
+            FrameError::InvalidContentLength
+        ));
     }
 
     #[test]
@@ -632,7 +632,7 @@ mod tests {
         // Header claiming 1 GB body — must reject without OOMing.
         let huge = format!("Content-Length: {}\r\n\r\n", MAX_BUFFER_BYTES + 1);
         let err = try_parse(huge.as_bytes()).unwrap_err();
-        assert_eq!(err, FrameError::OversizedBody);
+        assert!(matches!(err, FrameError::OversizedBody));
     }
 
     /// Mock transport echo test: we drive a fake reader/writer pair

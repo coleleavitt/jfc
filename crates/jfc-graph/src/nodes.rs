@@ -7,7 +7,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 
 /// Exactly 5 node kinds — no more, no less.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum NodeKind {
     Function,
     Struct,
@@ -37,7 +37,11 @@ pub struct Span {
 }
 
 /// Deterministic node identifier: hash(file_path + ":" + qualified_name + ":" + kind)
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+///
+/// Implements `Ord` so callers (notably [`crate::fingerprint`]) can sort
+/// containers of `NodeId` into a canonical order before hashing — this is
+/// what makes graph fingerprints iteration-order-independent.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct NodeId(pub u64);
 
 impl NodeId {
@@ -53,6 +57,21 @@ impl NodeId {
 }
 
 /// Full node data stored in the graph.
+///
+/// ## Revision tracking
+///
+/// `birth_revision` and `last_modified_revision` give every node a coarse
+/// timeline relative to the owning [`crate::graph::CodeGraph::current_revision`].
+/// Both default to `0`, which means **"unknown / pre-history"** — that is the
+/// value an old serialized graph (without these fields) deserializes to via
+/// `#[serde(default)]`. Treat `0` as "this node is at least as old as anything
+/// we've seen". The DSL `since N` filter and
+/// [`crate::graph::CodeGraph::nodes_changed_since`] use these fields to answer
+/// "what changed since revision N?".
+///
+/// Both fields are populated by [`crate::graph::CodeGraph`] mutation methods —
+/// callers building [`NodeData`] literals can leave them at `0`; they will be
+/// overwritten with `current_revision` on insert.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeData {
     pub id: NodeId,
@@ -63,6 +82,18 @@ pub struct NodeData {
     pub span: Span,
     pub visibility: Visibility,
     pub metadata: HashMap<String, String>,
+    /// Graph revision at which this node was first added. Monotonically
+    /// increasing; matches [`crate::graph::CodeGraph::current_revision`] at
+    /// the moment of insertion. `0` means "pre-history" — used by old
+    /// serialized graphs and by callers building literals before insertion.
+    #[serde(default)]
+    pub birth_revision: u64,
+    /// Graph revision at which this node was most recently modified — either
+    /// an `add_node` overwrite (metadata / span / visibility change) or an
+    /// edge addition / removal that touches this node. `0` means
+    /// "pre-history" (see field-level / struct-level docs).
+    #[serde(default)]
+    pub last_modified_revision: u64,
 }
 
 #[cfg(test)]
@@ -113,6 +144,8 @@ mod tests {
             span,
             visibility: Visibility::Public,
             metadata: HashMap::from([("async".to_string(), "false".to_string())]),
+            birth_revision: 0,
+            last_modified_revision: 0,
         };
 
         assert_eq!(node.id, id);
@@ -122,6 +155,35 @@ mod tests {
         assert_eq!(node.file_path, PathBuf::from("src/main.rs"));
         assert_eq!(node.visibility, Visibility::Public);
         assert_eq!(node.metadata.get("async"), Some(&"false".to_string()));
+    }
+
+    // Robust: graphs serialized before the revision-tracking fields existed
+    // must deserialize cleanly with both fields = 0 (interpreted as
+    // "pre-history"). Wire-compat: old payloads omit `birth_revision` and
+    // `last_modified_revision` entirely.
+    #[test]
+    fn legacy_node_data_deserializes_with_default_revisions_robust() {
+        let legacy_json = r#"{
+            "id": [123],
+            "kind": "Function",
+            "name": "legacy",
+            "qualified_name": "crate::legacy",
+            "file_path": "src/legacy.rs",
+            "span": {
+                "file": "src/legacy.rs",
+                "start_line": 1,
+                "start_col": 0,
+                "end_line": 2,
+                "end_col": 0,
+                "byte_range": { "start": 0, "end": 10 }
+            },
+            "visibility": "Public",
+            "metadata": {}
+        }"#;
+        let node: NodeData = serde_json::from_str(legacy_json).expect("legacy decode");
+        assert_eq!(node.birth_revision, 0);
+        assert_eq!(node.last_modified_revision, 0);
+        assert_eq!(node.name, "legacy");
     }
 
     #[test]
@@ -138,6 +200,8 @@ mod tests {
             span,
             visibility: Visibility::Private,
             metadata: HashMap::new(),
+            birth_revision: 0,
+            last_modified_revision: 0,
         };
 
         let json = serde_json::to_string(&node).expect("serialize");

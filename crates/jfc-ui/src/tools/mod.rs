@@ -858,15 +858,24 @@ pub async fn execute_tool(
         (ToolKind::TeamMemberMode, ToolInput::TeamMemberMode { member_name, mode }) => {
             execute_team_member_mode(&member_name, &mode, active_team_name).await
         }
-        (ToolKind::GraphQuery, ToolInput::GraphQuery { query, max_tokens }) => {
+        (
+            ToolKind::GraphQuery,
+            ToolInput::GraphQuery {
+                query,
+                max_tokens,
+                include_handles,
+            },
+        ) => {
             let budget = max_tokens.unwrap_or(4000);
+            let want_handles = include_handles.unwrap_or(true);
             let session = get_or_build_graph_session(&cwd);
             // Run twice: once raw (so we can record the structured
-            // QueryResult to history) and once formatted with the
-            // budget. The raw call is cheap — same parse, just
-            // skips the formatting pass — and the alternative
-            // (changing format_query_result to also expose the
-            // QueryResult) would touch the jfc-graph public API.
+            // QueryResult to history *and* extract chain-able handles)
+            // and once formatted with the budget. The raw call is
+            // cheap — same parse, just skips the formatting pass —
+            // and the alternative (changing format_query_result to
+            // also expose the QueryResult) would touch the jfc-graph
+            // public API.
             let raw_for_predicates = session.query_raw(&query).ok();
             if let Some(ref raw) = raw_for_predicates {
                 record_graph_query(&query, raw);
@@ -881,7 +890,7 @@ pub async fn execute_tool(
                     // sees "to call X you must have passed (a > 0)"
                     // without having to grep for callers manually.
                     if query.contains("preconditions")
-                        && let Some(raw) = raw_for_predicates
+                        && let Some(ref raw) = raw_for_predicates
                     {
                         let mut preds_block = String::new();
                         for node_id in raw.nodes.iter().take(10) {
@@ -911,6 +920,31 @@ pub async fn execute_tool(
                         if !preds_block.is_empty() {
                             text.push_str("\n\n--- preconditions ---");
                             text.push_str(&preds_block);
+                        }
+                    }
+                    // Append a machine-parseable handle footer so the
+                    // model can pipe this query's matches into the
+                    // next turn (e.g. `path fn:foo → fn:bar`). Bounded
+                    // at 50 entries to keep the budget bite small even
+                    // when a query returns hundreds of nodes.
+                    if want_handles
+                        && let Some(ref raw) = raw_for_predicates
+                    {
+                        let handles = raw.handles(&session.graph);
+                        if !handles.is_empty() {
+                            text.push_str("\n\n--- handles ---");
+                            const HANDLE_CAP: usize = 50;
+                            let total = handles.len();
+                            for h in handles.iter().take(HANDLE_CAP) {
+                                text.push('\n');
+                                text.push_str(h);
+                            }
+                            if total > HANDLE_CAP {
+                                text.push_str(&format!(
+                                    "\n... and {} more (use a tighter query to see all)",
+                                    total - HANDLE_CAP
+                                ));
+                            }
                         }
                     }
                     if output.was_truncated {

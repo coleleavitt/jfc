@@ -237,6 +237,8 @@ impl Default for VertexProvider {
     }
 }
 
+impl crate::provider::seal::Sealed for VertexProvider {}
+
 #[async_trait]
 impl Provider for VertexProvider {
     fn name(&self) -> &str {

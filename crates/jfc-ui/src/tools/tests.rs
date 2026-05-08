@@ -584,6 +584,7 @@ async fn run_bounty_unknown_id_errors_robust() {
             Err(anyhow::anyhow!("noop"))
         }
     }
+    impl crate::provider::seal::Sealed for NoopProvider {}
     register_active_provider(
         std::sync::Arc::new(NoopProvider),
         crate::provider::ModelId::new("noop"),
@@ -830,6 +831,7 @@ fn register_active_provider_round_trip_normal() {
             Err(anyhow::anyhow!("noop"))
         }
     }
+    impl crate::provider::seal::Sealed for NoopProvider {}
     let p: std::sync::Arc<dyn crate::provider::Provider> = std::sync::Arc::new(NoopProvider);
     let m = crate::provider::ModelId::new("noop-model");
     register_active_provider(p, m.clone());
@@ -1156,6 +1158,7 @@ fn graph_history_caps_at_max_robust() {
             was_truncated: false,
             total_before_truncation: 0,
             cycles_detected: vec![],
+            metadata: vec![],
         });
     for i in 0..60 {
         record_graph_query(&format!("query_{i}"), &raw);
@@ -2655,4 +2658,234 @@ fn notebook_edit_invalid_mode_fails_robust() {
     let nb = sample_ipynb();
     let err = notebook_edit_text(&nb, "abc123", "x", "wat").unwrap_err();
     assert!(err.contains("invalid edit_mode"), "{err}");
+}
+
+// ─── graph_query: extended grammar + handles footer ────────────────
+
+fn graph_query_fixtures_dir() -> &'static Path {
+    Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../jfc-graph/tests/fixtures"
+    ))
+}
+
+/// Normal: `union` set algebra reaches the new `run_query_expr` path
+/// (the legacy parser would reject the `union` keyword). The merged
+/// result must contain at least one match from each operand.
+#[tokio::test]
+async fn graph_query_runs_set_algebra_normal() {
+    let _guard = graph_history_test_lock()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    clear_graph_history();
+    let fixtures = graph_query_fixtures_dir();
+    invalidate_graph_session_cache(Some(fixtures));
+
+    let result = execute_tool(
+        ToolKind::GraphQuery,
+        ToolInput::GraphQuery {
+            query: r#"fn("foo") union fn("baz")"#.into(),
+            max_tokens: Some(2000),
+            include_handles: Some(true),
+        },
+        fixtures.to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(!result.is_error(), "{}", result.output);
+    // Both operand matches survive the union.
+    assert!(result.output.contains("foo"), "{}", result.output);
+    assert!(result.output.contains("baz"), "{}", result.output);
+}
+
+/// Normal: `path A -> B` reaches `execute_path_query` and returns nodes
+/// along the chain. `a -> b -> c` exists in `deep_call_chain.rs`.
+#[tokio::test]
+async fn graph_query_runs_path_query_normal() {
+    let _guard = graph_history_test_lock()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    clear_graph_history();
+    let fixtures = graph_query_fixtures_dir();
+    invalidate_graph_session_cache(Some(fixtures));
+
+    let result = execute_tool(
+        ToolKind::GraphQuery,
+        ToolInput::GraphQuery {
+            query: r#"path fn("a") -> fn("c")"#.into(),
+            max_tokens: Some(2000),
+            include_handles: Some(false),
+        },
+        fixtures.to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(!result.is_error(), "{}", result.output);
+    // `find_by_name` is substring-and-lowercased, so `fn("a")` also
+    // selects callers like `bar`/`baz` — but the path connecting
+    // `a -> ... -> c` must still surface `c`.
+    assert!(result.output.contains("c"), "{}", result.output);
+    // include_handles=false suppresses the footer.
+    assert!(
+        !result.output.contains("--- handles ---"),
+        "{}",
+        result.output
+    );
+}
+
+/// Normal: a successful query emits a `--- handles ---` block when
+/// `include_handles` is true (the default), and each line is shaped as
+/// `<kind>:<qualified_name>`.
+#[tokio::test]
+async fn graph_query_emits_handles_footer_normal() {
+    let _guard = graph_history_test_lock()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    clear_graph_history();
+    let fixtures = graph_query_fixtures_dir();
+    invalidate_graph_session_cache(Some(fixtures));
+
+    let result = execute_tool(
+        ToolKind::GraphQuery,
+        ToolInput::GraphQuery {
+            query: r#"fn("foo") | callees"#.into(),
+            max_tokens: Some(2000),
+            include_handles: None, // default = true
+        },
+        fixtures.to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(!result.is_error(), "{}", result.output);
+    assert!(
+        result.output.contains("--- handles ---"),
+        "footer missing: {}",
+        result.output
+    );
+    // Each emitted handle starts with one of the known prefixes.
+    let footer_start = result.output.find("--- handles ---").unwrap();
+    let footer = &result.output[footer_start..];
+    let any_handle = footer.lines().skip(1).any(|line| {
+        line.starts_with("fn:")
+            || line.starts_with("struct:")
+            || line.starts_with("enum:")
+            || line.starts_with("trait:")
+            || line.starts_with("mod:")
+    });
+    assert!(any_handle, "no handle line found in footer: {footer}");
+}
+
+/// Robust: when more than 50 handles match, the footer truncates to
+/// the first 50 entries and appends an "and N more" note. Driven via
+/// the `QueryResult::handles()` helper directly so we don't need a
+/// fixture with 50+ symbols.
+#[test]
+fn graph_query_handles_footer_truncates_at_50_robust() {
+    use jfc_graph::dsl::QueryResult;
+    use jfc_graph::graph::CodeGraph;
+    use jfc_graph::nodes::{NodeData, NodeId, NodeKind, Span, Visibility};
+    use std::collections::HashMap;
+
+    let mut graph = CodeGraph::new();
+    let mut node_ids = Vec::new();
+    for i in 0..60 {
+        let qn = format!("crate::sym{i}");
+        let id = NodeId::new("src/lib.rs", &qn, NodeKind::Function);
+        let data = NodeData {
+            id: id.clone(),
+            kind: NodeKind::Function,
+            name: format!("sym{i}"),
+            qualified_name: qn,
+            file_path: PathBuf::from("src/lib.rs"),
+            span: Span {
+                file: PathBuf::from("src/lib.rs"),
+                start_line: 1,
+                start_col: 0,
+                end_line: 1,
+                end_col: 1,
+                byte_range: 0..1,
+            },
+            visibility: Visibility::Public,
+            metadata: HashMap::new(),
+            birth_revision: 0,
+            last_modified_revision: 0,
+        };
+        node_ids.push(graph.add_node(data));
+    }
+    let result = QueryResult {
+        nodes: node_ids,
+        edges: Vec::new(),
+        was_truncated: false,
+        total_before_truncation: 60,
+        cycles_detected: Vec::new(),
+        metadata: Vec::new(),
+    };
+
+    let handles = result.handles(&graph);
+    assert_eq!(handles.len(), 60);
+
+    // Replay the footer-rendering logic from the GraphQuery handler so
+    // the truncation contract stays pinned even if the dispatcher
+    // refactors. Mirrors `tools/mod.rs::GraphQuery` cap=50.
+    const CAP: usize = 50;
+    let mut footer = String::from("--- handles ---");
+    for h in handles.iter().take(CAP) {
+        footer.push('\n');
+        footer.push_str(h);
+    }
+    if handles.len() > CAP {
+        footer.push_str(&format!(
+            "\n... and {} more (use a tighter query to see all)",
+            handles.len() - CAP
+        ));
+    }
+
+    assert!(footer.contains("... and 10 more"), "{footer}");
+    assert!(footer.contains("fn:crate::sym0"), "{footer}");
+    assert!(footer.contains("fn:crate::sym49"), "{footer}");
+    // The 51st handle (index 50) must NOT appear.
+    assert!(!footer.contains("fn:crate::sym50\n"), "{footer}");
+}
+
+/// Robust: a syntactically broken query surfaces as a tool failure
+/// rather than crashing the dispatcher.
+#[tokio::test]
+async fn graph_query_returns_failure_on_parse_error_robust() {
+    let _guard = graph_history_test_lock()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    clear_graph_history();
+    let fixtures = graph_query_fixtures_dir();
+    invalidate_graph_session_cache(Some(fixtures));
+
+    let result = execute_tool(
+        ToolKind::GraphQuery,
+        ToolInput::GraphQuery {
+            query: "this is not a query".into(),
+            max_tokens: Some(2000),
+            include_handles: Some(true),
+        },
+        fixtures.to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(result.is_error(), "expected failure, got: {}", result.output);
+    assert!(
+        result.output.contains("Graph query error")
+            || result.output.to_lowercase().contains("parse"),
+        "unexpected error message: {}",
+        result.output
+    );
 }

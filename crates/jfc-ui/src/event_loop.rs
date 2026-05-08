@@ -106,7 +106,56 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     // turn. We don't push *another* user message — the placeholder we just
     // patched above stands in. Build the assistant slot + spawn the stream.
     let assistant_idx = app.messages.len();
+    // Debug-only invariant check BEFORE pushing the assistant slot.
+    // The queue-drain path is exactly where the plan-continuation
+    // phantom-assistant bug landed; surfacing a violation here points
+    // straight at the regression instead of waiting for the broken
+    // shape to ship downstream.
+    #[cfg(debug_assertions)]
+    if let Err(err) = crate::types::validate_turn_invariants_inner(
+        &app.messages,
+        /* allow_streaming_tail = */ true,
+    ) {
+        tracing::warn!(
+            target: "jfc::ui::queue::invariants",
+            error = %err,
+            assistant_idx,
+            "drain_queued_prompts: turn-invariant violation BEFORE staging new assistant slot"
+        );
+    }
     app.tool_ctx.total_user_turns += 1;
+
+    // Auto graph-context injection mirrors the path in
+    // `input::handle_submit`. Queued prompts go through this drain
+    // function instead of the typed-prompt code path, so without
+    // this duplicate the auto-inject only fires on freshly-typed
+    // prompts and silently skips queue-drain replays — exactly the
+    // case where the user is most likely to be batching impact-
+    // analysis questions and benefits most from the structural hint.
+    //
+    // Gated behind the `intent-gate` cargo feature for symmetry with
+    // the `mod intent` declaration in `main.rs`.
+    #[cfg(feature = "intent-gate")]
+    {
+        let intent_for_inject = crate::intent::classify(&text).intent;
+        if crate::intent::is_graph_intent(intent_for_inject) {
+            let cwd = std::path::PathBuf::from(&app.cwd);
+            let injected = crate::intent::auto_inject_graph_context(
+                &mut app.messages,
+                intent_for_inject,
+                &text,
+                &cwd,
+            );
+            if injected {
+                tracing::info!(
+                    target: "jfc::intent::auto_ctx",
+                    intent = ?intent_for_inject,
+                    "auto graph-context injected (queued-prompt drain)"
+                );
+            }
+        }
+    }
+
     app.messages.push(ChatMessage::assistant(String::new()));
     app.streaming_text.clear();
     app.streaming_reasoning.clear();
@@ -141,8 +190,12 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     };
     let tx = tx.clone();
     let interrupt = app.interrupt_flag.clone();
+    // wg-async: queued-prompt drain is a fresh user turn — mint a new
+    // cancel token so a prior turn's cancel doesn't poison this one.
+    app.cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel = app.cancel_token.clone();
     tokio::spawn(async move {
-        stream::stream_response(provider, messages, model, tx, interrupt).await;
+        stream::stream_response(provider, messages, model, tx, interrupt, cancel).await;
     });
 }
 
@@ -176,6 +229,14 @@ pub(crate) async fn run(
     {
         tracing::info!(target: "jfc::ui::theme", theme = %name, "applied persisted theme");
         app.theme = theme;
+        // The render cache stores `Vec<Line<'static>>` with syntect highlight
+        // colors baked in from the previous theme. Switching themes without
+        // invalidating would serve stale-colored lines until each entry is
+        // naturally evicted by the LRU. At boot the cache is empty so this is
+        // a no-op, but we keep symmetry with the `/theme` handler so future
+        // refactors don't introduce a regression.
+        tracing::debug!(target: "jfc::render::cache", "theme switch — invalidating cache");
+        app.render_cache.borrow_mut().clear();
     }
     if let Some(name) = crate::config::load().output_style.as_deref() {
         let parsed = crate::output_style::OutputStyle::from_str_loose(name);
@@ -261,7 +322,7 @@ pub(crate) async fn run(
                     app.messages = messages;
                     app.current_session_id = Some(session_id.clone());
                     // Re-open task store so tasks from the resumed session are loaded.
-                    app.task_store = crate::tasks::TaskStore::open(&session_id);
+                    app.task_store = crate::tasks::TaskStore::open(session_id.as_str());
                     if let Some(model_id) = saved_model {
                         if let Some(p) = super::provider_for_model(&app.providers, &model_id) {
                             tracing::info!(
@@ -279,6 +340,7 @@ pub(crate) async fn run(
             }
         }
         super::StartupSession::Resume(session_id) => {
+            let session_id = crate::ids::SessionId::new(session_id);
             if let Some((messages, saved_model)) =
                 session::load_session_with_model(&session_id).await
             {
@@ -307,7 +369,7 @@ pub(crate) async fn run(
                 app.messages = messages;
                 app.current_session_id = Some(session_id.clone());
                 // Re-open task store so tasks from the resumed session are loaded.
-                app.task_store = crate::tasks::TaskStore::open(&session_id);
+                app.task_store = crate::tasks::TaskStore::open(session_id.as_str());
                 if let Some(model_id) = saved_model {
                     if let Some(p) = super::provider_for_model(&app.providers, &model_id) {
                         tracing::info!(
@@ -480,7 +542,7 @@ pub(crate) async fn run(
                 session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
             });
         }
-        app.current_session_id = Some(session_id);
+        app.current_session_id = Some(session_id.clone());
 
         let provider = app.provider.clone();
         let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
@@ -492,8 +554,13 @@ pub(crate) async fn run(
         };
         let tx_clone = tx.clone();
         let interrupt = app.interrupt_flag.clone();
+        // wg-async: --prompt startup spawns a stream that holds critical
+        // state (SSE conn + tx). Wire the cancel token in so an early
+        // ESC can drop it cleanly.
+        app.cancel_token = tokio_util::sync::CancellationToken::new();
+        let cancel = app.cancel_token.clone();
         tokio::spawn(async move {
-            stream::stream_response(provider, messages, model, tx_clone, interrupt).await;
+            stream::stream_response(provider, messages, model, tx_clone, interrupt, cancel).await;
         });
     }
 
@@ -711,7 +778,7 @@ pub(crate) async fn run(
                                         }
                                     }
                                     if let Some(idx) = session_idx {
-                                        let ordered: Vec<String> = this_project
+                                        let ordered: Vec<crate::ids::SessionId> = this_project
                                             .into_iter()
                                             .chain(other.into_iter())
                                             .map(|s| s.id)
@@ -770,15 +837,12 @@ pub(crate) async fn run(
                                                 if is_double_click {
                                                     // Toggle pin. Pinning
                                                     // forces expanded; unpinning
-                                                    // leaves expanded as-is so
+                                                    // leaves cap state as-is so
                                                     // the user can collapse with
                                                     // a subsequent single click.
-                                                    tc.pinned = !tc.pinned;
-                                                    if tc.pinned {
-                                                        tc.expanded = true;
-                                                    }
+                                                    tc.display.toggle_pinned();
                                                 } else {
-                                                    tc.expanded = !tc.expanded;
+                                                    tc.display.toggle_expanded();
                                                 }
                                             }
                                         }
@@ -897,7 +961,7 @@ pub(crate) async fn run(
                                             .description
                                             .lines()
                                             .next()
-                                            .unwrap_or(&bt.task_id)
+                                            .unwrap_or(bt.task_id.as_str())
                                             .to_owned();
                                         let total_for_msg = total;
                                         toast::push_with_cap(
@@ -935,7 +999,7 @@ pub(crate) async fn run(
                             // — same path as one-shot subagents.
                             let _ = tx
                                 .send(AppEvent::AgentChunk {
-                                    task_id,
+                                    task_id: crate::ids::TaskId::from(task_id),
                                     text: delta,
                                 })
                                 .await;
@@ -1057,7 +1121,8 @@ pub(crate) async fn run(
                         app.last_heartbeat_at = Some(now);
                         let session_id = app
                             .current_session_id
-                            .clone()
+                            .as_ref()
+                            .map(|s| s.as_str().to_owned())
                             .unwrap_or_else(|| "<no-session>".to_owned());
                         crate::hooks::fire_async(
                             crate::hooks::HookPoint::OnHeartbeat,
@@ -1429,15 +1494,23 @@ pub(crate) async fn run(
                         let history = app.messages.clone();
                         let tx_cls = tx.clone();
                         let tool_for_task = tool.clone();
+                        // wg-async: classifier issues a provider call
+                        // (often 2-5s). Race against cancellation so an
+                        // ESC×2 unblocks the user-visible tool decision
+                        // instead of letting it land in a cancelled turn.
+                        let cancel_cls = app.cancel_token.clone();
                         tokio::spawn(async move {
-                            let decision = crate::auto_mode::classify(
-                                provider.as_ref(),
-                                &model,
-                                &cfg,
-                                &history,
-                                &tool_for_task,
-                            )
-                            .await;
+                            let decision = tokio::select! {
+                                biased;
+                                _ = cancel_cls.cancelled() => return,
+                                d = crate::auto_mode::classify(
+                                    provider.as_ref(),
+                                    &model,
+                                    &cfg,
+                                    &history,
+                                    &tool_for_task,
+                                ) => d,
+                            };
                             let _ = tx_cls
                                 .send(AppEvent::ClassifierDecision {
                                     tool: tool_for_task,
@@ -1821,6 +1894,7 @@ pub(crate) async fn run(
                                 std::sync::Arc::clone(&app.provider),
                                 app.model.clone(),
                                 app.teammate_event_tx.clone(),
+                                app.cancel_token.clone(),
                             );
                         } else if app.pending_approval.is_some() || !app.approval_queue.is_empty() {
                             tracing::info!(
@@ -1930,9 +2004,13 @@ pub(crate) async fn run(
                     app.turn_started_at = None;
                     app.pending_tool_calls.clear();
                     // Reset the interrupt flag so background tasks or the
-                    // next auto-retry don't see a stale `true`.
+                    // next auto-retry don't see a stale `true`. Also mint
+                    // a fresh cancel token — the previous one may already
+                    // be cancelled, and we don't want to poison the next
+                    // spawn.
                     app.interrupt_flag
                         .store(false, std::sync::atomic::Ordering::SeqCst);
+                    app.cancel_token = tokio_util::sync::CancellationToken::new();
                     if !auto_compact_signal {
                         app.messages.push(ChatMessage::assistant(format!(
                             "**Error:** {e}\n\n_Press Ctrl+R to retry the last prompt._"
@@ -2112,7 +2190,7 @@ pub(crate) async fn run(
                                         ToolOutput::Text(result.output.clone())
                                     };
                                     if matches!(tc.output, ToolOutput::LargeText(_)) {
-                                        tc.is_collapsed = true;
+                                        tc.display.collapse();
                                     }
                                     // Fresh tool output → reset the
                                     // path-yank cursor so the next
@@ -2125,21 +2203,42 @@ pub(crate) async fn run(
                                             &result.output,
                                         );
                                     }
-                                    let new_status = if result.is_error() {
-                                        ToolStatus::Failed
+                                    // Use the typestate-style transition
+                                    // helpers — they refuse to revive a
+                                    // terminal tool (Failed → Completed
+                                    // would be a logic bug, e.g. a stale
+                                    // ToolResult arriving after a denial).
+                                    // On invalid transition we log + leave
+                                    // the existing terminal status alone,
+                                    // since the second result is the
+                                    // duplicate, not the first.
+                                    let transition = if result.is_error() {
+                                        tc.mark_failed()
                                     } else {
-                                        ToolStatus::Complete
+                                        tc.mark_completed()
                                     };
-                                    tc.status = new_status;
+                                    if let Err(err) = transition {
+                                        tracing::warn!(
+                                            target: "jfc::event_loop",
+                                            tool_id = %tc.id.as_str(),
+                                            from = ?err.from,
+                                            to = ?err.to,
+                                            "ToolResult: refusing to revive terminal tool — \
+                                             keeping prior status",
+                                        );
+                                    }
+                                    let new_status = tc.status;
                                     // Sparkle on success: stamp the tool
                                     // id so the renderer can flash a `✦`
                                     // for ~600ms next to its gutter, then
                                     // fade. Failures intentionally don't
                                     // sparkle — celebration on red would
                                     // be confusing.
-                                    if matches!(new_status, ToolStatus::Complete) {
-                                        app.recent_tool_completion =
-                                            Some((tc.id.clone(), std::time::Instant::now()));
+                                    if matches!(new_status, ToolStatus::Completed) {
+                                        app.recent_tool_completion = Some((
+                                            tc.id.as_str().to_owned(),
+                                            std::time::Instant::now(),
+                                        ));
                                     }
                                     found = true;
                                     break;
@@ -2245,6 +2344,12 @@ pub(crate) async fn run(
                                     output_chars: chars,
                                 });
                             });
+                        // wg-async: compact holds critical state (the full
+                        // message slice + an outbound tx). Race the long
+                        // provider call against `cancelled()` so ESC×2
+                        // mid-compact doesn't leave it running for ~30s
+                        // sending CompactionDone into a stale state.
+                        let cancel_compact = app.cancel_token.clone();
                         tokio::spawn(async move {
                             let options = crate::provider::StreamOptions::new(model.clone());
                             tracing::debug!(
@@ -2253,15 +2358,31 @@ pub(crate) async fn run(
                                 window,
                                 "spawned post-response compaction task"
                             );
-                            let result = crate::compact::compact(
-                                &messages,
-                                provider.as_ref(),
-                                &options,
-                                &mut tool_ctx,
-                                window,
-                                Some(on_progress),
-                            )
-                            .await;
+                            let result = tokio::select! {
+                                biased;
+                                _ = cancel_compact.cancelled() => {
+                                    tracing::info!(
+                                        target: "jfc::compact",
+                                        "compaction cancelled via token"
+                                    );
+                                    let _ = tx_compact
+                                        .send(AppEvent::CompactionFailed(
+                                            "Compaction cancelled by user".into(),
+                                            None,
+                                            true,
+                                        ))
+                                        .await;
+                                    return;
+                                }
+                                r = crate::compact::compact(
+                                    &messages,
+                                    provider.as_ref(),
+                                    &options,
+                                    &mut tool_ctx,
+                                    window,
+                                    Some(on_progress),
+                                ) => r,
+                            };
                             match result {
                                 crate::compact::CompactResult::Success {
                                     messages,
@@ -2357,14 +2478,19 @@ pub(crate) async fn run(
                     // visibly stalls. From the v126 log: 5 bash tools synthesized
                     // then conversation died after first approval. Holding the
                     // continuation here lets the user finish all approvals first.
-                    if app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                    if app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+                        || app.cancel_token.is_cancelled()
+                    {
                         tracing::info!(
                             target: "jfc::stream",
                             "agentic loop NOT continuing — user requested interrupt"
                         );
-                        // Clear so the next user submission starts fresh.
+                        // Clear so the next user submission starts fresh —
+                        // both the legacy flag and the (possibly cancelled)
+                        // token need refreshing for the next spawn cycle.
                         app.interrupt_flag
                             .store(false, std::sync::atomic::Ordering::SeqCst);
+                        app.cancel_token = tokio_util::sync::CancellationToken::new();
                         app.is_streaming = false;
                     } else if app.pending_approval.is_none()
                         && app.approval_queue.is_empty()
@@ -2587,8 +2713,8 @@ pub(crate) async fn run(
                     // rather than the "No messages yet" empty state. v126
                     // pipes nested-stream chunks the same way so the user
                     // can drill into a running agent and see what it's doing.
-                    app.last_active_agent_task = Some(task_id.clone());
-                    if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                    app.last_active_agent_task = Some(task_id.as_str().to_owned());
+                    if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
                         // Coalesce with the previous chunk when both came in
                         // rapid succession AND the previous entry doesn't end
                         // with a newline — so a single conceptual paragraph
@@ -2639,7 +2765,7 @@ pub(crate) async fn run(
                     );
                     use types::{TaskLifecycle, TaskStatusPart};
                     app.background_tasks.insert(
-                        task_id.clone(),
+                        task_id.as_str().to_owned(),
                         app::BackgroundTask {
                             task_id: task_id.clone(),
                             description: description.clone(),
@@ -2681,7 +2807,7 @@ pub(crate) async fn run(
                     input_tokens,
                     output_tokens,
                 } => {
-                    if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                    if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
                         if let Some(ref tool) = last_tool {
                             // Append a one-line activity entry to the task's
                             // message log so `messages_task_view` shows what
@@ -2729,7 +2855,7 @@ pub(crate) async fn run(
                         "TaskCompleted"
                     );
                     use types::TaskLifecycle;
-                    if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                    if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
                         bt.status = TaskLifecycle::Completed;
                         bt.summary = Some(summary.clone());
                         let elapsed_s = elapsed_ms / 1000;
@@ -2756,7 +2882,7 @@ pub(crate) async fn run(
                         "TaskFailed"
                     );
                     use types::TaskLifecycle;
-                    if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                    if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
                         bt.status = TaskLifecycle::Failed;
                         bt.error = Some(error.clone());
                     }

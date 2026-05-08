@@ -1734,6 +1734,8 @@ pub(crate) fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -
     body
 }
 
+impl crate::provider::seal::Sealed for OpenWebUIProvider {}
+
 #[async_trait]
 impl Provider for OpenWebUIProvider {
     fn name(&self) -> &str {

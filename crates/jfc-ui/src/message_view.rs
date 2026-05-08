@@ -15,166 +15,28 @@ pub struct MessageView<'a> {
     pub app: &'a App,
 }
 
+/// Total visual rows the message view will draw at this width.
+///
+/// **One producer, one truth.** This used to be a parallel
+/// implementation that walked the message tree and summed predicted
+/// heights — and every change to rendering quietly drifted from it.
+/// We hit the bug class four times (TaskStatus markdown, Reasoning
+/// expanded wide, Advisor byte-counted char-wrap, narrow
+/// CompactBoundary) before unifying. The rustc query system /
+/// MIR-pass community calls this single-source-of-truth pattern
+/// "query feeding": compute once, derive any view from the canonical
+/// artifact (the produced `RenderItem` vec), never reimplement the
+/// computation in a sibling code path.
+///
+/// Cost: one extra `build_render_items` per frame. Acceptable —
+/// markdown rendering is cached in `RenderCache`, the rest is
+/// O(parts). The previous "fast-path predictor" was a premature
+/// optimization that traded ~ms per frame for permanent drift bugs.
 pub fn message_view_total_lines(app: &App, inner_w: usize) -> usize {
-    // Fast path: compute total height using cached line counts without
-    // materializing the full RenderItem vec. This avoids .to_vec() cloning
-    // of cached Line vecs just to count them.
-    let mut total = 0usize;
-    let width = inner_w as u16;
-
-    for (idx, msg) in app.messages.iter().enumerate() {
-        let is_streaming_placeholder = app.streaming_assistant_idx == Some(idx) && app.is_streaming;
-        if is_streaming_placeholder {
-            let has_content = msg.parts.iter().any(|p| match p {
-                MessagePart::Text(s) => !s.is_empty(),
-                MessagePart::Reasoning(s) => !s.is_empty(),
-                _ => true,
-            });
-            if !has_content {
-                continue;
-            }
-        }
-
-        // Role label
-        total += 1;
-
-        let reasoning_expanded = app.reasoning_expanded.get(&idx).copied().unwrap_or(false);
-
-        for part in &msg.parts {
-            match part {
-                MessagePart::Text(text) => {
-                    let mut cache = app.render_cache.borrow_mut();
-                    let t = app.theme;
-                    if is_streaming_placeholder {
-                        // Streaming: render via fast path (no syntect), store in
-                        // dedicated slot so LRU is untouched.
-                        let rendered = markdown::to_lines_streaming(text, &t, width as usize);
-                        cache.set_streaming(idx, width, rendered);
-                        total += cache.streaming_wrapped_line_count(idx, width);
-                    } else {
-                        // Populate the cache (compute lines + wrapped count once),
-                        // then read the precomputed wrapped count. Pre-cache this
-                        // loop instantiated `Paragraph::new(line.clone()).wrap(...)`
-                        // for EVERY line on EVERY frame — see render_cache.rs
-                        // `compute_wrapped_line_count` for the moved-once version.
-                        cache.get_or_insert_with(text, width, |t_text, w| {
-                            markdown::to_lines(t_text, &t, w as usize)
-                        });
-                        total += cache.wrapped_line_count(text, width).unwrap_or(0);
-                    }
-                }
-                MessagePart::Reasoning(text) => {
-                    if reasoning_expanded {
-                        total += 1 + text.lines().count();
-                    } else {
-                        total += 1;
-                    }
-                }
-                MessagePart::Tool(tool) => {
-                    // Apply the same grouping the renderer uses so
-                    // total-line math matches what we'll actually
-                    // draw. We approximate by checking each tool: if
-                    // it's the START of a groupable run of >=3 same-
-                    // kind tools AND the group is not expanded, the
-                    // run contributes 1 row total. Otherwise this
-                    // tool contributes its block height.
-                    if is_groupable(&tool.kind) {
-                        // Find the parts vector index for this tool
-                        // by pointer identity (cheap — same Vec).
-                        let pos = msg
-                            .parts
-                            .iter()
-                            .position(|p| match p {
-                                MessagePart::Tool(t) => std::ptr::eq(t, tool),
-                                _ => false,
-                            })
-                            .unwrap_or(0);
-                        // If the previous part was a same-kind groupable,
-                        // this tool's height was already counted as part
-                        // of the run header — skip it.
-                        let prev_is_same = pos > 0
-                            && matches!(
-                                &msg.parts[pos - 1],
-                                MessagePart::Tool(prev)
-                                    if std::mem::discriminant(&prev.kind)
-                                        == std::mem::discriminant(&tool.kind)
-                                        && is_groupable(&prev.kind)
-                            );
-                        if prev_is_same {
-                            continue;
-                        }
-                        // We're at the start of a run. Count length.
-                        let mut run_len = 1usize;
-                        let mut cursor = pos + 1;
-                        while cursor < msg.parts.len() {
-                            if let MessagePart::Tool(t2) = &msg.parts[cursor] {
-                                if std::mem::discriminant(&t2.kind)
-                                    == std::mem::discriminant(&tool.kind)
-                                {
-                                    run_len += 1;
-                                    cursor += 1;
-                                    continue;
-                                }
-                            }
-                            break;
-                        }
-                        let group_key = format!("{}:{}", idx, tool.id);
-                        let expanded = app.tool_group_expanded.contains(&group_key);
-                        if run_len >= 3 && !expanded {
-                            // Single-row group header replaces the
-                            // entire run.
-                            total += 1;
-                        } else {
-                            // Sum the run's actual heights.
-                            for run_part in &msg.parts[pos..pos + run_len] {
-                                if let MessagePart::Tool(t2) = run_part {
-                                    total += tool_block_height(t2, inner_w);
-                                }
-                            }
-                        }
-                    } else {
-                        total += tool_block_height(tool, inner_w);
-                    }
-                }
-                MessagePart::TaskStatus(ts) => {
-                    total += 1;
-                    if ts.error.is_some() {
-                        total += 1;
-                    }
-                }
-                MessagePart::CompactBoundary { .. } => {
-                    total += 1;
-                }
-                MessagePart::Advisor(text) => {
-                    // 1 row for the "ADVISOR:" header + 1 wrapped row per
-                    // visible line. We approximate wrapping at `width`
-                    // (matches the Text branch's heuristic before
-                    // RenderCache enrichment lands).
-                    total += 1;
-                    let w = (width as usize).max(1);
-                    for line in text.lines() {
-                        // Each line wraps to ceil(len / width) rows.
-                        total += line.len().div_ceil(w).max(1);
-                    }
-                    if text.is_empty() {
-                        total += 1;
-                    }
-                }
-            }
-        }
-
-        // Elapsed footer
-        if msg.role == Role::Assistant && !is_streaming_placeholder {
-            if msg.elapsed.is_some() {
-                total += 1;
-            }
-        }
-
-        // Blank separator
-        total += 1;
-    }
-
-    total
+    build_render_items(app, inner_w)
+        .iter()
+        .map(|i| i.height(inner_w))
+        .sum()
 }
 
 impl Widget for MessageView<'_> {
@@ -189,9 +51,36 @@ impl Widget for MessageView<'_> {
         let max_scroll = total_h.saturating_sub(area.height as usize);
         let scroll = self.app.scroll_offset.min(max_scroll);
 
+        // Frame-level diagnostics for chasing scroll/overflow drift —
+        // e.g., a content row that visibly clips at the viewport's
+        // bottom edge despite scroll math saying everything fits.
+        // `RUST_LOG=jfc::render::scroll=debug` lights these up.
+        // Cheap: one structured event per frame at debug level.
+        tracing::debug!(
+            target: "jfc::render::scroll",
+            n_items = items.len(),
+            n_messages = self.app.messages.len(),
+            inner_w,
+            viewport_h = area.height,
+            total_h = total_h,
+            scroll_offset_raw = self.app.scroll_offset,
+            scroll_offset_clamped = scroll,
+            max_scroll,
+            "MessageView::render begin"
+        );
+
         let mut lines_skipped: usize = 0;
         let mut y = area.y;
         let bottom = area.y + area.height;
+        // Diagnostics: track which item index landed at top + bottom of
+        // the viewport, plus the absolute content-line range that's
+        // visible. Logged once at the end so per-item spam stays at
+        // trace level.
+        let mut first_visible_item: Option<usize> = None;
+        let mut last_visible_item: Option<usize> = None;
+        let mut first_visible_line: Option<usize> = None;
+        let mut last_visible_line: Option<usize> = None;
+        let mut last_y_drawn: u16 = area.y;
 
         // Active message scope. Used only to know when to drop a
         // pulsing typing cursor `▋` after the most-recent streamed
@@ -212,8 +101,15 @@ impl Widget for MessageView<'_> {
         // gutter so the two signals reinforce each other.
         let mut last_streaming_cursor: Option<(u16, u16, u16)> = None;
 
-        for item in &items {
+        for (item_idx, item) in items.iter().enumerate() {
             if y >= bottom {
+                tracing::trace!(
+                    target: "jfc::render::scroll",
+                    stopped_at_item = item_idx,
+                    total_items = items.len(),
+                    y, bottom,
+                    "MessageView::render hit viewport bottom — items beyond this are clipped"
+                );
                 break;
             }
 
@@ -278,6 +174,13 @@ impl Widget for MessageView<'_> {
                 lines_skipped += h;
                 continue;
             }
+            // Track viewport boundaries for the once-per-frame summary.
+            if first_visible_item.is_none() {
+                first_visible_item = Some(item_idx);
+                first_visible_line = Some(lines_skipped + item_scroll_skip);
+            }
+            last_visible_item = Some(item_idx);
+            last_visible_line = Some(lines_skipped + item_scroll_skip + render_h as usize);
 
             // No left-side inset: items render at full width. The
             // earlier 2-column gutter strip is gone — color + bold
@@ -298,7 +201,7 @@ impl Widget for MessageView<'_> {
                     self.app
                         .tool_hit_regions
                         .borrow_mut()
-                        .push((tool.id.clone(), item_area));
+                        .push((tool.id.as_str().to_owned(), item_area));
                 }
                 RenderItem::ToolGroup { key, .. } => {
                     self.app
@@ -345,8 +248,33 @@ impl Widget for MessageView<'_> {
             // the user's "those blue lines look dumb" feedback.)
 
             y += render_h;
+            last_y_drawn = y;
             lines_skipped += h;
         }
+
+        // End-of-frame snapshot: where the scroll math actually
+        // landed. Compare `last_visible_line` vs `total_h`
+        // to know whether the content tail is on-screen, and
+        // `last_y_drawn` vs `bottom` to spot a viewport-bottom gap.
+        // Pair this with the `MessageView::render begin` log to
+        // diagnose "I see line N but expected line M at the bottom"
+        // class bugs without instrumenting every layer.
+        let content_at_bottom = last_visible_line
+            .map(|l| l >= total_h)
+            .unwrap_or(false);
+        tracing::debug!(
+            target: "jfc::render::scroll",
+            first_visible_item = ?first_visible_item,
+            last_visible_item = ?last_visible_item,
+            first_visible_line = ?first_visible_line,
+            last_visible_line = ?last_visible_line,
+            last_y_drawn,
+            viewport_bottom = bottom,
+            viewport_gap_rows = bottom.saturating_sub(last_y_drawn),
+            content_tail_visible = content_at_bottom,
+            total_h,
+            "MessageView::render end"
+        );
     }
 }
 
@@ -661,14 +589,12 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
                     let lines = if is_streaming_placeholder {
                         // Streaming fast path: recompute every frame without
                         // syntect. Cost is ~5µs/KB (pulldown-cmark only) vs
-                        // ~200µs/KB with syntect highlighting. The streaming
-                        // slot in RenderCache stores the result for line-count
-                        // queries within the same frame.
+                        // ~200µs/KB with syntect highlighting. We deliberately
+                        // bypass the main render cache here — the text mutates
+                        // each frame, so caching by content hash would only
+                        // ever miss and bloat the LRU.
                         let theme = t;
-                        let rendered = markdown::to_lines_streaming(text, &theme, inner_w);
-                        let mut cache = app.render_cache.borrow_mut();
-                        cache.set_streaming(idx, inner_w as u16, rendered.clone());
-                        rendered
+                        markdown::to_lines_streaming(text, &theme, inner_w)
                     } else {
                         let mut cache = app.render_cache.borrow_mut();
                         let width = inner_w as u16;
@@ -690,7 +616,7 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
                     items.push(RenderItem::ToolBlock(app, tool));
                 }
                 MessagePart::TaskStatus(ts) => {
-                    push_task_status_lines(&mut items, ts, &t);
+                    push_task_status_lines(&mut items, ts, &t, inner_w);
                 }
                 MessagePart::CompactBoundary { pre_tokens } => {
                     items.push(RenderItem::TextLine(Line::from(vec![
@@ -750,155 +676,276 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
     items
 }
 
+/// Single-source-of-truth for a tool's rendered rows. **One producer,
+/// one truth.** Both `tool_block_height` and `render_tool_block` walk
+/// the body of a tool by calling `tool_body_lines` — so any change
+/// to what the renderer emits automatically updates the height the
+/// scroll math thinks the tool occupies.
+///
+/// We hit this drift class repeatedly: the renderer dispatches by
+/// `BashCmdKind` to one of ~9 different `render_*_skip` functions
+/// (each with their own caps, headers, footers, stderr handling),
+/// while the predictor used a single `wrapped_line_count`-based
+/// formula that was wrong for nearly every dispatched path. Concrete
+/// drift cases pre-fix:
+///
+/// - **Cap mismatch**: predictor 80/500 universally; actual renderers
+///   use 80/500 (most), 100/500 (tabular_list), 200/1000 (hex_dump),
+///   300/1500 (compiler_output), 500-always (cat_markdown).
+/// - **Exit-code header**: the predictor unconditionally added 1 for
+///   the exit-code row, but `render_grep_output_skip` only emits it
+///   for `code > 1`, `render_git_diff_output_skip` for `code > 1`,
+///   and many others only for `code != 0` — so a successful command
+///   was over-counted by 1 row.
+/// - **Stderr divider**: predictor added 1 for `↳ stderr` between
+///   stdout and stderr — but only `render_command_output_skip` and
+///   `render_cat_output_skip` actually emit that divider. The other
+///   structured renderers (grep/path_list/git_diff/git_log/hex_dump/
+///   tabular_list) emit a blank line + raw stderr lines (no `↳`).
+/// - **Word-wrap mismatch**: predictor used `wrapped_line_count` (cell-
+///   width div_ceil), but most structured renderers don't pre-wrap —
+///   they let `Paragraph` clip lines to area.width. So a long line
+///   was 1 row in the renderer, multiple in the predictor.
+/// - **Markdown / syntect line counts**: `cat README.md` flows through
+///   `markdown::to_lines` which produces a different row count than
+///   raw text-line counting. The predictor's `wrapped_line_count`
+///   was off by a wide margin for any markdown-rendered content.
+/// - **Highlighted file content**: `render_highlighted_block_skip`
+///   uses `markdown::highlight_code` (with width subtraction), which
+///   the predictor approximated with a flat `content_w - 2` raw
+///   line count.
+///
+/// The fix mirrors the rustc query-system "feed the ground truth into
+/// the query" pattern — produce the exact `Vec<Line>` once, count it
+/// for height, render it for paint. The diff path stays special-cased
+/// because its per-row bg tinting requires direct buffer painting
+/// that doesn't fit `Paragraph`'s model; for that arm we share a
+/// `diff_row_count` helper between the producer and the renderer.
 fn tool_block_height(tool: &ToolCall, inner_w: usize) -> usize {
-    if tool.is_collapsed {
+    if tool.display.is_collapsed() {
         return 1;
     }
-    // v126-style flat layout: 1 title row + (optional) bash-continuation
-    // rows + content rows. Continuation rows show lines 2+ of a multi-
-    // line bash command — the title only fits the first line — so the
-    // user sees the heredoc body, not just `cat > file <<'EOF'`.
     let cont = bash_continuation_lines(tool).len();
     let content_w = inner_w.saturating_sub(2);
-    // When the renderer will route ToolOutput::Text through the
-    // highlighted-with-line-numbers path, the effective wrap width
-    // is narrower (gutter eats columns). Approximate the gutter
-    // width so wrapped_line_count uses the same width the renderer
-    // will. Without this, long lines in Read output undercount their
-    // wrapped height and get clipped offscreen.
-    let effective_content_w = if matches!(&tool.output, ToolOutput::Text(s) if !s.is_empty())
-        && infer_lang_from_tool(tool).is_some()
-    {
-        // Estimate gutter: max line-number width + separator.
-        // split_line_numbers would be exact but expensive; approximate
-        // from line count of the text. 4-digit line numbers + ` │ ` = 7,
-        // 5-digit = 8. Use 8 as conservative default.
-        content_w.saturating_sub(8)
-    } else {
-        content_w
-    };
-    1 + cont + tool_content_height_with(&tool.output, effective_content_w, tool.expanded)
+    1 + cont + tool_content_height_with_tool(tool, content_w)
 }
 
 pub fn tool_block_height_pub(tool: &ToolCall, inner_w: usize) -> usize {
     tool_block_height(tool, inner_w)
 }
 
-fn tool_content_height(output: &ToolOutput, content_w: usize) -> usize {
-    tool_content_height_with(output, content_w, false)
+/// Body-only row count for a tool — drives both the height-math
+/// predictor and the actual draw via `tool_body_lines` /
+/// `tool_body_diff_rows`.
+fn tool_content_height_with_tool(tool: &ToolCall, content_w: usize) -> usize {
+    match &tool.output {
+        ToolOutput::Diff(diff) => diff_row_count(diff, tool.display.is_expanded()),
+        // Empty + text + command + file-content + file-list all
+        // produce a flat `Vec<Line>` — count it directly.
+        _ => tool_body_lines(tool, content_w).len(),
+    }
 }
 
-/// Compute the rendered row count for a tool's body. `expanded` lifts
-/// the per-section preview caps so the user sees the full content
-/// after toggling expand (Ctrl+O / `o` / left-click on the tool
-/// block). The "+ N more" footer line is included in the count when
-/// the cap clips content; the renderer matches the same logic.
-fn tool_content_height_with(output: &ToolOutput, content_w: usize, expanded: bool) -> usize {
-    let cap = if expanded { 500 } else { 80 };
-    let footer_if = |total: usize| if total > cap { 1 } else { 0 };
-    match output {
-        ToolOutput::Empty => 0,
+/// Count rows for a diff render. Mirrors `render_diff_skip` exactly:
+/// summary line (when there are non-zero additions/deletions) +
+/// per-hunk (1 header + min(lines.len, hunk_cap) data + overflow
+/// footer when truncated). Both paths read this; if you change the
+/// diff renderer's row layout you change this.
+fn diff_row_count(diff: &DiffView, expanded: bool) -> usize {
+    let summary = if diff.additions > 0 || diff.deletions > 0 {
+        1
+    } else {
+        0
+    };
+    let hunk_cap = if expanded { 500 } else { 50 };
+    summary
+        + diff
+            .hunks
+            .iter()
+            .map(|h| {
+                1 + h.lines.len().min(hunk_cap)
+                    + if h.lines.len() > hunk_cap { 1 } else { 0 }
+            })
+            .sum::<usize>()
+}
 
+/// Produce the exact `Vec<Line>` the body of `tool` will render.
+/// Called from both `tool_content_height_with_tool` (for row count)
+/// and the renderer (delegating to `Paragraph::new(...)`). Width
+/// matches what the renderer's body area gets.
+///
+/// Returns an empty Vec for the `Diff` arm — diff has its own paint
+/// path that walks the `DiffView` directly (it needs per-row bg
+/// tints). Use `diff_row_count` for height in that arm.
+fn tool_body_lines(tool: &ToolCall, content_w: usize) -> Vec<Line<'static>> {
+    // Theme is only used for span styling, which doesn't affect row
+    // count — pass `dark()` as a dummy. The renderer path uses
+    // `tool_body_lines_themed` with the real theme.
+    tool_body_lines_themed(tool, content_w, crate::theme::Theme::dark(), None)
+}
+
+/// Theme-aware variant. The renderer calls this with the actual
+/// theme so the styled spans match what gets painted; the height
+/// path uses `tool_body_lines` (which passes a default theme) since
+/// only the row count matters there. `app` is needed only for the
+/// Read-tool diagnostics gutter; height callers can pass `None`.
+fn tool_body_lines_themed(
+    tool: &ToolCall,
+    content_w: usize,
+    t: Theme,
+    app: Option<&App>,
+) -> Vec<Line<'static>> {
+    // Body content branch by tool.output (mirrors render_tool_content_with_skip).
+    match &tool.output {
+        ToolOutput::Empty => Vec::new(),
         ToolOutput::Text(s) => {
-            let total = wrapped_line_count(s, content_w);
-            total.min(cap) + footer_if(total)
-        }
-
-        ToolOutput::LargeText(lt) => {
-            if !expanded
-                && (lt.line_count > LargeText::COLLAPSE_LINES
-                    || lt.content.len() > LargeText::COLLAPSE_BYTES)
-            {
-                1
+            let lang = infer_lang_from_tool(tool);
+            if let Some(lang) = lang.as_deref() {
+                let diag_lines = if matches!(tool.kind, ToolKind::Read) {
+                    if let Some(app) = app {
+                        diagnostics_for_path(app, &tool.input)
+                    } else {
+                        std::collections::HashMap::new()
+                    }
+                } else {
+                    std::collections::HashMap::new()
+                };
+                produce_highlighted_with_line_numbers_lines(
+                    lang,
+                    s,
+                    content_w,
+                    t,
+                    tool.display.is_expanded(),
+                    &diag_lines,
+                )
+            } else if matches!(tool.kind, ToolKind::Task) {
+                produce_markdown_block_lines(s, content_w, t)
             } else {
-                let total = wrapped_line_count(&lt.content, content_w);
-                total.min(cap) + footer_if(total)
+                produce_text_block_lines(s, content_w, t.text_secondary, t, tool.display.is_expanded())
             }
         }
-
-        ToolOutput::Command { stdout, stderr, .. } => {
-            let stdout_total = if stdout.is_empty() {
-                0
+        ToolOutput::LargeText(lt) => {
+            let huge = lt.line_count > LargeText::COLLAPSE_LINES
+                || lt.content.len() > LargeText::COLLAPSE_BYTES;
+            if huge && !tool.display.is_expanded() {
+                vec![Line::from(Span::styled(
+                    format!("[{} · click or press o to expand]", lt.size_label()),
+                    Style::default()
+                        .fg(t.text_muted)
+                        .add_modifier(Modifier::ITALIC),
+                ))]
             } else {
-                wrapped_line_count(stdout, content_w)
+                produce_text_block_lines(
+                    &lt.content,
+                    content_w,
+                    t.text_secondary,
+                    t,
+                    tool.display.is_expanded(),
+                )
+            }
+        }
+        ToolOutput::Command {
+            stdout,
+            stderr,
+            exit_code,
+        } => {
+            let cmd_str = match &tool.input {
+                ToolInput::Bash { command, .. } => command.as_str(),
+                _ => "",
             };
-            let stderr_total = if stderr.is_empty() {
-                0
+            let cmd_kind = classify_bash_cmd(cmd_str);
+            let success = !stdout.is_empty() && exit_code.unwrap_or(-1) == 0;
+            let grep_success = matches!(cmd_kind, BashCmdKind::Grep)
+                && !stdout.is_empty()
+                && exit_code.unwrap_or(-1) <= 1;
+            let gitdiff_success = matches!(cmd_kind, BashCmdKind::GitDiff)
+                && !stdout.is_empty()
+                && exit_code.unwrap_or(-1) <= 1;
+            match cmd_kind {
+                BashCmdKind::Grep if grep_success => produce_grep_output_lines(
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    t,
+                    tool.display.is_expanded(),
+                    cmd_str,
+                ),
+                BashCmdKind::PathList if success => {
+                    produce_path_list_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
+                }
+                BashCmdKind::GitDiff if gitdiff_success => {
+                    produce_git_diff_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
+                }
+                BashCmdKind::GitLog if success => {
+                    produce_git_log_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
+                }
+                BashCmdKind::HexDump if success => {
+                    produce_hex_dump_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
+                }
+                BashCmdKind::TabularList if success => {
+                    produce_tabular_list_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
+                }
+                BashCmdKind::CompilerOutput
+                    if !stdout.is_empty()
+                        && exit_code.map(|c| c == 0 || c == 101 || c == 1).unwrap_or(true) =>
+                {
+                    produce_compiler_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
+                }
+                _ => {
+                    let lang_hint = infer_lang_from_tool(tool);
+                    let lang_lc = lang_hint.as_deref().map(|l| l.to_ascii_lowercase());
+                    let is_markdown_lang = lang_lc
+                        .as_deref()
+                        .map(|l| matches!(l, "md" | "markdown" | "mdx" | "mkd" | "mdown"))
+                        .unwrap_or(false);
+                    let content_is_md = !is_markdown_lang && looks_like_markdown(stdout);
+                    if success && (is_markdown_lang || content_is_md) {
+                        produce_cat_markdown_output_lines(stdout, stderr, *exit_code, content_w, t)
+                    } else if let Some(lang) = lang_hint.as_deref().filter(|_| success) {
+                        produce_cat_output_lines(
+                            lang,
+                            stdout,
+                            stderr,
+                            *exit_code,
+                            content_w,
+                            t,
+                            tool.display.is_expanded(),
+                        )
+                    } else {
+                        produce_command_output_lines(
+                            stdout,
+                            stderr,
+                            *exit_code,
+                            content_w,
+                            t,
+                            tool.display.is_expanded(),
+                        )
+                    }
+                }
+            }
+        }
+        ToolOutput::Diff(_) => {
+            // Diff renders directly to buffer with per-row bg tinting
+            // that doesn't fit `Paragraph`'s model — `tool_content_height_with_tool`
+            // routes the diff arm through `diff_row_count` instead of
+            // counting `tool_body_lines`. Returning empty here means
+            // any path that bypasses `tool_content_height_with_tool`
+            // and tries to count `tool_body_lines` for a diff fails
+            // loudly (zero rows) rather than silently miscounting.
+            Vec::new()
+        }
+        ToolOutput::FileContent {
+            content, language, ..
+        } => {
+            let hl_lang = if language.is_empty() {
+                "rs"
             } else {
-                wrapped_line_count(stderr, content_w)
+                language.as_str()
             };
-            // +1 for exit code row. When both stdout and stderr are
-            // non-empty the renderer also emits a `↳ stderr` divider
-            // row between them — account for it so the height doesn't
-            // undercount and clip the last stderr line.
-            let stderr_divider = if !stdout.is_empty() && !stderr.is_empty() {
-                1
-            } else {
-                0
-            };
-            1 + stdout_total.min(cap)
-                + footer_if(stdout_total)
-                + stderr_divider
-                + stderr_total.min(cap)
-                + footer_if(stderr_total)
+            produce_highlighted_block_lines(hl_lang, content, content_w, t, tool.display.is_expanded())
         }
-
-        ToolOutput::Diff(diff) => {
-            let summary_row = if diff.additions > 0 || diff.deletions > 0 {
-                1
-            } else {
-                0
-            };
-            let hunk_cap = if expanded { 500 } else { 50 };
-            summary_row
-                + diff
-                    .hunks
-                    .iter()
-                    .map(|h| {
-                        1 + h.lines.len().min(hunk_cap)
-                            + if h.lines.len() > hunk_cap { 1 } else { 0 }
-                    })
-                    .sum::<usize>()
-        }
-
-        ToolOutput::FileContent { content, .. } => {
-            // The renderer wraps at area.width - 2 (gutter `│ ` prefix),
-            // so subtract 2 here to match the effective wrap width.
-            let effective_w = content_w.saturating_sub(2);
-            let total = wrapped_line_count(content, effective_w);
-            total.min(cap) + footer_if(total)
-        }
-
-        ToolOutput::FileList(files) => {
-            let cap = if expanded { 500 } else { 20 };
-            files.len().min(cap) + if files.len() > cap { 1 } else { 0 }
-        }
+        ToolOutput::FileList(files) => produce_file_list_lines(files, t),
     }
-}
-
-fn wrapped_line_count(text: &str, width: usize) -> usize {
-    use unicode_width::UnicodeWidthChar;
-    if width == 0 {
-        return text.lines().count().max(1);
-    }
-    // Use display-cell width (matching `markdown::hard_wrap_str` at
-    // render time) rather than raw char count. Without this, lines
-    // containing CJK / emoji / box-drawing chars undercount their
-    // wrapped row height (each takes 2 cells, counted as 1) and the
-    // tool block's allocated area is smaller than what the renderer
-    // emits — corrupting the buffer with overlapping text. Bug
-    // observed when streaming `git diff --stat` output containing
-    // wide path glyphs.
-    text.lines()
-        .map(|line| {
-            let cells: usize = line
-                .chars()
-                .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
-                .sum();
-            if cells == 0 { 1 } else { cells.div_ceil(width) }
-        })
-        .sum::<usize>()
-        .max(if text.is_empty() { 0 } else { 1 })
 }
 
 fn render_tool_block(
@@ -913,7 +960,7 @@ fn render_tool_block(
         return;
     }
 
-    if tool.is_collapsed {
+    if tool.display.is_collapsed() {
         if skip == 0 {
             // Collapsed-tool header: no gutter glyph (matching the
             // expanded path). The header itself includes the status
@@ -958,7 +1005,7 @@ fn render_tool_block(
     // fade. Reduced-motion skips it. Now sits at column 0 (where
     // the gutter used to be) since there's no bar to compete with.
     if skip == 0
-        && matches!(tool.status, crate::types::ToolStatus::Complete)
+        && matches!(tool.status, crate::types::ToolStatus::Completed)
         && !crate::spinner::reduced_motion()
     {
         if let Some((id, when)) = &app.recent_tool_completion {
@@ -1075,7 +1122,7 @@ fn build_title_spans<'a>(
         Span::styled(status_icon.to_owned(), status_style),
         Span::raw(" "),
     ];
-    if tool.pinned {
+    if tool.display.is_pinned() {
         spans.push(Span::styled(
             "📌 ",
             Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
@@ -1109,7 +1156,7 @@ fn build_title_spans<'a>(
 /// (their badge is too noisy and adds nothing — most reads, glob,
 /// memory ops finish in <100ms).
 fn format_elapsed_badge(tool: &ToolCall) -> Option<String> {
-    if !matches!(tool.status, ToolStatus::Complete | ToolStatus::Failed) {
+    if !matches!(tool.status, ToolStatus::Completed | ToolStatus::Failed) {
         return None;
     }
     let ms = tool.elapsed_ms?;
@@ -1191,11 +1238,18 @@ fn build_header_inner_spans<'a>(tool: &'a ToolCall, t: &Theme, max_w: usize) -> 
 /// spinner uses, so a Running bash tool reads as alive instead of
 /// frozen.
 fn tool_status_icon(tool: &ToolCall, t: &Theme) -> (&'static str, Style) {
+    // ExecutionStatus added two variants (Idle, Cancelled) that tools
+    // didn't historically use — Idle is reserved for sub-agent tasks
+    // and Cancelled is produced when the user denies a tool. Render
+    // both with sensible defaults instead of panicking, so a stray
+    // Idle (programmer error) still shows something rather than
+    // crashing the renderer.
     match tool.status {
         ToolStatus::Pending => ("○", Style::default().fg(t.warning)),
-        ToolStatus::Running => ("◌", Style::default().fg(t.accent)),
-        ToolStatus::Complete => ("●", Style::default().fg(t.success)),
+        ToolStatus::Running | ToolStatus::Idle => ("◌", Style::default().fg(t.accent)),
+        ToolStatus::Completed => ("●", Style::default().fg(t.success)),
         ToolStatus::Failed => ("✗", Style::default().fg(t.error)),
+        ToolStatus::Cancelled => ("⊘", Style::default().fg(t.text_muted)),
     }
 }
 
@@ -1248,6 +1302,12 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         }
         ToolKind::NotebookRead | ToolKind::NotebookEdit => Color::Rgb(255, 170, 100),
         ToolKind::Generic(_) => t.text_secondary,
+        // Unknown tools render in a muted style — they're never
+        // dispatched (permission layer denies them), so the row is
+        // really just a record of "the model asked for this name and
+        // we refused." Use text_muted to make it visually distinct
+        // from a normal Generic row.
+        ToolKind::UnknownTool { .. } => t.text_muted,
     }
 }
 
@@ -1311,11 +1371,17 @@ pub fn tool_status_icon_animated(
 }
 
 fn border_color_for_status(tool: &ToolCall, t: &Theme) -> Color {
+    // Idle is Task-only territory but still valid on the unified
+    // ExecutionStatus enum — render with the same accent as Running
+    // (the tool, if it ever lands here, is "alive but quiet"). A
+    // Cancelled tool drops to muted to match its terminal-but-benign
+    // semantics.
     match tool.status {
         ToolStatus::Pending => t.warning,
-        ToolStatus::Running => t.accent,
-        ToolStatus::Complete => t.border,
+        ToolStatus::Running | ToolStatus::Idle => t.accent,
+        ToolStatus::Completed => t.border,
         ToolStatus::Failed => t.error,
+        ToolStatus::Cancelled => t.text_muted,
     }
 }
 
@@ -1404,250 +1470,104 @@ fn render_tool_content_with_skip(
         height: remaining_h,
     };
     let skip = local_skip;
-    match &tool.output {
-        ToolOutput::Empty => {}
-        ToolOutput::Text(s) => {
-            let lang = infer_lang_from_tool(tool);
-            if let Some(lang) = lang.as_deref() {
-                // Build a per-line severity map for the file this
-                // tool is reading so the gutter can decorate
-                // offending rows. Only Read produces line-numbered
-                // output; for Edit/Write the path is the file but
-                // the content shown is the *new* state, not the
-                // current diagnostic-bearing state — skipping the
-                // map there avoids stale glyphs.
-                let diag_lines = if matches!(tool.kind, ToolKind::Read) {
-                    diagnostics_for_path(app, &tool.input)
-                } else {
-                    std::collections::HashMap::new()
-                };
-                render_highlighted_with_line_numbers(
-                    lang,
-                    s,
-                    area,
-                    t,
-                    buf,
-                    skip,
-                    tool.expanded,
-                    &diag_lines,
-                );
-            } else if matches!(tool.kind, ToolKind::Task) {
-                render_markdown_block_skip(s, area, t, buf, skip);
-            } else {
-                render_text_block_skip(s, area, t.text_secondary, t, buf, skip, tool.expanded);
-            }
-        }
-        ToolOutput::LargeText(lt) => {
-            // Three-state: huge + not expanded → 1-row teaser; huge +
-            // expanded → render through the same text path as moderate
-            // outputs; moderate → always render.
-            let huge = lt.line_count > LargeText::COLLAPSE_LINES
-                || lt.content.len() > LargeText::COLLAPSE_BYTES;
-            if huge && !tool.expanded {
-                if skip == 0 {
-                    Paragraph::new(Line::from(Span::styled(
-                        format!("[{} · click or press o to expand]", lt.size_label()),
-                        Style::default()
-                            .fg(t.text_muted)
-                            .add_modifier(Modifier::ITALIC),
-                    )))
-                    .style(Style::default().bg(t.bg))
-                    .render(area, buf);
-                }
-            } else {
-                render_text_block_skip(
-                    &lt.content,
-                    area,
-                    t.text_secondary,
-                    t,
-                    buf,
-                    skip,
-                    tool.expanded,
-                );
-            }
-        }
-        ToolOutput::Command {
-            stdout,
-            stderr,
-            exit_code,
-        } => {
-            // When a Bash command is a plain `cat <file.ext>` / `head`
-            // / `tail`, route stdout through syntect highlighting so
-            // the user sees real Rust/Python/etc. coloring instead
-            // of monochrome. The fallback path (no recognised file)
-            // keeps the existing ANSI-aware rendering for arbitrary
-            // commands. Stderr always renders red; exit-code line
-            // stays as before.
-            // Bash output routing:
-            //   - Structured tools (grep/rg/find/ls/git diff/git log)
-            //     get dedicated parsers + colored renderers.
-            //   - cat/head/tail get markdown-or-syntax rendering as
-            //     before (markdown wins when content sniffs md-y).
-            //   - Everything else falls through to plain command
-            //     output (which already does ANSI passthrough).
-            let cmd_str = match &tool.input {
-                ToolInput::Bash { command, .. } => command.as_str(),
-                _ => "",
-            };
-            let cmd_kind = classify_bash_cmd(cmd_str);
-            let success = !stdout.is_empty() && exit_code.unwrap_or(-1) == 0;
-            // grep returns 1 for "no matches" — treat as success
-            // visually so the renderer fires even when the result
-            // is just the header.
-            let grep_success = matches!(cmd_kind, BashCmdKind::Grep)
-                && !stdout.is_empty()
-                && exit_code.unwrap_or(-1) <= 1;
-            // git diff returns 1 when there are diffs (with --exit-code).
-            let gitdiff_success = matches!(cmd_kind, BashCmdKind::GitDiff)
-                && !stdout.is_empty()
-                && exit_code.unwrap_or(-1) <= 1;
 
-            match cmd_kind {
-                BashCmdKind::Grep if grep_success => render_grep_output_skip(
-                    stdout,
-                    stderr,
-                    *exit_code,
-                    area,
-                    t,
-                    buf,
-                    skip,
-                    tool.expanded,
-                    cmd_str,
-                ),
-                BashCmdKind::PathList if success => render_path_list_output_skip(
-                    stdout,
-                    stderr,
-                    *exit_code,
-                    area,
-                    t,
-                    buf,
-                    skip,
-                    tool.expanded,
-                ),
-                BashCmdKind::GitDiff if gitdiff_success => render_git_diff_output_skip(
-                    stdout,
-                    stderr,
-                    *exit_code,
-                    area,
-                    t,
-                    buf,
-                    skip,
-                    tool.expanded,
-                ),
-                BashCmdKind::GitLog if success => render_git_log_output_skip(
-                    stdout,
-                    stderr,
-                    *exit_code,
-                    area,
-                    t,
-                    buf,
-                    skip,
-                    tool.expanded,
-                ),
-                BashCmdKind::HexDump if success => render_hex_dump_output_skip(
-                    stdout,
-                    stderr,
-                    *exit_code,
-                    area,
-                    t,
-                    buf,
-                    skip,
-                    tool.expanded,
-                ),
-                BashCmdKind::TabularList if success => render_tabular_list_output_skip(
-                    stdout,
-                    stderr,
-                    *exit_code,
-                    area,
-                    t,
-                    buf,
-                    skip,
-                    tool.expanded,
-                ),
-                // Cargo / make / npm builds: the structured output
-                // (`Compiling X`, `error[E…]`, `warning:`, `Finished`,
-                // `running N tests`, `test foo … ok/FAILED`) deserves
-                // semantic coloring, not the flat ANSI passthrough
-                // command_output gives. Treat exit_code 0 / 101 (test
-                // failure is still informative) as a render trigger.
-                BashCmdKind::CompilerOutput
-                    if !stdout.is_empty()
-                        && exit_code.map(|c| c == 0 || c == 101 || c == 1).unwrap_or(true) =>
-                {
-                    render_compiler_output_skip(
-                        stdout,
-                        stderr,
-                        *exit_code,
-                        area,
-                        t,
-                        buf,
-                        skip,
-                        tool.expanded,
-                    )
-                }
-                _ => {
-                    // cat/head/tail path — fall through to the
-                    // existing markdown-or-syntect routing.
-                    let lang_hint = infer_lang_from_tool(tool);
-                    let lang_lc = lang_hint.as_deref().map(|l| l.to_ascii_lowercase());
-                    let is_markdown_lang = lang_lc
-                        .as_deref()
-                        .map(|l| matches!(l, "md" | "markdown" | "mdx" | "mkd" | "mdown"))
-                        .unwrap_or(false);
-                    let content_is_md = !is_markdown_lang && looks_like_markdown(stdout);
-                    if success && (is_markdown_lang || content_is_md) {
-                        render_cat_markdown_output_skip(
-                            stdout, stderr, *exit_code, area, t, buf, skip,
-                        );
-                    } else if let Some(lang) = lang_hint.as_deref().filter(|_| success) {
-                        render_cat_output_skip(
-                            lang,
-                            stdout,
-                            stderr,
-                            *exit_code,
-                            area,
-                            t,
-                            buf,
-                            skip,
-                            tool.expanded,
-                        );
-                    } else {
-                        render_command_output_skip(
-                            stdout,
-                            stderr,
-                            *exit_code,
-                            area,
-                            t,
-                            buf,
-                            skip,
-                            tool.expanded,
-                        );
-                    }
-                }
-            }
-        }
-        ToolOutput::Diff(diff) => render_diff_skip(diff, area, t, buf, skip, tool.expanded),
-        ToolOutput::FileContent {
-            content, language, ..
-        } => {
-            let hl_lang = if language.is_empty() {
-                "rs"
-            } else {
-                language.as_str()
-            };
-            render_highlighted_block_skip(hl_lang, content, area, t, buf, skip, tool.expanded);
-        }
-        ToolOutput::FileList(files) => render_file_list_skip(files, area, t, buf, skip),
+    // Diff renders directly to buffer because each row needs its own
+    // bg-color tint that `Paragraph` can't paint as a per-row band.
+    // All other arms route through `tool_body_lines_themed` — the
+    // canonical producer the height predictor also walks — so renderer
+    // rows == predictor rows by construction.
+    if let ToolOutput::Diff(diff) = &tool.output {
+        render_diff_skip(diff, area, t, buf, skip, tool.display.is_expanded());
+        return;
+    }
+
+    let lines = tool_body_lines_themed(tool, area.width as usize, t, Some(app));
+    // Two arms historically used `Wrap{trim:false}` so a long inline
+    // run (e.g. a long JSON string in a Task result, a wide markdown
+    // span from `cat README.md`) word-wraps cleanly instead of
+    // clipping at the right edge. `markdown::to_lines` already
+    // pre-wraps to width, but the defensive Wrap covers any spans
+    // that exceed the area on rendering. Detection mirrors the
+    // dispatch in `tool_body_lines_themed` so the predictor and
+    // renderer agree on which path was taken.
+    let task_md = matches!(
+        (&tool.kind, &tool.output),
+        (ToolKind::Task, ToolOutput::Text(_))
+    ) && infer_lang_from_tool(tool).is_none();
+    let cat_md = if let (
+        ToolOutput::Command {
+            stdout, exit_code, ..
+        },
+        ToolInput::Bash { command, .. },
+    ) = (&tool.output, &tool.input)
+    {
+        let success = !stdout.is_empty() && exit_code.unwrap_or(-1) == 0;
+        let lang_hint = infer_lang_from_bash(command);
+        let lang_lc = lang_hint.as_deref().map(|l| l.to_ascii_lowercase());
+        let is_markdown_lang = lang_lc
+            .as_deref()
+            .map(|l| matches!(l, "md" | "markdown" | "mdx" | "mkd" | "mdown"))
+            .unwrap_or(false);
+        let content_is_md = !is_markdown_lang && looks_like_markdown(stdout);
+        let cmd_kind = classify_bash_cmd(command);
+        matches!(cmd_kind, BashCmdKind::Other) && success && (is_markdown_lang || content_is_md)
+    } else {
+        false
+    };
+
+    if task_md || cat_md {
+        render_lines_with_scroll_wrapped(lines, area, t.bg, skip, buf);
+    } else {
+        render_lines_with_scroll(lines, area, t.bg, skip, buf);
     }
 }
 
-/// Render `text` through the full markdown pipeline (`markdown::to_lines`)
-/// instead of the plain width-wrapper. Use for Task subagent output and
-/// other tool results that are known to be assistant-authored markdown.
+/// The single "lines + scroll → buffer" consumer used by every
+/// `render_*_skip` wrapper around a `produce_*_lines` producer.
+///
+/// Centralising the draw step ensures the height predictor
+/// (`tool_body_lines_themed`, which sums the same `produce_*_lines`)
+/// and the renderer always agree on row counts: the only difference
+/// between them is whether the lines hit the buffer or get measured.
+/// Callers that need `.wrap(...)` (markdown blocks where width-aware
+/// soft-wrap is desirable) use `render_lines_with_scroll_wrapped`.
+fn render_lines_with_scroll(
+    lines: Vec<Line<'static>>,
+    area: Rect,
+    bg: Color,
+    skip: usize,
+    buf: &mut Buffer,
+) {
+    Paragraph::new(lines)
+        .style(Style::default().bg(bg))
+        .scroll((skip as u16, 0))
+        .render(area, buf);
+}
+
+/// Variant of `render_lines_with_scroll` for markdown-rendered output
+/// where `Wrap{trim:false}` matters — it word-wraps long inline runs
+/// instead of clipping at the right edge. Without this a Task-tool
+/// result whose JSON contains a long string value (e.g. `"message":
+/// "Spawned successfully…"`) got cut to `"message": "Spawned su"` with
+/// no continuation.
+fn render_lines_with_scroll_wrapped(
+    lines: Vec<Line<'static>>,
+    area: Rect,
+    bg: Color,
+    skip: usize,
+    buf: &mut Buffer,
+) {
+    Paragraph::new(lines)
+        .style(Style::default().bg(bg))
+        .wrap(ratatui::widgets::Wrap { trim: false })
+        .scroll((skip as u16, 0))
+        .render(area, buf);
+}
+
+/// Produce `text`-as-markdown lines for use in tool body rendering.
 /// Caps at `MAX_LINES` so a runaway agent can't drown the transcript.
-fn render_markdown_block_skip(text: &str, area: Rect, t: Theme, buf: &mut Buffer, skip: usize) {
+fn produce_markdown_block_lines(text: &str, width: usize, t: Theme) -> Vec<Line<'static>> {
     const MAX_LINES: usize = 200;
-    let width = area.width as usize;
     let mut lines = markdown::to_lines(text, &t, width.max(1));
     if lines.len() > MAX_LINES {
         let total = lines.len();
@@ -1657,17 +1577,7 @@ fn render_markdown_block_skip(text: &str, area: Rect, t: Theme, buf: &mut Buffer
             Style::default().fg(t.text_muted),
         )));
     }
-    // Wrap{trim:false} word-wraps long lines instead of clipping them
-    // at the right edge. Without this a Task-tool result whose JSON
-    // contains a long string value (e.g. "message": "Spawned successfully…")
-    // got cut to "message": "Spawned su" with no continuation. Markdown
-    // is the right rendering for the JSON pretty-print body — we just
-    // need it to wrap rather than chop.
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .wrap(ratatui::widgets::Wrap { trim: false })
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
 /// Wrap a styled `Line` to `width` columns, preserving span styles
@@ -1711,20 +1621,17 @@ fn wrap_styled_line(line: &Line<'static>, width: usize) -> Vec<Line<'static>> {
     out
 }
 
-fn render_text_block_skip(
+fn produce_text_block_lines(
     text: &str,
-    area: Rect,
+    width: usize,
     text_style: Color,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
-) {
+) -> Vec<Line<'static>> {
     // Expanded blocks lift the cap from 80 to 500 so the user can
     // see the full Read/Bash output without leaving the transcript.
     // Click on the tool block (or `o` / Ctrl+O) toggles `expanded`.
     let max_lines = if expanded { 500usize } else { 80usize };
-    let width = area.width as usize;
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut count = 0usize;
 
@@ -1748,7 +1655,6 @@ fn render_text_block_skip(
             // Try the git colorizers in order: diffstat first (most
             // specific), then full diff hunks (broader). Falls back
             // to plain styling for any line that doesn't match.
-            // Mirrors git's color slots from research/git/diff.c:84.
             if let Some(spans) = colorize_diffstat_line(&clean, text_style, t) {
                 lines.push(Line::from(spans));
             } else if let Some(spans) = colorize_git_diff_line(&clean, text_style, t) {
@@ -1772,11 +1678,7 @@ fn render_text_block_skip(
             count += 1;
         }
     }
-
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
 /// Detect git-diffstat-style lines (` path | NN +++---`) and return
@@ -1971,9 +1873,14 @@ fn colorize_git_log_line(
     fallback: Color,
     t: Theme,
 ) -> Option<Vec<Span<'static>>> {
-    // Match a leading 7-40-char hex run followed by space.
+    // Match a leading 7-40-char hex run followed by a space. The
+    // `saw_space` flag distinguishes "broke out of loop because we
+    // hit a space" from "ran out of input mid-hex-run" — without it,
+    // an all-hex line (e.g. "abcdef1234567") would slice
+    // `line[hash_len + 1..]` past the end and panic.
     let mut chars = line.chars();
     let mut hash_len = 0;
+    let mut saw_space = false;
     for c in chars.by_ref() {
         if c.is_ascii_hexdigit() {
             hash_len += 1;
@@ -1981,12 +1888,13 @@ fn colorize_git_log_line(
                 return None;
             }
         } else if c == ' ' {
+            saw_space = true;
             break;
         } else {
             return None;
         }
     }
-    if hash_len < 7 {
+    if hash_len < 7 || !saw_space {
         return None;
     }
     let hash = &line[..hash_len];
@@ -2279,7 +2187,10 @@ fn colorize_diagnostic_prefix(
     if trimmed.starts_with("error[") {
         let close = trimmed.find(']')?;
         let colon = trimmed[close..].find(':')?;
-        let head_end = close + colon + 2;
+        // head_end = close + colon + 2 to include `: `, but if the
+        // line ends with the colon (no trailing space + body), `+ 2`
+        // overshoots. Clamp to trimmed.len() to keep the slice valid.
+        let head_end = (close + colon + 2).min(trimmed.len());
         let head = &trimmed[..head_end];
         let rest = &trimmed[head_end..];
         return Some(vec![
@@ -2316,16 +2227,14 @@ fn colorize_diagnostic_prefix(
     ])
 }
 
-fn render_highlighted_with_line_numbers(
+fn produce_highlighted_with_line_numbers_lines(
     lang: &str,
     text: &str,
-    area: Rect,
+    content_w: usize,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
     diag_lines: &std::collections::HashMap<usize, crate::diagnostics::Severity>,
-) {
+) -> Vec<Line<'static>> {
     let (line_numbers, code) = split_line_numbers(text);
     let code_ref = code.as_deref().unwrap_or(text);
 
@@ -2345,10 +2254,8 @@ fn render_highlighted_with_line_numbers(
     } else {
         2
     };
-    let code_w = (area.width as usize).saturating_sub(gutter_cols).max(10);
+    let code_w = content_w.saturating_sub(gutter_cols).max(10);
 
-    // Cap matches the body in tool_content_height_with: 80 collapsed,
-    // 500 expanded. Footer line tells the user how to see the rest.
     let max_lines = if expanded { 500usize } else { 80usize };
     let highlighted = markdown::highlight_code_raw(lang, code_ref, code_w, &t);
     let total = highlighted.len();
@@ -2369,11 +2276,6 @@ fn render_highlighted_with_line_numbers(
                     format!("{:>width$}", num_str, width = gutter_width),
                     gutter_style,
                 )];
-                // Severity glyph column: shows ✘/⚠/ℹ on lines that
-                // have a diagnostic, blank otherwise. Color matches
-                // severity. The lookup uses the parsed line number,
-                // not the row index `i`, because Read tools may
-                // start at a non-zero offset.
                 if has_diags {
                     let lineno: usize = num_str.parse().unwrap_or(0);
                     let (glyph, color) = match diag_lines.get(&lineno) {
@@ -2409,11 +2311,7 @@ fn render_highlighted_with_line_numbers(
                 .add_modifier(Modifier::ITALIC),
         )));
     }
-
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
 fn split_line_numbers(text: &str) -> (Option<Vec<String>>, Option<String>) {
@@ -2687,16 +2585,14 @@ fn looks_like_markdown(text: &str) -> bool {
     score >= 4
 }
 
-fn render_highlighted_block_skip(
+fn produce_highlighted_block_lines(
     lang: &str,
     code: &str,
-    area: Rect,
+    content_w: usize,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
-) {
-    let inner_w = area.width.saturating_sub(2) as usize;
+) -> Vec<Line<'static>> {
+    let inner_w = content_w.saturating_sub(2);
     let max_lines = if expanded { 500usize } else { 80usize };
     let mut lines = markdown::highlight_code(lang, code, inner_w, &t);
     let total = lines.len();
@@ -2712,10 +2608,7 @@ fn render_highlighted_block_skip(
                 .add_modifier(Modifier::ITALIC),
         )));
     }
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
 /// What kind of bash command produced this output, derived purely
@@ -3119,18 +3012,14 @@ fn grep_target_file(cmd: &str) -> Option<String> {
 /// (matches grep's default), `:` separators muted, match body in
 /// surface text color. Context lines (`-` separator) dim their
 /// body to differentiate from matches.
-#[allow(clippy::too_many_arguments)]
-fn render_grep_output_skip(
+fn produce_grep_output_lines(
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
-    area: Rect,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
     cmd: &str,
-) {
+) -> Vec<Line<'static>> {
     let max_lines = if expanded { 500usize } else { 80usize };
     let mut lines: Vec<Line<'static>> = Vec::new();
     if let Some(code) = exit_code {
@@ -3283,10 +3172,7 @@ fn render_grep_output_skip(
             )));
         }
     }
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
 /// Render `find` / `ls` / `tree` / `fd` output as a list of paths
@@ -3294,17 +3180,13 @@ fn render_grep_output_skip(
 /// is split on whitespace and each entry gets its own colored
 /// span; `ls -l` lines get split by column with file mode in muted,
 /// size right-aligned, name colored.
-#[allow(clippy::too_many_arguments)]
-fn render_path_list_output_skip(
+fn produce_path_list_output_lines(
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
-    area: Rect,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
-) {
+) -> Vec<Line<'static>> {
     let max_lines = if expanded { 500usize } else { 80usize };
     let mut lines: Vec<Line<'static>> = Vec::new();
     if let Some(code) = exit_code {
@@ -3395,26 +3277,19 @@ fn render_path_list_output_skip(
             )));
         }
     }
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
-/// Render `git diff` / `git show` output as colored unified diff.
-/// Each line gets a per-prefix color: `+` green, `-` red, `@@`
+/// Produce `git diff` / `git show` output as colored unified diff
+/// lines. Each line gets a per-prefix color: `+` green, `-` red, `@@`
 /// cyan, file headers bold, index/`diff --git` lines muted.
-#[allow(clippy::too_many_arguments)]
-fn render_git_diff_output_skip(
+fn produce_git_diff_output_lines(
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
-    area: Rect,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
-) {
+) -> Vec<Line<'static>> {
     let max_lines = if expanded { 1000usize } else { 200usize };
     let mut lines: Vec<Line<'static>> = Vec::new();
     if let Some(code) = exit_code {
@@ -3470,27 +3345,20 @@ fn render_git_diff_output_skip(
             )));
         }
     }
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
-/// Render `git log` output. Detects two formats:
+/// Produce `git log` output lines. Detects two formats:
 ///   - `--oneline`: `SHA message` — SHA in accent, rest plain
 ///   - default: `commit SHA\nAuthor: ...\nDate: ...\n\n    body\n`
 ///     — `commit` line in accent, Author/Date muted, body italic.
-#[allow(clippy::too_many_arguments)]
-fn render_git_log_output_skip(
+fn produce_git_log_output_lines(
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
-    area: Rect,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
-) {
+) -> Vec<Line<'static>> {
     let max_lines = if expanded { 500usize } else { 100usize };
     let mut lines: Vec<Line<'static>> = Vec::new();
     if let Some(code) = exit_code {
@@ -3587,10 +3455,7 @@ fn render_git_log_output_skip(
             )));
         }
     }
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
 /// Render `cat <markdown-file>` output as actual rendered markdown
@@ -3599,23 +3464,17 @@ fn render_git_log_output_skip(
 /// the document the way the model's prose is shown — not the raw
 /// `# Header` characters with syntax coloring. Mirrors v126's
 /// markdown rendering for tool output.
-#[allow(clippy::too_many_arguments)]
-fn render_cat_markdown_output_skip(
+fn produce_cat_markdown_output_lines(
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
-    area: Rect,
+    content_w: usize,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
-) {
+) -> Vec<Line<'static>> {
     const MAX_LINES: usize = 500;
-    let inner_w = area.width.saturating_sub(2) as usize;
-    let mut lines: Vec<Line> = Vec::new();
+    let inner_w = content_w.saturating_sub(2);
+    let mut lines: Vec<Line<'static>> = Vec::new();
 
-    // Optional exit-code badge for the rare case where a `cat`
-    // succeeds but emits a non-zero exit (shouldn't happen, but
-    // mirrors the behavior of the syntect path for parity).
     if let Some(code) = exit_code {
         if code != 0 {
             lines.push(Line::from(Span::styled(
@@ -3625,9 +3484,6 @@ fn render_cat_markdown_output_skip(
         }
     }
 
-    // The actual markdown render — same pipeline the assistant's
-    // text uses. `to_lines` handles headers, tables, code fences,
-    // bullets, etc.
     let body = markdown::to_lines(stdout, &t, inner_w.max(1));
     lines.extend(body);
 
@@ -3655,11 +3511,7 @@ fn render_cat_markdown_output_skip(
         }
     }
 
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .wrap(ratatui::widgets::Wrap { trim: false })
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
 /// Render `xxd` / `hexyl` / `od` hex-dump output. Each input line
@@ -3668,17 +3520,13 @@ fn render_cat_markdown_output_skip(
 /// the doubled-space separator before the ASCII column, color each
 /// region distinctly, and pass everything else through unstyled so
 /// hexyl's box-drawing characters survive intact.
-#[allow(clippy::too_many_arguments)]
-fn render_hex_dump_output_skip(
+fn produce_hex_dump_output_lines(
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
-    area: Rect,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
-) {
+) -> Vec<Line<'static>> {
     let max_lines = if expanded { 1000usize } else { 200usize };
     let mut lines: Vec<Line<'static>> = Vec::new();
     if let Some(code) = exit_code
@@ -3763,10 +3611,7 @@ fn render_hex_dump_output_skip(
             )));
         }
     }
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
 /// Render `docker ps` / `docker images` / `kubectl get …` and
@@ -3776,17 +3621,13 @@ fn render_hex_dump_output_skip(
 /// muted text so wide tables remain scannable. Container/pod state
 /// columns get an extra tint when we recognise the value (`Running`,
 /// `Up …`, `Exited`, `Error`, `CrashLoopBackOff`).
-#[allow(clippy::too_many_arguments)]
-fn render_tabular_list_output_skip(
+fn produce_tabular_list_output_lines(
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
-    area: Rect,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
-) {
+) -> Vec<Line<'static>> {
     let max_lines = if expanded { 500usize } else { 100usize };
     let mut lines: Vec<Line<'static>> = Vec::new();
     if let Some(code) = exit_code
@@ -3850,10 +3691,7 @@ fn render_tabular_list_output_skip(
             )));
         }
     }
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
 /// Render `cargo build` / `cargo test` / `cargo check` / `make` /
@@ -3871,17 +3709,13 @@ fn render_tabular_list_output_skip(
 ///   * `test foo::bar ... ok` → success; `... FAILED` → error
 ///   * `failures:` block headers → error
 ///   * Everything else → text_secondary
-#[allow(clippy::too_many_arguments)]
-fn render_compiler_output_skip(
+fn produce_compiler_output_lines(
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
-    area: Rect,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
-) {
+) -> Vec<Line<'static>> {
     let max_lines = if expanded { 1500usize } else { 300usize };
     let mut lines: Vec<Line<'static>> = Vec::new();
     if let Some(code) = exit_code
@@ -4113,28 +3947,22 @@ fn render_compiler_output_skip(
                 .add_modifier(Modifier::ITALIC),
         )));
     }
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
-/// Render Bash output where stdout is the contents of a single
+/// Produce Bash output lines where stdout is the contents of a single
 /// file (cat / head / tail). Top row is the exit-code badge, then
 /// stdout flows through syntect highlighting (no line numbers — the
 /// `cat` user opted out of those), then any stderr in red.
-#[allow(clippy::too_many_arguments)]
-fn render_cat_output_skip(
+fn produce_cat_output_lines(
     lang: &str,
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
-    area: Rect,
+    content_w: usize,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
-) {
+) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let (code_str, code_style) = match exit_code {
         Some(0) => ("exit 0".to_owned(), Style::default().fg(t.success)),
@@ -4144,8 +3972,7 @@ fn render_cat_output_skip(
     lines.push(Line::from(Span::styled(code_str, code_style)));
 
     let max_lines = if expanded { 500usize } else { 80usize };
-    let inner_w = area.width as usize;
-    let mut highlighted = markdown::highlight_code_raw(lang, stdout, inner_w, &t);
+    let mut highlighted = markdown::highlight_code_raw(lang, stdout, content_w, &t);
     let total = highlighted.len();
     let truncated = total > max_lines;
     if truncated {
@@ -4178,27 +4005,21 @@ fn render_cat_output_skip(
             )));
         }
     }
-
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
-fn render_command_output_skip(
+fn produce_command_output_lines(
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
-    area: Rect,
+    content_w: usize,
     t: Theme,
-    buf: &mut Buffer,
-    skip: usize,
     expanded: bool,
-) {
+) -> Vec<Line<'static>> {
     use ansi_to_tui::IntoText;
 
     let mut lines: Vec<Line<'static>> = Vec::new();
-    let w = area.width as usize;
+    let w = content_w;
 
     let (code_str, code_style) = match exit_code {
         Some(0) => ("exit 0".to_owned(), Style::default().fg(t.success)),
@@ -4210,11 +4031,6 @@ fn render_command_output_skip(
     let max_lines = if expanded { 500usize } else { 80usize };
     let mut count = 0usize;
 
-    // Route through `ansi-to-tui` so SGR codes from cargo / git diff /
-    // test runners survive as ratatui `Style`s. Falls back to the
-    // sanitize-and-stripe path when the parser rejects (rare — only
-    // truly malformed escape sequences). Each parsed Line is then
-    // wrapped to fit the column width while preserving its spans.
     let push_styled =
         |raw: &str, fallback_style: Style, lines: &mut Vec<Line<'static>>, count: &mut usize| {
             if *count >= max_lines {
@@ -4248,10 +4064,6 @@ fn render_command_output_skip(
         &mut lines,
         &mut count,
     );
-    // Make the stdout→stderr boundary visible. Without this the user
-    // sees red lines mixed in with grey and can't tell where the
-    // failure stream begins. The divider only appears when both
-    // streams have content.
     if !stdout.is_empty() && !stderr.is_empty() && count < max_lines {
         lines.push(Line::from(Span::styled(
             "↳ stderr",
@@ -4262,11 +4074,7 @@ fn render_command_output_skip(
         count += 1;
     }
     push_styled(stderr, Style::default().fg(t.error), &mut lines, &mut count);
-
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
 /// Best-effort language detection for a diff view. Returns a token suitable
@@ -4505,7 +4313,7 @@ fn render_diff_skip(
     }
 }
 
-fn render_file_list_skip(files: &[String], area: Rect, t: Theme, buf: &mut Buffer, skip: usize) {
+fn produce_file_list_lines(files: &[String], t: Theme) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     for f in files.iter().take(20) {
         lines.push(Line::from(Span::styled(
@@ -4519,10 +4327,7 @@ fn render_file_list_skip(files: &[String], area: Rect, t: Theme, buf: &mut Buffe
             Style::default().fg(t.text_muted),
         )));
     }
-    Paragraph::new(lines)
-        .style(Style::default().bg(t.bg))
-        .scroll((skip as u16, 0))
-        .render(area, buf);
+    lines
 }
 
 fn render_assistant_text_lines<'a>(
@@ -4947,7 +4752,12 @@ fn push_advisor_lines<'a>(items: &mut Vec<RenderItem<'a>>, text: &'a str, t: &Th
     }
 }
 
-fn push_task_status_lines<'a>(items: &mut Vec<RenderItem<'a>>, ts: &'a TaskStatusPart, t: &Theme) {
+fn push_task_status_lines<'a>(
+    items: &mut Vec<RenderItem<'a>>,
+    ts: &'a TaskStatusPart,
+    t: &Theme,
+    inner_w: usize,
+) {
     let (icon, style) = match ts.status {
         TaskLifecycle::Pending => ("◌", Style::default().fg(t.text_muted)),
         TaskLifecycle::Running => ("◎", Style::default().fg(t.text_primary)),
@@ -4956,16 +4766,58 @@ fn push_task_status_lines<'a>(items: &mut Vec<RenderItem<'a>>, ts: &'a TaskStatu
         TaskLifecycle::Failed => ("✗", Style::default().fg(t.error)),
         TaskLifecycle::Cancelled => ("○", Style::default().fg(t.text_muted)),
     };
-    let label = ts.summary.as_deref().unwrap_or(ts.description.as_str());
     let elapsed = ts
         .elapsed_ms
         .map(|ms| format!(" [{:.1}s]", ms as f64 / 1000.0))
         .unwrap_or_default();
+
+    // TaskCompleted stuffs the entire subagent response (often
+    // thousands of chars of markdown — headings, tables, fenced code)
+    // into `summary`. Packing that into a single styled Span garbles
+    // the output and trashes scroll math, since one logical Line gets
+    // word-wrapped as plain text and `RenderItem::TextLine::height`
+    // has to walk a multi-KB string per frame. Multi-line summaries
+    // get split off into their own markdown-rendered TextLines,
+    // matching what the dedicated task view does.
+    let summary = ts.summary.as_deref().unwrap_or("");
+    let summary_is_block = summary.contains('\n');
+
+    let header_label: &str = if summary.is_empty() || summary_is_block {
+        ts.description.as_str()
+    } else {
+        summary
+    };
     items.push(RenderItem::TextLine(Line::from(vec![
         Span::styled(format!("{icon} task "), style),
-        Span::styled(label.to_owned(), Style::default().fg(t.text_secondary)),
+        Span::styled(
+            header_label.to_owned(),
+            Style::default().fg(t.text_secondary),
+        ),
         Span::styled(elapsed, Style::default().fg(t.text_muted)),
     ])));
+
+    if summary_is_block {
+        const MAX_LINES: usize = 120;
+        let width = inner_w.max(1);
+        let mut lines = markdown::to_lines(summary, t, width);
+        if lines.len() > MAX_LINES {
+            let total = lines.len();
+            lines.truncate(MAX_LINES);
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "… {} more lines · open task view to see full result",
+                    total.saturating_sub(MAX_LINES)
+                ),
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::ITALIC),
+            )));
+        }
+        for line in lines {
+            items.push(RenderItem::TextLine(line));
+        }
+    }
+
     if let Some(err) = &ts.error {
         items.push(RenderItem::TextLine(Line::from(vec![
             Span::styled("  error: ", Style::default().fg(t.error)),
@@ -5653,16 +5505,14 @@ mod helper_tests {
 
     fn dummy_tool(input: ToolInput, output: ToolOutput, kind: ToolKind) -> ToolCall {
         ToolCall {
-            id: "t-1".to_string(),
+            id: crate::ids::ToolId::from("t-1"),
             kind,
-            status: ToolStatus::Complete,
+            status: ToolStatus::Completed,
             input,
             output,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }
     }
 
@@ -5872,45 +5722,36 @@ mod helper_tests {
         assert!(!looks_like_markdown(""));
     }
 
-    // --- wrapped_line_count ------------------------------------------
-
-    #[test]
-    fn wrapped_line_count_short_one_line_normal() {
-        assert_eq!(wrapped_line_count("hello", 80), 1);
-    }
-
-    #[test]
-    fn wrapped_line_count_multi_line_normal() {
-        assert_eq!(wrapped_line_count("a\nb\nc", 80), 3);
-    }
-
-    #[test]
-    fn wrapped_line_count_wraps_normal() {
-        // 12 chars at width 5 = ceil(12/5) = 3.
-        assert_eq!(wrapped_line_count("abcdefghijkl", 5), 3);
-    }
-
-    #[test]
-    fn wrapped_line_count_zero_width_robust() {
-        // Zero width → fall back to text.lines().count().max(1).
-        assert_eq!(wrapped_line_count("a\nb", 0), 2);
-        assert_eq!(wrapped_line_count("", 0), 1);
-    }
-
-    #[test]
-    fn wrapped_line_count_empty_text_returns_zero_robust() {
-        // Empty text contributes 0 (the fold's `.max(...)` only kicks
-        // in if text is non-empty).
-        assert_eq!(wrapped_line_count("", 80), 0);
-    }
-
-    #[test]
-    fn wrapped_line_count_blank_line_counts_as_one_robust() {
-        // A truly blank logical line still rendered as one row.
-        assert_eq!(wrapped_line_count("\n", 80), 1);
-    }
+    // wrapped_line_count tests removed: the standalone helper was
+    // deleted when we unified the height predictor to delegate to
+    // `build_render_items` (single-producer pattern from the
+    // t-compiler/query-system Zulip discussions). Wrap-counting now
+    // lives inside `RenderItem::TextLine::height` and is exercised by
+    // the `predictor_matches_renderer_*` regression tests below.
 
     // --- tool_content_height_with ------------------------------------
+    //
+    // Convenience wrapper over the new `tool_content_height_with_tool`
+    // path so existing assertions stay readable. The producer-based
+    // height path needs a full ToolCall to dispatch by `BashCmdKind`,
+    // so we synthesize a generic Bash tool and swap in the output.
+    fn tool_content_height_with(output: &ToolOutput, content_w: usize, expanded: bool) -> usize {
+        let mut t = dummy_tool(
+            ToolInput::Bash {
+                command: "echo".into(),
+                timeout: None,
+                workdir: None,
+            },
+            output.clone(),
+            ToolKind::Bash,
+        );
+        t.display = if expanded {
+            crate::types::ToolDisplayState::Expanded { pinned: false }
+        } else {
+            crate::types::ToolDisplayState::DEFAULT
+        };
+        tool_content_height_with_tool(&t, content_w)
+    }
 
     #[test]
     fn tool_content_height_empty_zero_normal() {
@@ -6005,7 +5846,7 @@ mod helper_tests {
             ToolOutput::Text("foo\nbar\nbaz".into()),
             ToolKind::Bash,
         );
-        t.is_collapsed = true;
+        t.display = crate::types::ToolDisplayState::Collapsed;
         assert_eq!(tool_block_height(&t, 80), 1);
         // Public wrapper should match.
         assert_eq!(tool_block_height_pub(&t, 80), 1);
@@ -6267,11 +6108,9 @@ mod helper_tests {
                 workdir: None,
             },
             output: ToolOutput::Empty,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         };
         let (g0, _) = tool_status_icon_animated(&tool, &t, 0);
         let (g6, _) = tool_status_icon_animated(&tool, &t, 6);
@@ -6287,18 +6126,16 @@ mod helper_tests {
         let tool = ToolCall {
             id: "c".into(),
             kind: ToolKind::Bash,
-            status: ToolStatus::Complete,
+            status: ToolStatus::Completed,
             input: ToolInput::Bash {
                 command: "x".into(),
                 timeout: None,
                 workdir: None,
             },
             output: ToolOutput::Empty,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         };
         let (g0, _) = tool_status_icon_animated(&tool, &t, 0);
         let (g100, _) = tool_status_icon_animated(&tool, &t, 100);
@@ -6319,11 +6156,9 @@ mod helper_tests {
                 workdir: None,
             },
             output: ToolOutput::Empty,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         };
         let (g, _) = tool_status_icon_animated(&tool, &t, 42);
         assert_eq!(g, "✗");
@@ -6571,7 +6406,7 @@ mod helper_tests {
             ToolOutput::Empty,
             ToolKind::Bash,
         );
-        tool.pinned = true;
+        tool.display = crate::types::ToolDisplayState::Expanded { pinned: true };
         let spans = build_title_spans(&tool, &t, "●", Style::default(), 80);
         let combined: String = spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(combined.contains("📌"), "expected pin glyph: {combined:?}");
@@ -6606,7 +6441,7 @@ mod helper_tests {
         for (status, expected) in [
             (ToolStatus::Pending, t.warning),
             (ToolStatus::Running, t.accent),
-            (ToolStatus::Complete, t.border),
+            (ToolStatus::Completed, t.border),
             (ToolStatus::Failed, t.error),
         ] {
             let mut tool = dummy_tool(
@@ -6749,9 +6584,324 @@ mod helper_tests {
                 Ok(Box::pin(futures::stream::empty()))
             }
         }
+        impl crate::provider::seal::Sealed for Stub {}
 
         let app = App::new(Arc::new(Stub), "test-model");
         // No messages → 0 lines.
         assert_eq!(message_view_total_lines(&app, 80), 0);
+    }
+
+    // --- Predictor / renderer drift guard ----------------------------------
+    //
+    // The scroll path runs `message_view_total_lines` per frame and uses
+    // its number for follow-bottom math. The renderer separately walks
+    // `build_render_items` and sums `RenderItem::height`. When those two
+    // disagree, `follow_bottom` parks scroll at a wrong line — the user
+    // sees a clipped tail. We've now had this bug across (a) TaskStatus
+    // multi-line summaries, (b) Reasoning expanded with wide thoughts,
+    // (c) Advisor blocks with byte-counted character-wrap. Each escape
+    // was structurally identical. These tests build minimal apps with
+    // each part type at a width that forces wrapping and assert the two
+    // numbers agree byte-for-byte. New part types or rendering changes
+    // get one of these cases added; if the predictor diverges, the test
+    // fails before the user sees a clipped scroll.
+    fn renderer_total_height(app: &App, inner_w: usize) -> usize {
+        build_render_items(app, inner_w)
+            .iter()
+            .map(|i| i.height(inner_w))
+            .sum()
+    }
+
+    fn stub_app() -> App {
+        use crate::provider::{
+            EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions,
+        };
+        use std::sync::Arc;
+        struct Stub;
+        #[async_trait::async_trait]
+        impl Provider for Stub {
+            fn name(&self) -> &str {
+                "test"
+            }
+            fn available_models(&self) -> Vec<ModelInfo> {
+                Vec::new()
+            }
+            async fn stream(
+                &self,
+                _: Vec<ProviderMessage>,
+                _: &StreamOptions,
+            ) -> anyhow::Result<EventStream> {
+                Ok(Box::pin(futures::stream::empty()))
+            }
+        }
+        impl crate::provider::seal::Sealed for Stub {}
+        App::new(Arc::new(Stub), "test-model")
+    }
+
+    /// Reasoning expanded — single line wider than viewport must wrap
+    /// in both predictor and renderer.
+    #[test]
+    fn predictor_matches_renderer_reasoning_expanded_wide() {
+        let mut app = stub_app();
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.parts.clear();
+        let wide = "x".repeat(150);
+        msg.parts.push(MessagePart::Reasoning(wide));
+        app.messages.push(msg);
+        // Force expanded so the body rows actually render.
+        app.reasoning_expanded.insert(0, true);
+        let w = 40usize;
+        assert_eq!(
+            message_view_total_lines(&app, w),
+            renderer_total_height(&app, w),
+            "reasoning-expanded: predictor must match renderer at width {w}",
+        );
+    }
+
+    /// Advisor body — byte-counted char-wrap used to disagree with
+    /// ratatui's word-wrap; ribbon prefix wasn't subtracted from width.
+    #[test]
+    fn predictor_matches_renderer_advisor_wide() {
+        let mut app = stub_app();
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.parts.clear();
+        msg.parts.push(MessagePart::Advisor(
+            "this advisor message is intentionally wider than the viewport \
+             so word-wrap must split it into multiple visual rows."
+                .to_owned(),
+        ));
+        app.messages.push(msg);
+        let w = 30usize;
+        assert_eq!(
+            message_view_total_lines(&app, w),
+            renderer_total_height(&app, w),
+            "advisor: predictor must match renderer at width {w}",
+        );
+    }
+
+    /// TaskStatus completed with multi-line markdown body — original
+    /// 148-line drift bug. Predictor must mirror the same
+    /// `markdown::to_lines` + 120-line cap as `push_task_status_lines`.
+    #[test]
+    fn predictor_matches_renderer_task_status_completed_block() {
+        let mut app = stub_app();
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.parts.clear();
+        let summary = "# Plan\n\nStep 1: do thing.\nStep 2: another thing.\n\n\
+                       ```rust\nfn main() {}\n```\n\nMore text after the block."
+            .to_owned();
+        msg.parts.push(MessagePart::TaskStatus(TaskStatusPart {
+            task_id: "t1".into(),
+            description: "Do the work".into(),
+            status: TaskLifecycle::Completed,
+            summary: Some(summary),
+            error: None,
+            elapsed_ms: Some(1234),
+        }));
+        app.messages.push(msg);
+        let w = 60usize;
+        assert_eq!(
+            message_view_total_lines(&app, w),
+            renderer_total_height(&app, w),
+            "task-status (completed multi-line): predictor must match renderer at width {w}",
+        );
+    }
+
+    /// CompactBoundary on a narrow viewport — the decorative line wraps.
+    #[test]
+    fn predictor_matches_renderer_compact_boundary_narrow() {
+        let mut app = stub_app();
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.parts.clear();
+        msg.parts
+            .push(MessagePart::CompactBoundary { pre_tokens: 12345 });
+        app.messages.push(msg);
+        let w = 16usize;
+        assert_eq!(
+            message_view_total_lines(&app, w),
+            renderer_total_height(&app, w),
+            "compact-boundary: predictor must match renderer at narrow width {w}",
+        );
+    }
+
+    // --- Tool-block predictor / renderer drift guard ----------------------
+    //
+    // Each test builds one tool with a specific output shape (large
+    // diff, multi-line bash, expanded vs. collapsed file content),
+    // then asserts the predicted height (`tool_block_height`) equals
+    // the total non-empty rows the renderer paints into a buffer at
+    // two widths. Pre-fix the predictor drifted from the renderer in
+    // 6+ ways (see `tool_block_height`'s doc comment).
+
+    /// Sum of rows the renderer paints for one ToolCall at `width`.
+    ///
+    /// We initialize the buffer with a sentinel symbol (`~`) so that
+    /// a blank-line render (which paints spaces) is distinguishable
+    /// from "buffer untouched": any row where the leftmost cell still
+    /// reads `~` was never written to. A row counts as "painted" if
+    /// its leftmost cell was overwritten, regardless of whether that
+    /// overwrite landed a space or a glyph.
+    fn rendered_tool_rows(app: &App, tool: &ToolCall, width: u16) -> usize {
+        let predicted = tool_block_height(tool, width as usize) as u16;
+        let h = predicted.saturating_add(8).max(16);
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width,
+            height: h,
+        };
+        let mut buf = Buffer::empty(area);
+        // Pre-fill with a sentinel so we can tell "renderer painted a
+        // space here" from "renderer never touched this cell".
+        for y in 0..h {
+            for x in 0..width {
+                buf[(x, y)].set_symbol("~");
+            }
+        }
+        let t = app.theme;
+        render_tool_block(app, tool, area, t, &mut buf, 0);
+        let mut painted = 0usize;
+        for y in 0..h {
+            let row_painted = (0..width).any(|x| buf[(x, y)].symbol() != "~");
+            if row_painted {
+                painted += 1;
+            }
+        }
+        painted
+    }
+
+    /// Multi-line Bash command, plain stdout — exercises the
+    /// continuation-line + command-output dispatch.
+    #[test]
+    fn tool_block_height_matches_renderer_multiline_bash() {
+        let app = stub_app();
+        let tool = ToolCall {
+            id: "tb1".into(),
+            kind: ToolKind::Bash,
+            status: ToolStatus::Completed,
+            input: ToolInput::Bash {
+                command: "cat <<'EOF'\nfirst\nsecond\nthird\nEOF".into(),
+                timeout: None,
+                workdir: None,
+            },
+            output: ToolOutput::Command {
+                stdout: "alpha\nbeta\ngamma\n".into(),
+                stderr: String::new(),
+                exit_code: Some(0),
+            },
+            display: crate::types::ToolDisplayState::DEFAULT,
+            elapsed_ms: Some(120),
+            started_at: None,
+        };
+        for w in [40u16, 80u16] {
+            let predicted = tool_block_height(&tool, w as usize);
+            let actual = rendered_tool_rows(&app, &tool, w);
+            assert_eq!(
+                predicted, actual,
+                "multiline bash: predictor {predicted} != renderer {actual} at width {w}",
+            );
+        }
+    }
+
+    /// Large diff with many hunk lines — exercises the diff renderer
+    /// path (special-cased per-row bg painting) and the hunk_cap
+    /// truncation footer.
+    #[test]
+    fn tool_block_height_matches_renderer_large_diff() {
+        let app = stub_app();
+        let mut hunk_lines = Vec::new();
+        for n in 0..120 {
+            hunk_lines.push(crate::types::DiffLine {
+                kind: if n % 3 == 0 {
+                    DiffLineKind::Added
+                } else if n % 3 == 1 {
+                    DiffLineKind::Removed
+                } else {
+                    DiffLineKind::Context
+                },
+                content: format!("line {n}"),
+                old_line: Some(n + 1),
+                new_line: Some(n + 1),
+            });
+        }
+        let diff = DiffView {
+            file_path: "src/foo.rs".into(),
+            additions: 40,
+            deletions: 40,
+            hunks: vec![crate::types::DiffHunk {
+                old_start: 1,
+                new_start: 1,
+                header: "@@ -1,120 +1,120 @@".into(),
+                lines: hunk_lines,
+            }],
+        };
+        let tool = ToolCall {
+            id: "tb2".into(),
+            kind: ToolKind::Edit,
+            status: ToolStatus::Completed,
+            input: ToolInput::Edit {
+                file_path: "src/foo.rs".into(),
+                old_string: String::new(),
+                new_string: String::new(),
+                replacement: ReplacementMode::FirstOnly,
+            },
+            output: ToolOutput::Diff(diff),
+            display: crate::types::ToolDisplayState::DEFAULT,
+            elapsed_ms: None,
+            started_at: None,
+        };
+        for w in [60u16, 100u16] {
+            let predicted = tool_block_height(&tool, w as usize);
+            let actual = rendered_tool_rows(&app, &tool, w);
+            assert_eq!(
+                predicted, actual,
+                "large diff: predictor {predicted} != renderer {actual} at width {w}",
+            );
+        }
+    }
+
+    /// FileContent (Read result with content) — exercises the
+    /// syntect-highlighted block path under both expanded and
+    /// collapsed semantics.
+    #[test]
+    fn tool_block_height_matches_renderer_file_content_expanded_and_collapsed() {
+        let app = stub_app();
+        let mut body = String::new();
+        for n in 0..120 {
+            body.push_str(&format!("fn line_{n}() {{ let x = {n}; }}\n"));
+        }
+        let make_tool = |expanded: bool| ToolCall {
+            id: "tb3".into(),
+            kind: ToolKind::Read,
+            status: ToolStatus::Completed,
+            input: ToolInput::Read {
+                file_path: "src/lib.rs".into(),
+                offset: None,
+                limit: None,
+            },
+            output: ToolOutput::FileContent {
+                path: "src/lib.rs".into(),
+                content: body.clone(),
+                language: "rs".into(),
+            },
+            display: if expanded {
+                crate::types::ToolDisplayState::Expanded { pinned: false }
+            } else {
+                crate::types::ToolDisplayState::DEFAULT
+            },
+            elapsed_ms: None,
+            started_at: None,
+        };
+        for expanded in [false, true] {
+            let tool = make_tool(expanded);
+            for w in [60u16, 100u16] {
+                let predicted = tool_block_height(&tool, w as usize);
+                let actual = rendered_tool_rows(&app, &tool, w);
+                assert_eq!(
+                    predicted, actual,
+                    "file-content expanded={expanded}: predictor {predicted} != renderer {actual} at width {w}",
+                );
+            }
+        }
     }
 }

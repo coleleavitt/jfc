@@ -2,9 +2,12 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
+use tracing::warn;
 use tree_sitter::{Node as TsNode, Parser};
 
-use crate::adapter::{AdapterError, LanguageAdapter, ParsedFile};
+use crate::adapter::{
+    AdapterError, LanguageAdapter, ParseOutcome, ParsedFile, first_syntax_error,
+};
 use crate::edges::{EdgeData, EdgeKind};
 use crate::nodes::{NodeData, NodeId, NodeKind, Span, Visibility};
 
@@ -50,11 +53,60 @@ impl LanguageAdapter for RustAdapter {
                 reason: "tree-sitter returned None".into(),
             })?;
 
+        if let Some(err) = first_syntax_error(&tree, path, content) {
+            // Surface the typed error. Callers that want the partial tree
+            // anyway should use `parse_file_lenient`.
+            return Err(err);
+        }
+
         Ok(ParsedFile {
             path: path.to_path_buf(),
             source: content.to_string(),
             tree,
         })
+    }
+
+    fn parse_file_lenient(
+        &self,
+        path: &Path,
+        content: &str,
+    ) -> Result<ParseOutcome, AdapterError> {
+        let tree = self
+            .parser
+            .lock()
+            .unwrap()
+            .parse(content, None)
+            .ok_or_else(|| AdapterError::ParseFailed {
+                path: path.display().to_string(),
+                reason: "tree-sitter returned None".into(),
+            })?;
+
+        let error = first_syntax_error(&tree, path, content);
+        let parsed = ParsedFile {
+            path: path.to_path_buf(),
+            source: content.to_string(),
+            tree,
+        };
+
+        if let Some(ref err) = error {
+            if let AdapterError::SyntaxError {
+                start,
+                end,
+                summary,
+                ..
+            } = err
+            {
+                warn!(
+                    target: "jfc::graph::parser",
+                    path = %path.display(),
+                    byte_range = ?(*start..*end),
+                    summary = %summary,
+                    "tree-sitter ERROR node — graph may be incomplete"
+                );
+            }
+        }
+
+        Ok(ParseOutcome { parsed, error })
     }
 
     fn extract_nodes(&self, parsed: &ParsedFile) -> Vec<NodeData> {
@@ -321,6 +373,9 @@ fn extract_trait(
                         span,
                         visibility: vis,
                         metadata: HashMap::new(),
+                        // Stamped on insertion via `CodeGraph::add_node`.
+                        birth_revision: 0,
+                        last_modified_revision: 0,
                     });
                 }
             }
@@ -386,6 +441,9 @@ fn extract_impl(
                         span,
                         visibility: vis,
                         metadata: HashMap::new(),
+                        // Stamped on insertion via `CodeGraph::add_node`.
+                        birth_revision: 0,
+                        last_modified_revision: 0,
                     });
                 }
             }
@@ -467,6 +525,9 @@ fn build_node_data(
         span,
         visibility: vis,
         metadata,
+        // Stamped on insertion via `CodeGraph::add_node`.
+        birth_revision: 0,
+        last_modified_revision: 0,
     }
 }
 
@@ -1017,5 +1078,68 @@ fn known() {}
             .iter()
             .any(|(src, dst, _)| *src == pong_node.id && *dst == ping_node.id);
         assert!(pong_calls_ping, "expected pong → ping call edge");
+    }
+
+    #[test]
+    fn test_rust_adapter_parse_file_detects_syntax_error() {
+        // Unclosed brace — tree-sitter will produce ERROR/MISSING nodes.
+        let adapter = RustAdapter::new();
+        let path = PathBuf::from("broken.rs");
+        let bad_source = "fn caller() {\n    do_thing(\n";
+
+        let result = adapter.parse_file(&path, bad_source);
+        match result {
+            Err(AdapterError::SyntaxError { .. }) => {}
+            other => panic!(
+                "expected SyntaxError on broken source, got {:?}",
+                other.map(|_| "Ok(_)").unwrap_or("Err(other)")
+            ),
+        }
+    }
+
+    #[test]
+    fn test_rust_adapter_parse_file_lenient_returns_partial() {
+        // Lenient path keeps the partial tree AND surfaces the error so the
+        // builder can index what it can while warning the caller.
+        let adapter = RustAdapter::new();
+        let path = PathBuf::from("broken.rs");
+        let bad_source = "fn first() {}\nfn second(\n";
+
+        let outcome = match adapter.parse_file_lenient(&path, bad_source) {
+            Ok(o) => o,
+            Err(e) => panic!("lenient parse must produce a partial tree: {e:?}"),
+        };
+        assert!(
+            outcome.error.is_some(),
+            "expected SyntaxError on partial tree"
+        );
+        assert!(
+            matches!(outcome.error.as_ref(), Some(AdapterError::SyntaxError { .. })),
+        );
+        // Tree should still be usable — we should at least see `first`.
+        let nodes = adapter.extract_nodes(&outcome.parsed);
+        assert!(
+            nodes.iter().any(|n| n.name == "first"),
+            "partial tree should still surface `first`, got: {:?}",
+            nodes.iter().map(|n| n.name.as_str()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_rust_adapter_parse_file_clean_source_is_ok() {
+        let adapter = RustAdapter::new();
+        let path = PathBuf::from("clean.rs");
+        let good_source = "fn ok() {}\n";
+
+        let parsed = match adapter.parse_file(&path, good_source) {
+            Ok(p) => p,
+            Err(e) => panic!("clean source must parse: {e:?}"),
+        };
+        let outcome = match adapter.parse_file_lenient(&path, good_source) {
+            Ok(o) => o,
+            Err(e) => panic!("clean source must parse leniently: {e:?}"),
+        };
+        assert!(outcome.error.is_none());
+        assert_eq!(parsed.tree.root_node().kind(), "source_file");
     }
 }

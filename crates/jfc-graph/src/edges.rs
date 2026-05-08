@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::nodes::Span;
+use crate::nodes::{NodeKind, Span};
 
 /// Edge kinds connecting nodes in the code graph.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -21,6 +21,55 @@ pub enum EdgeKind {
     Implements,
     /// Call to external crate (crate_name, path)
     ExternalCall(String, String),
+}
+
+impl EdgeKind {
+    /// Returns true if this edge kind is allowed between the given source and
+    /// target node kinds.
+    ///
+    /// Per-edge-kind invariants (the table downstream traversal relies on):
+    ///
+    /// | EdgeKind          | Source                         | Target                                  |
+    /// |-------------------|--------------------------------|-----------------------------------------|
+    /// | `Calls`           | Function                       | Function                                |
+    /// | `UnresolvedCall`  | Function                       | any (placeholder NodeId, not yet bound) |
+    /// | `UsesType`        | Function                       | Struct \| Enum \| Trait                 |
+    /// | `References`      | any                            | any (relaxed)                           |
+    /// | `Contains`        | Module \| Struct \| Enum \| Trait | Function \| Struct \| Enum \| Trait \| Module |
+    /// | `Implements`      | Struct \| Enum                 | Trait                                   |
+    /// | `ExternalCall`    | Function                       | any (placeholder for external symbol)   |
+    pub fn valid_for(&self, source: NodeKind, target: NodeKind) -> bool {
+        match self {
+            EdgeKind::Calls => source == NodeKind::Function && target == NodeKind::Function,
+            EdgeKind::UnresolvedCall(_) => source == NodeKind::Function,
+            EdgeKind::UsesType => {
+                source == NodeKind::Function
+                    && matches!(
+                        target,
+                        NodeKind::Struct | NodeKind::Enum | NodeKind::Trait
+                    )
+            }
+            EdgeKind::References => true,
+            EdgeKind::Contains => {
+                matches!(
+                    source,
+                    NodeKind::Module | NodeKind::Struct | NodeKind::Enum | NodeKind::Trait
+                ) && matches!(
+                    target,
+                    NodeKind::Function
+                        | NodeKind::Struct
+                        | NodeKind::Enum
+                        | NodeKind::Trait
+                        | NodeKind::Module
+                )
+            }
+            EdgeKind::Implements => {
+                matches!(source, NodeKind::Struct | NodeKind::Enum)
+                    && target == NodeKind::Trait
+            }
+            EdgeKind::ExternalCall(_, _) => source == NodeKind::Function,
+        }
+    }
 }
 
 /// Edge data stored on graph edges.
@@ -102,5 +151,58 @@ mod tests {
             assert_eq!(deserialized.source_span, edge.source_span);
             assert_eq!(deserialized.weight, edge.weight);
         }
+    }
+
+    #[test]
+    fn test_valid_for_calls() {
+        assert!(EdgeKind::Calls.valid_for(NodeKind::Function, NodeKind::Function));
+        assert!(!EdgeKind::Calls.valid_for(NodeKind::Module, NodeKind::Function));
+        assert!(!EdgeKind::Calls.valid_for(NodeKind::Function, NodeKind::Struct));
+    }
+
+    #[test]
+    fn test_valid_for_implements() {
+        assert!(EdgeKind::Implements.valid_for(NodeKind::Struct, NodeKind::Trait));
+        assert!(EdgeKind::Implements.valid_for(NodeKind::Enum, NodeKind::Trait));
+        assert!(!EdgeKind::Implements.valid_for(NodeKind::Function, NodeKind::Trait));
+        assert!(!EdgeKind::Implements.valid_for(NodeKind::Struct, NodeKind::Function));
+    }
+
+    #[test]
+    fn test_valid_for_contains() {
+        assert!(EdgeKind::Contains.valid_for(NodeKind::Module, NodeKind::Function));
+        assert!(EdgeKind::Contains.valid_for(NodeKind::Struct, NodeKind::Function));
+        assert!(EdgeKind::Contains.valid_for(NodeKind::Module, NodeKind::Module));
+        assert!(!EdgeKind::Contains.valid_for(NodeKind::Function, NodeKind::Function));
+    }
+
+    #[test]
+    fn test_valid_for_uses_type() {
+        assert!(EdgeKind::UsesType.valid_for(NodeKind::Function, NodeKind::Struct));
+        assert!(EdgeKind::UsesType.valid_for(NodeKind::Function, NodeKind::Enum));
+        assert!(EdgeKind::UsesType.valid_for(NodeKind::Function, NodeKind::Trait));
+        assert!(!EdgeKind::UsesType.valid_for(NodeKind::Function, NodeKind::Function));
+        assert!(!EdgeKind::UsesType.valid_for(NodeKind::Struct, NodeKind::Struct));
+    }
+
+    #[test]
+    fn test_valid_for_unresolved_and_external() {
+        let unresolved = EdgeKind::UnresolvedCall("foo".into());
+        assert!(unresolved.valid_for(NodeKind::Function, NodeKind::Function));
+        // UnresolvedCall is a placeholder — target may not exist with proper kind yet,
+        // so we only require the source to be a Function.
+        assert!(unresolved.valid_for(NodeKind::Function, NodeKind::Module));
+        assert!(!unresolved.valid_for(NodeKind::Module, NodeKind::Function));
+
+        let external = EdgeKind::ExternalCall("serde".into(), "Serialize".into());
+        assert!(external.valid_for(NodeKind::Function, NodeKind::Trait));
+        assert!(!external.valid_for(NodeKind::Struct, NodeKind::Trait));
+    }
+
+    #[test]
+    fn test_valid_for_references_relaxed() {
+        // References is intentionally relaxed — accepts any pairing.
+        assert!(EdgeKind::References.valid_for(NodeKind::Module, NodeKind::Function));
+        assert!(EdgeKind::References.valid_for(NodeKind::Function, NodeKind::Module));
     }
 }

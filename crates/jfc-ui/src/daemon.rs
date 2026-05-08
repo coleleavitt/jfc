@@ -616,7 +616,22 @@ pub fn should_fire_cron(job: &CronJob, now: SystemTime) -> bool {
     match &job.schedule {
         CronSchedule::Every { period } => match job.last_run {
             None => true,
-            Some(last) => now.duration_since(last).unwrap_or_default() >= *period,
+            Some(last) => {
+                // `duration_since` errors if `now < last` (system clock went
+                // backward). Saturate to ZERO and warn — a clock skew should
+                // not silently re-fire jobs nor crash the daemon.
+                match now.duration_since(last) {
+                    Ok(elapsed) => elapsed >= *period,
+                    Err(_) => {
+                        tracing::warn!(
+                            target: "jfc::daemon",
+                            "clock skew detected: now < last_run for cron job {}",
+                            job.id
+                        );
+                        false
+                    }
+                }
+            }
         },
         CronSchedule::Crontab {
             minute,
@@ -721,7 +736,13 @@ pub fn read_last_lines(path: &Path, n: usize) -> Vec<String> {
 }
 
 fn uuid_short() -> String {
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    // If the system clock is set before UNIX_EPOCH (extreme skew or pre-1970
+    // hardware clocks), saturate to ZERO. The resulting id collides with
+    // anything else generated under that condition, but we prefer that to a
+    // panic in id-generation paths.
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO);
     format!("{:x}{:04x}", t.as_secs() & 0xFFFF_FFFF, t.subsec_millis())
 }
 

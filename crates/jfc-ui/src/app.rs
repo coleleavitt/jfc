@@ -41,13 +41,13 @@ pub enum AppEvent {
         cache_write_tokens: u32,
     },
     ToolResult {
-        tool_id: String,
+        tool_id: crate::ids::ToolId,
         result: ExecutionResult,
     },
     /// Incremental output from a running tool (e.g. bash stdout line-by-line).
     /// The UI appends this to the tool's live output preview.
     ToolOutputChunk {
-        tool_id: String,
+        tool_id: crate::ids::ToolId,
         chunk: String,
     },
     AllToolsComplete,
@@ -92,7 +92,7 @@ pub enum AppEvent {
     /// per-agent stream handler that pipes nested-stream chunks into
     /// the parent's task buffer.
     AgentChunk {
-        task_id: String,
+        task_id: crate::ids::TaskId,
         text: String,
     },
     /// Inbound message from a teammate (delivered via the leader inbox).
@@ -129,11 +129,11 @@ pub enum AppEvent {
         reason: String,
     },
     TaskStarted {
-        task_id: String,
+        task_id: crate::ids::TaskId,
         description: String,
     },
     TaskProgress {
-        task_id: String,
+        task_id: crate::ids::TaskId,
         last_tool: Option<String>,
         elapsed_ms: u64,
         /// Cumulative tools invoked this run (None = no update). Routed
@@ -147,12 +147,12 @@ pub enum AppEvent {
         output_tokens: Option<u64>,
     },
     TaskCompleted {
-        task_id: String,
+        task_id: crate::ids::TaskId,
         summary: String,
         elapsed_ms: u64,
     },
     TaskFailed {
-        task_id: String,
+        task_id: crate::ids::TaskId,
         error: String,
     },
     McpUpdated {
@@ -249,6 +249,15 @@ impl PermissionMode {
 
     /// Whether this mode allows a given tool to execute without prompting.
     pub fn auto_approves(self, tool: &ToolCall) -> PermissionDecision {
+        // Unknown tools are denied in every permission mode (including
+        // BypassPermissions) — we don't dispatch a name we don't know,
+        // because the input schema is unknown and `execute_tool` would
+        // route the call to a "not yet implemented" failure anyway.
+        // The whole point of the UnknownTool variant is to make the
+        // refusal explicit instead of silently hitting that default.
+        if matches!(tool.kind, ToolKind::UnknownTool { .. }) {
+            return PermissionDecision::Denied("unknown tool — refusing to dispatch");
+        }
         match self {
             Self::Default => PermissionDecision::NeedsPrompt,
             Self::Plan => match tool.kind {
@@ -403,7 +412,7 @@ pub const TICK_MS: u64 = 80;
 pub const TOKEN_HISTORY_CAP: usize = 32;
 
 pub struct BackgroundTask {
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub description: String,
     pub status: crate::types::TaskLifecycle,
     pub started_at: std::time::Instant,
@@ -614,6 +623,15 @@ pub struct App {
     /// reported activity this turn.
     pub last_active_agent_task: Option<String>,
     pub interrupt_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Per-turn cancellation token. Cloned into every spawned task that
+    /// holds critical state (stream_response, tool dispatch, compact,
+    /// session save) so an ESC×2 / interrupt can race the in-flight work
+    /// against `.cancelled()` instead of waiting for the AtomicBool poll
+    /// to come around. Re-minted on every fresh user turn so the previous
+    /// token's cancelled state doesn't poison the next stream. wg-async
+    /// pattern: tasks holding state must be explicitly cancellable, not
+    /// just dropped via a flag the task may never poll.
+    pub cancel_token: tokio_util::sync::CancellationToken,
     /// Timestamp of the most recent ESC press in the main shortcut
     /// handler. The next ESC within `INTERRUPT_DOUBLE_TAP_MS` triggers
     /// an interrupt instead of just clearing the input.
@@ -699,7 +717,7 @@ pub struct App {
     /// selection moves past the visible area.
     pub session_list_state: ratatui::widgets::ListState,
     /// Active session id (set when the user picks one or starts a new one).
-    pub current_session_id: Option<String>,
+    pub current_session_id: Option<crate::ids::SessionId>,
     /// v126 auto-mode classifier config — `enabled: true` routes every tool
     /// call through the LLM classifier instead of prompting the user.
     /// Loaded from `~/.config/jfc/settings.json` at startup.
@@ -844,7 +862,7 @@ pub struct App {
     /// TODO Phase B: once `BackgroundTask.messages` migrates to
     /// `Vec<ChatMessage>` and the subagent view renders through the same
     /// `MessageView` pipeline as the main chat, this field collapses into
-    /// per-`ToolCall.is_collapsed` state and can be removed.
+    /// per-`ToolCall.display` state and can be removed.
     /// Per-task expansion state. Keyed by `task_id` so navigating
     /// between tasks (or out and back in) preserves what the user has
     /// expanded. Previously a session-wide `HashSet<usize>` that got
@@ -976,6 +994,7 @@ impl App {
             token_history: std::collections::VecDeque::with_capacity(TOKEN_HISTORY_CAP),
             last_active_agent_task: None,
             interrupt_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            cancel_token: tokio_util::sync::CancellationToken::new(),
             last_esc_at: None,
             always_approved: Vec::new(),
             session_approved: Vec::new(),
@@ -1076,7 +1095,7 @@ impl App {
         };
         // Open the task store with the real session id so tasks persist to disk.
         if let Some(ref sid) = app.current_session_id {
-            app.task_store = crate::tasks::TaskStore::open(sid);
+            app.task_store = crate::tasks::TaskStore::open(sid.as_str());
         }
         app.sync_selected_context_window();
         tracing::info!(
@@ -1095,7 +1114,7 @@ impl App {
     ///
     /// Pass `None` to mint a fresh session id; pass `Some(id)` to adopt an
     /// existing one (the session-load path through the sidebar / `/continue`).
-    pub fn switch_session(&mut self, id: Option<String>) {
+    pub fn switch_session(&mut self, id: Option<crate::ids::SessionId>) {
         let old_id = self.current_session_id.clone();
         let new_id = id.unwrap_or_else(crate::session::generate_session_id);
         tracing::info!(
@@ -1105,7 +1124,7 @@ impl App {
             "switch_session"
         );
         self.current_session_id = Some(new_id.clone());
-        self.task_store = crate::tasks::TaskStore::open(&new_id);
+        self.task_store = crate::tasks::TaskStore::open(new_id.as_str());
         self.task_completion_times.clear();
         self.task_activities.clear();
         self.task_panel_selected = 0;
@@ -1426,6 +1445,7 @@ mod tests {
             Ok(Box::pin(futures::stream::empty()))
         }
     }
+    impl crate::provider::seal::Sealed for TestProvider {}
 
     fn new_app() -> App {
         App::new(Arc::new(TestProvider), "test-model")
@@ -1433,18 +1453,16 @@ mod tests {
 
     fn make_tool(kind: ToolKind, id: &str) -> ToolCall {
         ToolCall {
-            id: id.to_owned(),
+            id: crate::ids::ToolId::from(id),
             kind,
             status: ToolStatus::Pending,
             input: ToolInput::Generic {
                 summary: String::new(),
             },
             output: ToolOutput::Empty,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }
     }
 
@@ -1905,14 +1923,17 @@ mod tests {
         app.task_completion_times
             .insert(crate::tasks::TaskId::from("t1"), Instant::now());
 
-        app.switch_session(Some("ses_test_switch".into()));
+        app.switch_session(Some(crate::ids::SessionId::new("ses_test_switch")));
 
         assert!(!app.compact_suppressed);
         assert_eq!(app.task_panel_selected, 0);
         assert!(app.viewing_task_id.is_none());
         assert!(app.viewing_task_expanded.is_empty());
         assert!(app.task_completion_times.is_empty());
-        assert_eq!(app.current_session_id.as_deref(), Some("ses_test_switch"));
+        assert_eq!(
+            app.current_session_id.as_ref().map(|s| s.as_str()),
+            Some("ses_test_switch"),
+        );
     }
 
     // Normal: switch_session(None) installs a freshly-generated id and
@@ -1926,7 +1947,7 @@ mod tests {
         app.current_session_id = None;
         app.switch_session(None);
         assert!(app.current_session_id.is_some());
-        let id = app.current_session_id.as_deref().unwrap();
+        let id = app.current_session_id.as_ref().unwrap().as_str();
         assert!(id.starts_with("ses_"), "id has expected prefix: {id}");
     }
 
@@ -2154,7 +2175,7 @@ mod tests {
         let tool = ToolCall {
             id: "t".into(),
             kind: ToolKind::Edit,
-            status: ToolStatus::Complete,
+            status: ToolStatus::Completed,
             input: ToolInput::Edit {
                 file_path: "src/x.rs".into(),
                 old_string: "old".into(),
@@ -2162,11 +2183,9 @@ mod tests {
                 replacement: ReplacementMode::FirstOnly,
             },
             output: ToolOutput::Text("ok".into()),
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         };
         let part = MessagePart::Tool(tool);
         match part {

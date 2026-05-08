@@ -4,14 +4,15 @@
 //! adapters for cycle-detected, depth-bounded traversal with zero-copy
 //! direction flipping.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use petgraph::Direction;
 use petgraph::stable_graph::NodeIndex;
-use petgraph::visit::{Dfs, Reversed};
+use petgraph::visit::{Dfs, EdgeRef, Reversed};
 
+use crate::edges::EdgeData;
 use crate::graph::CodeGraph;
-use crate::nodes::NodeId;
+use crate::nodes::{NodeData, NodeId};
 
 /// Direction of traversal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,6 +166,16 @@ pub fn traverse(graph: &CodeGraph, start: &NodeId, config: &TraversalConfig) -> 
 /// Find shortest path between two nodes using BFS.
 ///
 /// Returns `None` if no path exists within `max_depth` hops.
+///
+/// Implementation note: parent tracking uses a `HashMap<NodeIndex, NodeIndex>`
+/// rather than a `Vec<(NodeIndex, Option<NodeIndex>)>`. This avoids the previous
+/// O(n) linear scan per reconstruction step (overall O(n²)) and rules out the
+/// "stale entry causes infinite loop" failure mode that the linear scan was
+/// vulnerable to. Path reconstruction is now O(n) total.
+///
+/// As belt-and-suspenders defense against any future corruption of the parent
+/// map, reconstruction caps iterations at `parents.len() + 1` and returns `None`
+/// on overflow rather than spinning forever.
 pub fn find_path(
     graph: &CodeGraph,
     from: &NodeId,
@@ -179,13 +190,13 @@ pub fn find_path(
     }
 
     let inner = graph.inner();
-    let mut visited: HashSet<NodeIndex> = HashSet::new();
-    let mut parents: Vec<(NodeIndex, Option<NodeIndex>)> = Vec::new();
+    // `parents[child] = parent` — only inserted once per node (first time visited),
+    // so look-ups are O(1) and the chain `to_idx → ... → from_idx` is acyclic by
+    // construction (BFS never revisits, so each node has exactly one parent).
+    let mut parents: HashMap<NodeIndex, NodeIndex> = HashMap::new();
     let mut queue: std::collections::VecDeque<(NodeIndex, usize)> =
         std::collections::VecDeque::new();
 
-    visited.insert(from_idx);
-    parents.push((from_idx, None));
     queue.push_back((from_idx, 0));
 
     while let Some((current, depth)) = queue.pop_front() {
@@ -194,30 +205,14 @@ pub fn find_path(
         }
 
         for neighbor in inner.neighbors_directed(current, Direction::Outgoing) {
-            if visited.contains(&neighbor) {
+            if neighbor == from_idx || parents.contains_key(&neighbor) {
                 continue;
             }
 
-            visited.insert(neighbor);
-            parents.push((neighbor, Some(current)));
+            parents.insert(neighbor, current);
 
             if neighbor == to_idx {
-                // Reconstruct path
-                let mut path_indices = vec![neighbor];
-                let mut cursor = current;
-                path_indices.push(cursor);
-                while let Some((_, Some(parent))) = parents.iter().find(|(n, _)| *n == cursor) {
-                    path_indices.push(*parent);
-                    cursor = *parent;
-                }
-                path_indices.reverse();
-
-                return Some(
-                    path_indices
-                        .iter()
-                        .filter_map(|idx| graph.node_id_for(*idx).cloned())
-                        .collect(),
-                );
+                return reconstruct_path(graph, &parents, from_idx, to_idx);
             }
 
             queue.push_back((neighbor, depth + 1));
@@ -225,6 +220,378 @@ pub fn find_path(
     }
 
     None
+}
+
+/// Multi-source shortest path: BFS from any of `sources` to `target`.
+///
+/// All sources are seeded into the BFS frontier at depth 0 simultaneously, so
+/// the first source to reach `target` (in BFS order) wins. The returned path
+/// starts at whichever source produced it and ends at `target`.
+///
+/// Returns `None` if `target` is unreachable from every source within
+/// `max_depth` hops, if any input is missing from the graph, or if `sources`
+/// is empty.
+///
+/// Implementation note: `parents` doubles as the visited set — sources insert
+/// themselves with a self-parent so BFS never re-enqueues them, and path
+/// reconstruction stops at the entry whose parent equals itself (rather than
+/// the single fixed `from_idx` of the single-source case).
+pub fn find_path_multi_source(
+    graph: &CodeGraph,
+    sources: &[NodeId],
+    target: &NodeId,
+    max_depth: usize,
+) -> Option<Vec<NodeId>> {
+    if sources.is_empty() {
+        return None;
+    }
+    let target_idx = graph.resolve(target)?;
+    let inner = graph.inner();
+
+    // Seed every resolvable source at depth 0. Sources mark themselves as their
+    // own parent so reconstruction can detect "we hit a source".
+    let mut parents: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+    let mut queue: std::collections::VecDeque<(NodeIndex, usize)> =
+        std::collections::VecDeque::new();
+
+    for src in sources {
+        if let Some(idx) = graph.resolve(src) {
+            // Early exit: a source IS the target.
+            if idx == target_idx {
+                return Some(vec![src.clone()]);
+            }
+            // First seeding wins — duplicates are skipped via the contains check.
+            if !parents.contains_key(&idx) {
+                parents.insert(idx, idx); // self-parent sentinel
+                queue.push_back((idx, 0));
+            }
+        }
+    }
+
+    if queue.is_empty() {
+        return None;
+    }
+
+    while let Some((current, depth)) = queue.pop_front() {
+        if depth >= max_depth {
+            continue;
+        }
+
+        for neighbor in inner.neighbors_directed(current, Direction::Outgoing) {
+            if parents.contains_key(&neighbor) {
+                continue;
+            }
+            parents.insert(neighbor, current);
+
+            if neighbor == target_idx {
+                return reconstruct_path_multi_source(graph, &parents, target_idx);
+            }
+            queue.push_back((neighbor, depth + 1));
+        }
+    }
+
+    None
+}
+
+/// Reconstruct a path back to whichever source it originated from.
+///
+/// Sources are encoded by `parents[src] == src` (self-parent sentinel set by
+/// [`find_path_multi_source`]); the walk terminates the first time that
+/// invariant holds.
+fn reconstruct_path_multi_source(
+    graph: &CodeGraph,
+    parents: &HashMap<NodeIndex, NodeIndex>,
+    target_idx: NodeIndex,
+) -> Option<Vec<NodeId>> {
+    let cap = parents.len() + 1;
+    let mut path_indices: Vec<NodeIndex> = Vec::with_capacity(cap);
+    path_indices.push(target_idx);
+
+    let mut cursor = target_idx;
+    loop {
+        let parent = *parents.get(&cursor)?;
+        if parent == cursor {
+            // Reached a source (self-parent sentinel).
+            break;
+        }
+        path_indices.push(parent);
+        cursor = parent;
+        if path_indices.len() > cap {
+            return None;
+        }
+    }
+
+    path_indices.reverse();
+    Some(
+        path_indices
+            .into_iter()
+            .filter_map(|idx| graph.node_id_for(idx).cloned())
+            .collect(),
+    )
+}
+
+/// Enumerate all simple (cycle-free) paths from `source` to `target` up to
+/// `max_depth` hops, capped at `max_paths` results.
+///
+/// Uses iterative DFS with backtracking: a `path` stack tracks the current
+/// candidate, and `on_path` (a `HashSet<NodeIndex>`) keeps the cycle-prevention
+/// check at O(1). Each frame stores the iterator state for its expansion so
+/// backtracking is just popping the stack — no recursion-depth ceiling.
+///
+/// Returns an empty vector if either endpoint is missing from the graph or if
+/// no simple path under the depth cap exists. The `source == target` case
+/// returns the single trivial path `[source]`.
+pub fn all_simple_paths(
+    graph: &CodeGraph,
+    source: &NodeId,
+    target: &NodeId,
+    max_depth: usize,
+    max_paths: usize,
+) -> Vec<Vec<NodeId>> {
+    let mut results: Vec<Vec<NodeId>> = Vec::new();
+    if max_paths == 0 {
+        return results;
+    }
+    let Some(source_idx) = graph.resolve(source) else {
+        return results;
+    };
+    let Some(target_idx) = graph.resolve(target) else {
+        return results;
+    };
+
+    if source_idx == target_idx {
+        results.push(vec![source.clone()]);
+        return results;
+    }
+
+    let inner = graph.inner();
+
+    // Iterative DFS frame: (node, neighbor iterator).
+    type Frame<'a> = (
+        NodeIndex,
+        petgraph::stable_graph::Neighbors<'a, EdgeData>,
+    );
+
+    let mut path: Vec<NodeIndex> = Vec::new();
+    let mut on_path: HashSet<NodeIndex> = HashSet::new();
+    let mut stack: Vec<Frame> = Vec::new();
+
+    path.push(source_idx);
+    on_path.insert(source_idx);
+    stack.push((source_idx, inner.neighbors_directed(source_idx, Direction::Outgoing)));
+
+    while let Some((_node, iter)) = stack.last_mut() {
+        // Path length in *edges* (hops) is `path.len() - 1`. A new neighbor
+        // would push to depth `path.len()`, i.e. `path.len()` hops. Skip
+        // expansion entirely once that would exceed `max_depth`.
+        if path.len() - 1 >= max_depth {
+            // Backtrack: this frame can't extend further without overshooting.
+            on_path.remove(&path.pop().expect("path matches stack depth"));
+            stack.pop();
+            continue;
+        }
+
+        match iter.next() {
+            Some(neighbor) => {
+                if neighbor == target_idx {
+                    // Snapshot the full path including the target.
+                    let mut snapshot: Vec<NodeId> = path
+                        .iter()
+                        .filter_map(|&idx| graph.node_id_for(idx).cloned())
+                        .collect();
+                    if let Some(tid) = graph.node_id_for(target_idx) {
+                        snapshot.push(tid.clone());
+                    }
+                    results.push(snapshot);
+                    if results.len() >= max_paths {
+                        return results;
+                    }
+                    // Don't descend through the target — paths through it
+                    // would re-enter (target acts as a leaf for enumeration).
+                    continue;
+                }
+                if on_path.contains(&neighbor) {
+                    // Cycle — skip.
+                    continue;
+                }
+                // Descend.
+                path.push(neighbor);
+                on_path.insert(neighbor);
+                stack.push((neighbor, inner.neighbors_directed(neighbor, Direction::Outgoing)));
+            }
+            None => {
+                // No more neighbors — backtrack.
+                on_path.remove(&path.pop().expect("path matches stack depth"));
+                stack.pop();
+            }
+        }
+    }
+
+    results
+}
+
+/// Shortest path from `source` to `target` that avoids any node where
+/// `avoid_node` returns `true`. The source and target themselves are checked
+/// against the predicate; if either matches, no path is returned.
+///
+/// BFS, identical to [`find_path`] except that neighbors are filtered through
+/// the predicate before being enqueued. The predicate is consulted at
+/// expansion time rather than baked into the parent map, so callers can swap
+/// predicates without re-traversing.
+pub fn find_path_avoiding<F>(
+    graph: &CodeGraph,
+    source: &NodeId,
+    target: &NodeId,
+    max_depth: usize,
+    avoid_node: F,
+) -> Option<Vec<NodeId>>
+where
+    F: Fn(&NodeId, &NodeData) -> bool,
+{
+    let from_idx = graph.resolve(source)?;
+    let to_idx = graph.resolve(target)?;
+
+    // Source or target excluded by predicate → no admissible path exists.
+    let inner = graph.inner();
+    if let Some(data) = inner.node_weight(from_idx)
+        && avoid_node(source, data)
+    {
+        return None;
+    }
+    if let Some(data) = inner.node_weight(to_idx)
+        && avoid_node(target, data)
+    {
+        return None;
+    }
+
+    if from_idx == to_idx {
+        return Some(vec![source.clone()]);
+    }
+
+    let mut parents: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+    let mut queue: std::collections::VecDeque<(NodeIndex, usize)> =
+        std::collections::VecDeque::new();
+    queue.push_back((from_idx, 0));
+
+    while let Some((current, depth)) = queue.pop_front() {
+        if depth >= max_depth {
+            continue;
+        }
+
+        for neighbor in inner.neighbors_directed(current, Direction::Outgoing) {
+            if neighbor == from_idx || parents.contains_key(&neighbor) {
+                continue;
+            }
+            // Predicate check: skip avoided nodes (target itself is exempt
+            // from avoidance — already validated above).
+            if neighbor != to_idx
+                && let Some(data) = inner.node_weight(neighbor)
+                && let Some(nbr_id) = graph.node_id_for(neighbor)
+                && avoid_node(nbr_id, data)
+            {
+                continue;
+            }
+
+            parents.insert(neighbor, current);
+
+            if neighbor == to_idx {
+                return reconstruct_path(graph, &parents, from_idx, to_idx);
+            }
+            queue.push_back((neighbor, depth + 1));
+        }
+    }
+
+    None
+}
+
+/// Shortest path from `source` to `target` that avoids any edge where
+/// `avoid_edge` returns `true`.
+///
+/// Mirror of [`find_path_avoiding`] for edge-level predicates. Iterates
+/// `edges_directed` rather than `neighbors_directed` so the [`EdgeData`] is
+/// available to the predicate; the same parent-map BFS reconstruction is
+/// reused.
+pub fn find_path_avoiding_edge<F>(
+    graph: &CodeGraph,
+    source: &NodeId,
+    target: &NodeId,
+    max_depth: usize,
+    avoid_edge: F,
+) -> Option<Vec<NodeId>>
+where
+    F: Fn(&EdgeData) -> bool,
+{
+    let from_idx = graph.resolve(source)?;
+    let to_idx = graph.resolve(target)?;
+
+    if from_idx == to_idx {
+        return Some(vec![source.clone()]);
+    }
+
+    let inner = graph.inner();
+    let mut parents: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+    let mut queue: std::collections::VecDeque<(NodeIndex, usize)> =
+        std::collections::VecDeque::new();
+    queue.push_back((from_idx, 0));
+
+    while let Some((current, depth)) = queue.pop_front() {
+        if depth >= max_depth {
+            continue;
+        }
+
+        for edge in inner.edges_directed(current, Direction::Outgoing) {
+            if avoid_edge(edge.weight()) {
+                continue;
+            }
+            let neighbor = edge.target();
+            if neighbor == from_idx || parents.contains_key(&neighbor) {
+                continue;
+            }
+            parents.insert(neighbor, current);
+
+            if neighbor == to_idx {
+                return reconstruct_path(graph, &parents, from_idx, to_idx);
+            }
+            queue.push_back((neighbor, depth + 1));
+        }
+    }
+
+    None
+}
+
+/// Reconstruct a path `from_idx → ... → to_idx` from a parent map produced by BFS.
+///
+/// Returns `None` if the chain exceeds the size of the parent map (which would
+/// indicate corruption, since BFS guarantees each node has at most one parent
+/// and the chain length is bounded by the visited set).
+fn reconstruct_path(
+    graph: &CodeGraph,
+    parents: &HashMap<NodeIndex, NodeIndex>,
+    from_idx: NodeIndex,
+    to_idx: NodeIndex,
+) -> Option<Vec<NodeId>> {
+    let cap = parents.len() + 1;
+    let mut path_indices: Vec<NodeIndex> = Vec::with_capacity(cap);
+    path_indices.push(to_idx);
+
+    let mut cursor = to_idx;
+    while cursor != from_idx {
+        let parent = *parents.get(&cursor)?;
+        path_indices.push(parent);
+        cursor = parent;
+        if path_indices.len() > cap {
+            // Defensive: parent map is corrupted (cycle or detached chain).
+            return None;
+        }
+    }
+
+    path_indices.reverse();
+    Some(
+        path_indices
+            .into_iter()
+            .filter_map(|idx| graph.node_id_for(idx).cloned())
+            .collect(),
+    )
 }
 
 /// Extract subgraph: all nodes reachable from `start` within `depth` in both directions.
@@ -330,20 +697,20 @@ pub trait GraphConnectivity {
 
 impl GraphConnectivity for CodeGraph {
     fn outgoing_neighbors(&self, node: &NodeId) -> Vec<NodeId> {
-        let Some(&idx) = self.index_map.get(node) else {
+        let Some(idx) = self.resolve(node) else {
             return Vec::new();
         };
-        self.graph
+        self.inner()
             .neighbors_directed(idx, Direction::Outgoing)
             .filter_map(|n| self.node_id_for(n).cloned())
             .collect()
     }
 
     fn incoming_neighbors(&self, node: &NodeId) -> Vec<NodeId> {
-        let Some(&idx) = self.index_map.get(node) else {
+        let Some(idx) = self.resolve(node) else {
             return Vec::new();
         };
-        self.graph
+        self.inner()
             .neighbors_directed(idx, Direction::Incoming)
             .filter_map(|n| self.node_id_for(n).cloned())
             .collect()
@@ -381,6 +748,8 @@ mod tests {
             span: sample_span(),
             visibility: Visibility::Public,
             metadata: HashMap::new(),
+            birth_revision: 0,
+            last_modified_revision: 0,
         }
     }
 
@@ -478,6 +847,51 @@ mod tests {
     }
 
     #[test]
+    fn find_path_long_chain_normal() {
+        // Regression test for the O(n²) reconstruction loop in find_path.
+        // Build a 1000-node chain n0 → n1 → ... → n999 and assert the returned
+        // path has 1000 entries in the correct order. (We don't time-bound the
+        // test — correctness on a long chain is sufficient evidence the
+        // reconstruction is no longer quadratic, since the previous O(n²)
+        // implementation also produced correct output, just slowly.)
+        let mut g = CodeGraph::new();
+        let n = 1000;
+        let ids: Vec<NodeId> = (0..n)
+            .map(|i| g.add_node(make_node(&format!("n{i}"))))
+            .collect();
+        for i in 0..n - 1 {
+            g.add_edge(&ids[i], &ids[i + 1], make_edge()).unwrap();
+        }
+
+        let path = find_path(&g, &ids[0], &ids[n - 1], n).expect("path should exist");
+        assert_eq!(path.len(), n);
+        assert_eq!(path[0], ids[0]);
+        assert_eq!(path[n - 1], ids[n - 1]);
+        // Spot-check ordering at a few interior positions.
+        assert_eq!(path[1], ids[1]);
+        assert_eq!(path[n / 2], ids[n / 2]);
+        assert_eq!(path[n - 2], ids[n - 2]);
+    }
+
+    #[test]
+    fn find_path_returns_none_when_disconnected_robust() {
+        // Two disconnected components: {a, b} and {c, d}. No path from a to d.
+        let mut g = CodeGraph::new();
+        let a_id = g.add_node(make_node("a"));
+        let b_id = g.add_node(make_node("b"));
+        let c_id = g.add_node(make_node("c"));
+        let d_id = g.add_node(make_node("d"));
+        g.add_edge(&a_id, &b_id, make_edge()).unwrap();
+        g.add_edge(&c_id, &d_id, make_edge()).unwrap();
+
+        assert!(find_path(&g, &a_id, &d_id, 100).is_none());
+        assert!(find_path(&g, &a_id, &c_id, 100).is_none());
+        // Sanity: paths within each component still resolve.
+        assert!(find_path(&g, &a_id, &b_id, 100).is_some());
+        assert!(find_path(&g, &c_id, &d_id, 100).is_some());
+    }
+
+    #[test]
     fn test_dfs_with_reversed() {
         let mut g = CodeGraph::new();
         let a_id = g.add_node(make_node("a"));
@@ -490,6 +904,188 @@ mod tests {
         let result = dfs_collect(&g, &c_id, TraversalDirection::Incoming, 100);
         assert_eq!(result.len(), 3); // c, b, a
         assert_eq!(result[0], c_id);
+    }
+
+    #[test]
+    fn find_path_multi_source_picks_shortest_from_any_normal() {
+        // Three sources; the chosen one should produce the shortest path.
+        //   s1 → x → t        (2 hops)
+        //   s2 → t            (1 hop)  ← winner
+        //   s3 → y → z → t    (3 hops)
+        let mut g = CodeGraph::new();
+        let s1 = g.add_node(make_node("s1"));
+        let s2 = g.add_node(make_node("s2"));
+        let s3 = g.add_node(make_node("s3"));
+        let x = g.add_node(make_node("x"));
+        let y = g.add_node(make_node("y"));
+        let z = g.add_node(make_node("z"));
+        let t = g.add_node(make_node("t"));
+        g.add_edge(&s1, &x, make_edge()).unwrap();
+        g.add_edge(&x, &t, make_edge()).unwrap();
+        g.add_edge(&s2, &t, make_edge()).unwrap();
+        g.add_edge(&s3, &y, make_edge()).unwrap();
+        g.add_edge(&y, &z, make_edge()).unwrap();
+        g.add_edge(&z, &t, make_edge()).unwrap();
+
+        let path = find_path_multi_source(&g, &[s1.clone(), s2.clone(), s3.clone()], &t, 10)
+            .expect("path should exist");
+        assert_eq!(path, vec![s2, t]);
+    }
+
+    #[test]
+    fn find_path_multi_source_returns_none_when_all_disconnected_robust() {
+        // Sources sit in component A, target in component B. No path possible.
+        let mut g = CodeGraph::new();
+        let s1 = g.add_node(make_node("s1"));
+        let s2 = g.add_node(make_node("s2"));
+        let mid = g.add_node(make_node("mid"));
+        let t = g.add_node(make_node("t"));
+        let other = g.add_node(make_node("other"));
+        g.add_edge(&s1, &mid, make_edge()).unwrap();
+        g.add_edge(&s2, &mid, make_edge()).unwrap();
+        g.add_edge(&t, &other, make_edge()).unwrap(); // detached subgraph
+
+        assert!(find_path_multi_source(&g, &[s1.clone(), s2.clone()], &t, 100).is_none());
+        // Empty sources: no path.
+        assert!(find_path_multi_source(&g, &[], &t, 100).is_none());
+        // Single source equal to target — the trivial path is returned.
+        let trivial = find_path_multi_source(&g, &[t.clone()], &t, 5).unwrap();
+        assert_eq!(trivial, vec![t]);
+    }
+
+    #[test]
+    fn all_simple_paths_diamond_returns_two_paths_normal() {
+        // Diamond: A → B → D and A → C → D.
+        let mut g = CodeGraph::new();
+        let a = g.add_node(make_node("a"));
+        let b = g.add_node(make_node("b"));
+        let c = g.add_node(make_node("c"));
+        let d = g.add_node(make_node("d"));
+        g.add_edge(&a, &b, make_edge()).unwrap();
+        g.add_edge(&a, &c, make_edge()).unwrap();
+        g.add_edge(&b, &d, make_edge()).unwrap();
+        g.add_edge(&c, &d, make_edge()).unwrap();
+
+        let paths = all_simple_paths(&g, &a, &d, 10, 10);
+        assert_eq!(paths.len(), 2);
+        // Both paths start at A and end at D, length 3.
+        for p in &paths {
+            assert_eq!(p.len(), 3);
+            assert_eq!(p[0], a);
+            assert_eq!(p[2], d);
+        }
+        // Together they cover both intermediate nodes.
+        let mids: HashSet<&NodeId> = paths.iter().map(|p| &p[1]).collect();
+        assert!(mids.contains(&b));
+        assert!(mids.contains(&c));
+    }
+
+    #[test]
+    fn all_simple_paths_respects_max_paths_robust() {
+        // Build A → {b1..b5} → t. Five distinct paths of length 3 exist;
+        // cap at 3 and verify exactly 3 returned.
+        let mut g = CodeGraph::new();
+        let a = g.add_node(make_node("a"));
+        let t = g.add_node(make_node("t"));
+        let bs: Vec<NodeId> = (0..5)
+            .map(|i| g.add_node(make_node(&format!("b{i}"))))
+            .collect();
+        for b in &bs {
+            g.add_edge(&a, b, make_edge()).unwrap();
+            g.add_edge(b, &t, make_edge()).unwrap();
+        }
+
+        let capped = all_simple_paths(&g, &a, &t, 10, 3);
+        assert_eq!(capped.len(), 3);
+        // Without the cap, all 5 should be enumerated.
+        let uncapped = all_simple_paths(&g, &a, &t, 10, 100);
+        assert_eq!(uncapped.len(), 5);
+        // max_depth bound: with depth 1, no path of length 2 fits (path has 2
+        // hops: a→bi→t).
+        let too_shallow = all_simple_paths(&g, &a, &t, 1, 100);
+        assert!(too_shallow.is_empty());
+    }
+
+    #[test]
+    fn all_simple_paths_excludes_cyclic_paths_robust() {
+        // Cycle: A → B → C → A, plus A → B → D. Only the acyclic path A→B→D
+        // should be enumerated; the cycle must not produce A→B→C→A→B→D etc.
+        let mut g = CodeGraph::new();
+        let a = g.add_node(make_node("a"));
+        let b = g.add_node(make_node("b"));
+        let c = g.add_node(make_node("c"));
+        let d = g.add_node(make_node("d"));
+        g.add_edge(&a, &b, make_edge()).unwrap();
+        g.add_edge(&b, &c, make_edge()).unwrap();
+        g.add_edge(&c, &a, make_edge()).unwrap(); // cycle back
+        g.add_edge(&b, &d, make_edge()).unwrap();
+
+        let paths = all_simple_paths(&g, &a, &d, 20, 100);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0], vec![a.clone(), b.clone(), d.clone()]);
+
+        // From source==target, the trivial single-node path is returned.
+        let trivial = all_simple_paths(&g, &a, &a, 5, 5);
+        assert_eq!(trivial, vec![vec![a]]);
+    }
+
+    #[test]
+    fn find_path_avoiding_node_skips_blacklisted_normal() {
+        // Diamond A→B→D, A→C→D. Blacklist B by qualified name; only A→C→D
+        // should be returned.
+        let mut g = CodeGraph::new();
+        let a = g.add_node(make_node("a"));
+        let b = g.add_node(make_node("b"));
+        let c = g.add_node(make_node("c"));
+        let d = g.add_node(make_node("d"));
+        g.add_edge(&a, &b, make_edge()).unwrap();
+        g.add_edge(&a, &c, make_edge()).unwrap();
+        g.add_edge(&b, &d, make_edge()).unwrap();
+        g.add_edge(&c, &d, make_edge()).unwrap();
+
+        let path = find_path_avoiding(&g, &a, &d, 10, |_id, data| {
+            data.qualified_name == "crate::b"
+        })
+        .expect("path through C should exist");
+        assert_eq!(path, vec![a.clone(), c.clone(), d.clone()]);
+
+        // If we blacklist BOTH intermediates, no path exists.
+        let blocked = find_path_avoiding(&g, &a, &d, 10, |_id, data| {
+            data.qualified_name == "crate::b" || data.qualified_name == "crate::c"
+        });
+        assert!(blocked.is_none());
+
+        // If we blacklist the source itself, no admissible path.
+        let self_blocked = find_path_avoiding(&g, &a, &d, 10, |_id, data| {
+            data.qualified_name == "crate::a"
+        });
+        assert!(self_blocked.is_none());
+    }
+
+    #[test]
+    fn find_path_avoiding_edge_skips_blacklisted_normal() {
+        // Diamond A→B→D, A→C→D. Blacklist the A→B edge by tagging it with a
+        // distinct weight, then verify only the C-route is returned.
+        let mut g = CodeGraph::new();
+        let a = g.add_node(make_node("a"));
+        let b = g.add_node(make_node("b"));
+        let c = g.add_node(make_node("c"));
+        let d = g.add_node(make_node("d"));
+        let mut tagged = make_edge();
+        tagged.weight = 99.0; // sentinel marking the edge to avoid
+        g.add_edge(&a, &b, tagged).unwrap();
+        g.add_edge(&a, &c, make_edge()).unwrap();
+        g.add_edge(&b, &d, make_edge()).unwrap();
+        g.add_edge(&c, &d, make_edge()).unwrap();
+
+        let path =
+            find_path_avoiding_edge(&g, &a, &d, 10, |edge| edge.weight == 99.0).unwrap();
+        assert_eq!(path, vec![a.clone(), c.clone(), d.clone()]);
+
+        // Blacklisting all outgoing edges from A produces no path.
+        let blocked =
+            find_path_avoiding_edge(&g, &a, &d, 10, |edge| edge.weight > 0.0 || edge.weight == 0.0);
+        assert!(blocked.is_none());
     }
 
     #[test]

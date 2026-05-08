@@ -198,20 +198,23 @@ impl fmt::Display for ModelSpec {
     }
 }
 
-/// Allows constructing from a raw string (bare model — no provider routing).
-/// Use `.parse::<ModelSpec>()` for full `provider/model` parsing.
-impl From<String> for ModelSpec {
-    fn from(s: String) -> Self {
-        // Attempt qualified parse; fall back to bare if it fails
-        s.parse()
-            .unwrap_or_else(|_| ModelSpec::bare(ModelId::new(s)))
-    }
-}
-
-impl From<&str> for ModelSpec {
-    fn from(s: &str) -> Self {
-        s.parse()
-            .unwrap_or_else(|_| ModelSpec::bare(ModelId::new(s)))
+impl ModelSpec {
+    /// Parse leniently: if `s` doesn't look like a `provider/model` spec
+    /// (e.g. it has an empty provider or empty model component), treat the
+    /// whole thing as a bare model id. Empty input still returns
+    /// `Err(ModelSpecParseError::Empty)` — silently producing a spec with an
+    /// empty `ModelId` would hide upstream "no model configured" bugs.
+    ///
+    /// For strict parsing prefer `s.parse::<ModelSpec>()`. Use this method
+    /// only when the caller has a documented reason to fall back to a bare
+    /// model id (e.g. an end-user-typed string from the model picker that
+    /// might contain stray slashes).
+    pub fn parse_lenient(s: &str) -> Result<Self, ModelSpecParseError> {
+        if s.is_empty() {
+            return Err(ModelSpecParseError::Empty);
+        }
+        Ok(s.parse()
+            .unwrap_or_else(|_| ModelSpec::bare(ModelId::new(s))))
     }
 }
 
@@ -522,8 +525,27 @@ pub enum StreamConvention {
     InlineXmlTags,
 }
 
+/// Sealed-trait machinery for `Provider`.
+///
+/// Following the `t-libs-api` "sealed traits" guidance: implementations of
+/// `Provider` live exclusively inside this crate's `providers/` module.
+/// External crates can still *reference* the trait — call its methods, hold
+/// `Arc<dyn Provider>` — but cannot add their own impls, because
+/// `seal::Sealed` is only implementable from within this crate.
+///
+/// Even though jfc-ui isn't a published library today, sealing protects
+/// future evolution: if the crate ever splits or is re-exported, downstream
+/// callers cannot lock us out of adding new required methods.
+pub mod seal {
+    pub trait Sealed {}
+}
+
+/// Sealed: implementations live inside the jfc-ui crate's `providers/`
+/// module. External crates cannot implement `Provider` directly — extend by
+/// adding a new module under `providers/` and registering it in the
+/// dispatch table in `main.rs`.
 #[async_trait]
-pub trait Provider: Send + Sync {
+pub trait Provider: Send + Sync + seal::Sealed {
     fn name(&self) -> &str;
 
     fn available_models(&self) -> Vec<ModelInfo>;
@@ -665,18 +687,42 @@ mod tests {
 
     // ─── ModelSpec constructors ───────────────────────────────────────────
 
+    // Normal: parse_lenient threads a qualified spec through to the strict
+    // FromStr path (no fallback needed).
     #[test]
-    fn from_string_parses_qualified_normal() {
-        let spec = ModelSpec::from("openwebui/gpt-4o".to_owned());
+    fn parse_lenient_qualified_normal() {
+        let spec = ModelSpec::parse_lenient("openwebui/gpt-4o").unwrap();
         assert_eq!(spec.provider().unwrap().as_str(), "openwebui");
         assert_eq!(spec.model().as_str(), "gpt-4o");
     }
 
+    // Normal: parse_lenient on a bare id still routes through FromStr —
+    // bare ids parse cleanly without needing the fallback.
     #[test]
-    fn from_str_bare_normal() {
-        let spec = ModelSpec::from("claude-opus-4-7");
+    fn parse_lenient_bare_normal() {
+        let spec = ModelSpec::parse_lenient("claude-opus-4-7").unwrap();
         assert_eq!(spec.provider(), None);
         assert_eq!(spec.model().as_str(), "claude-opus-4-7");
+    }
+
+    // Robust: parse_lenient on a malformed `provider/model` (empty model
+    // after the slash) falls back to treating the whole string as a bare
+    // model id — the lenient contract — instead of erroring.
+    #[test]
+    fn parse_lenient_empty_model_falls_back_robust() {
+        let spec = ModelSpec::parse_lenient("anthropic/").unwrap();
+        assert!(!spec.is_qualified());
+        assert_eq!(spec.model().as_str(), "anthropic/");
+    }
+
+    // Robust: parse_lenient on the empty string still errors — silently
+    // producing a spec with an empty ModelId would hide a "no model
+    // configured" bug, and is the entire reason this method is a separate
+    // call instead of a `From<String>` impl.
+    #[test]
+    fn parse_lenient_empty_is_error_robust() {
+        let err = ModelSpec::parse_lenient("").unwrap_err();
+        assert_eq!(err, ModelSpecParseError::Empty);
     }
 
     // ─── ModelSpec error Display ──────────────────────────────────────────
@@ -861,6 +907,7 @@ mod tests {
     #[tokio::test]
     async fn default_complete_returns_not_supported_robust() {
         struct StubProvider;
+        impl seal::Sealed for StubProvider {}
 
         #[async_trait]
         impl Provider for StubProvider {
@@ -896,6 +943,7 @@ mod tests {
     #[tokio::test]
     async fn default_stream_convention_is_anthropic_native_normal() {
         struct MinimalProvider;
+        impl seal::Sealed for MinimalProvider {}
 
         #[async_trait]
         impl Provider for MinimalProvider {

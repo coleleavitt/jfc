@@ -757,6 +757,7 @@ mod tests {
             })
         }
     }
+    impl crate::provider::seal::Sealed for MockProvider {}
 
     fn make_entry(filename: &str, body: &str) -> MemoryEntry {
         MemoryEntry {

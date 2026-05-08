@@ -176,6 +176,9 @@ impl PermissionRule {
     fn is_stronger_than(&self, other: &Self) -> bool {
         match self.specificity().cmp(&other.specificity()) {
             std::cmp::Ordering::Greater => true,
+            // Deny > Allow tiebreaker for defense-in-depth — when two glob
+            // patterns have equal specificity, prefer the safer (deny)
+            // verdict.
             std::cmp::Ordering::Equal => {
                 self.action == PermissionAction::Deny && other.action != PermissionAction::Deny
             }
@@ -498,5 +501,50 @@ mod tests {
             path: path.map(str::to_owned),
             reason: reason.map(str::to_owned),
         }
+    }
+
+    // Robust: when two rules have *exactly* equal specificity (same tool
+    // pattern, same path pattern, both fully literal so neither has any
+    // glob bytes), the Deny>Allow tiebreaker in `is_stronger_than` must
+    // pick the safer (deny) verdict regardless of registration order.
+    // This locks in the defense-in-depth behavior described in the
+    // comment on `PermissionRule::is_stronger_than`.
+    #[test]
+    fn permissions_tiebreaker_prefers_deny_robust() {
+        // Allow registered first, deny registered second.
+        let mut config = FeatureConfig::default();
+        config.permissions.ceiling.clear();
+        config.permissions.rules = vec![
+            rule("allow", "Edit", Some("src/lib.rs"), Some("permissive")),
+            rule("deny", "Edit", Some("src/lib.rs"), Some("strict")),
+        ];
+
+        let rules = RuleSet::from_config(&config);
+        let decision = rules.evaluate("Edit", Some("src/lib.rs"));
+
+        assert_eq!(
+            decision.action,
+            PermissionAction::Deny,
+            "deny must win on equal specificity",
+        );
+        assert_eq!(decision.reason.as_deref(), Some("strict"));
+
+        // Reverse order — deny first, allow second. Same outcome.
+        let mut config = FeatureConfig::default();
+        config.permissions.ceiling.clear();
+        config.permissions.rules = vec![
+            rule("deny", "Edit", Some("src/lib.rs"), Some("strict")),
+            rule("allow", "Edit", Some("src/lib.rs"), Some("permissive")),
+        ];
+
+        let rules = RuleSet::from_config(&config);
+        let decision = rules.evaluate("Edit", Some("src/lib.rs"));
+
+        assert_eq!(
+            decision.action,
+            PermissionAction::Deny,
+            "deny must win regardless of registration order",
+        );
+        assert_eq!(decision.reason.as_deref(), Some("strict"));
     }
 }

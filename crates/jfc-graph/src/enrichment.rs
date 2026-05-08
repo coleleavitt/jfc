@@ -37,9 +37,16 @@ pub struct EnrichmentStats {
 pub struct LspEnricher;
 
 impl LspEnricher {
-    /// Attempt to resolve UnresolvedCall edges using the LSP provider.
-    /// Returns statistics about what was resolved (read-only, no edge mutation in v1).
-    pub fn enrich_call_edges(
+    /// Inspect every `UnresolvedCall` edge against the LSP provider and
+    /// classify it (internal / external / failed) into [`EnrichmentStats`].
+    ///
+    /// Read-only: this method does not mutate the graph. It exists to
+    /// quantify how much LSP-driven rewiring would change the graph if/when
+    /// the mutating variant lands.
+    ///
+    // TODO(enrichment-v2): re-introduce mutating variant once
+    // UnresolvedCall→Calls rewrite is approved.
+    pub fn analyze_unresolved_calls(
         graph: &CodeGraph,
         provider: &dyn LspDataProvider,
         workspace_root: &Path,
@@ -121,6 +128,8 @@ mod tests {
             span: sample_span(file, start, end),
             visibility: Visibility::Public,
             metadata: HashMap::new(),
+            birth_revision: 0,
+            last_modified_revision: 0,
         }
     }
 
@@ -155,7 +164,7 @@ mod tests {
             }),
         };
 
-        let stats = LspEnricher::enrich_call_edges(&graph, &provider, Path::new("/workspace"));
+        let stats = LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
 
         assert_eq!(stats.total_unresolved, 1);
         assert_eq!(stats.resolved_internal, 1);
@@ -168,7 +177,7 @@ mod tests {
         let graph = build_graph_with_unresolved();
 
         let provider = MockProvider { definition: None };
-        let stats = LspEnricher::enrich_call_edges(&graph, &provider, Path::new("/workspace"));
+        let stats = LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
 
         assert_eq!(stats.total_unresolved, 1);
         assert_eq!(stats.resolved_internal, 0);
@@ -188,7 +197,7 @@ mod tests {
             }),
         };
 
-        let stats = LspEnricher::enrich_call_edges(&graph, &provider, Path::new("/workspace"));
+        let stats = LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
 
         assert_eq!(stats.total_unresolved, 1);
         assert_eq!(stats.resolved_internal, 0);
@@ -214,7 +223,7 @@ mod tests {
         graph.add_edge(&a_id, &b_id, edge).unwrap();
 
         let provider = MockProvider { definition: None };
-        let stats = LspEnricher::enrich_call_edges(&graph, &provider, Path::new("/workspace"));
+        let stats = LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
 
         assert_eq!(stats.total_unresolved, 0);
     }
@@ -223,7 +232,7 @@ mod tests {
     fn test_empty_graph() {
         let graph = CodeGraph::new();
         let provider = MockProvider { definition: None };
-        let stats = LspEnricher::enrich_call_edges(&graph, &provider, Path::new("/workspace"));
+        let stats = LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
         assert_eq!(stats, EnrichmentStats::default());
     }
 }

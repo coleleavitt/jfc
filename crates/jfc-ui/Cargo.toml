@@ -17,6 +17,14 @@ ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
 ratatui-textarea = "0.9"
 tokio = { workspace = true, features = ["full"] }
+# CancellationToken for coordinated cancellation across spawn sites that hold
+# critical state. Per the wg-async pattern (a spawned task holding state must
+# be explicitly cancelled, not just dropped via a polled AtomicBool), we use
+# this to thread cancel signals into stream_response, tool dispatch, compact,
+# and session-save tasks. The transitive dep is already present via reqwest /
+# tokio-util in our Cargo.lock; declaring it directly so the rt feature is
+# explicit and the API is stable for our use.
+tokio-util = { version = "0.7", features = ["rt"] }
 tokio-stream = "0.1"
 futures = { workspace = true }
 anyhow = { workspace = true }

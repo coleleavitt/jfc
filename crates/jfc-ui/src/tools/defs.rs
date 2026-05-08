@@ -411,35 +411,47 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "graph_query".into(),
-            description: "Query the project's code graph using a pipe-based DSL. \
-                Use to surgically find callers, callees, type usages, or trace data \
-                taint without loading whole files. Operators (chain with `|`): \
-                `fn(\"name\")` selects functions by substring; `type(\"name\")` selects \
-                struct/enum/trait; `callers` / `callees` walk Calls edges; `depth N` \
-                limits traversal (use 1-3 for narrow context, 5+ for full reach); \
-                `filter kind=Function|Struct|Enum|Module|Trait` filters; \
-                `show fields|signature|body` controls projection; `taint \"var\"` \
-                traces a parameter through call chains; `preconditions` \
-                walks callers backward and surfaces the enclosing \
-                if/match/while predicate at each call site (use this \
-                to answer \"what must have been true to reach X?\"). \
+            description: "Query the project's code graph using a pipe-based DSL with set algebra and path patterns. \
+                Surgically find callers, callees, type usages, or trace data taint without loading whole files. \
+                Pipe operators (chain with `|`): `fn(\"name\")` selects functions by substring; \
+                `type(\"name\")` selects struct/enum/trait; `callers` / `callees` walk Calls edges; \
+                `depth N` limits traversal (1-3 narrow, 5+ full reach); \
+                `filter kind=Function|Struct|Enum|Module|Trait` filters by node kind; \
+                `show fields|signature|body` controls projection; `taint \"var\"` traces a parameter \
+                through call chains; `preconditions` walks callers backward and surfaces enclosing \
+                if/match/while predicates (\"what must have been true to reach X?\"); \
+                `since N` keeps only nodes whose `last_modified_revision >= N`. \
+                Set algebra (combine queries): `A union B`, `A intersect B`, `A \\ B` (difference). \
+                Path patterns: `path A -> B` (shortest), `paths A -> B depth N` (all simple, bounded), \
+                with `where intermediate kind=K` and `via EdgeKind` qualifiers. \
+                Entrypoints: `entrypoints` or `entrypoints kind=Main|PublicApi|Test|Bench|FfiExport`. \
                 Examples: \
-                `fn(\"execute_tool\") | callees | depth 2`, \
-                `type(\"Config\") | callers`, \
-                `fn(\"parse\") | taint \"input\" | depth 5`, \
-                `fn(\"unwrap_unchecked\") | preconditions`. \
-                Cycles are auto-detected (mutual recursion terminates). Output is \
-                token-budgeted; truncated results report \"Showing N/M nodes\".".into(),
+                `fn(\"execute_tool\") | callees | depth 2`; \
+                `type(\"Config\") | callers`; \
+                `fn(\"parse\") | taint \"input\" | depth 5`; \
+                `fn(\"a\") union fn(\"b\")`; \
+                `path fn(\"login\") -> fn(\"db_write\")`; \
+                `paths fn(\"handler\") -> fn(\"unsafe_op\") via Calls depth 8`; \
+                `entrypoints kind=PublicApi`; \
+                `(fn(\"foo\") | callers) \\ fn(\"test_\") since 42`. \
+                Cycles auto-detected (mutual recursion terminates). Output is token-budgeted; \
+                truncated results report \"Showing N/M nodes\". The output ends with a \
+                `--- handles ---` block of `kind:qualified_name` strings (e.g. `fn:crate::foo`) \
+                so you can chain queries directly. Set `include_handles=false` to suppress.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "DSL query string (e.g. `fn(\"foo\") | callees | depth 2`)"
+                        "description": "DSL query string. Examples: `fn(\"foo\") | callees | depth 2`, `path fn(\"a\") -> fn(\"b\")`, `entrypoints kind=Main`, `fn(\"x\") union fn(\"y\")`."
                     },
                     "max_tokens": {
                         "type": "number",
                         "description": "Optional token budget (default 4000). Output truncates to fit."
+                    },
+                    "include_handles": {
+                        "type": "boolean",
+                        "description": "Append a `--- handles ---` footer of structured handles for chaining (default true). Set false when only summary text is needed."
                     }
                 },
                 "required": ["query"]

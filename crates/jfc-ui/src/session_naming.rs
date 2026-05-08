@@ -42,7 +42,7 @@ fn build_request(first_user: &str, first_assistant: &str) -> Vec<ProviderMessage
 /// Generate a title and persist it to the session file. Best-effort —
 /// returns the title that was written, or `None` on any failure.
 pub async fn generate_and_save(
-    session_id: String,
+    session_id: crate::ids::SessionId,
     provider: Arc<dyn Provider>,
     model: ModelId,
     first_user: String,

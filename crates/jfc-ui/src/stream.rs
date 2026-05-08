@@ -761,6 +761,7 @@ mod auto_compact_tests {
             Ok(Box::pin(futures::stream::iter(events)))
         }
     }
+    impl crate::provider::seal::Sealed for CannedSummaryProvider {}
 
     /// Provider that always returns an error from `stream()` — used to
     /// verify the compaction call gracefully no-ops on transport errors
@@ -783,6 +784,7 @@ mod auto_compact_tests {
             Err(anyhow::anyhow!("simulated stream failure"))
         }
     }
+    impl crate::provider::seal::Sealed for ErrorProvider {}
 
     fn user_text(s: &str) -> ProviderMessage {
         ProviderMessage {
@@ -989,6 +991,11 @@ pub async fn stream_response(
     model: ModelId,
     tx: mpsc::Sender<AppEvent>,
     interrupt: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    // wg-async pattern: spawned tasks holding critical state need an
+    // explicit cancellation handle, not just a polled flag. The token
+    // races the SSE stream against `.cancelled()` so ESC×2 unwinds in
+    // microseconds instead of waiting for the next STREAM_INTERRUPT_POLL.
+    cancel: tokio_util::sync::CancellationToken,
 ) {
     let cwd = std::env::current_dir()
         .ok()
@@ -1383,10 +1390,11 @@ Do not use a colon before tool calls.";
     loop {
         // Cooperative cancel: the user pressed ESC twice — drop the
         // stream mid-flight, surface a clean stop, and let the main
-        // loop reset state. Poll this while waiting for the next SSE
-        // event too; a stalled network read must not trap the UI in
-        // "Interrupting..." forever.
-        if interrupt.load(std::sync::atomic::Ordering::SeqCst) {
+        // loop reset state. Two paths: legacy `interrupt` AtomicBool
+        // (still set by callers we haven't migrated yet) and the
+        // CancellationToken (instantly observed via `.cancelled()` in
+        // the select! below — no polling latency).
+        if interrupt.load(std::sync::atomic::Ordering::SeqCst) || cancel.is_cancelled() {
             tracing::info!(target: "jfc::stream", "stream interrupted by user (ESC×2)");
             let _ = tx
                 .send(AppEvent::StreamError("Interrupted by user".to_owned()))
@@ -1396,6 +1404,16 @@ Do not use a colon before tool calls.";
 
         let event = tokio::select! {
             biased;
+            // wg-async: race the SSE read against the cancel token so a
+            // stalled provider (slow first byte, hung TLS) doesn't trap
+            // the user in "Interrupting…" until the next interrupt poll.
+            _ = cancel.cancelled() => {
+                tracing::info!(target: "jfc::stream", "stream cancelled via token");
+                let _ = tx
+                    .send(AppEvent::StreamError("Interrupted by user".to_owned()))
+                    .await;
+                return;
+            }
             _ = tokio::time::sleep(STREAM_INTERRUPT_POLL) => continue,
             event = stream.next() => event,
         };
@@ -1478,19 +1496,78 @@ Do not use a colon before tool calls.";
                     input_len = assembled.len(),
                     "tool_done"
                 );
-                let input_val: serde_json::Value =
-                    serde_json::from_str(&assembled).unwrap_or(serde_json::Value::Null);
-                let tool = ToolCall {
-                    id: tool_use_id,
-                    kind: ToolKind::from_name(&tool_name),
-                    status: ToolStatus::Pending,
-                    input: ToolInput::from_value(&tool_name, input_val),
-                    output: ToolOutput::Empty,
-                    is_collapsed: false,
-                    expanded: false,
-                    elapsed_ms: None,
-                    started_at: Some(std::time::Instant::now()),
-                    pinned: false,
+                // Two failure modes get the same treatment: emit the tool
+                // with `Failed` status and a diagnostic output so the model
+                // sees a tool_result it can react to.
+                //   1. Outer JSON parse failure (assembled bytes don't even
+                //      parse as JSON).
+                //   2. Inner shape validation failure (`from_value` returns
+                //      `ToolInputError`) — same root problem one layer in:
+                //      a malformed payload like `{"content": null}` for
+                //      Write would otherwise silently default `content: ""`.
+                // In both cases we bail with `ToolInput::Generic` carrying
+                // the original payload as the summary so the user can see
+                // what the model tried to send.
+                let parse_outcome: Result<serde_json::Value, _> =
+                    if assembled.trim().is_empty() {
+                        Ok(serde_json::Value::Object(serde_json::Map::new()))
+                    } else {
+                        serde_json::from_str(&assembled)
+                    };
+                let kind = ToolKind::from_name(&tool_name);
+                let make_stub = || ToolInput::Generic {
+                    summary: if assembled.is_empty() {
+                        format!("(empty input for {tool_name})")
+                    } else {
+                        assembled.clone()
+                    },
+                };
+                // Build through ToolCall::new_pending / new_failed
+                // constructors instead of a struct literal. The
+                // typestate guards on ToolCall make "constructed in
+                // Pending and later transitioned via mark_*" the
+                // primary path; new_failed is the carve-out for the
+                // malformed-input case where dispatch never happens.
+                let id = crate::ids::ToolId::from(tool_use_id.clone());
+                let tool = match parse_outcome {
+                    Ok(input_val) => match ToolInput::from_value(&tool_name, input_val) {
+                        Ok(parsed) => ToolCall::new_pending(id, kind, parsed),
+                        Err(err) => {
+                            tracing::warn!(
+                                target: "jfc::stream",
+                                tool_name = %tool_name,
+                                tool_use_id = %tool_use_id,
+                                input_len = assembled.len(),
+                                error = %err,
+                                "tool_done: input shape validation failed — failing tool"
+                            );
+                            let msg = format!(
+                                "{err}\n\n\
+                                 The tool input was valid JSON but didn't match the \
+                                 tool's required schema. Retry with the correct fields."
+                            );
+                            ToolCall::new_failed(id, kind, make_stub(), ToolOutput::Text(msg))
+                        }
+                    },
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "jfc::stream",
+                            tool_name = %tool_name,
+                            tool_use_id = %tool_use_id,
+                            input_len = assembled.len(),
+                            error = %err,
+                            "tool_done: input JSON parse failed — failing tool"
+                        );
+                        let msg = format!(
+                            "Tool input was not valid JSON ({} bytes received): {}\n\n\
+                             The provider stream finished before sending a complete \
+                             `input` object. Retry the tool call with a properly-formed \
+                             JSON input.",
+                            assembled.len(),
+                            err,
+                        );
+                        ToolCall::new_failed(id, kind, make_stub(), ToolOutput::Text(msg))
+                    }
                 };
                 tool_accum.remove(&index);
                 let _ = tx.send(AppEvent::StreamTool(tool)).await;
@@ -1574,6 +1651,10 @@ pub fn dispatch_tools_batched(
     provider: Arc<dyn crate::provider::Provider>,
     model: crate::provider::ModelId,
     teammate_event_tx: mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
+    // wg-async: tool batches can run for minutes (Bash, subagents). Hand
+    // the spawned scheduler a cancel handle so ESC×2 races the batch
+    // against `.cancelled()` rather than orphaning the work.
+    cancel: tokio_util::sync::CancellationToken,
 ) {
     use crate::types::ToolInput;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1622,7 +1703,7 @@ pub fn dispatch_tools_batched(
         // in-process and communicates via the mailbox system.
         if task_input.is_teammate_spawn() {
             let tx_task = tx.clone();
-            let task_id = tc.id.clone();
+            let task_id = tc.id.as_str().to_owned();
             let done = send_all_complete.clone();
 
             let name = task_input.name.clone().unwrap_or_default();
@@ -1730,12 +1811,12 @@ pub fn dispatch_tools_batched(
                     .unwrap_or_default(),
             });
             let _ = tx_task.try_send(AppEvent::TaskStarted {
-                task_id: runner_task_id.clone(),
+                task_id: crate::ids::TaskId::from(runner_task_id.clone()),
                 description: format!("spawn teammate: {name}"),
             });
 
             let _ = tx_task.try_send(AppEvent::ToolResult {
-                tool_id: task_id,
+                tool_id: crate::ids::ToolId::from(task_id),
                 result: crate::tools::ExecutionResult::success(
                     serde_json::to_string_pretty(&result_json).unwrap_or_default(),
                 ),
@@ -1748,7 +1829,7 @@ pub fn dispatch_tools_batched(
         let tx_task = tx.clone();
         let provider_task = provider.clone();
         let model_task = model.clone();
-        let task_id = tc.id.clone();
+        let task_id = tc.id.as_str().to_owned();
         let description = task_input.description.clone();
         let done = send_all_complete.clone();
 
@@ -1823,7 +1904,7 @@ pub fn dispatch_tools_batched(
             );
             let _ = tx_task
                 .send(AppEvent::TaskStarted {
-                    task_id: task_id.clone(),
+                    task_id: crate::ids::TaskId::from(task_id.clone()),
                     description,
                 })
                 .await;
@@ -1865,7 +1946,7 @@ pub fn dispatch_tools_batched(
                 );
                 let _ = tx_task
                     .send(AppEvent::TaskFailed {
-                        task_id: task_id.clone(),
+                        task_id: crate::ids::TaskId::from(task_id.clone()),
                         error: result.output.clone(),
                     })
                     .await;
@@ -1879,7 +1960,7 @@ pub fn dispatch_tools_batched(
                 );
                 let _ = tx_task
                     .send(AppEvent::TaskCompleted {
-                        task_id: task_id.clone(),
+                        task_id: crate::ids::TaskId::from(task_id.clone()),
                         summary: result.output.clone(),
                         elapsed_ms,
                     })
@@ -1959,7 +2040,7 @@ pub fn dispatch_tools_batched(
 
             let _ = tx_task
                 .send(AppEvent::ToolResult {
-                    tool_id: task_id,
+                    tool_id: crate::ids::ToolId::from(task_id),
                     result: match &worktree_outcome {
                         Some((wt, true)) => crate::tools::ExecutionResult::success(format!(
                             "{}\n\n[worktree preserved with uncommitted changes]\n\
@@ -1993,8 +2074,19 @@ pub fn dispatch_tools_batched(
         );
         let tx_clone = tx.clone();
         let done = send_all_complete.clone();
+        // wg-async cancellation: race the batch executor against the
+        // turn's cancel token. The scheduler itself runs synchronous
+        // tool work; a token-cancel cuts off the *await* between tools
+        // and lets the spawn return early so its capture set drops.
+        let cancel_batch = cancel.clone();
         tokio::spawn(async move {
-            scheduler::execute_batches(batches, &tx_clone, cwd, dedup, task_store, None).await;
+            tokio::select! {
+                biased;
+                _ = cancel_batch.cancelled() => {
+                    tracing::info!(target: "jfc::stream", "tool batch cancelled via token");
+                }
+                _ = scheduler::execute_batches(batches, &tx_clone, cwd, dedup, task_store, None) => {}
+            }
             done();
         });
     }
@@ -2015,7 +2107,7 @@ pub fn should_continue_loop(messages: &[ChatMessage]) -> bool {
     }
     let all_done = last.parts.iter().all(|p| match p {
         MessagePart::Tool(tc) => {
-            tc.status == ToolStatus::Complete || tc.status == ToolStatus::Failed
+            tc.status == ToolStatus::Completed || tc.status == ToolStatus::Failed
         }
         _ => true,
     });
@@ -2037,6 +2129,23 @@ pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
         total_messages = app.messages.len(),
         "continue_agentic_loop: starting new sub-stream"
     );
+    // Debug-only invariant check BEFORE we stage the next assistant
+    // slot. If the caller handed us a broken slice (e.g. trailing
+    // assistant from the prior round wasn't merged), surface it in
+    // the log instead of silently doubling down. Behind cfg() so
+    // release builds skip the walk.
+    #[cfg(debug_assertions)]
+    if let Err(err) = crate::types::validate_turn_invariants_inner(
+        &app.messages,
+        /* allow_streaming_tail = */ true,
+    ) {
+        tracing::warn!(
+            target: "jfc::stream::invariants",
+            error = %err,
+            assistant_idx,
+            "continue_agentic_loop: turn-invariant violation BEFORE staging new assistant slot"
+        );
+    }
     app.messages.push(ChatMessage::assistant(String::new()));
     app.streaming_text.clear();
     app.streaming_reasoning.clear();
@@ -2060,9 +2169,13 @@ pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     let model = app.model.clone();
     let tx = tx.clone();
     let interrupt = app.interrupt_flag.clone();
+    let cancel = app.cancel_token.clone();
 
+    // wg-async: the agentic continuation IS critical state — it produces
+    // the next sub-stream's events. Hand it the cancel token so a mid-loop
+    // ESC unwinds it the same way it unwinds the original turn.
     tokio::spawn(async move {
-        stream_response(provider, messages, model, tx, interrupt).await;
+        stream_response(provider, messages, model, tx, interrupt, cancel).await;
     });
 }
 
@@ -2329,7 +2442,7 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
                 MessagePart::Tool(tc) => {
                     tool_use_count += 1;
                     Some(ProviderContent::ToolUse {
-                        id: tc.id.clone(),
+                        id: tc.id.as_str().to_owned(),
                         name: tc.kind.api_name().to_owned(),
                         input: tc.input.to_value(),
                     })
@@ -2343,8 +2456,17 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
             .iter()
             .filter_map(|p| match p {
                 MessagePart::Tool(tc) => {
+                    // After ExecutionStatus unification, tools can in
+                    // principle land in any of six states. In practice
+                    // tools never reach Idle (that's a Task-only state
+                    // for sub-agents that are alive but quiescent), and
+                    // Cancelled is treated as a flavor of "the tool was
+                    // never executed" — same back-pressure to the model
+                    // as Pending/Running abandonment, just with a
+                    // slightly different stub message so the model can
+                    // tell why the tool didn't run.
                     let (result_text, is_error) = match tc.status {
-                        ToolStatus::Complete | ToolStatus::Failed => {
+                        ToolStatus::Completed | ToolStatus::Failed => {
                             tool_result_count += 1;
                             let text = match &tc.output {
                                 ToolOutput::Text(s) => s.clone(),
@@ -2368,6 +2490,34 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
                             };
                             (text, tc.status == ToolStatus::Failed)
                         }
+                        ToolStatus::Cancelled => {
+                            abandoned_count += 1;
+                            (
+                                "Tool was cancelled before it could run. \
+                                 No output was produced."
+                                    .to_owned(),
+                                true,
+                            )
+                        }
+                        ToolStatus::Idle => {
+                            // Tools never enter Idle in normal flow —
+                            // this is a programmer error, not a runtime
+                            // condition. Log and treat as abandoned so
+                            // we still ship a well-formed tool_result
+                            // (Anthropic 400s on orphaned tool_use).
+                            tracing::error!(
+                                target: "jfc::stream",
+                                tool_id = %tc.id.as_str(),
+                                "tool reached Idle state — should not happen"
+                            );
+                            abandoned_count += 1;
+                            (
+                                "Tool was abandoned: unexpected Idle state. \
+                                 No output was produced."
+                                    .to_owned(),
+                                true,
+                            )
+                        }
                         ToolStatus::Pending | ToolStatus::Running => {
                             abandoned_count += 1;
                             (
@@ -2379,7 +2529,7 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
                         }
                     };
                     Some(ProviderContent::ToolResult {
-                        tool_use_id: tc.id.clone(),
+                        tool_use_id: tc.id.as_str().to_owned(),
                         content: cap_tool_result(&result_text),
                         is_error,
                     })
@@ -2825,18 +2975,16 @@ mod build_provider_messages_tests {
         output: ToolOutput,
     ) -> ToolCall {
         ToolCall {
-            id: id.to_owned(),
+            id: crate::ids::ToolId::from(id),
             kind,
             status,
             input: ToolInput::Generic {
                 summary: "x".into(),
             },
             output,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         }
     }
 
@@ -2914,7 +3062,7 @@ mod build_provider_messages_tests {
         let tool = make_tool_call(
             "toolu_a",
             ToolKind::Bash,
-            ToolStatus::Complete,
+            ToolStatus::Completed,
             ToolOutput::Text("hello world".into()),
         );
         let msgs = vec![
@@ -3006,7 +3154,7 @@ mod build_provider_messages_tests {
         let tool = make_tool_call(
             "toolu_c",
             ToolKind::Bash,
-            ToolStatus::Complete,
+            ToolStatus::Completed,
             ToolOutput::Command {
                 stdout: "ok\n".into(),
                 stderr: String::new(),
@@ -3035,7 +3183,7 @@ mod build_provider_messages_tests {
         let tool = make_tool_call(
             "toolu_d",
             ToolKind::Read,
-            ToolStatus::Complete,
+            ToolStatus::Completed,
             ToolOutput::FileContent {
                 path: "/tmp/x.rs".into(),
                 content: "fn main() {}".into(),
@@ -3061,7 +3209,7 @@ mod build_provider_messages_tests {
         let tool = make_tool_call(
             "toolu_e",
             ToolKind::Glob,
-            ToolStatus::Complete,
+            ToolStatus::Completed,
             ToolOutput::FileList(vec!["/a".into(), "/b".into(), "/c".into()]),
         );
         let msgs = vec![
@@ -3085,7 +3233,7 @@ mod build_provider_messages_tests {
         let tool = make_tool_call(
             "toolu_f",
             ToolKind::Bash,
-            ToolStatus::Complete,
+            ToolStatus::Completed,
             ToolOutput::Text("ok".into()),
         );
         let msgs = vec![
@@ -3110,13 +3258,13 @@ mod build_provider_messages_tests {
         let t1 = make_tool_call(
             "a",
             ToolKind::Bash,
-            ToolStatus::Complete,
+            ToolStatus::Completed,
             ToolOutput::Text("1".into()),
         );
         let t2 = make_tool_call(
             "b",
             ToolKind::Read,
-            ToolStatus::Complete,
+            ToolStatus::Completed,
             ToolOutput::Text("2".into()),
         );
         let msgs = vec![
@@ -3261,11 +3409,9 @@ mod should_continue_loop_tests {
                 summary: "x".into(),
             },
             output: ToolOutput::Empty,
-            is_collapsed: false,
-            expanded: false,
+            display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
-            pinned: false,
         })])
     }
 
@@ -3273,7 +3419,7 @@ mod should_continue_loop_tests {
     // continues so the agent gets a chance to react to the tool results.
     #[test]
     fn continues_when_all_tools_complete_normal() {
-        let msgs = vec![assistant_with_tool(ToolStatus::Complete)];
+        let msgs = vec![assistant_with_tool(ToolStatus::Completed)];
         assert!(should_continue_loop(&msgs));
     }
 
@@ -3322,5 +3468,112 @@ mod should_continue_loop_tests {
     fn does_not_continue_on_empty_messages_robust() {
         let msgs: Vec<ChatMessage> = vec![];
         assert!(!should_continue_loop(&msgs));
+    }
+}
+
+#[cfg(test)]
+mod cancellation_token_tests {
+    //! Regression tests for the wg-async cancellation pattern.
+    //!
+    //! Background: spawn sites in `stream.rs` and `event_loop.rs` used
+    //! to take an `Arc<AtomicBool>` that the spawned task polled between
+    //! iterations. A blocking provider call mid-tick could miss the flag
+    //! for seconds. We migrated the long-running spawn sites to also
+    //! receive a `tokio_util::sync::CancellationToken` so they can race
+    //! their work against `.cancelled()` via `tokio::select!`. These
+    //! tests pin that contract: cancelling the token must unwind the
+    //! spawned task within a single tokio scheduler tick.
+    use super::*;
+    use tokio_util::sync::CancellationToken;
+
+    /// Normal: a task that races a long sleep against `.cancelled()`
+    /// returns immediately when the token is cancelled, instead of
+    /// waiting for the sleep to finish. This is the core latency win
+    /// over the AtomicBool-poll pattern.
+    #[tokio::test]
+    async fn cancel_during_spawn_unwinds_within_one_tick_normal() {
+        let cancel = CancellationToken::new();
+        let cancel_for_task = cancel.clone();
+
+        // Spawn a task that mirrors the migrated stream_response select!
+        // shape: a long fake "stream read" raced against cancellation.
+        let handle = tokio::spawn(async move {
+            tokio::select! {
+                biased;
+                _ = cancel_for_task.cancelled() => "cancelled",
+                _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => "completed",
+            }
+        });
+
+        // Cancel after a microsleep so the task has actually started
+        // polling its select! arms before the signal lands.
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        cancel.cancel();
+
+        // The whole join must finish well under the 60-second sleep —
+        // give it 500ms of headroom for slow CI runners.
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            handle,
+        )
+        .await
+        .expect("spawn must unwind within 500ms after cancel()")
+        .expect("spawned task must not panic");
+
+        assert_eq!(outcome, "cancelled");
+    }
+
+    /// Robust: cancelling the token BEFORE the task gets to its first
+    /// poll still unwinds it — `cancelled()` returns immediately when
+    /// the token is already in the cancelled state. Without this, a
+    /// task spawned between the user's ESC×2 and the runtime actually
+    /// scheduling it could miss the cancel and run to completion.
+    #[tokio::test]
+    async fn cancel_before_task_starts_still_short_circuits_robust() {
+        let cancel = CancellationToken::new();
+        // Cancel BEFORE the spawn so the cloned token enters the task
+        // already in the cancelled state.
+        cancel.cancel();
+        let cancel_for_task = cancel.clone();
+
+        let handle = tokio::spawn(async move {
+            tokio::select! {
+                biased;
+                _ = cancel_for_task.cancelled() => "cancelled",
+                _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => "completed",
+            }
+        });
+
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            handle,
+        )
+        .await
+        .expect("pre-cancelled token must short-circuit the spawn")
+        .expect("spawned task must not panic");
+
+        assert_eq!(outcome, "cancelled");
+    }
+
+    /// Robust: a fresh token is not poisoned by a previously-cancelled
+    /// sibling. The migration mints a new token on every user submit;
+    /// if that mint were a no-op the next turn would be DOA. This pins
+    /// `CancellationToken::new()` semantics for the post-interrupt
+    /// new-turn path.
+    #[tokio::test]
+    async fn fresh_token_is_not_cancelled_robust() {
+        let prior = CancellationToken::new();
+        prior.cancel();
+        assert!(prior.is_cancelled());
+
+        // `App::handle_submit_text` and the StreamError handler both do
+        // `app.cancel_token = CancellationToken::new();` after a cancel.
+        let fresh = CancellationToken::new();
+        assert!(!fresh.is_cancelled());
+
+        // And cloning the fresh token doesn't observe the prior one's
+        // cancelled state — they're independent.
+        let fresh_clone = fresh.clone();
+        assert!(!fresh_clone.is_cancelled());
     }
 }

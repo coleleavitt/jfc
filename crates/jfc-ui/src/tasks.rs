@@ -31,7 +31,7 @@
 #![allow(dead_code)]
 
 use std::borrow::Borrow;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -42,7 +42,7 @@ use serde::{Deserialize, Serialize};
 /// Stable task identity. Kept as a transparent string on disk/wire, but typed
 /// in-process so task ids cannot be accidentally mixed with subjects, owners,
 /// or tool ids.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct TaskId(String);
 
@@ -178,10 +178,17 @@ pub struct Task {
     pub status: TaskStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
+    /// Tasks that depend on this task (the inverse of `blocked_by`).
+    /// `BTreeSet` rather than `Vec` so re-creates of an already-blocked
+    /// downstream cannot accumulate duplicate reverse-links across runs;
+    /// the sorted-set serde shape is `[..]` same as `Vec`, so wire format is
+    /// stable.
     #[serde(default)]
-    pub blocks: Vec<TaskId>,
+    pub blocks: BTreeSet<TaskId>,
+    /// Tasks that block this task. `BTreeSet` for the same reason as
+    /// `blocks` — dedupe and stable sort across re-creates.
     #[serde(default, rename = "blockedBy")]
-    pub blocked_by: Vec<TaskId>,
+    pub blocked_by: BTreeSet<TaskId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
     /// Monotonic creation counter, used for stable sort by recency.
@@ -274,7 +281,10 @@ impl TaskStore {
         B: Into<TaskId>,
     {
         let mut inner = self.inner.lock().unwrap();
-        let blocked_by = blocked_by.into_iter().map(Into::into).collect::<Vec<_>>();
+        let blocked_by = blocked_by
+            .into_iter()
+            .map(Into::into)
+            .collect::<BTreeSet<TaskId>>();
         for dep in &blocked_by {
             if !inner.tasks.contains_key(dep.as_str()) {
                 return Err(TaskError::UnknownDependency { id: dep.clone() });
@@ -287,13 +297,11 @@ impl TaskStore {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         // Reverse-link: each task in `blocked_by` should record this task in
-        // its `blocks` list.
-        let blocked_by_clone = blocked_by.clone();
-        for dep in &blocked_by_clone {
+        // its `blocks` list. `BTreeSet::insert` naturally dedupes, so this is
+        // idempotent across re-creates with the same id.
+        for dep in &blocked_by {
             if let Some(t) = inner.tasks.get_mut(dep.as_str()) {
-                if !t.blocks.contains(&id) {
-                    t.blocks.push(id.clone());
-                }
+                t.blocks.insert(id.clone());
             }
         }
         let truncated_subject: &str = if subject.len() > 80 {
@@ -314,8 +322,8 @@ impl TaskStore {
             active_form,
             status: TaskStatus::Pending,
             owner: None,
-            blocks: Vec::new(),
-            blocked_by: blocked_by_clone,
+            blocks: BTreeSet::new(),
+            blocked_by,
             metadata: None,
             created_at_ms: now_ms,
         };
@@ -349,7 +357,7 @@ impl TaskStore {
         let next_blocked_by = patch.blocked_by.as_ref().map(|deps| {
             deps.iter()
                 .map(|dep| TaskId::from(dep.as_str()))
-                .collect::<Vec<_>>()
+                .collect::<BTreeSet<TaskId>>()
         });
         if let Some(deps) = &next_blocked_by {
             if deps.iter().any(|d| d.as_str() == id) {
@@ -550,8 +558,10 @@ mod tests {
             .create("second".into(), "".into(), None, vec![t1.id.clone()])
             .unwrap();
         let t1_after = store.get(&t1.id).unwrap();
-        assert_eq!(t1_after.blocks, vec![t2.id.clone()]);
-        assert_eq!(t2.blocked_by, vec![t1.id.clone()]);
+        let expected_blocks: BTreeSet<TaskId> = std::iter::once(t2.id.clone()).collect();
+        let expected_blocked_by: BTreeSet<TaskId> = std::iter::once(t1.id.clone()).collect();
+        assert_eq!(t1_after.blocks, expected_blocks);
+        assert_eq!(t2.blocked_by, expected_blocked_by);
     }
 
     // Robust: blocked_by referencing a non-existent task fails create cleanly.

@@ -139,11 +139,11 @@ pub struct HookContext {
 
 impl HookContext {
     /// Create a minimal context for tool-related hooks.
-    pub fn for_tool(tool_name: &str, tool_input: &str, session_id: &str) -> Self {
+    pub fn for_tool(tool_name: &str, tool_input: &str, session_id: impl AsRef<str>) -> Self {
         Self {
             tool_name: tool_name.to_string(),
             tool_input: tool_input.to_string(),
-            session_id: session_id.to_string(),
+            session_id: session_id.as_ref().to_string(),
             intent: None,
             file_path: None,
             agent_name: None,
@@ -152,11 +152,11 @@ impl HookContext {
     }
 
     /// Create a context for file-related hooks.
-    pub fn for_file(file_path: &str, session_id: &str) -> Self {
+    pub fn for_file(file_path: &str, session_id: impl AsRef<str>) -> Self {
         Self {
             tool_name: String::new(),
             tool_input: String::new(),
-            session_id: session_id.to_string(),
+            session_id: session_id.as_ref().to_string(),
             intent: None,
             file_path: Some(file_path.to_string()),
             agent_name: None,
@@ -165,11 +165,11 @@ impl HookContext {
     }
 
     /// Create a context for agent lifecycle hooks.
-    pub fn for_agent(agent_name: &str, session_id: &str) -> Self {
+    pub fn for_agent(agent_name: &str, session_id: impl AsRef<str>) -> Self {
         Self {
             tool_name: String::new(),
             tool_input: String::new(),
-            session_id: session_id.to_string(),
+            session_id: session_id.as_ref().to_string(),
             intent: None,
             file_path: None,
             agent_name: Some(agent_name.to_string()),
@@ -178,11 +178,15 @@ impl HookContext {
     }
 
     /// Create a context for session-level hooks.
-    pub fn for_session(session_id: &str) -> Self {
+    ///
+    /// Accepts anything `AsRef<str>` (string literal, `String`, or
+    /// `SessionId`) so call sites don't have to thread the typed id
+    /// through `.as_str()` at every fire.
+    pub fn for_session(session_id: impl AsRef<str>) -> Self {
         Self {
             tool_name: String::new(),
             tool_input: String::new(),
-            session_id: session_id.to_string(),
+            session_id: session_id.as_ref().to_string(),
             intent: None,
             file_path: None,
             agent_name: None,
@@ -209,6 +213,18 @@ pub enum HookHandler {
     /// Comment/slop checker.
     CommentChecker,
     /// Shell command executor (runs a user-defined command).
+    ///
+    /// **Limitation — fire-and-forget semantics.** `ShellCommand`
+    /// handlers spawn a child process and return [`HookAction::Continue`]
+    /// immediately. They **cannot veto a tool call** (no Skip / Abort /
+    /// Replace), their stdout/stderr is **not collected**, and their
+    /// exit code is **not checked**. The spawn failure itself is
+    /// silently dropped.
+    ///
+    /// Use a Rust handler ([`HookHandler::Custom`] or a new variant) for
+    /// any blocking pre-tool veto behavior. `ShellCommand` is suitable
+    /// only for informational side effects (notifications, log shipping,
+    /// metrics).
     ShellCommand { command: String },
     /// Custom function (for testing and extensibility).
     Custom { name: String, action: HookAction },
@@ -259,8 +275,19 @@ impl HookHandler {
                 HookAction::Continue
             }
             Self::ShellCommand { command } => {
-                // Execute a shell command, passing context via env vars.
-                // Non-blocking — only fires for informational hooks.
+                // Fire-and-forget: spawn and return immediately. See the
+                // doc comment on `HookHandler::ShellCommand` for the full
+                // limitation list (no veto, no output capture, no exit
+                // status). The trace below is the only observability hook
+                // available.
+                tracing::debug!(
+                    target: "jfc::hooks::shell",
+                    point = ?point,
+                    tool = %ctx.tool_name,
+                    session_id = %ctx.session_id,
+                    command = %command,
+                    "spawning ShellCommand hook (fire-and-forget)"
+                );
                 let _ = std::process::Command::new("sh")
                     .arg("-c")
                     .arg(command)
@@ -315,8 +342,19 @@ impl HookRegistry {
         HookAction::Continue
     }
 
-    /// Fire hooks asynchronously (non-blocking). For informational hooks
-    /// where we don't need the result (heartbeat, telemetry, etc).
+    /// Fire hooks for the given point in registration order, ignoring all
+    /// returned actions (no Skip/Replace/Abort short-circuit). For
+    /// informational hooks where we don't need the result (heartbeat,
+    /// telemetry, etc).
+    ///
+    /// **WARNING**: This is misnamed — it runs **synchronously** on the
+    /// caller's thread. The "async" in the name refers to the
+    /// fire-and-forget intent, not to any async runtime semantics. Handler
+    /// errors and veto actions are dropped (best-effort). If a handler
+    /// blocks (e.g. a `ShellCommand` spawn that contends on a slow
+    /// subprocess setup), the caller blocks too.
+    ///
+    /// Prefer [`HookRegistry::fire`] when veto behavior is required.
     pub fn fire_async(&self, point: HookPoint, ctx: &HookContext) {
         for (hook_point, handler) in &self.hooks {
             if *hook_point == point {
@@ -397,9 +435,13 @@ pub fn fire(point: HookPoint, ctx: &HookContext) -> HookAction {
     }
 }
 
-/// Fire a hook asynchronously (non-blocking). Used at high-frequency
-/// sites (heartbeat, model-response chunks) where we don't want any
-/// per-call overhead from short-circuit logic.
+/// Fire a hook on the global registry without short-circuit logic. Used
+/// at high-frequency sites (heartbeat, model-response chunks) where we
+/// don't want per-call overhead from veto handling.
+///
+/// **WARNING**: Misnamed — runs synchronously on the caller's thread
+/// (see [`HookRegistry::fire_async`] for the underlying behavior).
+/// Handler veto actions are ignored.
 pub fn fire_async(point: HookPoint, ctx: &HookContext) {
     if let Some(reg) = GLOBAL_REGISTRY.get() {
         reg.fire_async(point, ctx);

@@ -71,6 +71,8 @@ impl OpenAIProvider {
     }
 }
 
+impl crate::provider::seal::Sealed for OpenAIProvider {}
+
 #[async_trait]
 impl Provider for OpenAIProvider {
     fn name(&self) -> &str {

@@ -2,54 +2,112 @@ use std::path::{Path, PathBuf};
 
 use tracing::warn;
 
-use crate::adapter::LanguageAdapter;
+use crate::adapter::{AdapterError, LanguageAdapter};
 use crate::graph::CodeGraph;
+
+/// Result of a build pass — the graph plus diagnostics that the caller should
+/// surface (rather than silently swallow).
+///
+/// `parse_errors` is populated when tree-sitter produced ERROR/MISSING nodes
+/// but a partial tree was usable; the corresponding file's nodes/edges are
+/// still indexed. `files_skipped` lists files that produced no usable tree
+/// (I/O failure or hard parse failure).
+#[derive(Default)]
+pub struct BuildResult {
+    pub graph: CodeGraph,
+    pub parse_errors: Vec<AdapterError>,
+    pub files_skipped: Vec<PathBuf>,
+}
 
 /// Orchestrates building a [`CodeGraph`] from source files.
 pub struct GraphBuilder;
 
 impl GraphBuilder {
     /// Build graph from all matching files in a directory (recursive).
+    ///
+    /// Convenience wrapper that discards diagnostics — prefer
+    /// [`Self::build_from_directory_with_result`] for production code.
     pub fn build_from_directory(path: &Path, adapter: &dyn LanguageAdapter) -> CodeGraph {
-        let files = Self::discover_files(path, adapter.file_extensions());
-        Self::build_from_files(&files, adapter)
+        Self::build_from_directory_with_result(path, adapter).graph
     }
 
     /// Build graph from a specific list of files.
+    ///
+    /// Convenience wrapper that discards diagnostics — prefer
+    /// [`Self::build_from_files_with_result`] for production code.
     pub fn build_from_files(files: &[PathBuf], adapter: &dyn LanguageAdapter) -> CodeGraph {
-        let mut graph = CodeGraph::new();
+        Self::build_from_files_with_result(files, adapter).graph
+    }
+
+    /// Build graph + diagnostics from all matching files in a directory.
+    pub fn build_from_directory_with_result(
+        path: &Path,
+        adapter: &dyn LanguageAdapter,
+    ) -> BuildResult {
+        let files = Self::discover_files(path, adapter.file_extensions());
+        Self::build_from_files_with_result(&files, adapter)
+    }
+
+    /// Build graph + diagnostics from a specific list of files.
+    ///
+    /// Files with tree-sitter syntax errors are indexed with their *partial*
+    /// tree (so the user still gets best-effort symbols) and the
+    /// [`AdapterError::SyntaxError`] is collected into `parse_errors`. Files
+    /// that fail to read or hard-fail parsing land in `files_skipped`.
+    pub fn build_from_files_with_result(
+        files: &[PathBuf],
+        adapter: &dyn LanguageAdapter,
+    ) -> BuildResult {
+        let mut result = BuildResult::default();
 
         for file_path in files {
             let content = match std::fs::read_to_string(file_path) {
                 Ok(c) => c,
                 Err(e) => {
                     warn!("Failed to read {}: {}", file_path.display(), e);
+                    result.files_skipped.push(file_path.clone());
                     continue;
                 }
             };
 
-            let parsed = match adapter.parse_file(file_path, &content) {
-                Ok(p) => p,
+            let outcome = match adapter.parse_file_lenient(file_path, &content) {
+                Ok(o) => o,
                 Err(e) => {
                     warn!("Failed to parse {}: {}", file_path.display(), e);
+                    result.files_skipped.push(file_path.clone());
                     continue;
                 }
             };
 
+            if let Some(err) = outcome.error {
+                // Partial tree — index what we have but record the error so
+                // the caller can surface it (CLI warning, LSP diagnostic, etc.).
+                result.parse_errors.push(err);
+            }
+
+            let parsed = outcome.parsed;
             let nodes = adapter.extract_nodes(&parsed);
             for node in &nodes {
-                graph.add_node(node.clone());
+                result.graph.add_node(node.clone());
             }
 
             let edges = adapter.extract_edges(&parsed, &nodes);
             for (from, to, edge_data) in edges {
-                if graph.contains_node(&from) && graph.contains_node(&to) {
-                    let _ = graph.add_edge(&from, &to, edge_data);
+                if result.graph.contains_node(&from) && result.graph.contains_node(&to) {
+                    if let Err(e) = result.graph.add_edge(&from, &to, edge_data) {
+                        // Edge-invariant violations are a builder/adapter bug,
+                        // not user-facing, so we log loudly.
+                        warn!(
+                            target: "jfc::graph::builder",
+                            error = %e,
+                            "edge rejected by graph invariant — adapter produced a malformed edge"
+                        );
+                    }
                 }
             }
         }
 
-        graph
+        result
     }
 
     fn discover_files(dir: &Path, extensions: &[&str]) -> Vec<PathBuf> {

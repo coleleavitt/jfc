@@ -130,6 +130,8 @@ mod tests {
             span: make_span(),
             visibility: Visibility::Public,
             metadata: HashMap::new(),
+            birth_revision: 0,
+            last_modified_revision: 0,
         }
     }
 
@@ -149,6 +151,7 @@ mod tests {
             was_truncated: false,
             total_before_truncation: 3,
             cycles_detected: vec![],
+            metadata: vec![],
         };
 
         (graph, result)
@@ -188,6 +191,7 @@ mod tests {
             was_truncated: false,
             total_before_truncation: 0,
             cycles_detected: vec![],
+            metadata: vec![],
         };
 
         let output = format_query_result(&result, &graph, None, 1000);

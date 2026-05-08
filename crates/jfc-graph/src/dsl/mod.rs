@@ -1,9 +1,11 @@
 //! Domain-specific language for graph queries.
 //!
-//! Grammar (exactly 8 operators, pipe-separated):
+//! Grammar (legacy pipe-chain — preserved for back-compat):
 //! ```text
 //! query       := op ( '|' op )*
-//! op          := fn_select | type_select | callers | callees | depth | filter | show | taint
+//! op          := fn_select | type_select | callers | callees | depth | filter
+//!              | show | taint | preconditions | since | hot | scc
+//!              | dispatch | cluster_by_type | affected
 //! fn_select   := 'fn' '(' STRING ')'
 //! type_select := 'type' '(' STRING ')'
 //! callers     := 'callers'
@@ -12,9 +14,43 @@
 //! filter      := 'filter' 'kind' '=' IDENT
 //! show        := 'show' PROJECTION
 //! taint       := 'taint' STRING
+//! since       := 'since' NUMBER
+//! hot         := 'hot' NUMBER
+//! scc         := 'scc'
+//! dispatch    := 'dispatch'
+//! cluster_by_type := 'cluster' 'by' 'type'
+//! affected    := 'affected' NUMBER 'since' NUMBER
 //! ```
+//!
+//! Extended grammar (set algebra, path patterns, entrypoint selector,
+//! dominator queries, trait/cluster selectors, multi-source path):
+//! ```text
+//! expr        := setop_expr
+//! setop_expr  := atom ( ( 'union' | 'intersect' | 'diff' | '\' ) atom )*
+//! atom        := pipe_chain | path_query | entrypoint_query
+//!              | dominators_query | dominates_query | trait_impls_query
+//!              | multi_path_query | '(' expr ')'
+//! pipe_chain  := op ( '|' op )*
+//! path_query  := ( 'path' | 'paths' ) atom '->' atom
+//!                ( 'where' 'intermediate' 'kind' '=' IDENT )?
+//!                ( 'via' EDGE_KIND )?
+//!                ( 'depth' NUMBER )?
+//! entrypoint_query := 'entrypoints' ( 'kind' '=' IDENT )?
+//! dominators_query := 'dominators' 'of' atom
+//! dominates_query  := 'dominates' atom
+//! trait_impls_query := 'trait_impls' 'of' atom
+//! multi_path_query := 'multi_path' '{' atom ( ',' atom )* '}' '->' atom
+//!                     ( 'depth' NUMBER )?
+//! ```
+//!
+//! Set-op precedence: all three (`union`, `intersect`, `diff`/`\`) share
+//! the same precedence level and are left-associative. Use parentheses
+//! to disambiguate. Set ops only preserve the `nodes` field of each
+//! operand's [`QueryResult`]; edges, cycle records, and other metadata
+//! are intentionally dropped because there is no meaningful merge
+//! semantics across heterogenous traversals.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::edges::EdgeKind;
 use crate::graph::CodeGraph;
@@ -42,6 +78,67 @@ pub enum Token {
     Preconditions,
     Kind,
     Equals,
+    /// Left paren — only meaningful in extended grammar (set-op grouping).
+    LParen,
+    /// Right paren — only meaningful in extended grammar.
+    RParen,
+    /// Set-algebra union (`A union B`).
+    Union,
+    /// Set-algebra intersection (`A intersect B`).
+    Intersect,
+    /// Set-algebra difference, spelled either `A diff B` or `A \ B`.
+    Diff,
+    /// Path pattern: shortest single path between endpoints.
+    Path,
+    /// Path pattern: all simple paths between endpoints.
+    Paths,
+    /// `where` clause introducing intermediate-node predicates.
+    Where,
+    /// `intermediate` qualifier inside a `where` clause.
+    Intermediate,
+    /// `via EDGE_KIND` requirement: at least one edge of the given kind on the path.
+    Via,
+    /// Path-segment arrow (`->` or unicode `→`).
+    Arrow,
+    /// `entrypoints` selector — returns classified entrypoint nodes.
+    Entrypoints,
+    /// `since N` postfix filter — restrict working set to nodes whose
+    /// `last_modified_revision >= N`. Pairs with
+    /// [`crate::graph::CodeGraph::current_revision`] to answer "what
+    /// changed since revision N?".
+    Since,
+    /// `hot N` — top-N by PageRank. As a bare selector ranks the entire
+    /// graph; as a postfix op restricts the working set to its hottest N.
+    Hot,
+    /// `scc` — strongly connected components. Bare selector returns the
+    /// union of all multi-element SCC members; as a postfix op restricts
+    /// to SCCs containing the working-set nodes.
+    Scc,
+    /// `dominators of fn("X")` — dominator chain seeded at X.
+    Dominators,
+    /// `dominates fn("X")` — descendants of X in the dominator tree.
+    Dominates,
+    /// `of` — connector for `dominators of <expr>`.
+    Of,
+    /// `trait_impls of type("X")` — implementors of trait X.
+    TraitImpls,
+    /// `dispatch` — restrict working set to functions whose calls go
+    /// through trait-method dispatch (postfix op).
+    Dispatch,
+    /// `cluster` — used in `cluster by type` (bare or postfix).
+    Cluster,
+    /// `by` — connector for `cluster by type`.
+    By,
+    /// `affected N since M` — `nodes_changed_within_depth(M, N)`.
+    Affected,
+    /// `multi_path {fn("a"), fn("b")} -> fn("c")` — multi-source shortest path.
+    MultiPath,
+    /// `{` — opens a brace list (multi-source `path` / `multi_path`).
+    LBrace,
+    /// `}` — closes a brace list.
+    RBrace,
+    /// `,` — separates entries in a brace list.
+    Comma,
     String(String),
     Number(usize),
     Ident(String),
@@ -82,6 +179,183 @@ pub enum DslOp {
     /// caller's source span to surface the actual enclosing if/match
     /// expression text.
     Preconditions,
+    /// `since N` postfix filter — restricts the working set to nodes whose
+    /// `last_modified_revision >= N`. Composes with any other operator;
+    /// chain it last in a pipe-query to answer "of the things selected,
+    /// which changed since revision N?". The argument is a `u64` so callers
+    /// can pass the value of [`crate::graph::CodeGraph::current_revision`]
+    /// captured before a batch of mutations.
+    Since(u64),
+    /// `hot N` — top-N functions by PageRank centrality.
+    ///
+    /// Two semantics depending on chain position:
+    /// - **Bare** (`hot 10`): rank every function in the graph; keep top N.
+    /// - **Postfix** (`fn("auth") | callees | hot 5`): rank only nodes
+    ///   already in the working set; keep its top N.
+    ///
+    /// Centrality is computed lazily (`graph.hottest_functions(n)` for the
+    /// bare form; `graph.centrality()` then a re-rank for the postfix
+    /// form). One PageRank computation per `hot` op — the working set is
+    /// usually small relative to the graph, so re-running on the bare
+    /// form vs. caching is a wash.
+    Hot(usize),
+    /// `scc` — strongly connected components.
+    ///
+    /// - **Bare** (`scc`): return every member of every multi-element SCC
+    ///   in the graph. Singletons are excluded — the answer to "what
+    ///   loops?" not "every node is in some SCC".
+    /// - **Postfix** (`fn("foo") | scc`): restrict to the SCC(s)
+    ///   containing the working-set nodes. Empty result if every input is
+    ///   a singleton.
+    ///
+    /// `QueryResult.metadata` describes each surviving cluster as a line
+    /// of the form `SCC[i] size=N members=[name, name, ...]`.
+    Scc,
+    /// `dispatch` — postfix filter restricting the working set to
+    /// functions that participate in trait dispatch as the *caller*.
+    /// Computed via [`crate::graph::CodeGraph::trait_dispatch_calls`].
+    /// Pairs with `fn("foo") | dispatch` to answer "which calls in foo
+    /// go through trait dispatch?".
+    Dispatch,
+    /// `cluster by type` — group functions by their primary type
+    /// (most-frequent `UsesType` target). When chained postfix
+    /// (`<expr> | cluster by type`), only functions in the working set
+    /// participate.
+    ///
+    /// Result: union of every function across every cluster (the
+    /// clustering itself surfaces in `metadata` as `cluster[i] type=T
+    /// size=N members=[...]`).
+    ClusterByType,
+    /// `affected N since M` — every node within `N` undirected hops of
+    /// any node modified at or after revision `M`. Wraps
+    /// [`crate::graph::CodeGraph::nodes_changed_within_depth`].
+    ///
+    /// Spelled `affected` rather than reusing `depth`/`since` because
+    /// `since N | depth M` would semantically mean "filter to recent,
+    /// then expand outgoing N hops" — different ordering and direction.
+    /// `affected N since M` is undirected and seeded at *every* recent
+    /// node, which is what code-review questions like "what's near my
+    /// recent changes?" actually want.
+    Affected { depth: usize, since_rev: u64 },
+}
+
+/// Top-level expression supporting set algebra, path patterns, and
+/// entrypoint selectors on top of the legacy pipe-chain grammar.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expr {
+    /// A traditional pipe-chain (e.g. `fn("foo") | callers | depth 3`).
+    Pipe(Vec<DslOp>),
+    /// `path` (single shortest) or `paths` (all simple) between two
+    /// expressions, with optional intermediate-kind, edge-via, and
+    /// depth qualifiers.
+    PathQuery(PathQuery),
+    /// `entrypoints` selector — optionally filtered to a specific
+    /// [`EntrypointKind`].
+    Entrypoints(Option<EntrypointKind>),
+    /// Set-algebra binary op: union / intersect / diff (left minus right).
+    SetOp {
+        op: SetOp,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+    /// `dominators of <expr>` — for each node selected by `<expr>`, walk
+    /// the dominator chain in the call graph and union the result.
+    ///
+    /// The dominator tree is rooted at a synthetic entry chosen by
+    /// [`pick_dominator_root`]: prefer `fn main`, fall back to the
+    /// function with the highest fan-in. The call graph isn't natively
+    /// single-entry so this is a documented heuristic; callers needing a
+    /// specific root should use [`crate::dominators::Dominators::build`]
+    /// directly.
+    DominatorsOf(Box<Expr>),
+    /// `dominates <expr>` — for each node selected by `<expr>`, return
+    /// every node it dominates (descendants in the dominator tree).
+    /// Same root-selection policy as `DominatorsOf`.
+    DominatesOf(Box<Expr>),
+    /// `trait_impls of <expr>` — for each `Trait` node selected by
+    /// `<expr>`, return the union of its direct implementors via
+    /// `Implements` edges. Backed by
+    /// [`crate::graph::CodeGraph::trait_hierarchies`].
+    TraitImplsOf(Box<Expr>),
+    /// `multi_path { <expr>, <expr>, ... } -> <expr>` — multi-source
+    /// shortest path. Wraps
+    /// [`crate::traversal::find_path_multi_source`]: every source set is
+    /// seeded into a single BFS so the shortest path from *any* source
+    /// to `to` wins. Optional trailing `depth N` qualifier (default 32).
+    MultiPath {
+        sources: Vec<Expr>,
+        to: Box<Expr>,
+        max_depth: Option<usize>,
+    },
+}
+
+/// Set-algebra operator on `QueryResult` node sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetOp {
+    Union,
+    Intersect,
+    /// Asymmetric difference (`A \ B` = nodes in A but not in B).
+    Diff,
+}
+
+/// Path-pattern flavor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathMode {
+    /// Single shortest path.
+    Shortest,
+    /// All simple (non-self-intersecting) paths.
+    AllSimple,
+}
+
+/// Parsed `path` / `paths` query AST.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PathQuery {
+    pub mode: PathMode,
+    pub from: Box<Expr>,
+    pub to: Box<Expr>,
+    /// `where intermediate kind=K` — restrict intermediate node kinds.
+    pub intermediate_kind: Option<NodeKind>,
+    /// `via EdgeKind` — require at least one edge of this kind on the path.
+    pub via_edge: Option<EdgeKind>,
+    /// `depth N` — bound search depth (default 32 if unspecified).
+    pub max_depth: Option<usize>,
+}
+
+/// Coarse classification of program entrypoints — mirrors the categories
+/// produced by [`crate::analysis::CodeGraph::classify_entrypoints`] one-to-one.
+/// Kept as a separate enum (rather than re-exporting `analysis::EntrypointKind`)
+/// because the DSL surface is the user-facing keyword set: callers spell
+/// `Main`/`PublicApi`/`Test`/`Bench`/`FfiExport` in queries and we translate
+/// at the executor boundary. If `analysis::EntrypointKind` ever grows or
+/// renames, the DSL keyword surface stays stable until we choose to expose
+/// the change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntrypointKind {
+    /// `fn main` at module root.
+    Main,
+    /// Public function exposed at crate root or `pub mod`.
+    PublicApi,
+    /// `#[test]`, `#[tokio::test]`, integration tests, etc.
+    Test,
+    /// `#[bench]` benchmark harness.
+    Bench,
+    /// FFI export: `pub extern "..." fn` or `#[no_mangle]`.
+    FfiExport,
+}
+
+impl EntrypointKind {
+    /// Translate an `analysis::EntrypointKind` (the source of truth) into the
+    /// DSL-facing variant. The two enums currently align 1:1 but kept
+    /// separate so the DSL keyword surface can evolve independently.
+    fn from_analysis(k: crate::analysis::EntrypointKind) -> Self {
+        match k {
+            crate::analysis::EntrypointKind::Main => Self::Main,
+            crate::analysis::EntrypointKind::PublicApi => Self::PublicApi,
+            crate::analysis::EntrypointKind::Test => Self::Test,
+            crate::analysis::EntrypointKind::Bench => Self::Bench,
+            crate::analysis::EntrypointKind::FfiExport => Self::FfiExport,
+        }
+    }
 }
 
 /// Parse error with position info.
@@ -113,6 +387,15 @@ pub fn lex(input: &str) -> Result<Vec<Token>, ParseError> {
             continue;
         }
 
+        // Unicode arrow `→` (3 bytes: 0xE2 0x86 0x92). Detect before falling
+        // through to the byte-by-byte ASCII match — `→` is the natural
+        // notation in the documented path-query grammar.
+        if pos + 2 < len && bytes[pos] == 0xE2 && bytes[pos + 1] == 0x86 && bytes[pos + 2] == 0x92 {
+            tokens.push(Token::Arrow);
+            pos += 3;
+            continue;
+        }
+
         match bytes[pos] {
             b'|' => {
                 tokens.push(Token::Pipe);
@@ -121,6 +404,34 @@ pub fn lex(input: &str) -> Result<Vec<Token>, ParseError> {
             b'=' => {
                 tokens.push(Token::Equals);
                 pos += 1;
+            }
+            b'(' => {
+                tokens.push(Token::LParen);
+                pos += 1;
+            }
+            b')' => {
+                tokens.push(Token::RParen);
+                pos += 1;
+            }
+            b'\\' => {
+                tokens.push(Token::Diff);
+                pos += 1;
+            }
+            b'{' => {
+                tokens.push(Token::LBrace);
+                pos += 1;
+            }
+            b'}' => {
+                tokens.push(Token::RBrace);
+                pos += 1;
+            }
+            b',' => {
+                tokens.push(Token::Comma);
+                pos += 1;
+            }
+            b'-' if pos + 1 < len && bytes[pos + 1] == b'>' => {
+                tokens.push(Token::Arrow);
+                pos += 2;
             }
             b'"' => {
                 let start = pos;
@@ -214,6 +525,35 @@ pub fn lex(input: &str) -> Result<Vec<Token>, ParseError> {
                     "taint" => tokens.push(Token::Taint),
                     "preconditions" => tokens.push(Token::Preconditions),
                     "kind" => tokens.push(Token::Kind),
+                    "union" => tokens.push(Token::Union),
+                    "intersect" => tokens.push(Token::Intersect),
+                    "diff" => tokens.push(Token::Diff),
+                    "path" => tokens.push(Token::Path),
+                    "paths" => tokens.push(Token::Paths),
+                    "where" => tokens.push(Token::Where),
+                    "intermediate" => tokens.push(Token::Intermediate),
+                    "via" => tokens.push(Token::Via),
+                    "entrypoints" => tokens.push(Token::Entrypoints),
+                    // Postfix history filter: `since N` — see `DslOp::Since`.
+                    // Sits at the same grammar level as `depth N` (postfix,
+                    // takes a single numeric argument) so it can chain after
+                    // any selector or traversal.
+                    "since" => tokens.push(Token::Since),
+                    // Centrality / structural / type-cluster operators —
+                    // see `DslOp::{Hot,Scc,Dominators,...}` for the full
+                    // wiring story. Each is a single-keyword token that the
+                    // pipe-chain parser dispatches on.
+                    "hot" => tokens.push(Token::Hot),
+                    "scc" => tokens.push(Token::Scc),
+                    "dominators" => tokens.push(Token::Dominators),
+                    "dominates" => tokens.push(Token::Dominates),
+                    "of" => tokens.push(Token::Of),
+                    "trait_impls" => tokens.push(Token::TraitImpls),
+                    "dispatch" => tokens.push(Token::Dispatch),
+                    "cluster" => tokens.push(Token::Cluster),
+                    "by" => tokens.push(Token::By),
+                    "affected" => tokens.push(Token::Affected),
+                    "multi_path" => tokens.push(Token::MultiPath),
                     _ => tokens.push(Token::Ident(word.to_string())),
                 }
             }
@@ -386,16 +726,134 @@ fn parse_op(tokens: &[Token], pos: &mut usize) -> Result<DslOp, ParseError> {
             *pos += 1;
             Ok(DslOp::Preconditions)
         }
+        // `since N` — postfix history filter. Mirrors `depth N`'s grammar
+        // (single numeric argument) but operates on the temporal axis: keep
+        // only nodes whose `last_modified_revision >= N`. Sits at the same
+        // precedence level as every other pipe-operator; chain order
+        // determines whether the filter applies before or after a traversal
+        // expansion.
+        Token::Since => {
+            *pos += 1;
+            if *pos >= tokens.len() {
+                return Err(ParseError::new(*pos, "expected number after 'since'"));
+            }
+            match &tokens[*pos] {
+                Token::Number(n) => {
+                    let rev = *n as u64;
+                    *pos += 1;
+                    Ok(DslOp::Since(rev))
+                }
+                _ => Err(ParseError::new(*pos, "expected number after 'since'")),
+            }
+        }
+        // `hot N` — top-N centrality. Single numeric argument, behavior
+        // depends on whether the working set is empty (bare ⇒ rank graph)
+        // or populated (postfix ⇒ rank within set). Decided in the executor.
+        Token::Hot => {
+            *pos += 1;
+            if *pos >= tokens.len() {
+                return Err(ParseError::new(*pos, "expected number after 'hot'"));
+            }
+            match &tokens[*pos] {
+                Token::Number(n) => {
+                    let k = *n;
+                    *pos += 1;
+                    Ok(DslOp::Hot(k))
+                }
+                _ => Err(ParseError::new(*pos, "expected number after 'hot'")),
+            }
+        }
+        // `scc` — no arguments. Bare-vs-postfix distinction handled in the executor.
+        Token::Scc => {
+            *pos += 1;
+            Ok(DslOp::Scc)
+        }
+        // `dispatch` — postfix filter; arguments derive from working set.
+        Token::Dispatch => {
+            *pos += 1;
+            Ok(DslOp::Dispatch)
+        }
+        // `cluster by type` — exact two-keyword sequence. We don't currently
+        // support clustering by anything else, but the `by` keyword leaves
+        // room (`cluster by trait`, `cluster by file`) without re-parsing.
+        Token::Cluster => {
+            *pos += 1;
+            if *pos >= tokens.len() || tokens[*pos] != Token::By {
+                return Err(ParseError::new(*pos, "expected 'by' after 'cluster'"));
+            }
+            *pos += 1;
+            if *pos >= tokens.len() {
+                return Err(ParseError::new(*pos, "expected 'type' after 'cluster by'"));
+            }
+            match &tokens[*pos] {
+                Token::Type => {
+                    *pos += 1;
+                    Ok(DslOp::ClusterByType)
+                }
+                Token::Ident(s) if s == "type" => {
+                    *pos += 1;
+                    Ok(DslOp::ClusterByType)
+                }
+                _ => Err(ParseError::new(
+                    *pos,
+                    "expected 'type' after 'cluster by'",
+                )),
+            }
+        }
+        // `affected N since M` — single-shot temporal-neighborhood operator.
+        // Note `since` here is consumed as a *positional* argument, not the
+        // `Since` postfix filter. Parser reads literally: `affected`,
+        // number, `since`, number.
+        Token::Affected => {
+            *pos += 1;
+            if *pos >= tokens.len() {
+                return Err(ParseError::new(*pos, "expected number after 'affected'"));
+            }
+            let depth = match &tokens[*pos] {
+                Token::Number(n) => *n,
+                _ => {
+                    return Err(ParseError::new(
+                        *pos,
+                        "expected number (depth) after 'affected'",
+                    ));
+                }
+            };
+            *pos += 1;
+            if *pos >= tokens.len() || tokens[*pos] != Token::Since {
+                return Err(ParseError::new(
+                    *pos,
+                    "expected 'since' after 'affected N'",
+                ));
+            }
+            *pos += 1;
+            if *pos >= tokens.len() {
+                return Err(ParseError::new(
+                    *pos,
+                    "expected number (revision) after 'affected N since'",
+                ));
+            }
+            let since_rev = match &tokens[*pos] {
+                Token::Number(n) => *n as u64,
+                _ => {
+                    return Err(ParseError::new(
+                        *pos,
+                        "expected number after 'affected N since'",
+                    ));
+                }
+            };
+            *pos += 1;
+            Ok(DslOp::Affected { depth, since_rev })
+        }
         Token::Ident(s) => Err(ParseError::new(
             *pos,
             format!(
-                "unknown operation '{s}'. Valid operations: fn, type, callers, callees, depth, filter, show, taint, preconditions"
+                "unknown operation '{s}'. Valid operations: fn, type, callers, callees, depth, filter, show, taint, preconditions, since, hot, scc, dispatch, cluster, affected"
             ),
         )),
         _ => Err(ParseError::new(
             *pos,
             format!(
-                "unexpected token {:?}. Expected an operation (fn, type, callers, callees, depth, filter, show, taint, preconditions)",
+                "unexpected token {:?}. Expected an operation (fn, type, callers, callees, depth, filter, show, taint, preconditions, since, hot, scc, dispatch, cluster, affected)",
                 token
             ),
         )),
@@ -433,6 +891,414 @@ pub fn parse_query(input: &str) -> Result<Vec<DslOp>, ParseError> {
     parse(&tokens)
 }
 
+// ---------------------------------------------------------------------------
+// Extended expression parser: set algebra, path patterns, entrypoint selector.
+//
+// Grammar (left-associative, single precedence level for set ops):
+//
+//     expr     := atom (('union' | 'intersect' | 'diff' | '\') atom)*
+//     atom     := '(' expr ')'
+//                | path_query
+//                | entrypoint_query
+//                | pipe_chain
+//
+// The pipe-chain parser is reused unchanged for back-compat. Set-ops only
+// preserve the `nodes` set across operands; per-operand metadata is dropped.
+// ---------------------------------------------------------------------------
+
+/// Parse a top-level [`Expr`] from a query string.
+///
+/// Use this entry point when callers want set algebra, path patterns, or
+/// the `entrypoints` selector. For pure pipe-chain back-compat, prefer
+/// [`parse_query`] which returns `Vec<DslOp>` directly.
+pub fn parse_expr(input: &str) -> Result<Expr, ParseError> {
+    let tokens = lex(input)?;
+    if tokens.is_empty() {
+        return Err(ParseError::new(0, "empty query"));
+    }
+    let mut pos = 0;
+    let expr = parse_expr_inner(&tokens, &mut pos)?;
+    if pos < tokens.len() {
+        return Err(ParseError::new(
+            pos,
+            format!("trailing tokens after expression: {:?}", &tokens[pos..]),
+        ));
+    }
+    Ok(expr)
+}
+
+fn parse_expr_inner(tokens: &[Token], pos: &mut usize) -> Result<Expr, ParseError> {
+    let mut left = parse_atom(tokens, pos)?;
+    loop {
+        if *pos >= tokens.len() {
+            break;
+        }
+        let op = match &tokens[*pos] {
+            Token::Union => SetOp::Union,
+            Token::Intersect => SetOp::Intersect,
+            Token::Diff => SetOp::Diff,
+            _ => break,
+        };
+        *pos += 1;
+        let right = parse_atom(tokens, pos)?;
+        left = Expr::SetOp {
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+    }
+    Ok(left)
+}
+
+fn parse_atom(tokens: &[Token], pos: &mut usize) -> Result<Expr, ParseError> {
+    if *pos >= tokens.len() {
+        return Err(ParseError::new(*pos, "expected expression"));
+    }
+    match &tokens[*pos] {
+        Token::LParen => {
+            *pos += 1;
+            let inner = parse_expr_inner(tokens, pos)?;
+            if *pos >= tokens.len() || tokens[*pos] != Token::RParen {
+                return Err(ParseError::new(*pos, "expected ')' to close group"));
+            }
+            *pos += 1;
+            Ok(inner)
+        }
+        Token::Path | Token::Paths => parse_path_query(tokens, pos),
+        Token::Entrypoints => parse_entrypoint_query(tokens, pos),
+        Token::Dominators => parse_dominators_query(tokens, pos),
+        Token::Dominates => parse_dominates_query(tokens, pos),
+        Token::TraitImpls => parse_trait_impls_query(tokens, pos),
+        Token::MultiPath => parse_multi_path_query(tokens, pos),
+        _ => parse_pipe_chain_atom(tokens, pos).map(Expr::Pipe),
+    }
+}
+
+/// `dominators of <atom>` — `of` is required even though it's purely
+/// connective, because `dominators fn("foo")` would otherwise let the
+/// pipe-chain parser eat `dominators` as an unknown operator. Keeping
+/// `of` explicit also leaves room for future `dominators since N` etc.
+fn parse_dominators_query(tokens: &[Token], pos: &mut usize) -> Result<Expr, ParseError> {
+    debug_assert!(matches!(tokens[*pos], Token::Dominators));
+    *pos += 1;
+    if *pos >= tokens.len() || tokens[*pos] != Token::Of {
+        return Err(ParseError::new(*pos, "expected 'of' after 'dominators'"));
+    }
+    *pos += 1;
+    let inner = parse_atom(tokens, pos)?;
+    Ok(Expr::DominatorsOf(Box::new(inner)))
+}
+
+/// `dominates <atom>` — no `of` here because `dominates` is naturally a
+/// transitive verb (`X dominates Y`). Mirrors the petgraph API name.
+fn parse_dominates_query(tokens: &[Token], pos: &mut usize) -> Result<Expr, ParseError> {
+    debug_assert!(matches!(tokens[*pos], Token::Dominates));
+    *pos += 1;
+    let inner = parse_atom(tokens, pos)?;
+    Ok(Expr::DominatesOf(Box::new(inner)))
+}
+
+/// `trait_impls of <atom>` — `<atom>` should select `Trait` nodes; non-trait
+/// nodes contribute no implementors and are silently skipped at execution.
+fn parse_trait_impls_query(tokens: &[Token], pos: &mut usize) -> Result<Expr, ParseError> {
+    debug_assert!(matches!(tokens[*pos], Token::TraitImpls));
+    *pos += 1;
+    if *pos >= tokens.len() || tokens[*pos] != Token::Of {
+        return Err(ParseError::new(*pos, "expected 'of' after 'trait_impls'"));
+    }
+    *pos += 1;
+    let inner = parse_atom(tokens, pos)?;
+    Ok(Expr::TraitImplsOf(Box::new(inner)))
+}
+
+/// `multi_path { <expr>, <expr>, ... } -> <expr>` with optional `depth N`.
+///
+/// Parses the brace list as one-or-more sub-expressions separated by commas.
+/// We use `multi_path` rather than overloading `path { ... }` because the
+/// `path` token is already deeply integrated with single-source parsing
+/// and ambiguity around `path fn("a")` (single source) vs.
+/// `path {fn("a")}` (one-element multi source) would surprise the LLM.
+fn parse_multi_path_query(tokens: &[Token], pos: &mut usize) -> Result<Expr, ParseError> {
+    debug_assert!(matches!(tokens[*pos], Token::MultiPath));
+    *pos += 1;
+    if *pos >= tokens.len() || tokens[*pos] != Token::LBrace {
+        return Err(ParseError::new(
+            *pos,
+            "expected '{' after 'multi_path' to open the source list",
+        ));
+    }
+    *pos += 1;
+
+    let mut sources: Vec<Expr> = Vec::new();
+    loop {
+        if *pos >= tokens.len() {
+            return Err(ParseError::new(
+                *pos,
+                "unterminated source list: expected ',' or '}'",
+            ));
+        }
+        if tokens[*pos] == Token::RBrace {
+            *pos += 1;
+            break;
+        }
+        let item = parse_atom(tokens, pos)?;
+        sources.push(item);
+        match tokens.get(*pos) {
+            Some(Token::Comma) => {
+                *pos += 1;
+            }
+            Some(Token::RBrace) => {
+                *pos += 1;
+                break;
+            }
+            _ => {
+                return Err(ParseError::new(
+                    *pos,
+                    "expected ',' or '}' in multi_path source list",
+                ));
+            }
+        }
+    }
+
+    if sources.is_empty() {
+        return Err(ParseError::new(
+            *pos,
+            "multi_path requires at least one source",
+        ));
+    }
+
+    if *pos >= tokens.len() || tokens[*pos] != Token::Arrow {
+        return Err(ParseError::new(
+            *pos,
+            "expected '->' or '→' after multi_path source list",
+        ));
+    }
+    *pos += 1;
+
+    let to = parse_atom(tokens, pos)?;
+
+    let mut max_depth: Option<usize> = None;
+    if *pos < tokens.len() && tokens[*pos] == Token::Depth {
+        *pos += 1;
+        if *pos >= tokens.len() {
+            return Err(ParseError::new(*pos, "expected number after 'depth'"));
+        }
+        match &tokens[*pos] {
+            Token::Number(n) => {
+                max_depth = Some(*n);
+                *pos += 1;
+            }
+            _ => return Err(ParseError::new(*pos, "expected number after 'depth'")),
+        }
+    }
+
+    Ok(Expr::MultiPath {
+        sources,
+        to: Box::new(to),
+        max_depth,
+    })
+}
+
+/// Parse a pipe-chain that is also a sub-expression. Stops at end-of-input
+/// or any token that does not belong inside a pipe chain (set-op keyword,
+/// closing paren, end of path-query operand). This is the same operator
+/// soup as legacy [`parse`] but bounded so the outer expression parser can
+/// continue.
+fn parse_pipe_chain_atom(tokens: &[Token], pos: &mut usize) -> Result<Vec<DslOp>, ParseError> {
+    let start = *pos;
+    let mut ops = Vec::new();
+    loop {
+        if *pos >= tokens.len() {
+            break;
+        }
+        // Stop at any token that ends a pipe-chain in the extended grammar.
+        if matches!(
+            tokens[*pos],
+            Token::Union
+                | Token::Intersect
+                | Token::Diff
+                | Token::RParen
+                | Token::RBrace
+                | Token::Comma
+                | Token::Arrow
+                | Token::Where
+                | Token::Via
+                | Token::Of
+        ) {
+            break;
+        }
+        let op = parse_op(tokens, pos)?;
+        ops.push(op);
+        if *pos < tokens.len() && tokens[*pos] == Token::Pipe {
+            *pos += 1;
+            if *pos >= tokens.len() {
+                return Err(ParseError::new(*pos, "expected operation after '|'"));
+            }
+        } else {
+            break;
+        }
+    }
+    if ops.is_empty() {
+        return Err(ParseError::new(start, "expected pipe-chain operator"));
+    }
+    Ok(ops)
+}
+
+fn parse_path_query(tokens: &[Token], pos: &mut usize) -> Result<Expr, ParseError> {
+    let mode = match &tokens[*pos] {
+        Token::Path => PathMode::Shortest,
+        Token::Paths => PathMode::AllSimple,
+        _ => return Err(ParseError::new(*pos, "expected 'path' or 'paths'")),
+    };
+    *pos += 1;
+
+    let from = parse_atom(tokens, pos)?;
+
+    if *pos >= tokens.len() || tokens[*pos] != Token::Arrow {
+        return Err(ParseError::new(
+            *pos,
+            "expected '->' or '→' between path endpoints",
+        ));
+    }
+    *pos += 1;
+
+    let to = parse_atom(tokens, pos)?;
+
+    let mut intermediate_kind: Option<NodeKind> = None;
+    let mut via_edge: Option<EdgeKind> = None;
+    let mut max_depth: Option<usize> = None;
+
+    // Trailing qualifiers may appear in any order; loop until we run out.
+    loop {
+        if *pos >= tokens.len() {
+            break;
+        }
+        match &tokens[*pos] {
+            Token::Where => {
+                *pos += 1;
+                if *pos >= tokens.len() || tokens[*pos] != Token::Intermediate {
+                    return Err(ParseError::new(*pos, "expected 'intermediate' after 'where'"));
+                }
+                *pos += 1;
+                if *pos >= tokens.len() || tokens[*pos] != Token::Kind {
+                    return Err(ParseError::new(
+                        *pos,
+                        "expected 'kind' after 'where intermediate'",
+                    ));
+                }
+                *pos += 1;
+                if *pos >= tokens.len() || tokens[*pos] != Token::Equals {
+                    return Err(ParseError::new(
+                        *pos,
+                        "expected '=' after 'where intermediate kind'",
+                    ));
+                }
+                *pos += 1;
+                if *pos >= tokens.len() {
+                    return Err(ParseError::new(*pos, "expected node kind"));
+                }
+                let kind = match &tokens[*pos] {
+                    Token::Ident(s) => parse_node_kind(s, *pos)?,
+                    _ => return Err(ParseError::new(*pos, "expected node kind identifier")),
+                };
+                *pos += 1;
+                intermediate_kind = Some(kind);
+            }
+            Token::Via => {
+                *pos += 1;
+                if *pos >= tokens.len() {
+                    return Err(ParseError::new(*pos, "expected edge kind after 'via'"));
+                }
+                let edge = match &tokens[*pos] {
+                    Token::Ident(s) => parse_edge_kind(s, *pos)?,
+                    _ => return Err(ParseError::new(*pos, "expected edge kind identifier")),
+                };
+                *pos += 1;
+                via_edge = Some(edge);
+            }
+            Token::Depth => {
+                *pos += 1;
+                if *pos >= tokens.len() {
+                    return Err(ParseError::new(*pos, "expected number after 'depth'"));
+                }
+                let n = match &tokens[*pos] {
+                    Token::Number(n) => *n,
+                    _ => return Err(ParseError::new(*pos, "expected number after 'depth'")),
+                };
+                *pos += 1;
+                max_depth = Some(n);
+            }
+            _ => break,
+        }
+    }
+
+    Ok(Expr::PathQuery(PathQuery {
+        mode,
+        from: Box::new(from),
+        to: Box::new(to),
+        intermediate_kind,
+        via_edge,
+        max_depth,
+    }))
+}
+
+fn parse_entrypoint_query(tokens: &[Token], pos: &mut usize) -> Result<Expr, ParseError> {
+    debug_assert!(matches!(tokens[*pos], Token::Entrypoints));
+    *pos += 1;
+    // Optional `kind=Main|PublicApi|Test` filter.
+    if *pos < tokens.len() && tokens[*pos] == Token::Kind {
+        *pos += 1;
+        if *pos >= tokens.len() || tokens[*pos] != Token::Equals {
+            return Err(ParseError::new(*pos, "expected '=' after 'kind'"));
+        }
+        *pos += 1;
+        if *pos >= tokens.len() {
+            return Err(ParseError::new(*pos, "expected entrypoint kind"));
+        }
+        let kind = match &tokens[*pos] {
+            Token::Ident(s) => parse_entrypoint_kind(s, *pos)?,
+            _ => return Err(ParseError::new(*pos, "expected entrypoint kind identifier")),
+        };
+        *pos += 1;
+        Ok(Expr::Entrypoints(Some(kind)))
+    } else {
+        Ok(Expr::Entrypoints(None))
+    }
+}
+
+fn parse_edge_kind(s: &str, pos: usize) -> Result<EdgeKind, ParseError> {
+    match s {
+        "Calls" => Ok(EdgeKind::Calls),
+        "UnresolvedCall" => Ok(EdgeKind::UnresolvedCall(String::new())),
+        "UsesType" => Ok(EdgeKind::UsesType),
+        "References" => Ok(EdgeKind::References),
+        "Contains" => Ok(EdgeKind::Contains),
+        "Implements" => Ok(EdgeKind::Implements),
+        "ExternalCall" => Ok(EdgeKind::ExternalCall(String::new(), String::new())),
+        _ => Err(ParseError::new(
+            pos,
+            format!(
+                "unknown edge kind '{s}'. Valid: Calls, UnresolvedCall, UsesType, \
+                 References, Contains, Implements, ExternalCall"
+            ),
+        )),
+    }
+}
+
+fn parse_entrypoint_kind(s: &str, pos: usize) -> Result<EntrypointKind, ParseError> {
+    match s {
+        "Main" => Ok(EntrypointKind::Main),
+        "PublicApi" => Ok(EntrypointKind::PublicApi),
+        "Test" => Ok(EntrypointKind::Test),
+        "Bench" => Ok(EntrypointKind::Bench),
+        "FfiExport" => Ok(EntrypointKind::FfiExport),
+        _ => Err(ParseError::new(
+            pos,
+            format!("unknown entrypoint kind '{s}'. Valid: Main, PublicApi, Test, Bench, FfiExport"),
+        )),
+    }
+}
+
 /// Configuration for query execution.
 #[derive(Debug, Clone)]
 pub struct QueryConfig {
@@ -462,6 +1328,54 @@ pub struct QueryResult {
     pub total_before_truncation: usize,
     /// Cycles detected during traversal.
     pub cycles_detected: Vec<NodeId>,
+    /// Free-form lines describing higher-order structure that doesn't fit
+    /// in `nodes`/`edges`: SCC clusters with member lists, type clusters
+    /// with their primary type, entrypoint kinds and reach metrics, etc.
+    /// Each entry is a single human-readable line — renderers can show
+    /// these verbatim, parse selectively, or ignore them. Empty for the
+    /// majority of queries that don't carry analytical metadata.
+    pub metadata: Vec<String>,
+}
+
+impl Default for QueryResult {
+    fn default() -> Self {
+        Self {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            was_truncated: false,
+            total_before_truncation: 0,
+            cycles_detected: Vec::new(),
+            metadata: Vec::new(),
+        }
+    }
+}
+
+impl QueryResult {
+    /// Render each result node as a structured `kind:qualified_name`
+    /// handle string, using the node's own [`NodeKind`] and
+    /// [`crate::nodes::NodeData::qualified_name`] (the same scheme
+    /// [`crate::symbols::SymbolTable`] uses for `fn:`/`struct:`/`enum:`/
+    /// `trait:`/`mod:`).
+    ///
+    /// Nodes whose [`NodeId`] no longer resolves in `graph` (e.g. the
+    /// graph was mutated between query and rendering) are skipped
+    /// silently — handles are best-effort by design.
+    pub fn handles(&self, graph: &CodeGraph) -> Vec<String> {
+        self.nodes
+            .iter()
+            .filter_map(|id| {
+                let node = graph.get_node(id)?;
+                let prefix = match node.kind {
+                    NodeKind::Function => "fn",
+                    NodeKind::Struct => "struct",
+                    NodeKind::Enum => "enum",
+                    NodeKind::Trait => "trait",
+                    NodeKind::Module => "mod",
+                };
+                Some(format!("{}:{}", prefix, node.qualified_name))
+            })
+            .collect()
+    }
 }
 
 /// Errors from query execution.
@@ -487,6 +1401,7 @@ impl<'a> QueryEngine<'a> {
     pub fn execute(&self, ops: &[DslOp], config: &QueryConfig) -> Result<QueryResult, QueryError> {
         let mut working_set: HashSet<NodeId> = HashSet::new();
         let mut cycles_detected: Vec<NodeId> = Vec::new();
+        let mut metadata: Vec<String> = Vec::new();
 
         for op in ops {
             match op {
@@ -559,6 +1474,19 @@ impl<'a> QueryEngine<'a> {
                             .unwrap_or(false)
                     });
                 }
+                // `since N` — history-axis filter. Keep only nodes whose
+                // `last_modified_revision >= rev`. Implemented as an in-place
+                // retention rather than a re-intersection with
+                // `nodes_changed_since` to avoid an `O(n)` full-graph scan
+                // when the working set is already small.
+                DslOp::Since(rev) => {
+                    working_set.retain(|id| {
+                        self.graph
+                            .get_node(id)
+                            .map(|n| n.last_modified_revision >= *rev)
+                            .unwrap_or(false)
+                    });
+                }
                 DslOp::Show(_) => {}
                 DslOp::Preconditions => {
                     // Backward control-flow: BFS over *incoming* call
@@ -597,6 +1525,206 @@ impl<'a> QueryEngine<'a> {
                     }
 
                     working_set = reachers;
+                }
+                // `hot N` — top-N by PageRank.
+                //
+                // Bare invocation (empty working set) ranks the entire graph
+                // via `hottest_functions`. Postfix invocation re-ranks only
+                // the working-set members against the full-graph PageRank
+                // scores (no separate restricted PageRank — the full-graph
+                // scores carry the right "global importance" signal that
+                // a restricted re-run would obscure).
+                DslOp::Hot(n) => {
+                    if working_set.is_empty() {
+                        let ranked = self.graph.hottest_functions(*n);
+                        metadata.push(format!("hot top={n} bare=true"));
+                        for (id, score) in ranked {
+                            metadata.push(format!(
+                                "hot {} score={:.4}",
+                                self.graph
+                                    .get_node(&id)
+                                    .map(|nd| nd.qualified_name.clone())
+                                    .unwrap_or_else(|| format!("{id:?}")),
+                                score
+                            ));
+                            working_set.insert(id);
+                        }
+                    } else {
+                        let centrality = self.graph.centrality();
+                        let mut scored: Vec<(NodeId, f64)> = working_set
+                            .iter()
+                            .map(|id| {
+                                let s = centrality.pagerank.get(id).copied().unwrap_or(0.0);
+                                (id.clone(), s)
+                            })
+                            .collect();
+                        scored.sort_by(|a, b| {
+                            b.1.partial_cmp(&a.1)
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                                .then_with(|| a.0.cmp(&b.0))
+                        });
+                        scored.truncate(*n);
+                        metadata.push(format!("hot top={n} bare=false"));
+                        let kept: HashSet<NodeId> = scored.iter().map(|(id, _)| id.clone()).collect();
+                        for (id, score) in &scored {
+                            metadata.push(format!(
+                                "hot {} score={:.4}",
+                                self.graph
+                                    .get_node(id)
+                                    .map(|nd| nd.qualified_name.clone())
+                                    .unwrap_or_else(|| format!("{id:?}")),
+                                score
+                            ));
+                        }
+                        working_set = kept;
+                    }
+                }
+                // `scc` — strongly connected components.
+                //
+                // Bare: every member of every multi-element SCC.
+                // Postfix: union of every multi-element SCC that contains at
+                // least one working-set node. Singleton SCCs are excluded —
+                // the question "what loops?" wants cycles, not literally
+                // every node.
+                DslOp::Scc => {
+                    let part = self.graph.strongly_connected_components();
+                    let bare = working_set.is_empty();
+                    let mut keep_components: Vec<usize> = Vec::new();
+                    if bare {
+                        for (i, comp) in part.components.iter().enumerate() {
+                            if comp.len() > 1 {
+                                keep_components.push(i);
+                            }
+                        }
+                    } else {
+                        let mut seen: HashSet<usize> = HashSet::new();
+                        for id in &working_set {
+                            if let Some(&idx) = part.component_of.get(id) {
+                                if part.components[idx].len() > 1 && seen.insert(idx) {
+                                    keep_components.push(idx);
+                                }
+                            }
+                        }
+                    }
+                    let mut new_set: HashSet<NodeId> = HashSet::new();
+                    for &i in &keep_components {
+                        let comp = &part.components[i];
+                        let names: Vec<String> = comp
+                            .iter()
+                            .take(8)
+                            .filter_map(|id| self.graph.get_node(id).map(|n| n.name.clone()))
+                            .collect();
+                        metadata.push(format!(
+                            "SCC[{i}] size={} members=[{}]",
+                            comp.len(),
+                            names.join(", ")
+                        ));
+                        for id in comp {
+                            new_set.insert(id.clone());
+                        }
+                    }
+                    if !bare {
+                        // For postfix form, intersect the SCC union with the
+                        // original working set's component membership only —
+                        // but the user reads `scc` as "expand to the SCC", so
+                        // returning the full cluster is the more useful read.
+                        // We keep the union as-is.
+                    }
+                    working_set = new_set;
+                }
+                // `dispatch` — postfix filter: callers participating in trait dispatch.
+                //
+                // Computed from `trait_dispatch_calls()`: each entry is a
+                // (caller, callee, trait) triple where the callee is a
+                // function declared on a trait. We restrict working_set to
+                // callers; the callee + trait info goes into metadata so
+                // renderers can show "X calls Trait::method".
+                DslOp::Dispatch => {
+                    let calls = self.graph.trait_dispatch_calls();
+                    let working_subset: HashSet<NodeId> = working_set.iter().cloned().collect();
+                    let mut keep: HashSet<NodeId> = HashSet::new();
+                    for d in &calls {
+                        let in_working = working_subset.is_empty()
+                            || working_subset.contains(&d.caller);
+                        if !in_working {
+                            continue;
+                        }
+                        let caller_name = self
+                            .graph
+                            .get_node(&d.caller)
+                            .map(|n| n.qualified_name.clone())
+                            .unwrap_or_else(|| format!("{:?}", d.caller));
+                        let callee_name = self
+                            .graph
+                            .get_node(&d.callee)
+                            .map(|n| n.qualified_name.clone())
+                            .unwrap_or_else(|| format!("{:?}", d.callee));
+                        let trait_name = self
+                            .graph
+                            .get_node(&d.trait_id)
+                            .map(|n| n.qualified_name.clone())
+                            .unwrap_or_else(|| format!("{:?}", d.trait_id));
+                        metadata.push(format!(
+                            "dispatch {caller_name} -> {trait_name}::{callee_name}"
+                        ));
+                        keep.insert(d.caller.clone());
+                    }
+                    working_set = keep;
+                }
+                // `cluster by type` — group functions by primary `UsesType` target.
+                //
+                // Postfix: only consider functions in the working set when
+                // computing primary-type membership (the cluster set itself
+                // is restricted, but we still call the full `cluster_by_primary_type`
+                // and filter — the analysis is whole-graph by design).
+                DslOp::ClusterByType => {
+                    let clusters = self.graph.cluster_by_primary_type();
+                    let restrict: Option<HashSet<NodeId>> = if working_set.is_empty() {
+                        None
+                    } else {
+                        Some(working_set.iter().cloned().collect())
+                    };
+                    let mut new_set: HashSet<NodeId> = HashSet::new();
+                    for (i, c) in clusters.iter().enumerate() {
+                        let funcs: Vec<NodeId> = match &restrict {
+                            Some(r) => c.functions.iter().filter(|f| r.contains(*f)).cloned().collect(),
+                            None => c.functions.iter().cloned().collect(),
+                        };
+                        if funcs.is_empty() {
+                            continue;
+                        }
+                        let primary_name = self
+                            .graph
+                            .get_node(&c.primary_type)
+                            .map(|n| n.qualified_name.clone())
+                            .unwrap_or_else(|| format!("{:?}", c.primary_type));
+                        let member_names: Vec<String> = funcs
+                            .iter()
+                            .take(8)
+                            .filter_map(|id| self.graph.get_node(id).map(|n| n.name.clone()))
+                            .collect();
+                        metadata.push(format!(
+                            "cluster[{i}] type={primary_name} size={} members=[{}]",
+                            funcs.len(),
+                            member_names.join(", ")
+                        ));
+                        for id in funcs {
+                            new_set.insert(id);
+                        }
+                    }
+                    working_set = new_set;
+                }
+                // `affected N since M` — undirected N-hop neighborhood of every
+                // node modified at or after revision M. Replaces the working set
+                // (this is a selector, not a filter — it's equivalent to having
+                // had a `selector` op produce the changed set then expanded).
+                DslOp::Affected { depth, since_rev } => {
+                    let nodes = self.graph.nodes_changed_within_depth(*since_rev, *depth);
+                    metadata.push(format!(
+                        "affected depth={depth} since={since_rev} count={}",
+                        nodes.len()
+                    ));
+                    working_set = nodes.into_iter().collect();
                 }
                 DslOp::Taint(_var_name) => {
                     // Taint analysis v1: BFS over outgoing call edges from working set
@@ -663,6 +1791,7 @@ impl<'a> QueryEngine<'a> {
             was_truncated,
             total_before_truncation: total,
             cycles_detected,
+            metadata,
         })
     }
 }
@@ -676,6 +1805,657 @@ pub fn run_query(
     let ops = parse_query(query)?;
     let engine = QueryEngine::new(graph);
     engine.execute(&ops, config)
+}
+
+// ---------------------------------------------------------------------------
+// Expression executor: evaluates [`Expr`] nodes (set algebra, path patterns,
+// entrypoint selectors). Set ops keep `nodes` only; everything else is
+// dropped — see module docs for rationale.
+// ---------------------------------------------------------------------------
+
+impl<'a> QueryEngine<'a> {
+    /// Execute an [`Expr`] (extended grammar with set algebra, path
+    /// patterns, and entrypoint selectors).
+    pub fn execute_expr(
+        &self,
+        expr: &Expr,
+        config: &QueryConfig,
+    ) -> Result<QueryResult, QueryError> {
+        match expr {
+            Expr::Pipe(ops) => self.execute(ops, config),
+            Expr::Entrypoints(kind_filter) => {
+                Ok(self.execute_entrypoints(*kind_filter, config))
+            }
+            Expr::PathQuery(pq) => self.execute_path_query(pq, config),
+            Expr::SetOp { op, left, right } => {
+                let l = self.execute_expr(left, config)?;
+                let r = self.execute_expr(right, config)?;
+                Ok(combine_set_op(*op, l, r, config.max_nodes))
+            }
+            Expr::DominatorsOf(inner) => {
+                let seed = self.execute_expr(inner, config)?;
+                Ok(self.execute_dominators_of(&seed.nodes, config))
+            }
+            Expr::DominatesOf(inner) => {
+                let seed = self.execute_expr(inner, config)?;
+                Ok(self.execute_dominates_of(&seed.nodes, config))
+            }
+            Expr::TraitImplsOf(inner) => {
+                let seed = self.execute_expr(inner, config)?;
+                Ok(self.execute_trait_impls_of(&seed.nodes, config))
+            }
+            Expr::MultiPath { sources, to, max_depth } => {
+                self.execute_multi_path(sources, to, *max_depth, config)
+            }
+        }
+    }
+
+    /// Walk the dominator chain from each seed up to the root.
+    ///
+    /// Returns the union of every chain (and the seeds themselves are
+    /// excluded — `dominators_chain` returns strict ancestors, which
+    /// matches the user's mental model: "what dominates X?" should not
+    /// include X). Records the chosen root in `metadata`.
+    fn execute_dominators_of(
+        &self,
+        seeds: &[NodeId],
+        config: &QueryConfig,
+    ) -> QueryResult {
+        let mut result = QueryResult::default();
+        let Some((root_id, root_idx)) = self.pick_dominator_root() else {
+            result.metadata.push("dominators: no entry node available".to_string());
+            return result;
+        };
+        let dom = crate::dominators::Dominators::build(self.graph.inner(), root_idx);
+
+        let root_name = self
+            .graph
+            .get_node(&root_id)
+            .map(|n| n.qualified_name.clone())
+            .unwrap_or_else(|| format!("{root_id:?}"));
+        result.metadata.push(format!("dominators root={root_name}"));
+
+        let mut nodes: HashSet<NodeId> = HashSet::new();
+        for seed in seeds {
+            let Some(seed_idx) = self.graph.resolve(seed) else {
+                continue;
+            };
+            for ancestor_idx in dom.dominators_chain(&seed_idx) {
+                if let Some(id) = self.graph.node_id_for(ancestor_idx) {
+                    nodes.insert(id.clone());
+                }
+            }
+        }
+        let total = nodes.len();
+        let was_truncated = total > config.max_nodes;
+        let mut node_list: Vec<NodeId> = nodes.into_iter().collect();
+        if was_truncated {
+            node_list.truncate(config.max_nodes);
+        }
+        result.nodes = node_list;
+        result.was_truncated = was_truncated;
+        result.total_before_truncation = total;
+        result
+    }
+
+    /// Inverse of [`Self::execute_dominators_of`]: every node whose
+    /// dominator chain contains any seed.
+    fn execute_dominates_of(
+        &self,
+        seeds: &[NodeId],
+        config: &QueryConfig,
+    ) -> QueryResult {
+        let mut result = QueryResult::default();
+        let Some((root_id, root_idx)) = self.pick_dominator_root() else {
+            result.metadata.push("dominates: no entry node available".to_string());
+            return result;
+        };
+        let dom = crate::dominators::Dominators::build(self.graph.inner(), root_idx);
+        let root_name = self
+            .graph
+            .get_node(&root_id)
+            .map(|n| n.qualified_name.clone())
+            .unwrap_or_else(|| format!("{root_id:?}"));
+        result.metadata.push(format!("dominates root={root_name}"));
+
+        // Build set of seed indices.
+        let seed_idxs: HashSet<petgraph::stable_graph::NodeIndex> = seeds
+            .iter()
+            .filter_map(|id| self.graph.resolve(id))
+            .collect();
+        if seed_idxs.is_empty() {
+            return result;
+        }
+
+        // For every node in the graph, check whether its dom chain hits any seed.
+        let mut nodes: HashSet<NodeId> = HashSet::new();
+        for idx in self.graph.inner().node_indices() {
+            let chain = dom.dominators_chain(&idx);
+            for ancestor in chain {
+                if seed_idxs.contains(&ancestor) {
+                    if let Some(id) = self.graph.node_id_for(idx) {
+                        nodes.insert(id.clone());
+                    }
+                    break;
+                }
+            }
+        }
+        let total = nodes.len();
+        let was_truncated = total > config.max_nodes;
+        let mut node_list: Vec<NodeId> = nodes.into_iter().collect();
+        if was_truncated {
+            node_list.truncate(config.max_nodes);
+        }
+        result.nodes = node_list;
+        result.was_truncated = was_truncated;
+        result.total_before_truncation = total;
+        result
+    }
+
+    /// `trait_impls of <expr>` — for each `Trait` selected by `<expr>`,
+    /// return its direct implementors (Struct/Enum nodes via `Implements`
+    /// edges). Sourced from
+    /// [`crate::graph::CodeGraph::trait_hierarchies`].
+    fn execute_trait_impls_of(
+        &self,
+        seeds: &[NodeId],
+        config: &QueryConfig,
+    ) -> QueryResult {
+        let mut result = QueryResult::default();
+        let seed_set: HashSet<&NodeId> = seeds.iter().collect();
+        let hierarchies = self.graph.trait_hierarchies();
+        let mut nodes: HashSet<NodeId> = HashSet::new();
+        for h in &hierarchies {
+            if !seed_set.contains(&h.trait_id) {
+                continue;
+            }
+            let trait_name = self
+                .graph
+                .get_node(&h.trait_id)
+                .map(|n| n.qualified_name.clone())
+                .unwrap_or_else(|| format!("{:?}", h.trait_id));
+            let impl_names: Vec<String> = h
+                .direct_impls
+                .iter()
+                .take(8)
+                .filter_map(|id| self.graph.get_node(id).map(|n| n.name.clone()))
+                .collect();
+            result.metadata.push(format!(
+                "trait_impls {trait_name} count={} impls=[{}]",
+                h.direct_impls.len(),
+                impl_names.join(", ")
+            ));
+            for id in &h.direct_impls {
+                nodes.insert(id.clone());
+            }
+        }
+        let total = nodes.len();
+        let was_truncated = total > config.max_nodes;
+        let mut node_list: Vec<NodeId> = nodes.into_iter().collect();
+        if was_truncated {
+            node_list.truncate(config.max_nodes);
+        }
+        result.nodes = node_list;
+        result.was_truncated = was_truncated;
+        result.total_before_truncation = total;
+        result
+    }
+
+    /// Multi-source shortest path — wraps
+    /// [`crate::traversal::find_path_multi_source`]. Sources are unioned
+    /// from every `<expr>` operand inside the brace list; the BFS picks
+    /// whichever source reaches `to` first.
+    fn execute_multi_path(
+        &self,
+        sources: &[Expr],
+        to: &Expr,
+        max_depth: Option<usize>,
+        config: &QueryConfig,
+    ) -> Result<QueryResult, QueryError> {
+        let mut all_sources: HashSet<NodeId> = HashSet::new();
+        for s in sources {
+            let r = self.execute_expr(s, config)?;
+            for id in r.nodes {
+                all_sources.insert(id);
+            }
+        }
+        let to_set = self.execute_expr(to, config)?;
+        let depth = max_depth.unwrap_or(32);
+
+        let src_vec: Vec<NodeId> = all_sources.into_iter().collect();
+        let mut nodes: HashSet<NodeId> = HashSet::new();
+        let mut edges: Vec<(NodeId, NodeId, String)> = Vec::new();
+        let mut seen_edges: HashSet<(NodeId, NodeId, String)> = HashSet::new();
+        let mut metadata: Vec<String> = Vec::new();
+        for target in &to_set.nodes {
+            let Some(path) =
+                traversal::find_path_multi_source(self.graph, &src_vec, target, depth)
+            else {
+                continue;
+            };
+            metadata.push(format!(
+                "multi_path source={:?} to={} len={}",
+                self.graph
+                    .get_node(&path[0])
+                    .map(|n| n.name.clone())
+                    .unwrap_or_default(),
+                self.graph
+                    .get_node(target)
+                    .map(|n| n.name.clone())
+                    .unwrap_or_default(),
+                path.len()
+            ));
+            for (i, id) in path.iter().enumerate() {
+                nodes.insert(id.clone());
+                if i + 1 < path.len() {
+                    let next = &path[i + 1];
+                    let kind_str = self
+                        .graph
+                        .get_edges_from(id)
+                        .into_iter()
+                        .find(|(t, _)| *t == next)
+                        .map(|(_, e)| format!("{:?}", e.kind))
+                        .unwrap_or_else(|| "UnknownEdge".to_string());
+                    let key = (id.clone(), next.clone(), kind_str);
+                    if seen_edges.insert(key.clone()) {
+                        edges.push(key);
+                    }
+                }
+            }
+            if nodes.len() >= config.max_nodes {
+                break;
+            }
+        }
+
+        let total = nodes.len();
+        let was_truncated = total > config.max_nodes;
+        let mut node_list: Vec<NodeId> = nodes.into_iter().collect();
+        if was_truncated {
+            node_list.truncate(config.max_nodes);
+        }
+        Ok(QueryResult {
+            nodes: node_list,
+            edges,
+            was_truncated,
+            total_before_truncation: total,
+            cycles_detected: Vec::new(),
+            metadata,
+        })
+    }
+
+    /// Pick a dominator-tree root for the call graph.
+    ///
+    /// Strategy:
+    /// 1. A `Function` whose `name == "main"` (deterministic via
+    ///    `nodes_by_kind_name`-style lookup over `find_by_name`).
+    /// 2. The `Function` with the highest fan-in (most callers) — a
+    ///    decent proxy for "central" when there is no `main` (library
+    ///    crates, test binaries, etc.). Ties broken by `NodeId` order
+    ///    for determinism.
+    /// 3. `None` if neither is available.
+    ///
+    /// Returns both the [`NodeId`] and its petgraph index because callers
+    /// already need the index to build the `Dominators` and the `NodeId`
+    /// for metadata reporting.
+    fn pick_dominator_root(
+        &self,
+    ) -> Option<(NodeId, petgraph::stable_graph::NodeIndex)> {
+        // First preference: fn main.
+        for n in self.graph.find_by_name("main") {
+            if n.kind == NodeKind::Function && n.name == "main" {
+                if let Some(idx) = self.graph.resolve(&n.id) {
+                    return Some((n.id.clone(), idx));
+                }
+            }
+        }
+        // Fallback: highest fan-in function.
+        let mut best: Option<(usize, NodeId, petgraph::stable_graph::NodeIndex)> = None;
+        for func in self.graph.nodes_by_kind(NodeKind::Function) {
+            let Some(idx) = self.graph.resolve(&func.id) else {
+                continue;
+            };
+            let fan_in = self.graph.get_edges_to(&func.id).len();
+            best = match best {
+                None => Some((fan_in, func.id.clone(), idx)),
+                Some((bf, ref bid, bidx)) => {
+                    if fan_in > bf || (fan_in == bf && &func.id < bid) {
+                        Some((fan_in, func.id.clone(), idx))
+                    } else {
+                        Some((bf, bid.clone(), bidx))
+                    }
+                }
+            };
+        }
+        best.map(|(_, id, idx)| (id, idx))
+    }
+
+    /// Execute the `entrypoints` selector by delegating to
+    /// [`crate::analysis::CodeGraph::classify_entrypoints`].
+    ///
+    /// The classifier returns one [`crate::analysis::EntrypointSummary`]
+    /// per entrypoint with its kind plus reach metrics (fan_in, fan_out,
+    /// max_reach_depth, reach_size). When `kind_filter` is `Some`, we
+    /// keep only summaries whose kind matches; otherwise we keep all.
+    ///
+    /// Each surviving summary contributes its `node_id` to `nodes` and a
+    /// human-readable line to `metadata` of the form:
+    ///
+    /// `{Kind} {qualified_name} fan_in={n} fan_out={n} reach={size}`
+    ///
+    /// so renderers can show the analytical context without having to
+    /// re-run the classifier.
+    fn execute_entrypoints(
+        &self,
+        kind_filter: Option<EntrypointKind>,
+        config: &QueryConfig,
+    ) -> QueryResult {
+        let summaries = self.graph.classify_entrypoints();
+        let mut nodes: Vec<NodeId> = Vec::new();
+        let mut metadata: Vec<String> = Vec::new();
+
+        for s in summaries {
+            let dsl_kind = EntrypointKind::from_analysis(s.kind);
+            if let Some(want) = kind_filter
+                && dsl_kind != want
+            {
+                continue;
+            }
+            let name = self
+                .graph
+                .get_node(&s.node_id)
+                .map(|n| n.qualified_name.clone())
+                .unwrap_or_else(|| format!("{:?}", s.node_id));
+            metadata.push(format!(
+                "{:?} {} fan_in={} fan_out={} reach={}",
+                dsl_kind, name, s.fan_in, s.fan_out, s.reach_size
+            ));
+            nodes.push(s.node_id);
+        }
+
+        let total = nodes.len();
+        let was_truncated = total > config.max_nodes;
+        if was_truncated {
+            nodes.truncate(config.max_nodes);
+        }
+        QueryResult {
+            nodes,
+            edges: Vec::new(),
+            was_truncated,
+            total_before_truncation: total,
+            cycles_detected: Vec::new(),
+            metadata,
+        }
+    }
+
+    /// Execute a `path` / `paths` query.
+    ///
+    /// Strategy:
+    /// 1. Evaluate the `from` and `to` sub-expressions to candidate sets.
+    /// 2. For each (start, end) pair:
+    ///    - In `Shortest` mode: invoke [`crate::traversal::find_path`]
+    ///      (sibling-owned, BFS-shortest with depth bound).
+    ///    - In `AllSimple` mode: enumerate simple paths inline via
+    ///      bounded DFS — keeps the implementation hermetic so we don't
+    ///      depend on whichever in-progress sibling helper lands first.
+    /// 3. Apply `where intermediate kind=K` and `via EdgeKind` filters
+    ///    to each candidate path.
+    /// 4. Union all surviving path nodes into the result and emit the
+    ///    on-path edges as `(from, to, edge_kind_debug)`.
+    fn execute_path_query(
+        &self,
+        pq: &PathQuery,
+        config: &QueryConfig,
+    ) -> Result<QueryResult, QueryError> {
+        let from_set = self.execute_expr(&pq.from, config)?;
+        let to_set = self.execute_expr(&pq.to, config)?;
+
+        let max_depth = pq.max_depth.unwrap_or(32);
+        let mut nodes: HashSet<NodeId> = HashSet::new();
+        let mut edges: Vec<(NodeId, NodeId, String)> = Vec::new();
+        let mut emitted_edges: HashSet<(NodeId, NodeId, String)> = HashSet::new();
+
+        for src in &from_set.nodes {
+            for dst in &to_set.nodes {
+                let candidate_paths = match pq.mode {
+                    PathMode::Shortest => traversal::find_path(self.graph, src, dst, max_depth)
+                        .into_iter()
+                        .collect::<Vec<_>>(),
+                    PathMode::AllSimple => {
+                        all_simple_paths_bounded(self.graph, src, dst, max_depth, config.max_nodes)
+                    }
+                };
+
+                for path in candidate_paths {
+                    if !path_matches_filters(self.graph, &path, pq) {
+                        continue;
+                    }
+                    for (i, node_id) in path.iter().enumerate() {
+                        nodes.insert(node_id.clone());
+                        if i + 1 < path.len() {
+                            let next = &path[i + 1];
+                            // Emit the actual edge kind from the graph if
+                            // present; otherwise fall back to a generic
+                            // marker. Multi-edges between same nodes are
+                            // collapsed by the `emitted_edges` set.
+                            let kind_str = self
+                                .graph
+                                .get_edges_from(node_id)
+                                .into_iter()
+                                .find(|(t, _)| *t == next)
+                                .map(|(_, e)| format!("{:?}", e.kind))
+                                .unwrap_or_else(|| "UnknownEdge".to_string());
+                            let key = (node_id.clone(), next.clone(), kind_str.clone());
+                            if emitted_edges.insert(key.clone()) {
+                                edges.push(key);
+                            }
+                        }
+                    }
+                    if nodes.len() >= config.max_nodes {
+                        break;
+                    }
+                }
+                if nodes.len() >= config.max_nodes {
+                    break;
+                }
+            }
+            if nodes.len() >= config.max_nodes {
+                break;
+            }
+        }
+
+        let total = nodes.len();
+        let was_truncated = total > config.max_nodes;
+        let node_list: Vec<NodeId> = nodes.into_iter().collect();
+        let nodes_out = if was_truncated {
+            node_list[..config.max_nodes].to_vec()
+        } else {
+            node_list
+        };
+
+        Ok(QueryResult {
+            nodes: nodes_out,
+            edges,
+            was_truncated,
+            total_before_truncation: total,
+            cycles_detected: Vec::new(),
+            metadata: Vec::new(),
+        })
+    }
+}
+
+/// Combine two [`QueryResult`]s under a [`SetOp`]. Only the `nodes` field
+/// is preserved (per module-level contract) — `edges` and other metadata
+/// are dropped because there is no defensible merge across heterogenous
+/// operands. Truncation is recomputed against the merged size.
+fn combine_set_op(op: SetOp, left: QueryResult, right: QueryResult, max_nodes: usize) -> QueryResult {
+    let l: HashSet<NodeId> = left.nodes.into_iter().collect();
+    let r: HashSet<NodeId> = right.nodes.into_iter().collect();
+    let merged: Vec<NodeId> = match op {
+        SetOp::Union => l.union(&r).cloned().collect(),
+        SetOp::Intersect => l.intersection(&r).cloned().collect(),
+        SetOp::Diff => l.difference(&r).cloned().collect(),
+    };
+    let total = merged.len();
+    let was_truncated = total > max_nodes;
+    let nodes = if was_truncated {
+        merged[..max_nodes].to_vec()
+    } else {
+        merged
+    };
+    QueryResult {
+        nodes,
+        edges: Vec::new(),
+        was_truncated,
+        total_before_truncation: total,
+        cycles_detected: Vec::new(),
+        metadata: Vec::new(),
+    }
+}
+
+/// Return true if the candidate path satisfies all path-query qualifiers.
+///
+/// - `intermediate_kind`: every node *except* endpoints must have the
+///   requested `NodeKind`. Endpoints are exempt because the user already
+///   selected them via the `from`/`to` expressions and re-restricting them
+///   here would surprise.
+/// - `via_edge`: at least one edge along the path must match the requested
+///   [`EdgeKind`]. For variant-with-payload kinds (`UnresolvedCall`,
+///   `ExternalCall`) we compare on discriminant only — the user wrote
+///   `via UnresolvedCall`, not a specific symbol name.
+fn path_matches_filters(graph: &CodeGraph, path: &[NodeId], pq: &PathQuery) -> bool {
+    if let Some(kind) = pq.intermediate_kind {
+        // Exclude first and last (endpoints).
+        if path.len() > 2 {
+            for node in &path[1..path.len() - 1] {
+                let Some(data) = graph.get_node(node) else {
+                    return false;
+                };
+                if data.kind != kind {
+                    return false;
+                }
+            }
+        }
+    }
+    if let Some(required) = &pq.via_edge {
+        let mut found = false;
+        for window in path.windows(2) {
+            let from = &window[0];
+            let to = &window[1];
+            for (target, edge) in graph.get_edges_from(from) {
+                if target == to && edge_kind_matches(&edge.kind, required) {
+                    found = true;
+                    break;
+                }
+            }
+            if found {
+                break;
+            }
+        }
+        if !found {
+            return false;
+        }
+    }
+    true
+}
+
+fn edge_kind_matches(actual: &EdgeKind, expected: &EdgeKind) -> bool {
+    use EdgeKind::*;
+    matches!(
+        (actual, expected),
+        (Calls, Calls)
+            | (UsesType, UsesType)
+            | (References, References)
+            | (Contains, Contains)
+            | (Implements, Implements)
+            | (UnresolvedCall(_), UnresolvedCall(_))
+            | (ExternalCall(_, _), ExternalCall(_, _))
+    )
+}
+
+/// Bounded enumeration of all simple paths between two nodes.
+///
+/// We implement this inline rather than depending on a sibling helper
+/// (`analysis::all_simple_paths` is in-progress in another agent's tree)
+/// so this DSL module compiles standalone. Honors `max_depth` and caps
+/// the total node-budget via `node_budget` — once we accumulate that
+/// many distinct nodes across all returned paths, enumeration stops.
+fn all_simple_paths_bounded(
+    graph: &CodeGraph,
+    from: &NodeId,
+    to: &NodeId,
+    max_depth: usize,
+    node_budget: usize,
+) -> Vec<Vec<NodeId>> {
+    let mut results: Vec<Vec<NodeId>> = Vec::new();
+    let mut stack: Vec<NodeId> = vec![from.clone()];
+    let mut on_stack: HashMap<NodeId, ()> = HashMap::new();
+    on_stack.insert(from.clone(), ());
+    let mut total_nodes_emitted: HashSet<NodeId> = HashSet::new();
+
+    fn dfs(
+        graph: &CodeGraph,
+        current: &NodeId,
+        target: &NodeId,
+        max_depth: usize,
+        node_budget: usize,
+        stack: &mut Vec<NodeId>,
+        on_stack: &mut HashMap<NodeId, ()>,
+        results: &mut Vec<Vec<NodeId>>,
+        total: &mut HashSet<NodeId>,
+    ) {
+        if stack.len() > max_depth + 1 {
+            return;
+        }
+        if current == target {
+            for n in stack.iter() {
+                total.insert(n.clone());
+            }
+            results.push(stack.clone());
+            return;
+        }
+        if total.len() >= node_budget {
+            return;
+        }
+        for (next, _edge) in graph.get_edges_from(current) {
+            if on_stack.contains_key(next) {
+                continue;
+            }
+            stack.push(next.clone());
+            on_stack.insert(next.clone(), ());
+            dfs(
+                graph, next, target, max_depth, node_budget, stack, on_stack, results, total,
+            );
+            on_stack.remove(next);
+            stack.pop();
+            if total.len() >= node_budget {
+                return;
+            }
+        }
+    }
+
+    dfs(
+        graph,
+        from,
+        to,
+        max_depth,
+        node_budget,
+        &mut stack,
+        &mut on_stack,
+        &mut results,
+        &mut total_nodes_emitted,
+    );
+
+    results
+}
+
+/// Convenience: parse + execute an extended-grammar query.
+pub fn run_query_expr(
+    query: &str,
+    graph: &CodeGraph,
+    config: &QueryConfig,
+) -> Result<QueryResult, QueryError> {
+    let expr = parse_expr(query)?;
+    QueryEngine::new(graph).execute_expr(&expr, config)
 }
 
 #[cfg(test)]
@@ -791,6 +2571,8 @@ mod tests {
                 span: span(),
                 visibility: Visibility::Public,
                 metadata: HashMap::new(),
+                birth_revision: 0,
+                last_modified_revision: 0,
             }
         }
 
@@ -852,6 +2634,8 @@ mod tests {
                 span: span(),
                 visibility: Visibility::Public,
                 metadata: HashMap::new(),
+                birth_revision: 0,
+                last_modified_revision: 0,
             }
         }
         let mut graph = CodeGraph::new();
@@ -1104,5 +2888,613 @@ mod tests {
             "expected at most 3 nodes with max_nodes=3, got: {}",
             result.nodes.len()
         );
+    }
+
+    // -----------------------------------------------------------------
+    // Extended grammar: set algebra, path patterns, entrypoint selector.
+    // -----------------------------------------------------------------
+
+    /// Build a small fixture graph: a -> b -> c, plus d (isolated) and
+    /// b -> d via UnresolvedCall. Useful for set-op and path-query tests
+    /// that need predictable structure independent of tree-sitter parsing.
+    fn build_setalgebra_fixture() -> CodeGraph {
+        use crate::edges::{EdgeData, EdgeKind};
+        use crate::nodes::{NodeData, NodeId, NodeKind, Span, Visibility};
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        fn span() -> Span {
+            Span {
+                file: PathBuf::from("t.rs"),
+                start_line: 1,
+                start_col: 0,
+                end_line: 5,
+                end_col: 1,
+                byte_range: 0..50,
+            }
+        }
+        fn node(name: &str) -> NodeData {
+            NodeData {
+                id: NodeId::new("t.rs", &format!("crate::{name}"), NodeKind::Function),
+                kind: NodeKind::Function,
+                name: name.to_string(),
+                qualified_name: format!("crate::{name}"),
+                file_path: PathBuf::from("t.rs"),
+                span: span(),
+                visibility: Visibility::Public,
+                metadata: HashMap::new(),
+                birth_revision: 0,
+                last_modified_revision: 0,
+            }
+        }
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        let _d = g.add_node(node("d"));
+        let calls = || EdgeData {
+            kind: EdgeKind::Calls,
+            source_span: span(),
+            weight: 1.0,
+        };
+        let unresolved = || EdgeData {
+            kind: EdgeKind::UnresolvedCall("d".to_string()),
+            source_span: span(),
+            weight: 1.0,
+        };
+        g.add_edge(&a, &b, calls()).unwrap();
+        g.add_edge(&b, &c, calls()).unwrap();
+        // b -> d via UnresolvedCall — gives us a path with a non-Calls
+        // edge for `via` filter tests.
+        let d_id = NodeId::new("t.rs", "crate::d", NodeKind::Function);
+        g.add_edge(&b, &d_id, unresolved()).unwrap();
+        g
+    }
+
+    fn names_of(graph: &CodeGraph, ids: &[NodeId]) -> std::collections::HashSet<String> {
+        ids.iter()
+            .filter_map(|id| graph.get_node(id).map(|n| n.name.clone()))
+            .collect()
+    }
+
+    // Normal: union of two pipe chains yields the set union of their
+    // node results. Per module contract, edges/metadata are dropped.
+    #[test]
+    fn dsl_union_combines_results_normal() {
+        let graph = build_setalgebra_fixture();
+        let cfg = QueryConfig::default();
+        // {a, b} union {c} == {a, b, c}.
+        let result = run_query_expr(
+            r#"fn("a") | callees union fn("c")"#,
+            &graph,
+            &cfg,
+        )
+        .unwrap();
+        let names = names_of(&graph, &result.nodes);
+        assert!(names.contains("b"), "expected 'b' in union, got {names:?}");
+        assert!(names.contains("c"), "expected 'c' in union, got {names:?}");
+        // Edges deliberately empty under set-op.
+        assert!(result.edges.is_empty());
+    }
+
+    // Normal: intersect keeps only nodes present in both operands.
+    #[test]
+    fn dsl_intersect_keeps_only_common_normal() {
+        let graph = build_setalgebra_fixture();
+        let cfg = QueryConfig::default();
+        // a's callees = {b}; b's callers = {a}. Intersection should be empty.
+        // Use a self-overlapping case instead: callees of a {b} ∩ callers of c {b}.
+        let result = run_query_expr(
+            r#"fn("a") | callees intersect fn("c") | callers"#,
+            &graph,
+            &cfg,
+        )
+        .unwrap();
+        let names = names_of(&graph, &result.nodes);
+        assert_eq!(names.len(), 1, "expected exactly {{b}}, got {names:?}");
+        assert!(names.contains("b"));
+    }
+
+    // Normal: A \ B subtracts right from left. Used to express "all
+    // callers of X except sanitized ones".
+    #[test]
+    fn dsl_difference_subtracts_right_from_left_normal() {
+        let graph = build_setalgebra_fixture();
+        let cfg = QueryConfig::default();
+        // {a's callees plus a} \ {b} should drop b. Use depth=1 to get {a, b}.
+        let result = run_query_expr(r#"fn("a") | callees | depth 1 \ fn("b")"#, &graph, &cfg)
+            .unwrap();
+        let names = names_of(&graph, &result.nodes);
+        assert!(!names.contains("b"), "b should be excluded, got {names:?}");
+    }
+
+    // Normal: `path A -> B` returns the shortest path (a, b, c).
+    #[test]
+    fn dsl_path_finds_shortest_normal() {
+        let graph = build_setalgebra_fixture();
+        let cfg = QueryConfig::default();
+        let result = run_query_expr(r#"path fn("a") -> fn("c")"#, &graph, &cfg).unwrap();
+        let names = names_of(&graph, &result.nodes);
+        assert!(names.contains("a"));
+        assert!(names.contains("b"));
+        assert!(names.contains("c"));
+    }
+
+    // Normal: `paths A -> B` returns all simple paths. In our fixture
+    // there's only one a→c path (a→b→c) so node set is {a, b, c}.
+    #[test]
+    fn dsl_paths_returns_all_simple_paths_normal() {
+        let graph = build_setalgebra_fixture();
+        let cfg = QueryConfig::default();
+        let result = run_query_expr(r#"paths fn("a") -> fn("c") depth 5"#, &graph, &cfg)
+            .unwrap();
+        let names = names_of(&graph, &result.nodes);
+        assert_eq!(names.len(), 3);
+        assert!(names.contains("a") && names.contains("b") && names.contains("c"));
+    }
+
+    // Normal: `via UnresolvedCall` requires at least one UnresolvedCall
+    // edge. Path a→b→d (via UnresolvedCall) qualifies; a→b→c (all Calls)
+    // does not. So `paths fn("a") -> fn("d") via UnresolvedCall` yields
+    // {a, b, d} but `paths fn("a") -> fn("c") via UnresolvedCall` is empty.
+    #[test]
+    fn dsl_path_via_edge_kind_filters_normal() {
+        let graph = build_setalgebra_fixture();
+        let cfg = QueryConfig::default();
+
+        let positive = run_query_expr(
+            r#"paths fn("a") -> fn("d") via UnresolvedCall depth 5"#,
+            &graph,
+            &cfg,
+        )
+        .unwrap();
+        let names = names_of(&graph, &positive.nodes);
+        assert!(names.contains("a") && names.contains("b") && names.contains("d"));
+
+        let negative = run_query_expr(
+            r#"paths fn("a") -> fn("c") via UnresolvedCall depth 5"#,
+            &graph,
+            &cfg,
+        )
+        .unwrap();
+        assert!(
+            negative.nodes.is_empty(),
+            "expected no nodes (no UnresolvedCall edge on a->c path), got {:?}",
+            names_of(&graph, &negative.nodes)
+        );
+    }
+
+    // Normal: `entrypoints` selector now delegates to
+    // `CodeGraph::classify_entrypoints`. The setalgebra fixture builds
+    // public functions with no `test`/`bench`/`no_mangle` metadata, so
+    // every function classifies as `PublicApi`. The bare query returns
+    // all four; the `kind=Main` filter returns none (no `fn main`).
+    #[test]
+    fn dsl_entrypoints_returns_classified_normal() {
+        let graph = build_setalgebra_fixture();
+        let cfg = QueryConfig::default();
+        let result = run_query_expr("entrypoints", &graph, &cfg).unwrap();
+        let names = names_of(&graph, &result.nodes);
+        assert_eq!(
+            names.len(),
+            4,
+            "expected all 4 public functions classified, got {names:?}"
+        );
+        // Metadata should describe each entrypoint's kind + reach.
+        assert!(
+            !result.metadata.is_empty(),
+            "expected metadata describing classified entrypoints"
+        );
+        for line in &result.metadata {
+            assert!(line.starts_with("PublicApi "), "got {line}");
+        }
+
+        let result_main = run_query_expr("entrypoints kind=Main", &graph, &cfg).unwrap();
+        assert!(
+            result_main.nodes.is_empty(),
+            "no fn main in fixture, expected empty"
+        );
+        let result_pub = run_query_expr("entrypoints kind=PublicApi", &graph, &cfg).unwrap();
+        assert_eq!(result_pub.nodes.len(), 4);
+    }
+
+    // Robust: parser rejects mismatched parens with a useful message.
+    #[test]
+    fn dsl_parens_unbalanced_robust() {
+        let err = parse_expr(r#"(fn("a") union fn("b")"#).unwrap_err();
+        assert!(err.message.contains(')'), "msg = {}", err.message);
+    }
+
+    // Normal: `since N` postfix filter restricts a pipe-chain result to
+    // nodes whose `last_modified_revision >= N`. Build a tiny graph,
+    // capture a cutoff after the first insert, then add a second node;
+    // a `fn(...) | since cutoff` query must return the *new* node and
+    // omit the older one.
+    #[test]
+    fn dsl_since_filters_old_nodes_normal() {
+        use crate::graph::CodeGraph;
+        use crate::nodes::{NodeData, NodeId, NodeKind, Span, Visibility};
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        fn span() -> Span {
+            Span {
+                file: PathBuf::from("t.rs"),
+                start_line: 1,
+                start_col: 0,
+                end_line: 5,
+                end_col: 1,
+                byte_range: 0..50,
+            }
+        }
+        fn node(name: &str) -> NodeData {
+            NodeData {
+                id: NodeId::new("t.rs", &format!("crate::{name}"), NodeKind::Function),
+                kind: NodeKind::Function,
+                name: name.to_string(),
+                qualified_name: format!("crate::{name}"),
+                file_path: PathBuf::from("t.rs"),
+                span: span(),
+                visibility: Visibility::Public,
+                metadata: HashMap::new(),
+                birth_revision: 0,
+                last_modified_revision: 0,
+            }
+        }
+
+        let mut graph = CodeGraph::new();
+        let _old = graph.add_node(node("old_fn")); // revision 1
+        let cutoff = graph.current_revision() + 1; // 2
+        let _new = graph.add_node(node("new_fn")); // revision 2
+
+        // Parse the new postfix filter.
+        let parsed = parse_query(&format!(r#"fn("fn") | since {cutoff}"#)).unwrap();
+        assert!(matches!(parsed.last(), Some(DslOp::Since(r)) if *r == cutoff));
+
+        // Execute against both functions ("fn" matches both via substring).
+        let cfg = QueryConfig::default();
+        let result = run_query(&format!(r#"fn("fn") | since {cutoff}"#), &graph, &cfg).unwrap();
+        let names: std::collections::HashSet<&str> = result
+            .nodes
+            .iter()
+            .filter_map(|id| graph.get_node(id).map(|n| n.name.as_str()))
+            .collect();
+        assert!(
+            names.contains("new_fn"),
+            "expected new_fn after `since {cutoff}`, got: {names:?}"
+        );
+        assert!(
+            !names.contains("old_fn"),
+            "old_fn must be filtered out by `since {cutoff}`, got: {names:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // New analytical operators: hot, scc, dominators, dominates,
+    // trait_impls, dispatch, cluster by type, affected, multi_path.
+    // -----------------------------------------------------------------
+
+    /// Helper: build a node with a given kind and visibility.
+    fn fixture_node(name: &str, kind: NodeKind) -> crate::nodes::NodeData {
+        use crate::nodes::{NodeData, NodeId, Span, Visibility};
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+        let span = Span {
+            file: PathBuf::from("t.rs"),
+            start_line: 1,
+            start_col: 0,
+            end_line: 5,
+            end_col: 1,
+            byte_range: 0..50,
+        };
+        NodeData {
+            id: NodeId::new("t.rs", &format!("crate::{name}"), kind),
+            kind,
+            name: name.to_string(),
+            qualified_name: format!("crate::{name}"),
+            file_path: PathBuf::from("t.rs"),
+            span,
+            visibility: Visibility::Public,
+            metadata: HashMap::new(),
+            birth_revision: 0,
+            last_modified_revision: 0,
+        }
+    }
+    fn fixture_calls_edge() -> crate::edges::EdgeData {
+        use crate::edges::{EdgeData, EdgeKind};
+        use crate::nodes::Span;
+        use std::path::PathBuf;
+        EdgeData {
+            kind: EdgeKind::Calls,
+            source_span: Span {
+                file: PathBuf::from("t.rs"),
+                start_line: 1,
+                start_col: 0,
+                end_line: 5,
+                end_col: 1,
+                byte_range: 0..50,
+            },
+            weight: 1.0,
+        }
+    }
+
+    // Normal: `hot N` parses as DslOp::Hot(N) and executes against an
+    // empty working set by ranking the entire graph.
+    #[test]
+    fn dsl_hot_bare_returns_top_n_normal() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(fixture_node("a", NodeKind::Function));
+        let b = g.add_node(fixture_node("b", NodeKind::Function));
+        let c = g.add_node(fixture_node("c", NodeKind::Function));
+        // Make `b` and `c` hot: many fan-in edges.
+        g.add_edge(&a, &b, fixture_calls_edge()).unwrap();
+        g.add_edge(&a, &c, fixture_calls_edge()).unwrap();
+        g.add_edge(&c, &b, fixture_calls_edge()).unwrap();
+
+        let parsed = parse_query("hot 2").unwrap();
+        assert_eq!(parsed, vec![DslOp::Hot(2)]);
+
+        let result = run_query("hot 2", &g, &QueryConfig::default()).unwrap();
+        assert!(result.nodes.len() <= 2);
+        assert!(!result.metadata.is_empty(), "expected hot metadata");
+    }
+
+    // Robust: `hot N` postfix re-ranks only the working set.
+    #[test]
+    fn dsl_hot_postfix_reranks_working_set_robust() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(fixture_node("a", NodeKind::Function));
+        let b = g.add_node(fixture_node("b", NodeKind::Function));
+        let c = g.add_node(fixture_node("c", NodeKind::Function));
+        g.add_edge(&a, &b, fixture_calls_edge()).unwrap();
+        g.add_edge(&a, &c, fixture_calls_edge()).unwrap();
+
+        // a's callees are b, c; hot 1 keeps the highest-pagerank one.
+        let result =
+            run_query(r#"fn("a") | callees | hot 1"#, &g, &QueryConfig::default()).unwrap();
+        assert!(result.nodes.len() <= 1);
+    }
+
+    // Normal: `scc` returns members of multi-element strongly connected
+    // components. ping↔pong forms a 2-cycle; both should appear.
+    #[test]
+    fn dsl_scc_bare_returns_cycle_members_normal() {
+        let mut g = CodeGraph::new();
+        let ping = g.add_node(fixture_node("ping", NodeKind::Function));
+        let pong = g.add_node(fixture_node("pong", NodeKind::Function));
+        let isolated = g.add_node(fixture_node("isolated", NodeKind::Function));
+        let _ = isolated; // singleton
+        g.add_edge(&ping, &pong, fixture_calls_edge()).unwrap();
+        g.add_edge(&pong, &ping, fixture_calls_edge()).unwrap();
+
+        let parsed = parse_query("scc").unwrap();
+        assert_eq!(parsed, vec![DslOp::Scc]);
+        let result = run_query("scc", &g, &QueryConfig::default()).unwrap();
+        let names = names_of(&g, &result.nodes);
+        assert!(names.contains("ping") && names.contains("pong"));
+        assert!(!names.contains("isolated"), "singleton should be excluded");
+        assert!(result.metadata.iter().any(|m| m.contains("size=2")));
+    }
+
+    // Normal: `dominators of fn("X")` walks the dominator chain in the
+    // call graph rooted at fn main (or fan-in fallback).
+    #[test]
+    fn dsl_dominators_of_walks_chain_normal() {
+        let mut g = CodeGraph::new();
+        let main_n = g.add_node(fixture_node("main", NodeKind::Function));
+        let mid = g.add_node(fixture_node("mid", NodeKind::Function));
+        let leaf = g.add_node(fixture_node("leaf", NodeKind::Function));
+        g.add_edge(&main_n, &mid, fixture_calls_edge()).unwrap();
+        g.add_edge(&mid, &leaf, fixture_calls_edge()).unwrap();
+
+        let result = run_query_expr(
+            r#"dominators of fn("leaf")"#,
+            &g,
+            &QueryConfig::default(),
+        )
+        .unwrap();
+        let names = names_of(&g, &result.nodes);
+        // leaf's dominator chain is {mid, main}.
+        assert!(names.contains("main"), "got {names:?}");
+        assert!(names.contains("mid"), "got {names:?}");
+        assert!(!names.contains("leaf"), "seed should be excluded");
+    }
+
+    // Robust: `dominates fn("main")` returns descendants in the dom tree.
+    #[test]
+    fn dsl_dominates_returns_descendants_robust() {
+        let mut g = CodeGraph::new();
+        let main_n = g.add_node(fixture_node("main", NodeKind::Function));
+        let mid = g.add_node(fixture_node("mid", NodeKind::Function));
+        let leaf = g.add_node(fixture_node("leaf", NodeKind::Function));
+        g.add_edge(&main_n, &mid, fixture_calls_edge()).unwrap();
+        g.add_edge(&mid, &leaf, fixture_calls_edge()).unwrap();
+
+        let result =
+            run_query_expr(r#"dominates fn("main")"#, &g, &QueryConfig::default()).unwrap();
+        let names = names_of(&g, &result.nodes);
+        assert!(names.contains("mid"), "got {names:?}");
+        assert!(names.contains("leaf"), "got {names:?}");
+    }
+
+    // Normal: `trait_impls of type("X")` returns Implements-edge sources.
+    #[test]
+    fn dsl_trait_impls_returns_implementors_normal() {
+        use crate::edges::{EdgeData, EdgeKind};
+        use crate::nodes::Span;
+        use std::path::PathBuf;
+        let mut g = CodeGraph::new();
+        let trait_id = g.add_node(fixture_node("MyTrait", NodeKind::Trait));
+        let s1 = g.add_node(fixture_node("Foo", NodeKind::Struct));
+        let s2 = g.add_node(fixture_node("Bar", NodeKind::Struct));
+        let impls = || EdgeData {
+            kind: EdgeKind::Implements,
+            source_span: Span {
+                file: PathBuf::from("t.rs"),
+                start_line: 1,
+                start_col: 0,
+                end_line: 5,
+                end_col: 1,
+                byte_range: 0..50,
+            },
+            weight: 1.0,
+        };
+        g.add_edge(&s1, &trait_id, impls()).unwrap();
+        g.add_edge(&s2, &trait_id, impls()).unwrap();
+
+        let result = run_query_expr(
+            r#"trait_impls of type("MyTrait")"#,
+            &g,
+            &QueryConfig::default(),
+        )
+        .unwrap();
+        let names = names_of(&g, &result.nodes);
+        assert!(names.contains("Foo"));
+        assert!(names.contains("Bar"));
+        assert!(result.metadata.iter().any(|m| m.contains("trait_impls")));
+    }
+
+    // Normal: `cluster by type` parses and produces type-cluster metadata.
+    #[test]
+    fn dsl_cluster_by_type_emits_metadata_normal() {
+        use crate::edges::{EdgeData, EdgeKind};
+        use crate::nodes::Span;
+        use std::path::PathBuf;
+        let mut g = CodeGraph::new();
+        let cfg_ty = g.add_node(fixture_node("Config", NodeKind::Struct));
+        let f1 = g.add_node(fixture_node("load", NodeKind::Function));
+        let f2 = g.add_node(fixture_node("save", NodeKind::Function));
+        let uses = || EdgeData {
+            kind: EdgeKind::UsesType,
+            source_span: Span {
+                file: PathBuf::from("t.rs"),
+                start_line: 1,
+                start_col: 0,
+                end_line: 5,
+                end_col: 1,
+                byte_range: 0..50,
+            },
+            weight: 1.0,
+        };
+        g.add_edge(&f1, &cfg_ty, uses()).unwrap();
+        g.add_edge(&f2, &cfg_ty, uses()).unwrap();
+
+        let parsed = parse_query("cluster by type").unwrap();
+        assert_eq!(parsed, vec![DslOp::ClusterByType]);
+
+        let result = run_query("cluster by type", &g, &QueryConfig::default()).unwrap();
+        let names = names_of(&g, &result.nodes);
+        assert!(names.contains("load"));
+        assert!(names.contains("save"));
+        assert!(
+            result.metadata.iter().any(|m| m.contains("Config")),
+            "metadata should mention Config: {:?}",
+            result.metadata
+        );
+    }
+
+    // Normal: `affected N since M` wraps nodes_changed_within_depth and
+    // returns the temporal-neighborhood set.
+    #[test]
+    fn dsl_affected_returns_changed_neighborhood_normal() {
+        let mut g = CodeGraph::new();
+        let _a = g.add_node(fixture_node("a", NodeKind::Function));
+        let cutoff = g.current_revision() + 1;
+        let b = g.add_node(fixture_node("b", NodeKind::Function));
+        let c = g.add_node(fixture_node("c", NodeKind::Function));
+        // c is reachable from b (the recently-added node) within 1 hop.
+        g.add_edge(&b, &c, fixture_calls_edge()).unwrap();
+
+        let parsed = parse_query(&format!("affected 1 since {cutoff}")).unwrap();
+        assert_eq!(
+            parsed,
+            vec![DslOp::Affected {
+                depth: 1,
+                since_rev: cutoff,
+            }]
+        );
+
+        let result = run_query(
+            &format!("affected 1 since {cutoff}"),
+            &g,
+            &QueryConfig::default(),
+        )
+        .unwrap();
+        let names = names_of(&g, &result.nodes);
+        // b changed at/after cutoff, c is within 1 hop of b — both in.
+        assert!(names.contains("b"), "got {names:?}");
+        assert!(names.contains("c"), "got {names:?}");
+    }
+
+    // Robust: `multi_path { fn("a"), fn("x") } -> fn("c")` picks the
+    // shortest path from any source. Both a→b→c and x→y→z→c exist;
+    // the multi-source BFS finds a→b→c first.
+    #[test]
+    fn dsl_multi_path_picks_shortest_from_any_source_robust() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(fixture_node("a", NodeKind::Function));
+        let b = g.add_node(fixture_node("b", NodeKind::Function));
+        let c = g.add_node(fixture_node("c", NodeKind::Function));
+        let x = g.add_node(fixture_node("x", NodeKind::Function));
+        let y = g.add_node(fixture_node("y", NodeKind::Function));
+        let z = g.add_node(fixture_node("z", NodeKind::Function));
+        g.add_edge(&a, &b, fixture_calls_edge()).unwrap();
+        g.add_edge(&b, &c, fixture_calls_edge()).unwrap();
+        g.add_edge(&x, &y, fixture_calls_edge()).unwrap();
+        g.add_edge(&y, &z, fixture_calls_edge()).unwrap();
+        g.add_edge(&z, &c, fixture_calls_edge()).unwrap();
+
+        let result = run_query_expr(
+            r#"multi_path { fn("a"), fn("x") } -> fn("c") depth 5"#,
+            &g,
+            &QueryConfig::default(),
+        )
+        .unwrap();
+        let names = names_of(&g, &result.nodes);
+        // Shortest path a -> b -> c (length 3).
+        assert!(names.contains("a"));
+        assert!(names.contains("b"));
+        assert!(names.contains("c"));
+        // Should NOT include the longer x -> y -> z -> c path.
+        assert!(!names.contains("y"), "got {names:?}");
+    }
+
+    // Robust: `dispatch` postfix filter restricts to functions whose
+    // calls go through trait-method dispatch (Trait → Contains → callee).
+    #[test]
+    fn dsl_dispatch_filter_restricts_to_trait_callers_robust() {
+        use crate::edges::{EdgeData, EdgeKind};
+        use crate::nodes::Span;
+        use std::path::PathBuf;
+        let mut g = CodeGraph::new();
+        let trait_id = g.add_node(fixture_node("Iter", NodeKind::Trait));
+        let trait_method = g.add_node(fixture_node("next", NodeKind::Function));
+        let caller = g.add_node(fixture_node("user", NodeKind::Function));
+        let other = g.add_node(fixture_node("other_fn", NodeKind::Function));
+        let _ = other;
+        let contains = EdgeData {
+            kind: EdgeKind::Contains,
+            source_span: Span {
+                file: PathBuf::from("t.rs"),
+                start_line: 1,
+                start_col: 0,
+                end_line: 5,
+                end_col: 1,
+                byte_range: 0..50,
+            },
+            weight: 1.0,
+        };
+        g.add_edge(&trait_id, &trait_method, contains).unwrap();
+        g.add_edge(&caller, &trait_method, fixture_calls_edge())
+            .unwrap();
+
+        let parsed = parse_query("dispatch").unwrap();
+        assert_eq!(parsed, vec![DslOp::Dispatch]);
+
+        // Bare dispatch returns all dispatch callers in the graph.
+        let result = run_query("dispatch", &g, &QueryConfig::default()).unwrap();
+        let names = names_of(&g, &result.nodes);
+        assert!(names.contains("user"), "got {names:?}");
+        assert!(!names.contains("other_fn"), "got {names:?}");
     }
 }

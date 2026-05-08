@@ -174,7 +174,7 @@ pub async fn execute_task(
         if let (Some(tx), Some(id)) = (tx, id) {
             // TaskProgress is non-critical; the next progress update supersedes this one.
             let _ = tx.try_send(crate::app::AppEvent::TaskProgress {
-                task_id: id.to_owned(),
+                task_id: crate::ids::TaskId::from(id),
                 last_tool,
                 elapsed_ms: started_at.elapsed().as_millis() as u64,
                 tool_use_count,
@@ -263,7 +263,7 @@ pub async fn execute_task(
                     if let (Some(tx), Some(id)) = (tx, task_id) {
                         let _ = tx
                             .send(crate::app::AppEvent::AgentChunk {
-                                task_id: id.to_owned(),
+                                task_id: crate::ids::TaskId::from(id),
                                 text: delta.clone(),
                             })
                             .await;
@@ -378,7 +378,29 @@ pub async fn execute_task(
             let kind = ToolKind::from_name(&name);
             let parsed: serde_json::Value =
                 serde_json::from_str(&input_json).unwrap_or(serde_json::Value::Null);
-            let input = ToolInput::from_value(&name, parsed);
+            // If shape validation rejects the input, surface the error as a
+            // tool_result so the subagent's model can retry rather than
+            // executing on a silently-defaulted payload.
+            let input = match ToolInput::from_value(&name, parsed) {
+                Ok(input) => input,
+                Err(err) => {
+                    tool_results.push(ProviderContent::ToolResult {
+                        tool_use_id: id.clone(),
+                        content: format!("Tool input rejected: {err}"),
+                        is_error: true,
+                    });
+                    total_tool_uses = total_tool_uses.saturating_add(1);
+                    emit_progress(
+                        tx,
+                        task_id,
+                        Some(name.clone()),
+                        Some(total_tool_uses),
+                        None,
+                        None,
+                    );
+                    continue;
+                }
+            };
             let result = execute_tool(kind, input, cwd.clone(), None, None, None).await;
             let is_error = result.is_error();
             // Cap each tool result so a single Read on a multi-MB file

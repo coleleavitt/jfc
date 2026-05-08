@@ -120,6 +120,8 @@ mod tests {
             span: sample_span(),
             visibility: Visibility::Public,
             metadata: HashMap::new(),
+            birth_revision: 0,
+            last_modified_revision: 0,
         }
     }
 

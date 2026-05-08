@@ -46,6 +46,7 @@ mod event_loop;
 mod types;
 mod git_context;
 mod env_context;
+mod ids;
 mod web_cache;
 mod bash_processes;
 mod session_naming;
@@ -588,9 +589,12 @@ fn build_providers() -> ProvidersInit {
         .or(recent_model)
         .unwrap_or_else(|| "claude-opus-4-5".to_owned());
 
-    // Parse as ModelSpec: "provider/model" or bare "model"
-    let spec: ModelSpec = resolved_raw
-        .parse()
+    // Parse as ModelSpec: "provider/model" or bare "model". Lenient because
+    // `resolved_raw` came from an env var / config / recent-models entry — a
+    // user-typed value that might contain stray slashes we'd rather treat as
+    // part of a bare id than reject. `resolved_raw` is filtered non-empty
+    // above, so the only `Err` path here is the empty-string guard.
+    let spec: ModelSpec = ModelSpec::parse_lenient(&resolved_raw)
         .unwrap_or_else(|_| ModelSpec::bare(resolved_raw.clone()));
     tracing::info!(
         target: "jfc::startup",

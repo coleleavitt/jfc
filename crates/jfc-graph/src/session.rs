@@ -1,8 +1,10 @@
 //! High-level session facade — the single entry point for jfc-ui.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::adapter::rust::RustAdapter;
+use tracing::warn;
+
+use crate::adapter::{AdapterError, rust::RustAdapter};
 use crate::builder::GraphBuilder;
 use crate::capabilities::{Capability, CapabilityTree};
 use crate::dsl::{self, QueryConfig, QueryError, QueryResult};
@@ -18,6 +20,11 @@ pub struct GraphSession {
     pub symbols: SymbolTable,
     pub events: EventLog,
     pub capabilities: CapabilityTree,
+    /// Tree-sitter syntax errors collected during the initial indexing pass.
+    /// Surfaces files with partial graphs so the UI can warn the user.
+    pub parse_errors: Vec<AdapterError>,
+    /// Files skipped entirely (I/O failure or hard parse failure).
+    pub files_skipped: Vec<PathBuf>,
     adapter: RustAdapter,
 }
 
@@ -25,24 +32,43 @@ impl GraphSession {
     /// Build a session by indexing all supported files under `workspace_root`.
     pub fn from_directory(workspace_root: &Path) -> Self {
         let adapter = RustAdapter::new();
-        let graph = GraphBuilder::build_from_directory(workspace_root, &adapter);
-        let symbols = SymbolTable::build_from_graph(&graph);
+        let result = GraphBuilder::build_from_directory_with_result(workspace_root, &adapter);
+        let symbols = SymbolTable::build_from_graph(&result.graph);
+
+        // Log a single summary line so the parse errors are observable even
+        // when the caller doesn't inspect `parse_errors` directly.
+        if !result.parse_errors.is_empty() {
+            warn!(
+                target: "jfc::graph::session",
+                count = result.parse_errors.len(),
+                "files with tree-sitter syntax errors — partial graph indexed"
+            );
+        }
+
         Self {
-            graph,
+            graph: result.graph,
             symbols,
             events: EventLog::new(),
             capabilities: CapabilityTree::new(),
+            parse_errors: result.parse_errors,
+            files_skipped: result.files_skipped,
             adapter,
         }
     }
 
     /// Execute a DSL query and return token-budgeted formatted output.
+    ///
+    /// Delegates to [`dsl::run_query_expr`] (the extended-grammar entry
+    /// point) — it parses the legacy pipe-chain as a sub-form, so all
+    /// pre-existing pipe queries still work, while callers also get
+    /// `union` / `intersect` / `\` set algebra, `path` / `paths`,
+    /// `entrypoints`, and the `since N` postfix filter for free.
     pub fn query(&self, query_str: &str, max_tokens: usize) -> Result<FormattedOutput, QueryError> {
         let config = QueryConfig {
             max_tokens,
             max_nodes: 50,
         };
-        let result = dsl::run_query(query_str, &self.graph, &config)?;
+        let result = dsl::run_query_expr(query_str, &self.graph, &config)?;
         Ok(formatting::format_query_result(
             &result,
             &self.graph,
@@ -51,10 +77,12 @@ impl GraphSession {
         ))
     }
 
-    /// Execute a DSL query and return the raw result for programmatic use.
+    /// Execute a DSL query and return the raw [`QueryResult`] for
+    /// programmatic use (e.g. handle extraction, history recording,
+    /// chained predicate analysis). Same parser as [`Self::query`].
     pub fn query_raw(&self, query_str: &str) -> Result<QueryResult, QueryError> {
         let config = QueryConfig::default();
-        dsl::run_query(query_str, &self.graph, &config)
+        dsl::run_query_expr(query_str, &self.graph, &config)
     }
 
     /// Incrementally update the graph after a file modification.

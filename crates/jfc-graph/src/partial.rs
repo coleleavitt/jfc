@@ -124,6 +124,8 @@ mod tests {
             span: sample_span(),
             visibility: Visibility::Public,
             metadata: HashMap::from([("fields".to_string(), fields_meta.to_string())]),
+            birth_revision: 0,
+            last_modified_revision: 0,
         }
     }
 
@@ -142,6 +144,8 @@ mod tests {
             span: sample_span(),
             visibility: Visibility::Public,
             metadata,
+            birth_revision: 0,
+            last_modified_revision: 0,
         }
     }
 

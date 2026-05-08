@@ -2,14 +2,44 @@
 //!
 //! Graph state is reconstructable from a base snapshot + ordered events.
 //! Supports undo via event replay.
+//!
+//! # On-disk schema versioning
+//!
+//! Every event written to disk MUST be wrapped in [`VersionedEvent`] and tagged
+//! with [`PERSISTENCE_SCHEMA_VERSION`]. Readers verify the tag and reject
+//! mismatches with [`PersistenceError::SchemaMismatch`]. The current schema is
+//! a clean break: there is no V1 legacy format to read — earlier in-memory
+//! event logs were not persisted to disk. When the on-disk format evolves,
+//! bump [`PERSISTENCE_SCHEMA_VERSION`] and either add a migration path here or
+//! continue treating older versions as a clean break (cache must be deleted).
 
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::edges::{EdgeData, EdgeKind};
 use crate::nodes::{NodeData, NodeId};
+
+/// Current on-disk schema version for [`VersionedEvent`].
+///
+/// Bump when the wire format of [`GraphEvent`], [`EditReason`], or
+/// [`EventEntry`] changes incompatibly. Readers reject any other value with
+/// [`PersistenceError::SchemaMismatch`].
+pub const PERSISTENCE_SCHEMA_VERSION: u32 = 1;
+
+/// Errors raised by persistence read/write paths.
+#[derive(Debug, Error)]
+pub enum PersistenceError {
+    /// Encountered an event whose `schema_version` doesn't match
+    /// [`PERSISTENCE_SCHEMA_VERSION`]. The on-disk cache must be regenerated.
+    #[error(
+        "persistence schema mismatch: expected version {expected}, found {found} \
+         (delete the on-disk cache and reindex)"
+    )]
+    SchemaMismatch { expected: u32, found: u32 },
+}
 
 /// Unique event identifier.
 pub type EventId = u64;
@@ -58,6 +88,41 @@ pub struct EventEntry {
     pub timestamp: Timestamp,
     pub event: GraphEvent,
     pub reason: Option<EditReason>,
+}
+
+/// Versioned wrapper for a persisted event entry.
+///
+/// All on-disk persistence MUST funnel through this type. The
+/// `schema_version` field is verified on read; mismatches produce
+/// [`PersistenceError::SchemaMismatch`]. See module docs for the migration
+/// policy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionedEvent {
+    pub schema_version: u32,
+    pub event: EventEntry,
+}
+
+impl VersionedEvent {
+    /// Wrap an entry with the current [`PERSISTENCE_SCHEMA_VERSION`] for
+    /// serialization.
+    pub fn wrap(event: EventEntry) -> Self {
+        Self {
+            schema_version: PERSISTENCE_SCHEMA_VERSION,
+            event,
+        }
+    }
+
+    /// Unwrap a deserialized entry, verifying the schema tag matches the
+    /// running binary's [`PERSISTENCE_SCHEMA_VERSION`].
+    pub fn unwrap_verified(self) -> Result<EventEntry, PersistenceError> {
+        if self.schema_version != PERSISTENCE_SCHEMA_VERSION {
+            return Err(PersistenceError::SchemaMismatch {
+                expected: PERSISTENCE_SCHEMA_VERSION,
+                found: self.schema_version,
+            });
+        }
+        Ok(self.event)
+    }
 }
 
 /// Append-only event log with snapshot support.
@@ -172,6 +237,8 @@ mod tests {
             },
             visibility: Visibility::Public,
             metadata: Default::default(),
+            birth_revision: 0,
+            last_modified_revision: 0,
         }
     }
 
@@ -309,5 +376,45 @@ mod tests {
         assert_eq!(entry.id, id);
 
         assert!(log.get_event(999).is_none());
+    }
+
+    // Normal: a VersionedEvent round-trips through the wrap/unwrap helpers
+    // without losing the inner entry.
+    #[test]
+    fn versioned_event_roundtrip_normal() {
+        let entry = EventEntry {
+            id: 7,
+            timestamp: 1234,
+            event: GraphEvent::NodeAdded(sample_node_data("rt")),
+            reason: None,
+        };
+        let wrapped = VersionedEvent::wrap(entry.clone());
+        assert_eq!(wrapped.schema_version, PERSISTENCE_SCHEMA_VERSION);
+        let unwrapped = wrapped.unwrap_verified().expect("schema matches");
+        assert_eq!(unwrapped.id, entry.id);
+        assert_eq!(unwrapped.timestamp, entry.timestamp);
+    }
+
+    // Robust: an entry tagged with a different schema version is rejected
+    // with SchemaMismatch carrying the expected/found pair.
+    #[test]
+    fn versioned_event_rejects_mismatch_robust() {
+        let entry = EventEntry {
+            id: 1,
+            timestamp: 0,
+            event: GraphEvent::NodeAdded(sample_node_data("rt")),
+            reason: None,
+        };
+        let bogus = VersionedEvent {
+            schema_version: PERSISTENCE_SCHEMA_VERSION + 1,
+            event: entry,
+        };
+        match bogus.unwrap_verified() {
+            Err(PersistenceError::SchemaMismatch { expected, found }) => {
+                assert_eq!(expected, PERSISTENCE_SCHEMA_VERSION);
+                assert_eq!(found, PERSISTENCE_SCHEMA_VERSION + 1);
+            }
+            Ok(_) => panic!("expected schema mismatch error"),
+        }
     }
 }
