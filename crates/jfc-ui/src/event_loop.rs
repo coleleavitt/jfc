@@ -365,6 +365,24 @@ pub(crate) async fn run(
                         app.model = model_id.into();
                     }
                     app.recompute_token_estimate();
+                    // Warm the tool-height cache so the first render frame
+                    // doesn't visibly spike — without this the first paint
+                    // computes heights for every terminal-state tool from
+                    // scratch (each height = one full `tool_body_lines`
+                    // build), and on a 100-tool conversation that's a
+                    // noticeable hitch right after the UI appears. We use
+                    // the current terminal width as the best-guess inner
+                    // width; render::messages may use a slightly different
+                    // value (sidebars open/closed) but mismatched widths
+                    // just produce a few extra cache entries — correctness
+                    // is unaffected and they get evicted by the LRU.
+                    if let Ok((cols, _rows)) = crossterm::terminal::size() {
+                        let inner_w = (cols as usize).saturating_sub(5);
+                        crate::message_view::warm_tool_height_cache_for_messages(
+                            &app.messages,
+                            inner_w,
+                        );
+                    }
                 }
             }
         }
@@ -412,6 +430,16 @@ pub(crate) async fn run(
                     app.model = model_id.into();
                 }
                 app.recompute_token_estimate();
+                // Same cache warm-up as the --continue branch — see comment
+                // there. Pre-paying the height computation here means the
+                // first render frame doesn't hitch.
+                if let Ok((cols, _rows)) = crossterm::terminal::size() {
+                    let inner_w = (cols as usize).saturating_sub(5);
+                    crate::message_view::warm_tool_height_cache_for_messages(
+                        &app.messages,
+                        inner_w,
+                    );
+                }
             } else {
                 tracing::warn!(
                     target: "jfc::session",
