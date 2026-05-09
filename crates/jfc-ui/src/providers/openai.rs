@@ -18,7 +18,14 @@ pub struct OpenAIProvider {
 
 impl OpenAIProvider {
     pub fn from_env() -> Option<Self> {
-        let api_key = std::env::var("OPENAI_API_KEY").ok()?.trim().to_owned();
+        // Try env var first (standard).
+        let api_key = std::env::var("OPENAI_API_KEY")
+            .ok()
+            .filter(|k| !k.trim().is_empty())
+            // Fall back to ~/.config/jfc/credentials.toml
+            .or_else(|| Self::key_from_credentials_file())
+            .map(|k| k.trim().to_owned())?;
+
         if api_key.is_empty() {
             return None;
         }
@@ -27,6 +34,42 @@ impl OpenAIProvider {
             api_key,
             std::env::var("OPENAI_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned()),
         ))
+    }
+
+    /// Read the OpenAI API key from `~/.config/jfc/credentials.toml`
+    /// if it exists. Format:
+    /// ```toml
+    /// [openai]
+    /// api_key = "sk-..."
+    /// ```
+    fn key_from_credentials_file() -> Option<String> {
+        let home = std::env::var("HOME").ok()?;
+        let path = std::path::PathBuf::from(home)
+            .join(".config/jfc/credentials.toml");
+        let content = std::fs::read_to_string(&path).ok()?;
+        // Minimal TOML parsing — just find [openai] section's api_key.
+        let mut in_openai = false;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed == "[openai]" {
+                in_openai = true;
+                continue;
+            }
+            if trimmed.starts_with('[') {
+                in_openai = false;
+                continue;
+            }
+            if in_openai && trimmed.starts_with("api_key") {
+                // Parse: api_key = "value"
+                if let Some(val) = trimmed.split('=').nth(1) {
+                    let val = val.trim().trim_matches('"').trim_matches('\'');
+                    if !val.is_empty() {
+                        return Some(val.to_string());
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub fn new(api_key: impl Into<String>, base_url: impl Into<String>) -> Self {
@@ -148,10 +191,7 @@ impl Provider for OpenAIProvider {
                 anyhow::bail!("OpenAI request failed: {cause} ({e})");
             }
         };
-        super::http::report_first_byte_latency(
-            "openai.chat/completions",
-            send_started.elapsed(),
-        );
+        super::http::report_first_byte_latency("openai.chat/completions", send_started.elapsed());
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
@@ -224,8 +264,46 @@ struct ChatMessage {
 
 #[derive(Debug, Default, Deserialize)]
 struct ChatUsage {
+    #[serde(default)]
     prompt_tokens: usize,
+    #[serde(default)]
     completion_tokens: usize,
+    #[serde(default)]
+    prompt_tokens_details: Option<PromptTokensDetails>,
+    #[serde(default)]
+    cache_creation_input_tokens: usize,
+    #[serde(default)]
+    cache_read_input_tokens: usize,
+    #[serde(default)]
+    cache_write_input_tokens: usize,
+}
+
+impl ChatUsage {
+    fn cache_read_tokens(&self) -> usize {
+        self.cache_read_input_tokens.max(
+            self.prompt_tokens_details
+                .as_ref()
+                .map_or(0, |d| d.cached_tokens),
+        )
+    }
+
+    fn cache_creation_tokens(&self) -> usize {
+        self.cache_creation_input_tokens
+            .max(self.cache_write_input_tokens)
+            .max(
+                self.prompt_tokens_details
+                    .as_ref()
+                    .map_or(0, |d| d.cache_creation_input_tokens),
+            )
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PromptTokensDetails {
+    #[serde(default)]
+    cached_tokens: usize,
+    #[serde(default)]
+    cache_creation_input_tokens: usize,
 }
 
 impl From<ChatUsage> for TokenUsage {
@@ -233,8 +311,8 @@ impl From<ChatUsage> for TokenUsage {
         Self {
             input_tokens: value.prompt_tokens,
             output_tokens: value.completion_tokens,
-            cache_read_tokens: 0,
-            cache_creation_tokens: 0,
+            cache_read_tokens: value.cache_read_tokens(),
+            cache_creation_tokens: value.cache_creation_tokens(),
         }
     }
 }
