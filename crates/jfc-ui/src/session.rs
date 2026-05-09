@@ -214,6 +214,9 @@ pub enum SerializedToolInput {
     TaskDone {
         task_id: String,
     },
+    TaskGet {
+        task_id: String,
+    },
     Skill {
         name: String,
         #[serde(default)]
@@ -1122,6 +1125,9 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::TaskDone { task_id } => SerializedToolInput::TaskDone {
             task_id: task_id.clone(),
         },
+        ToolInput::TaskGet { task_id } => SerializedToolInput::TaskGet {
+            task_id: task_id.clone(),
+        },
         ToolInput::Skill { name, args } => SerializedToolInput::Skill {
             name: name.clone(),
             args: args.clone(),
@@ -1557,6 +1563,7 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             owner_filter,
         },
         SerializedToolInput::TaskDone { task_id } => ToolInput::TaskDone { task_id },
+        SerializedToolInput::TaskGet { task_id } => ToolInput::TaskGet { task_id },
         SerializedToolInput::Skill { name, args } => ToolInput::Skill { name, args },
         SerializedToolInput::MemoryCreate {
             level,

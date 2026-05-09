@@ -707,6 +707,7 @@ pub enum ToolKind {
     TaskUpdate,
     TaskList,
     TaskDone,
+    TaskGet,
     Task,
     Skill,
     MemoryCreate,
@@ -838,6 +839,9 @@ pub enum ToolInput {
         owner_filter: Option<String>,
     },
     TaskDone {
+        task_id: String,
+    },
+    TaskGet {
         task_id: String,
     },
     Skill {
@@ -1481,6 +1485,7 @@ impl ToolKind {
             "taskupdate" => Self::TaskUpdate,
             "tasklist" => Self::TaskList,
             "taskdone" => Self::TaskDone,
+            "taskget" => Self::TaskGet,
             "task" => Self::Task,
             "skill" => Self::Skill,
             "memorycreate" => Self::MemoryCreate,
@@ -1544,6 +1549,7 @@ impl ToolKind {
             Self::TaskUpdate => "TaskUpdate",
             Self::TaskList => "TaskList",
             Self::TaskDone => "TaskDone",
+            Self::TaskGet => "TaskGet",
             Self::Task => "Task",
             Self::Skill => "Skill",
             Self::MemoryCreate => "MemoryCreate",
@@ -1598,6 +1604,7 @@ impl ToolKind {
             Self::TaskUpdate => "TaskUpdate",
             Self::TaskList => "TaskList",
             Self::TaskDone => "TaskDone",
+            Self::TaskGet => "TaskGet",
             Self::Task => "Task",
             Self::Skill => "Skill",
             Self::MemoryCreate => "MemoryCreate",
@@ -1700,6 +1707,7 @@ impl ToolInput {
                 None => "list tasks".into(),
             },
             Self::TaskDone { task_id } => format!("done: {task_id}"),
+            Self::TaskGet { task_id } => format!("get: {task_id}"),
             Self::Task(ti) => ti.summary(),
             Self::Skill { name, args } => match args.as_deref().filter(|s| !s.is_empty()) {
                 Some(a) => format!("{name}: {a}"),
@@ -1945,6 +1953,9 @@ impl ToolInput {
                 owner_filter: opt_str_field("owner_filter"),
             },
             ToolKind::TaskDone => Self::TaskDone {
+                task_id: req_str("task_id")?,
+            },
+            ToolKind::TaskGet => Self::TaskGet {
                 task_id: req_str("task_id")?,
             },
             ToolKind::Task => Self::Task(TaskInput {
@@ -2271,6 +2282,7 @@ impl ToolInput {
                 v
             }
             Self::TaskDone { task_id } => json!({ "task_id": task_id }),
+            Self::TaskGet { task_id } => json!({ "task_id": task_id }),
             Self::Task(ti) => {
                 let mut v = json!({
                     "description": ti.description,

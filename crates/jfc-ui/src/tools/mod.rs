@@ -38,7 +38,7 @@ use notebook::{execute_notebook_edit, execute_notebook_read};
 use notifications::{execute_push_notification, execute_remote_trigger};
 use search::{execute_glob, execute_grep};
 use swarm::{execute_send_message, execute_team_create, execute_team_delete, execute_team_member_mode};
-use tasks::{execute_task_create, execute_task_done, execute_task_list, execute_task_update};
+use tasks::{execute_task_create, execute_task_done, execute_task_get, execute_task_list, execute_task_update};
 use worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
 
 use std::path::{Path, PathBuf};
@@ -820,6 +820,9 @@ pub async fn execute_tool(
         ),
         (ToolKind::TaskDone, ToolInput::TaskDone { task_id }) => {
             execute_task_done(task_store, &task_id)
+        }
+        (ToolKind::TaskGet, ToolInput::TaskGet { task_id }) => {
+            execute_task_get(task_store, &task_id)
         }
         (ToolKind::Task, ToolInput::Task(_)) => {
             ExecutionResult::failure("Task tool must be dispatched via the streaming executor")

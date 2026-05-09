@@ -227,6 +227,20 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: "TaskGet".into(),
+            description: "Retrieve a task by ID.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The task id to retrieve (e.g. 't1')"
+                    }
+                },
+                "required": ["task_id"]
+            }),
+        },
+        ToolDef {
             name: "Skill".into(),
             description: "Invoke a registered skill by name. The skill's body is rendered as guidance and acted upon. Pass `args` as additional context.".into(),
             input_schema: serde_json::json!({

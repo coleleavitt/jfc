@@ -1288,7 +1288,7 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         ToolKind::Bash => Color::Rgb(180, 180, 200), // neutral grey
         ToolKind::Glob | ToolKind::Grep | ToolKind::Search => Color::Rgb(200, 160, 255), // lavender
         ToolKind::Task => Color::Rgb(255, 170, 220), // rose
-        ToolKind::TaskCreate | ToolKind::TaskUpdate | ToolKind::TaskList | ToolKind::TaskDone => {
+        ToolKind::TaskCreate | ToolKind::TaskUpdate | ToolKind::TaskList | ToolKind::TaskDone | ToolKind::TaskGet => {
             Color::Rgb(140, 220, 220)
         } // teal
         ToolKind::MemoryCreate | ToolKind::MemoryDelete => Color::Rgb(220, 220, 140), // olive

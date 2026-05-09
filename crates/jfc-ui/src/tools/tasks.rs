@@ -121,6 +121,26 @@ pub(super) fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) ->
     }
 }
 
+pub(super) fn execute_task_get(store: Option<Arc<TaskStore>>, task_id: &str) -> ExecutionResult {
+    debug!(target: "jfc::tools", task_id, "task_get: retrieving");
+    let Some(store) = store else {
+        return ExecutionResult::failure("Task store not available");
+    };
+    let tasks = store.list(DeletedFilter::Exclude);
+    match tasks.into_iter().find(|t| t.id == task_id) {
+        Some(task) => {
+            debug!(target: "jfc::tools", task_id, "task_get: found");
+            ExecutionResult::success(
+                serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
+            )
+        }
+        None => {
+            debug!(target: "jfc::tools", task_id, "task_get: not found");
+            ExecutionResult::failure(format!("No task found with id '{task_id}'"))
+        }
+    }
+}
+
 /// Resolve a registered skill by name and return its markdown body as the
 /// tool result. Optional `args` (when non-empty) are appended under an
 /// `# Args` header so the model can incorporate the caller's context.
