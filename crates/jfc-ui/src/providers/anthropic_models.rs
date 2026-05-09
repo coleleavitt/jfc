@@ -35,6 +35,8 @@ pub fn anthropic_first_party_models(provider_tag: &str) -> Vec<ModelInfo> {
         (ALIAS_OPUS, "↗ Opus (latest)"),
         (ALIAS_SONNET, "↗ Sonnet (latest)"),
         (ALIAS_HAIKU, "↗ Haiku (latest)"),
+        // Preview / experimental
+        ("claude-mythos-preview", "Claude Mythos (preview)"),
         // Opus — flagship, dated/specific
         ("claude-opus-4-7", "Claude Opus 4.7"),
         ("claude-opus-4-6", "Claude Opus 4.6"),
@@ -148,6 +150,20 @@ pub fn apply_seat_tier_filter(models: Vec<ModelInfo>, seat_tier: Option<&str>) -
         "apply_seat_tier_filter: pinned opus filter applied"
     );
     result
+}
+
+/// Whether a model supports `thinking.type = "adaptive"` (Claude decides when
+/// and how much to think). Mirrors v137's `FH8()` function.
+///
+/// Adaptive thinking is the preferred mode for 4.6+ models; older models must
+/// use `thinking.type = "enabled"` with an explicit `budget_tokens`.
+pub fn supports_adaptive_thinking(model_id: &str) -> bool {
+    let id = model_id.to_lowercase();
+    // Opus 4.6+ and Sonnet 4.6+ support adaptive
+    id.contains("opus-4-6")
+        || id.contains("opus-4-7")
+        || id.contains("sonnet-4-6")
+        || id.contains("mythos")
 }
 
 #[cfg(test)]
@@ -301,16 +317,42 @@ mod tests {
     #[test]
     #[cfg_attr(any(target_env = "msvc"), ignore)]
     fn custom_model_env_var_appends_row_normal() {
-        // SAFETY: tests in this binary may run in parallel — guard the env mutation
-        // with a unique, unlikely-to-clash key. We *only* check the injection point,
-        // not the canonical env name (separate test for that path is gated below).
-        // Ideally use serial_test crate, but that's an extra dep.
         unsafe { std::env::set_var("ANTHROPIC_CUSTOM_MODEL_OPTION", "claude-test-foo-bar") };
         let models = anthropic_first_party_models("anthropic-oauth");
         unsafe { std::env::remove_var("ANTHROPIC_CUSTOM_MODEL_OPTION") };
         assert!(
             models.iter().any(|m| m.id == "claude-test-foo-bar"),
             "custom model env var was not injected"
+        );
+    }
+
+    // ── Adaptive thinking ──────────────────────────────────────────────────
+
+    #[test]
+    fn adaptive_thinking_supported_for_4_6_plus_normal() {
+        assert!(supports_adaptive_thinking("claude-opus-4-6"));
+        assert!(supports_adaptive_thinking("claude-opus-4-7"));
+        assert!(supports_adaptive_thinking("claude-sonnet-4-6"));
+        assert!(supports_adaptive_thinking("claude-mythos-preview"));
+    }
+
+    #[test]
+    fn adaptive_thinking_not_supported_for_older_models_normal() {
+        assert!(!supports_adaptive_thinking("claude-opus-4-5-20251101"));
+        assert!(!supports_adaptive_thinking("claude-opus-4-20250514"));
+        assert!(!supports_adaptive_thinking("claude-sonnet-4-5-20250929"));
+        assert!(!supports_adaptive_thinking("claude-sonnet-4-20250514"));
+        assert!(!supports_adaptive_thinking("claude-3-7-sonnet-20250219"));
+        assert!(!supports_adaptive_thinking("claude-haiku-4-5-20251001"));
+        assert!(!supports_adaptive_thinking("claude-3-5-haiku-20241022"));
+    }
+
+    #[test]
+    fn mythos_preview_in_catalog_normal() {
+        let models = anthropic_first_party_models("anthropic-oauth");
+        assert!(
+            models.iter().any(|m| m.id == "claude-mythos-preview"),
+            "claude-mythos-preview should be in the catalog"
         );
     }
 }

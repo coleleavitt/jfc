@@ -65,6 +65,21 @@ pub enum FeatureGate {
     /// stdout into the LLM context as it arrives so the user can
     /// interrupt mid-command. Off by default (token-heavy).
     Marsh,
+    /// v137 `/goal` command: set a condition and keep working until it's
+    /// met. Session-scoped Stop hook blocks completion until the goal holds.
+    /// Clearable via `/goal clear`.
+    MapleTide,
+    /// v137 simple system prompt: certain models receive a reduced system
+    /// prompt instead of the full instruction set. Controlled server-side
+    /// via a model list; this gate enables the local opt-in path.
+    VelvetCascade,
+    /// v137 autocompact gating: additional pre-compact checks for
+    /// background sessions to avoid compacting during active tool runs.
+    BasaltSpur,
+    /// v137 dynamic notification banner: server can push a transient
+    /// announcement (maintenance window, feature rollout) that surfaces
+    /// as a high-priority toast.
+    PorchBell,
 }
 
 impl FeatureGate {
@@ -80,6 +95,10 @@ impl FeatureGate {
         FeatureGate::Finch,
         FeatureGate::Tern,
         FeatureGate::Marsh,
+        FeatureGate::MapleTide,
+        FeatureGate::VelvetCascade,
+        FeatureGate::BasaltSpur,
+        FeatureGate::PorchBell,
     ];
 
     pub fn codename(self) -> &'static str {
@@ -95,6 +114,10 @@ impl FeatureGate {
             Self::Finch => "finch",
             Self::Tern => "tern",
             Self::Marsh => "marsh",
+            Self::MapleTide => "maple-tide",
+            Self::VelvetCascade => "velvet-cascade",
+            Self::BasaltSpur => "basalt-spur",
+            Self::PorchBell => "porch-bell",
         }
     }
 
@@ -117,6 +140,10 @@ impl FeatureGate {
             Self::Finch => false,
             Self::Tern => true,
             Self::Marsh => false,
+            Self::MapleTide => false,
+            Self::VelvetCascade => false,
+            Self::BasaltSpur => false,
+            Self::PorchBell => false,
         }
     }
 
@@ -134,6 +161,10 @@ impl FeatureGate {
             Self::Finch => "First-run onboarding tour",
             Self::Tern => "Batch tool approval — one prompt for all queued tools",
             Self::Marsh => "Mid-stream bash output fed to model context",
+            Self::MapleTide => "/goal: keep working until condition is met",
+            Self::VelvetCascade => "Simple system prompt for select models",
+            Self::BasaltSpur => "Extra pre-compact checks for background sessions",
+            Self::PorchBell => "Dynamic server notification banner",
         }
     }
 }

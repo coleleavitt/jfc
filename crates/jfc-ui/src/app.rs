@@ -927,6 +927,10 @@ pub struct App {
     /// future config-toml field. When false, the slash command surfaces
     /// a hint message instead of running.
     pub advisor_enabled: bool,
+    /// v137 `/goal <condition>` — session-scoped stop condition. When set,
+    /// the agent keeps working until this condition is met. `/goal clear`
+    /// removes it.
+    pub goal_condition: Option<String>,
     /// Shared flag: true when the UI needs high-frequency ticks (animations,
     /// kinetic scroll, boot sweep). The tick task reads this to choose
     /// `ANIM_TICK_MS` vs `IDLE_TICK_MS`.
@@ -1116,6 +1120,7 @@ impl App {
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
+            goal_condition: None,
             wants_animation_frame: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             scroll_velocity: 0.0,
             last_scroll_tick: std::time::Instant::now(),

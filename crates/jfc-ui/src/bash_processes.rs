@@ -52,10 +52,17 @@ pub fn terminate_all() -> usize {
     let pids = snapshot();
     let mut count = 0;
     for pid in pids {
+        let target = pid as libc::pid_t;
+        // Guard: pid 0 signals the process group, pid -1 signals ALL user
+        // processes. Never allow either — they'd nuke the session.
+        if target <= 0 {
+            tracing::warn!(target: "jfc::bash::pids", pid, "refusing to signal pid <= 0");
+            continue;
+        }
         // SAFETY: kill(2) is async-signal-safe. SIGTERM gives the child a
         // chance to clean up; we don't escalate to SIGKILL here because the
         // tool's own timeout path already handles hard-kill on hang.
-        let r = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+        let r = unsafe { libc::kill(target, libc::SIGTERM) };
         if r == 0 {
             count += 1;
             tracing::info!(target: "jfc::bash::pids", pid, "SIGTERM dispatched (user abort)");
@@ -123,10 +130,9 @@ mod tests {
     #[test]
     fn terminate_all_signals_invalid_pids_robust() {
         clear_for_test();
-        // Use a PID that is overwhelmingly unlikely to exist (max u32). The
-        // kill returns -1 / ESRCH so count stays 0; we just want to prove
-        // the path doesn't panic and doesn't leave state behind.
-        register(u32::MAX);
+        // Use a PID that is overwhelmingly unlikely to exist. Avoid u32::MAX
+        // because it wraps to pid_t -1 which signals ALL user processes!
+        register(4_000_000);
         let _ = terminate_all();
         // Registry is *not* cleared — the dispatcher waits for the process
         // to actually exit and call deregister. Here we verify the entry
