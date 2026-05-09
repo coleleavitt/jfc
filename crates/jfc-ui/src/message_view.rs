@@ -13,6 +13,31 @@ use crate::types::*;
 
 pub struct MessageView<'a> {
     pub app: &'a App,
+    /// Optional precomputed render items + total height. Lets `render::messages`
+    /// build the items vec once per frame and share it with `MessageView::render`,
+    /// avoiding a second `build_render_items` walk that — pre-cache — was the
+    /// dominant remaining hot spot (gdb showed `Vec<Line<'static>>::to_vec` from
+    /// the streaming-text cache hit at message_view.rs:607). `None` falls back
+    /// to the legacy "MessageView builds its own" path used by tests + any
+    /// caller that hasn't been threaded through.
+    pub prebuilt: Option<PrebuiltItems<'a>>,
+}
+
+pub struct PrebuiltItems<'a> {
+    pub items: Vec<RenderItem<'a>>,
+    pub total_h: usize,
+    /// Pre-clamped scroll offset, computed by the caller before rendering.
+    /// `MessageView::render` uses this in place of reading `app.scroll_offset`
+    /// directly so the caller can hold a shared `&App` (via `items`) and a
+    /// pending mutation to `scroll_offset` at the same time without tripping
+    /// the borrow checker.
+    pub scroll: usize,
+}
+
+/// Public entry to `build_render_items` for callers in sibling modules
+/// (`render::messages`) that want to share one items vec with the widget.
+pub fn build_render_items_pub<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
+    build_render_items(app, inner_w)
 }
 
 /// Total visual rows the message view will draw at this width.
@@ -45,11 +70,16 @@ impl Widget for MessageView<'_> {
         let width = area.width;
         let inner_w = width as usize;
 
-        let items = build_render_items(self.app, inner_w);
-
-        let total_h: usize = items.iter().map(|i| i.height(inner_w)).sum();
+        let (items, total_h, prebuilt_scroll) = match self.prebuilt {
+            Some(p) => (p.items, p.total_h, Some(p.scroll)),
+            None => {
+                let items = build_render_items(self.app, inner_w);
+                let total_h: usize = items.iter().map(|i| i.height(inner_w)).sum();
+                (items, total_h, None)
+            }
+        };
         let max_scroll = total_h.saturating_sub(area.height as usize);
-        let scroll = self.app.scroll_offset.min(max_scroll);
+        let scroll = prebuilt_scroll.unwrap_or(self.app.scroll_offset).min(max_scroll);
 
         // Frame-level diagnostics for chasing scroll/overflow drift —
         // e.g., a content row that visibly clips at the viewport's
@@ -193,7 +223,7 @@ impl Widget for MessageView<'_> {
             // prefixed with `group:` so the click handler can tell
             // them apart from raw tool ids when toggling state.
             match item {
-                RenderItem::ToolBlock(_, tool) => {
+                RenderItem::ToolBlock(tool) => {
                     self.app
                         .tool_hit_regions
                         .borrow_mut()
@@ -207,7 +237,7 @@ impl Widget for MessageView<'_> {
                 }
                 _ => {}
             }
-            item.render_with_skip(item_area, buf, t, item_scroll_skip);
+            item.render_with_skip(self.app, item_area, buf, t, item_scroll_skip);
 
             // For streaming-placeholder scopes, remember the bottom
             // row's last-content column so MessageEnd can drop a
@@ -274,13 +304,20 @@ impl Widget for MessageView<'_> {
     }
 }
 
-enum RenderItem<'a> {
+pub enum RenderItem<'a> {
     TextLine(Line<'a>),
     /// Carries `&App` so the renderer can read `app.diagnostics`
     /// when rendering a Read result — without piping the whole App
     /// through the render-stack as a separate parameter at every
     /// helper. Only the tool-block path needs it; other items don't.
-    ToolBlock(&'a App, &'a ToolCall),
+    /// Single tool block. We carry only the `&ToolCall` reference (not `&App`)
+    /// so the items Vec borrows just `app.messages` instead of the whole `App` —
+    /// that lets `render::messages` mutate sibling fields like `scroll_offset`,
+    /// `total_lines`, and `viewport_height` while the prebuilt items are still
+    /// alive. Pre-fix the variant held `&App` and split-borrow rules forced
+    /// `render::messages` to either rebuild items twice per frame or defer all
+    /// scroll math, neither of which composed cleanly.
+    ToolBlock(&'a ToolCall),
     /// Collapsed group of consecutive same-kind tool calls (Read,
     /// Glob, Grep, Search). Renders as a single one-line teaser
     /// "▶ N reads · click to expand"; click on the row or `o` flips
@@ -307,7 +344,7 @@ enum RenderItem<'a> {
 }
 
 impl<'a> RenderItem<'a> {
-    fn height(&self, width: usize) -> usize {
+    pub fn height(&self, width: usize) -> usize {
         match self {
             RenderItem::Blank => 1,
             RenderItem::TextLine(line) => {
@@ -324,7 +361,7 @@ impl<'a> RenderItem<'a> {
                     p.line_count(width as u16).max(1)
                 }
             }
-            RenderItem::ToolBlock(_, tool) => tool_block_height(tool, width),
+            RenderItem::ToolBlock(tool) => tool_block_height(tool, width),
             RenderItem::ToolGroup { .. } => 1,
             // Scope markers occupy no rows — they only affect the
             // surrounding draw context (gutter color, bg tint).
@@ -332,7 +369,7 @@ impl<'a> RenderItem<'a> {
         }
     }
 
-    fn render_with_skip(&self, area: Rect, buf: &mut Buffer, t: Theme, skip: usize) {
+    fn render_with_skip(&self, app: &App, area: Rect, buf: &mut Buffer, t: Theme, skip: usize) {
         match self {
             RenderItem::MessageStart { .. } | RenderItem::MessageEnd => {}
             RenderItem::Blank => {}
@@ -343,7 +380,7 @@ impl<'a> RenderItem<'a> {
                     .style(Style::default().bg(t.bg))
                     .render(area, buf);
             }
-            RenderItem::ToolBlock(app, tool) => {
+            RenderItem::ToolBlock(tool) => {
                 render_tool_block(app, tool, area, t, buf, skip);
             }
             RenderItem::ToolGroup {
@@ -568,7 +605,7 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
                     // individually.
                     for tool_part in &msg.parts[p..run_end] {
                         if let MessagePart::Tool(tool) = tool_part {
-                            items.push(RenderItem::ToolBlock(app, tool));
+                            items.push(RenderItem::ToolBlock(tool));
                         }
                     }
                     p = run_end;
@@ -614,7 +651,7 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
                     push_reasoning_lines(&mut items, text, reasoning_expanded, idx, &t);
                 }
                 MessagePart::Tool(tool) => {
-                    items.push(RenderItem::ToolBlock(app, tool));
+                    items.push(RenderItem::ToolBlock(tool));
                 }
                 MessagePart::TaskStatus(ts) => {
                     push_task_status_lines(&mut items, ts, &t, inner_w);

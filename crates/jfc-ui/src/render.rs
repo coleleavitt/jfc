@@ -48,9 +48,12 @@ fn render_ribbon(f: &mut Frame, app: &App, area: Rect) {
         crate::app::PermissionMode::Auto => "auto",
         crate::app::PermissionMode::Plan => "plan",
     };
-    let cwd = std::env::current_dir()
-        .ok()
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+    // Use the cached cwd from `App::new` instead of `std::env::current_dir()`
+    // — the ribbon renders every frame, and the syscall showed up at 234×/4s
+    // in strace once message-view CPU was reduced enough to see it.
+    let cwd = std::path::Path::new(&app.cwd)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "?".to_owned());
     let branch = app.git_branch.clone().unwrap_or_else(|| "—".to_owned());
     let cost = crate::cost::fmt_cost(crate::cost::total_cost(&app.usage_by_model));
@@ -774,17 +777,18 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         Style::default().fg(t.border),
     )]));
 
-    let cwd_str = std::env::current_dir()
-        .map(|p| {
-            let s = p.display().to_string();
-            let home = std::env::var("HOME").unwrap_or_default();
-            if !home.is_empty() && s.starts_with(&home) {
-                format!("~{}", &s[home.len()..])
-            } else {
-                s
-            }
-        })
-        .unwrap_or_else(|_| "?".into());
+    // Same per-frame `getcwd` cleanup as the ribbon path: lean on the cached
+    // `app.cwd` so the sidebar footer doesn't re-syscall on every redraw.
+    let cwd_str = if app.cwd.is_empty() {
+        "?".to_owned()
+    } else {
+        let home = std::env::var("HOME").unwrap_or_default();
+        if !home.is_empty() && app.cwd.starts_with(&home) {
+            format!("~{}", &app.cwd[home.len()..])
+        } else {
+            app.cwd.clone()
+        }
+    };
     let cwd_display = tail_truncate(&cwd_str, inner.width.saturating_sub(2) as usize);
     footer_lines.push(Line::from(vec![
         Span::styled("⌂ ", Style::default().fg(t.text_muted)),
@@ -1692,30 +1696,35 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     //                         total  = 5
     let inner_width = area.width.saturating_sub(5) as usize;
 
-    // Cache key: only recompute total_lines when content or width changed.
-    // This eliminates the O(n × m) per-frame cost of walking every render
-    // item and computing paragraph wrap heights for items off-screen.
-    // During streaming, streaming_text.len() changes each chunk so the
-    // cache auto-invalidates at chunk rate (not tick rate).
-    let key = (app.messages.len(), app.streaming_text.len(), inner_width);
-    let total_lines = if app.total_lines_key == key && app.total_lines > 0 && !app.is_streaming {
-        app.total_lines
-    } else {
-        let tl = crate::message_view::message_view_total_lines(app, inner_width);
-        app.total_lines = tl;
-        app.total_lines_key = key;
-        tl
-    };
+    // Build render items ONCE per frame and share them with `MessageView::render`.
+    // Pre-fix this function called `message_view_total_lines` (one
+    // `build_render_items` walk) and the widget then ran `build_render_items`
+    // again — gdb sampling showed the second walk's `Vec<Line<'static>>::to_vec`
+    // out of `RenderCache` was the dominant remaining hot spot once syntect/onig
+    // and the tool-height path were memoized. Sharing one items vec halves the
+    // per-frame deep-clone work.
+    //
+    // The earlier `app.total_lines` cache that gated `message_view_total_lines`
+    // is no longer needed — items are required for paint anyway, and
+    // `tool_block_height` now memoizes the integer height per terminal-state
+    // tool, so the per-item .sum() is a string of hash lookups.
+    let items = crate::message_view::build_render_items_pub(app, inner_width);
+    let total_lines: usize = items.iter().map(|i| i.height(inner_width)).sum();
 
     let visible = area.height.saturating_sub(2) as usize;
-    app.viewport_height = visible;
 
+    // Compute the new scroll offset locally — `items` borrows from `app`, so we
+    // can't write `app.scroll_offset` until after `MessageView::render` consumes
+    // them. The new value is also passed into `PrebuiltItems` so the widget
+    // sees it during paint instead of the (still-old) `app.scroll_offset`.
     let scroll_before = app.scroll_offset;
-    if app.follow_bottom {
-        app.scroll_offset = total_lines.saturating_sub(visible);
+    let new_scroll_offset = if app.follow_bottom {
+        total_lines.saturating_sub(visible)
     } else if app.scroll_offset + visible > total_lines {
-        app.scroll_offset = total_lines.saturating_sub(visible);
-    }
+        total_lines.saturating_sub(visible)
+    } else {
+        app.scroll_offset
+    };
     // Trace the scroll math result. Bug class this catches: when
     // `total_lines` is undercounted (width mismatch), `scroll_offset`
     // gets pinned to a value smaller than the true bottom row,
@@ -1727,14 +1736,16 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
         total_lines,
         visible,
         scroll_before,
-        scroll_after = app.scroll_offset,
+        scroll_after = new_scroll_offset,
         follow_bottom = app.follow_bottom,
         "messages scroll math"
     );
 
-    let at_bottom = app.is_at_bottom();
+    // Mirror `App::is_at_bottom` against the freshly-computed values so the
+    // overflow indicator reflects the post-render state, not last frame's.
+    let at_bottom = new_scroll_offset >= total_lines.saturating_sub(visible.max(1));
     let title_right = if !at_bottom {
-        let remaining = total_lines.saturating_sub(app.scroll_offset + visible);
+        let remaining = total_lines.saturating_sub(new_scroll_offset + visible);
         format!(" ↓ {remaining} more ")
     } else {
         String::new()
@@ -1764,6 +1775,16 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
 
     let inner = block.inner(area);
     f.render_widget(block, area);
+
+    // Snapshot the values we'll need to commit back to App after `items` is
+    // dropped. The placeholder branch doesn't consume `items`, so we commit
+    // *after* the if/else with an explicit `drop(items)`.
+    let totals_to_commit = (
+        total_lines,
+        (app.messages.len(), app.streaming_text.len(), inner_width),
+        visible,
+        new_scroll_offset,
+    );
 
     if app.messages.is_empty() && app.streaming_text.is_empty() {
         // Boot sweep: for the first ~1.4s after launch, ripple a star
@@ -1828,7 +1849,15 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
             width: inner.width.saturating_sub(1),
             ..inner
         };
-        MessageView { app }.render(content_inner, f.buffer_mut());
+        MessageView {
+            app,
+            prebuilt: Some(crate::message_view::PrebuiltItems {
+                items,
+                total_h: total_lines,
+                scroll: new_scroll_offset,
+            }),
+        }
+        .render(content_inner, f.buffer_mut());
 
         if scrollbar_visible {
             // ratatui::widgets::Scrollbar drives off ScrollbarState
@@ -1840,7 +1869,7 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
             use ratatui::prelude::StatefulWidget;
             use ratatui::widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState};
             let mut state = ScrollbarState::new(total_lines.saturating_sub(visible))
-                .position(app.scroll_offset)
+                .position(new_scroll_offset)
                 .viewport_content_length(visible);
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(Some("▲"))
@@ -1880,6 +1909,17 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
             }
         }
     }
+
+    // Commit the freshly-computed values back to App. By this point both
+    // branches above have finished rendering and any borrow of `app` via the
+    // items vec is dropped. `App::max_scroll` (used by event-loop key
+    // handlers) reads these — staling them by a frame caused PgDn at end-of-
+    // buffer to silently no-op while still feeling laggy.
+    let (total_lines_v, total_lines_key_v, viewport_h_v, scroll_v) = totals_to_commit;
+    app.total_lines = total_lines_v;
+    app.total_lines_key = total_lines_key_v;
+    app.viewport_height = viewport_h_v;
+    app.scroll_offset = scroll_v;
 }
 
 /// Per-entry collapse threshold for the subagent task view. A single
