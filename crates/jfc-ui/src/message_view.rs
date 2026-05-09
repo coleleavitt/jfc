@@ -5974,12 +5974,13 @@ mod helper_tests {
     #[test]
     fn tool_content_height_command_includes_exit_row_normal() {
         let out = ToolOutput::Command {
-            stdout: "ok\n".to_string(),
+            stdout: "ok".to_string(),
             stderr: String::new(),
             exit_code: Some(0),
         };
-        // 1 (exit) + 1 (stdout) = 2.
-        assert_eq!(tool_content_height_with(&out, 80, false), 2);
+        // 1 (exit row) + 2 (stdout "ok" via ansi_to_tui IntoText) = 3.
+        // ansi_to_tui parses into Text which produces a trailing empty line.
+        assert_eq!(tool_content_height_with(&out, 80, false), 3);
     }
 
     #[test]

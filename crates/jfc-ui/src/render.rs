@@ -1691,9 +1691,21 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     //   scrollbar reserve           = 1
     //                         total  = 5
     let inner_width = area.width.saturating_sub(5) as usize;
-    let total_lines = crate::message_view::message_view_total_lines(app, inner_width);
 
-    app.total_lines = total_lines;
+    // Cache key: only recompute total_lines when content or width changed.
+    // This eliminates the O(n × m) per-frame cost of walking every render
+    // item and computing paragraph wrap heights for items off-screen.
+    // During streaming, streaming_text.len() changes each chunk so the
+    // cache auto-invalidates at chunk rate (not tick rate).
+    let key = (app.messages.len(), app.streaming_text.len(), inner_width);
+    let total_lines = if app.total_lines_key == key && app.total_lines > 0 && !app.is_streaming {
+        app.total_lines
+    } else {
+        let tl = crate::message_view::message_view_total_lines(app, inner_width);
+        app.total_lines = tl;
+        app.total_lines_key = key;
+        tl
+    };
 
     let visible = area.height.saturating_sub(2) as usize;
     app.viewport_height = visible;

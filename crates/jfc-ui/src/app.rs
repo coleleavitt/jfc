@@ -502,6 +502,9 @@ pub struct App {
     pub thinking_ended_at: Option<Instant>,
     pub scroll_offset: usize,
     pub total_lines: usize,
+    /// Cache key for `total_lines`: (message_count, streaming_text_len, last_width).
+    /// When any component changes, `message_view_total_lines` is recomputed.
+    pub total_lines_key: (usize, usize, usize),
     pub textarea: TextArea<'static>,
     pub show_palette: bool,
     pub palette_input: String,
@@ -984,6 +987,7 @@ impl App {
             is_streaming: false,
             scroll_offset: 0,
             total_lines: 0,
+            total_lines_key: (0, 0, 0),
             textarea,
             show_palette: false,
             palette_input: String::new(),
