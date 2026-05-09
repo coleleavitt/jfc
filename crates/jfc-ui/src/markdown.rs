@@ -43,6 +43,141 @@ fn syntect_span_to_ratatui(style: SyntectStyle, text: &str) -> Span<'static> {
 
 use crate::theme::Theme;
 
+// ── Inline color swatch detection ────────────────────────────────────────────
+//
+// Detects hex (#rrggbb, #rgb) and CSS rgb(r, g, b) color literals in prose
+// and emits a colored swatch character (█) so the user sees the actual color
+// inline. False-positive prevention:
+//   - Hex codes must be preceded by a word boundary or start-of-string (rejects
+//     #define, #include, anchor links like #section-name that contain non-hex
+//     chars).
+//   - 3-digit hex requires ALL digits to be duplicated pairs when expanded
+//     (i.e. we accept #fff, #a0c but NOT #if0 which looks like a preprocessor
+//     directive fragment).
+//   - rgb() requires exactly three numeric components 0-255.
+
+static COLOR_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r"(?x)
+        # 6-digit hex: #rrggbb
+        (\#[0-9a-fA-F]{6})
+        |
+        # 3-digit hex: #rgb
+        (\#[0-9a-fA-F]{3})
+        |
+        # CSS rgb(r, g, b)
+        (rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\))
+        "
+    ).expect("color regex")
+});
+
+/// Validate boundary: char before match must be non-alphanumeric (or start of string),
+/// and char after must not extend the hex sequence.
+fn valid_hex_boundary(text: &str, start: usize, end: usize, hex_len: usize) -> bool {
+    // Check preceding char: reject if it's alphanumeric (catches "foo#aabbcc")
+    if start > 0 {
+        let before = text[..start].chars().last().unwrap();
+        if before.is_alphanumeric() || before == '_' {
+            return false;
+        }
+    }
+    // Check following char: reject if it's a hex digit (catches truncated git hashes like #0c45357a)
+    // For 3-digit, also reject if followed by any word char (catches #if0-like patterns)
+    if end < text.len() {
+        let after = text[end..].chars().next().unwrap();
+        if hex_len == 6 && after.is_ascii_hexdigit() {
+            return false;
+        }
+        if hex_len == 3 && (after.is_alphanumeric() || after == '_') {
+            return false;
+        }
+    }
+    true
+}
+
+/// Parse a color literal match into an RGB Color. Returns None if values
+/// are out of range (>255) or if the match is a likely false positive.
+fn parse_color_match(text: &str, m: &regex::Match<'_>) -> Option<Color> {
+    let s = m.as_str();
+    let start = m.start();
+    let end = m.end();
+
+    if s.starts_with('#') && s.len() == 7 {
+        // 6-digit hex
+        if !valid_hex_boundary(text, start, end, 6) {
+            return None;
+        }
+        let r = u8::from_str_radix(&s[1..3], 16).ok()?;
+        let g = u8::from_str_radix(&s[3..5], 16).ok()?;
+        let b = u8::from_str_radix(&s[5..7], 16).ok()?;
+        return Some(Color::Rgb(r, g, b));
+    }
+    if s.starts_with('#') && s.len() == 4 {
+        // 3-digit hex
+        if !valid_hex_boundary(text, start, end, 3) {
+            return None;
+        }
+        let chars: &[u8] = s.as_bytes();
+        let r = u8::from_str_radix(&format!("{0}{0}", chars[1] as char), 16).ok()?;
+        let g = u8::from_str_radix(&format!("{0}{0}", chars[2] as char), 16).ok()?;
+        let b = u8::from_str_radix(&format!("{0}{0}", chars[3] as char), 16).ok()?;
+        return Some(Color::Rgb(r, g, b));
+    }
+    if s.starts_with("rgb(") {
+        // Extract the three numbers manually
+        let inner = &s[4..s.len() - 1];
+        let parts: Vec<&str> = inner.split(',').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+        let r: u16 = parts[0].trim().parse().ok()?;
+        let g: u16 = parts[1].trim().parse().ok()?;
+        let b: u16 = parts[2].trim().parse().ok()?;
+        if r > 255 || g > 255 || b > 255 {
+            return None;
+        }
+        return Some(Color::Rgb(r as u8, g as u8, b as u8));
+    }
+    None
+}
+
+/// Split a text string into spans, inserting a colored swatch (█) before each
+/// detected color literal. The `base_style` is applied to non-color text.
+/// Returns None if no color literals are found (caller uses fast path).
+fn colorize_inline_colors(text: &str, base_style: Style) -> Option<Vec<Span<'static>>> {
+    let mut matches_found = false;
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut last_end = 0;
+
+    for m in COLOR_RE.find_iter(text) {
+        let color = match parse_color_match(text, &m) {
+            Some(c) => c,
+            None => continue,
+        };
+        matches_found = true;
+
+        // Push any preceding text
+        if m.start() > last_end {
+            spans.push(Span::styled(text[last_end..m.start()].to_owned(), base_style));
+        }
+        // Push the swatch character in the detected color
+        spans.push(Span::styled("█ ".to_owned(), Style::default().fg(color)));
+        // Push the color code text itself with base style
+        spans.push(Span::styled(m.as_str().to_owned(), base_style));
+        last_end = m.end();
+    }
+
+    if !matches_found {
+        return None;
+    }
+
+    // Push trailing text
+    if last_end < text.len() {
+        spans.push(Span::styled(text[last_end..].to_owned(), base_style));
+    }
+    Some(spans)
+}
+
 /// Primary syntax set — `two_face::syntax::extra_newlines()` on top of
 /// syntect's defaults. ~250 grammars covering Zig, Nix, Fish, Hare, Roc,
 /// and the rest of the long tail. Mirrors codex CLI's primitive (research
@@ -1135,7 +1270,14 @@ where
                 .last()
                 .copied()
                 .unwrap_or(self.theme.style_text_primary);
-            self.push_span(Span::styled(line.to_string(), style));
+            // Detect inline color literals and render swatches
+            if let Some(color_spans) = colorize_inline_colors(line, style) {
+                for span in color_spans {
+                    self.push_span(span);
+                }
+            } else {
+                self.push_span(Span::styled(line.to_string(), style));
+            }
         }
         self.needs_newline = false;
     }
@@ -2260,5 +2402,132 @@ mod table_reflow_tests {
             texts.iter().any(|t| t.contains("Long content here")),
             "long content should fit on one line at width=0: {texts:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod color_swatch_tests {
+    use super::*;
+    use ratatui::style::Style;
+
+    #[test]
+    fn detects_6_digit_hex_normal() {
+        let style = Style::default();
+        let result = colorize_inline_colors("color is #ff7ab2 here", style);
+        assert!(result.is_some());
+        let spans = result.unwrap();
+        // Should be: "color is " + swatch + "#ff7ab2" + " here"
+        assert_eq!(spans.len(), 4);
+        assert_eq!(spans[0].content.as_ref(), "color is ");
+        assert_eq!(spans[1].content.as_ref(), "\u{2588} ");
+        assert_eq!(spans[1].style.fg, Some(Color::Rgb(255, 122, 178)));
+        assert_eq!(spans[2].content.as_ref(), "#ff7ab2");
+        assert_eq!(spans[3].content.as_ref(), " here");
+    }
+
+    #[test]
+    fn detects_3_digit_hex_normal() {
+        let style = Style::default();
+        let result = colorize_inline_colors("try #fff please", style);
+        assert!(result.is_some());
+        let spans = result.unwrap();
+        assert_eq!(spans[1].style.fg, Some(Color::Rgb(255, 255, 255)));
+        assert_eq!(spans[2].content.as_ref(), "#fff");
+    }
+
+    #[test]
+    fn detects_rgb_function_normal() {
+        let style = Style::default();
+        let result = colorize_inline_colors("use rgb(100, 200, 50) for green", style);
+        assert!(result.is_some());
+        let spans = result.unwrap();
+        assert_eq!(spans[1].style.fg, Some(Color::Rgb(100, 200, 50)));
+        assert_eq!(spans[2].content.as_ref(), "rgb(100, 200, 50)");
+    }
+
+    #[test]
+    fn rejects_preprocessor_directives_robust() {
+        let style = Style::default();
+        // #define, #include, #ifdef should NOT trigger
+        assert!(colorize_inline_colors("#define FOO", style).is_none());
+        assert!(colorize_inline_colors("#include <stdio.h>", style).is_none());
+        assert!(colorize_inline_colors("#ifdef DEBUG", style).is_none());
+    }
+
+    #[test]
+    fn rejects_anchor_links_robust() {
+        let style = Style::default();
+        // Markdown anchor links like #section-name have non-hex chars
+        assert!(colorize_inline_colors("#section-title", style).is_none());
+        assert!(colorize_inline_colors("#my-heading", style).is_none());
+    }
+
+    #[test]
+    fn rejects_git_hashes_robust() {
+        let style = Style::default();
+        // Git short hashes are 7+ hex chars — our regex requires exactly 6
+        // and the 7th char being hex triggers the negative lookahead
+        assert!(colorize_inline_colors("#0c45357a", style).is_none());
+        assert!(colorize_inline_colors("#b9cf926d", style).is_none());
+    }
+
+    #[test]
+    fn rejects_rgb_out_of_range_robust() {
+        let style = Style::default();
+        // rgb values > 255 should not match as valid colors
+        assert!(colorize_inline_colors("rgb(300, 200, 50)", style).is_none());
+        assert!(colorize_inline_colors("rgb(100, 256, 50)", style).is_none());
+    }
+
+    #[test]
+    fn multiple_colors_in_one_line_normal() {
+        let style = Style::default();
+        let result = colorize_inline_colors("#ff0000 and #00ff00", style);
+        assert!(result.is_some());
+        let spans = result.unwrap();
+        // swatch + "#ff0000" + " and " + swatch + "#00ff00"
+        assert_eq!(spans.len(), 5);
+        assert_eq!(spans[0].style.fg, Some(Color::Rgb(255, 0, 0)));
+        assert_eq!(spans[1].content.as_ref(), "#ff0000");
+        assert_eq!(spans[2].content.as_ref(), " and ");
+        assert_eq!(spans[3].style.fg, Some(Color::Rgb(0, 255, 0)));
+        assert_eq!(spans[4].content.as_ref(), "#00ff00");
+    }
+
+    #[test]
+    fn no_colors_returns_none_normal() {
+        let style = Style::default();
+        assert!(colorize_inline_colors("just plain text", style).is_none());
+        assert!(colorize_inline_colors("code `foo` here", style).is_none());
+    }
+
+    #[test]
+    fn hex_mid_word_rejected_robust() {
+        let style = Style::default();
+        // A hex code glued to an alphanumeric char shouldn't match
+        assert!(colorize_inline_colors("foo#aabbcc", style).is_none());
+        assert!(colorize_inline_colors("x#fff", style).is_none());
+    }
+
+    #[test]
+    fn hex_after_punctuation_accepted_normal() {
+        let style = Style::default();
+        // Should work after (, [, comma, colon, quote, etc.
+        let result = colorize_inline_colors("color:#ff0000;", style);
+        assert!(result.is_some());
+        let result = colorize_inline_colors("(#aabb00)", style);
+        assert!(result.is_some());
+        let result = colorize_inline_colors("[#112233]", style);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn preserves_base_style_normal() {
+        let style = Style::default().fg(Color::Rgb(100, 100, 100)).add_modifier(Modifier::BOLD);
+        let result = colorize_inline_colors("see #ff0000 here", style).unwrap();
+        // Non-swatch spans should carry the base style
+        assert_eq!(result[0].style, style);
+        assert_eq!(result[2].style, style);
+        assert_eq!(result[3].style, style);
     }
 }

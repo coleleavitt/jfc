@@ -125,6 +125,12 @@ const THEME_CHOICES: &[ThemeChoice] = &[
         description: "Clean high-readability light theme.",
         aliases: &["github"],
     },
+    ThemeChoice {
+        name: "shadotheme",
+        label: "Shadotheme",
+        description: "Purple/pink palette for the shadows — endless purples and pinks.",
+        aliases: &["shado", "shadorain"],
+    },
 ];
 
 const AVAILABLE_THEME_NAMES: &[&str] = &[
@@ -141,6 +147,7 @@ const AVAILABLE_THEME_NAMES: &[&str] = &[
     "rose-pine",
     "one-dark",
     "github-light",
+    "shadotheme",
 ];
 
 impl Theme {
@@ -656,6 +663,45 @@ impl Theme {
         .with_cached_styles()
     }
 
+    /// Shadotheme — Shadorain's purple/pink palette. Deep indigo bg
+    /// with vivid magenta/lavender accents; inspired by the Neovim
+    /// colorscheme at github.com/Shadorain/shadotheme.
+    pub fn shadotheme() -> Self {
+        Self {
+            bg: Color::Rgb(17, 17, 25),               // #111119 — Normal bg
+            surface: Color::Rgb(27, 27, 41),          // #1b1b29 — CursorLine
+            surface_raised: Color::Rgb(38, 36, 64),   // #262440 — selection
+            border: Color::Rgb(80, 80, 121),          // #505079 — WinSeparator
+            text_primary: Color::Rgb(223, 183, 232),  // #dfb7e8 — Normal fg
+            text_secondary: Color::Rgb(168, 137, 156),// #a8899c — muted pink
+            text_muted: Color::Rgb(98, 114, 164),     // #6272a4 — Comment
+            accent: Color::Rgb(189, 147, 249),        // #bd93f9 — purple
+            success: Color::Rgb(55, 212, 167),        // #37d4a7 — DiffAdd
+            warning: Color::Rgb(241, 143, 176),       // #F18FB0 — warm pink
+            error: Color::Rgb(181, 42, 91),           // #B52A5B — crimson
+            user_bubble_bg: Color::Rgb(38, 36, 64),   // #262440
+            asst_bubble_bg: Color::Rgb(20, 10, 29),   // #140a1d — deep purple
+            code_bg: Color::Rgb(14, 14, 22),          // slightly darker than bg
+            code_fg: Color::Rgb(223, 183, 232),       // #dfb7e8
+            code_string: Color::Rgb(134, 119, 217),   // #8677d9 — String
+            code_keyword: Color::Rgb(255, 122, 178),  // #ff7ab2 — Keyword
+            code_comment: Color::Rgb(98, 114, 164),   // #6272a4 — Comment
+            code_number: Color::Rgb(222, 40, 110),    // #de286e — Number
+            reasoning_bg: Color::Rgb(27, 27, 41),     // #1b1b29
+            reasoning_fg: Color::Rgb(161, 161, 221),  // #a1a1dd — soft lavender
+            style_text_secondary: Style::default(),
+            style_text_muted: Style::default(),
+            style_error: Style::default(),
+            style_success: Style::default(),
+            style_accent: Style::default(),
+            style_accent_bold: Style::default(),
+            style_border: Style::default(),
+            style_text_primary: Style::default(),
+            style_text_primary_bold: Style::default(),
+        }
+        .with_cached_styles()
+    }
+
     /// Look up a theme by name. Returns None for unknown names so
     /// the caller can show an error toast. Lookup is case-insensitive
     /// and accepts aliases (`solarized` ↔ `solarized-dark`,
@@ -675,6 +721,7 @@ impl Theme {
             "rose-pine" => Some(Self::rose_pine()),
             "one-dark" => Some(Self::one_dark()),
             "github-light" => Some(Self::github_light()),
+            "shadotheme" => Some(Self::shadotheme()),
             _ => None,
         }
     }
