@@ -691,7 +691,9 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                 to read promising hits. \
                 Prefix the query to select a backend: \
                 `arxiv: <query>` searches arXiv papers (free, no key needed); \
-                `scholar: <query>` searches Semantic Scholar (optional API key); \
+                `scholar: <query>` searches Semantic Scholar (optional API key, falls back to BFF); \
+                `papers: <query>` queries arXiv + Semantic Scholar in parallel and \
+                deduplicates results by arXiv ID / DOI / title; \
                 no prefix uses Google Custom Search Engine.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
