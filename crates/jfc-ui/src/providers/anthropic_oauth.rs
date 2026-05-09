@@ -50,7 +50,7 @@ const CLAUDE_CODE_IDENTITY: &str = "You are Claude Code, Anthropic's official CL
 const SALT: &str = "59cf53e54c78";
 
 const VERSION_URL: &str = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
-const VERSION_FALLBACK: &str = "2.1.36";
+const VERSION_FALLBACK: &str = "2.1.137";
 const VERSION_CACHE_TTL: Duration = Duration::from_secs(3600);
 const VERSION_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 const TOKEN_REFRESH_TIMEOUT: Duration = Duration::from_secs(15);
@@ -747,7 +747,6 @@ impl Provider for AnthropicOAuthProvider {
                 .header("user-agent", user_agent.clone())
                 .header("x-app", "cli")
                 .header("anthropic-client-platform", "cli")
-                .header("anthropic-dangerous-direct-browser-access", "true")
                 .body(attested_body.clone())
                 .send()
         })
