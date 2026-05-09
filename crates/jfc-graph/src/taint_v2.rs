@@ -70,6 +70,17 @@ pub struct TaintConfig<'a> {
 /// the first path discovered (shortest, by BFS layer order) wins. Callers
 /// who need *all* paths should run `forward_slice` directly and inspect
 /// the slice instead.
+///
+/// ## Phase 7 — frontier-aware BFS
+///
+/// The visited set uses a [`crate::frontier::Frontier`]-style hybrid
+/// (`HashSet<NodeId>` for sparse traversals, no auto-promotion since
+/// we work in `NodeId` space rather than dense `u32` indices). The
+/// underlying graph is the dataflow oracle's view, not the call
+/// graph, so push/pull direction-optimisation doesn't apply
+/// directly — we'd have to ask the oracle to enumerate predecessors.
+/// Future work: extend `DataflowOracle` with a `predecessors` method
+/// to enable pull-mode BFS for dense oracles.
 pub fn analyze(
     graph: &CodeGraph,
     oracle: &dyn DataflowOracle,

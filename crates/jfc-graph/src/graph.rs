@@ -620,6 +620,14 @@ impl Default for CodeGraph {
     }
 }
 
+impl CodeGraph {
+    /// Build a read-optimised CSR snapshot of the current graph state.
+    /// See [`crate::csr`] for the rationale.
+    pub fn snapshot(&self) -> crate::csr::CsrSnapshot {
+        crate::csr::CsrSnapshot::build(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

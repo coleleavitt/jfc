@@ -251,6 +251,39 @@ fn extract_function(
     scope: &[&str],
 ) -> Option<NodeData> {
     let name = get_node_name(node, "name", source)?;
+
+    // Phase 9: typed metadata — count parameters and detect `async`
+    // so KindData::from_node sees structured fields rather than
+    // re-parsing raw bytes. Tree-sitter-rust exposes these as
+    // children of the `function_item` node.
+    let mut metadata = HashMap::new();
+    let param_count = node
+        .child_by_field_name("parameters")
+        .map(|p| {
+            let mut c = p.walk();
+            p.named_children(&mut c)
+                .filter(|n| {
+                    matches!(n.kind(), "parameter" | "self_parameter" | "variadic_parameter")
+                })
+                .count()
+        })
+        .unwrap_or(0);
+    if param_count > 0 {
+        metadata.insert("param_count".into(), param_count.to_string());
+    }
+
+    // Detect `async fn` — look for `async` modifier child.
+    let mut cursor = node.walk();
+    let is_async = node
+        .children(&mut cursor)
+        .any(|c| c.kind() == "async" || c.kind() == "function_modifiers" && {
+            let mut mc = c.walk();
+            c.children(&mut mc).any(|m| m.kind() == "async")
+        });
+    if is_async {
+        metadata.insert("async".into(), "true".into());
+    }
+
     Some(build_node_data(
         &name,
         NodeKind::Function,
@@ -259,7 +292,7 @@ fn extract_function(
         file_path,
         file_path_str,
         scope,
-        HashMap::new(),
+        metadata,
     ))
 }
 
@@ -291,7 +324,9 @@ fn extract_struct(
                 }
             }
         }
+        let count = fields.len();
         metadata.insert("fields".to_string(), format!("[{}]", fields.join(",")));
+        metadata.insert("field_count".to_string(), count.to_string());
     }
 
     Some(build_node_data(
@@ -327,7 +362,9 @@ fn extract_enum(
                 }
             }
         }
+        let count = variants.len();
         metadata.insert("variants".to_string(), variants.join(","));
+        metadata.insert("variant_count".to_string(), count.to_string());
     }
 
     Some(build_node_data(
@@ -352,12 +389,14 @@ fn extract_trait(
 ) -> Option<NodeData> {
     let name = get_node_name(node, "name", source)?;
 
+    let mut method_names: Vec<String> = Vec::new();
     if let Some(body) = node.child_by_field_name("body") {
         let trait_name = &source[node.child_by_field_name("name").unwrap().byte_range()];
         let mut method_cursor = body.walk();
         for item in body.named_children(&mut method_cursor) {
             if item.kind() == "function_signature_item" || item.kind() == "function_item" {
                 if let Some(method_name) = get_node_name(item, "name", source) {
+                    method_names.push(method_name.clone());
                     let qualified =
                         build_qualified_name(scope, &format!("{trait_name}::{method_name}"));
                     let vis = detect_visibility(item, source);
@@ -382,6 +421,12 @@ fn extract_trait(
         }
     }
 
+    let mut trait_meta = HashMap::new();
+    if !method_names.is_empty() {
+        trait_meta.insert("method_count".into(), method_names.len().to_string());
+        trait_meta.insert("methods".into(), method_names.join(","));
+    }
+
     Some(build_node_data(
         &name,
         NodeKind::Trait,
@@ -390,7 +435,7 @@ fn extract_trait(
         file_path,
         file_path_str,
         scope,
-        HashMap::new(),
+        trait_meta,
     ))
 }
 
@@ -773,6 +818,72 @@ mod tests {
         let content = std::fs::read_to_string(&path).expect("read fixture");
         let parsed = adapter.parse_file(&path, &content).expect("parse");
         (adapter, parsed)
+    }
+
+    #[test]
+    fn rust_adapter_populates_typed_metadata_function() {
+        let adapter = RustAdapter::new();
+        let path = std::path::PathBuf::from("/tmp/x.rs");
+        let src = "async fn handle(req: Request, ctx: Context) -> Result<Response> { Ok(()) }";
+        let parsed = adapter.parse_file(&path, src).expect("parse");
+        let nodes = adapter.extract_nodes(&parsed);
+        let f = nodes
+            .iter()
+            .find(|n| n.kind == crate::nodes::NodeKind::Function && n.name == "handle")
+            .expect("handle function");
+        let kd = f.kind_data();
+        let func = kd.function.expect("function kind data");
+        assert_eq!(func.is_async, Some(true));
+        assert_eq!(func.param_count, Some(2));
+    }
+
+    #[test]
+    fn rust_adapter_populates_typed_metadata_struct() {
+        let adapter = RustAdapter::new();
+        let path = std::path::PathBuf::from("/tmp/y.rs");
+        let src = "struct Point { x: i32, y: i32, z: i32 }";
+        let parsed = adapter.parse_file(&path, src).expect("parse");
+        let nodes = adapter.extract_nodes(&parsed);
+        let s = nodes
+            .iter()
+            .find(|n| n.kind == crate::nodes::NodeKind::Struct && n.name == "Point")
+            .expect("Point struct");
+        let kd = s.kind_data();
+        let st = kd.struct_.expect("struct kind data");
+        assert_eq!(st.field_count, Some(3));
+    }
+
+    #[test]
+    fn rust_adapter_populates_typed_metadata_enum() {
+        let adapter = RustAdapter::new();
+        let path = std::path::PathBuf::from("/tmp/z.rs");
+        let src = "enum Color { Red, Green, Blue }";
+        let parsed = adapter.parse_file(&path, src).expect("parse");
+        let nodes = adapter.extract_nodes(&parsed);
+        let e = nodes
+            .iter()
+            .find(|n| n.kind == crate::nodes::NodeKind::Enum && n.name == "Color")
+            .expect("Color enum");
+        let kd = e.kind_data();
+        let en = kd.enum_.expect("enum kind data");
+        assert_eq!(en.variant_count, Some(3));
+        assert!(en.variants.contains(&"Red".to_string()));
+    }
+
+    #[test]
+    fn rust_adapter_populates_typed_metadata_trait() {
+        let adapter = RustAdapter::new();
+        let path = std::path::PathBuf::from("/tmp/t.rs");
+        let src = "trait Iter { fn next(&mut self) -> Option<u32>; fn size_hint(&self) -> usize; }";
+        let parsed = adapter.parse_file(&path, src).expect("parse");
+        let nodes = adapter.extract_nodes(&parsed);
+        let t = nodes
+            .iter()
+            .find(|n| n.kind == crate::nodes::NodeKind::Trait && n.name == "Iter")
+            .expect("Iter trait");
+        let kd = t.kind_data();
+        let tr = kd.trait_.expect("trait kind data");
+        assert_eq!(tr.method_count, Some(2));
     }
 
     #[test]

@@ -50,6 +50,11 @@
 //! are intentionally dropped because there is no meaningful merge
 //! semantics across heterogenous traversals.
 
+pub mod aggregate;
+pub mod plan;
+pub mod provenance;
+pub mod stream;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::edges::EdgeKind;
@@ -1521,6 +1526,7 @@ impl<'a> QueryEngine<'a> {
                                 max_depth: *n,
                                 max_nodes: config.max_nodes,
                                 direction: TraversalDirection::Outgoing,
+                                parallel: false,
                             },
                         );
                         for id in result.nodes {
@@ -1905,14 +1911,20 @@ impl<'a> QueryEngine<'a> {
 }
 
 /// Convenience function: parse and execute a query string.
+///
+/// Phase 3: runs through the [`crate::dsl::plan`] optimiser before
+/// execution. Rewrites are semantics-preserving — depth fusion,
+/// filter pushdown — so callers see only a perf improvement.
 pub fn run_query(
     query: &str,
     graph: &CodeGraph,
     config: &QueryConfig,
 ) -> Result<QueryResult, QueryError> {
     let ops = parse_query(query)?;
+    let plan = crate::dsl::plan::optimise_pipe(ops);
     let engine = QueryEngine::new(graph);
-    engine.execute(&ops, config)
+    let ops = plan.ops().expect("optimise_pipe yields Plan::Pipe");
+    engine.execute(ops, config)
 }
 
 // ---------------------------------------------------------------------------
@@ -2717,18 +2729,174 @@ fn all_simple_paths_bounded(
 }
 
 /// Convenience: parse + execute an extended-grammar query.
+///
+/// Phase 3: runs through the [`crate::dsl::plan`] optimiser before
+/// execution. Set-op operand reordering (smaller side first for
+/// `intersect`) plus per-pipe rewrites are applied; semantics are
+/// preserved.
+///
+/// Phase 8 (DSL unification): if the query starts with an aggregation
+/// keyword (`count`, `sum`, `avg`, `top_k_by`, `group_by`, `exists`,
+/// `forall`, `edges_of`, `edges_kind`, `let`), the aggregation
+/// executor handles it and projects the result back into a
+/// [`QueryResult`] so callers see one return type. Aggregations
+/// whose result type isn't node-shaped (`Scalar`, `Bool`, `Edges`,
+/// `Groups`) surface in `metadata` lines on the result; the `nodes`
+/// field is populated where projection is meaningful (e.g.
+/// `top_k_by`, `group_by`).
 pub fn run_query_expr(
     query: &str,
     graph: &CodeGraph,
     config: &QueryConfig,
 ) -> Result<QueryResult, QueryError> {
+    // Try the aggregation grammar first — it returns AggExpr::Plain
+    // for non-aggregation inputs, which we then unwrap and run
+    // through the regular optimiser.
+    if let Ok(agg) = crate::dsl::aggregate::parse_aggregate(query) {
+        if let crate::dsl::aggregate::AggExpr::Plain(plain) = agg {
+            let plan = crate::dsl::plan::optimise_expr(plain);
+            let optimised = plan
+                .expr()
+                .expect("optimise_expr yields Plan::Expr")
+                .clone();
+            return QueryEngine::new(graph).execute_expr(&optimised, config);
+        }
+        // Aggregation keyword — execute via the agg path, project
+        // into QueryResult.
+        return run_aggregate_unified(query, graph, config);
+    }
+
+    // Fall back to the legacy parse path.
     let expr = parse_expr(query)?;
-    QueryEngine::new(graph).execute_expr(&expr, config)
+    let plan = crate::dsl::plan::optimise_expr(expr);
+    let optimised = plan
+        .expr()
+        .expect("optimise_expr yields Plan::Expr")
+        .clone();
+    QueryEngine::new(graph).execute_expr(&optimised, config)
+}
+
+/// Internal: run a query through the aggregation executor and project
+/// its result into the [`QueryResult`] shape. Scalars and bools land
+/// in `metadata`; node-shaped results (`Nodes`, `Groups`, `Edges`)
+/// populate `nodes` (groups/edges via member projection).
+fn run_aggregate_unified(
+    query: &str,
+    graph: &CodeGraph,
+    config: &QueryConfig,
+) -> Result<QueryResult, QueryError> {
+    use crate::dsl::aggregate::{AggregateResult, run_aggregate};
+    let r = run_aggregate(query, graph, config)?;
+    let (nodes, edges_meta, metadata) = match r {
+        AggregateResult::Nodes(ns) => (ns, Vec::new(), Vec::new()),
+        AggregateResult::Edges(es) => {
+            let nodes: Vec<NodeId> =
+                es.iter().flat_map(|e| [e.from.clone(), e.to.clone()]).collect();
+            let edges: Vec<(NodeId, NodeId, String)> = es
+                .iter()
+                .map(|e| (e.from.clone(), e.to.clone(), format!("{:?}", e.kind)))
+                .collect();
+            let meta: Vec<String> = es
+                .iter()
+                .map(|e| format!("edge {:?} {} -> {}", e.kind, "from", "to"))
+                .take(10)
+                .collect();
+            (nodes, edges, meta)
+        }
+        AggregateResult::Scalar(n) => (
+            Vec::new(),
+            Vec::new(),
+            vec![format!("scalar = {n}")],
+        ),
+        AggregateResult::Bool(b) => (
+            Vec::new(),
+            Vec::new(),
+            vec![format!("bool = {b}")],
+        ),
+        AggregateResult::Groups(groups) => {
+            let nodes: Vec<NodeId> = groups.values().flatten().cloned().collect();
+            let meta: Vec<String> = groups
+                .iter()
+                .map(|(k, v)| format!("group `{k}` size={}", v.len()))
+                .collect();
+            (nodes, Vec::new(), meta)
+        }
+    };
+    Ok(QueryResult {
+        nodes,
+        edges: edges_meta,
+        was_truncated: false,
+        total_before_truncation: 0,
+        cycles_detected: Vec::new(),
+        metadata,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unified_run_query_handles_aggregation_count() {
+        // Phase 8: aggregation queries route through run_query_expr
+        // and project into QueryResult metadata.
+        let mut g = CodeGraph::new();
+        g.add_node(crate::nodes::NodeData {
+            id: NodeId::new("t.rs", "foo", NodeKind::Function),
+            kind: NodeKind::Function,
+            name: "foo".into(),
+            qualified_name: "foo".into(),
+            file_path: std::path::PathBuf::from("t.rs"),
+            span: crate::nodes::Span {
+                file: std::path::PathBuf::from("t.rs"),
+                start_line: 1,
+                start_col: 0,
+                end_line: 1,
+                end_col: 0,
+                byte_range: 0..0,
+            },
+            visibility: crate::nodes::Visibility::Public,
+            metadata: HashMap::new(),
+            birth_revision: 0,
+            last_modified_revision: 0,
+        });
+        let r = run_query_expr("count fn(\"foo\")", &g, &QueryConfig::default()).unwrap();
+        assert!(r.metadata.iter().any(|m| m.starts_with("scalar = 1")));
+    }
+
+    #[test]
+    fn unified_run_query_handles_exists() {
+        let g = CodeGraph::new();
+        let r = run_query_expr("exists fn(\"missing\")", &g, &QueryConfig::default()).unwrap();
+        assert!(r.metadata.iter().any(|m| m == "bool = false"));
+    }
+
+    #[test]
+    fn unified_run_query_handles_legacy_pipe() {
+        // Sanity: legacy queries unaffected.
+        let mut g = CodeGraph::new();
+        g.add_node(crate::nodes::NodeData {
+            id: NodeId::new("t.rs", "foo", NodeKind::Function),
+            kind: NodeKind::Function,
+            name: "foo".into(),
+            qualified_name: "foo".into(),
+            file_path: std::path::PathBuf::from("t.rs"),
+            span: crate::nodes::Span {
+                file: std::path::PathBuf::from("t.rs"),
+                start_line: 1,
+                start_col: 0,
+                end_line: 1,
+                end_col: 0,
+                byte_range: 0..0,
+            },
+            visibility: crate::nodes::Visibility::Public,
+            metadata: HashMap::new(),
+            birth_revision: 0,
+            last_modified_revision: 0,
+        });
+        let r = run_query_expr("fn(\"foo\")", &g, &QueryConfig::default()).unwrap();
+        assert_eq!(r.nodes.len(), 1);
+    }
 
     #[test]
     fn test_dsl_parse_simple() {

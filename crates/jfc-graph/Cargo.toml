@@ -11,15 +11,27 @@ petgraph = { version = "0.8", features = ["serde-1"] }
 # Pinned: tree-sitter grammars depend on AST shape; floating minor risks graph divergence across builds.
 tree-sitter = "=0.25.10"
 tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23"
+tree-sitter-python = "0.25"
+tree-sitter-go = "0.25"
 serde = { workspace = true }
 serde_json = { workspace = true }
 bincode = { version = "2", features = ["serde"] }
 ignore = "0.4"
 thiserror = { workspace = true }
 tracing = { workspace = true }
+# Phase 1 — parallelism + dense bitsets for direction-optimised BFS.
+rayon = "1.10"
+roaring = "0.10"
+dashmap = "6"
 
 [dev-dependencies]
 tempfile = "3"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "graph_bench"
+harness = false
 
 [lints]
 workspace = true

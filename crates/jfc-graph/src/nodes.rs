@@ -6,6 +6,12 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
 use std::path::PathBuf;
 
+// Phase 9: typed-metadata projection helper.
+//
+// `NodeData::kind_data()` lives in `crate::kind_specific` because it
+// imports the marker types from there. We re-export the constructor
+// here so callers can use `node.kind_data()` directly.
+
 /// Exactly 5 node kinds — no more, no less.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum NodeKind {

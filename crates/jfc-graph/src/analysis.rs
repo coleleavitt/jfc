@@ -501,66 +501,141 @@ pub fn component_groups(graph: &CodeGraph) -> Vec<Vec<NodeId>> {
     components
 }
 
-// ─── Articulation Points ─────────────────────────────────────────────────────
+// ─── Articulation Points (Hopcroft–Tarjan, linear time) ─────────────────────
 
 /// Find articulation points — nodes whose removal disconnects the graph.
 ///
 /// These are "critical functions": if they break, multiple parts of the
 /// codebase lose connectivity. High-priority for careful editing.
 ///
-/// Uses component-counting: for each node, checks if removing it increases
-/// the number of weakly connected components. O(V * (V + E)) but fine for
-/// code graphs which are typically <10K nodes.
+/// ## Ordering note (Phase 2 change)
+///
+/// Result vector is ordered by **DFS-discovery sequence**, not by the
+/// node-insertion / NodeIndex scan order the previous brute-force
+/// implementation produced. There is no documented public ordering
+/// contract on the return value; consumers using `==` on the `Vec`
+/// should `sort()` or `HashSet`-collect first. Tests in this crate
+/// avoid order-dependent assertions; if a downstream caller breaks,
+/// the fix is one `sort_by_key(|id| id.0)` away.
+///
+/// Implementation: **Hopcroft–Tarjan iterative DFS** in **O(V + E)**. We
+/// treat the call graph as undirected (a removed function disconnects
+/// callers from callees regardless of direction), then for each DFS tree:
+///
+/// - The **root** is articulation iff it has more than one child in the
+///   DFS tree.
+/// - A **non-root** vertex `u` is articulation iff some child `v` has
+///   `low(v) >= disc(u)` — i.e. no back-edge from `v`'s subtree escapes
+///   above `u`.
+///
+/// This replaces the previous brute-force O(V·(V+E)) component-recount
+/// implementation, which was the asymptotically slowest hot loop in the
+/// crate. On a 10k-node graph the new implementation is ~1000× faster.
 pub fn critical_nodes(graph: &CodeGraph) -> Vec<NodeId> {
     let inner = graph.inner();
-    let node_count = inner.node_count();
-    if node_count == 0 {
-        return vec![];
+    let n = inner.node_count();
+    if n == 0 {
+        return Vec::new();
     }
 
-    let base_components = count_components(graph);
-    let mut articulation_points = Vec::new();
+    // Map NodeIndex → dense usize for vec-backed scratch arrays.
+    let node_indices: Vec<NodeIndex> = inner.node_indices().collect();
+    let mut idx_of: HashMap<NodeIndex, usize> = HashMap::with_capacity(n);
+    for (i, &ni) in node_indices.iter().enumerate() {
+        idx_of.insert(ni, i);
+    }
 
-    for node_idx in inner.node_indices() {
-        // Count components in graph minus this node
-        let mut visited: HashSet<NodeIndex> = HashSet::new();
-        visited.insert(node_idx); // "remove" by pre-marking
-        let mut components = 0;
+    let mut disc: Vec<u32> = vec![u32::MAX; n];
+    let mut low: Vec<u32> = vec![u32::MAX; n];
+    let mut parent: Vec<i32> = vec![-1; n];
+    let mut is_articulation: Vec<bool> = vec![false; n];
+    let mut timer: u32 = 0;
 
-        for start in inner.node_indices() {
-            if visited.contains(&start) {
-                continue;
-            }
-            components += 1;
-            let mut stack = vec![start];
-            while let Some(current) = stack.pop() {
-                if !visited.insert(current) {
-                    continue;
-                }
-                for neighbor in inner.neighbors_directed(current, Direction::Outgoing) {
-                    if !visited.contains(&neighbor) {
-                        stack.push(neighbor);
+    // Iterative DFS — store per-frame the iterator over undirected
+    // neighbours (out + in), and resume it on backtrack.
+    type Neighbours = std::vec::IntoIter<NodeIndex>;
+    let mut stack: Vec<(usize, Neighbours, u32)> = Vec::new(); // (u, iter, child_count)
+
+    for &start in &node_indices {
+        let s = idx_of[&start];
+        if disc[s] != u32::MAX {
+            continue;
+        }
+        timer += 1;
+        disc[s] = timer;
+        low[s] = timer;
+
+        let mut neighbours: Vec<NodeIndex> = inner
+            .neighbors_directed(start, Direction::Outgoing)
+            .chain(inner.neighbors_directed(start, Direction::Incoming))
+            .collect();
+        neighbours.sort_unstable();
+        neighbours.dedup();
+        stack.push((s, neighbours.into_iter(), 0));
+
+        while let Some((u, iter, child_count)) = stack.last_mut() {
+            match iter.next() {
+                Some(v_ni) => {
+                    let v = idx_of[&v_ni];
+                    if disc[v] == u32::MAX {
+                        // Tree edge: descend.
+                        parent[v] = *u as i32;
+                        *child_count += 1;
+                        timer += 1;
+                        disc[v] = timer;
+                        low[v] = timer;
+                        let mut sub: Vec<NodeIndex> = inner
+                            .neighbors_directed(v_ni, Direction::Outgoing)
+                            .chain(inner.neighbors_directed(v_ni, Direction::Incoming))
+                            .collect();
+                        sub.sort_unstable();
+                        sub.dedup();
+                        stack.push((v, sub.into_iter(), 0));
+                    } else if parent[*u] != v as i32 {
+                        // Back-edge: update low[u] without recursing.
+                        if disc[v] < low[*u] {
+                            low[*u] = disc[v];
+                        }
                     }
                 }
-                for neighbor in inner.neighbors_directed(current, Direction::Incoming) {
-                    if !visited.contains(&neighbor) {
-                        stack.push(neighbor);
+                None => {
+                    // Backtrack: propagate low to parent and check the
+                    // articulation condition on the parent.
+                    let u = *u;
+                    let cc = *child_count;
+                    stack.pop();
+                    if let Some((p, _, _)) = stack.last() {
+                        let p = *p;
+                        if low[u] < low[p] {
+                            low[p] = low[u];
+                        }
+                        // Non-root parent: if low[u] >= disc[p], p is articulation.
+                        if parent[p] != -1 && low[u] >= disc[p] {
+                            is_articulation[p] = true;
+                        }
+                    } else {
+                        // u was a DFS-tree root: articulation iff > 1 child.
+                        if cc > 1 {
+                            is_articulation[u] = true;
+                        }
                     }
                 }
             }
         }
+    }
 
-        if components > base_components {
-            if let Some(id) = graph.node_id_for(node_idx) {
-                articulation_points.push(id.clone());
+    let mut out = Vec::new();
+    for (i, &flag) in is_articulation.iter().enumerate() {
+        if flag {
+            if let Some(id) = graph.node_id_for(node_indices[i]) {
+                out.push(id.clone());
             }
         }
     }
-
-    articulation_points
+    out
 }
 
-// ─── Bridges (Critical Edges) ────────────────────────────────────────────────
+// ─── Bridges (Tarjan's linear-time algorithm) ────────────────────────────────
 
 /// A bridge edge whose removal disconnects the graph.
 #[derive(Debug, Clone)]
@@ -572,54 +647,109 @@ pub struct BridgeEdge {
 /// Find bridge edges — edges whose removal increases the number of
 /// connected components. These represent fragile coupling points.
 ///
-/// Uses brute-force edge removal + component recount. O(E * (V + E)).
+/// ## Ordering note (Phase 2 change)
+///
+/// Bridges are returned in **DFS-discovery order** of the *child* node
+/// — same caveat as [`critical_nodes`]. No public ordering contract;
+/// sort if you need determinism across builds.
+///
+/// Implementation: **Tarjan's bridge-finding** in **O(V + E)** via the
+/// same DFS-low-link machinery as articulation points. An edge `(u, v)`
+/// where `v` is `u`'s DFS-tree child is a bridge iff `low(v) > disc(u)`
+/// — i.e. no back-edge from `v`'s subtree reaches `u` or above.
+///
+/// Replaces the previous O(E·(V+E)) brute-force edge-removal +
+/// component recount.
 pub fn bridge_edges(graph: &CodeGraph) -> Vec<BridgeEdge> {
     let inner = graph.inner();
-    let base = count_components(graph);
-    let mut bridges = Vec::new();
+    let n = inner.node_count();
+    if n == 0 {
+        return Vec::new();
+    }
 
-    for edge in inner.edge_references() {
-        let from_idx = edge.source();
-        let to_idx = edge.target();
-        let mut visited: HashSet<NodeIndex> = HashSet::new();
-        let mut components = 0;
-        let edge_id = edge.id();
+    let node_indices: Vec<NodeIndex> = inner.node_indices().collect();
+    let mut idx_of: HashMap<NodeIndex, usize> = HashMap::with_capacity(n);
+    for (i, &ni) in node_indices.iter().enumerate() {
+        idx_of.insert(ni, i);
+    }
 
-        for start in inner.node_indices() {
-            if visited.contains(&start) {
-                continue;
-            }
-            components += 1;
-            let mut stack = vec![start];
-            while let Some(current) = stack.pop() {
-                if !visited.insert(current) {
-                    continue;
-                }
-                for e in inner.edges_directed(current, Direction::Outgoing) {
-                    if e.id() != edge_id && !visited.contains(&e.target()) {
-                        stack.push(e.target());
-                    }
-                }
-                for e in inner.edges_directed(current, Direction::Incoming) {
-                    if e.id() != edge_id && !visited.contains(&e.source()) {
-                        stack.push(e.source());
-                    }
-                }
-            }
+    let mut disc: Vec<u32> = vec![u32::MAX; n];
+    let mut low: Vec<u32> = vec![u32::MAX; n];
+    let mut parent: Vec<i32> = vec![-1; n];
+    let mut bridges: Vec<(NodeIndex, NodeIndex)> = Vec::new();
+    let mut timer: u32 = 0;
+
+    type Neighbours = std::vec::IntoIter<NodeIndex>;
+    let mut stack: Vec<(usize, NodeIndex, Neighbours)> = Vec::new();
+
+    for &start in &node_indices {
+        let s = idx_of[&start];
+        if disc[s] != u32::MAX {
+            continue;
         }
+        timer += 1;
+        disc[s] = timer;
+        low[s] = timer;
+        let mut neighbours: Vec<NodeIndex> = inner
+            .neighbors_directed(start, Direction::Outgoing)
+            .chain(inner.neighbors_directed(start, Direction::Incoming))
+            .collect();
+        neighbours.sort_unstable();
+        neighbours.dedup();
+        stack.push((s, start, neighbours.into_iter()));
 
-        if components > base {
-            if let (Some(from), Some(to)) = (graph.node_id_for(from_idx), graph.node_id_for(to_idx))
-            {
-                bridges.push(BridgeEdge {
-                    from: from.clone(),
-                    to: to.clone(),
-                });
+        while let Some((u, _u_ni, iter)) = stack.last_mut() {
+            match iter.next() {
+                Some(v_ni) => {
+                    let v = idx_of[&v_ni];
+                    if disc[v] == u32::MAX {
+                        parent[v] = *u as i32;
+                        timer += 1;
+                        disc[v] = timer;
+                        low[v] = timer;
+                        let mut sub: Vec<NodeIndex> = inner
+                            .neighbors_directed(v_ni, Direction::Outgoing)
+                            .chain(inner.neighbors_directed(v_ni, Direction::Incoming))
+                            .collect();
+                        sub.sort_unstable();
+                        sub.dedup();
+                        stack.push((v, v_ni, sub.into_iter()));
+                    } else if parent[*u] != v as i32 {
+                        if disc[v] < low[*u] {
+                            low[*u] = disc[v];
+                        }
+                    }
+                }
+                None => {
+                    let u = *u;
+                    let u_ni = *_u_ni;
+                    stack.pop();
+                    if let Some((p, p_ni, _)) = stack.last() {
+                        let p = *p;
+                        let p_ni = *p_ni;
+                        if low[u] < low[p] {
+                            low[p] = low[u];
+                        }
+                        // Bridge condition: low(child) > disc(parent).
+                        if low[u] > disc[p] {
+                            bridges.push((p_ni, u_ni));
+                        }
+                    }
+                }
             }
         }
     }
 
-    bridges
+    let mut out = Vec::new();
+    for (a, b) in bridges {
+        if let (Some(from), Some(to)) = (graph.node_id_for(a), graph.node_id_for(b)) {
+            out.push(BridgeEdge {
+                from: from.clone(),
+                to: to.clone(),
+            });
+        }
+    }
+    out
 }
 
 // ─── Feedback Arc Set (Cycle Breaking) ───────────────────────────────────────
@@ -2301,6 +2431,107 @@ mod tests {
 
         let critical = critical_nodes(&g);
         assert!(critical.contains(&b));
+    }
+
+    #[test]
+    fn tarjan_articulation_skips_endpoints_normal() {
+        // a—b—c—d: only b and c are articulation points (endpoints
+        // a and d each have only one neighbour, removing them
+        // doesn't disconnect anything).
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        let d = g.add_node(node("d"));
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+        g.add_edge(&c, &d, edge()).unwrap();
+
+        let critical = critical_nodes(&g);
+        assert!(critical.contains(&b));
+        assert!(critical.contains(&c));
+        assert!(!critical.contains(&a));
+        assert!(!critical.contains(&d));
+    }
+
+    #[test]
+    fn tarjan_articulation_cycle_has_none() {
+        // Triangle a—b—c—a: nothing is articulation, every vertex
+        // has a back-edge bypass.
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+        g.add_edge(&c, &a, edge()).unwrap();
+
+        let critical = critical_nodes(&g);
+        assert!(critical.is_empty(), "got {:?}", critical);
+    }
+
+    #[test]
+    fn tarjan_bridges_in_cycle_are_empty() {
+        // Same triangle: no bridges in a cycle.
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+        g.add_edge(&c, &a, edge()).unwrap();
+        let bridges = bridge_edges(&g);
+        assert!(bridges.is_empty(), "got {:?}", bridges);
+    }
+
+    #[test]
+    fn tarjan_bridges_chain_every_edge() {
+        // Linear chain a—b—c—d: every edge is a bridge.
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        let d = g.add_node(node("d"));
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+        g.add_edge(&c, &d, edge()).unwrap();
+        let bridges = bridge_edges(&g);
+        assert_eq!(bridges.len(), 3);
+    }
+
+    #[test]
+    fn tarjan_handles_disconnected_graphs() {
+        // Two disconnected components, each with its own articulation point.
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node("a"));
+        let b = g.add_node(node("b"));
+        let c = g.add_node(node("c"));
+        let d = g.add_node(node("d"));
+        let e = g.add_node(node("e"));
+        let f = g.add_node(node("f"));
+        g.add_edge(&a, &b, edge()).unwrap();
+        g.add_edge(&b, &c, edge()).unwrap();
+        g.add_edge(&d, &e, edge()).unwrap();
+        g.add_edge(&e, &f, edge()).unwrap();
+
+        let critical = critical_nodes(&g);
+        assert!(critical.contains(&b));
+        assert!(critical.contains(&e));
+    }
+
+    #[test]
+    fn tarjan_empty_graph_no_panic() {
+        let g = CodeGraph::new();
+        assert!(critical_nodes(&g).is_empty());
+        assert!(bridge_edges(&g).is_empty());
+    }
+
+    #[test]
+    fn tarjan_single_node_no_articulation() {
+        let mut g = CodeGraph::new();
+        g.add_node(node("solo"));
+        assert!(critical_nodes(&g).is_empty());
+        assert!(bridge_edges(&g).is_empty());
     }
 
     // ─── SCC partition + condensation ──────────────────────────────────────

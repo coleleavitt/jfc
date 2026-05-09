@@ -24,10 +24,23 @@ use crate::nodes::{NodeData, NodeId};
 
 /// Current on-disk schema version for [`VersionedEvent`].
 ///
+/// ## Version history
+///
+/// - **v1** — original wire format.
+/// - **v2** — Phase 9: typed metadata (`KindData`) is populated by
+///   the rust adapter into `metadata` keys (`param_count`,
+///   `field_count`, `variant_count`, `method_count`, `async`, etc.).
+///   The wire format itself is **unchanged** — `metadata` was already
+///   `HashMap<String, String>` and absorbs the new keys
+///   transparently. We bump the version anyway so v1 readers can
+///   *opt to* re-index for the typed projections without seeing
+///   stale partial-metadata caches.
+///
 /// Bump when the wire format of [`GraphEvent`], [`EditReason`], or
 /// [`EventEntry`] changes incompatibly. Readers reject any other value with
-/// [`PersistenceError::SchemaMismatch`].
-pub const PERSISTENCE_SCHEMA_VERSION: u32 = 1;
+/// [`PersistenceError::SchemaMismatch`] unless [`migrate_event`] knows
+/// how to upgrade.
+pub const PERSISTENCE_SCHEMA_VERSION: u32 = 2;
 
 /// Errors raised by persistence read/write paths.
 #[derive(Debug, Error)]
@@ -39,6 +52,27 @@ pub enum PersistenceError {
          (delete the on-disk cache and reindex)"
     )]
     SchemaMismatch { expected: u32, found: u32 },
+}
+
+/// Best-effort upgrade of an `EventEntry` from `from_version` to
+/// [`PERSISTENCE_SCHEMA_VERSION`]. Currently a no-op for v1→v2
+/// because metadata is bag-shaped and v1 entries simply lack the
+/// new keys; downstream code falls through to `KindData::default()`
+/// for missing fields. Returns `Ok` for any handled version,
+/// `Err(SchemaMismatch)` for the unhandled future.
+pub fn migrate_event(
+    entry: EventEntry,
+    from_version: u32,
+) -> Result<EventEntry, PersistenceError> {
+    match from_version {
+        PERSISTENCE_SCHEMA_VERSION => Ok(entry),
+        // v1 → v2: no migration needed (metadata bag absorbs new keys).
+        1 => Ok(entry),
+        other => Err(PersistenceError::SchemaMismatch {
+            expected: PERSISTENCE_SCHEMA_VERSION,
+            found: other,
+        }),
+    }
 }
 
 /// Unique event identifier.
@@ -113,15 +147,23 @@ impl VersionedEvent {
     }
 
     /// Unwrap a deserialized entry, verifying the schema tag matches the
-    /// running binary's [`PERSISTENCE_SCHEMA_VERSION`].
+    /// running binary's [`PERSISTENCE_SCHEMA_VERSION`]. If the version
+    /// is older but a migration is registered (see [`migrate_event`]),
+    /// the event is silently upgraded — callers that need to know
+    /// whether a migration ran should consult [`Self::needs_migration`]
+    /// before unwrapping.
     pub fn unwrap_verified(self) -> Result<EventEntry, PersistenceError> {
-        if self.schema_version != PERSISTENCE_SCHEMA_VERSION {
-            return Err(PersistenceError::SchemaMismatch {
-                expected: PERSISTENCE_SCHEMA_VERSION,
-                found: self.schema_version,
-            });
+        if self.schema_version == PERSISTENCE_SCHEMA_VERSION {
+            return Ok(self.event);
         }
-        Ok(self.event)
+        // Try a migration before failing.
+        migrate_event(self.event, self.schema_version)
+    }
+
+    /// True if the wrapped event was written by an older schema and
+    /// would be migrated on read.
+    pub fn needs_migration(&self) -> bool {
+        self.schema_version != PERSISTENCE_SCHEMA_VERSION
     }
 }
 
@@ -416,5 +458,40 @@ mod tests {
             }
             Ok(_) => panic!("expected schema mismatch error"),
         }
+    }
+
+    #[test]
+    fn v1_event_migrates_to_v2_silently() {
+        // Phase 9: schema bump v1 → v2 is non-breaking. A v1 entry
+        // unwraps cleanly under v2.
+        let entry = EventEntry {
+            id: 1,
+            timestamp: 0,
+            event: GraphEvent::NodeAdded(sample_node_data("legacy")),
+            reason: None,
+        };
+        let v1_wrapped = VersionedEvent {
+            schema_version: 1,
+            event: entry,
+        };
+        assert!(v1_wrapped.needs_migration());
+        let migrated = v1_wrapped.unwrap_verified();
+        assert!(migrated.is_ok(), "v1 → v2 migration must succeed");
+    }
+
+    #[test]
+    fn migrate_event_handles_known_versions() {
+        let entry = EventEntry {
+            id: 1,
+            timestamp: 0,
+            event: GraphEvent::NodeAdded(sample_node_data("x")),
+            reason: None,
+        };
+        // Current version is a no-op.
+        assert!(migrate_event(entry.clone(), PERSISTENCE_SCHEMA_VERSION).is_ok());
+        // v1 is supported.
+        assert!(migrate_event(entry.clone(), 1).is_ok());
+        // Future versions fail.
+        assert!(migrate_event(entry, 999).is_err());
     }
 }

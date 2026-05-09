@@ -4,6 +4,9 @@
 //! nodes/edges. The [`AdapterRegistry`] maps file extensions to the appropriate adapter.
 
 pub mod rust;
+pub mod typescript;
+pub mod python;
+pub mod go;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
