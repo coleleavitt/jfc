@@ -722,10 +722,132 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
 /// because its per-row bg tinting requires direct buffer painting
 /// that doesn't fit `Paragraph`'s model; for that arm we share a
 /// `diff_row_count` helper between the producer and the renderer.
+/// Bounded memo of `tool_block_height` for terminal-state tools.
+///
+/// Why: `RenderItem::height` is summed across every render item every frame
+/// (twice — `message_view_total_lines` from `render::messages`, and again
+/// inside `MessageView::render`). For tool blocks the only way to know the
+/// height is to ask `tool_body_lines_themed` for the full Vec<Line> and take
+/// `.len()`. With the markdown highlight cache in place those Vecs are
+/// produced fast, but each one is a deep-clone of N lines × M spans × String
+/// per call — gdb sampling showed the main thread burning ~80% CPU in
+/// `Vec<Span>::clone` while idle.
+///
+/// Once a tool transitions to a terminal state (Completed / Failed /
+/// Cancelled) its content is immutable, so the height for a given (id, width,
+/// display state) is stable forever. Caching just the integer means height
+/// queries are a hash lookup with zero allocation; only the per-frame *paint*
+/// of visible tools still constructs Vec<Line>.
+struct ToolHeightEntry {
+    height: usize,
+    generation: u64,
+}
+
+const TOOL_HEIGHT_CACHE_MAX: usize = 1024;
+
+static TOOL_HEIGHT_CACHE: std::sync::LazyLock<std::sync::Mutex<ToolHeightCache>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::Mutex::new(ToolHeightCache {
+            map: std::collections::HashMap::with_capacity(256),
+            generation: 0,
+        })
+    });
+
+struct ToolHeightCache {
+    map: std::collections::HashMap<u64, ToolHeightEntry>,
+    generation: u64,
+}
+
+/// Drop every memoized tool height. Called when something changes that the
+/// per-tool fingerprint cannot encode — e.g. a layout/cap constant in this
+/// module is altered. Width and display-state changes are already covered by
+/// the key, so they don't need explicit invalidation.
+pub fn clear_tool_height_cache() {
+    let mut c = TOOL_HEIGHT_CACHE
+        .lock()
+        .expect("tool height cache poisoned");
+    c.map.clear();
+    c.generation = 0;
+}
+
+fn tool_height_fingerprint(tool: &ToolCall, inner_w: usize) -> u64 {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    tool.id.as_str().hash(&mut h);
+    inner_w.hash(&mut h);
+    // ToolDisplayState is small — hash by discriminant + payload bool so we
+    // don't have to add `Hash` to its derive in types.rs.
+    match tool.display {
+        ToolDisplayState::Default { pinned } => {
+            0u8.hash(&mut h);
+            pinned.hash(&mut h);
+        }
+        ToolDisplayState::Collapsed => {
+            1u8.hash(&mut h);
+        }
+        ToolDisplayState::Expanded { pinned } => {
+            2u8.hash(&mut h);
+            pinned.hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
 fn tool_block_height(tool: &ToolCall, inner_w: usize) -> usize {
     if tool.display.is_collapsed() {
         return 1;
     }
+    // Cache only terminal-state tools — Running/Pending/Idle tools have
+    // mutable content (output streams in chunk-by-chunk) and would serve
+    // stale heights. `elapsed_ms` is not part of the key because it's set
+    // at the same transition that freezes content, so it's already implied
+    // by the status check.
+    let cacheable = matches!(
+        tool.status,
+        ExecutionStatus::Completed | ExecutionStatus::Failed | ExecutionStatus::Cancelled
+    );
+
+    if cacheable {
+        let key = tool_height_fingerprint(tool, inner_w);
+        let mut cache = TOOL_HEIGHT_CACHE
+            .lock()
+            .expect("tool height cache poisoned");
+        cache.generation = cache.generation.wrapping_add(1);
+        let gen_now = cache.generation;
+        if let Some(entry) = cache.map.get_mut(&key) {
+            entry.generation = gen_now;
+            return entry.height;
+        }
+        // Drop the lock while we compute so re-entrant calls (the predictor
+        // recursing into another tool inside this one's body — none today,
+        // but cheap insurance) don't deadlock.
+        drop(cache);
+
+        let cont = bash_continuation_lines(tool).len();
+        let content_w = inner_w.saturating_sub(2);
+        let height = 1 + cont + tool_content_height_with_tool(tool, content_w);
+
+        let mut cache = TOOL_HEIGHT_CACHE
+            .lock()
+            .expect("tool height cache poisoned");
+        if cache.map.len() >= TOOL_HEIGHT_CACHE_MAX {
+            let target = TOOL_HEIGHT_CACHE_MAX * 3 / 4;
+            let mut gens: Vec<u64> = cache.map.values().map(|e| e.generation).collect();
+            gens.sort_unstable();
+            let cutoff_idx = cache.map.len().saturating_sub(target);
+            let cutoff = gens.get(cutoff_idx).copied().unwrap_or(u64::MAX);
+            cache.map.retain(|_, e| e.generation > cutoff);
+        }
+        cache.map.insert(
+            key,
+            ToolHeightEntry {
+                height,
+                generation: gen_now,
+            },
+        );
+        return height;
+    }
+
     let cont = bash_continuation_lines(tool).len();
     let content_w = inner_w.saturating_sub(2);
     1 + cont + tool_content_height_with_tool(tool, content_w)

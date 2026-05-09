@@ -61,50 +61,83 @@ fn yank_last_assistant(app: &App) {
 }
 
 async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
-    let Some(prompt) = app.queued_prompts.pop_front() else {
+    // Pop the entire queue at once. v137-style batched drain: a single
+    // turn-boundary collapses N queued prompts into ONE API call, instead
+    // of firing N separate sequential turns. The badge drops to 0 the
+    // instant this runs, and the user sees one streaming response covering
+    // every queued message — matching v137's `GC4`/`PC4` flow where
+    // `queuedCommands` is processed as one batch (cli.2.1.137.deob.js
+    // line 580193: `let R = L ?? []` then `for (let F = 0; F < R.length; F++)`).
+    let drained: Vec<crate::app::QueuedPrompt> = app.queued_prompts.drain(..).collect();
+    if drained.is_empty() {
         return;
-    };
-    let crate::app::QueuedPrompt { text, is_meta } = prompt;
+    }
+    let total = drained.len();
+    let meta_count = drained.iter().filter(|qp| qp.is_meta).count();
     tracing::info!(
         target: "jfc::ui::queue",
-        remaining = app.queued_prompts.len(),
-        len = text.len(),
-        is_meta,
-        "drain_queued_prompt"
+        total,
+        meta_count,
+        non_meta_count = total - meta_count,
+        "drain_queued_prompts: batched drain"
     );
 
-    // Replace the placeholder ("⏳ " for prose, "⚙ " for slash commands) with
-    // the clean text so the transcript matches what gets sent to the API
-    // (or what the slash-command handler executes against).
-    let glyph = if is_meta { "⚙" } else { "⏳" };
-    let placeholder = format!("{glyph} {text}");
-    for msg in app.messages.iter_mut() {
-        if msg.role == Role::User {
-            for part in msg.parts.iter_mut() {
-                if let MessagePart::Text(t) = part {
-                    if *t == placeholder {
-                        *t = text.clone();
-                        break;
+    // Phase 1: replace each prompt's `⏳`/`⚙` placeholder with the clean
+    // text, and run any slash commands locally in submission order. The
+    // placeholders were pushed at queue-time (input.rs:2089-2095) so they
+    // already render in the transcript — replacing them in-place gives
+    // the user the visual "they all sent" cue without us pushing
+    // duplicate user messages.
+    let mut non_meta_texts: Vec<String> = Vec::with_capacity(total - meta_count);
+    let mut first_non_meta_text: Option<String> = None;
+    for qp in drained {
+        let crate::app::QueuedPrompt { text, is_meta } = qp;
+        let glyph = if is_meta { "⚙" } else { "⏳" };
+        let placeholder = format!("{glyph} {text}");
+        for msg in app.messages.iter_mut() {
+            if msg.role == Role::User {
+                for part in msg.parts.iter_mut() {
+                    if let MessagePart::Text(t) = part {
+                        if *t == placeholder {
+                            *t = text.clone();
+                            break;
+                        }
                     }
                 }
             }
         }
+        if is_meta {
+            // Slash commands run locally — they may mutate state (e.g.
+            // /clear empties messages), so order matters.
+            input::run_slash_command(app, &text).await;
+        } else {
+            if first_non_meta_text.is_none() {
+                first_non_meta_text = Some(text.clone());
+            }
+            non_meta_texts.push(text);
+        }
     }
 
-    if is_meta {
-        // v126 isMeta: slash commands execute locally instead of streaming.
-        // We don't even hit the API — just dispatch through the existing
-        // slash command handler. Subsequent queued prompts surface
-        // immediately because no new stream starts.
-        input::run_slash_command(app, &text).await;
-        // Recurse: another queued prompt may be ready right now.
+    // Phase 2: if a slash command re-queued anything (e.g. a hook that
+    // submits a follow-up), drain that batch too. Without this, the
+    // re-queued items would sit until the next turn boundary.
+    if !app.queued_prompts.is_empty() {
         Box::pin(drain_queued_prompts(app, tx)).await;
+        // The recursive call may have already started a stream for the
+        // re-queued non-meta prompts; if so, fall through anyway so this
+        // batch's non-meta prompts also get a turn. They'll queue
+        // naturally because is_streaming is now true again.
+    }
+
+    if non_meta_texts.is_empty() {
         return;
     }
 
-    // Regular prompt path: run the same submit pipeline as a fresh user
-    // turn. We don't push *another* user message — the placeholder we just
-    // patched above stands in. Build the assistant slot + spawn the stream.
+    // Phase 3: build a single turn for ALL non-meta prompts. Their
+    // placeholders are now real user-message text; build_provider_messages
+    // (stream.rs:2400-2414) merges consecutive same-role messages, so N
+    // adjacent user messages collapse into one user turn before going to
+    // the API.
     let assistant_idx = app.messages.len();
     // Debug-only invariant check BEFORE pushing the assistant slot.
     // The queue-drain path is exactly where the plan-continuation
@@ -126,35 +159,31 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     app.tool_ctx.total_user_turns += 1;
 
     // Auto graph-context injection mirrors the path in
-    // `input::handle_submit`. Queued prompts go through this drain
-    // function instead of the typed-prompt code path, so without
-    // this duplicate the auto-inject only fires on freshly-typed
-    // prompts and silently skips queue-drain replays — exactly the
-    // case where the user is most likely to be batching impact-
-    // analysis questions and benefits most from the structural hint.
-    //
-    // Gated behind the `intent-gate` cargo feature for symmetry with
-    // the `mod intent` declaration in `main.rs`.
+    // `input::handle_submit`. Classify against the FIRST non-meta prompt
+    // — intent::classify takes a single string, and the first prompt is
+    // the most likely framing of the batch's intent.
     #[cfg(feature = "intent-gate")]
-    {
-        let intent_for_inject = crate::intent::classify(&text).intent;
+    if let Some(intent_text) = first_non_meta_text.as_deref() {
+        let intent_for_inject = crate::intent::classify(intent_text).intent;
         if crate::intent::is_graph_intent(intent_for_inject) {
             let cwd = std::path::PathBuf::from(&app.cwd);
             let injected = crate::intent::auto_inject_graph_context(
                 &mut app.messages,
                 intent_for_inject,
-                &text,
+                intent_text,
                 &cwd,
             );
             if injected {
                 tracing::info!(
                     target: "jfc::intent::auto_ctx",
                     intent = ?intent_for_inject,
-                    "auto graph-context injected (queued-prompt drain)"
+                    "auto graph-context injected (batched queued-prompt drain)"
                 );
             }
         }
     }
+    #[cfg(not(feature = "intent-gate"))]
+    let _ = first_non_meta_text;
 
     app.messages.push(ChatMessage::assistant(String::new()));
     app.streaming_text.clear();
@@ -179,23 +208,22 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
 
     let provider = app.provider.clone();
     let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
-    // Slate per-turn routing for the queued-prompt drain path. Mirrors
-    // `input::handle_submit` so a queued prompt sees the same routing as a
-    // freshly typed one — without this, queued submissions silently bypassed
-    // Slate and used `app.model`.
+    // Slate per-turn routing — route on the first prompt's text, since
+    // Slate classifies a single string. Mirrors handle_submit's path.
+    let route_text = non_meta_texts.first().cloned().unwrap_or_default();
     let model = if let Some(ref router) = app.slate {
-        router.route(&text, app.model.clone())
+        router.route(&route_text, app.model.clone())
     } else {
         app.model.clone()
     };
-    let tx = tx.clone();
+    let tx_spawn = tx.clone();
     let interrupt = app.interrupt_flag.clone();
     // wg-async: queued-prompt drain is a fresh user turn — mint a new
     // cancel token so a prior turn's cancel doesn't poison this one.
     app.cancel_token = tokio_util::sync::CancellationToken::new();
     let cancel = app.cancel_token.clone();
     tokio::spawn(async move {
-        stream::stream_response(provider, messages, model, tx, interrupt, cancel).await;
+        stream::stream_response(provider, messages, model, tx_spawn, interrupt, cancel).await;
     });
 }
 
@@ -2079,6 +2107,21 @@ pub(crate) async fn run(
                         );
                     }
                     app.scroll_to_bottom();
+                    // v137 VC4 (cli.2.1.137.deob.js:580338) auto-fires queued
+                    // commands once the queryGuard goes idle. jfc had no
+                    // equivalent: after ESC×2 abort or a network error the
+                    // queue would sit visible-but-stranded until the user
+                    // submitted again. Drain here so queued prompts run on
+                    // the next opportunity. Skipped on auto-compact since
+                    // that path already re-queues the last user prompt.
+                    if !auto_compact_signal && !app.queued_prompts.is_empty() {
+                        tracing::info!(
+                            target: "jfc::ui::queue",
+                            count = app.queued_prompts.len(),
+                            "draining queued prompts after StreamError"
+                        );
+                        drain_queued_prompts(&mut app, &tx).await;
+                    }
                 }
                 AppEvent::StreamUsage {
                     input_tokens,
