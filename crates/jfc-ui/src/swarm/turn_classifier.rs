@@ -120,7 +120,10 @@ fn build_detail(status: &TurnStatus, tools: &[String], text: &str) -> String {
         TurnStatus::Blocked => "Waiting for permission".to_string(),
         TurnStatus::ReviewReady => {
             // Extract first line as preview
-            text.lines().next().unwrap_or("Ready for review").to_string()
+            text.lines()
+                .next()
+                .unwrap_or("Ready for review")
+                .to_string()
         }
         TurnStatus::Idle => "Waiting for input".to_string(),
         TurnStatus::Error => "Encountered an error".to_string(),
@@ -129,7 +132,9 @@ fn build_detail(status: &TurnStatus, tools: &[String], text: &str) -> String {
 
 fn build_needs_action(status: &TurnStatus, is_permission: bool) -> Option<String> {
     match status {
-        TurnStatus::Blocked if is_permission => Some("Approve or deny pending permission".to_string()),
+        TurnStatus::Blocked if is_permission => {
+            Some("Approve or deny pending permission".to_string())
+        }
         TurnStatus::Blocked => Some("Unblock the agent".to_string()),
         TurnStatus::ReviewReady => Some("Review the agent's work".to_string()),
         TurnStatus::Error => Some("Check error and retry or abort".to_string()),
@@ -145,7 +150,10 @@ mod tests {
     fn classify_running() {
         let summary = classify_turn(
             &["bash".to_string(), "read".to_string()],
-            false, false, false, false,
+            false,
+            false,
+            false,
+            false,
             "I'll check the tests next",
         );
         assert_eq!(summary.status, TurnStatus::Running);
@@ -156,7 +164,10 @@ mod tests {
     fn classify_blocked() {
         let summary = classify_turn(
             &["edit".to_string()],
-            false, true, false, false,
+            false,
+            true,
+            false,
+            false,
             "Waiting for approval",
         );
         assert_eq!(summary.status, TurnStatus::Blocked);
@@ -173,7 +184,10 @@ mod tests {
     fn classify_review_ready() {
         let summary = classify_turn(
             &[],
-            false, false, false, false,
+            false,
+            false,
+            false,
+            false,
             "The implementation is complete and ready for review.",
         );
         assert_eq!(summary.status, TurnStatus::ReviewReady);

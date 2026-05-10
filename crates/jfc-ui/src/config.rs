@@ -650,8 +650,7 @@ pub fn save_theme_to(
         _ => Config::default(),
     };
     cfg.theme = Some(theme_name.to_string());
-    let serialized = toml::to_string_pretty(&cfg)
-        .map_err(|e| format!("serialize failed: {e}"))?;
+    let serialized = toml::to_string_pretty(&cfg).map_err(|e| format!("serialize failed: {e}"))?;
     std::fs::write(path, serialized)
         .map_err(|e| format!("write {} failed: {e}", path.display()))?;
     tracing::info!(
@@ -748,29 +747,31 @@ pub fn slate_rules_from_config(cfg: &Config) -> Vec<crate::slate::RoutingRule> {
     };
     rules
         .iter()
-        .filter_map(|r| match r.query_class.as_str() {
-            "trivial" => Some(crate::slate::QueryClass::Trivial),
-            "exploration" => Some(crate::slate::QueryClass::Exploration),
-            "code-edit" => Some(crate::slate::QueryClass::CodeEdit),
-            "refactor" => Some(crate::slate::QueryClass::Refactor),
-            "research" => Some(crate::slate::QueryClass::Research),
-            "long-context" => Some(crate::slate::QueryClass::LongContext),
-            other => {
-                tracing::warn!(
-                    target: "jfc::slate",
-                    query_class = other,
-                    "unknown slate query_class — rule dropped"
-                );
-                None
+        .filter_map(|r| {
+            match r.query_class.as_str() {
+                "trivial" => Some(crate::slate::QueryClass::Trivial),
+                "exploration" => Some(crate::slate::QueryClass::Exploration),
+                "code-edit" => Some(crate::slate::QueryClass::CodeEdit),
+                "refactor" => Some(crate::slate::QueryClass::Refactor),
+                "research" => Some(crate::slate::QueryClass::Research),
+                "long-context" => Some(crate::slate::QueryClass::LongContext),
+                other => {
+                    tracing::warn!(
+                        target: "jfc::slate",
+                        query_class = other,
+                        "unknown slate query_class — rule dropped"
+                    );
+                    None
+                }
             }
-        }
-        .map(|class| {
-            let mut rule = crate::slate::RoutingRule::new(class, r.model.clone());
-            if let Some(ref fb) = r.fallback_model {
-                rule = rule.with_fallback(fb.clone());
-            }
-            rule
-        }))
+            .map(|class| {
+                let mut rule = crate::slate::RoutingRule::new(class, r.model.clone());
+                if let Some(ref fb) = r.fallback_model {
+                    rule = rule.with_fallback(fb.clone());
+                }
+                rule
+            })
+        })
         .collect()
 }
 
@@ -813,10 +814,12 @@ model = "openai/gpt-5"
         )
         .unwrap();
         save_theme_to(&path, "tokyo-night").expect("write");
-        let cfg: Config =
-            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let cfg: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(cfg.theme.as_deref(), Some("tokyo-night"));
-        assert_eq!(cfg.default.model.as_deref(), Some("anthropic/claude-opus-4-7"));
+        assert_eq!(
+            cfg.default.model.as_deref(),
+            Some("anthropic/claude-opus-4-7")
+        );
         assert!(cfg.agents.contains_key("researcher"));
     }
 
@@ -844,8 +847,7 @@ model = "openai/gpt-5"
         let path = tmp.path().join("config.toml");
         std::fs::write(&path, "").unwrap();
         save_theme_to(&path, "nord").expect("write");
-        let cfg: Config =
-            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let cfg: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(cfg.theme.as_deref(), Some("nord"));
     }
 
@@ -1245,7 +1247,10 @@ fallback_model = "claude-sonnet-4-6"
         assert_eq!(rules[0].query_class, "trivial");
         assert_eq!(rules[0].model, "claude-haiku-4-5");
         assert!(rules[0].fallback_model.is_none());
-        assert_eq!(rules[1].fallback_model.as_deref(), Some("claude-sonnet-4-6"));
+        assert_eq!(
+            rules[1].fallback_model.as_deref(),
+            Some("claude-sonnet-4-6")
+        );
 
         // Conversion path: TOML rules → runtime RoutingRule list.
         let rt = slate_rules_from_config(&cfg);

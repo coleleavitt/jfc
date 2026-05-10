@@ -60,11 +60,7 @@ fn git_output(args: &[&str]) -> Option<String> {
         return None;
     }
     let s = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    if s.is_empty() { None } else { Some(s) }
 }
 
 /// Auto-detect git repo info for the current working directory.

@@ -102,16 +102,20 @@ pub fn friendly_error_message(status: u16, body: &str) -> String {
             "API Error: 400 due to tool use concurrency issues — retrying.".to_string()
         }
         400 => format!("Bad request: {}", truncate(body, 200)),
-        401 => "Authentication failed — check your API key or token (run /login if using OAuth).".to_string(),
+        401 => "Authentication failed — check your API key or token (run /login if using OAuth)."
+            .to_string(),
         403 => "Access forbidden — your account may not have access to this model.".to_string(),
-        408 => "Request timed out (408) — the upstream gave up before the body finished. Retrying.".to_string(),
+        408 => "Request timed out (408) — the upstream gave up before the body finished. Retrying."
+            .to_string(),
         409 => "Conflict (409) — concurrent state change. Retrying.".to_string(),
         413 => {
             // v132 treats 413 like request_too_large: hint at compaction
             // rather than just dumping "payload too large".
-            "Request body too large (413). Auto-compaction should kick in for context-window cases.".to_string()
+            "Request body too large (413). Auto-compaction should kick in for context-window cases."
+                .to_string()
         }
-        425 => "Server rejected the request as 'too early' (425). Retrying after a short delay.".to_string(),
+        425 => "Server rejected the request as 'too early' (425). Retrying after a short delay."
+            .to_string(),
         429 => {
             if body.contains("rate_limit") {
                 "Rate limited — too many requests. Retrying with backoff.".to_string()
@@ -203,11 +207,7 @@ fn extract_token_count(body: &str) -> Option<String> {
 }
 
 fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max {
-        s
-    } else {
-        &s[..max]
-    }
+    if s.len() <= max { s } else { &s[..max] }
 }
 
 #[cfg(test)]
@@ -243,8 +243,10 @@ mod tests {
     fn friendly_messages() {
         assert!(friendly_error_message(429, "rate_limit").contains("Rate limited"));
         assert!(friendly_error_message(401, "").contains("Authentication"));
-        assert!(friendly_error_message(400, "prompt is too long: 210169 tokens > 200000")
-            .contains("210169"));
+        assert!(
+            friendly_error_message(400, "prompt is too long: 210169 tokens > 200000")
+                .contains("210169")
+        );
     }
 
     /// Coverage check: every status code v132's cli.js explicitly
@@ -281,7 +283,9 @@ mod tests {
     /// these are exactly the transient cases v132 retries.
     #[test]
     fn retries_v132_transient_codes_normal() {
-        for code in [408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 529] {
+        for code in [
+            408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 529,
+        ] {
             assert!(
                 should_retry_status(code, None),
                 "status {code} should be retried"

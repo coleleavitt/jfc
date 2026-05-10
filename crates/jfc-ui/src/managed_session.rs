@@ -17,9 +17,9 @@
 //! 3. User input becomes a `send_user_message` call instead of a local
 //!    `provider.stream`.
 
+use futures::stream::Stream;
 use jfc_anthropic_sdk::sessions::{SessionEvent, SessionResource, SessionService};
 use jfc_anthropic_sdk::{Client, Result};
-use futures::stream::Stream;
 use std::pin::Pin;
 
 pub struct ManagedSession {
@@ -50,7 +50,9 @@ impl ManagedSession {
     /// Forward a user-typed prompt to the session. The agent's response
     /// arrives via the event stream returned by `connect`.
     pub async fn send(&self, content: serde_json::Value) -> Result<()> {
-        self.service.send_user_message(&self.session_id, content).await
+        self.service
+            .send_user_message(&self.session_id, content)
+            .await
     }
 
     /// Attach a Resource (file or repo) to the session. Mirrors v132's
@@ -88,12 +90,14 @@ pub fn render_event_line(event: &SessionEvent) -> String {
         SessionEvent::UserCustomToolResult { tool_use_id, .. } => {
             format!("[user custom result: {tool_use_id}]")
         }
-        SessionEvent::UserToolConfirmation { tool_use_id, approved, .. } => {
+        SessionEvent::UserToolConfirmation {
+            tool_use_id,
+            approved,
+            ..
+        } => {
             format!("[user confirmation: {tool_use_id} → {approved}]")
         }
-        SessionEvent::AgentThreadContextCompacted { .. } => {
-            "[context compacted]".to_owned()
-        }
+        SessionEvent::AgentThreadContextCompacted { .. } => "[context compacted]".to_owned(),
         SessionEvent::SessionStatusRunning { .. } => "[session: running]".to_owned(),
         SessionEvent::SessionStatusIdle { .. } => "[session: idle]".to_owned(),
         SessionEvent::SessionStatusTerminated { reason, .. } => match reason {

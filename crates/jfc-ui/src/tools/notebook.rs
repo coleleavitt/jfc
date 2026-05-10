@@ -1,4 +1,3 @@
-
 use super::ExecutionResult;
 
 pub(super) async fn execute_notebook_read(path_str: &str) -> ExecutionResult {
@@ -11,9 +10,7 @@ pub(super) async fn execute_notebook_read(path_str: &str) -> ExecutionResult {
     let text = match tokio::fs::read_to_string(&path).await {
         Ok(s) => s,
         Err(e) => {
-            return ExecutionResult::failure(format!(
-                "notebook_read: cannot read {path_str}: {e}"
-            ));
+            return ExecutionResult::failure(format!("notebook_read: cannot read {path_str}: {e}"));
         }
     };
     match notebook_read_text(&text) {
@@ -126,9 +123,7 @@ pub(super) async fn execute_notebook_edit(
     let text = match tokio::fs::read_to_string(&path).await {
         Ok(s) => s,
         Err(e) => {
-            return ExecutionResult::failure(format!(
-                "notebook_edit: cannot read {path_str}: {e}"
-            ));
+            return ExecutionResult::failure(format!("notebook_edit: cannot read {path_str}: {e}"));
         }
     };
     let mode = edit_mode.unwrap_or("replace");
@@ -138,9 +133,9 @@ pub(super) async fn execute_notebook_edit(
                 "notebook_edit: {mode} on {path_str}#{cell_id} ({} bytes written)",
                 new_text.len()
             )),
-            Err(e) => ExecutionResult::failure(format!(
-                "notebook_edit: write to {path_str} failed: {e}"
-            )),
+            Err(e) => {
+                ExecutionResult::failure(format!("notebook_edit: write to {path_str} failed: {e}"))
+            }
         },
         Err(e) => ExecutionResult::failure(format!("notebook_edit: {e}")),
     }
@@ -158,8 +153,8 @@ pub(crate) fn notebook_edit_text(
             "invalid edit_mode '{edit_mode}'. Must be one of: replace | insert | delete"
         ));
     }
-    let mut v: serde_json::Value = serde_json::from_str(notebook_json)
-        .map_err(|e| format!("invalid notebook JSON: {e}"))?;
+    let mut v: serde_json::Value =
+        serde_json::from_str(notebook_json).map_err(|e| format!("invalid notebook JSON: {e}"))?;
     let cells = v
         .get_mut("cells")
         .and_then(|c| c.as_array_mut())
@@ -212,4 +207,3 @@ pub(crate) fn notebook_edit_text(
 
     serde_json::to_string_pretty(&v).map_err(|e| format!("re-serialize failed: {e}"))
 }
-

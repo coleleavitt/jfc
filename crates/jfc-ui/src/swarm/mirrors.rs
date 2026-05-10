@@ -87,7 +87,9 @@ impl MirrorSession {
     /// Shorthand: emit a tool call event.
     pub fn tool_call(&self, tool_name: &str, input_preview: &str) {
         self.emit(
-            MirrorEventType::ToolCall { tool_name: tool_name.to_string() },
+            MirrorEventType::ToolCall {
+                tool_name: tool_name.to_string(),
+            },
             input_preview,
         );
     }
@@ -95,7 +97,10 @@ impl MirrorSession {
     /// Shorthand: emit a tool result event.
     pub fn tool_result(&self, tool_name: &str, success: bool, output_preview: &str) {
         self.emit(
-            MirrorEventType::ToolResult { tool_name: tool_name.to_string(), success },
+            MirrorEventType::ToolResult {
+                tool_name: tool_name.to_string(),
+                success,
+            },
             output_preview,
         );
     }
@@ -107,7 +112,12 @@ impl MirrorSession {
         } else {
             text.to_string()
         };
-        self.emit(MirrorEventType::ModelText { preview: preview.clone() }, &preview);
+        self.emit(
+            MirrorEventType::ModelText {
+                preview: preview.clone(),
+            },
+            &preview,
+        );
     }
 
     /// Shorthand: emit idle.
@@ -128,7 +138,9 @@ pub struct MirrorRegistry {
 
 impl MirrorRegistry {
     pub fn new() -> Self {
-        Self { sessions: Vec::new() }
+        Self {
+            sessions: Vec::new(),
+        }
     }
 
     /// Start mirroring an agent.
@@ -155,7 +167,10 @@ impl MirrorRegistry {
 
     /// List all active mirrors.
     pub fn active_mirrors(&self) -> Vec<&str> {
-        self.sessions.iter().map(|s| s.agent_name.as_str()).collect()
+        self.sessions
+            .iter()
+            .map(|s| s.agent_name.as_str())
+            .collect()
     }
 }
 

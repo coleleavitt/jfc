@@ -2,14 +2,16 @@ use std::path::Path;
 
 use super::ExecutionResult;
 
-pub(super) fn execute_cron_create(schedule_expr: &str, command: &str, description: &str) -> ExecutionResult {
+pub(super) fn execute_cron_create(
+    schedule_expr: &str,
+    command: &str,
+    description: &str,
+) -> ExecutionResult {
     use crate::daemon::{Daemon, DaemonPaths, parse_schedule};
     let schedule = match parse_schedule(schedule_expr) {
         Ok(s) => s,
         Err(e) => {
-            return ExecutionResult::failure(format!(
-                "Invalid schedule `{schedule_expr}`: {e}"
-            ));
+            return ExecutionResult::failure(format!("Invalid schedule `{schedule_expr}`: {e}"));
         }
     };
     let paths = DaemonPaths::default_user();
@@ -60,7 +62,11 @@ pub(super) fn execute_cron_delete(id: &str) -> ExecutionResult {
     }
 }
 
-pub(super) fn execute_schedule_wakeup(delay_seconds: u32, prompt: &str, reason: &str) -> ExecutionResult {
+pub(super) fn execute_schedule_wakeup(
+    delay_seconds: u32,
+    prompt: &str,
+    reason: &str,
+) -> ExecutionResult {
     use crate::daemon::{Daemon, DaemonPaths};
     if prompt.is_empty() {
         return ExecutionResult::failure("ScheduleWakeup: prompt must not be empty");
@@ -127,9 +133,7 @@ pub(super) async fn execute_monitor(command: &str, until: &str, cwd: &Path) -> E
             Ok(Ok(Some(line))) => {
                 if regex.is_match(&line) {
                     let _ = child.kill().await;
-                    return ExecutionResult::success(format!(
-                        "matched: {line}"
-                    ));
+                    return ExecutionResult::success(format!("matched: {line}"));
                 }
                 tail.push(line);
                 if tail.len() > TAIL_KEEP {
@@ -170,4 +174,3 @@ pub(super) async fn execute_monitor(command: &str, until: &str, cwd: &Path) -> E
         }
     }
 }
-

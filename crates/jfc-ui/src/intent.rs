@@ -308,9 +308,8 @@ pub fn graph_auto_context_enabled() -> bool {
 /// (canonicalized workspace root), same value shape (`Arc<GraphSession>`).
 /// First call per cwd pays the full tree-sitter indexing cost; subsequent
 /// calls are an `Arc::clone`.
-fn auto_context_cache() -> &'static Mutex<
-    std::collections::HashMap<PathBuf, Arc<jfc_graph::session::GraphSession>>,
-> {
+fn auto_context_cache()
+-> &'static Mutex<std::collections::HashMap<PathBuf, Arc<jfc_graph::session::GraphSession>>> {
     static CACHE: OnceLock<
         Mutex<std::collections::HashMap<PathBuf, Arc<jfc_graph::session::GraphSession>>>,
     > = OnceLock::new();
@@ -437,13 +436,62 @@ fn extract_symbol(prompt: &str) -> Option<String> {
     // Last-resort: the final identifier-shaped token in the prompt.
     // Skip common english words that happen to be identifier-shaped.
     let stop: &[&str] = &[
-        "the", "a", "an", "is", "are", "be", "to", "from", "of", "and", "or", "if",
-        "what", "where", "which", "who", "how", "this", "that", "it", "i", "we",
-        "fn", "function", "method", "type", "struct", "trait", "enum", "module",
-        "safe", "rename", "refactor", "change", "move", "remove", "break", "breaks",
-        "depend", "depends", "call", "calls", "callers", "callees", "impact",
-        "ripple", "blast", "radius", "trace", "reachable", "main", "entrypoint",
-        "entrypoints", "public", "api", "start",
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "be",
+        "to",
+        "from",
+        "of",
+        "and",
+        "or",
+        "if",
+        "what",
+        "where",
+        "which",
+        "who",
+        "how",
+        "this",
+        "that",
+        "it",
+        "i",
+        "we",
+        "fn",
+        "function",
+        "method",
+        "type",
+        "struct",
+        "trait",
+        "enum",
+        "module",
+        "safe",
+        "rename",
+        "refactor",
+        "change",
+        "move",
+        "remove",
+        "break",
+        "breaks",
+        "depend",
+        "depends",
+        "call",
+        "calls",
+        "callers",
+        "callees",
+        "impact",
+        "ripple",
+        "blast",
+        "radius",
+        "trace",
+        "reachable",
+        "main",
+        "entrypoint",
+        "entrypoints",
+        "public",
+        "api",
+        "start",
     ];
     let mut last: Option<&str> = None;
     for m in re.find_iter(prompt) {
@@ -567,9 +615,7 @@ fn build_impact_body(prompt: &str, cwd: &Path) -> String {
             "Auto graph-context for impact-analysis: no callers of `{sym}` found in the workspace graph (or symbol not present). Use `graph_query` to verify."
         );
     }
-    let mut out = format!(
-        "Auto graph-context (impact-analysis): callers of `{sym}` (depth 3):\n"
-    );
+    let mut out = format!("Auto graph-context (impact-analysis): callers of `{sym}` (depth 3):\n");
     for id in raw.nodes.iter().take(20) {
         if let Some(node) = session.graph.get_node(id) {
             out.push_str(&format!(
@@ -1063,12 +1109,8 @@ fn baz() -> i32 { 42 }
 
         let mut messages = vec![ChatMessage::user("what depends on bar".into())];
         let prompt = "what depends on bar";
-        let injected = auto_inject_graph_context(
-            &mut messages,
-            Intent::ImpactAnalysis,
-            prompt,
-            tmp.path(),
-        );
+        let injected =
+            auto_inject_graph_context(&mut messages, Intent::ImpactAnalysis, prompt, tmp.path());
         assert!(injected, "auto-inject should have appended a reminder");
 
         // The reminder is appended as a Text part on the last user

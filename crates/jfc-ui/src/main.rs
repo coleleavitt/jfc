@@ -4,18 +4,29 @@ mod app;
 
 mod attachments;
 mod auto_mode;
+mod bash_processes;
 mod compact;
 mod config;
 mod context;
 mod cost;
+mod credential_vault;
 mod diagnostics;
 mod diagnostics_producer;
 mod effort;
+mod env_context;
+mod event_loop;
+mod feature_gates;
+mod file_watcher;
 mod fleet_view;
+mod git_context;
+mod github;
+mod idle_prefetch;
+mod ids;
 mod inline_tools;
 mod input;
 mod lsp_client;
 mod lsp_rpc;
+mod managed_session;
 mod markdown;
 mod mcp;
 mod memory;
@@ -23,55 +34,44 @@ mod memory_recall;
 mod mentions;
 mod message_view;
 mod notifications;
+mod output_style;
 mod provider;
 mod providers;
+mod push_notifications;
 mod query;
 mod render;
 mod render_cache;
 mod scheduler;
+mod sdk_bridge;
 mod session;
+mod session_naming;
 mod slash_commands;
 mod slate;
 mod speculation;
 mod spinner;
 mod stream;
 mod swarm;
-mod tasks;
-mod output_style;
 mod system_reminder;
+mod tasks;
+mod telemetry;
 mod theme;
 mod toast;
 mod tools;
-mod event_loop;
 mod types;
-mod git_context;
-mod env_context;
-mod ids;
 mod web_cache;
 mod web_search;
-mod bash_processes;
-mod session_naming;
-mod feature_gates;
 mod workflows;
-mod credential_vault;
-mod push_notifications;
-mod sdk_bridge;
-mod managed_session;
-mod idle_prefetch;
-mod telemetry;
-mod file_watcher;
-mod github;
 mod worktrees;
 
 #[cfg(feature = "background-agents")]
 mod background;
+mod daemon;
 #[cfg(feature = "hashline")]
 mod hashline;
 #[cfg(feature = "hooks")]
 mod hooks;
 #[cfg(feature = "intent-gate")]
 mod intent;
-mod daemon;
 #[cfg(feature = "permission-automation")]
 mod permissions;
 #[cfg(feature = "landlock-sandbox")]
@@ -83,13 +83,10 @@ use clap::{Parser, Subcommand};
 use crossterm::{
     event::{
         DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
-        PushKeyboardEnhancementFlags,
+        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
-    terminal::{
-        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-    },
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 
@@ -529,8 +526,6 @@ fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
     guard
 }
 
-
-
 /// Push kitty keyboard enhancement flags so Ctrl+M is distinguishable from Enter
 /// (and Ctrl+J / Shift+Enter from one another). Returns true if flags were pushed
 /// and need to be popped on exit.
@@ -810,4 +805,3 @@ fn looks_openai_model(model_id: &str) -> bool {
         || model_id.starts_with("o3")
         || model_id.starts_with("o4")
 }
-

@@ -41,7 +41,10 @@ pub fn snapshot() -> Vec<u32> {
     let Ok(guard) = REGISTRY.lock() else {
         return Vec::new();
     };
-    guard.as_ref().map(|s| s.iter().copied().collect()).unwrap_or_default()
+    guard
+        .as_ref()
+        .map(|s| s.iter().copied().collect())
+        .unwrap_or_default()
 }
 
 /// SIGTERM every tracked bash subprocess. Returns the count of signals

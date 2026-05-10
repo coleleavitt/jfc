@@ -4,9 +4,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info, trace, warn};
 
+use super::{ExecutionResult, push_pending_tool_attachment};
 use crate::context::ReadDedupCache;
 use crate::types::ReplacementMode;
-use super::{ExecutionResult, push_pending_tool_attachment};
 
 pub(super) async fn execute_read(
     file_path: &str,
@@ -153,21 +153,17 @@ pub(super) async fn execute_read(
                 // result and often re-reads. The reminder makes the
                 // root cause visible.
                 if total_lines == 0 {
-                    return ExecutionResult::success(crate::system_reminder::format(
-                        &format!(
-                            "Warning: the file at {file_path} exists but its contents are empty."
-                        ),
-                    ));
+                    return ExecutionResult::success(crate::system_reminder::format(&format!(
+                        "Warning: the file at {file_path} exists but its contents are empty."
+                    )));
                 }
                 if start >= total_lines {
-                    return ExecutionResult::success(crate::system_reminder::format(
-                        &format!(
-                            "Warning: the file at {file_path} exists but is shorter \
+                    return ExecutionResult::success(crate::system_reminder::format(&format!(
+                        "Warning: the file at {file_path} exists but is shorter \
                              than the provided offset ({}). The file has {} lines.",
-                            start + 1,
-                            total_lines
-                        ),
-                    ));
+                        start + 1,
+                        total_lines
+                    )));
                 }
                 ExecutionResult::success(numbered)
             }
@@ -332,7 +328,11 @@ pub(super) async fn execute_edit(
 /// localized old_string→new_string replacement. Mirrors what unified
 /// diff renders look like, fed straight into the existing
 /// `ToolOutput::Diff` renderer.
-pub(super) fn build_edit_diff_view(file_path: &str, old: &str, new: &str) -> crate::types::DiffView {
+pub(super) fn build_edit_diff_view(
+    file_path: &str,
+    old: &str,
+    new: &str,
+) -> crate::types::DiffView {
     use crate::types::{DiffHunk, DiffLine, DiffLineKind, DiffView};
     const CONTEXT: usize = 3;
     let old_lines: Vec<&str> = old.lines().collect();
@@ -430,4 +430,3 @@ pub(super) fn build_edit_diff_view(file_path: &str, old: &str, new: &str) -> cra
         deletions,
     }
 }
-

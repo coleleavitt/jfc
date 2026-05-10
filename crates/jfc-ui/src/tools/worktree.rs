@@ -88,9 +88,7 @@ pub(super) async fn execute_enter_worktree(
                     ))
                 }
             }
-            Err(e) => {
-                ExecutionResult::failure(format!("enter_worktree: spawn failed: {e}"))
-            }
+            Err(e) => ExecutionResult::failure(format!("enter_worktree: spawn failed: {e}")),
         };
     }
 

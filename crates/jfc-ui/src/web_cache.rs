@@ -107,9 +107,6 @@ mod tests {
         // Fill to cap, then add one more — first entry should be gone.
         put("https://overflow.example/", "new".to_string());
         assert!(get("https://e0.example/").is_none());
-        assert_eq!(
-            get("https://overflow.example/"),
-            Some("new".to_string())
-        );
+        assert_eq!(get("https://overflow.example/"), Some("new".to_string()));
     }
 }

@@ -467,10 +467,7 @@ fn parse_skill(path: &Path, raw: &str) -> Option<Skill> {
 /// Only renders when at least one agent has a `key_trigger` populated.
 /// Returns `""` otherwise so callers can unconditionally `push_str`.
 pub(crate) fn render_dispatch_section(agents: &[AgentDef]) -> String {
-    let triggers: Vec<&AgentDef> = agents
-        .iter()
-        .filter(|a| a.key_trigger.is_some())
-        .collect();
+    let triggers: Vec<&AgentDef> = agents.iter().filter(|a| a.key_trigger.is_some()).collect();
     if triggers.is_empty() {
         return String::new();
     }

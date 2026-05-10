@@ -154,7 +154,10 @@ mod tests {
     fn unknown_string_falls_back_to_default_robust() {
         assert_eq!(OutputStyle::from_str_loose(""), OutputStyle::Default);
         assert_eq!(OutputStyle::from_str_loose("XYZ"), OutputStyle::Default);
-        assert_eq!(OutputStyle::from_str_loose("not-a-style"), OutputStyle::Default);
+        assert_eq!(
+            OutputStyle::from_str_loose("not-a-style"),
+            OutputStyle::Default
+        );
     }
 
     /// Robust: case-insensitive parsing — `BRIEF`, `Brief`, `brief`

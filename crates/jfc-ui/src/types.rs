@@ -194,7 +194,9 @@ pub enum MessagePart {
     Reasoning(String),
     Tool(ToolCall),
     TaskStatus(TaskStatusPart),
-    CompactBoundary { pre_tokens: usize },
+    CompactBoundary {
+        pre_tokens: usize,
+    },
     /// A parallel-advisor reply (see `crate::advisor`). Rendered with a
     /// distinct visual style (italic + secondary text color + "ADVISOR:"
     /// prefix) so the user can tell at a glance that this came from the
@@ -432,11 +434,7 @@ impl ToolCall {
     /// and hasn't been dispatched yet — guarantees the start state is
     /// always a sane `Pending`, never accidentally `Running` or
     /// `Completed`.
-    pub fn new_pending(
-        id: crate::ids::ToolId,
-        kind: ToolKind,
-        input: ToolInput,
-    ) -> Self {
+    pub fn new_pending(id: crate::ids::ToolId, kind: ToolKind, input: ToolInput) -> Self {
         Self {
             id,
             kind,
@@ -498,10 +496,7 @@ impl ToolCall {
         self.try_transition_to(ExecutionStatus::Cancelled)
     }
 
-    fn try_transition_to(
-        &mut self,
-        target: ExecutionStatus,
-    ) -> Result<(), InvalidToolTransition> {
+    fn try_transition_to(&mut self, target: ExecutionStatus) -> Result<(), InvalidToolTransition> {
         if !self.status.allows_transition_to(target) {
             return Err(InvalidToolTransition {
                 from: self.status,
@@ -769,7 +764,9 @@ pub enum ToolKind {
     /// silent dispatch to `Generic("Foo")` until someone notices.
     /// Always denied by permission checks — we won't dispatch a tool
     /// we don't understand.
-    UnknownTool { advertised_name: String },
+    UnknownTool {
+        advertised_name: String,
+    },
 }
 
 /// Returned by [`ToolCall::mark_running`] and friends when the caller
@@ -1314,9 +1311,7 @@ pub enum TurnInvariantError {
     /// status on a `Role::User` message. Tool calls live on assistant
     /// messages; finding one user-side means deserialization or the
     /// stream pipeline routed something to the wrong message.
-    #[error(
-        "orphan tool_result {tool_id} at index {at_index} (tool part on a user message)"
-    )]
+    #[error("orphan tool_result {tool_id} at index {at_index} (tool part on a user message)")]
     OrphanToolResult {
         tool_id: crate::ids::ToolId,
         at_index: usize,
@@ -1358,9 +1353,7 @@ fn default_true() -> bool {
     true
 }
 
-pub fn validate_turn_invariants(
-    messages: &[ChatMessage],
-) -> Result<(), TurnInvariantError> {
+pub fn validate_turn_invariants(messages: &[ChatMessage]) -> Result<(), TurnInvariantError> {
     validate_turn_invariants_inner(messages, /* allow_streaming_tail = */ false)
 }
 
@@ -1396,16 +1389,11 @@ pub(crate) fn validate_turn_invariants_inner(
                 // that may legitimately be followed by another user
                 // message describing the resumed task. Skip the
                 // alternation check across that exact seam.
-                let either_is_boundary =
-                    prev.is_compact_boundary() || m.is_compact_boundary();
+                let either_is_boundary = prev.is_compact_boundary() || m.is_compact_boundary();
                 if !either_is_boundary {
                     return Err(match m.role {
-                        Role::User => TurnInvariantError::ConsecutiveUser {
-                            at_index: i,
-                        },
-                        Role::Assistant => TurnInvariantError::ConsecutiveAssistant {
-                            at_index: i,
-                        },
+                        Role::User => TurnInvariantError::ConsecutiveUser { at_index: i },
+                        Role::Assistant => TurnInvariantError::ConsecutiveAssistant { at_index: i },
                     });
                 }
             }
@@ -1424,9 +1412,7 @@ pub(crate) fn validate_turn_invariants_inner(
             | MessagePart::TaskStatus(_)
             | MessagePart::CompactBoundary { .. } => true,
         });
-        let is_streaming_tail = allow_streaming_tail
-            && i == last_idx
-            && m.role == Role::Assistant;
+        let is_streaming_tail = allow_streaming_tail && i == last_idx && m.role == Role::Assistant;
         if !has_content && !is_streaming_tail {
             return Err(TurnInvariantError::EmptyMessage {
                 at_index: i,
@@ -1676,13 +1662,8 @@ impl ToolKind {
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum ToolInputError {
     #[error("tool `{tool}`: missing required field `{field}`")]
-    MissingField {
-        tool: String,
-        field: &'static str,
-    },
-    #[error(
-        "tool `{tool}`: field `{field}` has wrong type (expected {expected}, got {got})"
-    )]
+    MissingField { tool: String, field: &'static str },
+    #[error("tool `{tool}`: field `{field}` has wrong type (expected {expected}, got {got})")]
     WrongType {
         tool: String,
         field: &'static str,
@@ -1785,15 +1766,25 @@ impl ToolInput {
                 let preview: String = arguments.to_string().chars().take(60).collect();
                 format!("{label}: {preview}")
             }
-            Self::CronCreate { schedule, description, .. } => format!("cron `{schedule}`: {description}"),
+            Self::CronCreate {
+                schedule,
+                description,
+                ..
+            } => format!("cron `{schedule}`: {description}"),
             Self::CronList => "list cron jobs".into(),
             Self::CronDelete { id } => format!("delete cron: {id}"),
-            Self::ScheduleWakeup { delay_seconds, reason, .. } => format!("wake in {delay_seconds}s: {reason}"),
+            Self::ScheduleWakeup {
+                delay_seconds,
+                reason,
+                ..
+            } => format!("wake in {delay_seconds}s: {reason}"),
             Self::Monitor { command, until } => {
                 let preview: String = command.chars().take(40).collect();
                 format!("monitor `{preview}` until /{until}/")
             }
-            Self::Lsp { kind, file, line, .. } => format!("lsp {kind} {file}:{line}"),
+            Self::Lsp {
+                kind, file, line, ..
+            } => format!("lsp {kind} {file}:{line}"),
             Self::PushNotification { message, title } => match title {
                 Some(t) if !t.is_empty() => format!("{t}: {message}"),
                 _ => message.clone(),
@@ -1809,7 +1800,12 @@ impl ToolInput {
             },
             Self::ExitWorktree => "exit worktree".into(),
             Self::NotebookRead { path } => path.clone(),
-            Self::NotebookEdit { path, cell_id, edit_mode, .. } => {
+            Self::NotebookEdit {
+                path,
+                cell_id,
+                edit_mode,
+                ..
+            } => {
                 let mode = edit_mode.as_deref().unwrap_or("replace");
                 format!("notebook {mode} {path}#{cell_id}")
             }
@@ -1825,10 +1821,7 @@ impl ToolInput {
     /// "Validate at construction, trust thereafter." Once a `ToolInput` is
     /// built, downstream code can rely on required string fields actually
     /// being string-typed. `Bash::command` additionally must be non-empty.
-    pub fn from_value(
-        tool_name: &str,
-        v: serde_json::Value,
-    ) -> Result<Self, ToolInputError> {
+    pub fn from_value(tool_name: &str, v: serde_json::Value) -> Result<Self, ToolInputError> {
         let obj = match &v {
             serde_json::Value::Object(m) => Some(m),
             _ => None,
@@ -2119,9 +2112,7 @@ impl ToolInput {
                 description: req_str("description")?,
             },
             ToolKind::CronList => Self::CronList,
-            ToolKind::CronDelete => Self::CronDelete {
-                id: req_str("id")?,
-            },
+            ToolKind::CronDelete => Self::CronDelete { id: req_str("id")? },
             ToolKind::ScheduleWakeup => Self::ScheduleWakeup {
                 delay_seconds: obj
                     .and_then(|m| m.get("delay_seconds"))
@@ -2138,8 +2129,14 @@ impl ToolInput {
             ToolKind::Lsp => Self::Lsp {
                 kind: req_str("kind")?,
                 file: req_str("file")?,
-                line: obj.and_then(|m| m.get("line")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                column: obj.and_then(|m| m.get("column")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                line: obj
+                    .and_then(|m| m.get("line"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32,
+                column: obj
+                    .and_then(|m| m.get("column"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32,
             },
             ToolKind::PushNotification => Self::PushNotification {
                 message: req_str("message")?,
@@ -3320,7 +3317,8 @@ mod tests {
         // Completed when a tool was approved + executed faster than
         // the UI can poll. The transition rules allow this.
         let mut tc = fixture_pending_tool();
-        tc.mark_completed().expect("Pending → Completed should succeed");
+        tc.mark_completed()
+            .expect("Pending → Completed should succeed");
         assert_eq!(tc.status, ExecutionStatus::Completed);
     }
 
@@ -3352,7 +3350,8 @@ mod tests {
     #[test]
     fn tool_call_cancel_from_pending_normal() {
         let mut tc = fixture_pending_tool();
-        tc.mark_cancelled().expect("Pending → Cancelled should succeed");
+        tc.mark_cancelled()
+            .expect("Pending → Cancelled should succeed");
         assert_eq!(tc.status, ExecutionStatus::Cancelled);
         // Now terminal — further transitions refused.
         assert!(tc.mark_completed().is_err());
@@ -3866,8 +3865,7 @@ mod tests {
             "description": "release v1",
             "blocked_by": ["t1", "t2"],
         });
-        let input =
-            ToolInput::from_value("TaskCreate", v).expect("valid TaskCreate input");
+        let input = ToolInput::from_value("TaskCreate", v).expect("valid TaskCreate input");
         match input {
             ToolInput::TaskCreate { blocked_by, .. } => {
                 assert_eq!(blocked_by.len(), 2);
@@ -3886,8 +3884,7 @@ mod tests {
             "message": {"kind": "ping", "n": 42},
             "summary": "ping",
         });
-        let input = ToolInput::from_value("SendMessage", v)
-            .expect("valid SendMessage input");
+        let input = ToolInput::from_value("SendMessage", v).expect("valid SendMessage input");
         match input {
             ToolInput::SendMessage { to, message, .. } => {
                 assert_eq!(to, "alice");
@@ -3902,8 +3899,7 @@ mod tests {
     #[test]
     fn tool_input_from_value_unknown_kind_falls_through_to_generic_robust() {
         let v = serde_json::json!({"foo": "bar"});
-        let input = ToolInput::from_value("not_a_real_tool", v)
-            .expect("Generic accepts any shape");
+        let input = ToolInput::from_value("not_a_real_tool", v).expect("Generic accepts any shape");
         match input {
             ToolInput::Generic { summary } => {
                 // Generic stores the original JSON as a string.
@@ -3945,8 +3941,7 @@ mod tests {
     #[test]
     fn tool_input_from_value_rejects_write_with_null_content_robust() {
         let v = serde_json::json!({"file_path": "/etc/passwd", "content": null});
-        let err = ToolInput::from_value("Write", v)
-            .expect_err("Write with null content must fail");
+        let err = ToolInput::from_value("Write", v).expect_err("Write with null content must fail");
         assert_eq!(
             err,
             ToolInputError::MissingField {
@@ -3962,8 +3957,7 @@ mod tests {
     #[test]
     fn tool_input_from_value_rejects_bash_with_empty_command_robust() {
         let v = serde_json::json!({"command": ""});
-        let err = ToolInput::from_value("Bash", v)
-            .expect_err("Bash with empty command must fail");
+        let err = ToolInput::from_value("Bash", v).expect_err("Bash with empty command must fail");
         match err {
             ToolInputError::InvalidShape { tool, reason } => {
                 assert_eq!(tool, "Bash");
@@ -3982,8 +3976,7 @@ mod tests {
     #[test]
     fn tool_input_from_value_rejects_read_missing_file_path_robust() {
         let v = serde_json::json!({"offset": 0, "limit": 100});
-        let err = ToolInput::from_value("Read", v)
-            .expect_err("Read with no file_path must fail");
+        let err = ToolInput::from_value("Read", v).expect_err("Read with no file_path must fail");
         assert_eq!(
             err,
             ToolInputError::MissingField {
@@ -3999,8 +3992,7 @@ mod tests {
     #[test]
     fn tool_input_from_value_rejects_wrong_typed_field_robust() {
         let v = serde_json::json!({"file_path": 42, "content": "hi"});
-        let err = ToolInput::from_value("Write", v)
-            .expect_err("file_path must be a string");
+        let err = ToolInput::from_value("Write", v).expect_err("file_path must be a string");
         match err {
             ToolInputError::WrongType {
                 tool,
@@ -4389,8 +4381,7 @@ mod tests {
             ChatMessage::assistant("a".into()),
             ChatMessage::assistant("b".into()),
         ];
-        let err = validate_turn_invariants(&msgs)
-            .expect_err("must flag consecutive assistant");
+        let err = validate_turn_invariants(&msgs).expect_err("must flag consecutive assistant");
         assert_eq!(
             err,
             TurnInvariantError::ConsecutiveAssistant { at_index: 2 }
@@ -4432,8 +4423,7 @@ mod tests {
             ChatMessage::assistant(String::new()),
         ];
         // Strict mode rejects the empty placeholder.
-        let err = validate_turn_invariants(&msgs)
-            .expect_err("strict mode rejects empty tail");
+        let err = validate_turn_invariants(&msgs).expect_err("strict mode rejects empty tail");
         assert!(matches!(err, TurnInvariantError::EmptyMessage { .. }));
         // Permissive mode accepts it (the streaming pipeline is about
         // to fill it in).
@@ -4448,14 +4438,11 @@ mod tests {
     fn validate_turn_invariants_flags_orphan_tool_use_robust() {
         let msgs = vec![
             ChatMessage::user("run it".into()),
-            ChatMessage::assistant_parts(vec![MessagePart::Tool(pending_tool_call(
-                "tool_42",
-            ))]),
+            ChatMessage::assistant_parts(vec![MessagePart::Tool(pending_tool_call("tool_42"))]),
             ChatMessage::user("never mind".into()),
             ChatMessage::assistant("ok".into()),
         ];
-        let err =
-            validate_turn_invariants(&msgs).expect_err("must flag orphan tool_use");
+        let err = validate_turn_invariants(&msgs).expect_err("must flag orphan tool_use");
         match err {
             TurnInvariantError::OrphanToolUse { tool_id, at_index } => {
                 assert_eq!(tool_id, crate::ids::ToolId::new("tool_42"));
@@ -4481,8 +4468,7 @@ mod tests {
             elapsed: None,
             usage: None,
         }];
-        let err = validate_turn_invariants(&msgs)
-            .expect_err("tool part on user role must fail");
+        let err = validate_turn_invariants(&msgs).expect_err("tool part on user role must fail");
         match err {
             TurnInvariantError::OrphanToolResult { tool_id, at_index } => {
                 assert_eq!(tool_id, crate::ids::ToolId::new("tool_99"));
@@ -4501,8 +4487,7 @@ mod tests {
             ChatMessage::assistant("oops, I went first".into()),
             ChatMessage::user("hi".into()),
         ];
-        let err = validate_turn_invariants(&msgs)
-            .expect_err("leading assistant must fail");
+        let err = validate_turn_invariants(&msgs).expect_err("leading assistant must fail");
         assert_eq!(
             err,
             TurnInvariantError::LeadingAssistant {

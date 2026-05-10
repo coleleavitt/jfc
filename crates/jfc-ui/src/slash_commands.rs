@@ -173,7 +173,10 @@ mod tests {
     #[test]
     fn parse_shortcuts() {
         assert_eq!(parse_slash_command("/m"), Some(SlashCommand::Model(None)));
-        assert_eq!(parse_slash_command("/e high"), Some(SlashCommand::Effort(Some("high".to_string()))));
+        assert_eq!(
+            parse_slash_command("/e high"),
+            Some(SlashCommand::Effort(Some("high".to_string())))
+        );
         assert_eq!(parse_slash_command("/q"), Some(SlashCommand::Exit));
         assert_eq!(parse_slash_command("/h"), Some(SlashCommand::Help));
     }
@@ -196,7 +199,10 @@ mod tests {
     #[test]
     fn case_insensitive() {
         assert_eq!(parse_slash_command("/COMPACT"), Some(SlashCommand::Compact));
-        assert_eq!(parse_slash_command("/Model foo"), Some(SlashCommand::Model(Some("foo".to_string()))));
+        assert_eq!(
+            parse_slash_command("/Model foo"),
+            Some(SlashCommand::Model(Some("foo".to_string())))
+        );
     }
 
     #[test]
@@ -225,7 +231,10 @@ mod tests {
     // wizards (anthropic / claudeai / bedrock / vertex / console).
     #[test]
     fn parse_login_normal() {
-        assert_eq!(parse_slash_command("/login"), Some(SlashCommand::Login(None)));
+        assert_eq!(
+            parse_slash_command("/login"),
+            Some(SlashCommand::Login(None))
+        );
         assert_eq!(
             parse_slash_command("/login bedrock"),
             Some(SlashCommand::Login(Some("bedrock".to_string())))

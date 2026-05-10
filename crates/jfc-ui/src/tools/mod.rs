@@ -13,32 +13,38 @@ mod search;
 mod subagent;
 mod swarm;
 mod tasks;
-mod worktree;
 #[cfg(test)]
 mod tests;
+mod worktree;
 
 // Re-exports from submodules
 pub(crate) use defs::all_tool_defs;
 pub(crate) use economy::{
-    apply_winning_solution, market_report_string,
-    EconomyAgentInvoker, EconomySwarmProvider,
+    EconomyAgentInvoker, EconomySwarmProvider, apply_winning_solution, market_report_string,
 };
-pub(crate) use subagent::execute_task;
+pub(crate) use subagent::{execute_task, selected_subagent_model};
 pub(crate) use tasks::execute_skill;
 
-
 // Internal imports from submodules (used by execute_tool dispatcher)
-use economy::strip_html_tags;
 use bash::execute_bash;
-use daemon::{execute_cron_create, execute_cron_delete, execute_cron_list, execute_monitor, execute_schedule_wakeup};
+use daemon::{
+    execute_cron_create, execute_cron_delete, execute_cron_list, execute_monitor,
+    execute_schedule_wakeup,
+};
+use economy::strip_html_tags;
 use filesystem::{execute_edit, execute_read, execute_write};
 use lsp::execute_lsp;
 use memory::{execute_memory_create, execute_memory_delete};
 use notebook::{execute_notebook_edit, execute_notebook_read};
 use notifications::{execute_push_notification, execute_remote_trigger};
 use search::{execute_glob, execute_grep};
-use swarm::{execute_send_message, execute_team_create, execute_team_delete, execute_team_member_mode};
-use tasks::{execute_task_create, execute_task_done, execute_task_get, execute_task_list, execute_task_update};
+use swarm::{
+    execute_send_message, execute_team_create, execute_team_delete, execute_team_member_mode,
+};
+use tasks::{
+    execute_task_create, execute_task_done, execute_task_get, execute_task_list,
+    execute_task_update,
+};
 use worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
 
 use std::path::{Path, PathBuf};
@@ -266,8 +272,7 @@ pub(crate) fn snapshot_mcp_registry() -> Option<crate::mcp::McpRegistry> {
 /// just before serialization.
 fn pending_tool_attachments_handle()
 -> &'static std::sync::Mutex<Vec<crate::attachments::Attachment>> {
-    static H: OnceLock<std::sync::Mutex<Vec<crate::attachments::Attachment>>> =
-        OnceLock::new();
+    static H: OnceLock<std::sync::Mutex<Vec<crate::attachments::Attachment>>> = OnceLock::new();
     H.get_or_init(|| std::sync::Mutex::new(Vec::new()))
 }
 
@@ -436,7 +441,6 @@ use tokio::sync::Mutex;
 unsafe extern "C" {
     fn setsid() -> i32;
 }
-
 
 use crate::context::ReadDedupCache;
 use crate::provider::ToolDef;
@@ -945,9 +949,7 @@ pub async fn execute_tool(
                     // next turn (e.g. `path fn:foo → fn:bar`). Bounded
                     // at 50 entries to keep the budget bite small even
                     // when a query returns hundreds of nodes.
-                    if want_handles
-                        && let Some(ref raw) = raw_for_predicates
-                    {
+                    if want_handles && let Some(ref raw) = raw_for_predicates {
                         let handles = raw.handles(&session.graph);
                         if !handles.is_empty() {
                             text.push_str("\n\n--- handles ---");
@@ -1045,8 +1047,13 @@ pub async fn execute_tool(
                     if include_untested_list && untested > 0 {
                         summary.push_str("\n\nUntested functions:");
                         let mut count = 0;
-                        for node in session.graph.nodes_by_kind(jfc_graph::nodes::NodeKind::Function) {
-                            if node.metadata.get("coverage_tested").map(|v| v.as_str()) == Some("false") {
+                        for node in session
+                            .graph
+                            .nodes_by_kind(jfc_graph::nodes::NodeKind::Function)
+                        {
+                            if node.metadata.get("coverage_tested").map(|v| v.as_str())
+                                == Some("false")
+                            {
                                 summary.push_str(&format!(
                                     "\n  - {} ({}:{})",
                                     node.qualified_name,
@@ -1067,7 +1074,9 @@ pub async fn execute_tool(
                 }
                 Err(e) => {
                     summary.push_str(&format!("Coverage collection failed: {e}\n\n"));
-                    summary.push_str("Skipping coverage annotation, running possible-types analysis only.");
+                    summary.push_str(
+                        "Skipping coverage annotation, running possible-types analysis only.",
+                    );
                 }
             }
 
@@ -1524,10 +1533,7 @@ pub async fn execute_tool(
             }
             ExecutionResult::success(body)
         }
-        (
-            ToolKind::MultiEdit,
-            ToolInput::MultiEdit { file_path, edits },
-        ) => {
+        (ToolKind::MultiEdit, ToolInput::MultiEdit { file_path, edits }) => {
             // Apply each edit in order. Each edit sees the previous
             // edit's output, so later edits can reference text that
             // earlier edits introduced. Bails on the first edit that
@@ -1543,16 +1549,24 @@ pub async fn execute_tool(
                     ));
                 }
             };
-            let edit_array = match edits.as_array() {
-                Some(a) => a,
-                None => return ExecutionResult::failure(
-                    "MultiEdit: `edits` must be an array of {old_string, new_string} objects".to_string(),
-                ),
-            };
+            let edit_array =
+                match edits.as_array() {
+                    Some(a) => a,
+                    None => return ExecutionResult::failure(
+                        "MultiEdit: `edits` must be an array of {old_string, new_string} objects"
+                            .to_string(),
+                    ),
+                };
             let mut applied = 0usize;
             for (i, edit) in edit_array.iter().enumerate() {
-                let old = edit.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-                let new_s = edit.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                let old = edit
+                    .get("old_string")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let new_s = edit
+                    .get("new_string")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let replace_all = edit
                     .get("replace_all")
                     .and_then(|v| v.as_bool())
@@ -1619,7 +1633,10 @@ pub async fn execute_tool(
                     arr.iter()
                         .filter_map(|opt| {
                             let label = opt.get("label").and_then(|v| v.as_str())?;
-                            let desc = opt.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                            let desc = opt
+                                .get("description")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
                             if desc.is_empty() {
                                 Some(format!("- {label}"))
                             } else {
@@ -1711,7 +1728,11 @@ pub async fn execute_tool(
             };
             // Cap to 50 KB so the tool result doesn't blow context.
             let truncated = if body.len() > 50_000 {
-                format!("{}\n\n[...truncated, full {} bytes]", &body[..50_000], body.len())
+                format!(
+                    "{}\n\n[...truncated, full {} bytes]",
+                    &body[..50_000],
+                    body.len()
+                )
             } else {
                 body
             };
@@ -1724,9 +1745,7 @@ pub async fn execute_tool(
                 .as_ref()
                 .map(|p| format!("Focus: {p}\n\n"))
                 .unwrap_or_default();
-            ExecutionResult::success(format!(
-                "GET {url} → {status}\n\n{prompt_hint}{truncated}"
-            ))
+            ExecutionResult::success(format!("GET {url} → {status}\n\n{prompt_hint}{truncated}"))
         }
         (ToolKind::WebSearch, ToolInput::WebSearch { query, max_results }) => {
             let num = max_results.unwrap_or(5) as usize;
@@ -1752,7 +1771,8 @@ pub async fn execute_tool(
                 ExecutionResult::success(
                     "Plan presented to user. Permission mode transitions \
                      from Plan to AcceptEdits — you may now perform the \
-                     destructive operations described in the plan.".to_string(),
+                     destructive operations described in the plan."
+                        .to_string(),
                 )
             } else {
                 tracing::warn!(
@@ -1844,4 +1864,3 @@ pub async fn execute_tool(
         (kind, _) => ExecutionResult::failure(format!("Tool {:?} not yet implemented", kind)),
     }
 }
-

@@ -116,8 +116,7 @@ pub fn detect_kind(bytes: &[u8]) -> Option<AttachmentKind> {
 /// 413 round-trip.
 pub fn read_pdf_file(path: &std::path::Path) -> Result<Attachment, String> {
     const MAX_PDF_BYTES: u64 = 32 * 1024 * 1024;
-    let metadata = std::fs::metadata(path)
-        .map_err(|e| format!("stat {}: {e}", path.display()))?;
+    let metadata = std::fs::metadata(path).map_err(|e| format!("stat {}: {e}", path.display()))?;
     if metadata.len() > MAX_PDF_BYTES {
         return Err(format!(
             "PDF too large ({} bytes; cap is {} MiB)",
@@ -125,8 +124,7 @@ pub fn read_pdf_file(path: &std::path::Path) -> Result<Attachment, String> {
             MAX_PDF_BYTES / 1024 / 1024
         ));
     }
-    let bytes = std::fs::read(path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     if detect_kind(&bytes) != Some(AttachmentKind::ApplicationPdf) {
         return Err(format!(
             "{} does not start with `%PDF-` magic bytes",
@@ -238,7 +236,11 @@ pub fn to_anthropic_content_block(att: &Attachment) -> serde_json::Value {
         // re-encode. Tracked via task #193 in the session log.
     }
     let data = base64::engine::general_purpose::STANDARD.encode(&att.bytes);
-    let block_type = if att.kind.is_pdf() { "document" } else { "image" };
+    let block_type = if att.kind.is_pdf() {
+        "document"
+    } else {
+        "image"
+    };
     serde_json::json!({
         "type": block_type,
         "source": {
@@ -283,7 +285,11 @@ pub async fn to_anthropic_content_block_async(
                 bytes = att.bytes.len(),
                 "uploaded via Files API"
             );
-            let block_type = if att.kind.is_pdf() { "document" } else { "image" };
+            let block_type = if att.kind.is_pdf() {
+                "document"
+            } else {
+                "image"
+            };
             serde_json::json!({
                 "type": block_type,
                 "source": {

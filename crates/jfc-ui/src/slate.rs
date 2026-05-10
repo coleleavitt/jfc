@@ -148,9 +148,17 @@ impl QueryClass {
             "make it",
             "change the",
         ];
-        let has_file_path = trimmed
-            .split_whitespace()
-            .any(|w| (w.contains('/') && (w.contains(".rs") || w.contains(".ts") || w.contains(".js") || w.contains(".py") || w.contains(".go") || w.contains(".md") || w.contains(".toml"))) || w.starts_with("./"));
+        let has_file_path = trimmed.split_whitespace().any(|w| {
+            (w.contains('/')
+                && (w.contains(".rs")
+                    || w.contains(".ts")
+                    || w.contains(".js")
+                    || w.contains(".py")
+                    || w.contains(".go")
+                    || w.contains(".md")
+                    || w.contains(".toml")))
+                || w.starts_with("./")
+        });
         if EDIT_KEYWORDS.iter().any(|kw| lower.contains(kw)) || (has_file_path && len < 512) {
             return Self::CodeEdit;
         }
@@ -526,10 +534,7 @@ mod tests {
 
         // Rule set covers some classes but not others — uncovered classes
         // fall through to default.
-        let router = SlateRouter::new(vec![RoutingRule::new(
-            QueryClass::Refactor,
-            "opus-routed",
-        )]);
+        let router = SlateRouter::new(vec![RoutingRule::new(QueryClass::Refactor, "opus-routed")]);
         // Refactor → opus-routed.
         assert_eq!(
             router.route("rewrite the renderer", pin.clone()).as_str(),
@@ -538,7 +543,10 @@ mod tests {
         // Trivial → no rule, returns default.
         assert_eq!(router.route("ok", pin.clone()), pin);
         // Exploration → no rule, returns default.
-        assert_eq!(router.route("explain X", pin), ModelId::from("pinned-model"));
+        assert_eq!(
+            router.route("explain X", pin),
+            ModelId::from("pinned-model")
+        );
     }
 
     #[test]
@@ -573,16 +581,10 @@ mod tests {
                 .with_fallback("experiment-model"),
         ]);
         // Same query → same bucket → same model on every call.
-        let (m1, id1) = router.route_with_experiment(
-            "rewrite this function",
-            ModelId::from("def"),
-            10,
-        );
-        let (m2, id2) = router.route_with_experiment(
-            "rewrite this function",
-            ModelId::from("def"),
-            10,
-        );
+        let (m1, id1) =
+            router.route_with_experiment("rewrite this function", ModelId::from("def"), 10);
+        let (m2, id2) =
+            router.route_with_experiment("rewrite this function", ModelId::from("def"), 10);
         assert_eq!(m1, m2);
         assert_eq!(id1, id2);
         // exp_id is Some because a rule matched AND a fallback exists.
@@ -600,11 +602,8 @@ mod tests {
             QueryClass::Refactor,
             "control-model",
         )]); // no with_fallback
-        let (model, id) = router.route_with_experiment(
-            "rewrite this function",
-            ModelId::from("def"),
-            10,
-        );
+        let (model, id) =
+            router.route_with_experiment("rewrite this function", ModelId::from("def"), 10);
         assert_eq!(model.as_str(), "control-model");
         assert!(id.is_none(), "no fallback configured → no experiment id");
     }
@@ -613,7 +612,7 @@ mod tests {
     fn experiment_no_rule_match_returns_none_id_robust() {
         // No rule for the query's class → both model and id come from default.
         let router = SlateRouter::new(vec![
-            RoutingRule::new(QueryClass::Trivial, "haiku").with_fallback("haiku-exp")
+            RoutingRule::new(QueryClass::Trivial, "haiku").with_fallback("haiku-exp"),
         ]);
         let (model, id) =
             router.route_with_experiment("explain how X works", ModelId::from("def"), 10);

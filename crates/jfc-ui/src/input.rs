@@ -1133,7 +1133,11 @@ pub async fn handle_key(
             KeyCode::Char('x') => {
                 if let Some(id) = app.viewing_task_id.clone() {
                     if let Some(bt) = app.background_tasks.get_mut(&id) {
-                        if matches!(bt.status, crate::types::TaskLifecycle::Running | crate::types::TaskLifecycle::Idle) {
+                        if matches!(
+                            bt.status,
+                            crate::types::TaskLifecycle::Running
+                                | crate::types::TaskLifecycle::Idle
+                        ) {
                             bt.status = crate::types::TaskLifecycle::Failed;
                             bt.error = Some("cancelled by user".into());
                             crate::toast::push_with_cap(
@@ -1155,9 +1159,7 @@ pub async fn handle_key(
                         let prompt = bt.description.clone();
                         let tx_clone = tx.clone();
                         tokio::spawn(async move {
-                            let _ = tx_clone
-                                .send(crate::app::AppEvent::Submit(prompt))
-                                .await;
+                            let _ = tx_clone.send(crate::app::AppEvent::Submit(prompt)).await;
                         });
                         crate::toast::push_with_cap(
                             &mut app.toasts,
@@ -1948,7 +1950,10 @@ pub async fn handle_key(
                         crate::toast::Toast::new(
                             crate::toast::ToastKind::Warning,
                             if killed > 0 {
-                                format!("⏹ Interrupting… (SIGTERMed {killed} bash process{})", if killed == 1 { "" } else { "es" })
+                                format!(
+                                    "⏹ Interrupting… (SIGTERMed {killed} bash process{})",
+                                    if killed == 1 { "" } else { "es" }
+                                )
                             } else {
                                 "⏹ Interrupting…".to_owned()
                             },
@@ -2262,7 +2267,9 @@ async fn handle_submit(
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         for token in text.split_whitespace() {
             // Strip surrounding punctuation: `(@src/foo.rs)` → `src/foo.rs`.
-            let stripped = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '/' && c != '.' && c != '_' && c != '-' && c != '@');
+            let stripped = token.trim_matches(|c: char| {
+                !c.is_alphanumeric() && c != '/' && c != '.' && c != '_' && c != '-' && c != '@'
+            });
             let Some(rest) = stripped.strip_prefix('@') else {
                 continue;
             };
@@ -2602,7 +2609,8 @@ async fn handle_submit(
         let cwd = app.cwd.clone();
         let model = app.model.clone();
         tokio::spawn(async move {
-            crate::session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
+            crate::session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str()))
+                .await;
         });
     }
     app.current_session_id = Some(session_id.clone());
@@ -2615,8 +2623,7 @@ async fn handle_submit(
     // `app.model` — legacy behavior. The pinned model is also the fallback
     // for unmatched classes inside the router itself.
     let model = if let Some(ref router) = app.slate {
-        let (routed, class, rule_idx) =
-            router.route_explained(&text, app.model.clone());
+        let (routed, class, rule_idx) = router.route_explained(&text, app.model.clone());
         tracing::info!(
             target: "jfc::slate",
             class = ?class,
@@ -2769,22 +2776,20 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             app.messages
                 .push(ChatMessage::user(format!("/advisor {query}")));
             if !app.advisor_enabled {
-                app.messages.push(ChatMessage::assistant_parts(vec![
-                    MessagePart::Advisor(
+                app.messages
+                    .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                         "Advisor mode is disabled. Set `JFC_ADVISOR_ENABLED=1` and \
                          restart jfc to enable parallel advisor queries."
                             .into(),
-                    ),
-                ]));
+                    )]));
             } else if query.is_empty() {
-                app.messages.push(ChatMessage::assistant_parts(vec![
-                    MessagePart::Advisor(
+                app.messages
+                    .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
                         "Usage: `/advisor <question>` — runs a parallel call \
                          against a snapshot of this transcript and surfaces \
                          the reply here without disturbing the main agent."
                             .into(),
-                    ),
-                ]));
+                    )]));
             } else {
                 // Lazy-mint the session on first use so users that never
                 // call /advisor pay no allocation cost. The session model
@@ -2792,9 +2797,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 // models mid-session keeps the original advisor model.
                 let session = app
                     .advisor_session
-                    .get_or_insert_with(|| {
-                        crate::advisor::AdvisorSession::new(app.model.clone())
-                    });
+                    .get_or_insert_with(|| crate::advisor::AdvisorSession::new(app.model.clone()));
                 // Snapshot — Vec::clone is fine here, the deliverable
                 // explicitly calls for a SNAPSHOT semantic. Without the
                 // clone, `ask_advisor` would borrow `app.messages`
@@ -2945,43 +2948,44 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             } else {
                 let typed_session_id = crate::ids::SessionId::new(session_id);
                 if let Some(messages) = crate::session::load_session(&typed_session_id).await {
-                let msg_count = messages.len();
-                // Compare the loaded session's recorded cwd against the
-                // current process cwd before mutating app state. The
-                // resume still proceeds either way — the toast is just
-                // informational so the user notices they may be
-                // pointing at the wrong project.
-                if !force {
-                    let session_cwd = crate::session::load_session_metadata(&typed_session_id)
-                        .await
-                        .and_then(|m| m.cwd);
-                    let current_cwd = std::env::current_dir()
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    if let Some(msg) =
-                        crate::session::cwd_mismatch_message(session_cwd.as_deref(), &current_cwd)
-                    {
-                        crate::toast::push_with_cap(
-                            &mut app.toasts,
-                            crate::toast::Toast::new(crate::toast::ToastKind::Warning, msg),
-                        );
+                    let msg_count = messages.len();
+                    // Compare the loaded session's recorded cwd against the
+                    // current process cwd before mutating app state. The
+                    // resume still proceeds either way — the toast is just
+                    // informational so the user notices they may be
+                    // pointing at the wrong project.
+                    if !force {
+                        let session_cwd = crate::session::load_session_metadata(&typed_session_id)
+                            .await
+                            .and_then(|m| m.cwd);
+                        let current_cwd = std::env::current_dir()
+                            .map(|p| p.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        if let Some(msg) = crate::session::cwd_mismatch_message(
+                            session_cwd.as_deref(),
+                            &current_cwd,
+                        ) {
+                            crate::toast::push_with_cap(
+                                &mut app.toasts,
+                                crate::toast::Toast::new(crate::toast::ToastKind::Warning, msg),
+                            );
+                        }
                     }
+                    app.messages = messages;
+                    app.switch_session(Some(typed_session_id.clone()));
+                    app.streaming_text.clear();
+                    app.streaming_reasoning.clear();
+                    app.streaming_response_bytes = 0;
+                    app.streaming_assistant_idx = None;
+                    app.scroll_to_bottom();
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "**Resumed session `{typed_session_id}`** — {msg_count} message(s) loaded."
+                    )));
+                } else {
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "**Error:** Session `{typed_session_id}` not found."
+                    )));
                 }
-                app.messages = messages;
-                app.switch_session(Some(typed_session_id.clone()));
-                app.streaming_text.clear();
-                app.streaming_reasoning.clear();
-                app.streaming_response_bytes = 0;
-                app.streaming_assistant_idx = None;
-                app.scroll_to_bottom();
-                app.messages.push(ChatMessage::assistant(format!(
-                    "**Resumed session `{typed_session_id}`** — {msg_count} message(s) loaded."
-                )));
-            } else {
-                app.messages.push(ChatMessage::assistant(format!(
-                    "**Error:** Session `{typed_session_id}` not found."
-                )));
-            }
             }
         }
         "/sessions" => {
@@ -3045,7 +3049,9 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                         for name in &names {
                             match crate::workflows::load(&cwd, name) {
                                 Ok(w) => body.push_str(&crate::workflows::render_summary(name, &w)),
-                                Err(e) => body.push_str(&format!("- `{name}` (parse error: {e})\n")),
+                                Err(e) => {
+                                    body.push_str(&format!("- `{name}` (parse error: {e})\n"))
+                                }
                             }
                         }
                         body.push_str("\nRun with `/workflow run <name>`.");
@@ -3104,7 +3110,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             // (cheap, async-safe; failures are silent on systems
             // without one of those binaries).
             app.messages.push(ChatMessage::user(text.to_owned()));
-            let arg = parts.get(1).copied().map(str::trim).filter(|s| !s.is_empty());
+            let arg = parts
+                .get(1)
+                .copied()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
             let dispatch = crate::providers::login_dispatch::dispatch(arg);
             let url = match &dispatch {
                 crate::providers::login_dispatch::LoginDispatch::AnthropicApiKey(_)
@@ -3148,7 +3158,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             let arg = parts.get(1).copied().unwrap_or("").trim();
             if arg.is_empty() {
                 app.messages.push(ChatMessage::assistant(
-                    "Usage: `/batch <prompt-file>`. The file should contain one prompt per line.".into(),
+                    "Usage: `/batch <prompt-file>`. The file should contain one prompt per line."
+                        .into(),
                 ));
                 return;
             }
@@ -3176,7 +3187,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             }
             let Some(client) = crate::sdk_bridge::build_client() else {
                 app.messages.push(ChatMessage::assistant(
-                    "No Anthropic API key configured — `/batch` needs one (set ANTHROPIC_API_KEY).".into(),
+                    "No Anthropic API key configured — `/batch` needs one (set ANTHROPIC_API_KEY)."
+                        .into(),
                 ));
                 return;
             };
@@ -3402,7 +3414,12 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             // the session. Renderers read `app.verbose_mode` and lift
             // the per-tool preview cap when set.
             app.messages.push(ChatMessage::user(text.to_owned()));
-            let arg = parts.get(1).copied().unwrap_or("").trim().to_ascii_lowercase();
+            let arg = parts
+                .get(1)
+                .copied()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase();
             let target = match arg.as_str() {
                 "on" | "true" | "1" => Some(true),
                 "off" | "false" | "0" => Some(false),
@@ -3435,7 +3452,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             if arg == "list" {
                 if app.pinned_message_indices.is_empty() {
                     app.messages.push(ChatMessage::assistant(
-                        "No pinned messages. `/pin <n>` pins index n; `/pin` pins the most recent.".into(),
+                        "No pinned messages. `/pin <n>` pins index n; `/pin` pins the most recent."
+                            .into(),
                     ));
                 } else {
                     let mut idx: Vec<usize> = app.pinned_message_indices.iter().copied().collect();
@@ -3462,9 +3480,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 match arg.parse::<usize>() {
                     Ok(idx) if idx < app.messages.len() => {
                         app.pinned_message_indices.insert(idx);
-                        app.messages.push(ChatMessage::assistant(format!(
-                            "Pinned message #{idx}."
-                        )));
+                        app.messages
+                            .push(ChatMessage::assistant(format!("Pinned message #{idx}.")));
                     }
                     Ok(idx) => {
                         app.messages.push(ChatMessage::assistant(format!(
@@ -3486,16 +3503,14 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             if arg.is_empty() || arg == "all" {
                 let n = app.pinned_message_indices.len();
                 app.pinned_message_indices.clear();
-                app.messages.push(ChatMessage::assistant(format!(
-                    "Cleared {n} pin(s)."
-                )));
+                app.messages
+                    .push(ChatMessage::assistant(format!("Cleared {n} pin(s).")));
             } else {
                 match arg.parse::<usize>() {
                     Ok(idx) => {
                         if app.pinned_message_indices.remove(&idx) {
-                            app.messages.push(ChatMessage::assistant(format!(
-                                "Unpinned message #{idx}."
-                            )));
+                            app.messages
+                                .push(ChatMessage::assistant(format!("Unpinned message #{idx}.")));
                         } else {
                             app.messages.push(ChatMessage::assistant(format!(
                                 "Message #{idx} wasn't pinned."
@@ -3569,10 +3584,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             app.messages.push(ChatMessage::user(text.to_owned()));
             let mut report = String::from("**jfc /doctor**\n\n");
             // Provider reachable
-            report.push_str(&format!(
-                "- Active provider: `{}`\n",
-                app.provider.name(),
-            ));
+            report.push_str(&format!("- Active provider: `{}`\n", app.provider.name(),));
             // MCP server count
             report.push_str(&format!(
                 "- MCP servers configured: {}\n",
@@ -3596,7 +3608,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             report.push_str(&format!(
                 "- User memory dir: `{}` ({})\n",
                 memory_dir.display(),
-                if memory_dir.exists() { "exists" } else { "missing" },
+                if memory_dir.exists() {
+                    "exists"
+                } else {
+                    "missing"
+                },
             ));
             // Tracing log dir
             if let Some(home) = std::env::var_os("HOME") {
@@ -3607,14 +3623,15 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 report.push_str(&format!(
                     "- Tracing log dir: `{}` ({})\n",
                     log_dir.display(),
-                    if log_dir.exists() { "writable" } else { "will be created" },
+                    if log_dir.exists() {
+                        "writable"
+                    } else {
+                        "will be created"
+                    },
                 ));
             }
             // Auto-mode / permission mode
-            report.push_str(&format!(
-                "- Permission mode: `{:?}`\n",
-                app.permission_mode,
-            ));
+            report.push_str(&format!("- Permission mode: `{:?}`\n", app.permission_mode,));
             // Telemetry posture (from env)
             let telemetry = std::env::var("JFC_TELEMETRY")
                 .ok()
@@ -3631,7 +3648,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 .unwrap_or(false);
             report.push_str(&format!(
                 "- AWS CLI for Bedrock: `{}`\n",
-                if aws_ok { "available" } else { "not found (run /login bedrock to set up)" },
+                if aws_ok {
+                    "available"
+                } else {
+                    "not found (run /login bedrock to set up)"
+                },
             ));
             let gcloud_ok = std::process::Command::new("gcloud")
                 .arg("--version")
@@ -3640,12 +3661,20 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 .unwrap_or(false);
             report.push_str(&format!(
                 "- gcloud CLI for Vertex: `{}`\n",
-                if gcloud_ok { "available" } else { "not found (run /login vertex to set up)" },
+                if gcloud_ok {
+                    "available"
+                } else {
+                    "not found (run /login vertex to set up)"
+                },
             ));
             let api_key_set = std::env::var("ANTHROPIC_API_KEY").is_ok();
             report.push_str(&format!(
                 "- ANTHROPIC_API_KEY env: `{}`\n",
-                if api_key_set { "set" } else { "unset (run /login anthropic to set up)" },
+                if api_key_set {
+                    "set"
+                } else {
+                    "unset (run /login anthropic to set up)"
+                },
             ));
             // Cost so far this session
             let total = crate::cost::total_cost(&app.usage_by_model);
@@ -3665,9 +3694,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 .iter()
                 .filter(|g| crate::feature_gates::is_enabled(**g) != g.default_for())
                 .count();
-            report.push_str(&format!(
-                "- Feature gates overridden: {gate_overrides}\n",
-            ));
+            report.push_str(&format!("- Feature gates overridden: {gate_overrides}\n",));
             app.messages.push(ChatMessage::assistant(report));
         }
         "/effort" => {
@@ -3874,11 +3901,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             let arg = parts.get(1).copied().unwrap_or("").trim();
             app.messages.push(ChatMessage::user(text.to_owned()));
             if arg.starts_with("recall") {
-                let sub = arg
-                    .splitn(2, ' ')
-                    .nth(1)
-                    .map(str::trim)
-                    .unwrap_or("status");
+                let sub = arg.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("status");
                 match sub {
                     "on" | "enable" => {
                         crate::memory_recall::set_runtime_override(Some(true));
@@ -3930,9 +3953,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                         .to_owned()
                 } else {
                     let listing = crate::memory::format_existing_memories(&mems);
-                    format!("**{} memor{} loaded:**\n\n{listing}\n\nUse `/memory recall status` to see whether two-phase recall is active.",
+                    format!(
+                        "**{} memor{} loaded:**\n\n{listing}\n\nUse `/memory recall status` to see whether two-phase recall is active.",
                         mems.len(),
-                        if mems.len() == 1 { "y" } else { "ies" })
+                        if mems.len() == 1 { "y" } else { "ies" }
+                    )
                 };
                 app.messages.push(ChatMessage::assistant(body));
             }
@@ -4559,8 +4584,10 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 // new stream so the old (possibly cancelled) one can't
                 // racially interrupt the retry.
                 tokio::spawn(async move {
-                    crate::stream::stream_response(provider, messages, model, tx_stream, interrupt, cancel)
-                        .await;
+                    crate::stream::stream_response(
+                        provider, messages, model, tx_stream, interrupt, cancel,
+                    )
+                    .await;
                 });
                 return;
             }
@@ -4719,7 +4746,11 @@ fn handle_fleet_command(app: &mut App) {
         lines.push(format!(
             "Fleet: {} teammate{} active",
             app.team_context.teammates.len(),
-            if app.team_context.teammates.len() == 1 { "" } else { "s" }
+            if app.team_context.teammates.len() == 1 {
+                ""
+            } else {
+                "s"
+            }
         ));
         lines.push("".into());
         for tm in app.team_context.teammates.values() {
@@ -4730,7 +4761,8 @@ fn handle_fleet_command(app: &mut App) {
                 tm.agent_type.as_deref().unwrap_or("(no agent type)"),
                 elapsed.as_secs() / 60,
                 elapsed.as_secs() % 60,
-                tm.color.as_deref()
+                tm.color
+                    .as_deref()
                     .map(|c| format!(" · color={c}"))
                     .unwrap_or_default(),
             ));
@@ -4790,13 +4822,10 @@ async fn handle_teleport_command(app: &mut App, target: &str) {
     } else {
         format!("jfc/{target}")
     };
-    let result = crate::swarm::teleport::teleport_to_session(
-        repo_root,
-        &target_branch,
-        None,
-    );
-    app.messages
-        .push(crate::types::ChatMessage::user(format!("/teleport {target}")));
+    let result = crate::swarm::teleport::teleport_to_session(repo_root, &target_branch, None);
+    app.messages.push(crate::types::ChatMessage::user(format!(
+        "/teleport {target}"
+    )));
     app.messages
         .push(crate::types::ChatMessage::assistant(result.message.clone()));
     tracing::info!(
@@ -4818,7 +4847,11 @@ fn handle_output_style_command(app: &mut App, args: &str) {
     if arg.is_empty() {
         let mut lines = vec!["Available output styles:".to_string(), "".to_string()];
         for s in OutputStyle::all() {
-            let active = if *s == app.output_style { " · ACTIVE" } else { "" };
+            let active = if *s == app.output_style {
+                " · ACTIVE"
+            } else {
+                ""
+            };
             let suffix = s
                 .system_prompt_suffix()
                 .map(|t| t.split('.').next().unwrap_or("").trim().to_string())
@@ -4892,8 +4925,7 @@ fn save_output_style(name: &str) -> Result<std::path::PathBuf, String> {
         _ => crate::config::Config::default(),
     };
     cfg.output_style = Some(name.to_string());
-    let serialized = toml::to_string_pretty(&cfg)
-        .map_err(|e| format!("serialize failed: {e}"))?;
+    let serialized = toml::to_string_pretty(&cfg).map_err(|e| format!("serialize failed: {e}"))?;
     std::fs::write(&path, serialized)
         .map_err(|e| format!("write {} failed: {e}", path.display()))?;
     Ok(path)
@@ -4940,8 +4972,10 @@ async fn handle_init_command(app: &mut App) {
             Err(e) => format!("Failed to create {}: {e}", target.display()),
         }
     };
-    app.messages.push(crate::types::ChatMessage::user("/init".into()));
-    app.messages.push(crate::types::ChatMessage::assistant(body));
+    app.messages
+        .push(crate::types::ChatMessage::user("/init".into()));
+    app.messages
+        .push(crate::types::ChatMessage::assistant(body));
 }
 
 /// `/cost` — running session cost in dollars, broken down by model and
@@ -4970,8 +5004,10 @@ fn handle_cost_command(app: &mut App) {
     }
     lines.push("".into());
     lines.push(format!("**Total: {}**", crate::cost::fmt_cost(total)));
-    app.messages.push(crate::types::ChatMessage::user("/cost".into()));
-    app.messages.push(crate::types::ChatMessage::assistant(lines.join("\n")));
+    app.messages
+        .push(crate::types::ChatMessage::user("/cost".into()));
+    app.messages
+        .push(crate::types::ChatMessage::assistant(lines.join("\n")));
 }
 
 /// `/bug` — tell the user where to file a bug + capture a session-id
@@ -5001,9 +5037,11 @@ fn handle_bug_command(app: &mut App, description: String) {
             description.trim()
         }
     );
+    app.messages.push(crate::types::ChatMessage::user(
+        format!("/bug {description}").trim_end().into(),
+    ));
     app.messages
-        .push(crate::types::ChatMessage::user(format!("/bug {description}").trim_end().into()));
-    app.messages.push(crate::types::ChatMessage::assistant(body));
+        .push(crate::types::ChatMessage::assistant(body));
 }
 
 /// `/rewind [N]` — drop the last N user/assistant turn pairs from the
@@ -5021,10 +5059,7 @@ fn handle_rewind_command(app: &mut App, n_str: &str) {
     // groupings intact.
     let mut dropped_pairs = 0usize;
     while dropped_pairs < n {
-        let last_user_idx = app
-            .messages
-            .iter()
-            .rposition(|m| m.role == Role::User);
+        let last_user_idx = app.messages.iter().rposition(|m| m.role == Role::User);
         match last_user_idx {
             Some(idx) => {
                 let removed = app.messages.split_off(idx).len();
@@ -5220,7 +5255,8 @@ async fn handle_mcp_command(app: &mut App, args: &str) {
         app.messages.push(ChatMessage::user(raw));
         app.messages.push(ChatMessage::assistant(
             "MCP registry not initialized. Add `[mcp.<name>]` blocks to \
-             `~/.config/jfc/config.toml` and restart jfc.".to_owned(),
+             `~/.config/jfc/config.toml` and restart jfc."
+                .to_owned(),
         ));
         return;
     };
@@ -5230,7 +5266,8 @@ async fn handle_mcp_command(app: &mut App, args: &str) {
             let servers = registry.list().await;
             let body = if servers.is_empty() {
                 "No MCP servers configured. Add `[mcp.<name>]` blocks to \
-                 `~/.config/jfc/config.toml`.".to_owned()
+                 `~/.config/jfc/config.toml`."
+                    .to_owned()
             } else {
                 let mut s = format!("**{} MCP server(s):**\n\n", servers.len());
                 for srv in &servers {
@@ -5642,12 +5679,18 @@ async fn handle_pr_view(app: &mut App, arg: &str) {
                     s.push_str(&format!(
                         "- @{} ({}): {}\n",
                         r.author.login,
-                        if r.state.is_empty() { "COMMENTED" } else { &r.state },
+                        if r.state.is_empty() {
+                            "COMMENTED"
+                        } else {
+                            &r.state
+                        },
                         r.body.lines().next().unwrap_or("")
                     ));
                 }
             }
-            s.push_str("\n_Tip: run `/pr-autofix <num>` to ask the model to address review comments._");
+            s.push_str(
+                "\n_Tip: run `/pr-autofix <num>` to ask the model to address review comments._",
+            );
             s
         }
         Err(crate::github::client::GhError::NotAuthenticated) => {
@@ -5665,11 +5708,7 @@ async fn handle_pr_view(app: &mut App, arg: &str) {
 /// `/pr-autofix <num>` — fetch the PR, build the autofix prompt, and either
 /// inject it as a fresh user turn (driving a model response) or echo it
 /// inline if no `tx` channel is available (e.g. queued-prompt drain).
-async fn handle_pr_autofix(
-    app: &mut App,
-    arg: &str,
-    tx: Option<&mpsc::Sender<AppEvent>>,
-) {
+async fn handle_pr_autofix(app: &mut App, arg: &str, tx: Option<&mpsc::Sender<AppEvent>>) {
     if !crate::github::is_gh_installed() {
         push_gh_unavailable(app, &format!("/pr-autofix {arg}"));
         return;
@@ -5695,8 +5734,9 @@ async fn handle_pr_autofix(
         }
         Err(crate::github::client::GhError::RateLimited { reminder }) => {
             app.messages.push(ChatMessage::user(cmd));
-            app.messages
-                .push(ChatMessage::assistant(format!("Rate limited.\n\n{reminder}")));
+            app.messages.push(ChatMessage::assistant(format!(
+                "Rate limited.\n\n{reminder}"
+            )));
             return;
         }
         Err(e) => {
@@ -5765,7 +5805,8 @@ async fn handle_pr_autofix(
     let cancel = app.cancel_token.clone();
     // wg-async: retry / continuation path — fresh cancel token per spawn.
     tokio::spawn(async move {
-        crate::stream::stream_response(provider, messages, model, tx_stream, interrupt, cancel).await;
+        crate::stream::stream_response(provider, messages, model, tx_stream, interrupt, cancel)
+            .await;
     });
 }
 

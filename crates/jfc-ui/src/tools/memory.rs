@@ -62,4 +62,3 @@ pub(super) fn execute_memory_delete(path_str: &str) -> ExecutionResult {
         Err(e) => ExecutionResult::failure(format!("Failed to delete memory: {e}")),
     }
 }
-

@@ -167,11 +167,14 @@ async fn notify_memory_change(
                 text: notification.clone(),
                 timestamp: team_helpers::now_millis().to_string(),
                 color: None,
-                summary: Some(format!("Memory: {file_name} {}", match event_type {
-                    MemoryEventType::Created => "created",
-                    MemoryEventType::Modified => "updated",
-                    MemoryEventType::Deleted => "deleted",
-                })),
+                summary: Some(format!(
+                    "Memory: {file_name} {}",
+                    match event_type {
+                        MemoryEventType::Created => "created",
+                        MemoryEventType::Modified => "updated",
+                        MemoryEventType::Deleted => "deleted",
+                    }
+                )),
                 read: false,
             };
             let _ = mailbox::write_to_mailbox(&member.name, msg, team_name).await;

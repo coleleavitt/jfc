@@ -131,6 +131,8 @@ pub enum AppEvent {
     TaskStarted {
         task_id: crate::ids::TaskId,
         description: String,
+        model_used: Option<String>,
+        max_input_tokens: Option<u64>,
     },
     TaskProgress {
         task_id: crate::ids::TaskId,
@@ -1153,8 +1155,12 @@ impl App {
         let dominated = self.launched_at.elapsed() < std::time::Duration::from_millis(1500)
             || self.is_streaming
             || self.scroll_velocity.abs() > 0.5
-            || self.toasts.iter().any(|t| !t.is_expired_at(std::time::Instant::now()));
-        self.wants_animation_frame.store(dominated, Ordering::Relaxed);
+            || self
+                .toasts
+                .iter()
+                .any(|t| !t.is_expired_at(std::time::Instant::now()));
+        self.wants_animation_frame
+            .store(dominated, Ordering::Relaxed);
     }
 
     /// Resolve the git repository root by walking up from `cwd`.

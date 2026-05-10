@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::{debug, warn};
 
-use super::{configure_tool_command, terminal_safe_text, ExecutionResult};
 use super::bash::execute_bash;
+use super::{ExecutionResult, configure_tool_command, terminal_safe_text};
 
 pub(super) async fn execute_glob(pattern: &str, path: Option<&str>, cwd: &Path) -> ExecutionResult {
     debug!(target: "jfc::tools", pattern, path, "glob: searching");
@@ -89,4 +89,3 @@ pub(super) async fn execute_grep(
         }
     }
 }
-

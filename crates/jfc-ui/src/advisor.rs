@@ -175,8 +175,7 @@ fn render_snapshot(main_transcript: &[ChatMessage]) -> String {
 /// is told (via the system prompt) not to invent tools.
 fn build_messages(snapshot: &str, query: &str) -> Vec<ProviderMessage> {
     let snapshot_block = if snapshot.is_empty() {
-        "<main-transcript>\n(empty — main agent has not started yet)\n</main-transcript>"
-            .to_owned()
+        "<main-transcript>\n(empty — main agent has not started yet)\n</main-transcript>".to_owned()
     } else {
         format!("<main-transcript>\n{snapshot}</main-transcript>")
     };
@@ -187,9 +186,7 @@ fn build_messages(snapshot: &str, query: &str) -> Vec<ProviderMessage> {
         },
         ProviderMessage {
             role: ProviderRole::User,
-            content: vec![ProviderContent::Text(format!(
-                "Advisor question: {query}"
-            ))],
+            content: vec![ProviderContent::Text(format!("Advisor question: {query}"))],
         },
     ]
 }
@@ -333,8 +330,7 @@ async fn stream_to_completion(
 mod tests {
     use super::*;
     use crate::provider::{
-        EventStream, ModelInfo, ProviderMessage as PMsg, StreamConvention,
-        StreamOptions as SOpts,
+        EventStream, ModelInfo, ProviderMessage as PMsg, StreamConvention, StreamOptions as SOpts,
     };
     use async_trait::async_trait;
 
@@ -378,11 +374,7 @@ mod tests {
         fn stream_convention(&self) -> StreamConvention {
             StreamConvention::AnthropicNative
         }
-        async fn stream(
-            &self,
-            _messages: Vec<PMsg>,
-            _options: &SOpts,
-        ) -> Result<EventStream> {
+        async fn stream(&self, _messages: Vec<PMsg>, _options: &SOpts) -> Result<EventStream> {
             Err(anyhow!("not used in advisor tests"))
         }
         async fn complete(
@@ -627,18 +619,10 @@ mod tests {
             fn available_models(&self) -> Vec<ModelInfo> {
                 Vec::new()
             }
-            async fn stream(
-                &self,
-                _: Vec<PMsg>,
-                _: &SOpts,
-            ) -> Result<EventStream> {
+            async fn stream(&self, _: Vec<PMsg>, _: &SOpts) -> Result<EventStream> {
                 Err(anyhow!("unused"))
             }
-            async fn complete(
-                &self,
-                _: Vec<PMsg>,
-                _: &SOpts,
-            ) -> Result<CompletionResponse> {
+            async fn complete(&self, _: Vec<PMsg>, _: &SOpts) -> Result<CompletionResponse> {
                 Ok(CompletionResponse {
                     content: "x".repeat(400), // 400 chars → ~100 tokens
                     usage: Default::default(),

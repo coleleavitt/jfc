@@ -1,4 +1,3 @@
-
 use super::ExecutionResult;
 
 pub(super) fn execute_push_notification(message: &str, title: Option<&str>) -> ExecutionResult {
@@ -64,9 +63,7 @@ pub(super) async fn execute_remote_trigger(
     let resp = match client.post(&url).json(&body).send().await {
         Ok(r) => r,
         Err(e) => {
-            return ExecutionResult::failure(format!(
-                "remote_trigger: POST to {url} failed: {e}"
-            ));
+            return ExecutionResult::failure(format!("remote_trigger: POST to {url} failed: {e}"));
         }
     };
     let status = resp.status();
@@ -100,8 +97,8 @@ pub(super) fn remote_trigger_config_path() -> Option<std::path::PathBuf> {
 ///   - missing id   → "trigger '<id>' not found"
 ///   - missing url  → "trigger '<id>' has no `url` field"
 pub(crate) fn parse_trigger_url(toml_text: &str, trigger_id: &str) -> Result<String, String> {
-    let parsed: toml::Value = toml::from_str(toml_text)
-        .map_err(|e| format!("invalid triggers.toml: {e}"))?;
+    let parsed: toml::Value =
+        toml::from_str(toml_text).map_err(|e| format!("invalid triggers.toml: {e}"))?;
     let table = parsed
         .as_table()
         .ok_or_else(|| "triggers.toml must be a TOML table at the top level".to_owned())?;
@@ -114,4 +111,3 @@ pub(crate) fn parse_trigger_url(toml_text: &str, trigger_id: &str) -> Result<Str
         .ok_or_else(|| format!("trigger '{trigger_id}' has no `url` field"))?;
     Ok(url.to_owned())
 }
-

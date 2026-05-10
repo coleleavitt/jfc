@@ -140,9 +140,10 @@ impl SpeculationSession {
     pub fn commit(&mut self) -> io::Result<Vec<PathBuf>> {
         match self.state {
             SpeculationState::Active | SpeculationState::Pending | SpeculationState::Paused => {
-                let mut overlay = self.overlay.take().ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::Other, "overlay missing")
-                })?;
+                let mut overlay = self
+                    .overlay
+                    .take()
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "overlay missing"))?;
                 let updated = overlay.commit_changes()?;
                 self.state = SpeculationState::Committed;
                 Ok(updated)
@@ -208,10 +209,7 @@ mod tests {
         let cwd = TempDir::new().unwrap();
         let mut s = session(&base, &cwd, "t");
         let real = cwd.path().join("a.txt");
-        s.overlay_mut()
-            .unwrap()
-            .write_file(&real, b"x")
-            .unwrap();
+        s.overlay_mut().unwrap().write_file(&real, b"x").unwrap();
         s.pause().unwrap();
         assert_eq!(s.state(), SpeculationState::Paused);
         s.mark_finished().unwrap();

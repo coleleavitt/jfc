@@ -97,7 +97,8 @@ pub fn validate(cwd: &Path, candidate: &Path) -> Result<PathBuf, SafetyError> {
     if !candidate.is_absolute() {
         return Err(SafetyError::NotAbsolute(candidate.to_owned()));
     }
-    let normalized = normalize(candidate).ok_or_else(|| SafetyError::Escape(candidate.to_owned()))?;
+    let normalized =
+        normalize(candidate).ok_or_else(|| SafetyError::Escape(candidate.to_owned()))?;
     let cwd_norm = normalize(cwd).unwrap_or_else(|| cwd.to_owned());
 
     if !is_within(&cwd_norm, &normalized) {

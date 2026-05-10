@@ -130,7 +130,8 @@ impl BedrockProvider {
         // - explicit env vars
         // - persisted config from the wizard
         // - default profile present in ~/.aws/credentials
-        if std::env::var("AWS_ACCESS_KEY_ID").is_ok() && std::env::var("AWS_SECRET_ACCESS_KEY").is_ok()
+        if std::env::var("AWS_ACCESS_KEY_ID").is_ok()
+            && std::env::var("AWS_SECRET_ACCESS_KEY").is_ok()
         {
             return true;
         }
@@ -256,9 +257,16 @@ pub fn aws_cli_available() -> bool {
 /// the identity ARN on success.
 pub fn check_caller_identity(cfg: &BedrockConfig) -> anyhow::Result<String> {
     let mut cmd = std::process::Command::new("aws");
-    cmd.args(["sts", "get-caller-identity", "--query", "Arn", "--output", "text"])
-        .arg("--region")
-        .arg(cfg.region_or_default());
+    cmd.args([
+        "sts",
+        "get-caller-identity",
+        "--query",
+        "Arn",
+        "--output",
+        "text",
+    ])
+    .arg("--region")
+    .arg(cfg.region_or_default());
     if let Some(profile) = cfg.profile.as_deref() {
         cmd.args(["--profile", profile]);
     }

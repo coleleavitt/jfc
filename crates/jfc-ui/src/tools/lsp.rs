@@ -36,8 +36,7 @@ pub(super) async fn execute_lsp(
     let (tx, _rx) = tokio::sync::mpsc::channel::<crate::app::AppEvent>(16);
     let root_uri = format!("file://{}", cwd.display());
     let owned_args: Vec<&str> = args.to_vec();
-    let Some(client) =
-        crate::lsp_client::LspClient::spawn(cmd, &owned_args, &root_uri, tx).await
+    let Some(client) = crate::lsp_client::LspClient::spawn(cmd, &owned_args, &root_uri, tx).await
     else {
         return ExecutionResult::failure(format!(
             "lsp: failed to spawn '{cmd}' (binary not on PATH or handshake timed out)"
@@ -78,12 +77,7 @@ pub(super) async fn execute_lsp(
             }
         }
         "definition" => match client.goto_definition_async(&path, line, column).await {
-            Some(loc) => format!(
-                "{}:{}:{}",
-                loc.file.display(),
-                loc.line + 1,
-                loc.col + 1,
-            ),
+            Some(loc) => format!("{}:{}:{}", loc.file.display(), loc.line + 1, loc.col + 1,),
             None => "lsp: definition not found".to_owned(),
         },
         "references" => {
@@ -92,14 +86,7 @@ pub(super) async fn execute_lsp(
                 "lsp: no references found".to_owned()
             } else {
                 locs.iter()
-                    .map(|loc| {
-                        format!(
-                            "{}:{}:{}",
-                            loc.file.display(),
-                            loc.line + 1,
-                            loc.col + 1,
-                        )
-                    })
+                    .map(|loc| format!("{}:{}:{}", loc.file.display(), loc.line + 1, loc.col + 1,))
                     .collect::<Vec<_>>()
                     .join("\n")
             }
@@ -147,4 +134,3 @@ pub(super) fn format_lsp_hover(v: &serde_json::Value) -> String {
     }
     contents.to_string()
 }
-

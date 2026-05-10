@@ -995,4 +995,3 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
         },
     ]
 }
-

@@ -14,7 +14,9 @@
 //! `session::set_session_title`. Failures are swallowed — title is
 //! cosmetic and shouldn't disrupt the chat.
 
-use crate::provider::{ModelId, Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions};
+use crate::provider::{
+    ModelId, Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions,
+};
 use std::sync::Arc;
 
 const MAX_TITLE_CHARS: usize = 60;
@@ -100,7 +102,9 @@ fn sanitize(raw: &str) -> String {
         s = line.to_owned();
     }
     // Trailing punctuation.
-    s = s.trim_end_matches(['.', ',', ';', ':', '!', '?']).to_owned();
+    s = s
+        .trim_end_matches(['.', ',', ';', ':', '!', '?'])
+        .to_owned();
     // Length cap.
     if s.chars().count() > MAX_TITLE_CHARS {
         s = s.chars().take(MAX_TITLE_CHARS).collect();
@@ -165,6 +169,9 @@ mod tests {
             })
             .sum();
         // System prompt + truncated user (800) + truncated assistant (800) ~< 2500
-        assert!(body_len < 2500, "body length {body_len} exceeds expected cap");
+        assert!(
+            body_len < 2500,
+            "body length {body_len} exceeds expected cap"
+        );
     }
 }

@@ -82,7 +82,9 @@ mod tests {
         assert_eq!(msgs.len(), 2);
         let user = msgs.iter().rfind(|m| m.role == Role::User).unwrap();
         assert!(
-            user.parts.iter().any(|p| matches!(p, MessagePart::Text(t) if t.contains("Accept Edits"))),
+            user.parts
+                .iter()
+                .any(|p| matches!(p, MessagePart::Text(t) if t.contains("Accept Edits"))),
             "reminder should be appended to existing user message",
         );
     }

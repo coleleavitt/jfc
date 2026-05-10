@@ -1,8 +1,6 @@
-
 use std::process::Stdio;
 
-
-use super::{snapshot_event_sender, market_orchestrator, collusion_detector};
+use super::{collusion_detector, market_orchestrator, snapshot_event_sender};
 
 /// SwarmProvider impl for jfc-ui — delegates to the existing
 /// `worktrees` module. Each solver gets a worktree named
@@ -226,6 +224,8 @@ impl EconomyAgentInvoker {
             if let Err(e) = tx.try_send(crate::app::AppEvent::TaskStarted {
                 task_id: crate::ids::TaskId::from(task_id),
                 description: description.to_owned(),
+                model_used: None,
+                max_input_tokens: None,
             }) {
                 tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskStarted dropped: channel full");
             }

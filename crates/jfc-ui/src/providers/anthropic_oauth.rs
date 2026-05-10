@@ -525,14 +525,36 @@ fn build_system_blocks(billing_header_text: &str, caller_system: Option<&str>) -
             // largest block and changes least often, so a cache hit
             // saves the most. v132 puts a breakpoint on the last
             // system block; we mirror that.
-            blocks.push(json!({
-                "type": "text",
-                "text": sanitized,
-                "cache_control": { "type": "ephemeral" },
-            }));
+            blocks.extend(caller_system_blocks(&sanitized));
         }
     }
     json!(blocks)
+}
+
+fn caller_system_blocks(system: &str) -> Vec<Value> {
+    let Some(index) = system.find("\n\n## Current diagnostics") else {
+        return vec![json!({
+            "type": "text",
+            "text": system,
+            "cache_control": { "type": "ephemeral" },
+        })];
+    };
+
+    let stable = system[..index].trim_end();
+    let volatile = system[index..].trim_start();
+    [
+        (!stable.is_empty()).then(|| {
+            json!({
+                "type": "text",
+                "text": stable,
+                "cache_control": { "type": "ephemeral" },
+            })
+        }),
+        (!volatile.is_empty()).then(|| json!({ "type": "text", "text": volatile })),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// Strip third-party branding from the caller-supplied system prompt before
@@ -633,10 +655,7 @@ fn build_body(
         if let Some(arr) = tools.as_array_mut() {
             if let Some(last) = arr.last_mut() {
                 if let Some(obj) = last.as_object_mut() {
-                    obj.insert(
-                        "cache_control".to_owned(),
-                        json!({ "type": "ephemeral" }),
-                    );
+                    obj.insert("cache_control".to_owned(), json!({ "type": "ephemeral" }));
                 }
             }
         }
@@ -761,16 +780,11 @@ impl Provider for AnthropicOAuthProvider {
                     cause = cause,
                     "stream: send failed (after retries)"
                 );
-                anyhow::bail!(
-                    "Anthropic OAuth request failed: {cause} ({e})."
-                );
+                anyhow::bail!("Anthropic OAuth request failed: {cause} ({e}).");
             }
         };
 
-        super::http::report_first_byte_latency(
-            "anthropic_oauth.stream",
-            send_started.elapsed(),
-        );
+        super::http::report_first_byte_latency("anthropic_oauth.stream", send_started.elapsed());
         let status = resp.status();
         tracing::info!(
             target: "jfc::provider::anthropic_oauth",

@@ -195,8 +195,8 @@ impl CronField {
 }
 
 mod duration_secs {
-    use std::time::Duration;
     use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
 
     pub fn serialize<S: Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_u64(d.as_secs())
@@ -475,7 +475,12 @@ impl Daemon {
     }
 
     /// Add a cron job.
-    pub fn add_cron_job(&mut self, schedule: CronSchedule, description: &str, command: &str) -> String {
+    pub fn add_cron_job(
+        &mut self,
+        schedule: CronSchedule,
+        description: &str,
+        command: &str,
+    ) -> String {
         let id = format!("cron-{}", uuid_short());
         let job = CronJob {
             id: id.clone(),
@@ -839,15 +844,14 @@ pub async fn run_daemon(paths: DaemonPaths) -> std::io::Result<()> {
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
-        let mut term = match tokio::signal::unix::signal(
-            tokio::signal::unix::SignalKind::terminate(),
-        ) {
-            Ok(s) => s,
-            Err(_) => {
-                let _ = tokio::signal::ctrl_c().await;
-                return;
-            }
-        };
+        let mut term =
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(s) => s,
+                Err(_) => {
+                    let _ = tokio::signal::ctrl_c().await;
+                    return;
+                }
+            };
         tokio::select! {
             _ = term.recv() => {}
             _ = tokio::signal::ctrl_c() => {}
@@ -898,10 +902,7 @@ pub fn stop_daemon(paths: &DaemonPaths) -> std::io::Result<()> {
         if !result.status.success() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!(
-                    "kill failed: {}",
-                    String::from_utf8_lossy(&result.stderr)
-                ),
+                format!("kill failed: {}", String::from_utf8_lossy(&result.stderr)),
             ));
         }
     }

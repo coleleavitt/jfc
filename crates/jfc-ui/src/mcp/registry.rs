@@ -185,8 +185,8 @@ impl McpRegistry {
         arguments: Value,
         timeout: std::time::Duration,
     ) -> Result<ToolCallOutcome, DispatchError> {
-        let (server_name, tool_name) = protocol::split_advertised(advertised_name)
-            .ok_or(DispatchError::NotMcpName)?;
+        let (server_name, tool_name) =
+            protocol::split_advertised(advertised_name).ok_or(DispatchError::NotMcpName)?;
         let server = self
             .get(server_name)
             .await

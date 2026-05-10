@@ -50,10 +50,7 @@ pub fn build_render_items_pub<'a>(app: &'a App, inner_w: usize) -> Vec<RenderIte
 /// `inner_w` should match what `render::messages` will pass — terminal-width
 /// minus borders/padding/scrollbar (5). Mismatched widths just produce a few
 /// extra cache entries; correctness is unaffected.
-pub fn warm_tool_height_cache_for_messages(
-    messages: &[crate::types::ChatMessage],
-    inner_w: usize,
-) {
+pub fn warm_tool_height_cache_for_messages(messages: &[crate::types::ChatMessage], inner_w: usize) {
     use crate::types::MessagePart;
     for msg in messages {
         for part in &msg.parts {
@@ -103,7 +100,9 @@ impl Widget for MessageView<'_> {
             }
         };
         let max_scroll = total_h.saturating_sub(area.height as usize);
-        let scroll = prebuilt_scroll.unwrap_or(self.app.scroll_offset).min(max_scroll);
+        let scroll = prebuilt_scroll
+            .unwrap_or(self.app.scroll_offset)
+            .min(max_scroll);
 
         // Frame-level diagnostics for chasing scroll/overflow drift —
         // e.g., a content row that visibly clips at the viewport's
@@ -309,9 +308,7 @@ impl Widget for MessageView<'_> {
         // Pair this with the `MessageView::render begin` log to
         // diagnose "I see line N but expected line M at the bottom"
         // class bugs without instrumenting every layer.
-        let content_at_bottom = last_visible_line
-            .map(|l| l >= total_h)
-            .unwrap_or(false);
+        let content_at_bottom = last_visible_line.map(|l| l >= total_h).unwrap_or(false);
         tracing::debug!(
             target: "jfc::render::scroll",
             first_visible_item = ?first_visible_item,
@@ -568,8 +565,7 @@ fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
             Role::Assistant => {
                 let mut spans = Vec::new();
                 if is_streaming_placeholder && !crate::spinner::reduced_motion() {
-                    let phase = (app.launched_at.elapsed().as_millis() % 1200) as f32
-                        / 1200.0;
+                    let phase = (app.launched_at.elapsed().as_millis() % 1200) as f32 / 1200.0;
                     let intensity = if phase < 0.5 {
                         phase * 2.0
                     } else {
@@ -946,10 +942,7 @@ fn diff_row_count(diff: &DiffView, expanded: bool) -> usize {
         + diff
             .hunks
             .iter()
-            .map(|h| {
-                1 + h.lines.len().min(hunk_cap)
-                    + if h.lines.len() > hunk_cap { 1 } else { 0 }
-            })
+            .map(|h| 1 + h.lines.len().min(hunk_cap) + if h.lines.len() > hunk_cap { 1 } else { 0 })
             .sum::<usize>()
 }
 
@@ -1007,7 +1000,13 @@ fn tool_body_lines_themed(
             } else if matches!(tool.kind, ToolKind::Task) {
                 produce_markdown_block_lines(s, content_w, t)
             } else {
-                produce_text_block_lines(s, content_w, t.text_secondary, t, tool.display.is_expanded())
+                produce_text_block_lines(
+                    s,
+                    content_w,
+                    t.text_secondary,
+                    t,
+                    tool.display.is_expanded(),
+                )
             }
         }
         ToolOutput::LargeText(lt) => {
@@ -1021,7 +1020,13 @@ fn tool_body_lines_themed(
                         .add_modifier(Modifier::ITALIC),
                 ))]
             } else if looks_like_git_diff_output(&lt.content) {
-                produce_git_diff_output_lines(&lt.content, "", Some(0), t, tool.display.is_expanded())
+                produce_git_diff_output_lines(
+                    &lt.content,
+                    "",
+                    Some(0),
+                    t,
+                    tool.display.is_expanded(),
+                )
             } else {
                 produce_text_block_lines(
                     &lt.content,
@@ -1058,26 +1063,54 @@ fn tool_body_lines_themed(
                     tool.display.is_expanded(),
                     cmd_str,
                 ),
-                BashCmdKind::PathList if success => {
-                    produce_path_list_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
-                }
-                BashCmdKind::GitDiff if gitdiff_success => {
-                    produce_git_diff_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
-                }
-                BashCmdKind::GitLog if success => {
-                    produce_git_log_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
-                }
-                BashCmdKind::HexDump if success => {
-                    produce_hex_dump_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
-                }
-                BashCmdKind::TabularList if success => {
-                    produce_tabular_list_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
-                }
+                BashCmdKind::PathList if success => produce_path_list_output_lines(
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    t,
+                    tool.display.is_expanded(),
+                ),
+                BashCmdKind::GitDiff if gitdiff_success => produce_git_diff_output_lines(
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    t,
+                    tool.display.is_expanded(),
+                ),
+                BashCmdKind::GitLog if success => produce_git_log_output_lines(
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    t,
+                    tool.display.is_expanded(),
+                ),
+                BashCmdKind::HexDump if success => produce_hex_dump_output_lines(
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    t,
+                    tool.display.is_expanded(),
+                ),
+                BashCmdKind::TabularList if success => produce_tabular_list_output_lines(
+                    stdout,
+                    stderr,
+                    *exit_code,
+                    t,
+                    tool.display.is_expanded(),
+                ),
                 BashCmdKind::CompilerOutput
                     if !stdout.is_empty()
-                        && exit_code.map(|c| c == 0 || c == 101 || c == 1).unwrap_or(true) =>
+                        && exit_code
+                            .map(|c| c == 0 || c == 101 || c == 1)
+                            .unwrap_or(true) =>
                 {
-                    produce_compiler_output_lines(stdout, stderr, *exit_code, t, tool.display.is_expanded())
+                    produce_compiler_output_lines(
+                        stdout,
+                        stderr,
+                        *exit_code,
+                        t,
+                        tool.display.is_expanded(),
+                    )
                 }
                 _ => {
                     if looks_like_git_diff_output(stdout) {
@@ -1135,14 +1168,26 @@ fn tool_body_lines_themed(
             content, language, ..
         } => {
             if looks_like_git_diff_output(content) {
-                return produce_git_diff_output_lines(content, "", Some(0), t, tool.display.is_expanded());
+                return produce_git_diff_output_lines(
+                    content,
+                    "",
+                    Some(0),
+                    t,
+                    tool.display.is_expanded(),
+                );
             }
             let hl_lang = if language.is_empty() {
                 "rs"
             } else {
                 language.as_str()
             };
-            produce_highlighted_block_lines(hl_lang, content, content_w, t, tool.display.is_expanded())
+            produce_highlighted_block_lines(
+                hl_lang,
+                content,
+                content_w,
+                t,
+                tool.display.is_expanded(),
+            )
         }
         ToolOutput::FileList(files) => produce_file_list_lines(files, t),
     }
@@ -1471,16 +1516,20 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         ToolKind::Bash => Color::Rgb(180, 180, 200), // neutral grey
         ToolKind::Glob | ToolKind::Grep | ToolKind::Search => Color::Rgb(200, 160, 255), // lavender
         ToolKind::Task => Color::Rgb(255, 170, 220), // rose
-        ToolKind::TaskCreate | ToolKind::TaskUpdate | ToolKind::TaskList | ToolKind::TaskDone | ToolKind::TaskGet => {
-            Color::Rgb(140, 220, 220)
-        } // teal
+        ToolKind::TaskCreate
+        | ToolKind::TaskUpdate
+        | ToolKind::TaskList
+        | ToolKind::TaskDone
+        | ToolKind::TaskGet => Color::Rgb(140, 220, 220), // teal
         ToolKind::MemoryCreate | ToolKind::MemoryDelete => Color::Rgb(220, 220, 140), // olive
         ToolKind::TeamCreate
         | ToolKind::TeamDelete
         | ToolKind::SendMessage
         | ToolKind::TeamMemberMode => Color::Rgb(255, 150, 130), // coral
         ToolKind::Skill => Color::Rgb(180, 220, 255), // ice
-        ToolKind::GraphQuery | ToolKind::SymbolEdit | ToolKind::RunCoverage => Color::Rgb(130, 200, 180), // sage
+        ToolKind::GraphQuery | ToolKind::SymbolEdit | ToolKind::RunCoverage => {
+            Color::Rgb(130, 200, 180)
+        } // sage
         ToolKind::PostBounty | ToolKind::RunBounty | ToolKind::MarketStatus => {
             Color::Rgb(255, 215, 100)
         } // gold
@@ -1910,11 +1959,7 @@ fn looks_like_git_diff_output(text: &str) -> bool {
 ///
 /// Match shape: leading whitespace, any non-`|` characters, ` | `,
 /// optional digits + space, then a tail of `+`s and `-`s (any order).
-fn colorize_diffstat_line(
-    line: &str,
-    fallback: Color,
-    t: Theme,
-) -> Option<Vec<Span<'static>>> {
+fn colorize_diffstat_line(line: &str, fallback: Color, t: Theme) -> Option<Vec<Span<'static>>> {
     // Find the ` | ` separator that anchors the diffstat shape.
     let sep_idx = line.find(" | ")?;
     let (prefix, rest) = line.split_at(sep_idx);
@@ -1928,7 +1973,10 @@ fn colorize_diffstat_line(
         .map(|(i, _)| i)?;
     let head = &rest[..bars_start];
     let bars = &rest[bars_start..];
-    if !head.chars().all(|c| c.is_ascii_digit() || c.is_whitespace()) {
+    if !head
+        .chars()
+        .all(|c| c.is_ascii_digit() || c.is_whitespace())
+    {
         return None;
     }
     if bars.is_empty() || !bars.chars().all(|c| c == '+' || c == '-') {
@@ -1978,11 +2026,7 @@ fn colorize_diffstat_line(
 ///
 /// Returns `None` for any line that doesn't look like git diff output
 /// so the caller falls through to plain styling.
-fn colorize_git_diff_line(
-    line: &str,
-    fallback: Color,
-    t: Theme,
-) -> Option<Vec<Span<'static>>> {
+fn colorize_git_diff_line(line: &str, fallback: Color, t: Theme) -> Option<Vec<Span<'static>>> {
     if line.is_empty() {
         return None;
     }
@@ -1996,7 +2040,9 @@ fn colorize_git_diff_line(
     {
         return Some(vec![Span::styled(
             line.to_owned(),
-            Style::default().fg(t.text_primary).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
         )]);
     }
     if line.starts_with("--- ") || line.starts_with("+++ ") {
@@ -2042,11 +2088,7 @@ fn colorize_git_diff_line(
 /// space + path. Per `wt-status.c:45`, staged changes are green and
 /// unstaged / untracked / unmerged are red. Returns `None` for
 /// non-porcelain lines.
-fn colorize_git_status_line(
-    line: &str,
-    fallback: Color,
-    t: Theme,
-) -> Option<Vec<Span<'static>>> {
+fn colorize_git_status_line(line: &str, fallback: Color, t: Theme) -> Option<Vec<Span<'static>>> {
     let bytes = line.as_bytes();
     if bytes.len() < 4 || bytes[2] != b' ' {
         return None;
@@ -2090,11 +2132,7 @@ fn is_status_char(c: char) -> bool {
 /// Colorize `git log --oneline` rows: `<hash> [refs] subject`.
 /// Hash is yellow (matches git's COMMIT slot), refs in green (HEAD/
 /// branch) and red (remote tracking), rest in default.
-fn colorize_git_log_line(
-    line: &str,
-    fallback: Color,
-    t: Theme,
-) -> Option<Vec<Span<'static>>> {
+fn colorize_git_log_line(line: &str, fallback: Color, t: Theme) -> Option<Vec<Span<'static>>> {
     // Match a leading 7-40-char hex run followed by a space. The
     // `saw_space` flag distinguishes "broke out of loop because we
     // hit a space" from "ran out of input mid-hex-run" — without it,
@@ -2132,10 +2170,7 @@ fn colorize_git_log_line(
     if let Some(rest2) = rest.strip_prefix('(') {
         if let Some(end) = rest2.find(')') {
             let refs = &rest2[..end];
-            spans.push(Span::styled(
-                "(".to_owned(),
-                Style::default().fg(t.warning),
-            ));
+            spans.push(Span::styled("(".to_owned(), Style::default().fg(t.warning)));
             for (i, part) in refs.split(", ").enumerate() {
                 if i > 0 {
                     spans.push(Span::styled(
@@ -2154,10 +2189,7 @@ fn colorize_git_log_line(
                 };
                 spans.push(Span::styled(part.to_owned(), style));
             }
-            spans.push(Span::styled(
-                ")".to_owned(),
-                Style::default().fg(t.warning),
-            ));
+            spans.push(Span::styled(")".to_owned(), Style::default().fg(t.warning)));
             spans.push(Span::styled(
                 rest2[end + 1..].to_owned(),
                 Style::default().fg(fallback),
@@ -2165,10 +2197,7 @@ fn colorize_git_log_line(
             return Some(spans);
         }
     }
-    spans.push(Span::styled(
-        rest.to_owned(),
-        Style::default().fg(fallback),
-    ));
+    spans.push(Span::styled(rest.to_owned(), Style::default().fg(fallback)));
     Some(spans)
 }
 
@@ -2182,11 +2211,7 @@ fn colorize_git_log_line(
 /// - `mode change 100644 => 100755 path`   → yellow
 ///
 /// Returns `None` when the line doesn't match any known commit-output shape.
-fn colorize_git_commit_line(
-    line: &str,
-    fallback: Color,
-    t: Theme,
-) -> Option<Vec<Span<'static>>> {
+fn colorize_git_commit_line(line: &str, fallback: Color, t: Theme) -> Option<Vec<Span<'static>>> {
     // `[branch <hash>] subject`
     if line.starts_with('[') {
         let close = line.find(']')?;
@@ -2214,8 +2239,8 @@ fn colorize_git_commit_line(
         ]);
     }
     // ` N files changed, X insertions(+), Y deletions(-)`
-    if line.trim_start().starts_with(|c: char| c.is_ascii_digit())
-        && line.contains("files changed") || line.contains("file changed")
+    if line.trim_start().starts_with(|c: char| c.is_ascii_digit()) && line.contains("files changed")
+        || line.contains("file changed")
     {
         // Walk the line and color `(+)` green and `(-)` red wherever they appear.
         let mut spans: Vec<Span<'static>> = Vec::new();
@@ -2236,10 +2261,7 @@ fn colorize_git_commit_line(
                     } else {
                         Style::default().fg(t.error)
                     };
-                    spans.push(Span::styled(
-                        format!("({sign})"),
-                        style,
-                    ));
+                    spans.push(Span::styled(format!("({sign})"), style));
                     // Consume closing `)` if present (we already consumed sign).
                     if matches!(chars.peek(), Some(')')) {
                         chars.next();
@@ -2295,11 +2317,7 @@ fn colorize_git_commit_line(
 /// - `   * [new branch]      ref -> ref`              → green branch label, then green refs
 /// - `   - [deleted]         ref`                     → red label
 /// - `   + <hash>...<hash>   ref -> ref (forced update)` → red "forced update"
-fn colorize_git_push_line(
-    line: &str,
-    fallback: Color,
-    t: Theme,
-) -> Option<Vec<Span<'static>>> {
+fn colorize_git_push_line(line: &str, fallback: Color, t: Theme) -> Option<Vec<Span<'static>>> {
     if line.starts_with("To ") || line.starts_with("From ") {
         return Some(vec![Span::styled(
             line.to_owned(),
@@ -2373,10 +2391,7 @@ fn colorize_git_push_line(
                     Style::default().fg(t.success),
                 ));
             } else {
-                spans.push(Span::styled(
-                    tail.to_owned(),
-                    Style::default().fg(fallback),
-                ));
+                spans.push(Span::styled(tail.to_owned(), Style::default().fg(fallback)));
             }
             return Some(spans);
         }
@@ -2396,11 +2411,7 @@ fn colorize_git_push_line(
 /// - `usage:`                    → yellow
 ///
 /// Returns `None` for any line not starting with one of these.
-fn colorize_diagnostic_prefix(
-    line: &str,
-    fallback: Color,
-    t: Theme,
-) -> Option<Vec<Span<'static>>> {
+fn colorize_diagnostic_prefix(line: &str, fallback: Color, t: Theme) -> Option<Vec<Span<'static>>> {
     let trimmed = line.trim_start();
     let leading_ws = &line[..line.len() - trimmed.len()];
 
@@ -2426,11 +2437,23 @@ fn colorize_diagnostic_prefix(
     }
 
     let (label, label_style, rest) = if let Some(r) = trimmed.strip_prefix("error: ") {
-        ("error: ", Style::default().fg(t.error).add_modifier(Modifier::BOLD), r)
+        (
+            "error: ",
+            Style::default().fg(t.error).add_modifier(Modifier::BOLD),
+            r,
+        )
     } else if let Some(r) = trimmed.strip_prefix("fatal: ") {
-        ("fatal: ", Style::default().fg(t.error).add_modifier(Modifier::BOLD), r)
+        (
+            "fatal: ",
+            Style::default().fg(t.error).add_modifier(Modifier::BOLD),
+            r,
+        )
     } else if let Some(r) = trimmed.strip_prefix("warning: ") {
-        ("warning: ", Style::default().fg(t.warning).add_modifier(Modifier::BOLD), r)
+        (
+            "warning: ",
+            Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
+            r,
+        )
     } else if let Some(r) = trimmed.strip_prefix("hint: ") {
         ("hint: ", Style::default().fg(t.warning), r)
     } else if let Some(r) = trimmed.strip_prefix("note: ") {
@@ -2700,11 +2723,7 @@ fn infer_lang_from_bash(command: &str) -> Option<String> {
     // canonical "print all lines" idiom) doesn't get rejected for
     // its quoted `$`.
     let probe = redact_quoted(trimmed);
-    if probe.contains('$')
-        || probe.contains('`')
-        || probe.contains('&')
-        || probe.contains(';')
-    {
+    if probe.contains('$') || probe.contains('`') || probe.contains('&') || probe.contains(';') {
         return None;
     }
     // Strip stderr-redirect tokens like `2>/dev/null` or `2>&1`
@@ -2718,8 +2737,23 @@ fn infer_lang_from_bash(command: &str) -> Option<String> {
         .collect();
     let mut it = toks.iter().map(|s| s.as_str());
     let verb = it.next()?;
-    if !matches!(verb, "cat" | "head" | "tail" | "bat" | "less" | "more"
-        | "sed" | "awk" | "perl" | "jq" | "yq" | "python" | "python3" | "node") {
+    if !matches!(
+        verb,
+        "cat"
+            | "head"
+            | "tail"
+            | "bat"
+            | "less"
+            | "more"
+            | "sed"
+            | "awk"
+            | "perl"
+            | "jq"
+            | "yq"
+            | "python"
+            | "python3"
+            | "node"
+    ) {
         return None;
     }
 
@@ -2757,10 +2791,7 @@ fn infer_lang_from_bash(command: &str) -> Option<String> {
         // like a script (starts with a quote). A bare path with no
         // surrounding quotes still wins, so `awk file.txt` works
         // (degenerate but harmless).
-        if script_verb
-            && !seen_positional
-            && (arg.starts_with('\'') || arg.starts_with('"'))
-        {
+        if script_verb && !seen_positional && (arg.starts_with('\'') || arg.starts_with('"')) {
             seen_positional = true;
             continue;
         }
@@ -2949,8 +2980,8 @@ fn classify_bash_cmd(command: &str) -> BashCmdKind {
         // `kubectl get …`, `podman ps` — output is always a header
         // row + fixed-width columns.
         "docker" | "podman" => match toks.get(1).copied() {
-            Some("ps") | Some("images") | Some("image") | Some("container")
-            | Some("network") | Some("volume") => BashCmdKind::TabularList,
+            Some("ps") | Some("images") | Some("image") | Some("container") | Some("network")
+            | Some("volume") => BashCmdKind::TabularList,
             _ => BashCmdKind::Other,
         },
         "kubectl" | "k9s" | "oc" => match toks.get(1).copied() {
@@ -3159,17 +3190,32 @@ fn grep_target_file(cmd: &str) -> Option<String> {
     let toks = quote_aware_tokens(cmd);
     let mut it = toks.into_iter();
     let verb = it.next()?;
-    if !matches!(
-        verb.as_str(),
-        "grep" | "rg" | "ack" | "ag" | "ripgrep"
-    ) {
+    if !matches!(verb.as_str(), "grep" | "rg" | "ack" | "ag" | "ripgrep") {
         return None;
     }
     // Flags whose value lives in the *next* token. Skip both.
     const VALUE_FLAGS: &[&str] = &[
-        "-e", "-f", "-A", "-B", "-C", "-m", "--max-count", "--type", "-t",
-        "--type-not", "-T", "--color", "--colour", "-g", "--glob", "--iglob",
-        "--include", "--exclude", "--exclude-dir", "--threads", "-j",
+        "-e",
+        "-f",
+        "-A",
+        "-B",
+        "-C",
+        "-m",
+        "--max-count",
+        "--type",
+        "-t",
+        "--type-not",
+        "-T",
+        "--color",
+        "--colour",
+        "-g",
+        "--glob",
+        "--iglob",
+        "--include",
+        "--exclude",
+        "--exclude-dir",
+        "--threads",
+        "-j",
     ];
     // `-e PAT` and `-f FILE` (regex source file) supply the pattern
     // via a flag value rather than a positional. When we see one of
@@ -3263,9 +3309,7 @@ fn produce_grep_output_lines(
     let pathless = first_data
         .map(|l| matches!(parse_grep_line(l), Some(GrepLine::Match { path: "", .. })))
         .unwrap_or(false);
-    if pathless
-        && let Some(target) = grep_target_file(cmd)
-    {
+    if pathless && let Some(target) = grep_target_file(cmd) {
         lines.push(Line::from(Span::styled(
             target,
             Style::default()
@@ -3480,16 +3524,16 @@ fn produce_path_list_output_lines(
         )));
     }
     if !stderr.is_empty() {
-            if !lines.is_empty() {
-                lines.push(Line::from(""));
-            }
-            for sl in stderr.lines() {
-                lines.push(Line::from(Span::styled(
-                    sanitize_terminal_text(sl),
-                    Style::default().fg(t.error),
-                )));
-            }
+        if !lines.is_empty() {
+            lines.push(Line::from(""));
         }
+        for sl in stderr.lines() {
+            lines.push(Line::from(Span::styled(
+                sanitize_terminal_text(sl),
+                Style::default().fg(t.error),
+            )));
+        }
+    }
     lines
 }
 
@@ -3591,8 +3635,7 @@ fn produce_git_diff_output_lines(
             )];
             match highlighted.as_ref().and_then(|h| h.get(idx)) {
                 Some(hl) => {
-                    let extra_mod =
-                        matches!(kind, DiffLineKind::Removed).then_some(Modifier::DIM);
+                    let extra_mod = matches!(kind, DiffLineKind::Removed).then_some(Modifier::DIM);
                     for sp in &hl.spans {
                         let mut style = sp.style;
                         style.bg = Some(bg_color);
@@ -3621,8 +3664,7 @@ fn produce_git_diff_output_lines(
         // pick up the destination's extension, not the source's.
         if let Some(rest) = clean.strip_prefix("diff --git ") {
             flush(&mut hunk, &current_lang, &mut lines, max_lines, t);
-            current_lang = parse_diff_git_paths(rest)
-                .and_then(|(_, b)| lang_from_path(&b));
+            current_lang = parse_diff_git_paths(rest).and_then(|(_, b)| lang_from_path(&b));
             if lines.len() < max_lines {
                 lines.push(Line::from(Span::styled(
                     clean.clone(),
@@ -3702,16 +3744,16 @@ fn produce_git_diff_output_lines(
         )));
     }
     if !stderr.is_empty() {
-            if !lines.is_empty() {
-                lines.push(Line::from(""));
-            }
-            for sl in stderr.lines() {
-                lines.push(Line::from(Span::styled(
-                    sanitize_terminal_text(sl),
-                    Style::default().fg(t.error),
-                )));
-            }
+        if !lines.is_empty() {
+            lines.push(Line::from(""));
         }
+        for sl in stderr.lines() {
+            lines.push(Line::from(Span::styled(
+                sanitize_terminal_text(sl),
+                Style::default().fg(t.error),
+            )));
+        }
+    }
     lines
 }
 
@@ -3814,16 +3856,16 @@ fn produce_git_log_output_lines(
         )));
     }
     if !stderr.is_empty() {
-            if !lines.is_empty() {
-                lines.push(Line::from(""));
-            }
-            for sl in stderr.lines() {
-                lines.push(Line::from(Span::styled(
-                    sanitize_terminal_text(sl),
-                    Style::default().fg(t.error),
-                )));
-            }
+        if !lines.is_empty() {
+            lines.push(Line::from(""));
         }
+        for sl in stderr.lines() {
+            lines.push(Line::from(Span::styled(
+                sanitize_terminal_text(sl),
+                Style::default().fg(t.error),
+            )));
+        }
+    }
     lines
 }
 
@@ -3871,16 +3913,16 @@ fn produce_cat_markdown_output_lines(
     }
 
     if !stderr.is_empty() {
-            if !lines.is_empty() {
-                lines.push(Line::from(""));
-            }
-            for sl in stderr.lines() {
-                lines.push(Line::from(Span::styled(
-                    sanitize_terminal_text(sl),
-                    Style::default().fg(t.error),
-                )));
-            }
+        if !lines.is_empty() {
+            lines.push(Line::from(""));
         }
+        for sl in stderr.lines() {
+            lines.push(Line::from(Span::styled(
+                sanitize_terminal_text(sl),
+                Style::default().fg(t.error),
+            )));
+        }
+    }
 
     lines
 }
@@ -3932,18 +3974,12 @@ fn produce_hex_dump_output_lines(
             // Sanity check: real offsets are mostly hex digits.
             // A non-hex prefix means we're looking at unrelated
             // output (stderr-style line) — fall back to plain.
-            let looks_offset = !offset.is_empty()
-                && offset.trim_start().chars().all(|c| c.is_ascii_hexdigit());
+            let looks_offset =
+                !offset.is_empty() && offset.trim_start().chars().all(|c| c.is_ascii_hexdigit());
             if looks_offset {
                 let mut spans = vec![
-                    Span::styled(
-                        format!("{offset}:"),
-                        Style::default().fg(t.text_muted),
-                    ),
-                    Span::styled(
-                        bytes.to_owned(),
-                        Style::default().fg(t.accent),
-                    ),
+                    Span::styled(format!("{offset}:"), Style::default().fg(t.text_muted)),
+                    Span::styled(bytes.to_owned(), Style::default().fg(t.accent)),
                 ];
                 if !ascii.is_empty() {
                     spans.push(Span::raw("  "));
@@ -3974,16 +4010,16 @@ fn produce_hex_dump_output_lines(
         )));
     }
     if !stderr.is_empty() {
-            if !lines.is_empty() {
-                lines.push(Line::from(""));
-            }
-            for sl in stderr.lines() {
-                lines.push(Line::from(Span::styled(
-                    sanitize_terminal_text(sl),
-                    Style::default().fg(t.error),
-                )));
-            }
+        if !lines.is_empty() {
+            lines.push(Line::from(""));
         }
+        for sl in stderr.lines() {
+            lines.push(Line::from(Span::styled(
+                sanitize_terminal_text(sl),
+                Style::default().fg(t.error),
+            )));
+        }
+    }
     lines
 }
 
@@ -4021,9 +4057,7 @@ fn produce_tabular_list_output_lines(
         if !header_drawn && !raw.trim().is_empty() {
             lines.push(Line::from(Span::styled(
                 raw.to_owned(),
-                Style::default()
-                    .fg(t.accent)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
             )));
             header_drawn = true;
             continue;
@@ -4056,16 +4090,16 @@ fn produce_tabular_list_output_lines(
         )));
     }
     if !stderr.is_empty() {
-            if !lines.is_empty() {
-                lines.push(Line::from(""));
-            }
-            for sl in stderr.lines() {
-                lines.push(Line::from(Span::styled(
-                    sanitize_terminal_text(sl),
-                    Style::default().fg(t.error),
-                )));
-            }
+        if !lines.is_empty() {
+            lines.push(Line::from(""));
         }
+        for sl in stderr.lines() {
+            lines.push(Line::from(Span::styled(
+                sanitize_terminal_text(sl),
+                Style::default().fg(t.error),
+            )));
+        }
+    }
     lines
 }
 
@@ -4103,7 +4137,9 @@ fn produce_compiler_output_lines(
         };
         lines.push(Line::from(Span::styled(
             format!("[exit {code}]"),
-            Style::default().fg(badge_color).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(badge_color)
+                .add_modifier(Modifier::BOLD),
         )));
     }
     let mut total = 0usize;
@@ -4142,16 +4178,20 @@ fn produce_compiler_output_lines(
             continue;
         }
         for prefix in &[
-            "Checking ", "Building ", "Downloading ", "Updating ", "Verifying ",
-            "Installing ", "Removing ", "Fresh ", "Documenting ",
+            "Checking ",
+            "Building ",
+            "Downloading ",
+            "Updating ",
+            "Verifying ",
+            "Installing ",
+            "Removing ",
+            "Fresh ",
+            "Documenting ",
         ] {
             if let Some(rest) = trimmed.strip_prefix(prefix) {
                 lines.push(Line::from(vec![
                     Span::raw(leading.to_owned()),
-                    Span::styled(
-                        (*prefix).to_string(),
-                        Style::default().fg(t.text_muted),
-                    ),
+                    Span::styled((*prefix).to_string(), Style::default().fg(t.text_muted)),
                     Span::styled(rest.to_owned(), Style::default().fg(t.text_muted)),
                 ]));
                 continue;
@@ -4175,8 +4215,13 @@ fn produce_compiler_output_lines(
         // primary text so the message is legible.
         if let Some(rest) = trimmed.strip_prefix("error") {
             // Match `error[…]:` or `error:` — anything else is text.
-            let after = rest.trim_start_matches(|c: char| c == '[' || c == ']' || c.is_alphanumeric());
-            if rest.is_empty() || rest.starts_with(':') || rest.starts_with('[') || after.starts_with(':') {
+            let after =
+                rest.trim_start_matches(|c: char| c == '[' || c == ']' || c.is_alphanumeric());
+            if rest.is_empty()
+                || rest.starts_with(':')
+                || rest.starts_with('[')
+                || after.starts_with(':')
+            {
                 lines.push(Line::from(vec![
                     Span::raw(leading.to_owned()),
                     Span::styled(
@@ -4194,8 +4239,13 @@ fn produce_compiler_output_lines(
             }
         }
         if let Some(rest) = trimmed.strip_prefix("warning") {
-            let after = rest.trim_start_matches(|c: char| c == '[' || c == ']' || c.is_alphanumeric());
-            if rest.is_empty() || rest.starts_with(':') || rest.starts_with('[') || after.starts_with(':') {
+            let after =
+                rest.trim_start_matches(|c: char| c == '[' || c == ']' || c.is_alphanumeric());
+            if rest.is_empty()
+                || rest.starts_with(':')
+                || rest.starts_with('[')
+                || after.starts_with(':')
+            {
                 lines.push(Line::from(vec![
                     Span::raw(leading.to_owned()),
                     Span::styled(
@@ -4225,14 +4275,8 @@ fn produce_compiler_output_lines(
         if let Some(idx) = raw.find("--> ") {
             let (before, after) = raw.split_at(idx + 4);
             lines.push(Line::from(vec![
-                Span::styled(
-                    before.to_owned(),
-                    Style::default().fg(t.text_muted),
-                ),
-                Span::styled(
-                    after.to_owned(),
-                    Style::default().fg(t.accent),
-                ),
+                Span::styled(before.to_owned(), Style::default().fg(t.text_muted)),
+                Span::styled(after.to_owned(), Style::default().fg(t.accent)),
             ]));
             continue;
         }
@@ -5089,9 +5133,7 @@ fn push_advisor_lines<'a>(items: &mut Vec<RenderItem<'a>>, text: &'a str, t: &Th
         Span::styled("▎ ", Style::default().fg(t.accent)),
         Span::styled(
             "ADVISOR:",
-            Style::default()
-                .fg(t.accent)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
         ),
     ])));
     // Body rows: italic in text_secondary, ribboned with `▎` for the same
@@ -5463,7 +5505,10 @@ mod bash_output_tests {
     fn redact_quoted_blanks_inside_quotes_normal() {
         assert_eq!(redact_quoted("sed -n '1,$p' file"), "sed -n '    ' file");
         assert_eq!(redact_quoted("echo \"$x\""), "echo \"  \"");
-        assert_eq!(redact_quoted("plain text no quotes"), "plain text no quotes");
+        assert_eq!(
+            redact_quoted("plain text no quotes"),
+            "plain text no quotes"
+        );
     }
 
     // Normal: hex-dump tools route to HexDump.
@@ -5500,7 +5545,10 @@ mod bash_output_tests {
     // we don't try to color e.g. `docker run` interactive output).
     #[test]
     fn classify_docker_unknown_subcmd_other_robust() {
-        assert!(matches!(classify_bash_cmd("docker run x"), BashCmdKind::Other));
+        assert!(matches!(
+            classify_bash_cmd("docker run x"),
+            BashCmdKind::Other
+        ));
         assert!(matches!(classify_bash_cmd("docker"), BashCmdKind::Other));
     }
 
@@ -7078,11 +7126,7 @@ mod helper_tests {
         let mut saw_add = false;
         let mut saw_del = false;
         for line in &lines {
-            let plain: String = line
-                .spans
-                .iter()
-                .map(|s| s.content.as_ref())
-                .collect();
+            let plain: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
             if plain.starts_with('+') && !plain.starts_with("+++") {
                 saw_add = true;
             }
@@ -7091,7 +7135,10 @@ mod helper_tests {
             }
         }
         assert!(saw_add, "no `+` add line in rendered output:\n{rendered}");
-        assert!(saw_del, "no `-` remove line in rendered output:\n{rendered}");
+        assert!(
+            saw_del,
+            "no `-` remove line in rendered output:\n{rendered}"
+        );
     }
 
     #[test]
@@ -7102,15 +7149,8 @@ mod helper_tests {
         let mut add_fg: Option<ratatui::style::Color> = None;
         let mut del_fg: Option<ratatui::style::Color> = None;
         for line in &lines {
-            let plain: String = line
-                .spans
-                .iter()
-                .map(|s| s.content.as_ref())
-                .collect();
-            let first_fg = line
-                .spans
-                .iter()
-                .find_map(|s| s.style.fg);
+            let plain: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            let first_fg = line.spans.iter().find_map(|s| s.style.fg);
             if plain.starts_with('+') && !plain.starts_with("+++") && add_fg.is_none() {
                 add_fg = first_fg;
             }
@@ -7311,9 +7351,7 @@ mod helper_tests {
     }
 
     fn stub_app() -> App {
-        use crate::provider::{
-            EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions,
-        };
+        use crate::provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
         use std::sync::Arc;
         struct Stub;
         #[async_trait::async_trait]

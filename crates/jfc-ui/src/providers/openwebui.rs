@@ -1417,9 +1417,48 @@ struct ChatChunk {
 
 #[derive(Debug, Deserialize)]
 struct ChunkUsage {
+    #[serde(default)]
     prompt_tokens: u32,
+    #[serde(default)]
     completion_tokens: u32,
+    #[serde(default)]
     total_tokens: u32,
+    #[serde(default)]
+    prompt_tokens_details: Option<PromptTokensDetails>,
+    #[serde(default)]
+    cache_creation_input_tokens: u32,
+    #[serde(default)]
+    cache_read_input_tokens: u32,
+    #[serde(default)]
+    cache_write_input_tokens: u32,
+}
+
+impl ChunkUsage {
+    fn cache_read_tokens(&self) -> u32 {
+        self.cache_read_input_tokens.max(
+            self.prompt_tokens_details
+                .as_ref()
+                .map_or(0, |d| d.cached_tokens),
+        )
+    }
+
+    fn cache_write_tokens(&self) -> u32 {
+        self.cache_creation_input_tokens
+            .max(self.cache_write_input_tokens)
+            .max(
+                self.prompt_tokens_details
+                    .as_ref()
+                    .map_or(0, |d| d.cache_creation_input_tokens),
+            )
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct PromptTokensDetails {
+    #[serde(default)]
+    cached_tokens: u32,
+    #[serde(default)]
+    cache_creation_input_tokens: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1953,13 +1992,15 @@ pub(crate) fn openai_compatible_event_stream(resp: reqwest::Response) -> EventSt
                                     prompt_tokens = u.prompt_tokens,
                                     completion_tokens = u.completion_tokens,
                                     total_tokens = u.total_tokens,
+                                    cache_read_tokens = u.cache_read_tokens(),
+                                    cache_write_tokens = u.cache_write_tokens(),
                                     "usage"
                                 );
                                 emitted.push(Ok(StreamEvent::Usage {
                                     input_tokens: u.prompt_tokens,
                                     output_tokens: u.completion_tokens,
-                                    cache_read_tokens: 0,
-                                    cache_write_tokens: 0,
+                                    cache_read_tokens: u.cache_read_tokens(),
+                                    cache_write_tokens: u.cache_write_tokens(),
                                 }));
                             }
                             push_chunk_events_stateful(chunk, state, &mut emitted);

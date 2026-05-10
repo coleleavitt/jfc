@@ -10,12 +10,12 @@ use futures::StreamExt;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::mpsc;
 
-use crate::app::{self, App, AppEvent, PendingApproval, ANIM_TICK_MS, IDLE_TICK_MS};
+use crate::app::{self, ANIM_TICK_MS, App, AppEvent, IDLE_TICK_MS, PendingApproval};
 use crate::provider::{ModelId, Provider, ProviderId};
 use crate::types::*;
 use crate::{
-    attachments, config, diagnostics_producer, input, lsp_client, message_view, render,
-    session, slate, stream, tasks, toast, types,
+    attachments, config, diagnostics_producer, input, lsp_client, message_view, render, session,
+    slate, stream, tasks, toast, types,
 };
 
 fn yank_last_assistant(app: &App) {
@@ -1014,15 +1014,13 @@ pub(crate) async fn run(
                                 // `bt.status` to decide whether to keep
                                 // accepting work, so flipping it stops
                                 // the bleed.
-                                if let (Some(cap), false) =
-                                    (bt.max_input_tokens, bt.budget_killed)
+                                if let (Some(cap), false) = (bt.max_input_tokens, bt.budget_killed)
                                 {
-                                    let total = bt.latest_input_tokens
-                                        + bt.cumulative_output_tokens;
+                                    let total =
+                                        bt.latest_input_tokens + bt.cumulative_output_tokens;
                                     if total > cap {
                                         bt.budget_killed = true;
-                                        bt.status =
-                                            crate::types::TaskLifecycle::Failed;
+                                        bt.status = crate::types::TaskLifecycle::Failed;
                                         bt.error = Some(format!(
                                             "killed: token budget {cap} exceeded ({total} used)"
                                         ));
@@ -1281,10 +1279,11 @@ pub(crate) async fn run(
                             .unwrap_or(true);
                     if due {
                         let cwd = std::env::current_dir().unwrap_or_default();
-                        app.worktree_count = match crate::worktrees::list_worktrees_async(&cwd).await {
-                            Ok(list) => list.len().saturating_sub(1),
-                            Err(_) => 0,
-                        };
+                        app.worktree_count =
+                            match crate::worktrees::list_worktrees_async(&cwd).await {
+                                Ok(list) => list.len().saturating_sub(1),
+                                Err(_) => 0,
+                            };
                         app.worktree_count_last_refresh = Some(now);
                     }
 
@@ -1486,14 +1485,17 @@ pub(crate) async fn run(
                                 if fired >= 2 {
                                     break;
                                 }
-                                let in_flight = app.prefetch_in_flight.load(std::sync::atomic::Ordering::Relaxed);
+                                let in_flight = app
+                                    .prefetch_in_flight
+                                    .load(std::sync::atomic::Ordering::Relaxed);
                                 if in_flight >= 2 {
                                     break;
                                 }
                                 if crate::idle_prefetch::get(&path, None, None).is_some() {
                                     continue;
                                 }
-                                app.prefetch_in_flight.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                app.prefetch_in_flight
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                                 let counter = app.prefetch_in_flight.clone();
                                 tokio::spawn(async move {
                                     if let Ok(body) = tokio::fs::read_to_string(&path).await {
@@ -1733,7 +1735,9 @@ pub(crate) async fn run(
                             let segments = crate::inline_tools::parse(&text);
                             let tool_calls = segments
                                 .iter()
-                                .filter(|s| matches!(s, crate::inline_tools::Segment::ToolCall { .. }))
+                                .filter(|s| {
+                                    matches!(s, crate::inline_tools::Segment::ToolCall { .. })
+                                })
                                 .count();
                             tracing::warn!(
                                 target: "jfc::stream::inline_tools",
@@ -1811,11 +1815,9 @@ pub(crate) async fn run(
                                         _ => None,
                                     })
                                 });
-                            if let (Some(sid), Some(u), Some(a)) = (
-                                app.current_session_id.clone(),
-                                first_user,
-                                first_assistant,
-                            ) {
+                            if let (Some(sid), Some(u), Some(a)) =
+                                (app.current_session_id.clone(), first_user, first_assistant)
+                            {
                                 if let Some((p, m)) = crate::tools::snapshot_active_provider() {
                                     tokio::spawn(async move {
                                         let _ = crate::session_naming::generate_and_save(
@@ -1838,13 +1840,9 @@ pub(crate) async fn run(
                             // recent message_delta usage (already populated
                             // into usage_by_model). Skipped when no model
                             // is registered (no pricing match).
-                            let turn_cost =
-                                crate::cost::total_cost(&app.usage_by_model);
+                            let turn_cost = crate::cost::total_cost(&app.usage_by_model);
                             let label = if turn_cost > 0.0 {
-                                format!(
-                                    "{label} / {}",
-                                    crate::cost::fmt_cost(turn_cost)
-                                )
+                                format!("{label} / {}", crate::cost::fmt_cost(turn_cost))
                             } else {
                                 label
                             };
@@ -1963,7 +1961,13 @@ pub(crate) async fn run(
                         let cwd = app.cwd.clone();
                         let model = app.model.clone();
                         tokio::spawn(async move {
-                            session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
+                            session::save_session(
+                                &sid,
+                                &msgs,
+                                Some(cwd.as_str()),
+                                Some(model.as_str()),
+                            )
+                            .await;
                         });
                         app.last_session_save_at = Some(std::time::Instant::now());
                     }
@@ -2079,11 +2083,8 @@ pub(crate) async fn run(
                         if let Some(text) = last_user_text {
                             let tx_compact = tx.clone();
                             tokio::spawn(async move {
-                                tokio::time::sleep(std::time::Duration::from_millis(150))
-                                    .await;
-                                let _ = tx_compact
-                                    .send(AppEvent::Submit(text))
-                                    .await;
+                                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                                let _ = tx_compact.send(AppEvent::Submit(text)).await;
                             });
                         }
                     }
@@ -2378,7 +2379,13 @@ pub(crate) async fn run(
                         let cwd = app.cwd.clone();
                         let model = app.model.clone();
                         tokio::spawn(async move {
-                            session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
+                            session::save_session(
+                                &sid,
+                                &msgs,
+                                Some(cwd.as_str()),
+                                Some(model.as_str()),
+                            )
+                            .await;
                         });
                     }
                 }
@@ -2820,7 +2827,13 @@ pub(crate) async fn run(
                         let cwd = app.cwd.clone();
                         let model = app.model.clone();
                         tokio::spawn(async move {
-                            session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
+                            session::save_session(
+                                &sid,
+                                &msgs,
+                                Some(cwd.as_str()),
+                                Some(model.as_str()),
+                            )
+                            .await;
                         });
                     }
                 }
@@ -2874,10 +2887,12 @@ pub(crate) async fn run(
                 AppEvent::TaskStarted {
                     task_id,
                     description,
+                    model_used,
+                    max_input_tokens,
                 } => {
                     tracing::info!(
                         target: "jfc::task",
-                        %task_id, %description,
+                        %task_id, %description, ?model_used,
                         "TaskStarted"
                     );
                     use types::{TaskLifecycle, TaskStatusPart};
@@ -2895,8 +2910,8 @@ pub(crate) async fn run(
                             tool_use_count: 0,
                             latest_input_tokens: 0,
                             cumulative_output_tokens: 0,
-                            model_used: Some(app.model.as_str().to_owned()),
-                            max_input_tokens: None,
+                            model_used: model_used.or_else(|| Some(app.model.as_str().to_owned())),
+                            max_input_tokens,
                             budget_killed: false,
                         },
                     );
@@ -3064,9 +3079,8 @@ pub(crate) async fn run(
                         from_mode = ?app.permission_mode,
                         "ExitPlanMode: surfacing plan + transitioning out of Plan"
                     );
-                    let body = format!(
-                        "**Plan presented (Plan Mode → Accept Edits)**\n\n---\n\n{plan}"
-                    );
+                    let body =
+                        format!("**Plan presented (Plan Mode → Accept Edits)**\n\n---\n\n{plan}");
                     app.messages
                         .push(crate::types::ChatMessage::assistant(body));
                     if matches!(app.permission_mode, app::PermissionMode::Plan) {

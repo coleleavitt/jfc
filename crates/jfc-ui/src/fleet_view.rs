@@ -17,11 +17,11 @@
 //! to keep warnings quiet.
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
-    Frame,
 };
 
 use crate::swarm::turn_classifier::{TurnStatus, TurnSummary};
@@ -95,7 +95,7 @@ pub fn render_fleet_view(f: &mut Frame, area: Rect, state: &FleetViewState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Header
+            Constraint::Length(3), // Header
             Constraint::Min(5),    // Agent table
             Constraint::Length(5), // Detail panel
         ])
@@ -112,21 +112,54 @@ pub fn render_fleet_view(f: &mut Frame, area: Rect, state: &FleetViewState) {
 }
 
 fn render_header(f: &mut Frame, area: Rect, state: &FleetViewState) {
-    let running = state.agents.iter().filter(|a| a.status == TurnStatus::Running).count();
-    let blocked = state.agents.iter().filter(|a| a.status == TurnStatus::Blocked).count();
-    let idle = state.agents.iter().filter(|a| a.status == TurnStatus::Idle).count();
-    let completed = state.agents.iter().filter(|a| a.status == TurnStatus::Completed).count();
+    let running = state
+        .agents
+        .iter()
+        .filter(|a| a.status == TurnStatus::Running)
+        .count();
+    let blocked = state
+        .agents
+        .iter()
+        .filter(|a| a.status == TurnStatus::Blocked)
+        .count();
+    let idle = state
+        .agents
+        .iter()
+        .filter(|a| a.status == TurnStatus::Idle)
+        .count();
+    let completed = state
+        .agents
+        .iter()
+        .filter(|a| a.status == TurnStatus::Completed)
+        .count();
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled(" ⚡ Fleet ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " ⚡ Fleet ",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw("│ "),
-        Span::styled(format!("🔄 {running} running"), Style::default().fg(Color::Green)),
+        Span::styled(
+            format!("🔄 {running} running"),
+            Style::default().fg(Color::Green),
+        ),
         Span::raw("  "),
-        Span::styled(format!("🚫 {blocked} blocked"), Style::default().fg(Color::Red)),
+        Span::styled(
+            format!("🚫 {blocked} blocked"),
+            Style::default().fg(Color::Red),
+        ),
         Span::raw("  "),
-        Span::styled(format!("💤 {idle} idle"), Style::default().fg(Color::Yellow)),
+        Span::styled(
+            format!("💤 {idle} idle"),
+            Style::default().fg(Color::Yellow),
+        ),
         Span::raw("  "),
-        Span::styled(format!("✅ {completed} done"), Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("✅ {completed} done"),
+            Style::default().fg(Color::DarkGray),
+        ),
         Span::raw(format!("  │ {} total", state.agents.len())),
     ]))
     .block(Block::default().borders(Borders::ALL).title(" jfc fleet "));
@@ -137,7 +170,13 @@ fn render_header(f: &mut Frame, area: Rect, state: &FleetViewState) {
 fn render_agent_table(f: &mut Frame, area: Rect, state: &FleetViewState) {
     let header_cells = ["", "Agent", "Status", "Detail", "Tokens", "Turns", "Model"]
         .iter()
-        .map(|h| Cell::from(*h).style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+        .map(|h| {
+            Cell::from(*h).style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+        });
     let header = Row::new(header_cells).height(1);
 
     let rows: Vec<Row> = state
@@ -146,7 +185,9 @@ fn render_agent_table(f: &mut Frame, area: Rect, state: &FleetViewState) {
         .enumerate()
         .map(|(i, agent)| {
             let style = if i == state.selected {
-                Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
@@ -199,12 +240,18 @@ fn render_detail_panel(f: &mut Frame, area: Rect, state: &FleetViewState) {
         } else {
             agent.tools_this_turn.join(", ")
         };
-        let action = agent.needs_action.clone().unwrap_or_else(|| "none".to_string());
+        let action = agent
+            .needs_action
+            .clone()
+            .unwrap_or_else(|| "none".to_string());
         let session_line = format!("Session: {}  Tools: {}", agent.session_id, tools);
         let action_line = format!("Action needed: {}", action);
         vec![
             Line::from(Span::raw(session_line)),
-            Line::from(Span::styled(action_line, Style::default().fg(Color::Yellow))),
+            Line::from(Span::styled(
+                action_line,
+                Style::default().fg(Color::Yellow),
+            )),
             Line::from(Span::styled(
                 " [Enter] attach  [s] stop  [m] mirror  [r] restart  [q] quit ",
                 Style::default().fg(Color::DarkGray),
@@ -217,8 +264,8 @@ fn render_detail_panel(f: &mut Frame, area: Rect, state: &FleetViewState) {
         ))]
     };
 
-    let panel = Paragraph::new(content)
-        .block(Block::default().borders(Borders::ALL).title(" Details "));
+    let panel =
+        Paragraph::new(content).block(Block::default().borders(Borders::ALL).title(" Details "));
     f.render_widget(panel, area);
 }
 

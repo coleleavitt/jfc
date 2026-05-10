@@ -91,13 +91,7 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
         // token costs by ~70% on those turns. The v132 SDK does the
         // same; cli.js sets `cache_control: {type:"ephemeral"}` on the
         // last block of system + tools.
-        body["system"] = json!([
-            {
-                "type": "text",
-                "text": sys,
-                "cache_control": { "type": "ephemeral" },
-            }
-        ]);
+        body["system"] = system_blocks(sys);
     }
 
     if let Some(temp) = opts.temperature {
@@ -116,10 +110,7 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
         if let Some(arr) = tools.as_array_mut() {
             if let Some(last) = arr.last_mut() {
                 if let Some(obj) = last.as_object_mut() {
-                    obj.insert(
-                        "cache_control".to_owned(),
-                        json!({ "type": "ephemeral" }),
-                    );
+                    obj.insert("cache_control".to_owned(), json!({ "type": "ephemeral" }));
                 }
             }
         }
@@ -138,6 +129,27 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
     }
 
     body
+}
+
+fn system_blocks(system: &str) -> serde_json::Value {
+    let Some(index) = system.find("\n\n## Current diagnostics") else {
+        return json!([{ "type": "text", "text": system, "cache_control": { "type": "ephemeral" } }]);
+    };
+
+    let stable = system[..index].trim_end();
+    let volatile = system[index..].trim_start();
+    let mut blocks = Vec::new();
+    if !stable.is_empty() {
+        blocks.push(json!({
+            "type": "text",
+            "text": stable,
+            "cache_control": { "type": "ephemeral" },
+        }));
+    }
+    if !volatile.is_empty() {
+        blocks.push(json!({ "type": "text", "text": volatile }));
+    }
+    json!(blocks)
 }
 
 impl crate::provider::seal::Sealed for AnthropicProvider {}
@@ -261,9 +273,9 @@ impl Provider for AnthropicProvider {
                     "Permission denied — your account may not have access \
                      to this model. {friendly}"
                 ),
-                Some("rate_limit_error") => anyhow::bail!(
-                    "Rate limited — wait a moment and retry. {friendly}"
-                ),
+                Some("rate_limit_error") => {
+                    anyhow::bail!("Rate limited — wait a moment and retry. {friendly}")
+                }
                 Some("overloaded_error") => anyhow::bail!(
                     "Anthropic is overloaded ({status}). Try again in a \
                      few seconds. {friendly}"
@@ -272,12 +284,10 @@ impl Provider for AnthropicProvider {
                     "Request too large — auto-compaction should kick in. \
                      {friendly}"
                 ),
-                Some("invalid_request_error") => anyhow::bail!(
-                    "Invalid request: {friendly}\n  raw: {text}"
-                ),
-                Some("not_found_error") => anyhow::bail!(
-                    "Model or endpoint not found: {friendly}"
-                ),
+                Some("invalid_request_error") => {
+                    anyhow::bail!("Invalid request: {friendly}\n  raw: {text}")
+                }
+                Some("not_found_error") => anyhow::bail!("Model or endpoint not found: {friendly}"),
                 _ => anyhow::bail!("Anthropic API error {status}: {friendly}\n  raw: {text}"),
             }
         }
@@ -349,10 +359,7 @@ mod tests {
             None
         );
         // Outer `"type":"error"` alone — no inner error object — None.
-        assert_eq!(
-            anthropic_error_type("{\"type\":\"error\"}"),
-            None
-        );
+        assert_eq!(anthropic_error_type("{\"type\":\"error\"}"), None);
     }
 
     // Normal: a fresh provider exposes the expected name / convention pair so
@@ -388,14 +395,32 @@ mod tests {
     }
 
     // Normal: the optional `system` field is included when the caller provides
-    // a system prompt; the on-wire shape is a plain string per Anthropic's API.
+    // a system prompt; the on-wire shape is text blocks so cache_control can be
+    // applied to the stable prefix.
     #[test]
     fn build_body_includes_system_when_set_normal() {
         let body = build_body(
             vec![make_user_msg("hi")],
             &opts("m").system("you are helpful"),
         );
-        assert_eq!(body["system"], "you are helpful");
+        assert_eq!(body["system"][0]["text"], "you are helpful");
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn build_body_splits_volatile_diagnostics_from_cached_system() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").system("stable instructions\n\n## Current diagnostics\n\nvolatile"),
+        );
+        assert_eq!(body["system"].as_array().unwrap().len(), 2);
+        assert_eq!(body["system"][0]["text"], "stable instructions");
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(
+            body["system"][1]["text"],
+            "## Current diagnostics\n\nvolatile"
+        );
+        assert!(body["system"][1].get("cache_control").is_none());
     }
 
     // Robust: when no system prompt is set, the field must be absent (sending

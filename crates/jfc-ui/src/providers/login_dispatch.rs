@@ -181,7 +181,10 @@ mod tests {
     #[test]
     fn dispatch_empty_arg_treated_as_none_robust() {
         assert!(matches!(dispatch(Some("")), LoginDispatch::ShowChooser(_)));
-        assert!(matches!(dispatch(Some("   ")), LoginDispatch::ShowChooser(_)));
+        assert!(matches!(
+            dispatch(Some("   ")),
+            LoginDispatch::ShowChooser(_)
+        ));
     }
 
     // Robust: unknown target produces an Unknown variant naming the typo and

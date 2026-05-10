@@ -1006,7 +1006,11 @@ pub async fn stream_response(
     let skills_listing = if let Ok(cwd_path) = std::env::current_dir() {
         let skills = crate::agents::load_skills(&cwd_path);
         let block = crate::agents::render_skills_section(&skills);
-        if block.is_empty() { String::new() } else { block }
+        if block.is_empty() {
+            String::new()
+        } else {
+            block
+        }
     } else {
         String::new()
     };
@@ -1020,7 +1024,8 @@ pub async fn stream_response(
     // list via `load_all_agents`, so their `keyTrigger` frontmatter
     // also takes effect.
     let dispatch_section = {
-        let cwd_for_agents = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let cwd_for_agents =
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let agents = crate::agents::load_agents(&cwd_for_agents);
         crate::agents::render_dispatch_section(&agents)
     };
@@ -1252,8 +1257,8 @@ Do not use a colon before tool calls.";
     // unchanged) so default behavior is identical.
     #[cfg(feature = "permission-automation")]
     {
-        let cwd_for_perms = std::env::current_dir()
-            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let cwd_for_perms =
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let cfg = crate::config::feature_config::FeatureConfig::load(&cwd_for_perms);
         let rules = crate::permissions::RuleSet::from_config(&cfg);
         let before = advertised_tools.len();
@@ -1371,9 +1376,7 @@ Do not use a colon before tool calls.";
                     "stream rejected: prompt too long — requesting auto-compact"
                 );
                 let _ = tx
-                    .send(AppEvent::StreamError(format!(
-                        "auto-compact: {e}"
-                    )))
+                    .send(AppEvent::StreamError(format!("auto-compact: {e}")))
                     .await;
                 return;
             } else {
@@ -1508,12 +1511,11 @@ Do not use a colon before tool calls.";
                 // In both cases we bail with `ToolInput::Generic` carrying
                 // the original payload as the summary so the user can see
                 // what the model tried to send.
-                let parse_outcome: Result<serde_json::Value, _> =
-                    if assembled.trim().is_empty() {
-                        Ok(serde_json::Value::Object(serde_json::Map::new()))
-                    } else {
-                        serde_json::from_str(&assembled)
-                    };
+                let parse_outcome: Result<serde_json::Value, _> = if assembled.trim().is_empty() {
+                    Ok(serde_json::Value::Object(serde_json::Map::new()))
+                } else {
+                    serde_json::from_str(&assembled)
+                };
                 let kind = ToolKind::from_name(&tool_name);
                 let make_stub = || ToolInput::Generic {
                     summary: if assembled.is_empty() {
@@ -1710,6 +1712,27 @@ pub fn dispatch_tools_batched(
             let team_name = task_input.team_name.clone().unwrap_or_default();
             let agent_id = crate::swarm::types::make_agent_id(&name, &team_name);
             let color = crate::swarm::runner::assign_teammate_color();
+            let agent_def = task_input
+                .subagent_type
+                .as_deref()
+                .and_then(|t| agents.iter().find(|a| a.name.eq_ignore_ascii_case(t)));
+            let teammate_model = match crate::tools::selected_subagent_model(
+                &task_input,
+                agent_def,
+                model.clone(),
+                provider.name(),
+            ) {
+                Ok(model) => model,
+                Err(error) => {
+                    let _ = tx_task.try_send(AppEvent::ToolResult {
+                        tool_id: crate::ids::ToolId::from(task_id),
+                        result: crate::tools::ExecutionResult::failure(error),
+                    });
+                    done();
+                    continue;
+                }
+            };
+            let teammate_model_name = teammate_model.as_str().to_string();
 
             let config = crate::swarm::runner::TeammateRunnerConfig {
                 identity: crate::swarm::TeammateIdentity {
@@ -1722,10 +1745,10 @@ pub fn dispatch_tools_batched(
                 },
                 prompt: task_input.prompt.clone(),
                 description: task_input.description.clone(),
-                model: task_input.model.clone(),
+                model: Some(teammate_model_name.clone()),
                 agent_type: task_input.subagent_type.clone(),
                 provider: provider.clone(),
-                model_id: model.clone(),
+                model_id: teammate_model,
                 system_prompt: None,
             };
 
@@ -1743,7 +1766,7 @@ pub fn dispatch_tools_batched(
                 agent_id: agent_id.clone(),
                 name: name.clone(),
                 agent_type: task_input.subagent_type.clone(),
-                model: task_input.model.clone(),
+                model: Some(teammate_model_name.clone()),
                 color: Some(color.clone()),
                 plan_mode_required: Some(task_input.mode.as_deref() == Some("plan")),
                 joined_at: std::time::SystemTime::now()
@@ -1813,6 +1836,8 @@ pub fn dispatch_tools_batched(
             let _ = tx_task.try_send(AppEvent::TaskStarted {
                 task_id: crate::ids::TaskId::from(runner_task_id.clone()),
                 description: format!("spawn teammate: {name}"),
+                model_used: Some(teammate_model_name),
+                max_input_tokens: agent_def.and_then(|a| a.max_input_tokens),
             });
 
             let _ = tx_task.try_send(AppEvent::ToolResult {
@@ -1849,6 +1874,15 @@ pub fn dispatch_tools_batched(
             .as_deref()
             .and_then(|t| agents.iter().find(|a| a.name.eq_ignore_ascii_case(t)))
             .cloned();
+        let model_used = crate::tools::selected_subagent_model(
+            &task_input,
+            agent_def.as_ref(),
+            model.clone(),
+            provider.name(),
+        )
+        .ok()
+        .map(|model| model.as_str().to_string());
+        let max_input_tokens = agent_def.as_ref().and_then(|a| a.max_input_tokens);
         if agent_def.is_none() {
             if let Some(t) = task_input.subagent_type.as_deref() {
                 tracing::warn!(
@@ -1906,6 +1940,8 @@ pub fn dispatch_tools_batched(
                 .send(AppEvent::TaskStarted {
                     task_id: crate::ids::TaskId::from(task_id.clone()),
                     description,
+                    model_used,
+                    max_input_tokens,
                 })
                 .await;
 
@@ -2612,8 +2648,7 @@ mod pdf_attachment_drain_tests {
     /// Otherwise running two tests in parallel would leak state
     /// between them and break the queue-empty assertions.
     fn drain_test_lock() -> &'static std::sync::Mutex<()> {
-        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> =
-            std::sync::OnceLock::new();
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
         LOCK.get_or_init(|| std::sync::Mutex::new(()))
     }
 
@@ -3512,13 +3547,10 @@ mod cancellation_token_tests {
 
         // The whole join must finish well under the 60-second sleep —
         // give it 500ms of headroom for slow CI runners.
-        let outcome = tokio::time::timeout(
-            std::time::Duration::from_millis(500),
-            handle,
-        )
-        .await
-        .expect("spawn must unwind within 500ms after cancel()")
-        .expect("spawned task must not panic");
+        let outcome = tokio::time::timeout(std::time::Duration::from_millis(500), handle)
+            .await
+            .expect("spawn must unwind within 500ms after cancel()")
+            .expect("spawned task must not panic");
 
         assert_eq!(outcome, "cancelled");
     }
@@ -3544,13 +3576,10 @@ mod cancellation_token_tests {
             }
         });
 
-        let outcome = tokio::time::timeout(
-            std::time::Duration::from_millis(500),
-            handle,
-        )
-        .await
-        .expect("pre-cancelled token must short-circuit the spawn")
-        .expect("spawned task must not panic");
+        let outcome = tokio::time::timeout(std::time::Duration::from_millis(500), handle)
+            .await
+            .expect("pre-cancelled token must short-circuit the spawn")
+            .expect("spawned task must not panic");
 
         assert_eq!(outcome, "cancelled");
     }

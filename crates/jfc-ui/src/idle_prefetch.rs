@@ -72,8 +72,12 @@ pub fn get(path: &str, offset: Option<u64>, limit: Option<u64>) -> Option<String
 fn key_for(path: &str, offset: Option<u64>, limit: Option<u64>) -> String {
     format!(
         "{path}|{}|{}",
-        offset.map(|o| o.to_string()).unwrap_or_else(|| "*".to_owned()),
-        limit.map(|l| l.to_string()).unwrap_or_else(|| "*".to_owned())
+        offset
+            .map(|o| o.to_string())
+            .unwrap_or_else(|| "*".to_owned()),
+        limit
+            .map(|l| l.to_string())
+            .unwrap_or_else(|| "*".to_owned())
     )
 }
 
@@ -84,7 +88,9 @@ pub fn extract_candidates(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     for word in text.split_whitespace() {
         // Strip surrounding punctuation so `(src/foo.rs)` matches.
-        let trimmed = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '/' && c != '.' && c != '_' && c != '-' && c != ':');
+        let trimmed = word.trim_matches(|c: char| {
+            !c.is_alphanumeric() && c != '/' && c != '.' && c != '_' && c != '-' && c != ':'
+        });
         if !looks_like_path(trimmed) {
             continue;
         }

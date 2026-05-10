@@ -400,14 +400,14 @@ impl Theme {
     /// frost accents — strong for daytime use under bright lighting.
     pub fn nord() -> Self {
         Self {
-            bg: Color::Rgb(46, 52, 64),       // nord0
-            surface: Color::Rgb(59, 66, 82),  // nord1
-            surface_raised: Color::Rgb(67, 76, 94), // nord2
-            border: Color::Rgb(76, 86, 106),  // nord3
-            text_primary: Color::Rgb(216, 222, 233), // nord4
+            bg: Color::Rgb(46, 52, 64),                // nord0
+            surface: Color::Rgb(59, 66, 82),           // nord1
+            surface_raised: Color::Rgb(67, 76, 94),    // nord2
+            border: Color::Rgb(76, 86, 106),           // nord3
+            text_primary: Color::Rgb(216, 222, 233),   // nord4
             text_secondary: Color::Rgb(229, 233, 240), // nord5
             text_muted: Color::Rgb(76, 86, 106),
-            accent: Color::Rgb(136, 192, 208), // nord8 (frost)
+            accent: Color::Rgb(136, 192, 208),  // nord8 (frost)
             success: Color::Rgb(163, 190, 140), // nord14
             warning: Color::Rgb(235, 203, 139), // nord13
             error: Color::Rgb(191, 97, 106),    // nord11
@@ -438,11 +438,11 @@ impl Theme {
     /// orange/yellow accents; cherished by old-school terminal users.
     pub fn gruvbox_dark() -> Self {
         Self {
-            bg: Color::Rgb(40, 40, 40),       // bg0
-            surface: Color::Rgb(60, 56, 54),  // bg1
-            surface_raised: Color::Rgb(80, 73, 69), // bg2
-            border: Color::Rgb(102, 92, 84),  // bg3
-            text_primary: Color::Rgb(235, 219, 178), // fg1
+            bg: Color::Rgb(40, 40, 40),                // bg0
+            surface: Color::Rgb(60, 56, 54),           // bg1
+            surface_raised: Color::Rgb(80, 73, 69),    // bg2
+            border: Color::Rgb(102, 92, 84),           // bg3
+            text_primary: Color::Rgb(235, 219, 178),   // fg1
             text_secondary: Color::Rgb(213, 196, 161), // fg2
             text_muted: Color::Rgb(168, 153, 132),     // fg4
             accent: Color::Rgb(131, 165, 152),         // blue/aqua
@@ -552,17 +552,17 @@ impl Theme {
     /// pastels on a deep purple-grey bg. Gentle on the eyes.
     pub fn rose_pine() -> Self {
         Self {
-            bg: Color::Rgb(25, 23, 36),       // base
-            surface: Color::Rgb(31, 29, 46),  // surface
+            bg: Color::Rgb(25, 23, 36),             // base
+            surface: Color::Rgb(31, 29, 46),        // surface
             surface_raised: Color::Rgb(38, 35, 58), // overlay
             border: Color::Rgb(64, 60, 88),
-            text_primary: Color::Rgb(224, 222, 244), // text
+            text_primary: Color::Rgb(224, 222, 244),   // text
             text_secondary: Color::Rgb(144, 140, 170), // subtle
-            text_muted: Color::Rgb(110, 106, 134), // muted
-            accent: Color::Rgb(196, 167, 231), // iris
-            success: Color::Rgb(156, 207, 216), // foam
-            warning: Color::Rgb(246, 193, 119), // gold
-            error: Color::Rgb(235, 111, 146), // love
+            text_muted: Color::Rgb(110, 106, 134),     // muted
+            accent: Color::Rgb(196, 167, 231),         // iris
+            success: Color::Rgb(156, 207, 216),        // foam
+            warning: Color::Rgb(246, 193, 119),        // gold
+            error: Color::Rgb(235, 111, 146),          // love
             user_bubble_bg: Color::Rgb(31, 29, 46),
             asst_bubble_bg: Color::Rgb(25, 23, 36),
             code_bg: Color::Rgb(20, 18, 30),
@@ -668,27 +668,27 @@ impl Theme {
     /// colorscheme at github.com/Shadorain/shadotheme.
     pub fn shadotheme() -> Self {
         Self {
-            bg: Color::Rgb(17, 17, 25),               // #111119 — Normal bg
-            surface: Color::Rgb(27, 27, 41),          // #1b1b29 — CursorLine
-            surface_raised: Color::Rgb(38, 36, 64),   // #262440 — selection
-            border: Color::Rgb(80, 80, 121),          // #505079 — WinSeparator
-            text_primary: Color::Rgb(223, 183, 232),  // #dfb7e8 — Normal fg
-            text_secondary: Color::Rgb(168, 137, 156),// #a8899c — muted pink
-            text_muted: Color::Rgb(98, 114, 164),     // #6272a4 — Comment
-            accent: Color::Rgb(189, 147, 249),        // #bd93f9 — purple
-            success: Color::Rgb(55, 212, 167),        // #37d4a7 — DiffAdd
-            warning: Color::Rgb(241, 143, 176),       // #F18FB0 — warm pink
-            error: Color::Rgb(181, 42, 91),           // #B52A5B — crimson
-            user_bubble_bg: Color::Rgb(38, 36, 64),   // #262440
-            asst_bubble_bg: Color::Rgb(20, 10, 29),   // #140a1d — deep purple
-            code_bg: Color::Rgb(14, 14, 22),          // slightly darker than bg
-            code_fg: Color::Rgb(223, 183, 232),       // #dfb7e8
-            code_string: Color::Rgb(134, 119, 217),   // #8677d9 — String
-            code_keyword: Color::Rgb(255, 122, 178),  // #ff7ab2 — Keyword
-            code_comment: Color::Rgb(98, 114, 164),   // #6272a4 — Comment
-            code_number: Color::Rgb(222, 40, 110),    // #de286e — Number
-            reasoning_bg: Color::Rgb(27, 27, 41),     // #1b1b29
-            reasoning_fg: Color::Rgb(161, 161, 221),  // #a1a1dd — soft lavender
+            bg: Color::Rgb(17, 17, 25),                // #111119 — Normal bg
+            surface: Color::Rgb(27, 27, 41),           // #1b1b29 — CursorLine
+            surface_raised: Color::Rgb(38, 36, 64),    // #262440 — selection
+            border: Color::Rgb(80, 80, 121),           // #505079 — WinSeparator
+            text_primary: Color::Rgb(223, 183, 232),   // #dfb7e8 — Normal fg
+            text_secondary: Color::Rgb(168, 137, 156), // #a8899c — muted pink
+            text_muted: Color::Rgb(98, 114, 164),      // #6272a4 — Comment
+            accent: Color::Rgb(189, 147, 249),         // #bd93f9 — purple
+            success: Color::Rgb(55, 212, 167),         // #37d4a7 — DiffAdd
+            warning: Color::Rgb(241, 143, 176),        // #F18FB0 — warm pink
+            error: Color::Rgb(181, 42, 91),            // #B52A5B — crimson
+            user_bubble_bg: Color::Rgb(38, 36, 64),    // #262440
+            asst_bubble_bg: Color::Rgb(20, 10, 29),    // #140a1d — deep purple
+            code_bg: Color::Rgb(14, 14, 22),           // slightly darker than bg
+            code_fg: Color::Rgb(223, 183, 232),        // #dfb7e8
+            code_string: Color::Rgb(134, 119, 217),    // #8677d9 — String
+            code_keyword: Color::Rgb(255, 122, 178),   // #ff7ab2 — Keyword
+            code_comment: Color::Rgb(98, 114, 164),    // #6272a4 — Comment
+            code_number: Color::Rgb(222, 40, 110),     // #de286e — Number
+            reasoning_bg: Color::Rgb(27, 27, 41),      // #1b1b29
+            reasoning_fg: Color::Rgb(161, 161, 221),   // #a1a1dd — soft lavender
             style_text_secondary: Style::default(),
             style_text_muted: Style::default(),
             style_error: Style::default(),
@@ -910,9 +910,21 @@ mod tests {
             assert_text_distinct_from_bg(&t, name);
             // Semantic colors must be distinct so red/yellow/green
             // can't collide on any palette.
-            assert_ne!(rgb_of(t.success), rgb_of(t.warning), "{name}: success vs warning");
-            assert_ne!(rgb_of(t.warning), rgb_of(t.error), "{name}: warning vs error");
-            assert_ne!(rgb_of(t.success), rgb_of(t.error), "{name}: success vs error");
+            assert_ne!(
+                rgb_of(t.success),
+                rgb_of(t.warning),
+                "{name}: success vs warning"
+            );
+            assert_ne!(
+                rgb_of(t.warning),
+                rgb_of(t.error),
+                "{name}: warning vs error"
+            );
+            assert_ne!(
+                rgb_of(t.success),
+                rgb_of(t.error),
+                "{name}: success vs error"
+            );
         }
     }
 

@@ -62,7 +62,9 @@ impl VertexConfig {
     /// True only when project is set — the wizard validates this, but we
     /// re-check at startup so a manually-truncated file degrades cleanly.
     pub fn is_complete(&self) -> bool {
-        self.project.as_deref().is_some_and(|p| !p.trim().is_empty())
+        self.project
+            .as_deref()
+            .is_some_and(|p| !p.trim().is_empty())
     }
 }
 
@@ -333,10 +335,7 @@ pub fn fetch_gcloud_token() -> anyhow::Result<String> {
         .output()?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        anyhow::bail!(
-            "`gcloud auth print-access-token` failed: {}",
-            stderr.trim()
-        );
+        anyhow::bail!("`gcloud auth print-access-token` failed: {}", stderr.trim());
     }
     let token = String::from_utf8(out.stdout)?.trim().to_owned();
     if token.is_empty() {
@@ -356,7 +355,11 @@ pub fn fetch_gcloud_default_project() -> Option<String> {
         return None;
     }
     let s = String::from_utf8(out.stdout).ok()?.trim().to_owned();
-    if s.is_empty() || s == "(unset)" { None } else { Some(s) }
+    if s.is_empty() || s == "(unset)" {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 /// DO-178B §6.4.2 conformance: `_normal` and `_robust` cases for config
@@ -540,11 +543,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let stub = dir.path().join("gcloud");
         let mut f = std::fs::File::create(&stub).unwrap();
-        writeln!(
-            f,
-            "#!/bin/sh\necho 'ERROR: Reauth required.' 1>&2\nexit 1"
-        )
-        .unwrap();
+        writeln!(f, "#!/bin/sh\necho 'ERROR: Reauth required.' 1>&2\nexit 1").unwrap();
         drop(f);
         let mut perms = std::fs::metadata(&stub).unwrap().permissions();
         perms.set_mode(0o755);

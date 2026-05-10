@@ -559,7 +559,11 @@ mod tests {
     fn test_register_multi() {
         let mut registry = HookRegistry::new();
         registry.register_multi(
-            &[HookPoint::OnSessionStart, HookPoint::OnSessionEnd, HookPoint::OnHeartbeat],
+            &[
+                HookPoint::OnSessionStart,
+                HookPoint::OnSessionEnd,
+                HookPoint::OnHeartbeat,
+            ],
             HookHandler::Logger,
         );
         assert_eq!(registry.len(), 3);
@@ -577,7 +581,10 @@ mod tests {
         assert_eq!(agent_ctx.agent_name.as_deref(), Some("solver-1"));
 
         let session_ctx = HookContext::for_session("s1").with_extra("reason", "user-exit");
-        assert_eq!(session_ctx.extra[0], ("reason".to_string(), "user-exit".to_string()));
+        assert_eq!(
+            session_ctx.extra[0],
+            ("reason".to_string(), "user-exit".to_string())
+        );
     }
 
     #[test]
@@ -600,7 +607,11 @@ mod tests {
 
     #[test]
     fn test_comment_checker_detects_slop() {
-        let ctx = HookContext::for_tool("write", "// This function updates state\nfn update() {}", "s1");
+        let ctx = HookContext::for_tool(
+            "write",
+            "// This function updates state\nfn update() {}",
+            "s1",
+        );
         assert_continue(HookHandler::CommentChecker.execute(HookPoint::AfterToolDispatch, &ctx));
     }
 

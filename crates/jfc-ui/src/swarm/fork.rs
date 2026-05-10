@@ -113,7 +113,11 @@ mod tests {
     fn make_messages(n: usize) -> Vec<ChatMessage> {
         (0..n)
             .map(|i| ChatMessage {
-                role: if i % 2 == 0 { Role::User } else { Role::Assistant },
+                role: if i % 2 == 0 {
+                    Role::User
+                } else {
+                    Role::Assistant
+                },
                 parts: vec![MessagePart::Text(format!("message {i}"))],
                 agent_name: None,
                 model_name: None,

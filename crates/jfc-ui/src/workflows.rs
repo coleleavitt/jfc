@@ -60,9 +60,7 @@ pub fn list(project_root: &Path) -> Vec<String> {
             if p.extension().and_then(|e| e.to_str()) != Some("toml") {
                 return None;
             }
-            p.file_stem()
-                .and_then(|s| s.to_str())
-                .map(str::to_owned)
+            p.file_stem().and_then(|s| s.to_str()).map(str::to_owned)
         })
         .collect();
     out.sort();
@@ -72,8 +70,8 @@ pub fn list(project_root: &Path) -> Vec<String> {
 /// Load a workflow by name from `<project>/.jfc/workflows/<name>.toml`.
 pub fn load(project_root: &Path, name: &str) -> Result<Workflow, String> {
     let path = workflows_dir(project_root).join(format!("{name}.toml"));
-    let text = std::fs::read_to_string(&path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let text =
+        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
     toml::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))
 }
 
@@ -145,16 +143,8 @@ parallel = true
     #[test]
     fn list_returns_names_normal() {
         let tmp = TempDir::new().unwrap();
-        write_workflow(
-            tmp.path(),
-            "a",
-            "[[step]]\nagent='X'\nprompt='p'",
-        );
-        write_workflow(
-            tmp.path(),
-            "b",
-            "[[step]]\nagent='X'\nprompt='p'",
-        );
+        write_workflow(tmp.path(), "a", "[[step]]\nagent='X'\nprompt='p'");
+        write_workflow(tmp.path(), "b", "[[step]]\nagent='X'\nprompt='p'");
         let names = list(tmp.path());
         assert_eq!(names, vec!["a".to_owned(), "b".to_owned()]);
     }

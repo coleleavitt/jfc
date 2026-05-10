@@ -2,11 +2,15 @@ use std::path::{Path, PathBuf};
 
 use tracing::warn;
 
+use super::{ExecutionResult, all_tool_defs, execute_tool};
 use crate::provider::ToolDef;
 use crate::types::{ToolInput, ToolKind};
-use super::{ExecutionResult, all_tool_defs, execute_tool};
 
-pub(super) async fn execute_skill_in(cwd: &Path, name: &str, args: Option<&str>) -> ExecutionResult {
+pub(super) async fn execute_skill_in(
+    cwd: &Path,
+    name: &str,
+    args: Option<&str>,
+) -> ExecutionResult {
     let skills = crate::agents::load_skills(cwd);
     // Be permissive with what the model passes in. v126 lets the model
     // call a skill by its name (`do-178b`), but in practice the model
@@ -83,6 +87,154 @@ pub(super) fn filter_tools_for_agent(
         .collect()
 }
 
+fn subagent_model_alias(model: &str, provider_name: &str) -> String {
+    match (model.trim().to_ascii_lowercase().as_str(), provider_name) {
+        ("haiku", "openwebui") => "bedrock-claude-4-5-haiku".to_string(),
+        ("sonnet", "openwebui") => "bedrock-claude-4-6-sonnet".to_string(),
+        ("opus", "openwebui") => "bedrock-claude-4-6-opus".to_string(),
+        ("haiku", _) => "claude-haiku-4-5".to_string(),
+        ("sonnet", _) => "claude-sonnet-4-6".to_string(),
+        ("opus", _) => "claude-opus-4-6".to_string(),
+        _ => model.trim().to_string(),
+    }
+}
+
+pub(crate) fn selected_subagent_model(
+    task_input: &crate::types::TaskInput,
+    agent_def: Option<&crate::agents::AgentDef>,
+    parent_model: crate::provider::ModelId,
+    provider_name: &str,
+) -> Result<crate::provider::ModelId, String> {
+    let raw = std::env::var("CLAUDE_CODE_SUBAGENT_MODEL")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| task_input.model.clone())
+        .or_else(|| agent_def.and_then(|a| a.model.clone()));
+
+    let Some(raw) = raw else {
+        return Ok(parent_model);
+    };
+
+    if raw.eq_ignore_ascii_case("inherit") || raw.eq_ignore_ascii_case("parent") {
+        return Ok(parent_model);
+    }
+
+    let aliased = subagent_model_alias(&raw, provider_name);
+    let spec = crate::provider::ModelSpec::parse_lenient(&aliased)
+        .map_err(|e| format!("invalid subagent model {raw:?}: {e}"))?;
+
+    if let Some(prefix) = spec.provider() {
+        if prefix.as_str() != provider_name {
+            return Err(format!(
+                "subagent model {aliased:?} targets provider {prefix}, but the active provider is {provider_name}; provider switching for subagents is not wired yet"
+            ));
+        }
+    }
+
+    Ok(spec.into_model())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, path::PathBuf, sync::Mutex};
+
+    use super::*;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn task_input(model: Option<&str>) -> crate::types::TaskInput {
+        crate::types::TaskInput {
+            description: "inspect".to_string(),
+            prompt: "inspect".to_string(),
+            subagent_type: Some("explore".to_string()),
+            category: None,
+            run_in_background: false,
+            model: model.map(str::to_string),
+            name: None,
+            team_name: None,
+            mode: None,
+            isolation: None,
+        }
+    }
+
+    fn agent_model(model: Option<&str>) -> crate::agents::AgentDef {
+        crate::agents::AgentDef {
+            name: "Explore".to_string(),
+            source: PathBuf::from("builtin"),
+            model: model.map(str::to_string),
+            isolation: None,
+            skills: Vec::new(),
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
+            permission_mode: None,
+            forks_parent_context: None,
+            background: None,
+            color: None,
+            effort: None,
+            max_turns: None,
+            max_input_tokens: None,
+            memory: None,
+            mcp_servers: Vec::new(),
+            hooks: HashMap::new(),
+            key_trigger: None,
+            use_when: Vec::new(),
+            avoid_when: Vec::new(),
+            cost: None,
+            system_prompt: String::new(),
+        }
+    }
+
+    #[test]
+    fn selected_subagent_model_uses_agent_model_before_parent() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let model = selected_subagent_model(
+            &task_input(None),
+            Some(&agent_model(Some("haiku"))),
+            crate::provider::ModelId::new("claude-opus-4-6"),
+            "openwebui",
+        )
+        .unwrap();
+
+        assert_eq!(model.as_str(), "bedrock-claude-4-5-haiku");
+    }
+
+    #[test]
+    fn selected_subagent_model_env_overrides_task_model() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("CLAUDE_CODE_SUBAGENT_MODEL", "haiku") };
+
+        let model = selected_subagent_model(
+            &task_input(Some("opus")),
+            Some(&agent_model(Some("sonnet"))),
+            crate::provider::ModelId::new("claude-opus-4-6"),
+            "openwebui",
+        )
+        .unwrap();
+
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        assert_eq!(model.as_str(), "bedrock-claude-4-5-haiku");
+    }
+
+    #[test]
+    fn selected_subagent_model_rejects_cross_provider_models() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let error = selected_subagent_model(
+            &task_input(Some("anthropic/claude-haiku-4-5")),
+            None,
+            crate::provider::ModelId::new("bedrock-claude-4-6-opus"),
+            "openwebui",
+        )
+        .unwrap_err();
+
+        assert!(error.contains("provider switching for subagents is not wired yet"));
+    }
+}
+
 /// Run a subagent. The agent gets its own system prompt, tool catalogue
 /// (filtered by the agent's allow/disallow lists), an optional cwd
 /// override (used for worktree isolation), and a turn cap from
@@ -107,10 +259,11 @@ pub async fn execute_task(
     };
     use futures::StreamExt;
 
-    let model = if let Some(m) = &task_input.model {
-        crate::provider::ModelId::new(m.clone())
-    } else {
-        model_id
+    let model = match selected_subagent_model(task_input, agent_def, model_id, provider.name()) {
+        Ok(model) => model,
+        Err(error) => {
+            return ExecutionResult::failure(error);
+        }
     };
 
     let cwd = cwd_override
@@ -438,4 +591,3 @@ pub async fn execute_task(
         ExecutionResult::success(final_text)
     }
 }
-

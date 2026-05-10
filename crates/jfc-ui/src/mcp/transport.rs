@@ -243,11 +243,7 @@ impl Transport {
         let mut guard = self.inner.child.lock().await;
         if let Some(mut child) = guard.take() {
             let _ = child.start_kill();
-            let _ = tokio::time::timeout(
-                std::time::Duration::from_millis(500),
-                child.wait(),
-            )
-            .await;
+            let _ = tokio::time::timeout(std::time::Duration::from_millis(500), child.wait()).await;
         }
     }
 }
@@ -429,7 +425,8 @@ impl Transport {
         let transport = Self { inner };
 
         // Handshake: initialize → wait → initialized notification.
-        let init = protocol::build_initialize(transport.next_id(), "jfc", env!("CARGO_PKG_VERSION"));
+        let init =
+            protocol::build_initialize(transport.next_id(), "jfc", env!("CARGO_PKG_VERSION"));
         if transport.inner.stdin_tx.send(encode(&init)).is_err() {
             tracing::warn!(
                 target: "jfc::mcp",

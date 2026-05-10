@@ -21,7 +21,9 @@ use tokio::process::Command;
 #[derive(Debug, thiserror::Error)]
 pub enum GhError {
     /// `gh` is not installed or not on PATH.
-    #[error("`gh` CLI not found on PATH — install via https://cli.github.com or set JFC_GH_BIN_OVERRIDE")]
+    #[error(
+        "`gh` CLI not found on PATH — install via https://cli.github.com or set JFC_GH_BIN_OVERRIDE"
+    )]
     NotInstalled,
     /// `gh auth login` has not been completed (or the token is expired).
     #[error("`gh` is installed but not authenticated — run `gh auth login`")]
@@ -358,9 +360,8 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn run_classifies_rate_limit_robust() {
-        let (_dir, path) = write_shim(
-            "#!/bin/sh\n>&2 echo 'gh: API rate limit exceeded for 1.2.3.4'\nexit 1\n",
-        );
+        let (_dir, path) =
+            write_shim("#!/bin/sh\n>&2 echo 'gh: API rate limit exceeded for 1.2.3.4'\nexit 1\n");
         let client = GhClient::with_bin(path.to_string_lossy().into_owned());
         let res = client.gh_api("rate_limit", &[]).await;
         match res {
@@ -376,9 +377,8 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn run_classifies_not_authenticated_robust() {
-        let (_dir, path) = write_shim(
-            "#!/bin/sh\n>&2 echo 'To get started, please run: gh auth login'\nexit 4\n",
-        );
+        let (_dir, path) =
+            write_shim("#!/bin/sh\n>&2 echo 'To get started, please run: gh auth login'\nexit 4\n");
         let client = GhClient::with_bin(path.to_string_lossy().into_owned());
         let res = client.gh_api("user", &[]).await;
         match res {

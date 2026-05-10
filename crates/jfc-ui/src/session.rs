@@ -1181,10 +1181,7 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             ),
         },
         ToolInput::RunCoverage { lcov_path, .. } => SerializedToolInput::Generic {
-            summary: format!(
-                "RunCoverage({})",
-                lcov_path.as_deref().unwrap_or("auto")
-            ),
+            summary: format!("RunCoverage({})", lcov_path.as_deref().unwrap_or("auto")),
         },
         ToolInput::SymbolEdit { handle, .. } => SerializedToolInput::Generic {
             summary: format!("SymbolEdit: {handle}"),
@@ -1229,7 +1226,11 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::Mcp { name, arguments } => SerializedToolInput::Generic {
             summary: format!("{name}: {arguments}"),
         },
-        ToolInput::CronCreate { schedule, description, .. } => SerializedToolInput::Generic {
+        ToolInput::CronCreate {
+            schedule,
+            description,
+            ..
+        } => SerializedToolInput::Generic {
             summary: format!("CronCreate({schedule}): {description}"),
         },
         ToolInput::CronList => SerializedToolInput::Generic {
@@ -1238,7 +1239,11 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::CronDelete { id } => SerializedToolInput::Generic {
             summary: format!("CronDelete: {id}"),
         },
-        ToolInput::ScheduleWakeup { delay_seconds, reason, .. } => SerializedToolInput::Generic {
+        ToolInput::ScheduleWakeup {
+            delay_seconds,
+            reason,
+            ..
+        } => SerializedToolInput::Generic {
             summary: format!("ScheduleWakeup({delay_seconds}s): {reason}"),
         },
         ToolInput::Monitor { command, until } => SerializedToolInput::Generic {
@@ -1247,7 +1252,9 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
                 command.chars().take(40).collect::<String>()
             ),
         },
-        ToolInput::Lsp { kind, file, line, .. } => SerializedToolInput::Generic {
+        ToolInput::Lsp {
+            kind, file, line, ..
+        } => SerializedToolInput::Generic {
             summary: format!("LSP {kind} {file}:{line}"),
         },
         ToolInput::PushNotification { message, title } => SerializedToolInput::Generic {
@@ -1274,7 +1281,12 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::NotebookRead { path } => SerializedToolInput::Generic {
             summary: format!("NotebookRead: {path}"),
         },
-        ToolInput::NotebookEdit { path, cell_id, edit_mode, .. } => SerializedToolInput::Generic {
+        ToolInput::NotebookEdit {
+            path,
+            cell_id,
+            edit_mode,
+            ..
+        } => SerializedToolInput::Generic {
             summary: format!(
                 "NotebookEdit({}): {path}#{cell_id}",
                 edit_mode.as_deref().unwrap_or("replace"),
@@ -2200,11 +2212,7 @@ mod disk_io_tests {
         let _g = TempConfigHome::new();
         let missing = SessionId::new("ses_does_not_exist");
         assert!(load_session(&missing).await.is_none());
-        assert!(
-            load_session_with_model(&missing)
-                .await
-                .is_none()
-        );
+        assert!(load_session_with_model(&missing).await.is_none());
         assert!(load_session_metadata(&missing).await.is_none());
     }
 
@@ -2235,7 +2243,11 @@ mod disk_io_tests {
         std::fs::create_dir_all(&dir).expect("dir");
         let path = dir.join("ses_corrupted.json");
         std::fs::write(&path, "{ this is not json").expect("write garbage");
-        assert!(load_session_metadata(&SessionId::new("ses_corrupted")).await.is_none());
+        assert!(
+            load_session_metadata(&SessionId::new("ses_corrupted"))
+                .await
+                .is_none()
+        );
     }
 
     // Normal: list_sessions returns all known ids, newest-first by id sort
@@ -2273,9 +2285,27 @@ mod disk_io_tests {
     async fn list_sessions_filtered_includes_matching_and_legacy_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("hi".into())];
-        save_session(&SessionId::new("ses_20260101_000000"), &m, Some("/projA"), None).await;
-        save_session(&SessionId::new("ses_20260201_000000"), &m, Some("/projB"), None).await;
-        save_session(&SessionId::new("ses_20260301_000000"), &m, Some("/projA"), None).await;
+        save_session(
+            &SessionId::new("ses_20260101_000000"),
+            &m,
+            Some("/projA"),
+            None,
+        )
+        .await;
+        save_session(
+            &SessionId::new("ses_20260201_000000"),
+            &m,
+            Some("/projB"),
+            None,
+        )
+        .await;
+        save_session(
+            &SessionId::new("ses_20260301_000000"),
+            &m,
+            Some("/projA"),
+            None,
+        )
+        .await;
 
         let only_a = list_sessions_filtered(Some("/projA")).await;
         let ids: Vec<&str> = only_a.iter().map(|s| s.id.as_str()).collect();
@@ -2293,11 +2323,32 @@ mod disk_io_tests {
     async fn most_recent_session_for_cwd_returns_top_normal() {
         let _g = TempConfigHome::new();
         let m = vec![ChatMessage::user("hi".into())];
-        save_session(&SessionId::new("ses_20260101_000000"), &m, Some("/proj"), None).await;
-        save_session(&SessionId::new("ses_20260301_000000"), &m, Some("/proj"), None).await;
-        save_session(&SessionId::new("ses_20260201_000000"), &m, Some("/other"), None).await;
+        save_session(
+            &SessionId::new("ses_20260101_000000"),
+            &m,
+            Some("/proj"),
+            None,
+        )
+        .await;
+        save_session(
+            &SessionId::new("ses_20260301_000000"),
+            &m,
+            Some("/proj"),
+            None,
+        )
+        .await;
+        save_session(
+            &SessionId::new("ses_20260201_000000"),
+            &m,
+            Some("/other"),
+            None,
+        )
+        .await;
         let top = most_recent_session_for_cwd(Some("/proj")).await;
-        assert_eq!(top.as_ref().map(|s| s.as_str()), Some("ses_20260301_000000"));
+        assert_eq!(
+            top.as_ref().map(|s| s.as_str()),
+            Some("ses_20260301_000000")
+        );
     }
 
     // Robust: most_recent_session (global) returns the newest id regardless
@@ -2309,7 +2360,10 @@ mod disk_io_tests {
         save_session(&SessionId::new("ses_20260101_000000"), &m, None, None).await;
         save_session(&SessionId::new("ses_20260601_000000"), &m, None, None).await;
         let top = most_recent_session().await;
-        assert_eq!(top.as_ref().map(|s| s.as_str()), Some("ses_20260601_000000"));
+        assert_eq!(
+            top.as_ref().map(|s| s.as_str()),
+            Some("ses_20260601_000000")
+        );
     }
 
     // Normal: set_session_title writes a custom title that overrides

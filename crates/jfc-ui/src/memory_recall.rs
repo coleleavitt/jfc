@@ -610,29 +610,23 @@ pub async fn run_recall(
         return None;
     }
 
-    let selected_names = match select_relevant_memories(
-        query,
-        available,
-        provider.clone(),
-        model.clone(),
-    )
-    .await
-    {
-        Ok(names) if !names.is_empty() => names,
-        Ok(_) => {
-            cache_recall(query, None);
-            return None;
-        }
-        Err(e) => {
-            tracing::warn!(
-                target: "jfc::memory_recall",
-                error = %e,
-                "select_relevant_memories errored — skipping recall"
-            );
-            cache_recall(query, None);
-            return None;
-        }
-    };
+    let selected_names =
+        match select_relevant_memories(query, available, provider.clone(), model.clone()).await {
+            Ok(names) if !names.is_empty() => names,
+            Ok(_) => {
+                cache_recall(query, None);
+                return None;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "jfc::memory_recall",
+                    error = %e,
+                    "select_relevant_memories errored — skipping recall"
+                );
+                cache_recall(query, None);
+                return None;
+            }
+        };
 
     let selected: Vec<MemoryEntry> = available
         .iter()

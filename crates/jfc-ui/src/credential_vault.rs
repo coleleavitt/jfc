@@ -133,14 +133,20 @@ mod tests {
     fn api_key_profile_suffix_wins_normal() {
         let _g1 = EnvGuard::set("ANTHROPIC_API_KEY", "bare");
         let _g2 = EnvGuard::set("JFC_ANTHROPIC_API_KEY_WORK", "work-specific");
-        assert_eq!(api_key("anthropic", Some("work")).as_deref(), Some("work-specific"));
+        assert_eq!(
+            api_key("anthropic", Some("work")).as_deref(),
+            Some("work-specific")
+        );
     }
 
     #[test]
     fn api_key_falls_back_to_bare_env_normal() {
         let _g1 = EnvGuard::set("ANTHROPIC_API_KEY", "bare-key");
         // Profile is set but no JFC_*_<PROFILE> exists → falls back to bare.
-        assert_eq!(api_key("anthropic", Some("nonexistent")).as_deref(), Some("bare-key"));
+        assert_eq!(
+            api_key("anthropic", Some("nonexistent")).as_deref(),
+            Some("bare-key")
+        );
     }
 
     #[test]

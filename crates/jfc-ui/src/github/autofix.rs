@@ -121,7 +121,9 @@ mod tests {
                 state: "CHANGES_REQUESTED".into(),
                 body: "Couple of suggestions inline.".into(),
                 comments: vec![PrComment {
-                    author: PrAuthor { login: "bob".into() },
+                    author: PrAuthor {
+                        login: "bob".into(),
+                    },
                     body: "Drop this `unwrap`, prefer `?` propagation.".into(),
                     created_at: "2026-05-07T13:00:00Z".into(),
                 }],

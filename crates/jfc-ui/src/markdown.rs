@@ -67,8 +67,9 @@ static COLOR_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
         |
         # CSS rgb(r, g, b)
         (rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\))
-        "
-    ).expect("color regex")
+        ",
+    )
+    .expect("color regex")
 });
 
 /// Validate boundary: char before match must be non-alphanumeric (or start of string),
@@ -158,7 +159,10 @@ fn colorize_inline_colors(text: &str, base_style: Style) -> Option<Vec<Span<'sta
 
         // Push any preceding text
         if m.start() > last_end {
-            spans.push(Span::styled(text[last_end..m.start()].to_owned(), base_style));
+            spans.push(Span::styled(
+                text[last_end..m.start()].to_owned(),
+                base_style,
+            ));
         }
         // Push the swatch character in the detected color
         spans.push(Span::styled("█ ".to_owned(), Style::default().fg(color)));
@@ -952,10 +956,7 @@ where
                 if self.needs_newline {
                     self.push_line(Line::default());
                 }
-                self.push_line(Line::styled(
-                    "---",
-                    self.theme.style_text_muted,
-                ));
+                self.push_line(Line::styled("---", self.theme.style_text_muted));
                 self.needs_newline = true;
             }
             Event::TaskListMarker(checked) => {
@@ -1005,10 +1006,8 @@ where
                     self.push_line(Line::default());
                     self.needs_newline = false;
                 }
-                self.line_prefixes.push(Span::styled(
-                    "> ",
-                    self.theme.style_text_muted,
-                ));
+                self.line_prefixes
+                    .push(Span::styled("> ", self.theme.style_text_muted));
                 self.line_styles
                     .push(self.theme.style_text_secondary.italic());
             }
@@ -1039,8 +1038,7 @@ where
                 } else {
                     lang.to_owned()
                 };
-                let header_style = self.theme.style_accent
-                    .add_modifier(Modifier::BOLD);
+                let header_style = self.theme.style_accent.add_modifier(Modifier::BOLD);
                 // Emphasize the language tag a bit more — the previous
                 // bare accent color blended into prose. Bold + the
                 // small lang badge makes code blocks pop visually.
@@ -1073,10 +1071,7 @@ where
                             format!("{indent}{label}. ")
                         }
                     };
-                    self.push_span(Span::styled(
-                        prefix,
-                        self.theme.style_text_muted,
-                    ));
+                    self.push_span(Span::styled(prefix, self.theme.style_text_muted));
                 }
                 self.needs_newline = false;
             }
@@ -1291,7 +1286,9 @@ where
                     table.current_cell.push(span);
                 }
             } else {
-                table.current_cell.push(Span::styled(code.into_string(), code_style));
+                table
+                    .current_cell
+                    .push(Span::styled(code.into_string(), code_style));
             }
             return;
         }
@@ -1307,12 +1304,12 @@ where
 
     fn heading_style(&self, level: usize) -> Style {
         match level {
-            1 => self.theme.style_text_primary
+            1 => self
+                .theme
+                .style_text_primary
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-            2 => self.theme.style_text_primary
-                .add_modifier(Modifier::BOLD),
-            _ => self.theme.style_text_secondary
-                .add_modifier(Modifier::BOLD),
+            2 => self.theme.style_text_primary.add_modifier(Modifier::BOLD),
+            _ => self.theme.style_text_secondary.add_modifier(Modifier::BOLD),
         }
     }
 
@@ -2536,7 +2533,9 @@ mod color_swatch_tests {
 
     #[test]
     fn preserves_base_style_normal() {
-        let style = Style::default().fg(Color::Rgb(100, 100, 100)).add_modifier(Modifier::BOLD);
+        let style = Style::default()
+            .fg(Color::Rgb(100, 100, 100))
+            .add_modifier(Modifier::BOLD);
         let result = colorize_inline_colors("see #ff0000 here", style).unwrap();
         // Non-swatch spans should carry the base style
         assert_eq!(result[0].style, style);
@@ -2587,8 +2586,7 @@ mod color_swatch_tests {
         let all_spans: Vec<_> = lines.iter().flat_map(|l| l.spans.iter()).collect();
         // At least one span should be the swatch character with fg=#ff7ab2
         let has_swatch = all_spans.iter().any(|s| {
-            s.content.contains('\u{2588}')
-                && s.style.fg == Some(Color::Rgb(0xff, 0x7a, 0xb2))
+            s.content.contains('\u{2588}') && s.style.fg == Some(Color::Rgb(0xff, 0x7a, 0xb2))
         });
         assert!(
             has_swatch,
@@ -2603,8 +2601,7 @@ mod color_swatch_tests {
         let lines = super::to_lines(md, &theme, 120);
         let all_spans: Vec<_> = lines.iter().flat_map(|l| l.spans.iter()).collect();
         let has_swatch = all_spans.iter().any(|s| {
-            s.content.contains('\u{2588}')
-                && s.style.fg == Some(Color::Rgb(55, 212, 167))
+            s.content.contains('\u{2588}') && s.style.fg == Some(Color::Rgb(55, 212, 167))
         });
         assert!(
             has_swatch,

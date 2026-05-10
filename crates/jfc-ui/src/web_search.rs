@@ -22,8 +22,8 @@
 //! or `~/.config/academic-papers-mcp/config.toml` for higher rate limits.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::Deserialize;
 
@@ -31,11 +31,20 @@ use serde::Deserialize;
 
 /// Route a search query to the appropriate backend based on prefix.
 pub async fn search(query: &str, max_results: usize) -> Result<String, String> {
-    if let Some(q) = query.strip_prefix("arxiv:").or_else(|| query.strip_prefix("arxiv ")) {
+    if let Some(q) = query
+        .strip_prefix("arxiv:")
+        .or_else(|| query.strip_prefix("arxiv "))
+    {
         search_arxiv(q.trim(), max_results).await
-    } else if let Some(q) = query.strip_prefix("scholar:").or_else(|| query.strip_prefix("scholar ")) {
+    } else if let Some(q) = query
+        .strip_prefix("scholar:")
+        .or_else(|| query.strip_prefix("scholar "))
+    {
         search_semantic_scholar(q.trim(), max_results).await
-    } else if let Some(q) = query.strip_prefix("papers:").or_else(|| query.strip_prefix("papers ")) {
+    } else if let Some(q) = query
+        .strip_prefix("papers:")
+        .or_else(|| query.strip_prefix("papers "))
+    {
         search_papers_combined(q.trim(), max_results).await
     } else {
         search_google(query, max_results).await
@@ -247,13 +256,17 @@ fn load_google_keys() -> Vec<CseKey> {
 
 fn load_google_keys_from_config() -> Option<Vec<CseKey>> {
     let home = std::env::var("HOME").ok()?;
-    let path = PathBuf::from(home)
-        .join(".config/google-search-mcp/config.toml");
+    let path = PathBuf::from(home).join(".config/google-search-mcp/config.toml");
     let content = std::fs::read_to_string(&path).ok()?;
     let config: GoogleConfigFile = toml::from_str(&content).ok()?;
     Some(
-        config.keys.into_iter()
-            .map(|k| CseKey { api_key: k.api_key, cx: k.cx })
+        config
+            .keys
+            .into_iter()
+            .map(|k| CseKey {
+                api_key: k.api_key,
+                cx: k.cx,
+            })
             .collect(),
     )
 }
@@ -313,13 +326,19 @@ async fn search_google(query: &str, max_results: usize) -> Result<String, String
         .map_err(|e| format!("Google CSE request failed: {e}"))?;
 
     let status = resp.status();
-    let body = resp.text().await.map_err(|e| format!("Response read: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Response read: {e}"))?;
 
     let parsed: GoogleSearchResponse =
         serde_json::from_str(&body).map_err(|e| format!("JSON parse: {e}"))?;
 
     if let Some(err) = parsed.error {
-        return Err(format!("Google CSE API error {}: {}", err.code, err.message));
+        return Err(format!(
+            "Google CSE API error {}: {}",
+            err.code, err.message
+        ));
     }
     if !status.is_success() {
         return Err(format!("Google CSE returned HTTP {status}"));
@@ -339,7 +358,10 @@ async fn search_google(query: &str, max_results: usize) -> Result<String, String
         for (i, item) in parsed.items.iter().enumerate() {
             out.push_str(&format!(
                 "{}. {}\n   URL: {}\n   {}\n\n",
-                i + 1, item.title, item.link, item.snippet,
+                i + 1,
+                item.title,
+                item.link,
+                item.snippet,
             ));
         }
     }
@@ -356,7 +378,11 @@ fn arxiv_to_paper(e: ArxivEntry) -> PaperEntry {
         title: e.title,
         authors: e.authors,
         year: e.published.split('-').next().map(String::from),
-        venue: if e.category.is_empty() { None } else { Some(format!("arXiv {}", e.category)) },
+        venue: if e.category.is_empty() {
+            None
+        } else {
+            Some(format!("arXiv {}", e.category))
+        },
         citations: None,
         url: Some(format!("https://arxiv.org/abs/{}", e.arxiv_id)),
         pdf: Some(format!("https://arxiv.org/pdf/{}", e.arxiv_id)),
@@ -389,8 +415,14 @@ async fn search_arxiv_entries(query: &str, max_results: usize) -> Result<Vec<Pap
     if !resp.status().is_success() {
         return Err(format!("arXiv returned HTTP {}", resp.status()));
     }
-    let xml = resp.text().await.map_err(|e| format!("Response read: {e}"))?;
-    Ok(parse_arxiv_entries(&xml).into_iter().map(arxiv_to_paper).collect())
+    let xml = resp
+        .text()
+        .await
+        .map_err(|e| format!("Response read: {e}"))?;
+    Ok(parse_arxiv_entries(&xml)
+        .into_iter()
+        .map(arxiv_to_paper)
+        .collect())
 }
 
 async fn search_arxiv(query: &str, max_results: usize) -> Result<String, String> {
@@ -415,11 +447,13 @@ async fn search_arxiv(query: &str, max_results: usize) -> Result<String, String>
         return Err(format!("arXiv returned HTTP {}", resp.status()));
     }
 
-    let xml = resp.text().await.map_err(|e| format!("Response read: {e}"))?;
+    let xml = resp
+        .text()
+        .await
+        .map_err(|e| format!("Response read: {e}"))?;
     let entries = parse_arxiv_entries(&xml);
 
-    let total = extract_tag(&xml, "opensearch:totalResults")
-        .unwrap_or_else(|| "?".to_string());
+    let total = extract_tag(&xml, "opensearch:totalResults").unwrap_or_else(|| "?".to_string());
 
     let mut out = String::new();
     out.push_str(&format!(
@@ -433,8 +467,14 @@ async fn search_arxiv(query: &str, max_results: usize) -> Result<String, String>
             out.push_str(&format!("{}. {}\n", i + 1, entry.title));
             out.push_str(&format!("   arXiv: {}\n", entry.arxiv_id));
             out.push_str(&format!("   Authors: {}\n", entry.authors.join(", ")));
-            out.push_str(&format!("   Published: {} | Category: {}\n", entry.published, entry.category));
-            out.push_str(&format!("   PDF: https://arxiv.org/pdf/{}\n", entry.arxiv_id));
+            out.push_str(&format!(
+                "   Published: {} | Category: {}\n",
+                entry.published, entry.category
+            ));
+            out.push_str(&format!(
+                "   PDF: https://arxiv.org/pdf/{}\n",
+                entry.arxiv_id
+            ));
             // Truncate abstract to ~200 chars for readability.
             let summary = if entry.summary.len() > 200 {
                 format!("{}...", &entry.summary[..200])
@@ -563,8 +603,7 @@ fn semantic_scholar_api_key() -> Option<&'static str> {
         }
         // Try academic-papers-mcp config.
         let home = std::env::var("HOME").ok()?;
-        let path = PathBuf::from(home)
-            .join(".config/academic-papers-mcp/config.toml");
+        let path = PathBuf::from(home).join(".config/academic-papers-mcp/config.toml");
         let content = std::fs::read_to_string(&path).ok()?;
         // Simple TOML key extraction — avoid pulling in a full TOML parse
         // for a single optional key.
@@ -583,7 +622,8 @@ fn semantic_scholar_api_key() -> Option<&'static str> {
     .as_deref()
 }
 
-const S2_FIELDS: &str = "paperId,title,abstract,year,citationCount,url,venue,authors,publicationDate,openAccessPdf";
+const S2_FIELDS: &str =
+    "paperId,title,abstract,year,citationCount,url,venue,authors,publicationDate,openAccessPdf";
 
 async fn search_semantic_scholar(query: &str, max_results: usize) -> Result<String, String> {
     let limit = max_results.min(20).max(1);
@@ -619,7 +659,10 @@ async fn search_s2_public(query: &str, limit: usize) -> Result<String, String> {
         req = req.header("x-api-key", key);
     }
 
-    let resp = req.send().await.map_err(|e| format!("S2 request failed: {e}"))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("S2 request failed: {e}"))?;
 
     if resp.status() == 429 {
         return Err("S2 public API rate limited (429)".to_string());
@@ -628,7 +671,10 @@ async fn search_s2_public(query: &str, limit: usize) -> Result<String, String> {
         return Err(format!("Semantic Scholar returned HTTP {}", resp.status()));
     }
 
-    let body = resp.text().await.map_err(|e| format!("Response read: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Response read: {e}"))?;
     let parsed: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("JSON parse: {e}"))?;
 
@@ -646,7 +692,10 @@ async fn search_s2_public(query: &str, limit: usize) -> Result<String, String> {
                 let title = paper.get("title").and_then(|v| v.as_str()).unwrap_or("?");
                 let year = paper.get("year").and_then(|v| v.as_u64());
                 let venue = paper.get("venue").and_then(|v| v.as_str()).unwrap_or("");
-                let citations = paper.get("citationCount").and_then(|v| v.as_u64()).unwrap_or(0);
+                let citations = paper
+                    .get("citationCount")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 let url = paper.get("url").and_then(|v| v.as_str()).unwrap_or("");
                 let paper_id = paper.get("paperId").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -762,10 +811,7 @@ async fn search_s2_via_bff(query: &str, limit: usize) -> Result<String, String> 
 }
 
 /// Run the BFF completion + paper-batch lookup and return structured entries.
-async fn search_s2_via_bff_entries(
-    query: &str,
-    limit: usize,
-) -> Result<Vec<PaperEntry>, String> {
+async fn search_s2_via_bff_entries(query: &str, limit: usize) -> Result<Vec<PaperEntry>, String> {
     let client = http_client()?;
 
     let completion_resp = client
@@ -788,8 +834,8 @@ async fn search_s2_via_bff_entries(
         .text()
         .await
         .map_err(|e| format!("Response read: {e}"))?;
-    let completion_json: serde_json::Value = serde_json::from_str(&completion_body)
-        .map_err(|e| format!("BFF JSON parse: {e}"))?;
+    let completion_json: serde_json::Value =
+        serde_json::from_str(&completion_body).map_err(|e| format!("BFF JSON parse: {e}"))?;
 
     let paper_ids: Vec<String> = completion_json
         .get("suggestions")
@@ -924,9 +970,7 @@ async fn search_s2_via_bff_entries(
             year,
             venue,
             citations,
-            url: Some(format!(
-                "https://www.semanticscholar.org/paper/{paper_id}"
-            )),
+            url: Some(format!("https://www.semanticscholar.org/paper/{paper_id}")),
             pdf,
             abstract_text,
             arxiv_id,

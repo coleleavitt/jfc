@@ -17,8 +17,8 @@
 
 use notify::{RecursiveMode, Watcher};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 static CHANGE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -44,8 +44,8 @@ fn spawn_watcher() -> Result<(), String> {
     if paths.is_empty() {
         return Err("no candidate paths to watch".into());
     }
-    let mut watcher = notify::recommended_watcher(
-        |res: Result<notify::Event, notify::Error>| match res {
+    let mut watcher =
+        notify::recommended_watcher(|res: Result<notify::Event, notify::Error>| match res {
             Ok(event) => {
                 use notify::EventKind;
                 if matches!(
@@ -64,9 +64,8 @@ fn spawn_watcher() -> Result<(), String> {
             Err(e) => {
                 tracing::debug!(target: "jfc::file_watcher", error = %e, "watch error");
             }
-        },
-    )
-    .map_err(|e| format!("watcher init: {e}"))?;
+        })
+        .map_err(|e| format!("watcher init: {e}"))?;
     for path in &paths {
         let mode = if path.is_dir() {
             RecursiveMode::Recursive
@@ -111,7 +110,9 @@ fn candidate_paths() -> Vec<PathBuf> {
         }
     }
     if let Some(home) = std::env::var_os("HOME") {
-        let user_md = std::path::Path::new(&home).join(".claude").join("CLAUDE.md");
+        let user_md = std::path::Path::new(&home)
+            .join(".claude")
+            .join("CLAUDE.md");
         if user_md.exists() {
             out.push(user_md);
         }

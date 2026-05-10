@@ -584,9 +584,11 @@ pub fn create_tmux_session(agent_name: &str, worktree_path: &Path) -> Result<Str
     let result = Command::new("tmux")
         .args([
             "new-session",
-            "-d",                                    // detached
-            "-s", &session_name,                     // session name
-            "-c", &worktree_path.to_string_lossy(),  // working directory
+            "-d", // detached
+            "-s",
+            &session_name, // session name
+            "-c",
+            &worktree_path.to_string_lossy(), // working directory
         ])
         .output()
         .map_err(|e| format!("Failed to create tmux session: {e}"))?;
@@ -601,7 +603,9 @@ pub fn create_tmux_session(agent_name: &str, worktree_path: &Path) -> Result<Str
     // Set status bar to show agent info
     let _ = Command::new("tmux")
         .args([
-            "set-option", "-t", &session_name,
+            "set-option",
+            "-t",
+            &session_name,
             "status-left",
             &format!(" 🤖 {agent_name} "),
         ])
@@ -609,7 +613,9 @@ pub fn create_tmux_session(agent_name: &str, worktree_path: &Path) -> Result<Str
 
     let _ = Command::new("tmux")
         .args([
-            "set-option", "-t", &session_name,
+            "set-option",
+            "-t",
+            &session_name,
             "status-style",
             "bg=#1a1b26,fg=#7aa2f7",
         ])
@@ -623,10 +629,12 @@ pub fn tmux_add_log_pane(session_name: &str, log_path: &Path) -> Result<(), Stri
     let result = Command::new("tmux")
         .args([
             "split-window",
-            "-t", session_name,
-            "-v",                                    // vertical split
-            "-l", "30%",                             // 30% height for logs
-            "-d",                                    // don't switch focus
+            "-t",
+            session_name,
+            "-v", // vertical split
+            "-l",
+            "30%", // 30% height for logs
+            "-d",  // don't switch focus
             &format!("tail -f {}", log_path.to_string_lossy()),
         ])
         .output()
@@ -712,10 +720,7 @@ pub fn create_agent_worktree_with_tmux(
 }
 
 /// Clean up agent worktree + tmux session.
-pub fn cleanup_agent_worktree_with_tmux(
-    repo_root: &Path,
-    agent_name: &str,
-) -> Result<(), String> {
+pub fn cleanup_agent_worktree_with_tmux(repo_root: &Path, agent_name: &str) -> Result<(), String> {
     let session_name = tmux_session_name(agent_name);
 
     // Kill tmux session (ignore errors — might not exist)

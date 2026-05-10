@@ -180,11 +180,12 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // v132 Ribbon header strip — rendered at the top showing
     // model | mode | cwd | branch | cost. Suppressed when the Ribbon
     // feature gate is off so users on tiny terminals can reclaim a row.
-    let ribbon_height: u16 = if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::Ribbon) {
-        1
-    } else {
-        0
-    };
+    let ribbon_height: u16 =
+        if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::Ribbon) {
+            1
+        } else {
+            0
+        };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -890,10 +891,7 @@ fn highlight_mentions_in(s: &str, t: Theme, phase: f32) -> Vec<Span<'static>> {
         let c = chars[i];
         if c == '@' && (i == 0 || chars[i - 1].is_whitespace()) {
             if !buf.is_empty() {
-                spans.push(Span::styled(
-                    std::mem::take(&mut buf),
-                    t.style_text_primary,
-                ));
+                spans.push(Span::styled(std::mem::take(&mut buf), t.style_text_primary));
             }
             // Consume the `@` and the following non-whitespace token.
             let mut token = String::from('@');
@@ -1495,17 +1493,8 @@ fn sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(t.style_border)
-        .title(Span::styled(
-            " sessions ",
-            t.style_accent_bold,
-        ))
-        .title_bottom(
-            Line::from(Span::styled(
-                " ↑↓ · Enter ",
-                t.style_text_muted,
-            ))
-            .right_aligned(),
-        )
+        .title(Span::styled(" sessions ", t.style_accent_bold))
+        .title_bottom(Line::from(Span::styled(" ↑↓ · Enter ", t.style_text_muted)).right_aligned())
         .style(Style::default().bg(t.surface));
 
     let items: Vec<ListItem> = if app.session_meta.is_empty() {
@@ -1608,8 +1597,7 @@ fn visible_selected_row(app: &App) -> Option<usize> {
 fn separator_row(label: &str, t: Theme) -> ListItem<'static> {
     ListItem::new(Line::from(Span::styled(
         format!("  {label}"),
-        t.style_text_muted
-            .add_modifier(Modifier::DIM),
+        t.style_text_muted.add_modifier(Modifier::DIM),
     )))
 }
 
@@ -1767,10 +1755,7 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
         .border_type(ratatui::widgets::BorderType::Rounded)
         .border_style(Style::default().fg(border_color))
         .padding(Padding::horizontal(1))
-        .title_top(
-            Line::from(Span::styled(title_right, t.style_text_muted))
-                .right_aligned(),
-        )
+        .title_top(Line::from(Span::styled(title_right, t.style_text_muted)).right_aligned())
         .style(Style::default().bg(t.bg));
 
     let inner = block.inner(area);
@@ -2027,10 +2012,7 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(t.style_accent)
-        .title(Span::styled(
-            title_str,
-            t.style_accent_bold,
-        ))
+        .title(Span::styled(title_str, t.style_accent_bold))
         .style(Style::default().bg(t.bg));
 
     let inner = block.inner(area);
@@ -3591,7 +3573,10 @@ const SLASH_COMMANDS: &[(&str, &str)] = &[
         "/advisor",
         "ask a parallel advisor without disturbing the main agent",
     ),
-    ("/install-github-app", "install the Claude GitHub App on this repo"),
+    (
+        "/install-github-app",
+        "install the Claude GitHub App on this repo",
+    ),
     ("/pr", "show a PR + review comments (`/pr <num>`)"),
     ("/pr-autofix", "ask the model to fix PR review comments"),
     (
@@ -3653,10 +3638,7 @@ fn slash_popup(f: &mut Frame, app: &App, prefix: &str) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(t.style_accent)
-        .title(Span::styled(
-            " slash commands ",
-            t.style_accent_bold,
-        ))
+        .title(Span::styled(" slash commands ", t.style_accent_bold))
         .style(Style::default().bg(t.surface));
     let inner = block.inner(popup);
     f.render_widget(block, popup);
@@ -3923,8 +3905,7 @@ fn diagnostic_panel(f: &mut Frame, app: &App) {
     for (file, items) in &groups {
         lines.push(Line::from(Span::styled(
             file.clone(),
-            t.style_text_primary
-                .add_modifier(Modifier::BOLD),
+            t.style_text_primary.add_modifier(Modifier::BOLD),
         )));
         for entry in items {
             let body = crate::diagnostics::format_entry(entry);
@@ -4085,10 +4066,7 @@ fn palette(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(t.style_accent)
-        .title(Span::styled(
-            " Command Palette ",
-            t.style_accent,
-        ))
+        .title(Span::styled(" Command Palette ", t.style_accent))
         .style(Style::default().bg(t.surface));
 
     let inner = block.inner(palette_area);
@@ -4115,8 +4093,7 @@ fn palette(f: &mut Frame, app: &App) {
         .enumerate()
         .map(|(i, label)| {
             let style = if i == app.palette_selected {
-                t.style_accent_bold
-                    .bg(t.surface_raised)
+                t.style_accent_bold.bg(t.surface_raised)
             } else {
                 t.style_text_primary
             };
@@ -4303,10 +4280,7 @@ fn model_picker(f: &mut Frame, app: &mut App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(t.style_accent)
-        .title(Span::styled(
-            title,
-            t.style_accent_bold,
-        ))
+        .title(Span::styled(title, t.style_accent_bold))
         .title_bottom(
             Line::from(vec![
                 Span::styled(" ↑↓", Style::default().fg(t.text_muted)),
@@ -4359,8 +4333,7 @@ fn model_picker(f: &mut Frame, app: &mut App) {
     f.render_widget(Paragraph::new(filter_line), chunks[0]);
 
     // Build the table.
-    let header_style = t.style_text_muted
-        .add_modifier(Modifier::BOLD);
+    let header_style = t.style_text_muted.add_modifier(Modifier::BOLD);
     let header = Row::new(vec![
         Cell::from("  "),
         Cell::from("Model").style(header_style),
@@ -4510,24 +4483,17 @@ fn task_panel(f: &mut Frame, app: &mut App) {
         .iter()
         .map(|tk| {
             let (icon, status_style) = match tk.status {
-                crate::tasks::TaskStatus::Pending => {
-                    ("□ pending", t.style_text_muted)
-                }
-                crate::tasks::TaskStatus::InProgress => (
-                    "▣ in_progress",
-                    t.style_accent_bold,
-                ),
+                crate::tasks::TaskStatus::Pending => ("□ pending", t.style_text_muted),
+                crate::tasks::TaskStatus::InProgress => ("▣ in_progress", t.style_accent_bold),
                 crate::tasks::TaskStatus::Completed => (
                     "✓ completed",
-                    t.style_success
-                        .add_modifier(Modifier::CROSSED_OUT),
+                    t.style_success.add_modifier(Modifier::CROSSED_OUT),
                 ),
                 _ => ("✗ deleted", t.style_error),
             };
 
             let subj_style = if tk.status == crate::tasks::TaskStatus::Completed {
-                t.style_text_muted
-                    .add_modifier(Modifier::CROSSED_OUT)
+                t.style_text_muted.add_modifier(Modifier::CROSSED_OUT)
             } else {
                 t.style_text_primary
             };
@@ -4566,14 +4532,8 @@ fn task_panel(f: &mut Frame, app: &mut App) {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(t.style_border)
-            .title(Span::styled(
-                title.clone(),
-                t.style_accent_bold,
-            ))
-            .title_bottom(Span::styled(
-                " Esc close ",
-                t.style_text_muted,
-            ))
+            .title(Span::styled(title.clone(), t.style_accent_bold))
+            .title_bottom(Span::styled(" Esc close ", t.style_text_muted))
             .style(Style::default().bg(t.surface));
         let inner = block.inner(popup);
         f.render_widget(block, popup);
@@ -4619,14 +4579,10 @@ fn task_panel(f: &mut Frame, app: &mut App) {
         Block::default()
             .borders(Borders::ALL)
             .border_style(t.style_border)
-            .title(Span::styled(
-                title,
-                t.style_accent_bold,
-            ))
+            .title(Span::styled(title, t.style_accent_bold))
             .title_bottom(Span::styled(
                 " ↑↓ navigate · Esc close ",
-                t.style_text_muted
-                    .add_modifier(Modifier::ITALIC),
+                t.style_text_muted.add_modifier(Modifier::ITALIC),
             ))
             .style(Style::default().bg(t.surface)),
     )
@@ -4777,8 +4733,7 @@ fn build_diff_preview(tool: &ToolCall, t: &Theme) -> Option<Vec<Line<'static>>> 
             let mut lines: Vec<Line<'static>> = Vec::new();
             lines.push(Line::from(Span::styled(
                 format!(" {file_path}"),
-                t.style_text_secondary
-                    .add_modifier(Modifier::BOLD),
+                t.style_text_secondary.add_modifier(Modifier::BOLD),
             )));
             lines.push(Line::from(""));
             for (kind, txt) in [("- ", old_string), ("+ ", new_string)] {
@@ -4796,8 +4751,7 @@ fn build_diff_preview(tool: &ToolCall, t: &Theme) -> Option<Vec<Line<'static>>> 
             let mut lines: Vec<Line<'static>> = Vec::new();
             lines.push(Line::from(Span::styled(
                 format!(" {file_path}  ({} bytes)", content.len()),
-                t.style_text_secondary
-                    .add_modifier(Modifier::BOLD),
+                t.style_text_secondary.add_modifier(Modifier::BOLD),
             )));
             lines.push(Line::from(""));
             for ln in content.lines().take(30) {
@@ -4810,8 +4764,7 @@ fn build_diff_preview(tool: &ToolCall, t: &Theme) -> Option<Vec<Line<'static>>> 
             if total > 30 {
                 lines.push(Line::from(Span::styled(
                     format!("… {} more lines", total - 30),
-                    t.style_text_muted
-                        .add_modifier(Modifier::ITALIC),
+                    t.style_text_muted.add_modifier(Modifier::ITALIC),
                 )));
             }
             Some(lines)
@@ -4834,8 +4787,7 @@ fn build_diff_preview(tool: &ToolCall, t: &Theme) -> Option<Vec<Line<'static>>> 
             if total > 40 {
                 lines.push(Line::from(Span::styled(
                     format!("… {} more diff lines", total - 40),
-                    t.style_text_muted
-                        .add_modifier(Modifier::ITALIC),
+                    t.style_text_muted.add_modifier(Modifier::ITALIC),
                 )));
             }
             Some(lines)

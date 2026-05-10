@@ -1,10 +1,9 @@
-use super::*;
 use super::bash::execute_bash;
+use super::daemon::execute_monitor;
 use super::defs::all_tool_defs;
 use super::economy::{
-    apply_winning_solution, looks_like_unified_diff, market_report_string,
-    parse_file_blocks, parse_validator_output, split_patch_and_explanation,
-    verify_bounty_solution,
+    apply_winning_solution, looks_like_unified_diff, market_report_string, parse_file_blocks,
+    parse_validator_output, split_patch_and_explanation, verify_bounty_solution,
 };
 use super::filesystem::{build_edit_diff_view, execute_edit, execute_read, execute_write};
 use super::lsp::execute_lsp;
@@ -14,17 +13,19 @@ use super::notifications::{execute_push_notification, execute_remote_trigger, pa
 use super::search::{execute_glob, execute_grep};
 use super::subagent::{execute_skill_in, filter_tools_for_agent};
 use super::swarm::execute_team_member_mode;
-use super::tasks::{execute_task_create, execute_task_done, execute_task_list, execute_task_update};
+use super::tasks::{
+    execute_task_create, execute_task_done, execute_task_list, execute_task_update,
+};
 use super::worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
-use super::daemon::execute_monitor;
+use super::*;
 
+use crate::provider::ToolDef;
+use crate::tasks::TaskStore;
+use crate::types::{ReplacementMode, ToolInput, ToolKind};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use tokio::process::Command;
 use tokio::sync::Mutex;
-use crate::provider::ToolDef;
-use crate::tasks::TaskStore;
-use crate::types::{ReplacementMode, ToolInput, ToolKind};
 
 #[test]
 fn execution_result_failure_carries_diagnostic() {
@@ -79,8 +80,7 @@ async fn sudo_prompt_does_not_escape_or_hang() {
 
 #[test]
 fn terminal_safe_text_strips_control_sequences() {
-    let raw =
-        "\u{1b}[31mred\u{1b}[0m \u{1b}[<35;82;42MPassword:\u{7}\u{1b}]0;title\u{7} ok\u{0}";
+    let raw = "\u{1b}[31mred\u{1b}[0m \u{1b}[<35;82;42MPassword:\u{7}\u{1b}]0;title\u{7} ok\u{0}";
 
     assert_eq!(terminal_safe_text(raw), "red Password: ok");
 }
@@ -1442,8 +1442,7 @@ async fn execute_bash_combines_stdout_and_stderr_normal() {
 #[tokio::test]
 async fn execute_bash_strips_ansi_escape_codes_normal() {
     // bash subprocess emits ANSI red — terminal_safe_text strips it.
-    let result =
-        execute_bash("printf '\\033[31mred\\033[0m'", Some(5_000), Path::new(".")).await;
+    let result = execute_bash("printf '\\033[31mred\\033[0m'", Some(5_000), Path::new(".")).await;
     assert!(!result.is_error());
     assert!(
         !result.output.contains('\u{1b}'),
@@ -1508,8 +1507,7 @@ async fn execute_read_offset_and_limit_paginate_normal() {
 
 #[tokio::test]
 async fn execute_read_missing_file_returns_failure_robust() {
-    let result =
-        execute_read("/tmp/jfc-definitely-not-here-9999/x.txt", None, None, None).await;
+    let result = execute_read("/tmp/jfc-definitely-not-here-9999/x.txt", None, None, None).await;
     assert!(result.is_error());
     assert!(result.output.contains("Cannot read"), "{}", result.output);
 }
@@ -1631,8 +1629,7 @@ async fn execute_edit_multiple_matches_without_replace_all_fails_robust() {
     let path = dir.path().join("m.txt");
     tokio::fs::write(&path, "a a a").await.unwrap();
 
-    let result =
-        execute_edit(path.to_str().unwrap(), "a", "b", ReplacementMode::FirstOnly).await;
+    let result = execute_edit(path.to_str().unwrap(), "a", "b", ReplacementMode::FirstOnly).await;
     assert!(result.is_error());
     assert!(
         result.output.contains("matches"),
@@ -1814,8 +1811,7 @@ async fn execute_grep_files_with_matches_mode_normal() {
         .await
         .unwrap();
 
-    let result =
-        execute_grep("needle", None, None, Some("files_with_matches"), dir.path()).await;
+    let result = execute_grep("needle", None, None, Some("files_with_matches"), dir.path()).await;
     assert!(!result.is_error(), "{}", result.output);
     assert!(result.output.contains("a.txt"), "{}", result.output);
 }
@@ -2412,9 +2408,7 @@ async fn execute_remote_trigger_posts_payload_normal() {
     let home = tempfile::tempdir().expect("tempdir");
     let cfg_dir = home.path().join("jfc");
     std::fs::create_dir_all(&cfg_dir).expect("mkdir");
-    let triggers = format!(
-        "[t1]\nurl = \"http://127.0.0.1:{port}/hook\"\n",
-    );
+    let triggers = format!("[t1]\nurl = \"http://127.0.0.1:{port}/hook\"\n",);
     std::fs::write(cfg_dir.join("triggers.toml"), triggers).expect("write");
     // SAFETY: tests are not concurrent with code that reads XDG_CONFIG_HOME
     // arbitrarily — only the tool resolver uses it.
@@ -2506,7 +2500,21 @@ async fn enter_worktree_creates_fresh_normal() {
     let dir = tempfile::tempdir().expect("tempdir");
     let repo = dir.path();
     run_git(repo, &["init", "-q"]).await;
-    run_git(repo, &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init", "-q"]).await;
+    run_git(
+        repo,
+        &[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "init",
+            "-q",
+        ],
+    )
+    .await;
     let r = execute_enter_worktree("featx", None, repo).await;
     assert!(!r.is_error(), "{}", r.output);
     assert!(repo.join(".jfc-worktrees/featx").exists());
@@ -2881,7 +2889,11 @@ async fn graph_query_returns_failure_on_parse_error_robust() {
     )
     .await;
 
-    assert!(result.is_error(), "expected failure, got: {}", result.output);
+    assert!(
+        result.is_error(),
+        "expected failure, got: {}",
+        result.output
+    );
     assert!(
         result.output.contains("Graph query error")
             || result.output.to_lowercase().contains("parse"),

@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use tracing::{debug, info, warn};
 
-use crate::tasks::{DeletedFilter, TaskPatch, TaskStatus, TaskStore};
 use super::ExecutionResult;
 use super::subagent::execute_skill_in;
+use crate::tasks::{DeletedFilter, TaskPatch, TaskStatus, TaskStore};
 
 pub(super) fn execute_task_create(
     store: Option<Arc<TaskStore>>,
@@ -154,4 +154,3 @@ pub async fn execute_skill(name: &str, args: Option<&str>) -> ExecutionResult {
     let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
     execute_skill_in(&cwd, name, args).await
 }
-

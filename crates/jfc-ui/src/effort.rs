@@ -4,9 +4,9 @@
 //! how much "thinking" budget the model uses. Lower effort = faster + cheaper,
 //! higher effort = more thorough reasoning.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 /// Process-global slot mirroring the active session's effort pin.
 /// `stream_response` reads this every turn so the API param flows
@@ -85,7 +85,11 @@ impl EffortState {
     pub fn set(&mut self, level: ReasoningEffort) -> String {
         self.current = Some(level);
         self.publish_global();
-        format!("Reasoning effort set to: {} ({})", level, level.description())
+        format!(
+            "Reasoning effort set to: {} ({})",
+            level,
+            level.description()
+        )
     }
 
     /// Clear effort (use server default).
@@ -129,11 +133,26 @@ mod tests {
 
     #[test]
     fn parse_effort_levels() {
-        assert_eq!(ReasoningEffort::from_str_loose("low"), Some(ReasoningEffort::Low));
-        assert_eq!(ReasoningEffort::from_str_loose("HIGH"), Some(ReasoningEffort::High));
-        assert_eq!(ReasoningEffort::from_str_loose("med"), Some(ReasoningEffort::Medium));
-        assert_eq!(ReasoningEffort::from_str_loose("fast"), Some(ReasoningEffort::Low));
-        assert_eq!(ReasoningEffort::from_str_loose("max"), Some(ReasoningEffort::High));
+        assert_eq!(
+            ReasoningEffort::from_str_loose("low"),
+            Some(ReasoningEffort::Low)
+        );
+        assert_eq!(
+            ReasoningEffort::from_str_loose("HIGH"),
+            Some(ReasoningEffort::High)
+        );
+        assert_eq!(
+            ReasoningEffort::from_str_loose("med"),
+            Some(ReasoningEffort::Medium)
+        );
+        assert_eq!(
+            ReasoningEffort::from_str_loose("fast"),
+            Some(ReasoningEffort::Low)
+        );
+        assert_eq!(
+            ReasoningEffort::from_str_loose("max"),
+            Some(ReasoningEffort::High)
+        );
         assert_eq!(ReasoningEffort::from_str_loose("invalid"), None);
     }
 
