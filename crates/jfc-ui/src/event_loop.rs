@@ -2635,8 +2635,10 @@ pub(crate) async fn run(
                             "turn fully ended — draining queued prompts"
                         );
                         // Turn fully ended (model stopped, no more agentic loop
-                        // iterations, no pending tools). v126 input queue: drain
-                        // any prompts the user typed during streaming.
+                        // iterations, no pending tools). Clear turn_started_at
+                        // so the spinner stops, then drain any prompts the user
+                        // typed during streaming.
+                        app.turn_started_at = None;
                         drain_queued_prompts(&mut app, &tx).await;
                     }
                 }
@@ -3067,12 +3069,12 @@ pub(crate) async fn run(
                     );
                 }
                 AppEvent::ExitPlanModeRequested { plan } => {
-                    // Surface the plan as an assistant transcript
-                    // entry so the user can review it. Then transition
-                    // out of Plan into AcceptEdits so the model can
-                    // proceed with destructive edits in the next turn.
-                    // v132's behaviour is identical: plan text is
-                    // shown, mode flips, agent continues.
+                    // Surface the plan as part of the existing assistant message
+                    // (NOT a new message — that would fool should_continue_loop
+                    // into thinking the last assistant has no tools, blocking
+                    // the agentic continuation). Append the plan body to the
+                    // current streaming assistant message so the turn can
+                    // continue after tool completion.
                     tracing::info!(
                         target: "jfc::ui::plan_mode",
                         plan_bytes = plan.len(),
@@ -3080,9 +3082,27 @@ pub(crate) async fn run(
                         "ExitPlanMode: surfacing plan + transitioning out of Plan"
                     );
                     let body =
-                        format!("**Plan presented (Plan Mode → Accept Edits)**\n\n---\n\n{plan}");
-                    app.messages
-                        .push(crate::types::ChatMessage::assistant(body));
+                        format!("\n\n**Plan presented (Plan Mode → Accept Edits)**\n\n---\n\n{plan}");
+                    // Append to the current streaming assistant message if we
+                    // have one; otherwise fall back to the last assistant msg.
+                    let target_idx = app
+                        .streaming_assistant_idx
+                        .or_else(|| {
+                            app.messages
+                                .iter()
+                                .rposition(|m| m.role == crate::types::Role::Assistant)
+                        });
+                    if let Some(idx) = target_idx {
+                        // Append as a new Text part to the existing assistant msg.
+                        app.messages[idx]
+                            .parts
+                            .push(crate::types::MessagePart::Text(body));
+                    } else {
+                        // Fallback: no assistant message found (shouldn't happen
+                        // but defensive). Push as a new message.
+                        app.messages
+                            .push(crate::types::ChatMessage::assistant(body));
+                    }
                     if matches!(app.permission_mode, app::PermissionMode::Plan) {
                         app.permission_mode = app::PermissionMode::AcceptEdits;
                         crate::toast::push_with_cap(
