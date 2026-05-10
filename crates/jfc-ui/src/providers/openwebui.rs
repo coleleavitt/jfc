@@ -1237,6 +1237,50 @@ mod tests {
         assert_eq!(msgs[0], Value::Null);
     }
 
+    // Bedrock rejects tool_calls with empty `function.arguments`. The
+    // sanitizer must rewrite "" / "null" / Value::Null → "{}" so the
+    // request gets past the validator. Three cases:
+    //   - empty string ""
+    //   - literal "null" string
+    //   - missing arguments key (filled with "{}")
+    #[test]
+    fn bedrock_empty_tool_call_arguments_normalized_normal() {
+        let mut msgs = vec![json!({
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "1", "type": "function", "function": {"name": "X", "arguments": ""}},
+                {"id": "2", "type": "function", "function": {"name": "Y", "arguments": "null"}},
+                {"id": "3", "type": "function", "function": {"name": "Z"}},
+                {"id": "4", "type": "function", "function": {"name": "W", "arguments": "   "}},
+            ]
+        })];
+        bedrock_sanitize_messages(&mut msgs);
+        let calls = msgs[0]["tool_calls"].as_array().unwrap();
+        for c in calls {
+            assert_eq!(c["function"]["arguments"].as_str(), Some("{}"));
+        }
+    }
+
+    // Robust: well-formed arguments must be left untouched. We only
+    // rewrite the empty/null cases — preserving real payloads is critical
+    // for correctness on every other path.
+    #[test]
+    fn bedrock_nonempty_tool_call_arguments_unchanged_robust() {
+        let payload = r#"{"path":"/tmp/foo"}"#;
+        let mut msgs = vec![json!({
+            "role": "assistant",
+            "tool_calls": [
+                {"id": "1", "type": "function", "function": {"name": "Read", "arguments": payload}},
+            ]
+        })];
+        bedrock_sanitize_messages(&mut msgs);
+        assert_eq!(
+            msgs[0]["tool_calls"][0]["function"]["arguments"].as_str(),
+            Some(payload)
+        );
+    }
+
     // ── messages_reference_tools edge cases ──────────────────────────────
 
     // Robust: a non-object array entry returns false (defensive — the JSON
@@ -1527,6 +1571,27 @@ fn bedrock_sanitize_messages(messages: &mut Vec<Value>) {
                 );
             }
             _ => {}
+        }
+
+        // Bedrock rejects tool_calls where `function.arguments` is empty with:
+        //   "The value at messages.N.content.M.toolUse.input is empty."
+        // Ensure every tool_call has a non-empty arguments string (at minimum "{}").
+        if let Some(tool_calls) = obj.get_mut("tool_calls").and_then(|v| v.as_array_mut()) {
+            for tc in tool_calls.iter_mut() {
+                if let Some(func) = tc.get_mut("function").and_then(|f| f.as_object_mut()) {
+                    let needs_fix = match func.get("arguments") {
+                        None => true,
+                        Some(Value::String(s)) => {
+                            s.is_empty() || s == "null" || s.trim().is_empty()
+                        }
+                        Some(Value::Null) => true,
+                        _ => false,
+                    };
+                    if needs_fix {
+                        func.insert("arguments".into(), json!("{}"));
+                    }
+                }
+            }
         }
     }
 }

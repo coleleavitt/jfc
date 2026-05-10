@@ -409,6 +409,9 @@ pub struct QueuedPrompt {
 pub const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 pub const IDLE_TICK_MS: u64 = 80;
 pub const ANIM_TICK_MS: u64 = 33;
+/// If no stream event arrives within this duration while `is_streaming` is
+/// true, the watchdog resets the flag to stop the 30fps animation loop.
+pub const STREAM_WATCHDOG_TIMEOUT_SECS: u64 = 30;
 /// Cap on how many turns of token usage we retain for the info-sidebar
 /// sparkline. 32 datapoints fit comfortably in a 30-col-wide sidebar
 /// while still showing a meaningful trend.
@@ -463,6 +466,11 @@ pub struct App {
     pub streaming_response_bytes: usize,
     pub streaming_assistant_idx: Option<usize>,
     pub is_streaming: bool,
+    /// Updated on every inbound stream event (chunk, tool delta, done, error).
+    /// Used by the watchdog to detect stuck `is_streaming` flags — if no
+    /// stream activity arrives within `STREAM_WATCHDOG_TIMEOUT`, the flag is
+    /// force-reset to stop the 30fps animation loop.
+    pub last_stream_event_at: Option<Instant>,
     /// Wall-clock instant the current turn's stream began. Set when
     /// `is_streaming` flips true; cleared when it flips false. Drives the
     /// `(5m 10s · …)` elapsed counter in the v126-style spinner — without
@@ -987,6 +995,7 @@ impl App {
             turn_started_at: None,
             history_cursor: None,
             is_streaming: false,
+            last_stream_event_at: None,
             scroll_offset: 0,
             total_lines: 0,
             total_lines_key: (0, 0, 0),
@@ -1161,6 +1170,30 @@ impl App {
                 .any(|t| !t.is_expired_at(std::time::Instant::now()));
         self.wants_animation_frame
             .store(dominated, Ordering::Relaxed);
+    }
+
+    pub fn record_stream_activity(&mut self) {
+        self.last_stream_event_at = Some(Instant::now());
+    }
+
+    pub fn check_stream_watchdog(&mut self) {
+        if !self.is_streaming {
+            return;
+        }
+        let timed_out = self
+            .last_stream_event_at
+            .map(|t| t.elapsed().as_secs() >= STREAM_WATCHDOG_TIMEOUT_SECS)
+            .unwrap_or(false);
+        if timed_out {
+            tracing::warn!(
+                target: "jfc::app",
+                elapsed_secs = self.last_stream_event_at.map(|t| t.elapsed().as_secs()).unwrap_or(0),
+                "stream watchdog: resetting stuck is_streaming flag"
+            );
+            self.is_streaming = false;
+            self.streaming_started_at = None;
+            self.last_stream_event_at = None;
+        }
     }
 
     /// Resolve the git repository root by walking up from `cwd`.

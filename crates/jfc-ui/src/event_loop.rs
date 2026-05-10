@@ -193,6 +193,7 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     app.is_streaming = true;
     let now = std::time::Instant::now();
     app.streaming_started_at = Some(now);
+    app.last_stream_event_at = Some(now);
     app.streaming_last_token_at = Some(now);
     // Set the user-level turn clock too — survives across agentic-loop
     // iterations so a 5-step turn doesn't keep snapping back to `0s`.
@@ -222,8 +223,22 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     // cancel token so a prior turn's cancel doesn't poison this one.
     app.cancel_token = tokio_util::sync::CancellationToken::new();
     let cancel = app.cancel_token.clone();
+    let tx_guard = tx.clone();
     tokio::spawn(async move {
-        stream::stream_response(provider, messages, model, tx_spawn, interrupt, cancel).await;
+        let result = tokio::spawn(async move {
+            stream::stream_response(provider, messages, model, tx_spawn, interrupt, cancel)
+                .await;
+        })
+        .await;
+        if let Err(join_err) = result {
+            // Task panicked or was cancelled — ensure is_streaming gets reset.
+            let msg = if join_err.is_panic() {
+                format!("stream task panicked: {join_err}")
+            } else {
+                format!("stream task cancelled: {join_err}")
+            };
+            let _ = tx_guard.send(AppEvent::StreamError(msg));
+        }
     });
 }
 
@@ -585,6 +600,7 @@ pub(crate) async fn run(
         app.is_streaming = true;
         let now = std::time::Instant::now();
         app.streaming_started_at = Some(now);
+        app.last_stream_event_at = Some(now);
         app.streaming_last_token_at = Some(now);
         app.turn_started_at = Some(now);
         app.last_usage_output = 0;
@@ -1169,6 +1185,7 @@ pub(crate) async fn run(
                 }
                 AppEvent::Tick => {
                     app.spinner_frame = (app.spinner_frame + 1) % crate::app::SPINNER.len();
+                    app.check_stream_watchdog();
                     // Auto-clear expired toasts every tick. Cheap (O(N) over
                     // a tiny vec capped at MAX_TOASTS) and the only reliable
                     // place to do it — toasts have no creation-time timer.
@@ -1444,6 +1461,7 @@ pub(crate) async fn run(
                     }
                 }
                 AppEvent::StreamChunk { text, reasoning } => {
+                    app.record_stream_activity();
                     // Reset the stall clock on every chunk so the spinner's
                     // sub-status (`warming up` / `thinking` / `almost done`)
                     // reflects time-since-last-byte, not time-since-stream-start.
@@ -1567,6 +1585,7 @@ pub(crate) async fn run(
                     app.streaming_last_token_at = Some(std::time::Instant::now());
                 }
                 AppEvent::StreamTool(tool) => {
+                    app.record_stream_activity();
                     // Trace every StreamTool entry so next-run diagnostics show
                     // exactly which routing path each tool took. Without this,
                     // tools that take the auto-mode or no-approval branches are
@@ -1699,6 +1718,7 @@ pub(crate) async fn run(
                     }
                 }
                 AppEvent::StreamDone(stop_reason) => {
+                    app.record_stream_activity();
                     tracing::info!(
                         target: "jfc::stream",
                         ?stop_reason,
@@ -1708,6 +1728,7 @@ pub(crate) async fn run(
                         "AppEvent::StreamDone received"
                     );
                     app.is_streaming = false;
+                    app.last_stream_event_at = None;
                     app.render_cache.borrow_mut().clear_streaming();
 
                     // OpenWebUI / LiteLLM / some third-party gateways
@@ -2044,6 +2065,7 @@ pub(crate) async fn run(
                     }
                 }
                 AppEvent::StreamError(e) => {
+                    app.record_stream_activity();
                     tracing::error!(
                         target: "jfc::stream",
                         error = %e,
@@ -2089,6 +2111,7 @@ pub(crate) async fn run(
                         }
                     }
                     app.is_streaming = false;
+                    app.last_stream_event_at = None;
                     app.streaming_started_at = None;
                     app.streaming_last_token_at = None;
                     app.thinking_started_at = None;
@@ -2158,6 +2181,7 @@ pub(crate) async fn run(
                     cache_read_tokens,
                     cache_write_tokens,
                 } => {
+                    app.record_stream_activity();
                     // Anthropic sends *cumulative* token counts in every
                     // `message_delta` event (sse.rs:212-218 — see also
                     // anthropic-messaging spec). Naively calling `add_delta`
@@ -2613,9 +2637,10 @@ pub(crate) async fn run(
                         // both the legacy flag and the (possibly cancelled)
                         // token need refreshing for the next spawn cycle.
                         app.interrupt_flag
-                            .store(false, std::sync::atomic::Ordering::SeqCst);
-                        app.cancel_token = tokio_util::sync::CancellationToken::new();
-                        app.is_streaming = false;
+                             .store(false, std::sync::atomic::Ordering::SeqCst);
+                         app.cancel_token = tokio_util::sync::CancellationToken::new();
+                         app.is_streaming = false;
+                         app.last_stream_event_at = None;
                     } else if app.pending_approval.is_none()
                         && app.approval_queue.is_empty()
                         && stream::should_continue_loop(&app.messages)

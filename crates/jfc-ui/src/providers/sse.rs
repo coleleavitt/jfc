@@ -241,6 +241,38 @@ pub fn translate(
     }
 }
 
+/// Anthropic's Messages API requires `tool_use.input` to be a JSON object.
+/// Streamed deltas, Generic ToolInput fallbacks, and round-trip edge cases can
+/// produce a `Value::String` (stringified JSON) or `Value::Null`. This helper
+/// coerces non-object values into valid objects before the request leaves jfc.
+///
+/// Mirrors the v137 CLI logic at line 434836:
+///   if typeof input === "string" → JSON.parse(input) ?? {}
+///   if typeof input !== "object" → throw (we default to {} instead)
+fn ensure_input_object(v: &serde_json::Value) -> serde_json::Value {
+    match v {
+        serde_json::Value::Object(_) => v.clone(),
+        serde_json::Value::String(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() || trimmed == "null" {
+                return serde_json::json!({});
+            }
+            match serde_json::from_str::<serde_json::Value>(trimmed) {
+                Ok(serde_json::Value::Object(map)) => serde_json::Value::Object(map),
+                Ok(other) => {
+                    // Parsed but not an object (e.g., array, number). Wrap it
+                    // so the API gets a valid object.
+                    serde_json::json!({ "value": other })
+                }
+                Err(_) => serde_json::json!({}),
+            }
+        }
+        serde_json::Value::Null => serde_json::json!({}),
+        // Array/Number/Bool — shouldn't happen but handle defensively.
+        other => serde_json::json!({ "value": other }),
+    }
+}
+
 pub fn build_messages(messages: &[ProviderMessage]) -> Value {
     let tool_use_count = messages
         .iter()
@@ -285,7 +317,7 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
                         "type": "tool_use",
                         "id": id,
                         "name": name,
-                        "input": input,
+                        "input": ensure_input_object(input),
                     }),
                     // Image (PNG/JPEG/GIF/WebP) → `image` block;
                     // PDF → `document` block. Both share the base64
@@ -908,5 +940,49 @@ mod tests {
         assert_eq!(arr[0]["name"], "alpha");
         assert_eq!(arr[1]["name"], "beta");
         assert_eq!(arr[2]["name"], "gamma");
+    }
+
+    #[test]
+    fn ensure_input_object_passes_objects_through() {
+        let obj = serde_json::json!({"path": "/tmp", "recursive": true});
+        let result = ensure_input_object(&obj);
+        assert_eq!(result, obj);
+    }
+
+    #[test]
+    fn ensure_input_object_parses_stringified_json() {
+        let s = serde_json::Value::String(r#"{"path":"/tmp"}"#.to_owned());
+        let result = ensure_input_object(&s);
+        assert_eq!(result, serde_json::json!({"path": "/tmp"}));
+    }
+
+    #[test]
+    fn ensure_input_object_empty_string_becomes_empty_object() {
+        let s = serde_json::Value::String("".to_owned());
+        assert_eq!(ensure_input_object(&s), serde_json::json!({}));
+    }
+
+    #[test]
+    fn ensure_input_object_null_string_becomes_empty_object() {
+        let s = serde_json::Value::String("null".to_owned());
+        assert_eq!(ensure_input_object(&s), serde_json::json!({}));
+    }
+
+    #[test]
+    fn ensure_input_object_null_value_becomes_empty_object() {
+        assert_eq!(ensure_input_object(&serde_json::Value::Null), serde_json::json!({}));
+    }
+
+    #[test]
+    fn ensure_input_object_unparseable_string_becomes_empty_object() {
+        let s = serde_json::Value::String("not json at all".to_owned());
+        assert_eq!(ensure_input_object(&s), serde_json::json!({}));
+    }
+
+    #[test]
+    fn ensure_input_object_string_array_gets_wrapped() {
+        let s = serde_json::Value::String("[1, 2, 3]".to_owned());
+        let result = ensure_input_object(&s);
+        assert_eq!(result, serde_json::json!({"value": [1, 2, 3]}));
     }
 }

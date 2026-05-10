@@ -1,6 +1,8 @@
 pub mod anthropic;
+pub mod anthropic_accounts;
 pub mod anthropic_models;
 pub mod anthropic_oauth;
+pub mod anthropic_oauth_login;
 pub mod bedrock;
 pub mod bedrock_wizard;
 pub mod file_lock;

@@ -135,14 +135,66 @@ struct Cli {
     command: Option<Command>,
 }
 
-/// Top-level subcommands. Currently only the daemon family — leaving the
-/// TUI to be the default invocation keeps `jfc` ergonomic for humans.
+/// Top-level subcommands. Currently the daemon family and `auth` for
+/// multi-account OAuth management — leaving the TUI as the default
+/// invocation keeps `jfc` ergonomic for humans.
 #[derive(Subcommand, Debug)]
 enum Command {
     /// Manage the background daemon (cron jobs + scheduled wakeups).
     Daemon {
         #[command(subcommand)]
         sub: DaemonSubcommand,
+    },
+    /// Manage Anthropic OAuth accounts (login, list, switch, disable, remove).
+    Auth {
+        #[command(subcommand)]
+        sub: AuthSubcommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum AuthSubcommand {
+    /// Anthropic-specific account commands.
+    Anthropic {
+        #[command(subcommand)]
+        sub: AnthropicAuthSubcommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum AnthropicAuthSubcommand {
+    /// Add a new account via the PKCE OAuth flow. Opens a browser-pasteable
+    /// URL, then prompts for the `code#state` blob shown after Anthropic's
+    /// callback page.
+    Login {
+        /// Local name for the new account (e.g. "personal", "work").
+        /// Must start alphanumeric, max 100 chars, only `- _ . @ + space`.
+        name: String,
+    },
+    /// List configured accounts with tier, runtime status, and active marker.
+    List,
+    /// Print the active account's name (the one that would be picked first).
+    Active,
+    /// Switch which account is preferred for the next request. Rotation may
+    /// still bypass this if the picked account is rate-limited.
+    Switch {
+        /// Account name to mark active.
+        name: String,
+    },
+    /// Disable an account so the rotation manager skips it permanently
+    /// until re-enabled (e.g., after re-login).
+    Disable {
+        /// Account name to disable.
+        name: String,
+        /// Optional reason recorded in the store.
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Remove an account entirely from the store. The refresh token on disk
+    /// is wiped before deletion.
+    Remove {
+        /// Account name to remove.
+        name: String,
     },
 }
 
@@ -398,7 +450,138 @@ async fn run_remote_session(
 async fn run_subcommand(cmd: Command) -> anyhow::Result<()> {
     match cmd {
         Command::Daemon { sub } => run_daemon_subcommand(sub).await,
+        Command::Auth { sub } => run_auth_subcommand(sub).await,
     }
+}
+
+async fn run_auth_subcommand(sub: AuthSubcommand) -> anyhow::Result<()> {
+    match sub {
+        AuthSubcommand::Anthropic { sub } => run_anthropic_auth_subcommand(sub).await,
+    }
+}
+
+async fn run_anthropic_auth_subcommand(sub: AnthropicAuthSubcommand) -> anyhow::Result<()> {
+    use crate::providers::anthropic_accounts::AccountManager;
+    use crate::providers::anthropic_oauth::default_store_path;
+    use crate::providers::anthropic_oauth_login as login;
+
+    let store_path = default_store_path();
+    let mgr = AccountManager::load(store_path.clone()).await?;
+
+    match sub {
+        AnthropicAuthSubcommand::Login { name } => {
+            let req = login::authorize();
+            println!();
+            println!("=== Anthropic OAuth login: {name} ===");
+            println!();
+            println!("1. Open this URL in a browser:");
+            println!();
+            println!("   {}", req.url);
+            println!();
+            println!("2. After approving, the callback page will show a string like:");
+            println!("      <code>#<state>");
+            println!("3. Paste the entire string (with the `#`) here, then press Enter.");
+            println!();
+            print!("code#state> ");
+            use std::io::Write;
+            std::io::stdout().flush().ok();
+
+            let mut paste = String::new();
+            std::io::stdin().read_line(&mut paste)?;
+            let paste = paste.trim();
+            if paste.is_empty() {
+                anyhow::bail!("login: no input provided");
+            }
+
+            match login::login(&mgr, &name, paste, &req.verifier, &req.state).await {
+                Ok(_) => {
+                    println!("\n✓ logged in as '{name}'.");
+                    println!("  store: {}", store_path.display());
+                    Ok(())
+                }
+                Err(e) => Err(anyhow::anyhow!("login failed: {e}")),
+            }
+        }
+        AnthropicAuthSubcommand::List => {
+            let pairs = mgr.list_with_runtime().await;
+            if pairs.is_empty() {
+                println!("(no accounts in {})", store_path.display());
+                println!("Run `jfc auth anthropic login <name>` to add one.");
+                return Ok(());
+            }
+            let active_name = mgr.active_account().await.map(|a| a.name);
+            println!(
+                "{:<20} {:<8} {:<22} {:<10} {:<14}",
+                "NAME", "ACTIVE", "TIER", "ENABLED", "RUNTIME"
+            );
+            for (acct, rt) in pairs {
+                let is_active = active_name.as_deref() == Some(acct.name.as_str());
+                let active_marker = if is_active { "*" } else { "" };
+                let tier = acct.rate_limit_tier.as_deref().unwrap_or("(unknown)");
+                let enabled = if acct.is_enabled() { "yes" } else { "no" };
+                let runtime = format_runtime_state(&acct, &rt);
+                println!(
+                    "{:<20} {:<8} {:<22} {:<10} {:<14}",
+                    acct.name, active_marker, tier, enabled, runtime
+                );
+            }
+            Ok(())
+        }
+        AnthropicAuthSubcommand::Active => {
+            match mgr.active_account().await {
+                Some(a) => {
+                    println!("{}", a.name);
+                    Ok(())
+                }
+                None => {
+                    eprintln!("(no active account)");
+                    std::process::exit(1);
+                }
+            }
+        }
+        AnthropicAuthSubcommand::Switch { name } => {
+            if mgr.atomic_set_active(&name).await? {
+                println!("active = {name}");
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("switch: account '{name}' not found"))
+            }
+        }
+        AnthropicAuthSubcommand::Disable { name, reason } => {
+            mgr.atomic_disable_account(&name, reason.as_deref().unwrap_or("manual"))
+                .await?;
+            println!("disabled '{name}'");
+            Ok(())
+        }
+        AnthropicAuthSubcommand::Remove { name } => {
+            mgr.atomic_clear_refresh_token(&name).await.ok();
+            if mgr.atomic_remove_account(&name).await? {
+                println!("removed '{name}'");
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("remove: account '{name}' not found"))
+            }
+        }
+    }
+}
+
+fn format_runtime_state(
+    acct: &crate::providers::anthropic_accounts::Account,
+    rt: &crate::providers::anthropic_accounts::RuntimeState,
+) -> String {
+    if !acct.is_disk_rate_limit_cleared() {
+        return "rate-limited".into();
+    }
+    if !rt.cooldown_cleared() {
+        return "cooldown".into();
+    }
+    if rt.consecutive_failures > 0 {
+        return format!("fails={}", rt.consecutive_failures);
+    }
+    if acct.is_token_expired() {
+        return "token-expired".into();
+    }
+    "ok".into()
 }
 
 async fn run_daemon_subcommand(sub: DaemonSubcommand) -> anyhow::Result<()> {

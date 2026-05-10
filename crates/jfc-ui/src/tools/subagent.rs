@@ -395,7 +395,13 @@ pub async fn execute_task(
             );
         }
 
-        let stream = match provider.stream(conversation.clone(), &options).await {
+        let stream = match crate::stream::open_stream_with_bedrock_retries(
+            provider,
+            conversation.clone(),
+            &options,
+        )
+        .await
+        {
             Ok(s) => s,
             Err(e) => return ExecutionResult::failure(format!("Subagent stream error: {e}")),
         };

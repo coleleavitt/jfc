@@ -2553,7 +2553,11 @@ impl ToolInput {
                 v
             }
             Self::Generic { summary } => {
-                serde_json::from_str(summary).unwrap_or(json!({ "input": summary }))
+                match serde_json::from_str::<serde_json::Value>(summary) {
+                    Ok(serde_json::Value::Object(map)) => serde_json::Value::Object(map),
+                    Ok(_non_object) => json!({ "input": summary }),
+                    Err(_) => json!({ "input": summary }),
+                }
             }
         }
     }

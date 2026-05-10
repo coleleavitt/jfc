@@ -75,9 +75,19 @@ Anthropic Console sign-in:
 
 const CLAUDEAI_OAUTH_BODY: &str = "\
 Claude Code OAuth (claudeai) sign-in:
-  Run `opencode auth login` from another terminal to populate
-  ~/.config/opencode/anthropic-accounts.json. jfc reads that store on the
-  next launch and surfaces the OAuth provider in the picker.";
+  Run from another terminal:
+    jfc auth anthropic login <name>
+
+  Other commands:
+    jfc auth anthropic list           # show all accounts + tier + status
+    jfc auth anthropic switch <name>  # set the preferred account
+    jfc auth anthropic disable <name> # skip an account in rotation
+    jfc auth anthropic remove <name>  # delete an account from the store
+
+  Multi-account rotation: when an account hits 429 / invalid_grant, jfc
+  silently switches to the next-best account (tier-ranked, cooldown-aware).
+  The store at ~/.config/opencode/anthropic-accounts.json is shared with
+  opencode so logins from either tool are visible everywhere.";
 
 /// Dispatch a `/login [arg]` invocation. `arg` is `Some` when the user typed
 /// a sub-target, `None` for the bare `/login`. Sub-target matching is

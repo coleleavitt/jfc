@@ -286,7 +286,7 @@ fn resolve_store_path(
 /// because opencode rotates refresh tokens — using a separate jfc copy causes invalid_grant
 /// after opencode refreshes. Falls back to `~/.config/jfc/anthropic-accounts.json` when
 /// opencode's store is absent. Override with `JFC_ANTHROPIC_ACCOUNTS_PATH`.
-fn default_store_path() -> PathBuf {
+pub fn default_store_path() -> PathBuf {
     let override_env = std::env::var("JFC_ANTHROPIC_ACCOUNTS_PATH").ok();
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
     let opencode = home.join(".config/opencode/anthropic-accounts.json");
@@ -366,7 +366,15 @@ pub struct AnthropicOAuthProvider {
     store_path: PathBuf,
     token: Arc<RwLock<Option<TokenState>>>,
     profile: Arc<RwLock<Option<OAuthProfile>>>,
+    /// Multi-account rotation manager. Lazy-initialized on first use so
+    /// constructing the provider stays sync (and infallible).
+    manager: tokio::sync::OnceCell<super::anthropic_accounts::AccountManager>,
 }
+
+/// How many times [`AnthropicOAuthProvider::stream`] / `complete` will rotate
+/// to a different account on 429 / 401-after-refresh / `invalid_grant` before
+/// surfacing the error.
+const ROTATION_MAX_ATTEMPTS: usize = 5;
 
 impl AnthropicOAuthProvider {
     pub fn new() -> Self {
@@ -381,7 +389,25 @@ impl AnthropicOAuthProvider {
             store_path,
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
+            manager: tokio::sync::OnceCell::new(),
         }
+    }
+
+    /// Lazily initialize and return a reference to the account manager.
+    /// Re-reads the store from disk if its mtime advanced (so an opencode-
+    /// side rotation is picked up without restart).
+    pub async fn account_manager(
+        &self,
+    ) -> anyhow::Result<&super::anthropic_accounts::AccountManager> {
+        let mgr = self
+            .manager
+            .get_or_try_init(|| async {
+                super::anthropic_accounts::AccountManager::load(self.store_path.clone()).await
+            })
+            .await?;
+        // Best-effort hot-reload — failures don't block use of the cache.
+        let _ = mgr.reload_if_changed().await;
+        Ok(mgr)
     }
 
     /// Fetch and cache the OAuth profile (`GET /api/oauth/profile`). v126 calls this
@@ -437,48 +463,139 @@ impl AnthropicOAuthProvider {
     }
 
     async fn get_access_token(&self) -> anyhow::Result<String> {
+        // Default path: pick the best account via the rotation manager
+        // (tier-aware, cooldown-aware, LRU-tied). Falls back to legacy
+        // active-account selection if the manager isn't available.
+        let account_opt = match self.account_manager().await {
+            Ok(mgr) => mgr.pick_next().await.map(|a| (a.name, a.refresh_token, a.access_token, a.expires_at)),
+            Err(_) => None,
+        };
+
+        if let Some((name, refresh_token, access_token, expires_at)) = account_opt {
+            self.get_access_token_for(&name, &refresh_token, access_token.as_deref(), expires_at)
+                .await
+        } else {
+            self.get_access_token_legacy().await
+        }
+    }
+
+    /// Resolve an access token for a *specific* account. Honors the in-memory
+    /// cache only when the cached entry belongs to the requested account, so
+    /// rotation across accounts always re-acquires.
+    pub(crate) async fn get_access_token_for(
+        &self,
+        account_name: &str,
+        refresh_token: &str,
+        existing_access_token: Option<&str>,
+        existing_expires_at: Option<u64>,
+    ) -> anyhow::Result<String> {
         {
             let guard = self.token.read().await;
             if let Some(t) = guard.as_ref() {
-                if now_ms() < t.expires_at {
-                    tracing::debug!(
-                        target: "jfc::provider::anthropic_oauth",
-                        account = %t.account_name,
-                        "using cached access token (still fresh)"
-                    );
+                if t.account_name == account_name && now_ms() < t.expires_at {
                     return Ok(t.access_token.clone());
                 }
             }
         }
 
         let mut guard = self.token.write().await;
-
         if let Some(t) = guard.as_ref() {
-            if now_ms() < t.expires_at {
-                tracing::debug!(
-                    target: "jfc::provider::anthropic_oauth",
-                    account = %t.account_name,
-                    "using cached access token (race resolved)"
-                );
+            if t.account_name == account_name && now_ms() < t.expires_at {
                 return Ok(t.access_token.clone());
             }
         }
 
-        tracing::info!(
-            target: "jfc::provider::anthropic_oauth",
-            "access token expired or absent, refreshing"
+        let (access_token, new_refresh, expires_at) =
+            match (existing_access_token, existing_expires_at) {
+                (Some(at), Some(exp)) if now_ms() < exp => {
+                    (at.to_owned(), refresh_token.to_owned(), exp)
+                }
+                _ => self.refresh_with_disable_on_invalid_grant(account_name, refresh_token).await?,
+            };
+
+        // Persist via the rotation manager (atomic disk + in-memory cache);
+        // also fall through to the legacy writer for back-compat.
+        if let Ok(mgr) = self.account_manager().await {
+            let _ = mgr
+                .atomic_update_tokens(
+                    account_name,
+                    access_token.clone(),
+                    expires_at,
+                    Some(new_refresh.clone()),
+                )
+                .await;
+        }
+        let _ = write_back_tokens(
+            &self.store_path,
+            account_name,
+            &access_token,
+            &new_refresh,
+            expires_at,
         );
 
+        *guard = Some(TokenState {
+            access_token: access_token.clone(),
+            refresh_token: new_refresh,
+            expires_at,
+            account_name: account_name.to_owned(),
+        });
+
+        Ok(access_token)
+    }
+
+    /// Wraps [`refresh_access_token`] so a permanent `invalid_grant` failure
+    /// auto-disables the account in the rotation manager. Transient errors
+    /// (network, 5xx) bubble through unchanged so the caller can retry.
+    async fn refresh_with_disable_on_invalid_grant(
+        &self,
+        account_name: &str,
+        refresh_token: &str,
+    ) -> anyhow::Result<(String, String, u64)> {
+        match refresh_access_token(&self.client, refresh_token).await {
+            Ok(t) => Ok(t),
+            Err(e) => {
+                let msg = e.to_string().to_lowercase();
+                if msg.contains("invalid_grant") {
+                    if let Ok(mgr) = self.account_manager().await {
+                        let _ = mgr.atomic_clear_refresh_token(account_name).await;
+                    }
+                    tracing::warn!(
+                        target: "jfc::provider::anthropic_oauth::rotation",
+                        account = %account_name,
+                        "refresh failed with invalid_grant — account auto-disabled"
+                    );
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// Pre-rotation legacy path. Used when the manager is unavailable (e.g.,
+    /// store file unreadable) — preserves jfc's original single-account
+    /// behavior so an inaccessible store doesn't break the provider entirely.
+    async fn get_access_token_legacy(&self) -> anyhow::Result<String> {
+        {
+            let guard = self.token.read().await;
+            if let Some(t) = guard.as_ref() {
+                if now_ms() < t.expires_at {
+                    return Ok(t.access_token.clone());
+                }
+            }
+        }
+        let mut guard = self.token.write().await;
+        if let Some(t) = guard.as_ref() {
+            if now_ms() < t.expires_at {
+                return Ok(t.access_token.clone());
+            }
+        }
         let store = load_store(&self.store_path).map_err(|e| {
             anyhow::anyhow!(
                 "cannot load anthropic accounts from {}: {e}",
                 self.store_path.display()
             )
         })?;
-
         let account = pick_account(&store)
             .ok_or_else(|| anyhow::anyhow!("no enabled Anthropic accounts in store"))?;
-
         let (access_token, new_refresh, expires_at) =
             if let (Some(at), Some(exp)) = (&account.access_token, account.expires_at) {
                 if now_ms() < exp {
@@ -489,7 +606,6 @@ impl AnthropicOAuthProvider {
             } else {
                 refresh_access_token(&self.client, &account.refresh_token).await?
             };
-
         let _ = write_back_tokens(
             &self.store_path,
             &account.name,
@@ -497,15 +613,53 @@ impl AnthropicOAuthProvider {
             &new_refresh,
             expires_at,
         );
-
         *guard = Some(TokenState {
             access_token: access_token.clone(),
             refresh_token: new_refresh,
             expires_at,
             account_name: account.name.clone(),
         });
-
         Ok(access_token)
+    }
+}
+
+/// Parse `retry-after` header value into seconds. Spec allows either an
+/// integer ("seconds") or HTTP-date format. We honor integers; HTTP-date
+/// handling is intentionally conservative — any unparseable header returns
+/// `None`, which drives the manager to its default exponential cooldown.
+fn parse_retry_after_secs(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    let raw = headers.get("retry-after")?.to_str().ok()?;
+    let trimmed = raw.trim();
+    if let Ok(secs) = trimmed.parse::<u64>() {
+        return Some(secs);
+    }
+    None
+}
+
+/// Classification of an HTTP response for the rotation retry loop.
+/// Permanent errors abort the loop immediately; rotate variants advance to
+/// the next account.
+enum RotationDecision {
+    /// 2xx: hand the response back to the caller.
+    Success,
+    /// 429: rotate to the next account. `retry_after_secs` carries any
+    /// value parsed from the response header.
+    RateLimited { retry_after_secs: Option<u64> },
+    /// 401/5xx: rotate (transient/account-specific failure).
+    AccountFailure,
+    /// Other 4xx: bail with the response body — surfacing to the caller.
+    Permanent,
+}
+
+fn classify_for_rotation(status: reqwest::StatusCode) -> RotationDecision {
+    if status.is_success() {
+        RotationDecision::Success
+    } else if status.as_u16() == 429 {
+        RotationDecision::RateLimited { retry_after_secs: None }
+    } else if status.as_u16() == 401 || status.is_server_error() {
+        RotationDecision::AccountFailure
+    } else {
+        RotationDecision::Permanent
     }
 }
 
@@ -730,10 +884,10 @@ impl Provider for AnthropicOAuthProvider {
         messages: Vec<ProviderMessage>,
         options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
-        let access_token = self.get_access_token().await?;
-
+        // Account-independent body construction (billing header, attestation,
+        // user-agent) is hoisted outside the rotation loop — these don't
+        // change between accounts.
         let version = fetch_cli_version(&self.client).await;
-
         let first_user_text = messages
             .iter()
             .find(|m| m.role == ProviderRole::User)
@@ -746,75 +900,160 @@ impl Provider for AnthropicOAuthProvider {
                     }
                 })
             })
-            .unwrap_or("");
-        let billing_hash = compute_billing_hash(first_user_text, &version);
+            .unwrap_or("")
+            .to_owned();
+        let billing_hash = compute_billing_hash(&first_user_text, &version);
         let billing_header_text = build_billing_header_text(&version, &billing_hash);
         let user_agent = build_user_agent(&version);
-
         let body_value = build_body(messages, options, &billing_header_text);
         let body_str = serde_json::to_string(&body_value)?;
         let attested_body = compute_body_attestation(&body_str);
 
-        let send_started = std::time::Instant::now();
-        let resp = match super::http::send_with_retry("anthropic_oauth.stream", || {
-            self.client
-                .post(API_URL)
-                .header("authorization", format!("Bearer {access_token}"))
-                .header("anthropic-version", ANTHROPIC_VERSION)
-                .header("anthropic-beta", ANTHROPIC_BETA)
-                .header("content-type", "application/json")
-                .header("user-agent", user_agent.clone())
-                .header("x-app", "cli")
-                .header("anthropic-client-platform", "cli")
-                .body(attested_body.clone())
-                .send()
-        })
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                let cause = super::http::classify_send_error(&e);
-                tracing::warn!(
-                    target: "jfc::provider::anthropic_oauth",
-                    error = %e,
-                    cause = cause,
-                    "stream: send failed (after retries)"
+        // Rotation loop: each iteration picks the best-available account, sends
+        // the request, classifies the outcome, and continues on
+        // rate-limit/account-failure or returns on success/permanent error.
+        let mgr = self.account_manager().await?;
+        let mut last_err: Option<anyhow::Error> = None;
+        let mut tried: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for attempt in 0..ROTATION_MAX_ATTEMPTS {
+            let Some(account) = mgr.pick_next().await else {
+                break;
+            };
+            if !tried.insert(account.name.clone()) {
+                tracing::debug!(
+                    target: "jfc::provider::anthropic_oauth::rotation",
+                    "all candidate accounts exhausted at attempt {attempt}"
                 );
-                anyhow::bail!("Anthropic OAuth request failed: {cause} ({e}).");
+                break;
             }
-        };
 
-        super::http::report_first_byte_latency("anthropic_oauth.stream", send_started.elapsed());
-        let status = resp.status();
-        tracing::info!(
-            target: "jfc::provider::anthropic_oauth",
-            status = %status,
-            "stream: received HTTP response"
-        );
+            let access_token = match self
+                .get_access_token_for(
+                    &account.name,
+                    &account.refresh_token,
+                    account.access_token.as_deref(),
+                    account.expires_at,
+                )
+                .await
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!(
+                        target: "jfc::provider::anthropic_oauth::rotation",
+                        account = %account.name,
+                        error = %e,
+                        "token acquisition failed — rotating"
+                    );
+                    mgr.mark_failure(&account.name).await;
+                    last_err = Some(e);
+                    continue;
+                }
+            };
 
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            tracing::warn!(
-                target: "jfc::provider::anthropic_oauth",
-                status = %status,
-                body_preview = %&text[..text.len().min(200)],
-                "stream: API request failed"
+            let send_started = std::time::Instant::now();
+            let resp = match super::http::send_with_retry("anthropic_oauth.stream", || {
+                self.client
+                    .post(API_URL)
+                    .header("authorization", format!("Bearer {access_token}"))
+                    .header("anthropic-version", ANTHROPIC_VERSION)
+                    .header("anthropic-beta", ANTHROPIC_BETA)
+                    .header("content-type", "application/json")
+                    .header("user-agent", user_agent.clone())
+                    .header("x-app", "cli")
+                    .header("anthropic-client-platform", "cli")
+                    .body(attested_body.clone())
+                    .send()
+            })
+            .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    let cause = super::http::classify_send_error(&e);
+                    tracing::warn!(
+                        target: "jfc::provider::anthropic_oauth::rotation",
+                        account = %account.name,
+                        error = %e,
+                        cause = cause,
+                        "send failed (after retries) — rotating"
+                    );
+                    mgr.mark_failure(&account.name).await;
+                    last_err = Some(anyhow::anyhow!("Anthropic OAuth send failed: {cause} ({e})"));
+                    continue;
+                }
+            };
+
+            super::http::report_first_byte_latency(
+                "anthropic_oauth.stream",
+                send_started.elapsed(),
             );
-            // v126 cli.js (line 434161) detects this exact shape:
-            //   { "error": { "type": "not_found_error", "message": "model: <id>" } }
-            // and rephrases it as a model-access hint. Parsing here keeps the
-            // friendly path provider-local — non-Anthropic providers aren't affected.
-            if let Some(model) = parse_model_not_found(&text) {
-                anyhow::bail!(
-                    "{model} is not enabled on your Anthropic account. \
-                     Pin a model you have access to (Ctrl+M)."
-                );
+            let status = resp.status();
+            tracing::info!(
+                target: "jfc::provider::anthropic_oauth",
+                account = %account.name,
+                status = %status,
+                attempt = attempt + 1,
+                "stream: received HTTP response"
+            );
+
+            match classify_for_rotation(status) {
+                RotationDecision::Success => {
+                    mgr.mark_success(&account.name).await;
+                    return Ok(sse::into_event_stream(resp));
+                }
+                RotationDecision::RateLimited { .. } => {
+                    let retry_after = parse_retry_after_secs(resp.headers());
+                    mgr.mark_rate_limited(&account.name, retry_after).await;
+                    let body = resp.text().await.unwrap_or_default();
+                    tracing::warn!(
+                        target: "jfc::provider::anthropic_oauth::rotation",
+                        account = %account.name,
+                        retry_after_secs = retry_after.unwrap_or(0),
+                        body_preview = %&body[..body.len().min(200)],
+                        "rate-limited — rotating"
+                    );
+                    last_err = Some(anyhow::anyhow!(
+                        "rate-limited on account '{}': {body}",
+                        account.name
+                    ));
+                }
+                RotationDecision::AccountFailure => {
+                    mgr.mark_failure(&account.name).await;
+                    let body = resp.text().await.unwrap_or_default();
+                    tracing::warn!(
+                        target: "jfc::provider::anthropic_oauth::rotation",
+                        account = %account.name,
+                        status = %status,
+                        body_preview = %&body[..body.len().min(200)],
+                        "account-level failure — rotating"
+                    );
+                    last_err = Some(anyhow::anyhow!(
+                        "Anthropic API error {status} on account '{}': {body}",
+                        account.name
+                    ));
+                }
+                RotationDecision::Permanent => {
+                    let body = resp.text().await.unwrap_or_default();
+                    tracing::warn!(
+                        target: "jfc::provider::anthropic_oauth",
+                        status = %status,
+                        body_preview = %&body[..body.len().min(200)],
+                        "permanent API error — not rotating"
+                    );
+                    if let Some(model) = parse_model_not_found(&body) {
+                        anyhow::bail!(
+                            "{model} is not enabled on your Anthropic account. \
+                             Pin a model you have access to (Ctrl+M)."
+                        );
+                    }
+                    let friendly = super::retry::friendly_error_message(status.as_u16(), &body);
+                    anyhow::bail!("Anthropic API error {status}: {friendly}\n  raw: {body}");
+                }
             }
-            let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
-            anyhow::bail!("Anthropic API error {status}: {friendly}\n  raw: {text}");
         }
 
-        Ok(sse::into_event_stream(resp))
+        Err(last_err.unwrap_or_else(|| {
+            anyhow::anyhow!("all Anthropic OAuth accounts exhausted with no successful response")
+        }))
     }
 
     /// Non-streaming completion. Used by the auto-mode classifier (which forces
@@ -1666,6 +1905,7 @@ mod tests {
             store_path: path,
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
+            manager: tokio::sync::OnceCell::new(),
         };
         assert!(p.has_usable_config());
     }
@@ -1680,6 +1920,7 @@ mod tests {
             store_path: PathBuf::from("/tmp/jfc-nonexistent-anthropic-store.json"),
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
+            manager: tokio::sync::OnceCell::new(),
         };
         assert!(!p.has_usable_config());
     }
@@ -1697,6 +1938,7 @@ mod tests {
             store_path: path,
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
+            manager: tokio::sync::OnceCell::new(),
         };
         assert!(!p.has_usable_config());
     }
