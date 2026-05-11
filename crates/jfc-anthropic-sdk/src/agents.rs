@@ -34,8 +34,14 @@ pub struct AgentCreateParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SkillRef {
-    Anthropic { skill_id: String, version: Option<String> },
-    Custom { skill_id: String, version: Option<String> },
+    Anthropic {
+        skill_id: String,
+        version: Option<String>,
+    },
+    Custom {
+        skill_id: String,
+        version: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -119,6 +119,12 @@ pub enum AppEvent {
         subscription_type: Option<String>,
         email: Option<String>,
     },
+    /// Background snapshot of the active Anthropic OAuth account. Cached on
+    /// `App.anthropic_account_snapshot` and consumed by the ribbon to show
+    /// utilization (5h / 7d) plus the active claim type.
+    AnthropicSnapshotUpdated {
+        snapshot: Option<crate::providers::anthropic_accounts::AccountSnapshot>,
+    },
     /// v126 auto-mode classifier finished judging a pending tool call. When
     /// `blocked` is true, the tool is marked Failed with `reason` and never
     /// runs; when false, the tool is dispatched immediately without prompting
@@ -144,6 +150,10 @@ pub enum AppEvent {
         tool_use_count: Option<u32>,
         /// Latest API request's input-token count (None = no update).
         input_tokens: Option<u64>,
+        /// Latest API request's cache-read token count (None = no update).
+        cache_read_tokens: Option<u64>,
+        /// Latest API request's cache-write token count (None = no update).
+        cache_write_tokens: Option<u64>,
         /// Output tokens consumed during the latest API round-trip
         /// (None = no update). Folded into `cumulative_output_tokens`.
         output_tokens: Option<u64>,
@@ -433,10 +443,13 @@ pub struct BackgroundTask {
     /// events when the provider emits them, falls back to a 4-chars-per-
     /// token byte estimate otherwise). Mirrors v131's `latestInputTokens`.
     pub latest_input_tokens: u64,
+    /// Most recent request's cache-read token count.
+    pub latest_cache_read_tokens: u64,
+    /// Most recent request's cache-write token count.
+    pub latest_cache_write_tokens: u64,
     /// Sum of output tokens across every API round-trip in this run.
     /// Mirrors v131's `cumulativeOutputTokens`. The fan-UI badge displays
-    /// `latest_input + cumulative_output` to match Claude Code's
-    /// "89.7k tokens" figure.
+    /// the latest request context plus cumulative output.
     pub cumulative_output_tokens: u64,
     /// Model the agent is currently using. Captured from the spawn site
     /// so per-agent cost can be computed via `cost::cost_for(model, usage)`.
@@ -867,6 +880,15 @@ pub struct App {
     pub mcp_servers: Vec<crate::types::McpServerInfo>,
     pub lsp_servers: Vec<crate::types::LspServerInfo>,
     pub usage_by_model: HashMap<String, crate::types::ModelUsage>,
+    /// Cached snapshot of the active Anthropic OAuth account's utilization
+    /// (refreshed on every successful stream + every ~10s tick). Drives the
+    /// ribbon's "5h 47% / 7d 12% · opus weekly" display. `None` for non-
+    /// OAuth providers.
+    pub anthropic_account_snapshot: Option<crate::providers::anthropic_accounts::AccountSnapshot>,
+    /// Last instant we re-queried the rotation manager. Throttle to once
+    /// every ~10s so the ribbon stays current without burning a lock per
+    /// frame at 30fps.
+    pub anthropic_snapshot_refreshed_at: Option<std::time::Instant>,
     pub leader_key_active: bool,
     pub leader_key_timeout: Option<std::time::Instant>,
     pub viewing_task_id: Option<String>,
@@ -1112,6 +1134,8 @@ impl App {
             mcp_servers: Vec::new(),
             lsp_servers: Vec::new(),
             usage_by_model: HashMap::new(),
+            anthropic_account_snapshot: None,
+            anthropic_snapshot_refreshed_at: None,
             leader_key_active: false,
             leader_key_timeout: None,
             viewing_task_id: None,

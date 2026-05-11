@@ -30,8 +30,14 @@ pub struct SessionCreateParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResourceRef {
-    File { file_id: String },
-    GithubRepository { owner: String, repo: String, branch: Option<String> },
+    File {
+        file_id: String,
+    },
+    GithubRepository {
+        owner: String,
+        repo: String,
+        branch: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -59,24 +65,86 @@ pub enum SessionState {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionEvent {
-    UserMessage { content: serde_json::Value, timestamp: String },
-    AgentMessage { content: serde_json::Value, timestamp: String },
-    AgentThinking { content: serde_json::Value, timestamp: String },
-    AgentToolUse { tool_use_id: String, name: String, input: serde_json::Value, timestamp: String },
-    AgentMcpToolUse { tool_use_id: String, server: String, name: String, input: serde_json::Value, timestamp: String },
-    AgentToolResult { tool_use_id: String, content: serde_json::Value, is_error: Option<bool>, timestamp: String },
-    AgentMcpToolResult { tool_use_id: String, content: serde_json::Value, is_error: Option<bool>, timestamp: String },
-    AgentCustomToolUse { tool_use_id: String, name: String, input: serde_json::Value, timestamp: String },
-    UserCustomToolResult { tool_use_id: String, content: serde_json::Value, timestamp: String },
-    UserToolConfirmation { tool_use_id: String, approved: bool, timestamp: String },
-    AgentThreadContextCompacted { timestamp: String },
-    SessionStatusRunning { timestamp: String },
-    SessionStatusIdle { timestamp: String },
-    SessionStatusTerminated { reason: Option<String>, timestamp: String },
-    SessionStatusRescheduled { timestamp: String },
-    SessionDeleted { timestamp: String },
-    SessionError { message: String, timestamp: String },
-    SpanModelRequestEnd { duration_ms: u64, timestamp: String },
+    UserMessage {
+        content: serde_json::Value,
+        timestamp: String,
+    },
+    AgentMessage {
+        content: serde_json::Value,
+        timestamp: String,
+    },
+    AgentThinking {
+        content: serde_json::Value,
+        timestamp: String,
+    },
+    AgentToolUse {
+        tool_use_id: String,
+        name: String,
+        input: serde_json::Value,
+        timestamp: String,
+    },
+    AgentMcpToolUse {
+        tool_use_id: String,
+        server: String,
+        name: String,
+        input: serde_json::Value,
+        timestamp: String,
+    },
+    AgentToolResult {
+        tool_use_id: String,
+        content: serde_json::Value,
+        is_error: Option<bool>,
+        timestamp: String,
+    },
+    AgentMcpToolResult {
+        tool_use_id: String,
+        content: serde_json::Value,
+        is_error: Option<bool>,
+        timestamp: String,
+    },
+    AgentCustomToolUse {
+        tool_use_id: String,
+        name: String,
+        input: serde_json::Value,
+        timestamp: String,
+    },
+    UserCustomToolResult {
+        tool_use_id: String,
+        content: serde_json::Value,
+        timestamp: String,
+    },
+    UserToolConfirmation {
+        tool_use_id: String,
+        approved: bool,
+        timestamp: String,
+    },
+    AgentThreadContextCompacted {
+        timestamp: String,
+    },
+    SessionStatusRunning {
+        timestamp: String,
+    },
+    SessionStatusIdle {
+        timestamp: String,
+    },
+    SessionStatusTerminated {
+        reason: Option<String>,
+        timestamp: String,
+    },
+    SessionStatusRescheduled {
+        timestamp: String,
+    },
+    SessionDeleted {
+        timestamp: String,
+    },
+    SessionError {
+        message: String,
+        timestamp: String,
+    },
+    SpanModelRequestEnd {
+        duration_ms: u64,
+        timestamp: String,
+    },
 }
 
 /// A Resource attached to a Session (file or git repo). Mirrors v132's
@@ -123,7 +191,11 @@ impl SessionService {
             .client
             .execute_with_retry(|| {
                 self.client
-                    .request(Method::POST, "/v1/beta/sessions", Some(beta::MANAGED_AGENTS))
+                    .request(
+                        Method::POST,
+                        "/v1/beta/sessions",
+                        Some(beta::MANAGED_AGENTS),
+                    )
                     .json(&params)
             })
             .await?;

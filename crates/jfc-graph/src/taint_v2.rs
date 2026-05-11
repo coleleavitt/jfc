@@ -357,7 +357,9 @@ mod tests {
         );
 
         let mut oracle = MockOracle::default();
-        oracle.uses.insert(source.clone(), vec![a.clone(), b.clone()]);
+        oracle
+            .uses
+            .insert(source.clone(), vec![a.clone(), b.clone()]);
         oracle.uses.insert(a.clone(), vec![sink.clone()]);
         oracle.uses.insert(b.clone(), vec![sink.clone()]);
 
@@ -372,6 +374,10 @@ mod tests {
 
         let flows = analyze(&graph, &oracle, &cfg);
 
-        assert_eq!(flows.len(), 1, "dedup keeps only one flow per (source, sink)");
+        assert_eq!(
+            flows.len(),
+            1,
+            "dedup keeps only one flow per (source, sink)"
+        );
     }
 }

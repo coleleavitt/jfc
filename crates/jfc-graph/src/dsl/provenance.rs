@@ -108,8 +108,7 @@ pub fn trace_query(
         let partial_ops = &ops[..=i];
         let partial_result = engine.execute(partial_ops, config)?;
 
-        let prev_set: std::collections::HashSet<NodeId> =
-            working_set.iter().cloned().collect();
+        let prev_set: std::collections::HashSet<NodeId> = working_set.iter().cloned().collect();
 
         // For each new node in this stage's result that wasn't in the
         // previous stage, record provenance.
@@ -214,8 +213,7 @@ mod tests {
         let b = g.add_node(mk("b"));
         g.add_edge(&a, &b, ed()).unwrap();
 
-        let trace =
-            trace_query("fn(\"a\") | callees", &g, &QueryConfig::default()).unwrap();
+        let trace = trace_query("fn(\"a\") | callees", &g, &QueryConfig::default()).unwrap();
         // b should be in result with a as predecessor.
         let prov_b = trace.entries.get(&b).expect("b in trace");
         assert!(
@@ -231,8 +229,7 @@ mod tests {
         let b = g.add_node(mk("b"));
         g.add_edge(&a, &b, ed()).unwrap();
 
-        let trace =
-            trace_query("fn(\"a\") | callees", &g, &QueryConfig::default()).unwrap();
+        let trace = trace_query("fn(\"a\") | callees", &g, &QueryConfig::default()).unwrap();
         // a at depth 0, b at depth 1.
         let prov_a = trace.entries.get(&a).expect("a in trace");
         assert_eq!(prov_a.steps[0].depth, 0);
@@ -243,8 +240,7 @@ mod tests {
     #[test]
     fn trace_empty_result_produces_empty_trace() {
         let g = CodeGraph::new();
-        let trace =
-            trace_query("fn(\"missing\")", &g, &QueryConfig::default()).unwrap();
+        let trace = trace_query("fn(\"missing\")", &g, &QueryConfig::default()).unwrap();
         assert!(trace.result_nodes.is_empty());
         assert!(trace.entries.is_empty());
     }
@@ -254,8 +250,7 @@ mod tests {
         let mut g = CodeGraph::new();
         g.add_node(mk("foo"));
         // entrypoints is a non-Pipe expr.
-        let trace =
-            trace_query("entrypoints kind=Test", &g, &QueryConfig::default()).unwrap();
+        let trace = trace_query("entrypoints kind=Test", &g, &QueryConfig::default()).unwrap();
         // May or may not have results, but should not crash.
         for (_, prov) in &trace.entries {
             assert_eq!(prov.steps[0].op_name, "expr");

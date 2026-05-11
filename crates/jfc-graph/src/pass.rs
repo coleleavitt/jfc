@@ -101,16 +101,10 @@ pub trait Pass {
 pub enum PassError {
     /// A pass's [`Pass::requires`] was not satisfied at execution time.
     #[error("pass '{name}' missing precondition: {flag:?}")]
-    MissingPrecondition {
-        name: &'static str,
-        flag: GraphFlag,
-    },
+    MissingPrecondition { name: &'static str, flag: GraphFlag },
     /// A pass returned a hard failure from its `run`.
     #[error("pass '{name}' failed: {reason}")]
-    Failed {
-        name: &'static str,
-        reason: String,
-    },
+    Failed { name: &'static str, reason: String },
     /// The dependency DAG contains a cycle. The vector lists the
     /// pass names involved (in any order).
     #[error("pass dependency cycle detected: {0:?}")]
@@ -268,8 +262,7 @@ impl PassManager {
         }
 
         // Kahn: seed queue with zero in-degree nodes.
-        let mut queue: VecDeque<usize> =
-            (0..n).filter(|&i| in_degree[i] == 0).collect();
+        let mut queue: VecDeque<usize> = (0..n).filter(|&i| in_degree[i] == 0).collect();
         let mut order = Vec::with_capacity(n);
 
         while let Some(u) = queue.pop_front() {

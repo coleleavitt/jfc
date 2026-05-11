@@ -1074,9 +1074,7 @@ pub(crate) async fn open_stream_with_bedrock_retries(
             }
             Err(e) => {
                 let err_str = e.to_string();
-                if !is_bedrock_transient_400(&err_str)
-                    && !is_anthropic_tool_input_400(&err_str)
-                {
+                if !is_bedrock_transient_400(&err_str) && !is_anthropic_tool_input_400(&err_str) {
                     return Err(e);
                 }
                 if attempt == BEDROCK_TRANSIENT_400_RETRIES {
@@ -1100,8 +1098,7 @@ pub(crate) async fn open_stream_with_bedrock_retries(
             }
         }
     }
-    Err(last_err
-        .unwrap_or_else(|| anyhow::anyhow!("bedrock transient 400 retries exhausted")))
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("bedrock transient 400 retries exhausted")))
 }
 
 #[tracing::instrument(
@@ -1137,7 +1134,13 @@ pub async fn stream_response(
         if block.is_empty() {
             String::new()
         } else {
-            block
+            format!(
+                "{block}\nTo use a listed skill, call the Skill tool with \
+                 `name` set to the listed skill name and optional `args` for \
+                 extra context. On OpenAI-compatible routes the callable may \
+                 be advertised as lowercase `skill`; use the exact callable \
+                 name shown in the tool list."
+            )
         }
     } else {
         String::new()
@@ -1201,12 +1204,16 @@ Do not use a colon before tool calls.";
          are the one doing it. Working directory: {cwd}\n\n\
          ## Task tracking\n\
          For any request with 2 or more distinct steps, use TaskCreate to plan \
-         before starting. Call TaskCreate once per step with a short description. \
+         before starting. Call TaskCreate once per step with both `subject` \
+         and `description`. \
          Mark each step complete with TaskDone immediately after finishing it — \
          never batch completions. Update a step's description mid-work with \
          TaskUpdate if scope changes. TaskList shows the user your current plan \
-         in the sidebar. This is the primary way users track your progress, so \
-         use it consistently on all non-trivial work.\n\n\
+         in the sidebar. OpenAI-compatible providers may advertise task tools \
+         as lowercase names such as `taskcreate`, `taskdone`, `taskupdate`, \
+         and `tasklist`; use the exact callable name shown in the tool list. \
+         This is the primary way users track your progress, so use it \
+         consistently on all non-trivial work.\n\n\
          ## Available skills\n\n\
          {skills_listing}\n\n\
          {dispatch_section}\n\n\
@@ -1480,12 +1487,8 @@ Do not use a colon before tool calls.";
                     .system(opts.system.clone().unwrap_or_default())
                     .tools(opts.tools.clone())
                     .max_tokens(opts.max_tokens);
-                match open_stream_with_bedrock_retries(
-                    provider.as_ref(),
-                    messages,
-                    &fallback_opts,
-                )
-                .await
+                match open_stream_with_bedrock_retries(provider.as_ref(), messages, &fallback_opts)
+                    .await
                 {
                     Ok(s) => s,
                     Err(e2) => {

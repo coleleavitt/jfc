@@ -43,9 +43,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::dsl::{
-    Expr, ParseError, QueryConfig, QueryEngine, QueryError, lex, parse_expr,
-};
+use crate::dsl::{Expr, ParseError, QueryConfig, QueryEngine, QueryError, lex, parse_expr};
 use crate::edges::{EdgeData, EdgeKind};
 use crate::graph::CodeGraph;
 use crate::nodes::{NodeId, NodeKind};
@@ -83,15 +81,9 @@ pub enum AggExpr {
     /// `count <expr>` → number of nodes.
     Count(Expr),
     /// `sum <field> <expr>` → sum of `metadata[field]` parsed as number.
-    Sum {
-        field: String,
-        inner: Expr,
-    },
+    Sum { field: String, inner: Expr },
     /// `avg <field> <expr>` → mean.
-    Avg {
-        field: String,
-        inner: Expr,
-    },
+    Avg { field: String, inner: Expr },
     /// `top_k_by <field> <N> <expr>`.
     TopKBy {
         field: String,
@@ -99,17 +91,11 @@ pub enum AggExpr {
         inner: Expr,
     },
     /// `group_by <field> <expr>` → field-value buckets.
-    GroupBy {
-        field: String,
-        inner: Expr,
-    },
+    GroupBy { field: String, inner: Expr },
     /// `exists <expr>` → true iff the expr produces any nodes.
     Exists(Expr),
     /// `forall kind=<kind> <expr>` → every node has the given kind.
-    Forall {
-        kind: NodeKind,
-        inner: Expr,
-    },
+    Forall { kind: NodeKind, inner: Expr },
     /// `edges_of <expr>` → edges incident to inner's nodes.
     EdgesOf(Expr),
     /// `edges_kind <EdgeKindName>` → every edge in the graph of the
@@ -211,8 +197,10 @@ pub fn parse_aggregate(input: &str) -> Result<AggExpr, ParseError> {
                 })?
                 .trim_start();
             let (kind_name, rest) = take_ident(rest)?;
-            let kind = parse_kind(&kind_name)
-                .map_err(|m| ParseError { position: 0, message: m })?;
+            let kind = parse_kind(&kind_name).map_err(|m| ParseError {
+                position: 0,
+                message: m,
+            })?;
             let inner = parse_expr(rest.trim_start())?;
             Ok(AggExpr::Forall { kind, inner })
         }
@@ -222,10 +210,15 @@ pub fn parse_aggregate(input: &str) -> Result<AggExpr, ParseError> {
             Ok(AggExpr::EdgesOf(inner))
         }
         "edges_kind" => {
-            let rest = trimmed.strip_prefix("edges_kind").unwrap_or("").trim_start();
+            let rest = trimmed
+                .strip_prefix("edges_kind")
+                .unwrap_or("")
+                .trim_start();
             let (kind_name, _) = take_ident(rest)?;
-            let kind = parse_simple_edge_kind(&kind_name)
-                .map_err(|m| ParseError { position: 0, message: m })?;
+            let kind = parse_simple_edge_kind(&kind_name).map_err(|m| ParseError {
+                position: 0,
+                message: m,
+            })?;
             Ok(AggExpr::EdgesKind(kind))
         }
         "let" => parse_let(trimmed),
@@ -577,8 +570,12 @@ mod tests {
     #[test]
     fn avg_handles_empty_set() {
         let g = CodeGraph::new();
-        let r = run_aggregate("avg coverage_count fn(\"missing\")", &g, &QueryConfig::default())
-            .unwrap();
+        let r = run_aggregate(
+            "avg coverage_count fn(\"missing\")",
+            &g,
+            &QueryConfig::default(),
+        )
+        .unwrap();
         match r {
             AggregateResult::Scalar(n) => assert_eq!(n, 0.0),
             other => panic!("expected scalar, got {:?}", other),
@@ -591,12 +588,7 @@ mod tests {
         g.add_node(mk("a", NodeKind::Function, &[("score", "1")]));
         g.add_node(mk("b", NodeKind::Function, &[("score", "10")]));
         g.add_node(mk("c", NodeKind::Function, &[("score", "5")]));
-        let r = run_aggregate(
-            "top_k_by score 2 fn(\"a\")",
-            &g,
-            &QueryConfig::default(),
-        )
-        .unwrap();
+        let r = run_aggregate("top_k_by score 2 fn(\"a\")", &g, &QueryConfig::default()).unwrap();
         // fn("a") only matches "a" — k=2 returns just one.
         match r {
             AggregateResult::Nodes(nodes) => assert_eq!(nodes.len(), 1),
@@ -648,8 +640,12 @@ mod tests {
     fn forall_kind_matches() {
         let mut g = CodeGraph::new();
         g.add_node(mk("foo", NodeKind::Function, &[]));
-        let r = run_aggregate("forall kind=Function fn(\"foo\")", &g, &QueryConfig::default())
-            .unwrap();
+        let r = run_aggregate(
+            "forall kind=Function fn(\"foo\")",
+            &g,
+            &QueryConfig::default(),
+        )
+        .unwrap();
         match r {
             AggregateResult::Bool(b) => assert!(b),
             other => panic!("expected bool, got {:?}", other),

@@ -14,6 +14,8 @@ use crate::provider::{
     StreamConvention, StreamEvent, StreamOptions,
 };
 
+pub(crate) const AUTO_RETRY_SENTINEL: &str = "auto-retry-openwebui:";
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Account {
@@ -1478,6 +1480,12 @@ struct ChunkUsage {
 }
 
 impl ChunkUsage {
+    fn raw_input_tokens(&self) -> u32 {
+        self.prompt_tokens
+            .saturating_sub(self.cache_read_tokens())
+            .saturating_sub(self.cache_write_tokens())
+    }
+
     fn cache_read_tokens(&self) -> u32 {
         self.cache_read_input_tokens.max(
             self.prompt_tokens_details
@@ -1975,7 +1983,7 @@ impl Provider for OpenWebUIProvider {
                     "POST chat/completions failed before response (after retries)"
                 );
                 anyhow::bail!(
-                    "OpenWebUI request to {url} failed: {cause} ({e}). \
+                    "{AUTO_RETRY_SENTINEL}OpenWebUI request to {url} failed: {cause} ({e}). \
                      If this happens repeatedly, check the proxy/LiteLLM \
                      logs and verify ~/.config/jfc/openwebui/accounts.toml \
                      has a reachable base_url."
@@ -1997,12 +2005,19 @@ impl Provider for OpenWebUIProvider {
 
         if !resp.status().is_success() {
             let status = resp.status();
+            let should_retry =
+                super::retry::should_retry_status(status.as_u16(), Some(resp.headers()));
             let text = resp.text().await.unwrap_or_default();
             // Route through `friendly_error_message` so 401/403/429/5xx
             // get a human-readable hint instead of dumping the raw
             // upstream JSON. Falls back to the literal status+body for
             // anything we don't have a recipe for.
             let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+            if should_retry {
+                anyhow::bail!(
+                    "{AUTO_RETRY_SENTINEL}OpenWebUI API error {status}: {friendly}\n  raw: {text}"
+                );
+            }
             anyhow::bail!("OpenWebUI API error {status}: {friendly}\n  raw: {text}");
         }
 
@@ -2062,7 +2077,7 @@ pub(crate) fn openai_compatible_event_stream(resp: reqwest::Response) -> EventSt
                                     "usage"
                                 );
                                 emitted.push(Ok(StreamEvent::Usage {
-                                    input_tokens: u.prompt_tokens,
+                                    input_tokens: u.raw_input_tokens(),
                                     output_tokens: u.completion_tokens,
                                     cache_read_tokens: u.cache_read_tokens(),
                                     cache_write_tokens: u.cache_write_tokens(),

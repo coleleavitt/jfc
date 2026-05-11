@@ -192,6 +192,8 @@ impl EconomyAgentInvoker {
                             elapsed_ms: 0,
                             tool_use_count: None,
                             input_tokens: Some(i as u64),
+                            cache_read_tokens: None,
+                            cache_write_tokens: None,
                             output_tokens: Some(o as u64),
                         });
                     }

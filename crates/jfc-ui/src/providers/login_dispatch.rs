@@ -76,7 +76,8 @@ Anthropic Console sign-in:
 const CLAUDEAI_OAUTH_BODY: &str = "\
 Claude Code OAuth (claudeai) sign-in:
   Run from another terminal:
-    jfc auth anthropic login <name>
+    jfc auth anthropic login
+    jfc auth anthropic login --manual   # fallback paste flow
 
   Other commands:
     jfc auth anthropic list           # show all accounts + tier + status

@@ -1948,9 +1948,21 @@ impl ToolInput {
                             .collect()
                     })
                     .unwrap_or_default();
+                let subject = opt_str_field("subject")
+                    .or_else(|| opt_str_field("description"))
+                    .ok_or_else(|| ToolInputError::MissingField {
+                        tool: tool(),
+                        field: "subject",
+                    })?;
+                let description = opt_str_field("description")
+                    .or_else(|| opt_str_field("subject"))
+                    .ok_or_else(|| ToolInputError::MissingField {
+                        tool: tool(),
+                        field: "description",
+                    })?;
                 Self::TaskCreate {
-                    subject: req_str("subject")?,
-                    description: req_str("description")?,
+                    subject,
+                    description,
                     active_form: opt_str_field("active_form"),
                     blocked_by,
                 }
@@ -2552,13 +2564,11 @@ impl ToolInput {
                 }
                 v
             }
-            Self::Generic { summary } => {
-                match serde_json::from_str::<serde_json::Value>(summary) {
-                    Ok(serde_json::Value::Object(map)) => serde_json::Value::Object(map),
-                    Ok(_non_object) => json!({ "input": summary }),
-                    Err(_) => json!({ "input": summary }),
-                }
-            }
+            Self::Generic { summary } => match serde_json::from_str::<serde_json::Value>(summary) {
+                Ok(serde_json::Value::Object(map)) => serde_json::Value::Object(map),
+                Ok(_non_object) => json!({ "input": summary }),
+                Err(_) => json!({ "input": summary }),
+            },
         }
     }
 }
@@ -3874,6 +3884,44 @@ mod tests {
             ToolInput::TaskCreate { blocked_by, .. } => {
                 assert_eq!(blocked_by.len(), 2);
                 assert!(blocked_by.contains(&"t1".into()));
+            }
+            _ => panic!("expected TaskCreate"),
+        }
+    }
+
+    #[test]
+    fn tool_input_from_value_task_create_accepts_description_only_robust() {
+        let v = serde_json::json!({
+            "description": "Inspect the OpenAI-compatible tool path",
+        });
+        let input = ToolInput::from_value("taskcreate", v).expect("valid TaskCreate input");
+        match input {
+            ToolInput::TaskCreate {
+                subject,
+                description,
+                ..
+            } => {
+                assert_eq!(subject, "Inspect the OpenAI-compatible tool path");
+                assert_eq!(description, "Inspect the OpenAI-compatible tool path");
+            }
+            _ => panic!("expected TaskCreate"),
+        }
+    }
+
+    #[test]
+    fn tool_input_from_value_task_create_accepts_subject_only_robust() {
+        let v = serde_json::json!({
+            "subject": "Inspect tool path",
+        });
+        let input = ToolInput::from_value("TaskCreate", v).expect("valid TaskCreate input");
+        match input {
+            ToolInput::TaskCreate {
+                subject,
+                description,
+                ..
+            } => {
+                assert_eq!(subject, "Inspect tool path");
+                assert_eq!(description, "Inspect tool path");
             }
             _ => panic!("expected TaskCreate"),
         }

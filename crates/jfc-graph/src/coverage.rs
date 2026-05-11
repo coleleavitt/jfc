@@ -109,7 +109,14 @@ pub fn annotate_graph_from_lcov(
     let function_ids: Vec<_> = graph
         .nodes_by_kind(NodeKind::Function)
         .iter()
-        .map(|n| (n.id.clone(), n.file_path.clone(), n.span.start_line, n.span.end_line))
+        .map(|n| {
+            (
+                n.id.clone(),
+                n.file_path.clone(),
+                n.span.start_line,
+                n.span.end_line,
+            )
+        })
         .collect();
 
     let mut annotated = 0;
@@ -227,8 +234,7 @@ impl Pass for CoveragePass {
         let reader = std::io::BufReader::new(file);
         let (lcov, _warnings) = parse_lcov(reader);
 
-        let (annotated, untested) =
-            annotate_graph_from_lcov(graph, &lcov, &self.project_root);
+        let (annotated, untested) = annotate_graph_from_lcov(graph, &lcov, &self.project_root);
 
         // Store summary in graph metadata for downstream consumers.
         // (We use a sentinel node-less approach — just log it.)

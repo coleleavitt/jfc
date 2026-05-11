@@ -25,12 +25,30 @@ pub struct EnvironmentCreateParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "manager", rename_all = "snake_case")]
 pub enum PackageSpec {
-    Cargo { name: String, version: Option<String> },
-    Pip { name: String, version: Option<String> },
-    Npm { name: String, version: Option<String> },
-    Gem { name: String, version: Option<String> },
-    Go { module: String, version: Option<String> },
-    Apt { name: String, version: Option<String> },
+    Cargo {
+        name: String,
+        version: Option<String>,
+    },
+    Pip {
+        name: String,
+        version: Option<String>,
+    },
+    Npm {
+        name: String,
+        version: Option<String>,
+    },
+    Gem {
+        name: String,
+        version: Option<String>,
+    },
+    Go {
+        module: String,
+        version: Option<String>,
+    },
+    Apt {
+        name: String,
+        version: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -54,7 +72,11 @@ impl EnvironmentService {
             .client
             .execute_with_retry(|| {
                 self.client
-                    .request(Method::POST, "/v1/beta/environments", Some(beta::MANAGED_AGENTS))
+                    .request(
+                        Method::POST,
+                        "/v1/beta/environments",
+                        Some(beta::MANAGED_AGENTS),
+                    )
                     .json(&params)
             })
             .await?;

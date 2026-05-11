@@ -59,10 +59,8 @@ pub struct MessageUsage {
 }
 
 impl MessageUsage {
-    fn input_total(&self) -> u32 {
+    fn input_tokens(&self) -> u32 {
         self.input_tokens.unwrap_or_default()
-            + self.cache_creation_input_tokens.unwrap_or_default()
-            + self.cache_read_input_tokens.unwrap_or_default()
     }
 
     fn output_total(&self) -> u32 {
@@ -219,7 +217,7 @@ pub fn translate(
         SseEvent::MessageDelta { delta, usage } => {
             *stop_reason = Some(parse_stop_reason(delta.stop_reason.as_deref()));
             usage.map(|usage| StreamEvent::Usage {
-                input_tokens: usage.input_total(),
+                input_tokens: usage.input_tokens(),
                 output_tokens: usage.output_total(),
                 cache_read_tokens: usage.cache_read_input_tokens.unwrap_or_default(),
                 cache_write_tokens: usage.cache_creation_input_tokens.unwrap_or_default(),
@@ -232,7 +230,7 @@ pub fn translate(
             message: error.message,
         }),
         SseEvent::MessageStart { message } => message.usage.map(|usage| StreamEvent::Usage {
-            input_tokens: usage.input_total(),
+            input_tokens: usage.input_tokens(),
             output_tokens: usage.output_total(),
             cache_read_tokens: usage.cache_read_input_tokens.unwrap_or_default(),
             cache_write_tokens: usage.cache_creation_input_tokens.unwrap_or_default(),
@@ -474,7 +472,7 @@ fn log_parsed_event(event: &SseEvent) {
             tracing::info!(
                 target: "jfc::provider::anthropic_sse",
                 stop_reason = ?delta.stop_reason,
-                input_tokens = usage.as_ref().map(MessageUsage::input_total),
+                input_tokens = usage.as_ref().map(MessageUsage::input_tokens),
                 output_tokens = usage.as_ref().map(MessageUsage::output_total),
                 "message_delta"
             );
@@ -832,7 +830,7 @@ mod tests {
     }
 
     #[test]
-    fn message_start_usage_includes_cache_tokens() {
+    fn message_start_usage_keeps_cache_tokens_separate() {
         let json = r#"{"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":10,"cache_creation_input_tokens":3,"cache_read_input_tokens":7}}}"#;
         let event: SseEvent = serde_json::from_str(json).expect("message_start usage must parse");
         let (mut blocks, mut sr) = empty_state();
@@ -840,9 +838,10 @@ mod tests {
         assert!(matches!(
             translate(event, &mut blocks, &mut sr),
             Some(StreamEvent::Usage {
-                input_tokens: 20,
+                input_tokens: 10,
+                cache_read_tokens: 7,
+                cache_write_tokens: 3,
                 output_tokens: 0,
-                ..
             })
         ));
     }
@@ -970,7 +969,10 @@ mod tests {
 
     #[test]
     fn ensure_input_object_null_value_becomes_empty_object() {
-        assert_eq!(ensure_input_object(&serde_json::Value::Null), serde_json::json!({}));
+        assert_eq!(
+            ensure_input_object(&serde_json::Value::Null),
+            serde_json::json!({})
+        );
     }
 
     #[test]

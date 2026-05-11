@@ -116,7 +116,8 @@ pub struct ReachabilityEstimates {
 pub fn approximate_reachability(graph: &CodeGraph) -> ReachabilityEstimates {
     let all_ids: Vec<NodeId> = graph.all_node_ids().into_iter().cloned().collect();
     let n = all_ids.len();
-    let id_to_idx: HashMap<&NodeId, usize> = all_ids.iter().enumerate().map(|(i, id)| (id, i)).collect();
+    let id_to_idx: HashMap<&NodeId, usize> =
+        all_ids.iter().enumerate().map(|(i, id)| (id, i)).collect();
 
     // Forward sketches (descendants): propagate along outgoing edges.
     let mut fwd: Vec<HllSketch> = Vec::with_capacity(n);
@@ -198,13 +199,35 @@ mod tests {
     use std::path::PathBuf;
 
     fn span() -> Span {
-        Span { file: PathBuf::from("t.rs"), start_line: 1, start_col: 0, end_line: 1, end_col: 0, byte_range: 0..0 }
+        Span {
+            file: PathBuf::from("t.rs"),
+            start_line: 1,
+            start_col: 0,
+            end_line: 1,
+            end_col: 0,
+            byte_range: 0..0,
+        }
     }
     fn mk(name: &str) -> NodeData {
-        NodeData { id: NodeId::new("t.rs", name, NodeKind::Function), kind: NodeKind::Function, name: name.into(), qualified_name: name.into(), file_path: PathBuf::from("t.rs"), span: span(), visibility: Visibility::Public, metadata: HashMap::new(), birth_revision: 0, last_modified_revision: 0 }
+        NodeData {
+            id: NodeId::new("t.rs", name, NodeKind::Function),
+            kind: NodeKind::Function,
+            name: name.into(),
+            qualified_name: name.into(),
+            file_path: PathBuf::from("t.rs"),
+            span: span(),
+            visibility: Visibility::Public,
+            metadata: HashMap::new(),
+            birth_revision: 0,
+            last_modified_revision: 0,
+        }
     }
     fn ed() -> EdgeData {
-        EdgeData { kind: EdgeKind::Calls, source_span: span(), weight: 1.0 }
+        EdgeData {
+            kind: EdgeKind::Calls,
+            source_span: span(),
+            weight: 1.0,
+        }
     }
 
     #[test]
@@ -225,7 +248,10 @@ mod tests {
         }
         let est = s.estimate();
         let error = (est - 10_000.0).abs() / 10_000.0;
-        assert!(error < 0.05, "HLL error {error} exceeds 5% threshold; est={est}");
+        assert!(
+            error < 0.05,
+            "HLL error {error} exceeds 5% threshold; est={est}"
+        );
     }
 
     #[test]

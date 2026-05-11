@@ -1138,10 +1138,7 @@ mod tests {
             .nodes_by_kind_name(NodeKind::Struct, "Widget")
             .to_vec();
         let before_module = graph.nodes_in_module("crate::widgets");
-        let before_meta: Vec<NodeId> = graph
-            .nodes_with_metadata_key("kind_tag")
-            .cloned()
-            .collect();
+        let before_meta: Vec<NodeId> = graph.nodes_with_metadata_key("kind_tag").cloned().collect();
 
         graph.rebuild_indices();
 
@@ -1152,10 +1149,7 @@ mod tests {
             before_kind_name
         );
         assert_eq!(graph.nodes_in_module("crate::widgets"), before_module);
-        let after_meta: Vec<NodeId> = graph
-            .nodes_with_metadata_key("kind_tag")
-            .cloned()
-            .collect();
+        let after_meta: Vec<NodeId> = graph.nodes_with_metadata_key("kind_tag").cloned().collect();
         assert_eq!(after_meta, before_meta);
 
         // And the rebuilt indices still see both nodes through the

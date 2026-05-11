@@ -18,6 +18,66 @@ use crate::{
     slate, stream, tasks, toast, types,
 };
 
+fn restart_stream_in_place(
+    app: &mut App,
+    tx: &mpsc::Sender<AppEvent>,
+    assistant_idx: usize,
+    turn_started_at: Option<std::time::Instant>,
+) {
+    let Some(msg) = app.messages.get_mut(assistant_idx) else {
+        return;
+    };
+    if msg.role != Role::Assistant {
+        return;
+    }
+
+    msg.parts = vec![MessagePart::Text(String::new())];
+    msg.model_name = None;
+    msg.cost_tier = None;
+    msg.elapsed = None;
+    msg.usage = None;
+
+    app.streaming_text.clear();
+    app.streaming_reasoning.clear();
+    app.streaming_response_bytes = 0;
+    app.streaming_assistant_idx = Some(assistant_idx);
+    app.is_streaming = true;
+    let now = std::time::Instant::now();
+    app.streaming_started_at = Some(now);
+    app.last_stream_event_at = Some(now);
+    app.streaming_last_token_at = Some(now);
+    app.turn_started_at = turn_started_at.or(Some(now));
+    app.thinking_started_at = None;
+    app.thinking_ended_at = None;
+    app.last_usage_output = 0;
+    app.usage_apply_baseline = (0, 0, 0, 0);
+    app.scroll_to_bottom();
+
+    let provider = app.provider.clone();
+    let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
+    let model = app.model.clone();
+    let tx_spawn = tx.clone();
+    let interrupt = app.interrupt_flag.clone();
+    interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
+    app.cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel = app.cancel_token.clone();
+    let tx_guard = tx.clone();
+    tokio::spawn(async move {
+        let result = tokio::spawn(async move {
+            stream::stream_response(provider, messages, model, tx_spawn, interrupt, cancel).await;
+        })
+        .await;
+        if let Err(join_err) = result {
+            let msg = if join_err.is_panic() {
+                format!("stream task panicked: {join_err}")
+            } else {
+                format!("stream task cancelled: {join_err}")
+            };
+            let _ = tx_guard.send(AppEvent::StreamError(msg));
+        }
+    });
+}
+
 fn yank_last_assistant(app: &App) {
     let Some(text) = app
         .messages
@@ -226,8 +286,7 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     let tx_guard = tx.clone();
     tokio::spawn(async move {
         let result = tokio::spawn(async move {
-            stream::stream_response(provider, messages, model, tx_spawn, interrupt, cancel)
-                .await;
+            stream::stream_response(provider, messages, model, tx_spawn, interrupt, cancel).await;
         })
         .await;
         if let Err(join_err) = result {
@@ -489,6 +548,7 @@ pub(crate) async fn run(
     // Kick off OAuth profile fetch — needed for v126-equivalent seat-tier model gating
     // (XwH() in cli.js) and for showing the subscription type / email in the status bar.
     // Best-effort: a failure here just leaves seat_tier None, which means "no filter".
+    let oauth_for_snapshot = oauth_handle.clone();
     if let Some(oauth) = oauth_handle {
         let tx = tx.clone();
         tokio::spawn(async move {
@@ -1190,6 +1250,28 @@ pub(crate) async fn run(
                     // a tiny vec capped at MAX_TOASTS) and the only reliable
                     // place to do it — toasts have no creation-time timer.
                     toast::prune_expired(&mut app.toasts, std::time::Instant::now());
+
+                    // Refresh the cached Anthropic OAuth account snapshot every ~10s
+                    // so the ribbon shows up-to-date 5h/7d utilization and the
+                    // active rate-limit claim. The manager call locks a mutex,
+                    // so we throttle and run it on a background task.
+                    let needs_refresh = app
+                        .anthropic_snapshot_refreshed_at
+                        .map(|t| t.elapsed().as_secs() >= 10)
+                        .unwrap_or(true);
+                    if needs_refresh && oauth_for_snapshot.is_some() {
+                        app.anthropic_snapshot_refreshed_at = Some(std::time::Instant::now());
+                        let oauth = oauth_for_snapshot.clone().unwrap();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            if let Ok(mgr) = oauth.account_manager().await {
+                                let snapshot = mgr.snapshot_for_ui().await;
+                                let _ = tx
+                                    .send(AppEvent::AnthropicSnapshotUpdated { snapshot })
+                                    .await;
+                            }
+                        });
+                    }
 
                     // Kinetic scroll: apply velocity, decay, stop.
                     {
@@ -2071,6 +2153,10 @@ pub(crate) async fn run(
                         error = %e,
                         "AppEvent::StreamError — resetting stream state"
                     );
+                    let auto_retry_openwebui_signal =
+                        e.starts_with(crate::providers::openwebui::AUTO_RETRY_SENTINEL);
+                    let auto_retry_anthropic_oauth_signal =
+                        e.starts_with(crate::providers::anthropic_oauth::AUTO_RETRY_SENTINEL);
                     // v132 mid-stream auto-compact: stream.rs prefixes
                     // its `auto-compact:` sentinel when the API rejected
                     // the prompt for size reasons. We force a compact
@@ -2110,6 +2196,8 @@ pub(crate) async fn run(
                             });
                         }
                     }
+                    let retry_assistant_idx = app.streaming_assistant_idx;
+                    let retry_turn_started_at = app.turn_started_at;
                     app.is_streaming = false;
                     app.last_stream_event_at = None;
                     app.streaming_started_at = None;
@@ -2127,7 +2215,9 @@ pub(crate) async fn run(
                     // `turn_started_at.is_some()` and `!pending_tool_calls.is_empty()`)
                     // and the spinner/counter keeps animating after an
                     // interrupt or network error.
-                    app.turn_started_at = None;
+                    if !auto_retry_openwebui_signal && !auto_retry_anthropic_oauth_signal {
+                        app.turn_started_at = None;
+                    }
                     app.pending_tool_calls.clear();
                     // Reset the interrupt flag so background tasks or the
                     // next auto-retry don't see a stale `true`. Also mint
@@ -2137,7 +2227,11 @@ pub(crate) async fn run(
                     app.interrupt_flag
                         .store(false, std::sync::atomic::Ordering::SeqCst);
                     app.cancel_token = tokio_util::sync::CancellationToken::new();
-                    if !auto_compact_signal {
+                    if auto_retry_openwebui_signal || auto_retry_anthropic_oauth_signal {
+                        if let Some(idx) = retry_assistant_idx {
+                            restart_stream_in_place(&mut app, &tx, idx, retry_turn_started_at);
+                        }
+                    } else if !auto_compact_signal {
                         app.messages.push(ChatMessage::assistant(format!(
                             "**Error:** {e}\n\n_Press Ctrl+R to retry the last prompt._"
                         )));
@@ -2166,7 +2260,11 @@ pub(crate) async fn run(
                     // submitted again. Drain here so queued prompts run on
                     // the next opportunity. Skipped on auto-compact since
                     // that path already re-queues the last user prompt.
-                    if !auto_compact_signal && !app.queued_prompts.is_empty() {
+                    if !auto_compact_signal
+                        && !auto_retry_openwebui_signal
+                        && !auto_retry_anthropic_oauth_signal
+                        && !app.queued_prompts.is_empty()
+                    {
                         tracing::info!(
                             target: "jfc::ui::queue",
                             count = app.queued_prompts.len(),
@@ -2477,6 +2575,16 @@ pub(crate) async fn run(
                             rapid_refill_count = app.tool_ctx.rapid_refill_count,
                             "post-response compaction triggered"
                         );
+                        // Set the compaction guard synchronously so the agentic
+                        // loop continuation check (below) sees it immediately.
+                        // The CompactionStarted event still fires for the UI
+                        // spinner, but the guard must be synchronous to prevent
+                        // the race where continue_agentic_loop fires before the
+                        // async event is processed.
+                        app.compacting_started_at = Some(std::time::Instant::now());
+                        app.compacting_output_chars = 0;
+                        app.compacting_attempt_baseline = 0;
+                        app.compacting_last_progress = 0;
                         let _ = tx.send(AppEvent::CompactionStarted).await;
                         let messages = app.messages.clone();
                         let provider = Arc::clone(&app.provider);
@@ -2637,12 +2745,13 @@ pub(crate) async fn run(
                         // both the legacy flag and the (possibly cancelled)
                         // token need refreshing for the next spawn cycle.
                         app.interrupt_flag
-                             .store(false, std::sync::atomic::Ordering::SeqCst);
-                         app.cancel_token = tokio_util::sync::CancellationToken::new();
-                         app.is_streaming = false;
-                         app.last_stream_event_at = None;
+                            .store(false, std::sync::atomic::Ordering::SeqCst);
+                        app.cancel_token = tokio_util::sync::CancellationToken::new();
+                        app.is_streaming = false;
+                        app.last_stream_event_at = None;
                     } else if app.pending_approval.is_none()
                         && app.approval_queue.is_empty()
+                        && app.compacting_started_at.is_none()
                         && stream::should_continue_loop(&app.messages)
                     {
                         tracing::info!(
@@ -2668,14 +2777,19 @@ pub(crate) async fn run(
                     }
                 }
                 AppEvent::CompactionStarted => {
-                    // Drives the `Compacting…` spinner — without this, the UI
-                    // freezes on a long pre-submit compact and the user
-                    // assumes their keystroke was eaten.
+                    // The compacting_started_at guard is now set synchronously
+                    // at the decision site to prevent the agentic-loop race.
+                    // This event still fires for logging/observability but the
+                    // fields are already initialized — only set them if they
+                    // weren't (handles the edge case of manual /compact which
+                    // may not go through the AllToolsComplete path).
                     tracing::debug!(target: "jfc::compact", "CompactionStarted event received — showing spinner");
-                    app.compacting_started_at = Some(std::time::Instant::now());
-                    app.compacting_output_chars = 0;
-                    app.compacting_attempt_baseline = 0;
-                    app.compacting_last_progress = 0;
+                    if app.compacting_started_at.is_none() {
+                        app.compacting_started_at = Some(std::time::Instant::now());
+                        app.compacting_output_chars = 0;
+                        app.compacting_attempt_baseline = 0;
+                        app.compacting_last_progress = 0;
+                    }
                 }
                 AppEvent::CompactionProgress { output_chars } => {
                     // Live token feedback during compact streaming. Mirrors
@@ -2709,9 +2823,21 @@ pub(crate) async fn run(
                         new_message_count = messages.len(),
                         "applying compaction result to app state"
                     );
-                    app.messages = messages;
-                    app.tool_ctx = tool_ctx;
-                    app.tool_ctx.approx_tokens = post_tokens;
+                    if app.is_streaming {
+                        // Defensive: should be unreachable with the synchronous
+                        // compacting_started_at guard, but if a stream somehow
+                        // started during compaction, don't clobber live state.
+                        tracing::error!(
+                            target: "jfc::compact",
+                            "CompactionDone arrived while streaming — \
+                             discarding compaction result to avoid data corruption"
+                        );
+                    } else {
+                        app.messages = messages;
+                        app.tool_ctx = tool_ctx;
+                        app.tool_ctx.approx_tokens = post_tokens;
+                        app.last_usage_input = 0;
+                    }
                     app.compacting_started_at = None;
                     app.compacting_output_chars = 0;
                     app.compacting_attempt_baseline = 0;
@@ -2911,6 +3037,9 @@ pub(crate) async fn run(
                         app.model_picker_models = input::collect_all_models(&app);
                     }
                 }
+                AppEvent::AnthropicSnapshotUpdated { snapshot } => {
+                    app.anthropic_account_snapshot = snapshot;
+                }
                 AppEvent::TaskStarted {
                     task_id,
                     description,
@@ -2936,6 +3065,8 @@ pub(crate) async fn run(
                             messages: Vec::new(),
                             tool_use_count: 0,
                             latest_input_tokens: 0,
+                            latest_cache_read_tokens: 0,
+                            latest_cache_write_tokens: 0,
                             cumulative_output_tokens: 0,
                             model_used: model_used.or_else(|| Some(app.model.as_str().to_owned())),
                             max_input_tokens,
@@ -2964,6 +3095,8 @@ pub(crate) async fn run(
                     elapsed_ms,
                     tool_use_count,
                     input_tokens,
+                    cache_read_tokens,
+                    cache_write_tokens,
                     output_tokens,
                 } => {
                     if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
@@ -2984,6 +3117,12 @@ pub(crate) async fn run(
                         }
                         if let Some(n) = input_tokens {
                             bt.latest_input_tokens = n;
+                        }
+                        if let Some(n) = cache_read_tokens {
+                            bt.latest_cache_read_tokens = n;
+                        }
+                        if let Some(n) = cache_write_tokens {
+                            bt.latest_cache_write_tokens = n;
                         }
                         if let Some(n) = output_tokens {
                             // Cumulative — sum across every round-trip,
@@ -3106,17 +3245,16 @@ pub(crate) async fn run(
                         from_mode = ?app.permission_mode,
                         "ExitPlanMode: surfacing plan + transitioning out of Plan"
                     );
-                    let body =
-                        format!("\n\n**Plan presented (Plan Mode → Accept Edits)**\n\n---\n\n{plan}");
+                    let body = format!(
+                        "\n\n**Plan presented (Plan Mode → Accept Edits)**\n\n---\n\n{plan}"
+                    );
                     // Append to the current streaming assistant message if we
                     // have one; otherwise fall back to the last assistant msg.
-                    let target_idx = app
-                        .streaming_assistant_idx
-                        .or_else(|| {
-                            app.messages
-                                .iter()
-                                .rposition(|m| m.role == crate::types::Role::Assistant)
-                        });
+                    let target_idx = app.streaming_assistant_idx.or_else(|| {
+                        app.messages
+                            .iter()
+                            .rposition(|m| m.role == crate::types::Role::Assistant)
+                    });
                     if let Some(idx) = target_idx {
                         // Append as a new Text part to the existing assistant msg.
                         app.messages[idx]

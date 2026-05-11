@@ -77,7 +77,7 @@ mod permissions;
 #[cfg(feature = "landlock-sandbox")]
 mod sandbox;
 
-use std::{io, sync::Arc};
+use std::{io, sync::Arc, time::Duration};
 
 use clap::{Parser, Subcommand};
 use crossterm::{
@@ -164,12 +164,15 @@ enum AuthSubcommand {
 #[derive(Subcommand, Debug)]
 enum AnthropicAuthSubcommand {
     /// Add a new account via the PKCE OAuth flow. Opens a browser-pasteable
-    /// URL, then prompts for the `code#state` blob shown after Anthropic's
-    /// callback page.
+    /// URL. By default jfc waits for a localhost callback; `--manual` falls
+    /// back to the older paste-the-`code#state` flow.
     Login {
-        /// Local name for the new account (e.g. "personal", "work").
-        /// Must start alphanumeric, max 100 chars, only `- _ . @ + space`.
-        name: String,
+        /// Optional local alias. If omitted, jfc derives the canonical
+        /// account identity from the OAuth profile automatically.
+        name: Option<String>,
+        /// Use the manual callback-page paste flow instead of the localhost callback flow.
+        #[arg(long)]
+        manual: bool,
     },
     /// List configured accounts with tier, runtime status, and active marker.
     List,
@@ -469,37 +472,75 @@ async fn run_anthropic_auth_subcommand(sub: AnthropicAuthSubcommand) -> anyhow::
     let mgr = AccountManager::load(store_path.clone()).await?;
 
     match sub {
-        AnthropicAuthSubcommand::Login { name } => {
-            let req = login::authorize();
-            println!();
-            println!("=== Anthropic OAuth login: {name} ===");
-            println!();
-            println!("1. Open this URL in a browser:");
-            println!();
-            println!("   {}", req.url);
-            println!();
-            println!("2. After approving, the callback page will show a string like:");
-            println!("      <code>#<state>");
-            println!("3. Paste the entire string (with the `#`) here, then press Enter.");
-            println!();
-            print!("code#state> ");
-            use std::io::Write;
-            std::io::stdout().flush().ok();
+        AnthropicAuthSubcommand::Login { name, manual } => {
+            let requested_name = name.as_deref().unwrap_or("");
+            if manual {
+                let req = login::authorize();
+                println!();
+                println!("=== Anthropic OAuth login ===");
+                println!();
+                println!("1. Open this URL in a browser:");
+                println!();
+                println!("   {}", req.url);
+                println!();
+                println!("2. After approving, the callback page will show a string like:");
+                println!("      <code>#<state>");
+                println!("3. Paste the entire string (with the `#`) here, then press Enter.");
+                println!();
+                print!("code#state> ");
+                use std::io::Write;
+                std::io::stdout().flush().ok();
 
-            let mut paste = String::new();
-            std::io::stdin().read_line(&mut paste)?;
-            let paste = paste.trim();
-            if paste.is_empty() {
-                anyhow::bail!("login: no input provided");
-            }
-
-            match login::login(&mgr, &name, paste, &req.verifier, &req.state).await {
-                Ok(_) => {
-                    println!("\n✓ logged in as '{name}'.");
-                    println!("  store: {}", store_path.display());
-                    Ok(())
+                let mut paste = String::new();
+                std::io::stdin().read_line(&mut paste)?;
+                let paste = paste.trim();
+                if paste.is_empty() {
+                    anyhow::bail!("login: no input provided");
                 }
-                Err(e) => Err(anyhow::anyhow!("login failed: {e}")),
+
+                match login::login(&mgr, requested_name, paste, &req.verifier, &req.state).await {
+                    Ok(resolved_name) => {
+                        println!("\n✓ logged in as '{resolved_name}'.");
+                        println!("  store: {}", store_path.display());
+                        Ok(())
+                    }
+                    Err(e) => Err(anyhow::anyhow!("login failed: {e}")),
+                }
+            } else {
+                let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
+                let port = listener.local_addr()?.port();
+                let req = login::authorize_with_redirect(
+                    crate::providers::anthropic_oauth_login::RedirectTarget::Localhost(port),
+                );
+                println!();
+                println!("=== Anthropic OAuth login ===");
+                println!();
+                println!("Open this URL in a browser:");
+                println!();
+                println!("   {}", req.url);
+                println!();
+                println!("Waiting for callback on http://localhost:{port}/callback ...");
+                println!("If that fails, rerun with: jfc auth anthropic login --manual");
+
+                let (code, returned_state) = wait_for_oauth_callback(listener).await?;
+                match login::login_with_code_and_state(
+                    &mgr,
+                    requested_name,
+                    &code,
+                    &returned_state,
+                    &req.verifier,
+                    &req.state,
+                    &req.redirect_uri,
+                )
+                .await
+                {
+                    Ok(resolved_name) => {
+                        println!("\n✓ logged in as '{resolved_name}'.");
+                        println!("  store: {}", store_path.display());
+                        Ok(())
+                    }
+                    Err(e) => Err(anyhow::anyhow!("login failed: {e}")),
+                }
             }
         }
         AnthropicAuthSubcommand::List => {
@@ -527,18 +568,16 @@ async fn run_anthropic_auth_subcommand(sub: AnthropicAuthSubcommand) -> anyhow::
             }
             Ok(())
         }
-        AnthropicAuthSubcommand::Active => {
-            match mgr.active_account().await {
-                Some(a) => {
-                    println!("{}", a.name);
-                    Ok(())
-                }
-                None => {
-                    eprintln!("(no active account)");
-                    std::process::exit(1);
-                }
+        AnthropicAuthSubcommand::Active => match mgr.active_account().await {
+            Some(a) => {
+                println!("{}", a.name);
+                Ok(())
             }
-        }
+            None => {
+                eprintln!("(no active account)");
+                std::process::exit(1);
+            }
+        },
         AnthropicAuthSubcommand::Switch { name } => {
             if mgr.atomic_set_active(&name).await? {
                 println!("active = {name}");
@@ -563,6 +602,49 @@ async fn run_anthropic_auth_subcommand(sub: AnthropicAuthSubcommand) -> anyhow::
             }
         }
     }
+}
+
+async fn wait_for_oauth_callback(
+    listener: tokio::net::TcpListener,
+) -> anyhow::Result<(String, String)> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let (mut socket, _) = tokio::time::timeout(Duration::from_secs(300), listener.accept())
+        .await
+        .map_err(|_| anyhow::anyhow!("timed out waiting for OAuth callback"))??;
+
+    let mut buf = vec![0u8; 8192];
+    let n = socket.read(&mut buf).await?;
+    let req = String::from_utf8_lossy(&buf[..n]);
+    let first_line = req
+        .lines()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("malformed callback request"))?;
+    let path = first_line
+        .split_whitespace()
+        .nth(1)
+        .ok_or_else(|| anyhow::anyhow!("malformed callback request line"))?;
+    let url = reqwest::Url::parse(&format!("http://localhost{path}"))?;
+    let code = url
+        .query_pairs()
+        .find_map(|(k, v)| (k == "code").then(|| v.into_owned()))
+        .ok_or_else(|| anyhow::anyhow!("callback missing code"))?;
+    let state = url
+        .query_pairs()
+        .find_map(|(k, v)| (k == "state").then(|| v.into_owned()))
+        .ok_or_else(|| anyhow::anyhow!("callback missing state"))?;
+
+    let body =
+        "<html><body><h1>Anthropic login complete</h1><p>You can return to jfc.</p></body></html>";
+    let resp = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    socket.write_all(resp.as_bytes()).await.ok();
+    socket.shutdown().await.ok();
+
+    Ok((code, state))
 }
 
 fn format_runtime_state(

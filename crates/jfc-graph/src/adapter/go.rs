@@ -43,10 +43,16 @@ impl LanguageAdapter for GoAdapter {
         let mut parser = Parser::new();
         parser
             .set_language(&self.language)
-            .map_err(|e| AdapterError::ParseFailed { path: path.to_string_lossy().into(), reason: format!("{e}") })?;
+            .map_err(|e| AdapterError::ParseFailed {
+                path: path.to_string_lossy().into(),
+                reason: format!("{e}"),
+            })?;
         let tree = parser
             .parse(content, None)
-            .ok_or_else(|| AdapterError::ParseFailed { path: path.to_string_lossy().into(), reason: "tree-sitter returned None".into() })?;
+            .ok_or_else(|| AdapterError::ParseFailed {
+                path: path.to_string_lossy().into(),
+                reason: "tree-sitter returned None".into(),
+            })?;
         Ok(ParsedFile {
             tree,
             source: content.to_string(),
@@ -57,7 +63,13 @@ impl LanguageAdapter for GoAdapter {
     fn extract_nodes(&self, file: &ParsedFile) -> Vec<NodeData> {
         let mut nodes = Vec::new();
         let root = file.tree.root_node();
-        walk_go(root, &file.source, &file.path, &file.path.to_string_lossy(), &mut nodes);
+        walk_go(
+            root,
+            &file.source,
+            &file.path,
+            &file.path.to_string_lossy(),
+            &mut nodes,
+        );
         nodes
     }
 
@@ -67,7 +79,13 @@ impl LanguageAdapter for GoAdapter {
         nodes: &[NodeData],
     ) -> Vec<(NodeId, NodeId, EdgeData)> {
         let mut edges = Vec::new();
-        extract_go_calls(file.tree.root_node(), &file.source, &file.path, nodes, &mut edges);
+        extract_go_calls(
+            file.tree.root_node(),
+            &file.source,
+            &file.path,
+            nodes,
+            &mut edges,
+        );
         edges
     }
 }
@@ -77,7 +95,14 @@ fn walk_go(node: TsNode<'_>, source: &str, path: &Path, path_str: &str, out: &mu
         "function_declaration" => {
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name = text(name_node, source);
-                out.push(build_nd(&name, NodeKind::Function, node, path, path_str, &name));
+                out.push(build_nd(
+                    &name,
+                    NodeKind::Function,
+                    node,
+                    path,
+                    path_str,
+                    &name,
+                ));
             }
         }
         "method_declaration" => {
@@ -99,7 +124,14 @@ fn walk_go(node: TsNode<'_>, source: &str, path: &Path, path_str: &str, out: &mu
                 } else {
                     format!("{receiver}::{name}")
                 };
-                out.push(build_nd(&name, NodeKind::Function, node, path, path_str, &qn));
+                out.push(build_nd(
+                    &name,
+                    NodeKind::Function,
+                    node,
+                    path,
+                    path_str,
+                    &qn,
+                ));
             }
         }
         "type_declaration" => {
@@ -127,7 +159,14 @@ fn walk_go(node: TsNode<'_>, source: &str, path: &Path, path_str: &str, out: &mu
             for child in node.named_children(&mut cursor) {
                 if child.kind() == "package_identifier" {
                     let name = text(child, source);
-                    out.push(build_nd(&name, NodeKind::Module, node, path, path_str, &name));
+                    out.push(build_nd(
+                        &name,
+                        NodeKind::Module,
+                        node,
+                        path,
+                        path_str,
+                        &name,
+                    ));
                     break;
                 }
             }
@@ -194,7 +233,14 @@ fn text(node: TsNode<'_>, source: &str) -> String {
     source[node.byte_range()].to_string()
 }
 
-fn build_nd(name: &str, kind: NodeKind, node: TsNode<'_>, path: &Path, path_str: &str, qn: &str) -> NodeData {
+fn build_nd(
+    name: &str,
+    kind: NodeKind,
+    node: TsNode<'_>,
+    path: &Path,
+    path_str: &str,
+    qn: &str,
+) -> NodeData {
     NodeData {
         id: NodeId::new(path_str, qn, kind),
         kind,
@@ -230,7 +276,11 @@ mod tests {
         let src = "package main\nfunc hello() {}";
         let parsed = a.parse_file(Path::new("t.go"), src).unwrap();
         let nodes = a.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "hello" && n.kind == NodeKind::Function));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "hello" && n.kind == NodeKind::Function)
+        );
     }
 
     #[test]
@@ -239,7 +289,11 @@ mod tests {
         let src = "package main\ntype Point struct { X int; Y int }";
         let parsed = a.parse_file(Path::new("t.go"), src).unwrap();
         let nodes = a.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "Point" && n.kind == NodeKind::Struct));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "Point" && n.kind == NodeKind::Struct)
+        );
     }
 
     #[test]
@@ -248,7 +302,11 @@ mod tests {
         let src = "package main\ntype Reader interface { Read(p []byte) (int, error) }";
         let parsed = a.parse_file(Path::new("t.go"), src).unwrap();
         let nodes = a.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "Reader" && n.kind == NodeKind::Trait));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "Reader" && n.kind == NodeKind::Trait)
+        );
     }
 
     #[test]
@@ -257,7 +315,11 @@ mod tests {
         let src = "package main\ntype S struct{}\nfunc (s *S) Do() {}";
         let parsed = a.parse_file(Path::new("t.go"), src).unwrap();
         let nodes = a.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "Do" && n.kind == NodeKind::Function));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "Do" && n.kind == NodeKind::Function)
+        );
     }
 
     #[test]
@@ -276,6 +338,10 @@ mod tests {
         let src = "package mylib\nfunc Foo() {}";
         let parsed = a.parse_file(Path::new("t.go"), src).unwrap();
         let nodes = a.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "mylib" && n.kind == NodeKind::Module));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "mylib" && n.kind == NodeKind::Module)
+        );
     }
 }

@@ -44,7 +44,10 @@ impl FileService {
     pub async fn delete(&self, file_id: &str) -> Result<()> {
         let path = format!("/v1/beta/files/{file_id}");
         self.client
-            .execute_with_retry(|| self.client.request(Method::DELETE, &path, Some(beta::FILES)))
+            .execute_with_retry(|| {
+                self.client
+                    .request(Method::DELETE, &path, Some(beta::FILES))
+            })
             .await?;
         Ok(())
     }

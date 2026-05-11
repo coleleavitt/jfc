@@ -88,7 +88,10 @@ impl KindData {
                     .metadata
                     .get("async")
                     .map(|s| matches!(s.as_str(), "true" | "1"));
-                f.param_count = data.metadata.get("param_count").and_then(|s| s.parse().ok());
+                f.param_count = data
+                    .metadata
+                    .get("param_count")
+                    .and_then(|s| s.parse().ok());
                 f.coverage_count = data
                     .metadata
                     .get("coverage_count")
@@ -111,7 +114,10 @@ impl KindData {
             }
             NodeKind::Struct => {
                 let mut s = StructFields::default();
-                s.field_count = data.metadata.get("field_count").and_then(|x| x.parse().ok());
+                s.field_count = data
+                    .metadata
+                    .get("field_count")
+                    .and_then(|x| x.parse().ok());
                 if let Some(raw) = data.metadata.get("fields") {
                     s.fields = raw
                         .split(',')
@@ -130,7 +136,10 @@ impl KindData {
             }
             NodeKind::Enum => {
                 let mut e = EnumFields::default();
-                e.variant_count = data.metadata.get("variant_count").and_then(|x| x.parse().ok());
+                e.variant_count = data
+                    .metadata
+                    .get("variant_count")
+                    .and_then(|x| x.parse().ok());
                 if let Some(raw) = data.metadata.get("variants") {
                     e.variants = raw
                         .split(',')
@@ -142,7 +151,10 @@ impl KindData {
             }
             NodeKind::Trait => {
                 let mut t = TraitFields::default();
-                t.method_count = data.metadata.get("method_count").and_then(|x| x.parse().ok());
+                t.method_count = data
+                    .metadata
+                    .get("method_count")
+                    .and_then(|x| x.parse().ok());
                 if let Some(raw) = data.metadata.get("methods") {
                     t.methods = raw
                         .split(',')

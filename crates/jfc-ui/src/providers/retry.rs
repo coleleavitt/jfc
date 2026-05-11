@@ -102,7 +102,9 @@ pub fn friendly_error_message(status: u16, body: &str) -> String {
             "API Error: 400 due to tool use concurrency issues — retrying.".to_string()
         }
         400 if body.contains("toolUse.input is empty")
-            || (body.contains("BedrockException") && body.contains("tool_use") && body.contains("empty")) =>
+            || (body.contains("BedrockException")
+                && body.contains("tool_use")
+                && body.contains("empty")) =>
         {
             "Bedrock validator hiccup (empty toolUse.input) — retrying silently.".to_string()
         }

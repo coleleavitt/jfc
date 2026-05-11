@@ -64,14 +64,8 @@ pub struct Schedule {
 /// annotation so the optimiser can record decisions for the executor.
 #[derive(Debug, Clone)]
 pub enum Plan {
-    Pipe {
-        ops: Vec<DslOp>,
-        schedule: Schedule,
-    },
-    Expr {
-        expr: Expr,
-        schedule: Schedule,
-    },
+    Pipe { ops: Vec<DslOp>, schedule: Schedule },
+    Expr { expr: Expr, schedule: Schedule },
 }
 
 impl Plan {
@@ -226,11 +220,20 @@ fn can_swap_filter_with(op: &DslOp) -> bool {
 pub fn pick_schedule_for_pipe(ops: &[DslOp]) -> Schedule {
     let depth = ops
         .iter()
-        .find_map(|o| if let DslOp::Depth(n) = o { Some(*n) } else { None })
+        .find_map(|o| {
+            if let DslOp::Depth(n) = o {
+                Some(*n)
+            } else {
+                None
+            }
+        })
         .unwrap_or(1);
-    let has_expansion = ops
-        .iter()
-        .any(|o| matches!(o, DslOp::Callers | DslOp::Callees | DslOp::Taint(_) | DslOp::Preconditions));
+    let has_expansion = ops.iter().any(|o| {
+        matches!(
+            o,
+            DslOp::Callers | DslOp::Callees | DslOp::Taint(_) | DslOp::Preconditions
+        )
+    });
 
     let strategy = if !has_expansion {
         ScheduleStrategy::Push
@@ -297,7 +300,11 @@ fn rewrite_expr(expr: Expr) -> Expr {
             pq.to = Box::new(rewrite_expr(*pq.to));
             Expr::PathQuery(pq)
         }
-        Expr::MultiPath { sources, to, max_depth } => {
+        Expr::MultiPath {
+            sources,
+            to,
+            max_depth,
+        } => {
             let sources = sources.into_iter().map(rewrite_expr).collect();
             Expr::MultiPath {
                 sources,
@@ -378,11 +385,7 @@ mod tests {
         fuse_depths(&mut ops);
         assert_eq!(
             ops,
-            vec![
-                DslOp::SelectFn("f".into()),
-                DslOp::Callees,
-                DslOp::Depth(4),
-            ]
+            vec![DslOp::SelectFn("f".into()), DslOp::Callees, DslOp::Depth(4),]
         );
     }
 
@@ -396,11 +399,7 @@ mod tests {
 
     #[test]
     fn fuse_depths_does_not_collapse_mixed() {
-        let mut ops = vec![
-            DslOp::SelectFn("f".into()),
-            DslOp::Callers,
-            DslOp::Callees,
-        ];
+        let mut ops = vec![DslOp::SelectFn("f".into()), DslOp::Callers, DslOp::Callees];
         let before = ops.clone();
         fuse_depths(&mut ops);
         assert_eq!(ops, before);
@@ -466,11 +465,8 @@ mod tests {
 
     #[test]
     fn pick_schedule_deep_expansion_uses_auto() {
-        let s = pick_schedule_for_pipe(&[
-            DslOp::SelectFn("x".into()),
-            DslOp::Callers,
-            DslOp::Depth(5),
-        ]);
+        let s =
+            pick_schedule_for_pipe(&[DslOp::SelectFn("x".into()), DslOp::Callers, DslOp::Depth(5)]);
         assert_eq!(s.strategy, ScheduleStrategy::Auto);
     }
 
@@ -536,10 +532,7 @@ mod tests {
             DslOp::Filter(NodeKind::Function),
         ];
         let plan = optimise_pipe(ops);
-        assert!(matches!(
-            plan.ops().unwrap()[0],
-            DslOp::SelectFn(_)
-        ));
+        assert!(matches!(plan.ops().unwrap()[0], DslOp::SelectFn(_)));
         // Filter should be hoisted ahead of the fused callers.
         let pos_filter = plan
             .ops()
@@ -577,7 +570,13 @@ mod tests {
                     // callers run should be fused.
                     let depths: Vec<_> = ops
                         .iter()
-                        .filter_map(|o| if let DslOp::Depth(n) = o { Some(*n) } else { None })
+                        .filter_map(|o| {
+                            if let DslOp::Depth(n) = o {
+                                Some(*n)
+                            } else {
+                                None
+                            }
+                        })
                         .collect();
                     assert_eq!(depths, vec![2]);
                 }

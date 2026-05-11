@@ -23,15 +23,17 @@ use std::time::Duration;
 use base64::Engine;
 use reqwest::Client;
 use serde::Deserialize;
+use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use super::anthropic_accounts::{Account, AccountManager, now_ms};
 
-const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const DEFAULT_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
-const AUTHORIZE_URL: &str = "https://platform.claude.com/oauth/authorize";
-const REDIRECT_URI: &str = "https://platform.claude.com/oauth/code/callback";
+const CLAUDE_AI_AUTHORIZE_URL: &str = "https://claude.com/cai/oauth/authorize";
+const MANUAL_REDIRECT_URI: &str = "https://platform.claude.com/oauth/code/callback";
 const PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
+const ROLES_URL: &str = "https://api.anthropic.com/api/oauth/claude_cli/roles";
 
 /// Scopes for the initial authorize step. Mirrors opencode `AUTHORIZE_SCOPES`
 /// in `oauth/tokens.ts`. `org:create_api_key` was deliberately removed by
@@ -54,6 +56,7 @@ pub struct AuthorizeRequest {
     pub url: String,
     pub verifier: String,
     pub state: String,
+    pub redirect_uri: String,
 }
 
 /// Successful token-exchange result. `expires_at_ms` is already adjusted for
@@ -74,9 +77,26 @@ pub struct ProfileSnapshot {
     pub uuid: Option<String>,
     pub plan: Option<String>,
     pub rate_limit_tier: Option<String>,
+    pub full_name: Option<String>,
     pub organization_uuid: Option<String>,
     pub organization_name: Option<String>,
+    pub organization_type: Option<String>,
+    pub billing_type: Option<String>,
     pub display_name: Option<String>,
+    pub has_claude_max: bool,
+    pub has_claude_pro: bool,
+    pub has_extra_usage_enabled: bool,
+    pub subscription_status: Option<String>,
+    pub organization_role: Option<String>,
+    pub workspace_uuid: Option<String>,
+    pub workspace_name: Option<String>,
+    pub workspace_role: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum RedirectTarget {
+    Manual,
+    Localhost(u16),
 }
 
 /// Errors surfaced by the login pipeline. `Permanent` means the credentials
@@ -109,19 +129,42 @@ pub enum LoginError {
 /// 32-random-byte base64url string (independent from verifier per CLI
 /// behavior).
 pub fn authorize() -> AuthorizeRequest {
+    authorize_with_redirect(RedirectTarget::Manual)
+}
+
+pub fn authorize_with_redirect(target: RedirectTarget) -> AuthorizeRequest {
     let verifier = generate_random_b64url(32);
     let challenge = sha256_b64url(&verifier);
     let state = generate_random_b64url(32);
+    let redirect_uri = match target {
+        RedirectTarget::Manual => MANUAL_REDIRECT_URI.to_owned(),
+        RedirectTarget::Localhost(port) => format!("http://localhost:{port}/callback"),
+    };
+    let client_id = client_id();
     let url = format!(
-        "{AUTHORIZE_URL}?code=true&client_id={cid}&response_type=code&redirect_uri={redir}\
+        "{CLAUDE_AI_AUTHORIZE_URL}?code=true&client_id={cid}&response_type=code&redirect_uri={redir}\
          &scope={scope}&code_challenge={chal}&code_challenge_method=S256&state={st}",
-        cid = url_encode(CLIENT_ID),
-        redir = url_encode(REDIRECT_URI),
+        cid = url_encode(&client_id),
+        redir = url_encode(&redirect_uri),
         scope = url_encode(AUTHORIZE_SCOPES),
         chal = url_encode(&challenge),
         st = url_encode(&state),
     );
-    AuthorizeRequest { url, verifier, state }
+    let mut url = url;
+    if let Some(login_method) = force_login_method() {
+        url.push_str("&login_method=");
+        url.push_str(&url_encode(&login_method));
+    }
+    if let Some(org_uuid) = forced_org_uuid() {
+        url.push_str("&orgUUID=");
+        url.push_str(&url_encode(&org_uuid));
+    }
+    AuthorizeRequest {
+        url,
+        verifier,
+        state,
+        redirect_uri,
+    }
 }
 
 /// Parse a `code#state` paste from the Anthropic callback page into its
@@ -131,7 +174,11 @@ fn split_callback_paste(raw: &str) -> (String, Option<String>) {
     if let Some(hash_idx) = raw.rfind('#') {
         let (code, rest) = raw.split_at(hash_idx);
         let state = rest.trim_start_matches('#').trim();
-        let state = if state.is_empty() { None } else { Some(state.to_owned()) };
+        let state = if state.is_empty() {
+            None
+        } else {
+            Some(state.to_owned())
+        };
         (code.trim().to_owned(), state)
     } else {
         (raw.trim().to_owned(), None)
@@ -149,7 +196,40 @@ pub async fn exchange_code(
     verifier: &str,
     expected_state: &str,
 ) -> Result<TokenPair, LoginError> {
+    exchange_code_with_redirect(
+        raw_code_state,
+        verifier,
+        expected_state,
+        MANUAL_REDIRECT_URI,
+    )
+    .await
+}
+
+pub async fn exchange_code_with_redirect(
+    raw_code_state: &str,
+    verifier: &str,
+    expected_state: &str,
+    redirect_uri: &str,
+) -> Result<TokenPair, LoginError> {
     let (code, returned_state) = split_callback_paste(raw_code_state);
+    exchange_code_parts(
+        &code,
+        returned_state.as_deref(),
+        verifier,
+        expected_state,
+        redirect_uri,
+    )
+    .await
+}
+
+pub async fn exchange_code_parts(
+    code: &str,
+    returned_state: Option<&str>,
+    verifier: &str,
+    expected_state: &str,
+    redirect_uri: &str,
+) -> Result<TokenPair, LoginError> {
+    let code = code.trim();
     if code.is_empty() {
         return Err(LoginError::EmptyCode);
     }
@@ -158,15 +238,16 @@ pub async fn exchange_code(
         return Err(LoginError::StateMismatch);
     }
 
-    let client = Client::builder().timeout(OAUTH_TIMEOUT).build().map_err(|e| {
-        LoginError::Transient(format!("reqwest builder: {e}"))
-    })?;
+    let client = Client::builder()
+        .timeout(OAUTH_TIMEOUT)
+        .build()
+        .map_err(|e| LoginError::Transient(format!("reqwest builder: {e}")))?;
 
     let body = serde_json::json!({
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": REDIRECT_URI,
-        "client_id": CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "client_id": client_id(),
         "code_verifier": verifier,
         "state": expected_state,
     });
@@ -232,7 +313,9 @@ pub async fn exchange_code(
 
     let expires_in = json.expires_in.unwrap_or(3600.0);
     if !expires_in.is_finite() || expires_in <= 0.0 {
-        return Err(LoginError::Transient(format!("invalid expires_in={expires_in}")));
+        return Err(LoginError::Transient(format!(
+            "invalid expires_in={expires_in}"
+        )));
     }
 
     // Mirror opencode's 30s skew so we trigger refresh slightly early.
@@ -262,6 +345,7 @@ pub async fn fetch_profile(access_token: &str) -> Option<ProfileSnapshot> {
         return None;
     }
     let raw: RawProfile = resp.json().await.ok()?;
+    let roles = fetch_roles(&client, access_token).await;
     let plan = derive_plan(&raw);
     Some(ProfileSnapshot {
         email: raw.account.as_ref().and_then(|a| a.email.clone()),
@@ -271,9 +355,41 @@ pub async fn fetch_profile(access_token: &str) -> Option<ProfileSnapshot> {
             .organization
             .as_ref()
             .and_then(|o| o.rate_limit_tier.clone()),
+        full_name: raw.account.as_ref().and_then(|a| a.full_name.clone()),
         organization_uuid: raw.organization.as_ref().and_then(|o| o.uuid.clone()),
         organization_name: raw.organization.as_ref().and_then(|o| o.name.clone()),
+        organization_type: raw
+            .organization
+            .as_ref()
+            .and_then(|o| o.organization_type.clone()),
+        billing_type: raw
+            .organization
+            .as_ref()
+            .and_then(|o| o.billing_type.clone()),
         display_name: raw.account.as_ref().and_then(|a| a.display_name.clone()),
+        has_claude_max: raw
+            .account
+            .as_ref()
+            .and_then(|a| a.has_claude_max)
+            .unwrap_or(false),
+        has_claude_pro: raw
+            .account
+            .as_ref()
+            .and_then(|a| a.has_claude_pro)
+            .unwrap_or(false),
+        has_extra_usage_enabled: raw
+            .organization
+            .as_ref()
+            .and_then(|o| o.has_extra_usage_enabled)
+            .unwrap_or(false),
+        subscription_status: raw
+            .organization
+            .as_ref()
+            .and_then(|o| o.subscription_status.clone()),
+        organization_role: roles.as_ref().and_then(|r| r.organization_role.clone()),
+        workspace_uuid: roles.as_ref().and_then(|r| r.workspace_uuid.clone()),
+        workspace_name: roles.as_ref().and_then(|r| r.workspace_name.clone()),
+        workspace_role: roles.as_ref().and_then(|r| r.workspace_role.clone()),
     })
 }
 
@@ -287,11 +403,107 @@ pub async fn login(
     verifier: &str,
     expected_state: &str,
 ) -> Result<String, LoginError> {
-    let tokens = exchange_code(raw_code_state, verifier, expected_state).await?;
-    let profile = fetch_profile(&tokens.access_token).await.unwrap_or_default();
+    login_with_redirect(
+        manager,
+        name,
+        raw_code_state,
+        verifier,
+        expected_state,
+        MANUAL_REDIRECT_URI,
+    )
+    .await
+}
+
+pub async fn login_with_redirect(
+    manager: &AccountManager,
+    name: &str,
+    raw_code_state: &str,
+    verifier: &str,
+    expected_state: &str,
+    redirect_uri: &str,
+) -> Result<String, LoginError> {
+    let tokens =
+        exchange_code_with_redirect(raw_code_state, verifier, expected_state, redirect_uri).await?;
+    login_with_tokens(manager, name, tokens).await
+}
+
+pub async fn login_with_code_and_state(
+    manager: &AccountManager,
+    name: &str,
+    code: &str,
+    returned_state: &str,
+    verifier: &str,
+    expected_state: &str,
+    redirect_uri: &str,
+) -> Result<String, LoginError> {
+    let tokens = exchange_code_parts(
+        code,
+        Some(returned_state),
+        verifier,
+        expected_state,
+        redirect_uri,
+    )
+    .await?;
+    login_with_tokens(manager, name, tokens).await
+}
+
+async fn login_with_tokens(
+    manager: &AccountManager,
+    name: &str,
+    tokens: TokenPair,
+) -> Result<String, LoginError> {
+    let profile = fetch_profile(&tokens.access_token)
+        .await
+        .unwrap_or_default();
+    validate_org_restriction(&profile)?;
+    let existing_accounts = manager.list_accounts().await;
+    let resolved_name = resolve_account_name(&existing_accounts, name, &profile);
+    let duplicate_names =
+        duplicate_account_names(&existing_accounts, name, &resolved_name, &profile);
+
+    let mut extra = serde_json::Map::new();
+    if let Some(full_name) = profile.full_name {
+        extra.insert("fullName".to_owned(), json!(full_name));
+    }
+    if let Some(display_name) = profile.display_name.clone() {
+        extra.insert("displayName".to_owned(), json!(display_name));
+    }
+    if let Some(org_uuid) = profile.organization_uuid.clone() {
+        extra.insert("organizationUuid".to_owned(), json!(org_uuid));
+    }
+    if let Some(org_name) = profile.organization_name.clone() {
+        extra.insert("organizationName".to_owned(), json!(org_name));
+    }
+    if let Some(org_type) = profile.organization_type {
+        extra.insert("organizationType".to_owned(), json!(org_type));
+    }
+    if let Some(billing_type) = profile.billing_type {
+        extra.insert("billingType".to_owned(), json!(billing_type));
+    }
+    if let Some(subscription_status) = profile.subscription_status {
+        extra.insert("subscriptionStatus".to_owned(), json!(subscription_status));
+    }
+    if let Some(org_role) = profile.organization_role {
+        extra.insert("organizationRole".to_owned(), json!(org_role));
+    }
+    if let Some(workspace_uuid) = profile.workspace_uuid {
+        extra.insert("workspaceUuid".to_owned(), json!(workspace_uuid));
+    }
+    if let Some(workspace_name) = profile.workspace_name {
+        extra.insert("workspaceName".to_owned(), json!(workspace_name));
+    }
+    if let Some(workspace_role) = profile.workspace_role {
+        extra.insert("workspaceRole".to_owned(), json!(workspace_role));
+    }
+    extra.insert("hasClaudeMax".to_owned(), json!(profile.has_claude_max));
+    extra.insert("hasClaudePro".to_owned(), json!(profile.has_claude_pro));
+    extra.insert(
+        "hasExtraUsageEnabled".to_owned(),
+        json!(profile.has_extra_usage_enabled),
+    );
 
     let account = Account {
-        name: name.to_owned(),
+        name: resolved_name.clone(),
         refresh_token: tokens.refresh_token,
         access_token: Some(tokens.access_token),
         expires_at: Some(tokens.expires_at_ms),
@@ -304,10 +516,34 @@ pub async fn login(
         last_used: None,
         disabled_reason: None,
         rate_limit_reset_time: None,
-        extra: serde_json::Map::new(),
+        unified_status: None,
+        unified_reset_at: None,
+        rate_limit_type: None,
+        overage_status: None,
+        overage_reset_time: None,
+        overage_disabled_reason: None,
+        is_using_overage: None,
+        utilization_5h: None,
+        utilization_5h_reset_at: None,
+        utilization_7d: None,
+        utilization_7d_reset_at: None,
+        last_usage_refresh_at: None,
+        daily_usage: None,
+        total_usage: None,
+        extra,
     };
     manager.atomic_add_account(account).await?;
-    Ok(name.to_owned())
+    for duplicate_name in duplicate_names {
+        manager
+            .atomic_remove_account(&duplicate_name)
+            .await
+            .map_err(|e| {
+                LoginError::Transient(format!(
+                    "failed to remove duplicate account {duplicate_name}: {e}"
+                ))
+            })?;
+    }
+    Ok(resolved_name)
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
@@ -330,6 +566,7 @@ struct RawProfile {
 struct RawAccount {
     uuid: Option<String>,
     email: Option<String>,
+    full_name: Option<String>,
     display_name: Option<String>,
     has_claude_max: Option<bool>,
     has_claude_pro: Option<bool>,
@@ -341,6 +578,17 @@ struct RawOrg {
     name: Option<String>,
     organization_type: Option<String>,
     rate_limit_tier: Option<String>,
+    billing_type: Option<String>,
+    has_extra_usage_enabled: Option<bool>,
+    subscription_status: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawRoles {
+    organization_role: Option<String>,
+    workspace_uuid: Option<String>,
+    workspace_name: Option<String>,
+    workspace_role: Option<String>,
 }
 
 fn derive_plan(raw: &RawProfile) -> Option<String> {
@@ -365,6 +613,130 @@ fn derive_plan(raw: &RawProfile) -> Option<String> {
         return Some("claude_pro".to_owned());
     }
     None
+}
+
+async fn fetch_roles(client: &Client, access_token: &str) -> Option<RawRoles> {
+    let resp = client
+        .get(ROLES_URL)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    resp.json().await.ok()
+}
+
+fn validate_org_restriction(profile: &ProfileSnapshot) -> Result<(), LoginError> {
+    let Some(raw) = forced_org_uuid() else {
+        return Ok(());
+    };
+    let allowed: Vec<&str> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if allowed.is_empty() {
+        return Err(LoginError::Permanent(
+            "ANTHROPIC_FORCE_LOGIN_ORG_UUID is set but empty".to_owned(),
+        ));
+    }
+    let Some(org_uuid) = profile.organization_uuid.as_deref() else {
+        return Err(LoginError::Permanent(format!(
+            "account has no organization UUID, allowed: {}",
+            allowed.join(", ")
+        )));
+    };
+    if allowed.contains(&org_uuid) {
+        return Ok(());
+    }
+    Err(LoginError::Permanent(format!(
+        "account org {org_uuid} is not in allowed list: {}",
+        allowed.join(", ")
+    )))
+}
+
+fn client_id() -> String {
+    std::env::var("CLAUDE_CODE_OAUTH_CLIENT_ID")
+        .ok()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_CLIENT_ID.to_owned())
+}
+
+fn force_login_method() -> Option<String> {
+    std::env::var("ANTHROPIC_FORCE_LOGIN_METHOD")
+        .ok()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| matches!(s.as_str(), "claudeai" | "console"))
+}
+
+fn forced_org_uuid() -> Option<String> {
+    std::env::var("ANTHROPIC_FORCE_LOGIN_ORG_UUID")
+        .ok()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+}
+
+fn resolve_account_name(
+    existing: &[Account],
+    requested_name: &str,
+    profile: &ProfileSnapshot,
+) -> String {
+    if let Some(email) = profile.email.as_deref() {
+        if let Some(account) = existing.iter().find(|account| account.name == email) {
+            return account.name.clone();
+        }
+        if let Some(account) = existing
+            .iter()
+            .find(|account| account.email.as_deref() == Some(email))
+        {
+            return account.name.clone();
+        }
+    }
+    if let Some(account) = existing.iter().find(|account| {
+        account.name == requested_name && account_matches_profile_identity(account, profile)
+    }) {
+        return account.name.clone();
+    }
+    profile
+        .email
+        .clone()
+        .filter(|email| !email.trim().is_empty())
+        .unwrap_or_else(|| requested_name.to_owned())
+}
+
+fn duplicate_account_names(
+    existing: &[Account],
+    requested_name: &str,
+    resolved_name: &str,
+    profile: &ProfileSnapshot,
+) -> Vec<String> {
+    existing
+        .iter()
+        .filter(|account| account.name != resolved_name)
+        .filter(|account| {
+            account.name == requested_name || account_matches_profile_identity(account, profile)
+        })
+        .map(|account| account.name.clone())
+        .collect()
+}
+
+fn account_matches_profile_identity(account: &Account, profile: &ProfileSnapshot) -> bool {
+    if let Some(email) = profile.email.as_deref() {
+        if account.name == email || account.email.as_deref() == Some(email) {
+            return true;
+        }
+    }
+    let Some(org_uuid) = profile.organization_uuid.as_deref() else {
+        return false;
+    };
+    account
+        .extra
+        .get("organizationUuid")
+        .and_then(|value| value.as_str())
+        == Some(org_uuid)
 }
 
 fn parse_oauth_error(body: &str) -> (Option<String>, String) {
@@ -431,11 +803,10 @@ fn is_valid_access_token(s: &str) -> bool {
     s.starts_with("sk-ant-oat01-") && s.len() >= 32
 }
 
-/// `sk-ant-oat01-…` (OAuth refresh token) per opencode validation. Note
-/// Anthropic uses the same `oat01` prefix for both access and refresh —
-/// the difference is which endpoint accepts which.
+/// `sk-ant-ort01-…` (OAuth refresh token) per current Claude Code / opencode
+/// validation. Access and refresh tokens do NOT share a prefix.
 fn is_valid_refresh_token(s: &str) -> bool {
-    s.starts_with("sk-ant-oat01-") && s.len() >= 32
+    s.starts_with("sk-ant-ort01-") && s.len() >= 32
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────
@@ -449,14 +820,28 @@ mod tests {
     #[test]
     fn authorize_produces_valid_url_normal() {
         let req = authorize();
-        assert!(req.url.starts_with(AUTHORIZE_URL));
+        assert!(req.url.starts_with(CLAUDE_AI_AUTHORIZE_URL));
         assert!(req.url.contains("client_id="));
         assert!(req.url.contains("code_challenge="));
         assert!(req.url.contains("code_challenge_method=S256"));
-        assert!(req.url.contains(&format!("state={}", url_encode(&req.state))));
+        assert!(
+            req.url
+                .contains(&format!("state={}", url_encode(&req.state)))
+        );
+        assert!(req.url.contains(&url_encode(MANUAL_REDIRECT_URI)));
         assert_eq!(req.verifier.len(), 43);
         assert_eq!(req.state.len(), 43);
         assert_ne!(req.verifier, req.state);
+    }
+
+    #[test]
+    fn authorize_localhost_redirect_normal() {
+        let req = authorize_with_redirect(RedirectTarget::Localhost(43123));
+        assert!(
+            req.url
+                .contains(&url_encode("http://localhost:43123/callback"))
+        );
+        assert_eq!(req.redirect_uri, "http://localhost:43123/callback");
     }
 
     // Robust: SHA-256 challenge for a known verifier matches RFC 7636 §A.4
@@ -504,11 +889,64 @@ mod tests {
         assert!(is_valid_access_token(
             "sk-ant-oat01-aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         ));
+        assert!(is_valid_refresh_token(
+            "sk-ant-ort01-aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ));
         assert!(!is_valid_access_token(
             "sk-ant-api01-aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         ));
+        assert!(!is_valid_refresh_token(
+            "sk-ant-oat01-aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ));
         assert!(!is_valid_access_token("too-short"));
         assert!(!is_valid_access_token(""));
+    }
+
+    #[test]
+    fn resolve_account_name_prefers_existing_identity_normal() {
+        let existing = vec![
+            test_account("cole@unwrap.rs", Some("cole@unwrap.rs"), Some("org-unwrap")),
+            test_account(
+                "cole.leavitt@fiwealth.com",
+                Some("cole.leavitt@fiwealth.com"),
+                Some("org-fiwealth"),
+            ),
+        ];
+        let profile = ProfileSnapshot {
+            email: Some("cole.leavitt@fiwealth.com".to_owned()),
+            organization_uuid: Some("org-fiwealth".to_owned()),
+            ..ProfileSnapshot::default()
+        };
+        assert_eq!(
+            resolve_account_name(&existing, "personal", &profile),
+            "cole.leavitt@fiwealth.com"
+        );
+    }
+
+    #[test]
+    fn duplicate_account_names_collects_aliases_for_same_identity_normal() {
+        let existing = vec![
+            test_account(
+                "personal",
+                Some("cole.leavitt@fiwealth.com"),
+                Some("org-fiwealth"),
+            ),
+            test_account(
+                "cole.leavitt@fiwealth.com",
+                Some("cole.leavitt@fiwealth.com"),
+                Some("org-fiwealth"),
+            ),
+            test_account("cole@unwrap.rs", Some("cole@unwrap.rs"), Some("org-unwrap")),
+        ];
+        let profile = ProfileSnapshot {
+            email: Some("cole.leavitt@fiwealth.com".to_owned()),
+            organization_uuid: Some("org-fiwealth".to_owned()),
+            ..ProfileSnapshot::default()
+        };
+        assert_eq!(
+            duplicate_account_names(&existing, "personal", "cole.leavitt@fiwealth.com", &profile,),
+            vec!["personal".to_owned()]
+        );
     }
 
     // Edge: empty code in a `#state` paste rejects with EmptyCode early
@@ -553,7 +991,7 @@ mod tests {
         let mgr = AccountManager::load(path).await.unwrap();
         let acct = Account {
             name: "test".to_owned(),
-            refresh_token: "sk-ant-oat01-stub-refresh-token-string".to_owned(),
+            refresh_token: "sk-ant-ort01-stub-refresh-token-string".to_owned(),
             access_token: Some("sk-ant-oat01-stub-access-token-string".to_owned()),
             expires_at: Some(now_ms() + 3_600_000),
             enabled: Some(true),
@@ -565,11 +1003,62 @@ mod tests {
             last_used: None,
             disabled_reason: None,
             rate_limit_reset_time: None,
+            unified_status: None,
+            unified_reset_at: None,
+            rate_limit_type: None,
+            overage_status: None,
+            overage_reset_time: None,
+            overage_disabled_reason: None,
+            is_using_overage: None,
+            utilization_5h: None,
+            utilization_5h_reset_at: None,
+            utilization_7d: None,
+            utilization_7d_reset_at: None,
+            last_usage_refresh_at: None,
+            daily_usage: None,
+            total_usage: None,
             extra: serde_json::Map::new(),
         };
         mgr.atomic_add_account(acct).await.unwrap();
         let listed = mgr.list_accounts().await;
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].name, "test");
+    }
+
+    fn test_account(name: &str, email: Option<&str>, organization_uuid: Option<&str>) -> Account {
+        let mut extra = serde_json::Map::new();
+        if let Some(org_uuid) = organization_uuid {
+            extra.insert("organizationUuid".to_owned(), json!(org_uuid));
+        }
+        Account {
+            name: name.to_owned(),
+            refresh_token: "sk-ant-ort01-stub-refresh-token-string".to_owned(),
+            access_token: Some("sk-ant-oat01-stub-access-token-string".to_owned()),
+            expires_at: Some(now_ms() + 3_600_000),
+            enabled: Some(true),
+            rate_limit_tier: Some("claude_max_5x".to_owned()),
+            plan: Some("claude_max".to_owned()),
+            email: email.map(str::to_owned),
+            uuid: None,
+            added_at: Some(now_ms()),
+            last_used: None,
+            disabled_reason: None,
+            rate_limit_reset_time: None,
+            unified_status: None,
+            unified_reset_at: None,
+            rate_limit_type: None,
+            overage_status: None,
+            overage_reset_time: None,
+            overage_disabled_reason: None,
+            is_using_overage: None,
+            utilization_5h: None,
+            utilization_5h_reset_at: None,
+            utilization_7d: None,
+            utilization_7d_reset_at: None,
+            last_usage_refresh_at: None,
+            daily_usage: None,
+            total_usage: None,
+            extra,
+        }
     }
 }
