@@ -42,6 +42,7 @@ pub mod error;
 pub mod files;
 pub mod messages;
 pub mod models;
+pub mod pagination;
 pub mod retry;
 pub mod sessions;
 pub mod skills;

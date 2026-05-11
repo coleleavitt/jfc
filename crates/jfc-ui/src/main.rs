@@ -77,7 +77,7 @@ mod permissions;
 #[cfg(feature = "landlock-sandbox")]
 mod sandbox;
 
-use std::{io, sync::Arc, time::Duration};
+use std::{io, path::PathBuf, sync::Arc, time::Duration};
 
 use clap::{Parser, Subcommand};
 use crossterm::{
@@ -216,6 +216,44 @@ enum DaemonSubcommand {
     Fire {
         /// Cron job ID returned by `daemon list` (e.g. `cron-abcd1234`).
         id: String,
+    },
+    /// List persistent background-agent roster.
+    Agents,
+    /// Print recent log lines for one background agent.
+    Logs {
+        /// Background agent / Task id.
+        id: String,
+        /// Number of log lines to show.
+        #[arg(long, default_value_t = 80)]
+        lines: usize,
+    },
+    /// Follow a background agent log until it reaches a terminal state.
+    Attach {
+        /// Background agent / Task id.
+        id: String,
+        /// Number of existing log lines to print before following.
+        #[arg(long, default_value_t = 80)]
+        lines: usize,
+    },
+    /// Wait until a background agent reaches a terminal state.
+    Wait {
+        /// Background agent / Task id.
+        id: String,
+        /// Maximum seconds to wait before returning current status.
+        #[arg(long, default_value_t = 300)]
+        timeout_secs: u64,
+    },
+    /// Request cancellation for a background agent.
+    Kill {
+        /// Background agent / Task id.
+        id: String,
+    },
+    /// Internal worker entrypoint for durable background agents.
+    #[command(hide = true)]
+    Worker {
+        /// Launch spec written by the parent process.
+        #[arg(long)]
+        launch: PathBuf,
     },
 }
 
@@ -668,7 +706,9 @@ fn format_runtime_state(
 
 async fn run_daemon_subcommand(sub: DaemonSubcommand) -> anyhow::Result<()> {
     use crate::daemon::{
-        DaemonPaths, fire_cron_cli, list_string, run_daemon, status_string, stop_daemon,
+        DaemonPaths, attach_background_agent_cli, background_agent_logs_string,
+        background_agents_string, fire_cron_cli, list_string, request_background_agent_cancel,
+        run_daemon, status_string, stop_daemon, wait_background_agent_cli,
     };
     let paths = DaemonPaths::default_user();
 
@@ -699,6 +739,40 @@ async fn run_daemon_subcommand(sub: DaemonSubcommand) -> anyhow::Result<()> {
             println!("{msg}");
             Ok(())
         }
+        DaemonSubcommand::Agents => {
+            print!("{}", background_agents_string(&paths));
+            Ok(())
+        }
+        DaemonSubcommand::Logs { id, lines } => {
+            print!("{}", background_agent_logs_string(&paths, &id, lines));
+            Ok(())
+        }
+        DaemonSubcommand::Attach { id, lines } => {
+            attach_background_agent_cli(&paths, &id, lines)
+                .await
+                .map_err(|e| anyhow::anyhow!("attach failed: {e}"))?;
+            Ok(())
+        }
+        DaemonSubcommand::Wait { id, timeout_secs } => {
+            let msg = wait_background_agent_cli(
+                &paths,
+                &id,
+                std::time::Duration::from_secs(timeout_secs),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("wait failed: {e}"))?;
+            print!("{msg}");
+            Ok(())
+        }
+        DaemonSubcommand::Kill { id } => {
+            request_background_agent_cancel(&paths, &id)
+                .map_err(|e| anyhow::anyhow!("kill failed: {e}"))?;
+            println!("cancel requested for {id}");
+            Ok(())
+        }
+        DaemonSubcommand::Worker { launch } => crate::daemon::run_background_agent_worker(launch)
+            .await
+            .map_err(|e| anyhow::anyhow!("worker failed: {e}")),
     }
 }
 
@@ -814,10 +888,10 @@ fn enable_keyboard_enhancement(stdout: &mut io::Stdout) -> bool {
 /// Result of `build_providers()`. We keep a typed `Arc<AnthropicOAuthProvider>` next
 /// to the trait-object list so the OAuth-specific profile fetch can run without
 /// needing `Any`-style downcasting through the `Provider` trait.
-struct ProvidersInit {
-    providers: Vec<Arc<dyn Provider>>,
-    active_idx: usize,
-    model: ModelId,
+pub(crate) struct ProvidersInit {
+    pub(crate) providers: Vec<Arc<dyn Provider>>,
+    pub(crate) active_idx: usize,
+    pub(crate) model: ModelId,
     oauth: Option<Arc<AnthropicOAuthProvider>>,
 }
 
@@ -826,7 +900,7 @@ struct ProvidersInit {
 ///
 /// Active selection mirrors the prior single-provider precedence: explicit `ANTHROPIC_API_KEY`
 /// wins, then `OPENWEBUI_BASE_URL`, then OAuth.
-fn build_providers() -> ProvidersInit {
+pub(crate) fn build_providers() -> ProvidersInit {
     // Cascade for the startup model id:
     //   1. ANTHROPIC_MODEL / OPENWEBUI_MODEL env (explicit override for one run)
     //   2. ~/.config/jfc/config.toml `[default].model` (the user's persisted choice)

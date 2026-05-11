@@ -10,6 +10,7 @@
 use crate::beta;
 use crate::client::Client;
 use crate::error::Result;
+use crate::pagination::{ListParams, Page};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +59,14 @@ pub struct Environment {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct EnvironmentUpdateParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub packages: Option<Vec<PackageSpec>>,
+}
+
 pub struct EnvironmentService {
     client: Client,
 }
@@ -81,5 +90,65 @@ impl EnvironmentService {
             })
             .await?;
         Ok(resp.json().await?)
+    }
+
+    pub async fn list(&self) -> Result<Page<Environment>> {
+        self.list_page(&ListParams::default()).await
+    }
+
+    pub async fn list_page(&self, params: &ListParams) -> Result<Page<Environment>> {
+        let resp = self
+            .client
+            .execute_with_retry(|| {
+                self.client
+                    .request(
+                        Method::GET,
+                        "/v1/beta/environments",
+                        Some(beta::MANAGED_AGENTS),
+                    )
+                    .query(params)
+            })
+            .await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn get(&self, environment_id: &str) -> Result<Environment> {
+        let path = format!("/v1/beta/environments/{environment_id}");
+        let resp = self
+            .client
+            .execute_with_retry(|| {
+                self.client
+                    .request(Method::GET, &path, Some(beta::MANAGED_AGENTS))
+            })
+            .await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn update(
+        &self,
+        environment_id: &str,
+        params: EnvironmentUpdateParams,
+    ) -> Result<Environment> {
+        let path = format!("/v1/beta/environments/{environment_id}");
+        let resp = self
+            .client
+            .execute_with_retry(|| {
+                self.client
+                    .request(Method::PATCH, &path, Some(beta::MANAGED_AGENTS))
+                    .json(&params)
+            })
+            .await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn delete(&self, environment_id: &str) -> Result<()> {
+        let path = format!("/v1/beta/environments/{environment_id}");
+        self.client
+            .execute_with_retry(|| {
+                self.client
+                    .request(Method::DELETE, &path, Some(beta::MANAGED_AGENTS))
+            })
+            .await?;
+        Ok(())
     }
 }

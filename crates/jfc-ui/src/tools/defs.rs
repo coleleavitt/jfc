@@ -250,6 +250,10 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                         "type": "string",
                         "description": "The registered skill name (matches the `name` frontmatter or filename stem under `.claude/skills/`)"
                     },
+                    "skill": {
+                        "type": "string",
+                        "description": "Alias for `name`, accepted for Claude Code compatibility"
+                    },
                     "args": {
                         "type": "string",
                         "description": "Optional additional context appended to the skill body"

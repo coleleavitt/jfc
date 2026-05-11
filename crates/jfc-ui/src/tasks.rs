@@ -150,29 +150,30 @@ impl std::error::Error for TaskError {}
 
 /// A task's lifecycle status. `Deleted` is a tombstone — `TaskList` filters it
 /// out by default but it remains in the store for audit purposes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
+    #[default]
     Pending,
     InProgress,
     Completed,
     Deleted,
 }
 
-impl Default for TaskStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
-}
-
 /// One task. Field names match v126's wire shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: TaskId,
+    #[serde(default)]
     pub subject: String,
     #[serde(default)]
     pub description: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "activeForm",
+        alias = "active_form",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub active_form: Option<String>,
     #[serde(default)]
     pub status: TaskStatus,
@@ -236,12 +237,26 @@ impl TaskStore {
             path = %path.display(),
             "TaskStore::open"
         );
-        let inner = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok())
-            .unwrap_or_default();
+        let inner = Self::load_inner(&path);
         Arc::new(Self {
             inner: Mutex::new(inner),
+            path,
+        })
+    }
+
+    /// Open the task store shared by a swarm team. This intentionally uses
+    /// Claude-compatible swarm storage (`~/.claude/tasks/<team>/tasks.json`)
+    /// so the leader and in-process teammates coordinate over one list.
+    pub fn open_team(team_name: &str) -> Arc<Self> {
+        let path = crate::swarm::team_helpers::tasks_dir(team_name).join("tasks.json");
+        tracing::info!(
+            target: "jfc::tasks",
+            team_name,
+            path = %path.display(),
+            "TaskStore::open_team"
+        );
+        Arc::new(Self {
+            inner: Mutex::new(Self::load_inner(&path)),
             path,
         })
     }
@@ -250,6 +265,30 @@ impl TaskStore {
     pub fn in_memory() -> Arc<Self> {
         tracing::debug!(target: "jfc::tasks", "TaskStore::in_memory");
         Arc::new(Self::default())
+    }
+
+    fn load_inner(path: &PathBuf) -> TaskStoreInner {
+        let Some(raw) = std::fs::read_to_string(path).ok() else {
+            return TaskStoreInner::default();
+        };
+        if let Ok(inner) = serde_json::from_str::<TaskStoreInner>(&raw) {
+            return inner;
+        }
+        // Older swarm code wrote a bare task array to tasks.json. Accept it
+        // so existing team task files migrate on next persist instead of
+        // silently appearing empty.
+        if let Ok(tasks) = serde_json::from_str::<Vec<Task>>(&raw) {
+            let next_id = tasks
+                .iter()
+                .filter_map(|t| t.id.as_str().trim_start_matches('t').parse::<u64>().ok())
+                .max()
+                .unwrap_or(0);
+            return TaskStoreInner {
+                next_id,
+                tasks: tasks.into_iter().map(|t| (t.id.clone(), t)).collect(),
+            };
+        }
+        TaskStoreInner::default()
     }
 
     fn persist(&self, inner: &TaskStoreInner) {
@@ -453,6 +492,38 @@ impl TaskStore {
             "TaskStore::list"
         );
         out
+    }
+
+    /// Atomically claim the first pending, unowned task whose blockers are
+    /// all completed. Used by in-process teammates while idle-polling.
+    pub fn claim_next_available(&self, owner: &str) -> Option<Task> {
+        let mut inner = self.inner.lock().unwrap();
+        let completed = inner
+            .tasks
+            .values()
+            .filter(|t| t.status == TaskStatus::Completed)
+            .map(|t| t.id.clone())
+            .collect::<BTreeSet<_>>();
+        let mut ids = inner.tasks.keys().cloned().collect::<Vec<_>>();
+        ids.sort_by_key(|id| {
+            id.as_str()
+                .strip_prefix('t')
+                .and_then(|n| n.parse::<u64>().ok())
+                .unwrap_or(0)
+        });
+        let claim_id = ids.into_iter().find(|id| {
+            inner.tasks.get(id.as_str()).is_some_and(|task| {
+                task.status == TaskStatus::Pending
+                    && task.owner.as_deref().unwrap_or("").is_empty()
+                    && task.blocked_by.iter().all(|dep| completed.contains(dep))
+            })
+        })?;
+        let task = inner.tasks.get_mut(claim_id.as_str())?;
+        task.owner = Some(owner.to_owned());
+        task.status = TaskStatus::InProgress;
+        let task = task.clone();
+        self.persist(&inner);
+        Some(task)
     }
 
     /// Counts by status — used by the UI overflow summary.

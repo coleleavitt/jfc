@@ -12,6 +12,7 @@
 use crate::beta;
 use crate::client::Client;
 use crate::error::Result;
+use crate::pagination::{ListParams, Page};
 use reqwest::Method;
 use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
@@ -41,19 +42,19 @@ impl SkillService {
     }
 
     pub async fn list(&self) -> Result<Vec<Skill>> {
+        Ok(self.list_page(&ListParams::default()).await?.data)
+    }
+
+    pub async fn list_page(&self, params: &ListParams) -> Result<Page<Skill>> {
         let resp = self
             .client
             .execute_with_retry(|| {
                 self.client
                     .request(Method::GET, "/v1/beta/skills", Some(beta::SKILLS))
+                    .query(params)
             })
             .await?;
-        let body: serde_json::Value = resp.json().await?;
-        let data = body
-            .get("data")
-            .cloned()
-            .unwrap_or(serde_json::Value::Array(Vec::new()));
-        Ok(serde_json::from_value(data)?)
+        Ok(resp.json().await?)
     }
 
     pub async fn get(&self, skill_id: &str) -> Result<Skill> {
@@ -83,24 +84,16 @@ impl SkillService {
     pub async fn create(&self, display_title: &str, files: Vec<SkillFile>) -> Result<Skill> {
         let resp = self
             .client
-            .http()
-            .request(
+            .request_url(
                 Method::POST,
                 format!("{}/v1/beta/skills", self.client.base_url()),
+                Some(beta::SKILLS),
             )
-            .header("anthropic-beta", beta::SKILLS)
             .multipart(build_skill_form(display_title, files)?)
             .send()
             .await?;
         if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(crate::error::Error::Api {
-                status,
-                message: body,
-                request_id: None,
-                body: None,
-            });
+            return Err(crate::client::into_api_error(resp).await);
         }
         Ok(resp.json().await?)
     }
@@ -117,22 +110,22 @@ impl SkillService {
         );
         let resp = self
             .client
-            .http()
-            .request(Method::POST, url)
-            .header("anthropic-beta", beta::SKILLS)
-            .multipart(build_skill_form(skill_id, files)?)
+            .request_url(Method::POST, url, Some(beta::SKILLS))
+            .multipart(build_skill_version_form(files)?)
             .send()
             .await?;
         if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(crate::error::Error::Api {
-                status,
-                message: body,
-                request_id: None,
-                body: None,
-            });
+            return Err(crate::client::into_api_error(resp).await);
         }
+        Ok(resp.json().await?)
+    }
+
+    pub async fn list_versions(&self, skill_id: &str) -> Result<Page<SkillVersion>> {
+        let path = format!("/v1/beta/skills/{skill_id}/versions");
+        let resp = self
+            .client
+            .execute_with_retry(|| self.client.request(Method::GET, &path, Some(beta::SKILLS)))
+            .await?;
         Ok(resp.json().await?)
     }
 }
@@ -146,7 +139,15 @@ pub struct SkillFile {
 }
 
 fn build_skill_form(label: &str, files: Vec<SkillFile>) -> Result<Form> {
-    let mut form = Form::new().text("display_title", label.to_owned());
+    let form = Form::new().text("display_title", label.to_owned());
+    append_skill_files(form, files)
+}
+
+fn build_skill_version_form(files: Vec<SkillFile>) -> Result<Form> {
+    append_skill_files(Form::new(), files)
+}
+
+fn append_skill_files(mut form: Form, files: Vec<SkillFile>) -> Result<Form> {
     for f in files {
         let part = Part::bytes(f.bytes)
             .file_name(f.filename.clone())

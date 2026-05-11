@@ -32,7 +32,7 @@ fn rand_u64() -> u64 {
     use std::cell::Cell;
     use std::time::{SystemTime, UNIX_EPOCH};
     thread_local! {
-        static STATE: Cell<u64> = Cell::new(0);
+        static STATE: Cell<u64> = const { Cell::new(0) };
     }
     STATE.with(|s| {
         let mut x = s.get();

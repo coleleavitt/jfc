@@ -846,6 +846,18 @@ pub async fn execute_tool(
         }
     }
 
+    let task_store = match (active_team_name, &kind) {
+        (
+            Some(team_name),
+            ToolKind::TaskCreate
+            | ToolKind::TaskUpdate
+            | ToolKind::TaskList
+            | ToolKind::TaskDone
+            | ToolKind::TaskGet,
+        ) => Some(TaskStore::open_team(team_name)),
+        _ => task_store,
+    };
+
     match (kind, input) {
         (
             ToolKind::Bash,

@@ -73,6 +73,10 @@ pub struct DaemonState {
     /// Wakeups that have already fired — kept for replay/audit. Bounded.
     #[serde(default)]
     pub fired_wakeups: Vec<ScheduledWakeup>,
+    /// Persistent background-agent roster. This backs `jfc daemon agents`,
+    /// `logs`, `wait`, and cross-process cancellation requests.
+    #[serde(default)]
+    pub background_agents: HashMap<String, BackgroundAgentInfo>,
 }
 
 impl Default for DaemonState {
@@ -84,6 +88,7 @@ impl Default for DaemonState {
             cron_jobs: Vec::new(),
             wakeups: Vec::new(),
             fired_wakeups: Vec::new(),
+            background_agents: HashMap::new(),
         }
     }
 }
@@ -115,6 +120,69 @@ pub enum SessionStatus {
     Completed,
     Failed,
     Cancelled,
+}
+
+/// Durable lifecycle for a background Task/subagent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BackgroundAgentStatus {
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl BackgroundAgentStatus {
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+    }
+}
+
+/// Persistent background-agent metadata. Background Tasks run in detached worker
+/// processes; this record survives UI restarts and gives CLI tools a stable
+/// roster/log/cancel/respawn substrate.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackgroundAgentInfo {
+    pub id: String,
+    pub description: String,
+    pub status: BackgroundAgentStatus,
+    pub started_at: SystemTime,
+    pub updated_at: SystemTime,
+    pub completed_at: Option<SystemTime>,
+    pub pid: Option<u32>,
+    pub model: Option<String>,
+    pub worktree_path: Option<PathBuf>,
+    pub log_path: PathBuf,
+    #[serde(default)]
+    pub launch_path: Option<PathBuf>,
+    #[serde(default)]
+    pub cancel_requested: bool,
+    #[serde(default)]
+    pub respawn_count: u32,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub tool_use_count: u32,
+    #[serde(default)]
+    pub latest_input_tokens: u64,
+    #[serde(default)]
+    pub cumulative_output_tokens: u64,
+}
+
+/// Durable worker launch metadata for a background Task. This is the piece that
+/// lets a background agent run outside the TUI process and be respawned once if
+/// its worker exits before reporting a terminal state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackgroundAgentLaunch {
+    pub task_id: String,
+    pub task_input: crate::types::TaskInput,
+    pub model: crate::provider::ModelId,
+    pub provider_name: Option<String>,
+    pub agent_def: Option<crate::agents::AgentDef>,
+    pub cwd: PathBuf,
+    pub active_team_name: Option<String>,
+    pub created_at: SystemTime,
 }
 
 /// A cron-scheduled recurring task.
@@ -357,22 +425,24 @@ pub fn is_daemon_running(paths: &DaemonPaths) -> Option<u32> {
     let pid_str = std::fs::read_to_string(&paths.pid_file).ok()?;
     let pid: u32 = pid_str.trim().parse().ok()?;
 
+    process_is_running(pid).then_some(pid)
+}
+
+fn process_is_running(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+
     #[cfg(unix)]
     {
         use std::process::Command;
-        let result = Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .output()
-            .ok()?;
-        if result.status.success() {
-            return Some(pid);
-        }
-        return None;
+        let result = Command::new("kill").args(["-0", &pid.to_string()]).output();
+        result.map(|r| r.status.success()).unwrap_or(false)
     }
 
     #[cfg(not(unix))]
     {
-        Some(pid)
+        true
     }
 }
 
@@ -397,8 +467,7 @@ pub fn load_state(paths: &DaemonPaths) -> Option<DaemonState> {
 /// Save daemon state to disk (atomic write via tempfile + rename).
 pub fn save_state(paths: &DaemonPaths, state: &DaemonState) -> std::io::Result<()> {
     paths.ensure_dirs()?;
-    let json = serde_json::to_string_pretty(state)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let json = serde_json::to_string_pretty(state).map_err(std::io::Error::other)?;
     let tmp = paths.state_file.with_extension("json.tmp");
     std::fs::write(&tmp, json)?;
     std::fs::rename(&tmp, &paths.state_file)
@@ -433,7 +502,14 @@ impl Daemon {
 
     /// Persist current state to disk (best-effort).
     pub fn persist(&self) {
-        let _ = save_state(&self.paths, &self.state);
+        let mut state = self.state.clone();
+        if let Some(current) = load_state(&self.paths) {
+            // Background workers update their roster/log metadata out-of-process.
+            // Preserve that live subtree when the cron daemon persists its own
+            // in-memory cron/wakeup/session state.
+            state.background_agents = current.background_agents;
+        }
+        let _ = save_state(&self.paths, &state);
     }
 
     /// Register a new headless session.
@@ -649,19 +725,19 @@ pub fn should_fire_cron(job: &CronJob, now: SystemTime) -> bool {
                 Some(p) => p,
                 None => return false,
             };
-            if !minute.matches(parts.minute as u32) {
+            if !minute.matches(parts.minute) {
                 return false;
             }
-            if !hour.matches(parts.hour as u32) {
+            if !hour.matches(parts.hour) {
                 return false;
             }
-            if !day.matches(parts.day as u32) {
+            if !day.matches(parts.day) {
                 return false;
             }
-            if !month.matches(parts.month as u32) {
+            if !month.matches(parts.month) {
                 return false;
             }
-            if !weekday.matches(parts.weekday as u32) {
+            if !weekday.matches(parts.weekday) {
                 return false;
             }
             // Don't refire within the same minute.
@@ -740,6 +816,816 @@ pub fn read_last_lines(path: &Path, n: usize) -> Vec<String> {
         .collect()
 }
 
+fn append_log_line(path: &Path, line: &str) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        use std::io::Write;
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+fn background_agent_log_path(paths: &DaemonPaths, id: &str) -> PathBuf {
+    paths.log_dir.join("agents").join(format!("{id}.log"))
+}
+
+fn background_agent_launch_path(paths: &DaemonPaths, id: &str) -> PathBuf {
+    paths
+        .log_dir
+        .join("agents")
+        .join(format!("{id}.launch.json"))
+}
+
+fn spawn_worker_process(launch_path: &Path, cwd: &Path) -> std::io::Result<std::process::Child> {
+    let exe = std::env::current_exe()?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("daemon")
+        .arg("worker")
+        .arg("--launch")
+        .arg(launch_path)
+        .current_dir(cwd)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // Detach from the TUI's controlling process group so closing the UI
+        // does not SIGHUP the background worker.
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    Err(std::io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
+            });
+        }
+    }
+
+    cmd.spawn()
+}
+
+fn record_background_agent_worker_pid(
+    paths: &DaemonPaths,
+    id: &str,
+    pid: u32,
+    launch_path: &Path,
+) -> std::io::Result<()> {
+    let mut state = load_state(paths).unwrap_or_default();
+    let Some(agent) = state.background_agents.get_mut(id) else {
+        return Ok(());
+    };
+    agent.pid = Some(pid);
+    agent.launch_path = Some(launch_path.to_path_buf());
+    agent.status = BackgroundAgentStatus::Running;
+    agent.updated_at = SystemTime::now();
+    save_state(paths, &state)
+}
+
+fn mark_background_agent_spawn_failed(
+    paths: &DaemonPaths,
+    id: &str,
+    error: &str,
+) -> std::io::Result<()> {
+    let mut state = load_state(paths).unwrap_or_default();
+    let now = SystemTime::now();
+    let Some(agent) = state.background_agents.get_mut(id) else {
+        return Ok(());
+    };
+    agent.status = BackgroundAgentStatus::Failed;
+    agent.updated_at = now;
+    agent.completed_at = Some(now);
+    agent.error = Some(error.to_owned());
+    let log_path = agent.log_path.clone();
+    save_state(paths, &state)?;
+    append_log_line(&log_path, &format!("[Failed] {error}"));
+    Ok(())
+}
+
+pub fn spawn_background_agent_worker(launch: BackgroundAgentLaunch) -> std::io::Result<u32> {
+    let paths = DaemonPaths::default_user();
+    paths.ensure_dirs()?;
+    let launch_path = background_agent_launch_path(&paths, &launch.task_id);
+    let json = serde_json::to_string_pretty(&launch).map_err(std::io::Error::other)?;
+    std::fs::write(&launch_path, json)?;
+
+    record_background_agent_started(
+        &launch.task_id,
+        &launch.task_input.description,
+        Some(launch.model.as_str().to_owned()),
+        None,
+    );
+    record_background_agent_launch_path(&paths, &launch.task_id, &launch_path)?;
+
+    match spawn_worker_process(&launch_path, &launch.cwd) {
+        Ok(child) => {
+            let pid = child.id();
+            record_background_agent_worker_pid(&paths, &launch.task_id, pid, &launch_path)?;
+            append_log_line(
+                &background_agent_log_path(&paths, &launch.task_id),
+                &format!("[worker-started] pid={pid}"),
+            );
+            Ok(pid)
+        }
+        Err(e) => {
+            let _ = mark_background_agent_spawn_failed(&paths, &launch.task_id, &e.to_string());
+            Err(e)
+        }
+    }
+}
+
+fn record_background_agent_launch_path(
+    paths: &DaemonPaths,
+    id: &str,
+    launch_path: &Path,
+) -> std::io::Result<()> {
+    let mut state = load_state(paths).unwrap_or_default();
+    if let Some(agent) = state.background_agents.get_mut(id) {
+        agent.launch_path = Some(launch_path.to_path_buf());
+        agent.updated_at = SystemTime::now();
+    }
+    save_state(paths, &state)
+}
+
+/// Persist that a background agent started. Safe to call repeatedly for the
+/// same id; later calls refresh mutable metadata without dropping existing
+/// logs or terminal fields.
+pub fn record_background_agent_started(
+    id: &str,
+    description: &str,
+    model: Option<String>,
+    worktree_path: Option<PathBuf>,
+) {
+    let paths = DaemonPaths::default_user();
+    let mut state = load_state(&paths).unwrap_or_default();
+    let now = SystemTime::now();
+    let log_path = state
+        .background_agents
+        .get(id)
+        .map(|a| a.log_path.clone())
+        .unwrap_or_else(|| background_agent_log_path(&paths, id));
+    let existed = state.background_agents.contains_key(id);
+    let entry = state
+        .background_agents
+        .entry(id.to_owned())
+        .or_insert_with(|| BackgroundAgentInfo {
+            id: id.to_owned(),
+            description: description.to_owned(),
+            status: BackgroundAgentStatus::Running,
+            started_at: now,
+            updated_at: now,
+            completed_at: None,
+            pid: Some(std::process::id()),
+            model: model.clone(),
+            worktree_path: worktree_path.clone(),
+            log_path: log_path.clone(),
+            launch_path: None,
+            cancel_requested: false,
+            respawn_count: 0,
+            summary: None,
+            error: None,
+            tool_use_count: 0,
+            latest_input_tokens: 0,
+            cumulative_output_tokens: 0,
+        });
+    entry.description = description.to_owned();
+    entry.status = BackgroundAgentStatus::Running;
+    entry.updated_at = now;
+    entry.completed_at = None;
+    entry.pid = Some(std::process::id());
+    if model.is_some() {
+        entry.model = model;
+    }
+    if worktree_path.is_some() {
+        entry.worktree_path = worktree_path;
+    }
+    if !existed {
+        entry.cancel_requested = false;
+    }
+    entry.summary = None;
+    entry.error = None;
+    let _ = save_state(&paths, &state);
+    if !existed {
+        append_log_line(&log_path, &format!("[started] {description}"));
+    }
+}
+
+pub fn record_background_agent_log(id: &str, text: &str) {
+    let paths = DaemonPaths::default_user();
+    let mut state = load_state(&paths).unwrap_or_default();
+    let now = SystemTime::now();
+    let log_path = if let Some(agent) = state.background_agents.get_mut(id) {
+        agent.updated_at = now;
+        agent.log_path.clone()
+    } else {
+        let log_path = background_agent_log_path(&paths, id);
+        state.background_agents.insert(
+            id.to_owned(),
+            BackgroundAgentInfo {
+                id: id.to_owned(),
+                description: id.to_owned(),
+                status: BackgroundAgentStatus::Running,
+                started_at: now,
+                updated_at: now,
+                completed_at: None,
+                pid: Some(std::process::id()),
+                model: None,
+                worktree_path: None,
+                log_path: log_path.clone(),
+                launch_path: None,
+                cancel_requested: false,
+                respawn_count: 0,
+                summary: None,
+                error: None,
+                tool_use_count: 0,
+                latest_input_tokens: 0,
+                cumulative_output_tokens: 0,
+            },
+        );
+        log_path
+    };
+    let _ = save_state(&paths, &state);
+    for line in text.lines() {
+        append_log_line(&log_path, line);
+    }
+}
+
+pub fn record_background_agent_progress(
+    id: &str,
+    last_tool: Option<&str>,
+    tool_use_count: Option<u32>,
+    latest_input_tokens: Option<u64>,
+    output_tokens_delta: Option<u64>,
+) {
+    let paths = DaemonPaths::default_user();
+    let mut state = load_state(&paths).unwrap_or_default();
+    let Some(agent) = state.background_agents.get_mut(id) else {
+        return;
+    };
+    agent.updated_at = SystemTime::now();
+    if let Some(n) = tool_use_count {
+        agent.tool_use_count = n;
+    }
+    if let Some(n) = latest_input_tokens {
+        agent.latest_input_tokens = n;
+    }
+    if let Some(n) = output_tokens_delta {
+        agent.cumulative_output_tokens = agent.cumulative_output_tokens.saturating_add(n);
+    }
+    let log_path = agent.log_path.clone();
+    let _ = save_state(&paths, &state);
+    if let Some(tool) = last_tool {
+        append_log_line(&log_path, &format!("[tool] {tool}"));
+    }
+}
+
+pub fn record_background_agent_finished(
+    id: &str,
+    status: BackgroundAgentStatus,
+    summary_or_error: &str,
+) {
+    let paths = DaemonPaths::default_user();
+    let mut state = load_state(&paths).unwrap_or_default();
+    let now = SystemTime::now();
+    let log_path = if let Some(agent) = state.background_agents.get_mut(id) {
+        agent.status = status;
+        agent.updated_at = now;
+        agent.completed_at = Some(now);
+        match status {
+            BackgroundAgentStatus::Completed => agent.summary = Some(summary_or_error.to_owned()),
+            BackgroundAgentStatus::Failed | BackgroundAgentStatus::Cancelled => {
+                agent.error = Some(summary_or_error.to_owned())
+            }
+            BackgroundAgentStatus::Running => {}
+        }
+        agent.log_path.clone()
+    } else {
+        return;
+    };
+    let _ = save_state(&paths, &state);
+    append_log_line(
+        &log_path,
+        &format!("[{:?}] {}", status, summary_or_error.replace('\n', " ")),
+    );
+}
+
+pub fn background_agent_cancel_requested(id: &str) -> bool {
+    let paths = DaemonPaths::default_user();
+    load_state(&paths)
+        .and_then(|state| state.background_agents.get(id).cloned())
+        .map(|agent| agent.cancel_requested && !agent.status.is_terminal())
+        .unwrap_or(false)
+}
+
+pub fn request_background_agent_cancel(paths: &DaemonPaths, id: &str) -> std::io::Result<()> {
+    let mut state = load_state(paths).unwrap_or_default();
+    let Some(agent) = state.background_agents.get_mut(id) else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("no background agent `{id}`"),
+        ));
+    };
+    if agent.status.is_terminal() {
+        return Ok(());
+    }
+    agent.cancel_requested = true;
+    agent.updated_at = SystemTime::now();
+    let log_path = agent.log_path.clone();
+    save_state(paths, &state)?;
+    append_log_line(&log_path, "[cancel-requested]");
+    Ok(())
+}
+
+pub fn background_agents_string(paths: &DaemonPaths) -> String {
+    let state = reconcile_background_agents(paths).unwrap_or_default();
+    let mut agents: Vec<_> = state.background_agents.values().collect();
+    agents.sort_by_key(|a| a.started_at);
+    agents.reverse();
+    let mut s = String::new();
+    s.push_str("background agents:\n");
+    if agents.is_empty() {
+        s.push_str("  (none)\n");
+        return s;
+    }
+    for a in agents {
+        let age = SystemTime::now()
+            .duration_since(a.started_at)
+            .unwrap_or_default()
+            .as_secs();
+        let tokens = a
+            .latest_input_tokens
+            .saturating_add(a.cumulative_output_tokens);
+        let cancel = if a.cancel_requested {
+            " cancel-requested"
+        } else {
+            ""
+        };
+        s.push_str(&format!(
+            "  {} [{:?}{}] age={}s tools={} tokens={} :: {}\n",
+            a.id, a.status, cancel, age, a.tool_use_count, tokens, a.description
+        ));
+        if let Some(wt) = &a.worktree_path {
+            s.push_str(&format!("    worktree: {}\n", wt.display()));
+        }
+        s.push_str(&format!("    log: {}\n", a.log_path.display()));
+    }
+    s
+}
+
+pub fn background_agent_logs_string(paths: &DaemonPaths, id: &str, lines: usize) -> String {
+    let state = reconcile_background_agents(paths).unwrap_or_default();
+    let Some(agent) = state.background_agents.get(id) else {
+        return format!("no background agent `{id}`\n");
+    };
+    let mut s = format!(
+        "{} [{:?}] :: {}\n",
+        agent.id, agent.status, agent.description
+    );
+    for line in read_last_lines(&agent.log_path, lines) {
+        s.push_str(&line);
+        s.push('\n');
+    }
+    s
+}
+
+pub fn background_agents_for_restore(
+    paths: &DaemonPaths,
+    limit: usize,
+) -> Vec<BackgroundAgentInfo> {
+    let state = reconcile_background_agents(paths).unwrap_or_default();
+    let mut agents: Vec<_> = state.background_agents.into_values().collect();
+    agents.sort_by_key(|a| a.started_at);
+    agents.reverse();
+    let (active, terminal): (Vec<_>, Vec<_>) =
+        agents.into_iter().partition(|a| !a.status.is_terminal());
+    active.into_iter().chain(terminal).take(limit).collect()
+}
+
+pub async fn wait_background_agent_cli(
+    paths: &DaemonPaths,
+    id: &str,
+    timeout: Duration,
+) -> std::io::Result<String> {
+    let started = std::time::Instant::now();
+    loop {
+        let state = reconcile_background_agents(paths).unwrap_or_default();
+        let agent = state.background_agents.get(id).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("no background agent `{id}`"),
+            )
+        })?;
+        if agent.status.is_terminal() {
+            return Ok(format!(
+                "{} finished with {:?}: {}\n",
+                agent.id,
+                agent.status,
+                agent
+                    .summary
+                    .as_deref()
+                    .or(agent.error.as_deref())
+                    .unwrap_or("")
+            ));
+        }
+        if started.elapsed() >= timeout {
+            return Ok(format!("{} still {:?}\n", agent.id, agent.status));
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+pub async fn attach_background_agent_cli(
+    paths: &DaemonPaths,
+    id: &str,
+    lines: usize,
+) -> std::io::Result<()> {
+    use std::io::{Read, Seek, Write};
+
+    let state = reconcile_background_agents(paths)?;
+    let agent = state.background_agents.get(id).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("no background agent `{id}`"),
+        )
+    })?;
+    println!("{} [{:?}] :: {}", agent.id, agent.status, agent.description);
+    for line in read_last_lines(&agent.log_path, lines) {
+        println!("{line}");
+    }
+    std::io::stdout().flush()?;
+
+    let mut offset = std::fs::metadata(&agent.log_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    if agent.status.is_terminal() {
+        return Ok(());
+    }
+
+    loop {
+        let state = reconcile_background_agents(paths)?;
+        let agent = state.background_agents.get(id).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("no background agent `{id}`"),
+            )
+        })?;
+        if let Ok(mut file) = std::fs::File::open(&agent.log_path) {
+            let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+            if len < offset {
+                offset = 0;
+            }
+            if len > offset {
+                file.seek(std::io::SeekFrom::Start(offset))?;
+                let mut buf = String::new();
+                file.read_to_string(&mut buf)?;
+                print!("{buf}");
+                std::io::stdout().flush()?;
+                offset = len;
+            }
+        }
+        if agent.status.is_terminal() {
+            println!("[{:?}]", agent.status);
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Result<()> {
+    let launch_json = std::fs::read_to_string(&launch_path)?;
+    let launch: BackgroundAgentLaunch =
+        serde_json::from_str(&launch_json).map_err(std::io::Error::other)?;
+    let paths = DaemonPaths::default_user();
+    paths.ensure_dirs()?;
+
+    if let Err(e) = std::env::set_current_dir(&launch.cwd) {
+        let msg = format!("worker failed to enter cwd {}: {e}", launch.cwd.display());
+        mark_background_agent_spawn_failed(&paths, &launch.task_id, &msg)?;
+        return Err(e);
+    }
+
+    let provider_init = crate::build_providers();
+    let provider = launch
+        .provider_name
+        .as_deref()
+        .and_then(|name| {
+            provider_init
+                .providers
+                .iter()
+                .find(|provider| provider.name() == name)
+                .cloned()
+        })
+        .or_else(|| crate::provider_for_model(&provider_init.providers, launch.model.as_str()))
+        .unwrap_or_else(|| provider_init.providers[provider_init.active_idx].clone());
+
+    record_background_agent_started(
+        &launch.task_id,
+        &launch.task_input.description,
+        Some(launch.model.as_str().to_owned()),
+        None,
+    );
+    record_background_agent_launch_path(&paths, &launch.task_id, &launch_path)?;
+    append_log_line(
+        &background_agent_log_path(&paths, &launch.task_id),
+        &format!(
+            "[worker-running] pid={} provider={} cwd={}",
+            std::process::id(),
+            provider.name(),
+            launch.cwd.display()
+        ),
+    );
+
+    let (worktree_info, cwd_override) = prepare_background_worktree(&launch).await;
+    if let Some(path) = &cwd_override {
+        record_background_agent_started(
+            &launch.task_id,
+            &launch.task_input.description,
+            Some(launch.model.as_str().to_owned()),
+            Some(path.clone()),
+        );
+    }
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::app::AppEvent>(512);
+    let event_task_id = launch.task_id.clone();
+    let event_collector = tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                crate::app::AppEvent::AgentChunk { task_id, text }
+                    if task_id.as_str() == event_task_id =>
+                {
+                    record_background_agent_log(&event_task_id, &text);
+                }
+                crate::app::AppEvent::TaskProgress {
+                    task_id,
+                    last_tool,
+                    tool_use_count,
+                    input_tokens,
+                    output_tokens,
+                    ..
+                } if task_id.as_str() == event_task_id => {
+                    record_background_agent_progress(
+                        &event_task_id,
+                        last_tool.as_deref(),
+                        tool_use_count,
+                        input_tokens,
+                        output_tokens,
+                    );
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let task_store = launch
+        .active_team_name
+        .as_deref()
+        .map(crate::tasks::TaskStore::open_team);
+    let started = std::time::Instant::now();
+    let result = crate::tools::execute_task(
+        &launch.task_input,
+        provider.as_ref(),
+        launch.model.clone(),
+        Some(&tx),
+        Some(&launch.task_id),
+        launch.agent_def.as_ref(),
+        cwd_override.clone(),
+        task_store,
+        launch.active_team_name.as_deref(),
+    )
+    .await;
+    drop(tx);
+    let _ = event_collector.await;
+
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    finish_background_worktree(&launch.task_id, worktree_info).await;
+    if result.is_error() {
+        let was_cancelled = result
+            .output
+            .trim_start()
+            .to_ascii_lowercase()
+            .starts_with("cancelled:");
+        record_background_agent_finished(
+            &launch.task_id,
+            if was_cancelled {
+                BackgroundAgentStatus::Cancelled
+            } else {
+                BackgroundAgentStatus::Failed
+            },
+            &result.output,
+        );
+    } else {
+        record_background_agent_finished(
+            &launch.task_id,
+            BackgroundAgentStatus::Completed,
+            &result.output,
+        );
+    }
+    append_log_line(
+        &background_agent_log_path(&paths, &launch.task_id),
+        &format!("[worker-exited] elapsed_ms={elapsed_ms}"),
+    );
+    Ok(())
+}
+
+async fn prepare_background_worktree(
+    launch: &BackgroundAgentLaunch,
+) -> (
+    Option<(crate::worktrees::WorktreeInfo, PathBuf)>,
+    Option<PathBuf>,
+) {
+    if launch.task_input.isolation.as_deref() != Some("worktree") {
+        return (None, None);
+    }
+
+    let name = format!(
+        "agent-{}",
+        launch
+            .task_id
+            .replace("toolu_", "")
+            .chars()
+            .take(8)
+            .collect::<String>()
+    );
+    let repo_root = match crate::worktrees::find_repo_root_async(&launch.cwd).await {
+        Ok(root) => root,
+        Err(e) => {
+            record_background_agent_log(
+                &launch.task_id,
+                &format!(
+                    "[worktree] failed to resolve git root from {}: {e}; using cwd",
+                    launch.cwd.display()
+                ),
+            );
+            launch.cwd.clone()
+        }
+    };
+    match crate::worktrees::create_worktree_async(&repo_root, &name).await {
+        Ok(info) => {
+            let path = PathBuf::from(&info.path);
+            record_background_agent_log(
+                &launch.task_id,
+                &format!("[worktree] created {}", path.display()),
+            );
+            (Some((info, repo_root)), Some(path))
+        }
+        Err(e) => {
+            record_background_agent_log(
+                &launch.task_id,
+                &format!("[worktree] failed to create worktree: {e}; using cwd"),
+            );
+            (None, None)
+        }
+    }
+}
+
+async fn finish_background_worktree(
+    task_id: &str,
+    worktree_info: Option<(crate::worktrees::WorktreeInfo, PathBuf)>,
+) {
+    let Some((wt, repo_root)) = worktree_info else {
+        return;
+    };
+    let dirty = match tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(&wt.path)
+        .arg("status")
+        .arg("--porcelain")
+        .output()
+        .await
+    {
+        Ok(out) if out.status.success() => !out.stdout.is_empty(),
+        Ok(out) => {
+            record_background_agent_log(
+                task_id,
+                &format!(
+                    "[worktree] git status failed; preserving {}: {}",
+                    wt.path,
+                    String::from_utf8_lossy(&out.stderr)
+                ),
+            );
+            true
+        }
+        Err(e) => {
+            record_background_agent_log(
+                task_id,
+                &format!(
+                    "[worktree] git status spawn failed; preserving {}: {e}",
+                    wt.path
+                ),
+            );
+            true
+        }
+    };
+    if dirty {
+        record_background_agent_log(
+            task_id,
+            &format!(
+                "[worktree-preserved] path={} branch={} inspect=\"cd {} && git diff\"",
+                wt.path, wt.branch, wt.path
+            ),
+        );
+        return;
+    }
+    let wt_name = Path::new(&wt.path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    match crate::worktrees::remove_worktree_async(&repo_root, wt_name).await {
+        Ok(_) => {
+            record_background_agent_log(task_id, &format!("[worktree-removed] path={}", wt.path))
+        }
+        Err(e) => record_background_agent_log(
+            task_id,
+            &format!("[worktree] cleanup failed for {}: {e}", wt.path),
+        ),
+    }
+}
+
+fn reconcile_background_agents(paths: &DaemonPaths) -> std::io::Result<DaemonState> {
+    let mut state = load_state(paths).unwrap_or_default();
+    let now = SystemTime::now();
+    let mut changed = false;
+    let mut stale_logs = Vec::new();
+    let mut respawns: Vec<(String, PathBuf, PathBuf)> = Vec::new();
+
+    for agent in state.background_agents.values_mut() {
+        if agent.status != BackgroundAgentStatus::Running {
+            continue;
+        }
+        let owner_alive = agent.pid.map(process_is_running).unwrap_or(false);
+        if owner_alive {
+            continue;
+        }
+        let previous_pid = agent.pid;
+        if !agent.cancel_requested
+            && agent.respawn_count < 1
+            && let Some(launch_path) = agent.launch_path.clone()
+            && let Ok(launch_json) = std::fs::read_to_string(&launch_path)
+            && let Ok(launch) = serde_json::from_str::<BackgroundAgentLaunch>(&launch_json)
+        {
+            agent.respawn_count = agent.respawn_count.saturating_add(1);
+            agent.updated_at = now;
+            agent.pid = None;
+            stale_logs.push((
+                agent.log_path.clone(),
+                format!(
+                    "[respawn-requested] previous pid {:?} exited; restarting worker",
+                    previous_pid
+                ),
+            ));
+            respawns.push((agent.id.clone(), launch_path, launch.cwd));
+            changed = true;
+            continue;
+        }
+        agent.status = BackgroundAgentStatus::Failed;
+        agent.updated_at = now;
+        agent.completed_at = Some(now);
+        agent.cancel_requested = false;
+        let reason = match agent.pid {
+            Some(pid) => format!("stale: owning process {pid} exited before reporting completion"),
+            None => "stale: no owning process recorded".to_owned(),
+        };
+        agent.error = Some(reason.clone());
+        stale_logs.push((agent.log_path.clone(), format!("[Failed] {reason}")));
+        changed = true;
+    }
+
+    if changed {
+        save_state(paths, &state)?;
+        for (path, reason) in stale_logs {
+            append_log_line(&path, &reason);
+        }
+        for (id, launch_path, cwd) in respawns {
+            match spawn_worker_process(&launch_path, &cwd) {
+                Ok(child) => {
+                    let pid = child.id();
+                    record_background_agent_worker_pid(paths, &id, pid, &launch_path)?;
+                    append_log_line(
+                        &background_agent_log_path(paths, &id),
+                        &format!("[respawned] pid={pid}"),
+                    );
+                }
+                Err(e) => {
+                    mark_background_agent_spawn_failed(
+                        paths,
+                        &id,
+                        &format!("respawn failed: {e}"),
+                    )?;
+                }
+            }
+        }
+    }
+
+    Ok(state)
+}
+
 fn uuid_short() -> String {
     // If the system clock is set before UNIX_EPOCH (extreme skew or pre-1970
     // hardware clocks), saturate to ZERO. The resulting id collides with
@@ -802,6 +1688,7 @@ pub async fn run_daemon(paths: DaemonPaths) -> std::io::Result<()> {
         tokio::select! {
             _ = interval.tick() => {
                 let now = SystemTime::now();
+                let _ = reconcile_background_agents(&paths);
                 let fired = daemon.tick_cron(now);
                 for id in fired {
                     if let Some(job) = daemon.cron_by_id(&id).cloned() {
@@ -900,10 +1787,10 @@ pub fn stop_daemon(paths: &DaemonPaths) -> std::io::Result<()> {
             .args(["-TERM", &pid.to_string()])
             .output()?;
         if !result.status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("kill failed: {}", String::from_utf8_lossy(&result.stderr)),
-            ));
+            return Err(std::io::Error::other(format!(
+                "kill failed: {}",
+                String::from_utf8_lossy(&result.stderr)
+            )));
         }
     }
 
@@ -913,7 +1800,7 @@ pub fn stop_daemon(paths: &DaemonPaths) -> std::io::Result<()> {
 /// `jfc daemon status` — render a one-paragraph status string.
 pub fn status_string(paths: &DaemonPaths) -> String {
     let running = is_daemon_running(paths);
-    let state = load_state(paths).unwrap_or_default();
+    let state = reconcile_background_agents(paths).unwrap_or_default();
     let uptime = SystemTime::now()
         .duration_since(state.started_at)
         .unwrap_or_default()
@@ -946,12 +1833,21 @@ pub fn status_string(paths: &DaemonPaths) -> String {
         state.wakeups.len(),
         state.fired_wakeups.len()
     ));
+    s.push_str(&format!(
+        "background agents: {} ({} active)\n",
+        state.background_agents.len(),
+        state
+            .background_agents
+            .values()
+            .filter(|a| !a.status.is_terminal())
+            .count()
+    ));
     s
 }
 
 /// `jfc daemon list` — render cron jobs + pending wakeups.
 pub fn list_string(paths: &DaemonPaths) -> String {
-    let state = load_state(paths).unwrap_or_default();
+    let state = reconcile_background_agents(paths).unwrap_or_default();
     let mut s = String::new();
     s.push_str("cron jobs:\n");
     if state.cron_jobs.is_empty() {
@@ -979,6 +1875,24 @@ pub fn list_string(paths: &DaemonPaths) -> String {
         s.push_str(&format!(
             "  {} fires in {}s — {} :: {}\n",
             w.id, in_secs, w.reason, w.prompt
+        ));
+    }
+    s.push_str("background agents:\n");
+    if state.background_agents.is_empty() {
+        s.push_str("  (none)\n");
+    }
+    let mut agents: Vec<_> = state.background_agents.values().collect();
+    agents.sort_by_key(|a| a.started_at);
+    agents.reverse();
+    for a in agents.iter().take(20) {
+        s.push_str(&format!(
+            "  {} [{:?}] tools={} tokens={} :: {}\n",
+            a.id,
+            a.status,
+            a.tool_use_count,
+            a.latest_input_tokens
+                .saturating_add(a.cumulative_output_tokens),
+            a.description
         ));
     }
     s
@@ -1271,6 +2185,122 @@ mod tests {
         // Should not panic — `Daemon::new` falls back to default state.
         let d = Daemon::new(tmp.path()).unwrap();
         assert!(d.state.cron_jobs.is_empty());
+    }
+
+    #[test]
+    fn background_agent_state_roundtrip_normal() {
+        let tmp = TempDir::new().unwrap();
+        let paths = DaemonPaths::new(tmp.path());
+        paths.ensure_dirs().unwrap();
+        let log_path = background_agent_log_path(&paths, "task-1");
+        let mut state = DaemonState::default();
+        state.background_agents.insert(
+            "task-1".to_owned(),
+            BackgroundAgentInfo {
+                id: "task-1".to_owned(),
+                description: "inspect repo".to_owned(),
+                status: BackgroundAgentStatus::Running,
+                started_at: SystemTime::now(),
+                updated_at: SystemTime::now(),
+                completed_at: None,
+                pid: Some(std::process::id()),
+                model: Some("claude-sonnet-4-5".to_owned()),
+                worktree_path: Some(tmp.path().join("wt")),
+                log_path: log_path.clone(),
+                launch_path: None,
+                cancel_requested: false,
+                respawn_count: 0,
+                summary: None,
+                error: None,
+                tool_use_count: 2,
+                latest_input_tokens: 100,
+                cumulative_output_tokens: 25,
+            },
+        );
+        save_state(&paths, &state).unwrap();
+
+        let out = background_agents_string(&paths);
+        assert!(out.contains("task-1"));
+        assert!(out.contains("tokens=125"));
+        assert!(out.contains("worktree:"));
+    }
+
+    #[test]
+    fn background_agent_cancel_request_normal() {
+        let tmp = TempDir::new().unwrap();
+        let paths = DaemonPaths::new(tmp.path());
+        paths.ensure_dirs().unwrap();
+        let log_path = background_agent_log_path(&paths, "task-cancel");
+        let mut state = DaemonState::default();
+        state.background_agents.insert(
+            "task-cancel".to_owned(),
+            BackgroundAgentInfo {
+                id: "task-cancel".to_owned(),
+                description: "long run".to_owned(),
+                status: BackgroundAgentStatus::Running,
+                started_at: SystemTime::now(),
+                updated_at: SystemTime::now(),
+                completed_at: None,
+                pid: Some(std::process::id()),
+                model: None,
+                worktree_path: None,
+                log_path: log_path.clone(),
+                launch_path: None,
+                cancel_requested: false,
+                respawn_count: 0,
+                summary: None,
+                error: None,
+                tool_use_count: 0,
+                latest_input_tokens: 0,
+                cumulative_output_tokens: 0,
+            },
+        );
+        save_state(&paths, &state).unwrap();
+
+        request_background_agent_cancel(&paths, "task-cancel").unwrap();
+        let state = load_state(&paths).unwrap();
+        assert!(state.background_agents["task-cancel"].cancel_requested);
+        assert!(read_last_lines(&log_path, 1)[0].contains("[cancel-requested]"));
+    }
+
+    #[test]
+    fn background_agent_stale_owner_marked_failed_robust() {
+        let tmp = TempDir::new().unwrap();
+        let paths = DaemonPaths::new(tmp.path());
+        paths.ensure_dirs().unwrap();
+        let log_path = background_agent_log_path(&paths, "task-stale");
+        let mut state = DaemonState::default();
+        state.background_agents.insert(
+            "task-stale".to_owned(),
+            BackgroundAgentInfo {
+                id: "task-stale".to_owned(),
+                description: "lost run".to_owned(),
+                status: BackgroundAgentStatus::Running,
+                started_at: SystemTime::now(),
+                updated_at: SystemTime::now(),
+                completed_at: None,
+                pid: Some(0),
+                model: None,
+                worktree_path: None,
+                log_path: log_path.clone(),
+                launch_path: None,
+                cancel_requested: true,
+                respawn_count: 0,
+                summary: None,
+                error: None,
+                tool_use_count: 0,
+                latest_input_tokens: 0,
+                cumulative_output_tokens: 0,
+            },
+        );
+        save_state(&paths, &state).unwrap();
+
+        let state = reconcile_background_agents(&paths).unwrap();
+        let agent = &state.background_agents["task-stale"];
+        assert_eq!(agent.status, BackgroundAgentStatus::Failed);
+        assert!(!agent.cancel_requested);
+        assert!(agent.error.as_deref().unwrap_or_default().contains("stale"));
+        assert!(read_last_lines(&log_path, 1)[0].contains("[Failed] stale"));
     }
 
     // ─── ScheduleWakeup persistence (DO-178B _normal/_robust) ───────────

@@ -606,7 +606,7 @@ pub struct TaskStatusPart {
     pub elapsed_ms: Option<u64>,
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TaskInput {
     pub description: String,
     pub prompt: String,
@@ -2015,7 +2015,12 @@ impl ToolInput {
                 isolation: opt_str_field("isolation"),
             }),
             ToolKind::Skill => Self::Skill {
-                name: req_str("name")?,
+                name: opt_str_field("name")
+                    .or_else(|| opt_str_field("skill"))
+                    .ok_or_else(|| ToolInputError::MissingField {
+                        tool: tool(),
+                        field: "name",
+                    })?,
                 args: opt_str_field("args"),
             },
             ToolKind::ToolSearch => Self::ToolSearch {
@@ -3782,6 +3787,25 @@ mod tests {
             args: Some(String::new()),
         };
         assert_eq!(empty_args.summary(), "review");
+    }
+
+    #[test]
+    fn tool_input_from_value_skill_accepts_claude_skill_alias_robust() {
+        let input = ToolInput::from_value(
+            "Skill",
+            serde_json::json!({
+                "skill": "code-review",
+                "args": "focus on regressions"
+            }),
+        )
+        .expect("skill alias should parse");
+        match input {
+            ToolInput::Skill { name, args } => {
+                assert_eq!(name, "code-review");
+                assert_eq!(args.as_deref(), Some("focus on regressions"));
+            }
+            other => panic!("expected Skill input, got {other:?}"),
+        }
     }
 
     #[test]

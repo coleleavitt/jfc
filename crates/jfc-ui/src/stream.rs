@@ -1837,6 +1837,7 @@ pub fn dispatch_tools_batched(
     tx: &mpsc::Sender<AppEvent>,
     dedup: Arc<Mutex<ReadDedupCache>>,
     task_store: Option<Arc<crate::tasks::TaskStore>>,
+    active_team_name: Option<String>,
     provider: Arc<dyn crate::provider::Provider>,
     model: crate::provider::ModelId,
     teammate_event_tx: mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
@@ -1937,6 +1938,7 @@ pub fn dispatch_tools_batched(
                 provider: provider.clone(),
                 model_id: teammate_model,
                 system_prompt: None,
+                task_store: Some(crate::tasks::TaskStore::open_team(&team_name)),
             };
 
             let teammate_event_tx = teammate_event_tx.clone();
@@ -2044,6 +2046,8 @@ pub fn dispatch_tools_batched(
         let task_id = tc.id.as_str().to_owned();
         let description = task_input.description.clone();
         let done = send_all_complete.clone();
+        let task_store_task = task_store.clone();
+        let active_team_name_task = active_team_name.clone();
 
         // Resolve `subagent_type` to a concrete `AgentDef`. When unset
         // or unknown, falls back to `None` and `execute_task` runs with
@@ -2081,6 +2085,56 @@ pub fn dispatch_tools_batched(
             }
         }
 
+        if task_input.run_in_background {
+            let launch = crate::daemon::BackgroundAgentLaunch {
+                task_id: task_id.clone(),
+                task_input: task_input.clone(),
+                model: model.clone(),
+                provider_name: Some(provider.name().to_owned()),
+                agent_def: agent_def.clone(),
+                cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                active_team_name: active_team_name_task.clone(),
+                created_at: std::time::SystemTime::now(),
+            };
+            let spawn_result = crate::daemon::spawn_background_agent_worker(launch);
+            match spawn_result {
+                Ok(pid) => {
+                    let _ = tx_task.try_send(AppEvent::TaskStarted {
+                        task_id: crate::ids::TaskId::from(task_id.clone()),
+                        description: description.clone(),
+                        model_used: model_used.clone(),
+                        max_input_tokens,
+                    });
+                    let result_json = serde_json::json!({
+                        "status": "background_task_started",
+                        "task_id": task_id.clone(),
+                        "worker_pid": pid,
+                        "description": description.clone(),
+                        "message": "Task is running in a detached worker. Use `jfc daemon agents`, `jfc daemon attach <task_id>`, `jfc daemon wait <task_id>`, or `jfc daemon kill <task_id>`."
+                    });
+                    let _ = tx_task.try_send(AppEvent::ToolResult {
+                        tool_id: crate::ids::ToolId::from(task_id.clone()),
+                        result: crate::tools::ExecutionResult::success(
+                            serde_json::to_string_pretty(&result_json).unwrap_or_default(),
+                        ),
+                    });
+                }
+                Err(e) => {
+                    let error = format!("failed to spawn background worker: {e}");
+                    let _ = tx_task.try_send(AppEvent::TaskFailed {
+                        task_id: crate::ids::TaskId::from(task_id.clone()),
+                        error: error.clone(),
+                    });
+                    let _ = tx_task.try_send(AppEvent::ToolResult {
+                        tool_id: crate::ids::ToolId::from(task_id.clone()),
+                        result: crate::tools::ExecutionResult::failure(error),
+                    });
+                }
+            }
+            done();
+            continue;
+        }
+
         tokio::spawn(async move {
             // If isolation: "worktree", create a git worktree for this agent
             let worktree_info = if task_input.isolation.as_deref() == Some("worktree") {
@@ -2092,19 +2146,33 @@ pub fn dispatch_tools_batched(
                         .take(8)
                         .collect::<String>()
                 );
-                let repo_root = std::env::current_dir().unwrap_or_default();
-                match crate::worktrees::create_worktree(&repo_root, &name) {
+                let cwd = std::env::current_dir().unwrap_or_default();
+                let repo_root = match crate::worktrees::find_repo_root_async(&cwd).await {
+                    Ok(root) => root,
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "jfc::stream",
+                            cwd = %cwd.display(),
+                            error = %e,
+                            "task tool: failed to resolve git root, falling back to cwd for worktree"
+                        );
+                        cwd
+                    }
+                };
+                match crate::worktrees::create_worktree_async(&repo_root, &name).await {
                     Ok(info) => {
                         tracing::info!(
                             target: "jfc::stream",
+                            repo_root = %repo_root.display(),
                             worktree = %info.path,
                             "task tool: created worktree for isolated agent"
                         );
-                        Some(info)
+                        Some((info, repo_root))
                     }
                     Err(e) => {
                         tracing::warn!(
                             target: "jfc::stream",
+                            repo_root = %repo_root.display(),
                             error = %e,
                             "task tool: failed to create worktree, running in cwd"
                         );
@@ -2126,12 +2194,11 @@ pub fn dispatch_tools_batched(
             let _ = tx_task
                 .send(AppEvent::TaskStarted {
                     task_id: crate::ids::TaskId::from(task_id.clone()),
-                    description,
-                    model_used,
+                    description: description.clone(),
+                    model_used: model_used.clone(),
                     max_input_tokens,
                 })
                 .await;
-
             let started = std::time::Instant::now();
             // Forward the subagent's streaming text into the main event
             // loop (`AppEvent::AgentChunk`) so the task view fills live
@@ -2146,7 +2213,13 @@ pub fn dispatch_tools_batched(
             // existed on disk but the agent ran against the parent cwd.
             let cwd_override = worktree_info
                 .as_ref()
-                .map(|info| std::path::PathBuf::from(&info.path));
+                .map(|(info, _)| std::path::PathBuf::from(&info.path));
+            crate::daemon::record_background_agent_started(
+                &task_id,
+                &description,
+                model_used.clone(),
+                cwd_override.clone(),
+            );
             let result = crate::tools::execute_task(
                 &task_input,
                 provider_task.as_ref(),
@@ -2155,6 +2228,8 @@ pub fn dispatch_tools_batched(
                 Some(&task_id),
                 agent_def.as_ref(),
                 cwd_override,
+                task_store_task,
+                active_team_name_task.as_deref(),
             )
             .await;
             let elapsed_ms = started.elapsed().as_millis() as u64;
@@ -2198,7 +2273,10 @@ pub fn dispatch_tools_batched(
             // branch are returned in the result." `git status
             // --porcelain` is the standard "is the working tree clean"
             // signal — quiet, scriptable, exit-code aware.
-            let worktree_outcome: Option<(crate::worktrees::WorktreeInfo, bool)> = if let Some(wt) =
+            let worktree_outcome: Option<(crate::worktrees::WorktreeInfo, bool)> = if let Some((
+                wt,
+                repo_root,
+            )) =
                 worktree_info
             {
                 let dirty = match tokio::process::Command::new("git")
@@ -2230,14 +2308,14 @@ pub fn dispatch_tools_batched(
                     }
                 };
                 if !dirty {
-                    let repo_root = std::env::current_dir().unwrap_or_default();
                     let wt_name = std::path::Path::new(&wt.path)
                         .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("");
-                    match crate::worktrees::remove_worktree(&repo_root, wt_name) {
+                    match crate::worktrees::remove_worktree_async(&repo_root, wt_name).await {
                         Ok(_) => tracing::info!(
                             target: "jfc::stream",
+                            repo_root = %repo_root.display(),
                             worktree = %wt.path,
                             "worktree had no changes — removed"
                         ),
@@ -2261,30 +2339,32 @@ pub fn dispatch_tools_batched(
                 None
             };
 
-            let _ = tx_task
-                .send(AppEvent::ToolResult {
-                    tool_id: crate::ids::ToolId::from(task_id),
-                    result: match &worktree_outcome {
-                        Some((wt, true)) => crate::tools::ExecutionResult::success(format!(
-                            "{}\n\n[worktree preserved with uncommitted changes]\n\
-                         path: {}\nbranch: {}\n\
-                         To inspect: cd {} && git diff\n\
-                         To merge:   git merge {}\n\
-                         To discard: git worktree remove {} && git branch -D {}",
-                            result.output,
-                            wt.path,
-                            wt.branch,
-                            wt.path,
-                            wt.branch,
-                            wt.path,
-                            wt.branch,
-                        )),
-                        Some((_, false)) | None => result,
-                    },
-                })
-                .await;
+            if !task_input.run_in_background {
+                let _ = tx_task
+                    .send(AppEvent::ToolResult {
+                        tool_id: crate::ids::ToolId::from(task_id),
+                        result: match &worktree_outcome {
+                            Some((wt, true)) => crate::tools::ExecutionResult::success(format!(
+                                "{}\n\n[worktree preserved with uncommitted changes]\n\
+                             path: {}\nbranch: {}\n\
+                             To inspect: cd {} && git diff\n\
+                             To merge:   git merge {}\n\
+                             To discard: git worktree remove {} && git branch -D {}",
+                                result.output,
+                                wt.path,
+                                wt.branch,
+                                wt.path,
+                                wt.branch,
+                                wt.path,
+                                wt.branch,
+                            )),
+                            Some((_, false)) | None => result,
+                        },
+                    })
+                    .await;
 
-            done();
+                done();
+            }
         });
     }
 
@@ -2308,7 +2388,7 @@ pub fn dispatch_tools_batched(
                 _ = cancel_batch.cancelled() => {
                     tracing::info!(target: "jfc::stream", "tool batch cancelled via token");
                 }
-                _ = scheduler::execute_batches(batches, &tx_clone, cwd, dedup, task_store, None) => {}
+                _ = scheduler::execute_batches(batches, &tx_clone, cwd, dedup, task_store, active_team_name) => {}
             }
             done();
         });

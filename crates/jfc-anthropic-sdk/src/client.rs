@@ -67,10 +67,6 @@ impl Client {
         }
     }
 
-    pub(crate) fn http(&self) -> &reqwest::Client {
-        &self.inner.http
-    }
-
     pub(crate) fn base_url(&self) -> &str {
         &self.inner.base_url
     }
@@ -84,10 +80,19 @@ impl Client {
         beta: Option<&str>,
     ) -> reqwest::RequestBuilder {
         let url = format!("{}{}", self.inner.base_url, path);
+        self.request_url(method, url, beta)
+    }
+
+    pub(crate) fn request_url(
+        &self,
+        method: Method,
+        url: impl reqwest::IntoUrl,
+        beta: Option<&str>,
+    ) -> reqwest::RequestBuilder {
         let mut req = self
             .inner
             .http
-            .request(method, &url)
+            .request(method, url)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("user-agent", &self.inner.user_agent);
         match &self.inner.auth {
@@ -152,7 +157,7 @@ impl Client {
     }
 }
 
-async fn into_api_error(resp: Response) -> Error {
+pub(crate) async fn into_api_error(resp: Response) -> Error {
     let status = resp.status();
     let request_id = resp
         .headers()
