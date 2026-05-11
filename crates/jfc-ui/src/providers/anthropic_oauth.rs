@@ -683,14 +683,15 @@ fn is_stream_rate_limit_message(message: &str) -> bool {
 fn wrap_with_usage_recording(
     inner: EventStream,
     mgr: super::anthropic_accounts::AccountManager,
+    guard: super::anthropic_accounts::AccountRequestGuard,
     account_name: String,
     model: String,
 ) -> EventStream {
     use futures::stream::{self};
     let state = std::sync::Arc::new(tokio::sync::Mutex::new((0u64, 0u64, 0u64, 0u64)));
     let stream = stream::unfold(
-        (inner, state, mgr, account_name, model),
-        |(mut inner, state, mgr, account_name, model)| async move {
+        (inner, state, mgr, guard, account_name, model),
+        |(mut inner, state, mgr, guard, account_name, model)| async move {
             let mut next = inner.next().await?;
             if let Ok(StreamEvent::Error { message }) = &next
                 && is_stream_rate_limit_message(message)
@@ -762,7 +763,7 @@ fn wrap_with_usage_recording(
                     }
                 }
             }
-            Some((next, (inner, state, mgr, account_name, model)))
+            Some((next, (inner, state, mgr, guard, account_name, model)))
         },
     );
     Box::pin(stream)
@@ -1103,7 +1104,8 @@ impl Provider for AnthropicOAuthProvider {
             let mut hit_rate_limit_this_round = false;
 
             for attempt in 0..ROTATION_MAX_ATTEMPTS {
-                let Some(account) = mgr.pick_next_excluding(&tried).await else {
+                let Some((account, request_guard)) = mgr.acquire_next_excluding(&tried).await
+                else {
                     break;
                 };
                 tried.insert(account.name.clone());
@@ -1198,6 +1200,7 @@ impl Provider for AnthropicOAuthProvider {
                         return Ok(wrap_with_usage_recording(
                             stream,
                             mgr.clone(),
+                            request_guard,
                             account.name.clone(),
                             model_in_use.clone(),
                         ));
@@ -1405,7 +1408,8 @@ impl Provider for AnthropicOAuthProvider {
             let mut hit_rate_limit_this_round = false;
 
             for attempt in 0..ROTATION_MAX_ATTEMPTS {
-                let Some(account) = mgr.pick_next_excluding(&tried).await else {
+                let Some((account, _request_guard)) = mgr.acquire_next_excluding(&tried).await
+                else {
                     break;
                 };
                 tried.insert(account.name.clone());
