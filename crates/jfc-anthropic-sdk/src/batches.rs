@@ -139,7 +139,9 @@ impl MessageBatchService {
                     .request(Method::GET, &path, Some(beta::MESSAGE_BATCHES))
             })
             .await?;
-        Ok(Box::pin(resp.bytes_stream().map(|chunk| chunk.map(|b| b.to_vec()))))
+        Ok(Box::pin(
+            resp.bytes_stream().map(|chunk| chunk.map(|b| b.to_vec())),
+        ))
     }
 }
 
