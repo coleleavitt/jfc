@@ -30,15 +30,11 @@ pub fn streaming_client() -> reqwest::Client {
         .expect("provider HTTP client configuration is valid")
 }
 
-/// Send an HTTP request with automatic retry on connection-level
-/// failures. Each attempt invokes `build` to construct a fresh
-/// `RequestBuilder` (so the body and headers are re-serialized) and
-/// awaits its `.send()` future. Retries on `is_connect` / `is_timeout`
-/// / `is_request` errors using `RetryConfig::default()`'s exponential
-/// backoff with jitter; bails on non-retriable errors and on retry
-/// exhaustion. Status-code retries are *not* handled here — the
-/// caller still sees a `Response` and decides how to map 4xx/5xx
-/// onto its provider-specific error messages.
+/// Send an HTTP request with automatic retry on transient failures.
+/// Each attempt invokes `build` to construct a fresh `RequestBuilder`
+/// (so the body and headers are re-serialized) and awaits its `.send()`
+/// future. Retries on connection-level failures as well as transient
+/// HTTP statuses like 408/409/425/429/5xx.
 ///
 /// This addresses the `error sending request for url (…)` failures
 /// users hit on flaky networks or load-balanced proxies (e.g.
@@ -57,6 +53,23 @@ where
     for attempt in 0..=config.max_retries {
         match build().await {
             Ok(resp) => {
+                let status = resp.status();
+                if super::retry::should_retry_status(status.as_u16(), Some(resp.headers()))
+                    && attempt < config.max_retries
+                {
+                    let delay = config.delay_for_attempt(attempt);
+                    tracing::warn!(
+                        target: "jfc::http::retry",
+                        operation = operation,
+                        attempt = attempt + 1,
+                        max = config.max_retries + 1,
+                        status = status.as_u16(),
+                        delay_ms = delay.as_millis() as u64,
+                        "retrying after transient HTTP status"
+                    );
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
                 if attempt > 0 {
                     tracing::info!(
                         target: "jfc::http::retry",
@@ -242,5 +255,57 @@ mod tests {
         .await;
         assert!(res.is_ok(), "happy path should succeed");
         assert_eq!(attempts.load(Ordering::SeqCst), 1, "no retry on success");
+    }
+
+    // Normal: transient HTTP statuses should be retried before the
+    // final response is returned to the provider.
+    #[tokio::test(flavor = "current_thread")]
+    async fn send_with_retry_retries_504_before_success_normal() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let attempts = std::sync::Arc::new(AtomicU32::new(0));
+        let attempts_server = attempts.clone();
+
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut s, _)) = listener.accept().await else {
+                    break;
+                };
+                let n = attempts_server.fetch_add(1, Ordering::SeqCst);
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = s.read(&mut buf).await;
+                if n == 0 {
+                    let _ = s
+                        .write_all(
+                            b"HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 7\r\n\r\ntimeout",
+                        )
+                        .await;
+                } else {
+                    let _ = s
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                        .await;
+                }
+                let _ = s.shutdown().await;
+                if n > 0 {
+                    break;
+                }
+            }
+        });
+
+        let client = reqwest::Client::new();
+        let url = format!("http://{addr}/");
+        let res = send_with_retry("test.status_retry", || client.get(&url).send())
+            .await
+            .expect("request should succeed after retry");
+
+        assert_eq!(res.status(), reqwest::StatusCode::OK);
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            2,
+            "expected one retry after 504"
+        );
     }
 }

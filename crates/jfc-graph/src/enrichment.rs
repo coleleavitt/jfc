@@ -164,7 +164,8 @@ mod tests {
             }),
         };
 
-        let stats = LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
+        let stats =
+            LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
 
         assert_eq!(stats.total_unresolved, 1);
         assert_eq!(stats.resolved_internal, 1);
@@ -177,7 +178,8 @@ mod tests {
         let graph = build_graph_with_unresolved();
 
         let provider = MockProvider { definition: None };
-        let stats = LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
+        let stats =
+            LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
 
         assert_eq!(stats.total_unresolved, 1);
         assert_eq!(stats.resolved_internal, 0);
@@ -197,7 +199,8 @@ mod tests {
             }),
         };
 
-        let stats = LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
+        let stats =
+            LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
 
         assert_eq!(stats.total_unresolved, 1);
         assert_eq!(stats.resolved_internal, 0);
@@ -223,7 +226,8 @@ mod tests {
         graph.add_edge(&a_id, &b_id, edge).unwrap();
 
         let provider = MockProvider { definition: None };
-        let stats = LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
+        let stats =
+            LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
 
         assert_eq!(stats.total_unresolved, 0);
     }
@@ -232,7 +236,8 @@ mod tests {
     fn test_empty_graph() {
         let graph = CodeGraph::new();
         let provider = MockProvider { definition: None };
-        let stats = LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
+        let stats =
+            LspEnricher::analyze_unresolved_calls(&graph, &provider, Path::new("/workspace"));
         assert_eq!(stats, EnrichmentStats::default());
     }
 }

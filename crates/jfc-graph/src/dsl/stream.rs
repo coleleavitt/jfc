@@ -37,12 +37,7 @@ use crate::nodes::NodeId;
 /// `score_of` is called once per input element. Elements with no
 /// parsable value for the field receive `f64::NEG_INFINITY` and are
 /// always last.
-pub fn stream_top_k_by<I>(
-    iter: I,
-    graph: &CodeGraph,
-    field: &str,
-    k: usize,
-) -> Vec<NodeId>
+pub fn stream_top_k_by<I>(iter: I, graph: &CodeGraph, field: &str, k: usize) -> Vec<NodeId>
 where
     I: IntoIterator<Item = NodeId>,
 {
@@ -200,9 +195,17 @@ mod tests {
         let a = g.add_node(mk("a", "5"));
         let b = g.add_node(mk("b", "not a number"));
         let c = g.add_node(mk("c", "10"));
-        let out = stream_top_k_by(vec![a.clone(), b.clone(), c.clone()].into_iter(), &g, "score", 2);
+        let out = stream_top_k_by(
+            vec![a.clone(), b.clone(), c.clone()].into_iter(),
+            &g,
+            "score",
+            2,
+        );
         assert_eq!(out.len(), 2);
-        let names: Vec<String> = out.iter().map(|id| g.get_node(id).unwrap().name.clone()).collect();
+        let names: Vec<String> = out
+            .iter()
+            .map(|id| g.get_node(id).unwrap().name.clone())
+            .collect();
         assert_eq!(names, vec!["c", "a"]);
     }
 
@@ -223,20 +226,14 @@ mod tests {
         let _ = stream_exists(it, |id| id.0 == 5);
         // We can't observe `consumed` directly due to closure
         // ownership; rely on correctness via finite iteration.
-        assert!(stream_exists(
-            (0..10).map(|i| NodeId(i)),
-            |id| id.0 == 5,
-        ));
+        assert!(stream_exists((0..10).map(|i| NodeId(i)), |id| id.0 == 5,));
         assert!(!stream_exists((0..3).map(|i| NodeId(i)), |id| id.0 == 100));
     }
 
     #[test]
     fn forall_short_circuits() {
         assert!(stream_forall((0..5).map(|i| NodeId(i)), |id| id.0 < 100));
-        assert!(!stream_forall(
-            (0..5).map(|i| NodeId(i)),
-            |id| id.0 < 3,
-        ));
+        assert!(!stream_forall((0..5).map(|i| NodeId(i)), |id| id.0 < 3,));
     }
 
     #[test]
@@ -246,7 +243,10 @@ mod tests {
         let b = g.add_node(mk("b", "5"));
         let c = g.add_node(mk("c", "3"));
         let out = stream_top_k_by(vec![a, b.clone(), c.clone()].into_iter(), &g, "score", 3);
-        let names: Vec<String> = out.iter().map(|id| g.get_node(id).unwrap().name.clone()).collect();
+        let names: Vec<String> = out
+            .iter()
+            .map(|id| g.get_node(id).unwrap().name.clone())
+            .collect();
         assert_eq!(names, vec!["b", "c", "a"]);
     }
 

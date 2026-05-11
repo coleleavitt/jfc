@@ -261,9 +261,7 @@ pub fn traverse_csr(
                 match config.direction {
                     TraversalDirection::Outgoing => snapshot.out_degree(cv),
                     TraversalDirection::Incoming => snapshot.in_degree(cv),
-                    TraversalDirection::Both => {
-                        snapshot.out_degree(cv) + snapshot.in_degree(cv)
-                    }
+                    TraversalDirection::Both => snapshot.out_degree(cv) + snapshot.in_degree(cv),
                 }
             })
             .sum();
@@ -305,9 +303,10 @@ pub fn traverse_csr(
 
             for batch in local_results {
                 for (cur, nbr) in batch {
-                    if let (Some(cur_id), Some(nbr_id)) =
-                        (snapshot.id_of(CsrVertex(cur)), snapshot.id_of(CsrVertex(nbr)))
-                    {
+                    if let (Some(cur_id), Some(nbr_id)) = (
+                        snapshot.id_of(CsrVertex(cur)),
+                        snapshot.id_of(CsrVertex(nbr)),
+                    ) {
                         result_edges.push((cur_id.clone(), nbr_id.clone()));
                         if visited.contains(&nbr) {
                             cycles_detected_at.push(nbr_id.clone());
@@ -344,8 +343,7 @@ pub fn traverse_csr(
                 };
                 let cur_id = snapshot.id_of(cv).cloned();
                 for nbr in neighbours {
-                    if let (Some(cur_id), Some(nbr_id)) =
-                        (&cur_id, snapshot.id_of(CsrVertex(nbr)))
+                    if let (Some(cur_id), Some(nbr_id)) = (&cur_id, snapshot.id_of(CsrVertex(nbr)))
                     {
                         result_edges.push((cur_id.clone(), nbr_id.clone()));
                         if visited.contains(&nbr) {
@@ -592,10 +590,7 @@ pub fn all_simple_paths(
     let inner = graph.inner();
 
     // Iterative DFS frame: (node, neighbor iterator).
-    type Frame<'a> = (
-        NodeIndex,
-        petgraph::stable_graph::Neighbors<'a, EdgeData>,
-    );
+    type Frame<'a> = (NodeIndex, petgraph::stable_graph::Neighbors<'a, EdgeData>);
 
     let mut path: Vec<NodeIndex> = Vec::new();
     let mut on_path: HashSet<NodeIndex> = HashSet::new();
@@ -603,7 +598,10 @@ pub fn all_simple_paths(
 
     path.push(source_idx);
     on_path.insert(source_idx);
-    stack.push((source_idx, inner.neighbors_directed(source_idx, Direction::Outgoing)));
+    stack.push((
+        source_idx,
+        inner.neighbors_directed(source_idx, Direction::Outgoing),
+    ));
 
     while let Some((_node, iter)) = stack.last_mut() {
         // Path length in *edges* (hops) is `path.len() - 1`. A new neighbor
@@ -642,7 +640,10 @@ pub fn all_simple_paths(
                 // Descend.
                 path.push(neighbor);
                 on_path.insert(neighbor);
-                stack.push((neighbor, inner.neighbors_directed(neighbor, Direction::Outgoing)));
+                stack.push((
+                    neighbor,
+                    inner.neighbors_directed(neighbor, Direction::Outgoing),
+                ));
             }
             None => {
                 // No more neighbors — backtrack.
@@ -1407,13 +1408,13 @@ mod tests {
         g.add_edge(&b, &d, make_edge()).unwrap();
         g.add_edge(&c, &d, make_edge()).unwrap();
 
-        let path =
-            find_path_avoiding_edge(&g, &a, &d, 10, |edge| edge.weight == 99.0).unwrap();
+        let path = find_path_avoiding_edge(&g, &a, &d, 10, |edge| edge.weight == 99.0).unwrap();
         assert_eq!(path, vec![a.clone(), c.clone(), d.clone()]);
 
         // Blacklisting all outgoing edges from A produces no path.
-        let blocked =
-            find_path_avoiding_edge(&g, &a, &d, 10, |edge| edge.weight > 0.0 || edge.weight == 0.0);
+        let blocked = find_path_avoiding_edge(&g, &a, &d, 10, |edge| {
+            edge.weight > 0.0 || edge.weight == 0.0
+        });
         assert!(blocked.is_none());
     }
 

@@ -277,7 +277,9 @@ mod revision_tracking_tests {
 
         // Overwrite path: same NodeId, different metadata.
         let mut updated = node("a");
-        updated.metadata.insert("updated".to_string(), "y".to_string());
+        updated
+            .metadata
+            .insert("updated".to_string(), "y".to_string());
         g.add_node(updated);
         let after = g.get_node(&id).unwrap();
         assert_eq!(after.birth_revision, 1, "birth must be preserved");

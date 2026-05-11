@@ -5,9 +5,7 @@ use std::sync::Mutex;
 use tracing::warn;
 use tree_sitter::{Node as TsNode, Parser};
 
-use crate::adapter::{
-    AdapterError, LanguageAdapter, ParseOutcome, ParsedFile, first_syntax_error,
-};
+use crate::adapter::{AdapterError, LanguageAdapter, ParseOutcome, ParsedFile, first_syntax_error};
 use crate::edges::{EdgeData, EdgeKind};
 use crate::nodes::{NodeData, NodeId, NodeKind, Span, Visibility};
 
@@ -66,11 +64,7 @@ impl LanguageAdapter for RustAdapter {
         })
     }
 
-    fn parse_file_lenient(
-        &self,
-        path: &Path,
-        content: &str,
-    ) -> Result<ParseOutcome, AdapterError> {
+    fn parse_file_lenient(&self, path: &Path, content: &str) -> Result<ParseOutcome, AdapterError> {
         let tree = self
             .parser
             .lock()
@@ -263,7 +257,10 @@ fn extract_function(
             let mut c = p.walk();
             p.named_children(&mut c)
                 .filter(|n| {
-                    matches!(n.kind(), "parameter" | "self_parameter" | "variadic_parameter")
+                    matches!(
+                        n.kind(),
+                        "parameter" | "self_parameter" | "variadic_parameter"
+                    )
                 })
                 .count()
         })
@@ -274,12 +271,13 @@ fn extract_function(
 
     // Detect `async fn` — look for `async` modifier child.
     let mut cursor = node.walk();
-    let is_async = node
-        .children(&mut cursor)
-        .any(|c| c.kind() == "async" || c.kind() == "function_modifiers" && {
-            let mut mc = c.walk();
-            c.children(&mut mc).any(|m| m.kind() == "async")
-        });
+    let is_async = node.children(&mut cursor).any(|c| {
+        c.kind() == "async"
+            || c.kind() == "function_modifiers" && {
+                let mut mc = c.walk();
+                c.children(&mut mc).any(|m| m.kind() == "async")
+            }
+    });
     if is_async {
         metadata.insert("async".into(), "true".into());
     }
@@ -1224,9 +1222,10 @@ fn known() {}
             outcome.error.is_some(),
             "expected SyntaxError on partial tree"
         );
-        assert!(
-            matches!(outcome.error.as_ref(), Some(AdapterError::SyntaxError { .. })),
-        );
+        assert!(matches!(
+            outcome.error.as_ref(),
+            Some(AdapterError::SyntaxError { .. })
+        ),);
         // Tree should still be usable — we should at least see `first`.
         let nodes = adapter.extract_nodes(&outcome.parsed);
         assert!(

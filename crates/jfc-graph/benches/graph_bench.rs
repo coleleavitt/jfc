@@ -141,11 +141,7 @@ fn bench_dsl_eval(c: &mut Criterion) {
     let (g, _) = chain_graph(500);
     let cfg = QueryConfig::default();
     c.bench_function("dsl_eval_fn_callers_depth3", |b| {
-        b.iter(|| {
-            black_box(
-                run_query_expr(r#"fn("n0") | callees | depth 3"#, &g, &cfg).unwrap(),
-            )
-        });
+        b.iter(|| black_box(run_query_expr(r#"fn("n0") | callees | depth 3"#, &g, &cfg).unwrap()));
     });
 }
 

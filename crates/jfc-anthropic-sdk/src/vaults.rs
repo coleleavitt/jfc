@@ -24,10 +24,22 @@ pub struct Vault {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CredentialAuth {
-    Bearer { token: String },
-    GithubPat { token: String },
-    OauthTokenPair { access_token: String, refresh_token: Option<String>, expires_at: Option<String> },
-    McpOauth { client_id: String, access_token: String, refresh_token: Option<String> },
+    Bearer {
+        token: String,
+    },
+    GithubPat {
+        token: String,
+    },
+    OauthTokenPair {
+        access_token: String,
+        refresh_token: Option<String>,
+        expires_at: Option<String>,
+    },
+    McpOauth {
+        client_id: String,
+        access_token: String,
+        refresh_token: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]

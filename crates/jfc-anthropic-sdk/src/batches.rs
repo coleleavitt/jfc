@@ -77,15 +77,16 @@ impl MessageBatchService {
     /// `(custom_id, MessageRequest)` pair so the caller can correlate
     /// results when they stream back. Returns the batch's `id` so
     /// callers can poll `get` / stream `results`.
-    pub async fn create(
-        &self,
-        requests: Vec<BatchRequest>,
-    ) -> Result<MessageBatch> {
+    pub async fn create(&self, requests: Vec<BatchRequest>) -> Result<MessageBatch> {
         let resp = self
             .client
             .execute_with_retry(|| {
                 self.client
-                    .request(Method::POST, "/v1/beta/messages/batches", Some(beta::MESSAGE_BATCHES))
+                    .request(
+                        Method::POST,
+                        "/v1/beta/messages/batches",
+                        Some(beta::MESSAGE_BATCHES),
+                    )
                     .json(&serde_json::json!({ "requests": requests }))
             })
             .await?;

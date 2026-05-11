@@ -54,13 +54,10 @@ pub(super) async fn execute_skill_in(
 }
 
 /// Default agentic-loop bound when an agent definition doesn't pin one.
-/// Generous enough that legitimate multi-tool tasks complete; tight enough
-/// Safety cap for subagent turns. Claude Code has no fixed limit — agents
-/// run until end_turn or abort. We keep a generous cap to prevent truly
-/// runaway agents (e.g. infinite tool loops), but set it high enough that
-/// real multi-step tasks complete normally. Override per-agent via
-/// `agent_def.max_turns`.
-const DEFAULT_AGENT_MAX_TURNS: u32 = 200;
+/// Claude Code has no fixed limit — agents run until end_turn or abort.
+/// `None` = unlimited (matches CC behavior). Per-agent override via
+/// `agent_def.max_turns` still wins when present.
+const DEFAULT_AGENT_MAX_TURNS: Option<u32> = None;
 
 /// Apply an agent's `allowedTools` (allowlist) and `disallowedTools`
 /// (blocklist) to the parent's full tool catalogue. An empty `allowed`
@@ -302,9 +299,9 @@ pub async fn execute_task(
     };
     let tools = filter_tools_for_agent(all_tool_defs(), allowed, disallowed);
 
-    let max_turns = agent_def
+    let max_turns: Option<u32> = agent_def
         .and_then(|a| a.max_turns)
-        .unwrap_or(DEFAULT_AGENT_MAX_TURNS);
+        .or(DEFAULT_AGENT_MAX_TURNS);
 
     let mut conversation = vec![ProviderMessage {
         role: ProviderRole::User,
@@ -323,6 +320,8 @@ pub async fn execute_task(
                          last_tool: Option<String>,
                          tool_use_count: Option<u32>,
                          input_tokens: Option<u64>,
+                         cache_read_tokens: Option<u64>,
+                         cache_write_tokens: Option<u64>,
                          output_tokens: Option<u64>| {
         if let (Some(tx), Some(id)) = (tx, id) {
             // TaskProgress is non-critical; the next progress update supersedes this one.
@@ -332,6 +331,8 @@ pub async fn execute_task(
                 elapsed_ms: started_at.elapsed().as_millis() as u64,
                 tool_use_count,
                 input_tokens,
+                cache_read_tokens,
+                cache_write_tokens,
                 output_tokens,
             });
         }
@@ -339,18 +340,20 @@ pub async fn execute_task(
 
     'outer: loop {
         turn += 1;
-        if turn > max_turns {
-            warn!(
-                target: "jfc::tools",
-                task_id = ?task_id,
-                turn,
-                max_turns,
-                "subagent exceeded max_turns — bailing"
-            );
-            last_error = Some(format!(
-                "Subagent exceeded max_turns ({max_turns}). Returning partial output."
-            ));
-            break;
+        if let Some(cap) = max_turns {
+            if turn > cap {
+                warn!(
+                    target: "jfc::tools",
+                    task_id = ?task_id,
+                    turn,
+                    max_turns = cap,
+                    "subagent exceeded max_turns — bailing"
+                );
+                last_error = Some(format!(
+                    "Subagent exceeded max_turns ({cap}). Returning partial output."
+                ));
+                break;
+            }
         }
 
         let mut options = StreamOptions::new(model.clone()).tools(tools.clone());
@@ -413,6 +416,7 @@ pub async fn execute_task(
         let mut turn_text = String::new();
         let mut tool_uses: Vec<(String, String, String)> = Vec::new(); // (id, name, input_json)
         let mut stop_reason: Option<StopReason> = None;
+        let mut usage_baseline = (0u32, 0u32, 0u32, 0u32);
 
         while let Some(event) = stream.next().await {
             match event {
@@ -445,8 +449,16 @@ pub async fn execute_task(
                 Ok(StreamEvent::Usage {
                     input_tokens,
                     output_tokens,
-                    ..
+                    cache_read_tokens,
+                    cache_write_tokens,
                 }) => {
+                    let output_delta = output_tokens.saturating_sub(usage_baseline.1);
+                    usage_baseline = (
+                        input_tokens,
+                        output_tokens,
+                        cache_read_tokens,
+                        cache_write_tokens,
+                    );
                     // Surface this turn's input + output tokens to the
                     // parent fan UI. `latest_input_tokens` is overwritten
                     // (the live request size); `output_tokens` is folded
@@ -457,7 +469,9 @@ pub async fn execute_task(
                         None,
                         None,
                         Some(input_tokens as u64),
-                        Some(output_tokens as u64),
+                        Some(cache_read_tokens as u64),
+                        Some(cache_write_tokens as u64),
+                        Some(output_delta as u64),
                     );
                 }
                 Ok(StreamEvent::Done { stop_reason: sr }) => {
@@ -556,6 +570,8 @@ pub async fn execute_task(
                         Some(total_tool_uses),
                         None,
                         None,
+                        None,
+                        None,
                     );
                     continue;
                 }
@@ -577,6 +593,8 @@ pub async fn execute_task(
                 task_id,
                 Some(name.clone()),
                 Some(total_tool_uses),
+                None,
+                None,
                 None,
                 None,
             );

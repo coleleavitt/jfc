@@ -247,7 +247,12 @@ mod tests {
         // Linear chain a -> b -> c -> d. Forward from `a` with depth=2 should
         // include {a, b, c} but NOT `d`.
         let (graph, ids) = graph_with(&["a", "b", "c", "d"]);
-        let (a, b, c, d) = (ids[0].clone(), ids[1].clone(), ids[2].clone(), ids[3].clone());
+        let (a, b, c, d) = (
+            ids[0].clone(),
+            ids[1].clone(),
+            ids[2].clone(),
+            ids[3].clone(),
+        );
 
         let mut oracle = MockOracle::default();
         oracle.uses.insert(a.clone(), vec![b.clone()]);

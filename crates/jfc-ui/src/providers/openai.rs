@@ -314,7 +314,11 @@ fn is_chat_model(id: &str) -> bool {
     {
         return false;
     }
-    id.starts_with("gpt-") || id.starts_with("o1") || id.starts_with("o3") || id.starts_with("o4") || id.starts_with("chatgpt")
+    id.starts_with("gpt-")
+        || id.starts_with("o1")
+        || id.starts_with("o3")
+        || id.starts_with("o4")
+        || id.starts_with("chatgpt")
 }
 
 fn model_uses_responses(id: &str) -> bool {
@@ -347,7 +351,21 @@ fn build_responses_body(
 
     if !options.tools.is_empty() {
         body["tools"] = json!(options.tools.iter().map(responses_tool).collect::<Vec<_>>());
+        body["tool_choice"] = json!("auto");
         body["parallel_tool_calls"] = json!(true);
+    }
+
+    if let Some(ref effort) = options.reasoning_effort {
+        body["reasoning"] = json!({ "effort": effort });
+    }
+    if let Some(temp) = options.temperature {
+        body["temperature"] = Value::from(temp);
+    }
+    if let Some(top_p) = options.top_p {
+        body["top_p"] = Value::from(top_p);
+    }
+    for (key, value) in &options.provider_options {
+        body[key] = value.clone();
     }
 
     body
@@ -490,25 +508,30 @@ fn responses_events_from_sse(data: &str) -> Vec<anyhow::Result<StreamEvent>> {
             .get("item")
             .filter(|item| item.get("type").and_then(Value::as_str) == Some("function_call"))
             .map(|item| {
-                vec![Ok(StreamEvent::ToolDone {
-                    index: output_index(&value),
-                    tool_name: item
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string(),
-                    tool_use_id: item
-                        .get("call_id")
-                        .and_then(Value::as_str)
-                        .or_else(|| item.get("id").and_then(Value::as_str))
-                        .unwrap_or_default()
-                        .to_string(),
-                    input_json: item
-                        .get("arguments")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string(),
-                })]
+                vec![
+                    Ok(StreamEvent::ToolDone {
+                        index: output_index(&value),
+                        tool_name: item
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        tool_use_id: item
+                            .get("call_id")
+                            .and_then(Value::as_str)
+                            .or_else(|| item.get("id").and_then(Value::as_str))
+                            .unwrap_or_default()
+                            .to_string(),
+                        input_json: item
+                            .get("arguments")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                    }),
+                    Ok(StreamEvent::Done {
+                        stop_reason: StopReason::ToolUse,
+                    }),
+                ]
             })
             .unwrap_or_default(),
         "response.completed" => {
@@ -517,7 +540,7 @@ fn responses_events_from_sse(data: &str) -> Vec<anyhow::Result<StreamEvent>> {
                 .and_then(response_usage)
                 .map(|usage| {
                     vec![Ok(StreamEvent::Usage {
-                        input_tokens: usage.prompt_tokens as u32,
+                        input_tokens: usage.raw_input_tokens() as u32,
                         output_tokens: usage.completion_tokens as u32,
                         cache_read_tokens: usage.cache_read_tokens() as u32,
                         cache_write_tokens: usage.cache_creation_tokens() as u32,
@@ -643,6 +666,12 @@ struct ChatUsage {
 }
 
 impl ChatUsage {
+    fn raw_input_tokens(&self) -> usize {
+        self.prompt_tokens
+            .saturating_sub(self.cache_read_tokens())
+            .saturating_sub(self.cache_creation_tokens())
+    }
+
     fn cache_read_tokens(&self) -> usize {
         self.cache_read_input_tokens.max(
             self.prompt_tokens_details
@@ -673,7 +702,7 @@ struct PromptTokensDetails {
 impl From<ChatUsage> for TokenUsage {
     fn from(value: ChatUsage) -> Self {
         Self {
-            input_tokens: value.prompt_tokens,
+            input_tokens: value.raw_input_tokens(),
             output_tokens: value.completion_tokens,
             cache_read_tokens: value.cache_read_tokens(),
             cache_creation_tokens: value.cache_creation_tokens(),
@@ -717,6 +746,20 @@ mod tests {
 
     #[test]
     fn builds_responses_body_with_instructions_tools_and_input() {
+        let mut options = StreamOptions::new("gpt-5.5")
+            .system("be direct")
+            .reasoning_effort("high")
+            .temperature(0.2)
+            .top_p(0.9)
+            .tools(vec![ToolDef {
+                name: "inspect".to_string(),
+                description: "inspect files".to_string(),
+                input_schema: json!({ "type": "object" }),
+            }]);
+        options
+            .provider_options
+            .insert("metadata".to_string(), json!({ "source": "test" }));
+
         let body = build_responses_body(
             vec![
                 ProviderMessage {
@@ -740,13 +783,7 @@ mod tests {
                     }],
                 },
             ],
-            &StreamOptions::new("gpt-5.5")
-                .system("be direct")
-                .tools(vec![ToolDef {
-                    name: "inspect".to_string(),
-                    description: "inspect files".to_string(),
-                    input_schema: json!({ "type": "object" }),
-                }]),
+            &options,
             true,
         );
 
@@ -756,6 +793,11 @@ mod tests {
         assert_eq!(body["input"][1]["type"], "function_call");
         assert_eq!(body["input"][2]["type"], "function_call_output");
         assert_eq!(body["tools"][0]["type"], "function");
+        assert_eq!(body["tool_choice"], "auto");
+        assert_eq!(body["reasoning"]["effort"], "high");
+        assert_eq!(body["temperature"], 0.2);
+        assert_eq!(body["top_p"], 0.9);
+        assert_eq!(body["metadata"]["source"], "test");
         assert_eq!(body["stream"], true);
     }
 
@@ -778,9 +820,15 @@ mod tests {
             matches!(tool[0].as_ref().unwrap(), StreamEvent::ToolDone { tool_name, tool_use_id, .. } if tool_name == "inspect" && tool_use_id == "call_1")
         );
         assert!(matches!(
+            tool[1].as_ref().unwrap(),
+            StreamEvent::Done {
+                stop_reason: StopReason::ToolUse
+            }
+        ));
+        assert!(matches!(
             done[0].as_ref().unwrap(),
             StreamEvent::Usage {
-                input_tokens: 10,
+                input_tokens: 3,
                 output_tokens: 2,
                 cache_read_tokens: 7,
                 ..

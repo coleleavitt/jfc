@@ -60,10 +60,7 @@ pub enum PersistenceError {
 /// new keys; downstream code falls through to `KindData::default()`
 /// for missing fields. Returns `Ok` for any handled version,
 /// `Err(SchemaMismatch)` for the unhandled future.
-pub fn migrate_event(
-    entry: EventEntry,
-    from_version: u32,
-) -> Result<EventEntry, PersistenceError> {
+pub fn migrate_event(entry: EventEntry, from_version: u32) -> Result<EventEntry, PersistenceError> {
     match from_version {
         PERSISTENCE_SCHEMA_VERSION => Ok(entry),
         // v1 → v2: no migration needed (metadata bag absorbs new keys).

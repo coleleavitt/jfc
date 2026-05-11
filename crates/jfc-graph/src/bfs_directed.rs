@@ -114,8 +114,24 @@ pub fn bfs(snapshot: &CsrSnapshot, source: CsrVertex, cfg: &BfsConfig<'_>) -> Di
         direction = pick_direction(direction, &current, snapshot, cfg);
 
         match direction {
-            Direction::Push => push_step(snapshot, &current, &mut next, &mut depth, &mut parent, current_depth + 1, cfg),
-            Direction::Pull => pull_step(snapshot, &current, &mut next, &mut depth, &mut parent, current_depth + 1, cfg),
+            Direction::Push => push_step(
+                snapshot,
+                &current,
+                &mut next,
+                &mut depth,
+                &mut parent,
+                current_depth + 1,
+                cfg,
+            ),
+            Direction::Pull => pull_step(
+                snapshot,
+                &current,
+                &mut next,
+                &mut depth,
+                &mut parent,
+                current_depth + 1,
+                cfg,
+            ),
         }
 
         if !next.is_empty() {
@@ -355,7 +371,11 @@ mod tests {
         assert_eq!(r.depth[csr.vertex_of(&caller).unwrap().idx()], None);
 
         // Reverse from callee → caller at depth 1.
-        let r = bfs(&csr, csr.vertex_of(&callee).unwrap(), &BfsConfig::new(10).reverse());
+        let r = bfs(
+            &csr,
+            csr.vertex_of(&callee).unwrap(),
+            &BfsConfig::new(10).reverse(),
+        );
         assert_eq!(r.depth[csr.vertex_of(&caller).unwrap().idx()], Some(1));
     }
 
@@ -389,8 +409,14 @@ mod tests {
         g.add_edge(&b, &c, ed(EdgeKind::Calls)).unwrap();
         let csr = g.snapshot();
         let r = bfs(&csr, csr.vertex_of(&a).unwrap(), &BfsConfig::new(10));
-        assert_eq!(r.parent[csr.vertex_of(&b).unwrap().idx()], Some(csr.vertex_of(&a).unwrap()));
-        assert_eq!(r.parent[csr.vertex_of(&c).unwrap().idx()], Some(csr.vertex_of(&b).unwrap()));
+        assert_eq!(
+            r.parent[csr.vertex_of(&b).unwrap().idx()],
+            Some(csr.vertex_of(&a).unwrap())
+        );
+        assert_eq!(
+            r.parent[csr.vertex_of(&c).unwrap().idx()],
+            Some(csr.vertex_of(&b).unwrap())
+        );
     }
 
     #[test]

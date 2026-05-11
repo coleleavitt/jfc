@@ -3,10 +3,10 @@
 //! Each supported language implements [`LanguageAdapter`] to parse files and extract
 //! nodes/edges. The [`AdapterRegistry`] maps file extensions to the appropriate adapter.
 
+pub mod go;
+pub mod python;
 pub mod rust;
 pub mod typescript;
-pub mod python;
-pub mod go;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -51,11 +51,7 @@ pub trait LanguageAdapter: Send + Sync {
     /// The default implementation calls `parse_file` and flattens the error
     /// case — adapters that produce a tree before validating can override
     /// this for better partial-recovery semantics.
-    fn parse_file_lenient(
-        &self,
-        path: &Path,
-        content: &str,
-    ) -> Result<ParseOutcome, AdapterError> {
+    fn parse_file_lenient(&self, path: &Path, content: &str) -> Result<ParseOutcome, AdapterError> {
         match self.parse_file(path, content) {
             Ok(parsed) => Ok(ParseOutcome::ok(parsed)),
             // Only `SyntaxError` is recoverable here — the tree was produced,

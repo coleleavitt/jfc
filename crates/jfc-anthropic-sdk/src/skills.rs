@@ -80,15 +80,14 @@ impl SkillService {
     /// multipart upload with a `display_title` text field plus one
     /// `files` Part per attached file. Returns the freshly-minted
     /// Skill record.
-    pub async fn create(
-        &self,
-        display_title: &str,
-        files: Vec<SkillFile>,
-    ) -> Result<Skill> {
+    pub async fn create(&self, display_title: &str, files: Vec<SkillFile>) -> Result<Skill> {
         let resp = self
             .client
             .http()
-            .request(Method::POST, format!("{}/v1/beta/skills", self.client.base_url()))
+            .request(
+                Method::POST,
+                format!("{}/v1/beta/skills", self.client.base_url()),
+            )
             .header("anthropic-beta", beta::SKILLS)
             .multipart(build_skill_form(display_title, files)?)
             .send()

@@ -1154,11 +1154,7 @@ fn bron_kerbosch(
     // Pick pivot with max degree in P ∪ X
     let pivot = p
         .union(&x)
-        .max_by_key(|&&v| {
-            adj.get(&v)
-                .map(|n| n.intersection(&p).count())
-                .unwrap_or(0)
-        })
+        .max_by_key(|&&v| adj.get(&v).map(|n| n.intersection(&p).count()).unwrap_or(0))
         .copied();
 
     let pivot_neighbors: HashSet<NodeIndex> = pivot
@@ -1210,8 +1206,11 @@ pub fn all_pairs_distances(graph: &CodeGraph) -> HashMap<(NodeId, NodeId), f32> 
     }
 
     // Map NodeIndex → sequential index for the matrix
-    let idx_to_seq: HashMap<NodeIndex, usize> =
-        indices.iter().enumerate().map(|(i, &idx)| (idx, i)).collect();
+    let idx_to_seq: HashMap<NodeIndex, usize> = indices
+        .iter()
+        .enumerate()
+        .map(|(i, &idx)| (idx, i))
+        .collect();
 
     // Initialize distance matrix
     let mut dist = vec![vec![f32::INFINITY; n]; n];
@@ -1249,10 +1248,9 @@ pub fn all_pairs_distances(graph: &CodeGraph) -> HashMap<(NodeId, NodeId), f32> 
     for i in 0..n {
         for j in 0..n {
             if i != j && dist[i][j] < f32::INFINITY {
-                if let (Some(from_id), Some(to_id)) = (
-                    graph.node_id_for(indices[i]),
-                    graph.node_id_for(indices[j]),
-                ) {
+                if let (Some(from_id), Some(to_id)) =
+                    (graph.node_id_for(indices[i]), graph.node_id_for(indices[j]))
+                {
                     result.insert((from_id.clone(), to_id.clone()), dist[i][j]);
                 }
             }
@@ -1296,9 +1294,16 @@ pub fn nearest_neighbors(graph: &CodeGraph, node: &NodeId, n: usize) -> Vec<(Nod
     let mut dist: HashMap<NodeIndex, f32> = HashMap::new();
     let mut heap = BinaryHeap::new();
     dist.insert(node_idx, 0.0);
-    heap.push(State { cost: 0.0, node: node_idx });
+    heap.push(State {
+        cost: 0.0,
+        node: node_idx,
+    });
 
-    while let Some(State { cost, node: current }) = heap.pop() {
+    while let Some(State {
+        cost,
+        node: current,
+    }) = heap.pop()
+    {
         if cost > *dist.get(&current).unwrap_or(&f32::INFINITY) {
             continue;
         }
@@ -1307,7 +1312,10 @@ pub fn nearest_neighbors(graph: &CodeGraph, node: &NodeId, n: usize) -> Vec<(Nod
             let next_cost = cost + edge.weight().weight;
             if next_cost < *dist.get(&next).unwrap_or(&f32::INFINITY) {
                 dist.insert(next, next_cost);
-                heap.push(State { cost: next_cost, node: next });
+                heap.push(State {
+                    cost: next_cost,
+                    node: next,
+                });
             }
         }
     }
@@ -1456,7 +1464,12 @@ pub fn call_only_edges(graph: &CodeGraph) -> Vec<(NodeId, NodeId, f32)> {
     let inner = graph.inner();
     inner
         .edge_references()
-        .filter(|e| matches!(e.weight().kind, EdgeKind::Calls | EdgeKind::UnresolvedCall(_)))
+        .filter(|e| {
+            matches!(
+                e.weight().kind,
+                EdgeKind::Calls | EdgeKind::UnresolvedCall(_)
+            )
+        })
         .filter_map(|e| {
             let from = graph.node_id_for(e.source())?.clone();
             let to = graph.node_id_for(e.target())?.clone();
@@ -1800,9 +1813,7 @@ fn metadata_flag(node: &crate::nodes::NodeData, key: &str) -> bool {
         None => false,
         Some(v) => {
             let trimmed = v.trim();
-            !trimmed.is_empty()
-                && !trimmed.eq_ignore_ascii_case("false")
-                && trimmed != "0"
+            !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("false") && trimmed != "0"
         }
     }
 }
@@ -2079,7 +2090,10 @@ mod tests {
 
         let callers = callers_of(&g, &target);
         assert_eq!(callers, vec![caller.clone()]);
-        assert!(!callers.contains(&callee), "callees must not appear in callers_of");
+        assert!(
+            !callers.contains(&callee),
+            "callees must not appear in callers_of"
+        );
 
         // Mirror sanity: callees_of(target) returns [callee], not [caller].
         let callees = callees_of(&g, &target);
@@ -2205,12 +2219,24 @@ mod tests {
         assert!(!groups.is_empty());
 
         // b and c should be in the same color group (they don't share an edge)
-        let b_color = groups.iter().find(|grp| grp.members.contains(&b)).unwrap().color;
-        let c_color = groups.iter().find(|grp| grp.members.contains(&c)).unwrap().color;
+        let b_color = groups
+            .iter()
+            .find(|grp| grp.members.contains(&b))
+            .unwrap()
+            .color;
+        let c_color = groups
+            .iter()
+            .find(|grp| grp.members.contains(&c))
+            .unwrap()
+            .color;
         assert_eq!(b_color, c_color);
 
         // a should be in a different color than b (they share an edge)
-        let a_color = groups.iter().find(|grp| grp.members.contains(&a)).unwrap().color;
+        let a_color = groups
+            .iter()
+            .find(|grp| grp.members.contains(&a))
+            .unwrap()
+            .color;
         assert_ne!(a_color, b_color);
     }
 
@@ -2276,8 +2302,26 @@ mod tests {
         let c = g.add_node(node("c"));
         let d = g.add_node(node("d"));
         g.add_edge(&a, &b, edge()).unwrap();
-        g.add_edge(&a, &c, EdgeData { kind: EdgeKind::Calls, source_span: span(), weight: 5.0 }).unwrap();
-        g.add_edge(&a, &d, EdgeData { kind: EdgeKind::Calls, source_span: span(), weight: 2.0 }).unwrap();
+        g.add_edge(
+            &a,
+            &c,
+            EdgeData {
+                kind: EdgeKind::Calls,
+                source_span: span(),
+                weight: 5.0,
+            },
+        )
+        .unwrap();
+        g.add_edge(
+            &a,
+            &d,
+            EdgeData {
+                kind: EdgeKind::Calls,
+                source_span: span(),
+                weight: 2.0,
+            },
+        )
+        .unwrap();
 
         let neighbors = nearest_neighbors(&g, &a, 2);
         assert_eq!(neighbors.len(), 2);
@@ -2295,7 +2339,16 @@ mod tests {
         // a→b (cost 1) + b→c (cost 1) = 2, vs a→c (cost 10)
         g.add_edge(&a, &b, edge()).unwrap();
         g.add_edge(&b, &c, edge()).unwrap();
-        g.add_edge(&a, &c, EdgeData { kind: EdgeKind::Calls, source_span: span(), weight: 10.0 }).unwrap();
+        g.add_edge(
+            &a,
+            &c,
+            EdgeData {
+                kind: EdgeKind::Calls,
+                source_span: span(),
+                weight: 10.0,
+            },
+        )
+        .unwrap();
 
         let (path, cost) = weighted_shortest_path(&g, &a, &c).unwrap();
         assert_eq!(cost, 2.0);
@@ -2311,7 +2364,16 @@ mod tests {
         // Two paths: a→b→c (cost 2) and a→c (cost 3)
         g.add_edge(&a, &b, edge()).unwrap();
         g.add_edge(&b, &c, edge()).unwrap();
-        g.add_edge(&a, &c, EdgeData { kind: EdgeKind::Calls, source_span: span(), weight: 3.0 }).unwrap();
+        g.add_edge(
+            &a,
+            &c,
+            EdgeData {
+                kind: EdgeKind::Calls,
+                source_span: span(),
+                weight: 3.0,
+            },
+        )
+        .unwrap();
 
         let paths = k_shortest_paths(&g, &a, &c, 2);
         assert_eq!(paths.len(), 2);

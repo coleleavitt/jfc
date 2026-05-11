@@ -328,18 +328,18 @@ where
         };
 
         let cfg = bincode::config::standard();
-        let entry: VersionedAnalysisEntry<V> =
-            match bincode::serde::decode_from_slice(&bytes, cfg) {
-                Ok((value, _)) => value,
-                Err(err) => {
-                    warn!(
-                        target = %target.display(),
-                        error = %err,
-                        "analysis cache: decode failed, treating as miss"
-                    );
-                    return None;
-                }
-            };
+        let entry: VersionedAnalysisEntry<V> = match bincode::serde::decode_from_slice(&bytes, cfg)
+        {
+            Ok((value, _)) => value,
+            Err(err) => {
+                warn!(
+                    target = %target.display(),
+                    error = %err,
+                    "analysis cache: decode failed, treating as miss"
+                );
+                return None;
+            }
+        };
 
         entry.into_value_if_current()
     }
@@ -604,7 +604,9 @@ mod tests {
         let fp = Fingerprint::from_u64(0xdead_beef);
 
         cache.store_disk::<SccAnalysis>(&path, fp, &11).unwrap();
-        cache.store_disk::<CentralityAnalysis>(&path, fp, &22).unwrap();
+        cache
+            .store_disk::<CentralityAnalysis>(&path, fp, &22)
+            .unwrap();
 
         assert_eq!(cache.load_disk::<SccAnalysis>(&path, fp), Some(11));
         assert_eq!(cache.load_disk::<CentralityAnalysis>(&path, fp), Some(22));
@@ -679,7 +681,10 @@ mod tests {
             .store_disk::<SccAnalysis>(&path, fp, &sample_partition())
             .unwrap();
         assert!(bin_file.exists(), "store_disk should produce the .bin");
-        assert!(!tmp_file.exists(), "tmp file should not linger after rename");
+        assert!(
+            !tmp_file.exists(),
+            "tmp file should not linger after rename"
+        );
     }
 
     #[test]

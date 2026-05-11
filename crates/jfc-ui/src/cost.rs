@@ -127,6 +127,8 @@ pub fn cost_for_background_task(bt: &crate::app::BackgroundTask) -> f64 {
     };
     let mut usage = crate::types::ModelUsage::default();
     usage.input_tokens = bt.latest_input_tokens;
+    usage.cache_read_tokens = bt.latest_cache_read_tokens;
+    usage.cache_write_tokens = bt.latest_cache_write_tokens;
     usage.output_tokens = bt.cumulative_output_tokens;
     cost_for(model, &usage)
 }

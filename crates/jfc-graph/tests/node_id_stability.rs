@@ -81,7 +81,10 @@ fn node_id_survives_remove_then_add_with_slot_reuse() {
     // Beta is unaffected — `NodeId`-keyed access remains correct across the
     // mutation, regardless of any internal slot bookkeeping.
     assert!(graph.contains_node(&beta_id));
-    assert_eq!(graph.get_node(&beta_id).map(|n| n.name.as_str()), Some("beta"));
+    assert_eq!(
+        graph.get_node(&beta_id).map(|n| n.name.as_str()),
+        Some("beta")
+    );
 
     // Insert a brand-new node. `StableDiGraph` is free to reclaim alpha's
     // vacated slot for `gamma`.
@@ -101,7 +104,10 @@ fn node_id_survives_remove_then_add_with_slot_reuse() {
     );
 
     // Beta is still beta.
-    assert_eq!(graph.get_node(&beta_id).map(|n| n.name.as_str()), Some("beta"));
+    assert_eq!(
+        graph.get_node(&beta_id).map(|n| n.name.as_str()),
+        Some("beta")
+    );
 }
 
 /// Re-adding the *same* logical node after removal is consistent: the same
@@ -123,7 +129,10 @@ fn node_id_round_trips_through_remove_readd_cycle() {
     let id_second = graph.add_node(original);
     assert_eq!(id_first, id_second);
     assert!(graph.contains_node(&id_first));
-    assert_eq!(graph.get_node(&id_first).map(|n| n.name.as_str()), Some("foo"));
+    assert_eq!(
+        graph.get_node(&id_first).map(|n| n.name.as_str()),
+        Some("foo")
+    );
 }
 
 /// Edges referencing a node by `NodeId` survive a churn cycle on a *different*
@@ -151,14 +160,20 @@ fn edges_remain_addressable_by_node_id_after_churn() {
 
     // The a -> b edge is unaffected; its endpoints are still addressable
     // *by NodeId*, which is the only identifier the public API exposes.
-    let outgoing_from_a: Vec<&NodeId> =
-        graph.get_edges_from(&a_id).into_iter().map(|(id, _)| id).collect();
+    let outgoing_from_a: Vec<&NodeId> = graph
+        .get_edges_from(&a_id)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
     assert_eq!(outgoing_from_a, vec![&b_id]);
 
     // The b -> c edge was severed by remove_node (StableDiGraph drops incident
     // edges); it must NOT have been silently re-targeted at d.
-    let outgoing_from_b: Vec<&NodeId> =
-        graph.get_edges_from(&b_id).into_iter().map(|(id, _)| id).collect();
+    let outgoing_from_b: Vec<&NodeId> = graph
+        .get_edges_from(&b_id)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
     assert!(
         outgoing_from_b.is_empty(),
         "b -> c edge must be gone — never silently re-pointed at d"

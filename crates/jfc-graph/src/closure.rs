@@ -81,7 +81,10 @@ pub fn closure(
     // everything *transitively* reachable, not the seeds themselves.
     // Callers who want them included should `chain` them in.
     let seed_set: HashSet<&NodeId> = seeds.iter().collect();
-    visited.into_iter().filter(|n| !seed_set.contains(n)).collect()
+    visited
+        .into_iter()
+        .filter(|n| !seed_set.contains(n))
+        .collect()
 }
 
 /// Convenience: closure over `Calls` edges only (the most common
@@ -91,12 +94,7 @@ pub fn calls_closure(
     seeds: &[NodeId],
     direction: ClosureDirection,
 ) -> Vec<NodeId> {
-    closure(
-        graph,
-        seeds,
-        |k| matches!(k, EdgeKind::Calls),
-        direction,
-    )
+    closure(graph, seeds, |k| matches!(k, EdgeKind::Calls), direction)
 }
 
 /// Convenience: closure over any edge kind (treats the graph as
@@ -236,11 +234,7 @@ mod tests {
         let d = g.add_node(mk("d", NodeKind::Function));
         g.add_edge(&a, &b, ed(EdgeKind::Calls)).unwrap();
         g.add_edge(&c, &d, ed(EdgeKind::Calls)).unwrap();
-        let res = calls_closure(
-            &g,
-            &[a.clone(), c.clone()],
-            ClosureDirection::Outgoing,
-        );
+        let res = calls_closure(&g, &[a.clone(), c.clone()], ClosureDirection::Outgoing);
         assert!(res.contains(&b));
         assert!(res.contains(&d));
     }

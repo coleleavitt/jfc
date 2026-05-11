@@ -159,10 +159,7 @@ impl Indices {
     }
 
     /// Iterator over node ids that record metadata `key`.
-    pub(crate) fn nodes_with_metadata_key(
-        &self,
-        key: &str,
-    ) -> impl Iterator<Item = &NodeId> + '_ {
+    pub(crate) fn nodes_with_metadata_key(&self, key: &str) -> impl Iterator<Item = &NodeId> + '_ {
         self.by_metadata_key
             .get(key)
             .into_iter()

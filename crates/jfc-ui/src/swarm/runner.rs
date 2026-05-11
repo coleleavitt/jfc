@@ -606,17 +606,19 @@ async fn run_single_turn(
         content: vec![ProviderContent::Text(prompt.to_owned())],
     });
 
-    let mut total_tokens: u64 = 0;
+    let mut estimated_tokens_without_usage: u64 = 0;
+    let mut latest_input_tokens: u64 = 0;
+    let mut latest_cache_read_tokens: u64 = 0;
+    let mut latest_cache_write_tokens: u64 = 0;
+    let mut cumulative_output_tokens: u64 = 0;
     let mut total_tools: u64 = 0;
     let mut last_tool_name: Option<String> = None;
-    let max_turns = 200u32; // generous safety limit (CC has no limit)
+    // Unlimited turns — matches Claude Code, which has no fixed cap.
+    // The teammate runs until end_turn, abort, or upstream error.
     let mut turn = 0u32;
 
     loop {
         turn += 1;
-        if turn > max_turns {
-            return TurnResult::Error("max turns exceeded".into());
-        }
 
         // Check abort
         if *abort_rx.borrow() {
@@ -679,6 +681,9 @@ async fn run_single_turn(
             Option<String>,
         )> = Vec::new();
         let mut stop_reason = StopReason::EndTurn;
+        let mut saw_usage_this_turn = false;
+        let mut estimated_turn_tokens: u64 = 0;
+        let mut usage_baseline = (0u32, 0u32, 0u32, 0u32);
 
         futures::pin_mut!(stream);
         loop {
@@ -707,7 +712,9 @@ async fn run_single_turn(
             };
             match event {
                 StreamEvent::TextDelta { delta, .. } => {
-                    total_tokens += (delta.len() / 4) as u64;
+                    if !saw_usage_this_turn {
+                        estimated_turn_tokens += (delta.len() / 4) as u64;
+                    }
                     // Forward to the leader so the task panel for this
                     // teammate shows live output. The handler translates
                     // to `AppEvent::AgentChunk` keyed by `task_id`.
@@ -764,9 +771,22 @@ async fn run_single_turn(
                 StreamEvent::Usage {
                     input_tokens,
                     output_tokens,
-                    ..
+                    cache_read_tokens,
+                    cache_write_tokens,
                 } => {
-                    total_tokens = (input_tokens + output_tokens) as u64;
+                    let output_delta = output_tokens.saturating_sub(usage_baseline.1) as u64;
+                    usage_baseline = (
+                        input_tokens,
+                        output_tokens,
+                        cache_read_tokens,
+                        cache_write_tokens,
+                    );
+                    saw_usage_this_turn = true;
+                    latest_input_tokens = input_tokens as u64;
+                    latest_cache_read_tokens = cache_read_tokens as u64;
+                    latest_cache_write_tokens = cache_write_tokens as u64;
+                    cumulative_output_tokens =
+                        cumulative_output_tokens.saturating_add(output_delta);
                 }
                 StreamEvent::Done { stop_reason: r } => {
                     stop_reason = r;
@@ -776,6 +796,11 @@ async fn run_single_turn(
                 }
                 _ => {}
             }
+        }
+
+        if !saw_usage_this_turn {
+            estimated_tokens_without_usage =
+                estimated_tokens_without_usage.saturating_add(estimated_turn_tokens);
         }
 
         // Add assistant response to history
@@ -825,7 +850,11 @@ async fn run_single_turn(
             let _ = event_tx.send(TeammateEvent::Progress {
                 task_id: task_id.to_owned(),
                 agent_id: identity.agent_id.clone(),
-                token_count: total_tokens,
+                token_count: estimated_tokens_without_usage
+                    .saturating_add(latest_input_tokens)
+                    .saturating_add(latest_cache_read_tokens)
+                    .saturating_add(latest_cache_write_tokens)
+                    .saturating_add(cumulative_output_tokens),
                 tool_use_count: total_tools,
                 last_tool: Some(name.clone()),
             });
@@ -919,7 +948,11 @@ async fn run_single_turn(
     }
 
     TurnResult::Completed {
-        token_count: total_tokens,
+        token_count: estimated_tokens_without_usage
+            .saturating_add(latest_input_tokens)
+            .saturating_add(latest_cache_read_tokens)
+            .saturating_add(latest_cache_write_tokens)
+            .saturating_add(cumulative_output_tokens),
         tool_count: total_tools,
         last_tool: last_tool_name,
     }

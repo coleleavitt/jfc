@@ -200,7 +200,11 @@ pub fn stratify(rules: &[Rule]) -> Result<BTreeMap<PredicateName, usize>, Strata
                 }
             }
         }
-        strata_of_scc[i] = if max_dep_stratum < 0 { 0 } else { max_dep_stratum as usize };
+        strata_of_scc[i] = if max_dep_stratum < 0 {
+            0
+        } else {
+            max_dep_stratum as usize
+        };
     }
 
     let mut out = BTreeMap::new();

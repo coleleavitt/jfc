@@ -293,8 +293,10 @@ mod tests {
         let s1_id = g.add_node(s1);
         let s2_id = g.add_node(s2);
 
-        g.add_edge(&s1_id, &t_id, edge(EdgeKind::Implements)).unwrap();
-        g.add_edge(&s2_id, &t_id, edge(EdgeKind::Implements)).unwrap();
+        g.add_edge(&s1_id, &t_id, edge(EdgeKind::Implements))
+            .unwrap();
+        g.add_edge(&s2_id, &t_id, edge(EdgeKind::Implements))
+            .unwrap();
 
         let hierarchies = g.trait_hierarchies();
         let h = hierarchies
@@ -334,7 +336,8 @@ mod tests {
         let caller_id = g.add_node(caller);
 
         g.add_edge(&t_id, &tm_id, edge(EdgeKind::Contains)).unwrap();
-        g.add_edge(&caller_id, &tm_id, edge(EdgeKind::Calls)).unwrap();
+        g.add_edge(&caller_id, &tm_id, edge(EdgeKind::Calls))
+            .unwrap();
 
         let dispatched = g.trait_dispatch_calls();
         assert_eq!(dispatched.len(), 1);
@@ -357,7 +360,8 @@ mod tests {
         let caller_id = g.add_node(caller);
 
         g.add_edge(&s_id, &m_id, edge(EdgeKind::Contains)).unwrap();
-        g.add_edge(&caller_id, &m_id, edge(EdgeKind::Calls)).unwrap();
+        g.add_edge(&caller_id, &m_id, edge(EdgeKind::Calls))
+            .unwrap();
 
         let dispatched = g.trait_dispatch_calls();
         assert!(
@@ -383,9 +387,11 @@ mod tests {
         // the same pair are allowed by petgraph; they count as separate
         // UsesType references.)
         for _ in 0..3 {
-            g.add_edge(&f_id, &foo_id, edge(EdgeKind::UsesType)).unwrap();
+            g.add_edge(&f_id, &foo_id, edge(EdgeKind::UsesType))
+                .unwrap();
         }
-        g.add_edge(&f_id, &bar_id, edge(EdgeKind::UsesType)).unwrap();
+        g.add_edge(&f_id, &bar_id, edge(EdgeKind::UsesType))
+            .unwrap();
 
         let clusters = g.cluster_by_primary_type();
         let fc = clusters
@@ -407,8 +413,10 @@ mod tests {
         let foo_id = g.add_node(foo);
         let bar_id = g.add_node(bar);
 
-        g.add_edge(&f_id, &foo_id, edge(EdgeKind::UsesType)).unwrap();
-        g.add_edge(&f_id, &bar_id, edge(EdgeKind::UsesType)).unwrap();
+        g.add_edge(&f_id, &foo_id, edge(EdgeKind::UsesType))
+            .unwrap();
+        g.add_edge(&f_id, &bar_id, edge(EdgeKind::UsesType))
+            .unwrap();
 
         let clusters = g.cluster_by_primary_type();
         let fc = clusters

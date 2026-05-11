@@ -248,7 +248,10 @@ pub enum DslOp {
     /// `affected N since M` is undirected and seeded at *every* recent
     /// node, which is what code-review questions like "what's near my
     /// recent changes?" actually want.
-    Affected { depth: usize, since_rev: u64 },
+    Affected {
+        depth: usize,
+        since_rev: u64,
+    },
     /// `untested` — postfix filter restricting the working set to Function
     /// nodes with `metadata["coverage_tested"] != "true"`. Functions that
     /// haven't been annotated by a coverage pass at all are included (they
@@ -303,10 +306,7 @@ pub enum Expr {
     /// followed by pipe operators (e.g. `| untested | depth 3`).
     /// The atom is executed first to produce a working set, then the
     /// pipe ops are applied as postfix filters/transforms.
-    PipeFrom {
-        base: Box<Expr>,
-        ops: Vec<DslOp>,
-    },
+    PipeFrom { base: Box<Expr>, ops: Vec<DslOp> },
     /// `multi_path { <expr>, <expr>, ... } -> <expr>` — multi-source
     /// shortest path. Wraps
     /// [`crate::traversal::find_path_multi_source`]: every source set is
@@ -847,10 +847,7 @@ fn parse_op(tokens: &[Token], pos: &mut usize) -> Result<DslOp, ParseError> {
                     *pos += 1;
                     Ok(DslOp::ClusterByType)
                 }
-                _ => Err(ParseError::new(
-                    *pos,
-                    "expected 'type' after 'cluster by'",
-                )),
+                _ => Err(ParseError::new(*pos, "expected 'type' after 'cluster by'")),
             }
         }
         // `affected N since M` — single-shot temporal-neighborhood operator.
@@ -873,10 +870,7 @@ fn parse_op(tokens: &[Token], pos: &mut usize) -> Result<DslOp, ParseError> {
             };
             *pos += 1;
             if *pos >= tokens.len() || tokens[*pos] != Token::Since {
-                return Err(ParseError::new(
-                    *pos,
-                    "expected 'since' after 'affected N'",
-                ));
+                return Err(ParseError::new(*pos, "expected 'since' after 'affected N'"));
             }
             *pos += 1;
             if *pos >= tokens.len() {
@@ -1246,7 +1240,10 @@ fn parse_path_query(tokens: &[Token], pos: &mut usize) -> Result<Expr, ParseErro
             Token::Where => {
                 *pos += 1;
                 if *pos >= tokens.len() || tokens[*pos] != Token::Intermediate {
-                    return Err(ParseError::new(*pos, "expected 'intermediate' after 'where'"));
+                    return Err(ParseError::new(
+                        *pos,
+                        "expected 'intermediate' after 'where'",
+                    ));
                 }
                 *pos += 1;
                 if *pos >= tokens.len() || tokens[*pos] != Token::Kind {
@@ -1363,7 +1360,9 @@ fn parse_entrypoint_kind(s: &str, pos: usize) -> Result<EntrypointKind, ParseErr
         "FfiExport" => Ok(EntrypointKind::FfiExport),
         _ => Err(ParseError::new(
             pos,
-            format!("unknown entrypoint kind '{s}'. Valid: Main, PublicApi, Test, Bench, FfiExport"),
+            format!(
+                "unknown entrypoint kind '{s}'. Valid: Main, PublicApi, Test, Bench, FfiExport"
+            ),
         )),
     }
 }
@@ -1635,7 +1634,8 @@ impl<'a> QueryEngine<'a> {
                         });
                         scored.truncate(*n);
                         metadata.push(format!("hot top={n} bare=false"));
-                        let kept: HashSet<NodeId> = scored.iter().map(|(id, _)| id.clone()).collect();
+                        let kept: HashSet<NodeId> =
+                            scored.iter().map(|(id, _)| id.clone()).collect();
                         for (id, score) in &scored {
                             metadata.push(format!(
                                 "hot {} score={:.4}",
@@ -1714,8 +1714,8 @@ impl<'a> QueryEngine<'a> {
                     let working_subset: HashSet<NodeId> = working_set.iter().cloned().collect();
                     let mut keep: HashSet<NodeId> = HashSet::new();
                     for d in &calls {
-                        let in_working = working_subset.is_empty()
-                            || working_subset.contains(&d.caller);
+                        let in_working =
+                            working_subset.is_empty() || working_subset.contains(&d.caller);
                         if !in_working {
                             continue;
                         }
@@ -1757,7 +1757,12 @@ impl<'a> QueryEngine<'a> {
                     let mut new_set: HashSet<NodeId> = HashSet::new();
                     for (i, c) in clusters.iter().enumerate() {
                         let funcs: Vec<NodeId> = match &restrict {
-                            Some(r) => c.functions.iter().filter(|f| r.contains(*f)).cloned().collect(),
+                            Some(r) => c
+                                .functions
+                                .iter()
+                                .filter(|f| r.contains(*f))
+                                .cloned()
+                                .collect(),
                             None => c.functions.iter().cloned().collect(),
                         };
                         if funcs.is_empty() {
@@ -1849,10 +1854,13 @@ impl<'a> QueryEngine<'a> {
                 // and filter to nodes that have at least one possible type.
                 DslOp::PossibleTypes => {
                     working_set.retain(|id| {
-                        self.graph.get_node(id).map(|n| {
-                            n.metadata.contains_key("possible_input_types")
-                                || n.metadata.contains_key("possible_return_types")
-                        }).unwrap_or(false)
+                        self.graph
+                            .get_node(id)
+                            .map(|n| {
+                                n.metadata.contains_key("possible_input_types")
+                                    || n.metadata.contains_key("possible_return_types")
+                            })
+                            .unwrap_or(false)
                     });
                     for id in &working_set {
                         if let Some(n) = self.graph.get_node(id) {
@@ -1943,9 +1951,7 @@ impl<'a> QueryEngine<'a> {
     ) -> Result<QueryResult, QueryError> {
         match expr {
             Expr::Pipe(ops) => self.execute(ops, config),
-            Expr::Entrypoints(kind_filter) => {
-                Ok(self.execute_entrypoints(*kind_filter, config))
-            }
+            Expr::Entrypoints(kind_filter) => Ok(self.execute_entrypoints(*kind_filter, config)),
             Expr::PathQuery(pq) => self.execute_path_query(pq, config),
             Expr::SetOp { op, left, right } => {
                 let l = self.execute_expr(left, config)?;
@@ -1973,9 +1979,11 @@ impl<'a> QueryEngine<'a> {
                 // working set by calling execute_with_seed.
                 self.execute_pipe_from(&seed.nodes, ops, config)
             }
-            Expr::MultiPath { sources, to, max_depth } => {
-                self.execute_multi_path(sources, to, *max_depth, config)
-            }
+            Expr::MultiPath {
+                sources,
+                to,
+                max_depth,
+            } => self.execute_multi_path(sources, to, *max_depth, config),
         }
     }
 
@@ -2013,10 +2021,7 @@ impl<'a> QueryEngine<'a> {
                         .find_by_name(name)
                         .into_iter()
                         .filter(|n| {
-                            matches!(
-                                n.kind,
-                                NodeKind::Struct | NodeKind::Enum | NodeKind::Trait
-                            )
+                            matches!(n.kind, NodeKind::Struct | NodeKind::Enum | NodeKind::Trait)
                         })
                         .map(|n| n.id.clone())
                         .collect();
@@ -2066,10 +2071,13 @@ impl<'a> QueryEngine<'a> {
                 }
                 DslOp::PossibleTypes => {
                     working_set.retain(|id| {
-                        self.graph.get_node(id).map(|n| {
-                            n.metadata.contains_key("possible_input_types")
-                                || n.metadata.contains_key("possible_return_types")
-                        }).unwrap_or(false)
+                        self.graph
+                            .get_node(id)
+                            .map(|n| {
+                                n.metadata.contains_key("possible_input_types")
+                                    || n.metadata.contains_key("possible_return_types")
+                            })
+                            .unwrap_or(false)
                     });
                     for id in &working_set {
                         if let Some(n) = self.graph.get_node(id) {
@@ -2136,14 +2144,12 @@ impl<'a> QueryEngine<'a> {
     /// excluded — `dominators_chain` returns strict ancestors, which
     /// matches the user's mental model: "what dominates X?" should not
     /// include X). Records the chosen root in `metadata`.
-    fn execute_dominators_of(
-        &self,
-        seeds: &[NodeId],
-        config: &QueryConfig,
-    ) -> QueryResult {
+    fn execute_dominators_of(&self, seeds: &[NodeId], config: &QueryConfig) -> QueryResult {
         let mut result = QueryResult::default();
         let Some((root_id, root_idx)) = self.pick_dominator_root() else {
-            result.metadata.push("dominators: no entry node available".to_string());
+            result
+                .metadata
+                .push("dominators: no entry node available".to_string());
             return result;
         };
         let dom = crate::dominators::Dominators::build(self.graph.inner(), root_idx);
@@ -2180,14 +2186,12 @@ impl<'a> QueryEngine<'a> {
 
     /// Inverse of [`Self::execute_dominators_of`]: every node whose
     /// dominator chain contains any seed.
-    fn execute_dominates_of(
-        &self,
-        seeds: &[NodeId],
-        config: &QueryConfig,
-    ) -> QueryResult {
+    fn execute_dominates_of(&self, seeds: &[NodeId], config: &QueryConfig) -> QueryResult {
         let mut result = QueryResult::default();
         let Some((root_id, root_idx)) = self.pick_dominator_root() else {
-            result.metadata.push("dominates: no entry node available".to_string());
+            result
+                .metadata
+                .push("dominates: no entry node available".to_string());
             return result;
         };
         let dom = crate::dominators::Dominators::build(self.graph.inner(), root_idx);
@@ -2236,11 +2240,7 @@ impl<'a> QueryEngine<'a> {
     /// return its direct implementors (Struct/Enum nodes via `Implements`
     /// edges). Sourced from
     /// [`crate::graph::CodeGraph::trait_hierarchies`].
-    fn execute_trait_impls_of(
-        &self,
-        seeds: &[NodeId],
-        config: &QueryConfig,
-    ) -> QueryResult {
+    fn execute_trait_impls_of(&self, seeds: &[NodeId], config: &QueryConfig) -> QueryResult {
         let mut result = QueryResult::default();
         let seed_set: HashSet<&NodeId> = seeds.iter().collect();
         let hierarchies = self.graph.trait_hierarchies();
@@ -2308,8 +2308,7 @@ impl<'a> QueryEngine<'a> {
         let mut seen_edges: HashSet<(NodeId, NodeId, String)> = HashSet::new();
         let mut metadata: Vec<String> = Vec::new();
         for target in &to_set.nodes {
-            let Some(path) =
-                traversal::find_path_multi_source(self.graph, &src_vec, target, depth)
+            let Some(path) = traversal::find_path_multi_source(self.graph, &src_vec, target, depth)
             else {
                 continue;
             };
@@ -2377,9 +2376,7 @@ impl<'a> QueryEngine<'a> {
     /// Returns both the [`NodeId`] and its petgraph index because callers
     /// already need the index to build the `Dominators` and the `NodeId`
     /// for metadata reporting.
-    fn pick_dominator_root(
-        &self,
-    ) -> Option<(NodeId, petgraph::stable_graph::NodeIndex)> {
+    fn pick_dominator_root(&self) -> Option<(NodeId, petgraph::stable_graph::NodeIndex)> {
         // First preference: fn main.
         for n in self.graph.find_by_name("main") {
             if n.kind == NodeKind::Function && n.name == "main" {
@@ -2567,7 +2564,12 @@ impl<'a> QueryEngine<'a> {
 /// is preserved (per module-level contract) — `edges` and other metadata
 /// are dropped because there is no defensible merge across heterogenous
 /// operands. Truncation is recomputed against the merged size.
-fn combine_set_op(op: SetOp, left: QueryResult, right: QueryResult, max_nodes: usize) -> QueryResult {
+fn combine_set_op(
+    op: SetOp,
+    left: QueryResult,
+    right: QueryResult,
+    max_nodes: usize,
+) -> QueryResult {
     let l: HashSet<NodeId> = left.nodes.into_iter().collect();
     let r: HashSet<NodeId> = right.nodes.into_iter().collect();
     let merged: Vec<NodeId> = match op {
@@ -2703,7 +2705,15 @@ fn all_simple_paths_bounded(
             stack.push(next.clone());
             on_stack.insert(next.clone(), ());
             dfs(
-                graph, next, target, max_depth, node_budget, stack, on_stack, results, total,
+                graph,
+                next,
+                target,
+                max_depth,
+                node_budget,
+                stack,
+                on_stack,
+                results,
+                total,
             );
             on_stack.remove(next);
             stack.pop();
@@ -2790,8 +2800,10 @@ fn run_aggregate_unified(
     let (nodes, edges_meta, metadata) = match r {
         AggregateResult::Nodes(ns) => (ns, Vec::new(), Vec::new()),
         AggregateResult::Edges(es) => {
-            let nodes: Vec<NodeId> =
-                es.iter().flat_map(|e| [e.from.clone(), e.to.clone()]).collect();
+            let nodes: Vec<NodeId> = es
+                .iter()
+                .flat_map(|e| [e.from.clone(), e.to.clone()])
+                .collect();
             let edges: Vec<(NodeId, NodeId, String)> = es
                 .iter()
                 .map(|e| (e.from.clone(), e.to.clone(), format!("{:?}", e.kind)))
@@ -2803,16 +2815,8 @@ fn run_aggregate_unified(
                 .collect();
             (nodes, edges, meta)
         }
-        AggregateResult::Scalar(n) => (
-            Vec::new(),
-            Vec::new(),
-            vec![format!("scalar = {n}")],
-        ),
-        AggregateResult::Bool(b) => (
-            Vec::new(),
-            Vec::new(),
-            vec![format!("bool = {b}")],
-        ),
+        AggregateResult::Scalar(n) => (Vec::new(), Vec::new(), vec![format!("scalar = {n}")]),
+        AggregateResult::Bool(b) => (Vec::new(), Vec::new(), vec![format!("bool = {b}")]),
         AggregateResult::Groups(groups) => {
             let nodes: Vec<NodeId> = groups.values().flatten().cloned().collect();
             let meta: Vec<String> = groups
@@ -3400,12 +3404,7 @@ mod tests {
         let graph = build_setalgebra_fixture();
         let cfg = QueryConfig::default();
         // {a, b} union {c} == {a, b, c}.
-        let result = run_query_expr(
-            r#"fn("a") | callees union fn("c")"#,
-            &graph,
-            &cfg,
-        )
-        .unwrap();
+        let result = run_query_expr(r#"fn("a") | callees union fn("c")"#, &graph, &cfg).unwrap();
         let names = names_of(&graph, &result.nodes);
         assert!(names.contains("b"), "expected 'b' in union, got {names:?}");
         assert!(names.contains("c"), "expected 'c' in union, got {names:?}");
@@ -3438,8 +3437,8 @@ mod tests {
         let graph = build_setalgebra_fixture();
         let cfg = QueryConfig::default();
         // {a's callees plus a} \ {b} should drop b. Use depth=1 to get {a, b}.
-        let result = run_query_expr(r#"fn("a") | callees | depth 1 \ fn("b")"#, &graph, &cfg)
-            .unwrap();
+        let result =
+            run_query_expr(r#"fn("a") | callees | depth 1 \ fn("b")"#, &graph, &cfg).unwrap();
         let names = names_of(&graph, &result.nodes);
         assert!(!names.contains("b"), "b should be excluded, got {names:?}");
     }
@@ -3462,8 +3461,7 @@ mod tests {
     fn dsl_paths_returns_all_simple_paths_normal() {
         let graph = build_setalgebra_fixture();
         let cfg = QueryConfig::default();
-        let result = run_query_expr(r#"paths fn("a") -> fn("c") depth 5"#, &graph, &cfg)
-            .unwrap();
+        let result = run_query_expr(r#"paths fn("a") -> fn("c") depth 5"#, &graph, &cfg).unwrap();
         let names = names_of(&graph, &result.nodes);
         assert_eq!(names.len(), 3);
         assert!(names.contains("a") && names.contains("b") && names.contains("c"));
@@ -3723,12 +3721,8 @@ mod tests {
         g.add_edge(&main_n, &mid, fixture_calls_edge()).unwrap();
         g.add_edge(&mid, &leaf, fixture_calls_edge()).unwrap();
 
-        let result = run_query_expr(
-            r#"dominators of fn("leaf")"#,
-            &g,
-            &QueryConfig::default(),
-        )
-        .unwrap();
+        let result =
+            run_query_expr(r#"dominators of fn("leaf")"#, &g, &QueryConfig::default()).unwrap();
         let names = names_of(&g, &result.nodes);
         // leaf's dominator chain is {mid, main}.
         assert!(names.contains("main"), "got {names:?}");

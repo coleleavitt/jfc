@@ -339,12 +339,8 @@ fn bfs_relabel(graph: &CodeGraph) -> Vec<NodeIndex> {
     let mut seeds: Vec<NodeIndex> = inner.node_indices().collect();
     seeds.sort_by_key(|&idx| {
         std::cmp::Reverse(
-            inner
-                .neighbors_directed(idx, Direction::Outgoing)
-                .count()
-                + inner
-                    .neighbors_directed(idx, Direction::Incoming)
-                    .count(),
+            inner.neighbors_directed(idx, Direction::Outgoing).count()
+                + inner.neighbors_directed(idx, Direction::Incoming).count(),
         )
     });
 

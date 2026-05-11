@@ -268,7 +268,9 @@ fn collect_call_edges_csr(graph: &CodeGraph) -> Vec<(NodeId, NodeId)> {
         // Skip non-Function nodes — Calls edges always originate at
         // a Function. We need the NodeData to check kind.
         let Some(id) = snap.id_of(cv) else { continue };
-        let Some(node) = graph.get_node(id) else { continue };
+        let Some(node) = graph.get_node(id) else {
+            continue;
+        };
         if node.kind != NodeKind::Function {
             continue;
         }

@@ -43,10 +43,16 @@ impl LanguageAdapter for PythonAdapter {
         let mut parser = Parser::new();
         parser
             .set_language(&self.language)
-            .map_err(|e| AdapterError::ParseFailed { path: path.to_string_lossy().into(), reason: format!("{e}") })?;
+            .map_err(|e| AdapterError::ParseFailed {
+                path: path.to_string_lossy().into(),
+                reason: format!("{e}"),
+            })?;
         let tree = parser
             .parse(content, None)
-            .ok_or_else(|| AdapterError::ParseFailed { path: path.to_string_lossy().into(), reason: "tree-sitter returned None".into() })?;
+            .ok_or_else(|| AdapterError::ParseFailed {
+                path: path.to_string_lossy().into(),
+                reason: "tree-sitter returned None".into(),
+            })?;
         Ok(ParsedFile {
             tree,
             source: content.to_string(),
@@ -57,7 +63,14 @@ impl LanguageAdapter for PythonAdapter {
     fn extract_nodes(&self, file: &ParsedFile) -> Vec<NodeData> {
         let mut nodes = Vec::new();
         let root = file.tree.root_node();
-        walk_py(root, &file.source, &file.path, &file.path.to_string_lossy(), &[], &mut nodes);
+        walk_py(
+            root,
+            &file.source,
+            &file.path,
+            &file.path.to_string_lossy(),
+            &[],
+            &mut nodes,
+        );
         nodes
     }
 
@@ -67,7 +80,13 @@ impl LanguageAdapter for PythonAdapter {
         nodes: &[NodeData],
     ) -> Vec<(NodeId, NodeId, EdgeData)> {
         let mut edges = Vec::new();
-        extract_py_calls(file.tree.root_node(), &file.source, &file.path, nodes, &mut edges);
+        extract_py_calls(
+            file.tree.root_node(),
+            &file.source,
+            &file.path,
+            nodes,
+            &mut edges,
+        );
         edges
     }
 }
@@ -85,7 +104,14 @@ fn walk_py(
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name = text(name_node, source);
                 let qn = qualified(scope, &name);
-                out.push(build_nd(&name, NodeKind::Function, node, path, path_str, &qn));
+                out.push(build_nd(
+                    &name,
+                    NodeKind::Function,
+                    node,
+                    path,
+                    path_str,
+                    &qn,
+                ));
             }
         }
         "class_definition" => {
@@ -164,10 +190,21 @@ fn text(node: TsNode<'_>, source: &str) -> String {
 }
 
 fn qualified(scope: &[&str], name: &str) -> String {
-    if scope.is_empty() { name.to_string() } else { format!("{}::{}", scope.join("::"), name) }
+    if scope.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}::{}", scope.join("::"), name)
+    }
 }
 
-fn build_nd(name: &str, kind: NodeKind, node: TsNode<'_>, path: &Path, path_str: &str, qn: &str) -> NodeData {
+fn build_nd(
+    name: &str,
+    kind: NodeKind,
+    node: TsNode<'_>,
+    path: &Path,
+    path_str: &str,
+    qn: &str,
+) -> NodeData {
     NodeData {
         id: NodeId::new(path_str, qn, kind),
         kind,
@@ -200,9 +237,15 @@ mod tests {
     #[test]
     fn python_adapter_parses_function() {
         let a = PythonAdapter::new();
-        let parsed = a.parse_file(Path::new("t.py"), "def hello():\n    pass").unwrap();
+        let parsed = a
+            .parse_file(Path::new("t.py"), "def hello():\n    pass")
+            .unwrap();
         let nodes = a.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "hello" && n.kind == NodeKind::Function));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "hello" && n.kind == NodeKind::Function)
+        );
     }
 
     #[test]
@@ -211,8 +254,16 @@ mod tests {
         let src = "class Widget:\n    def render(self):\n        pass";
         let parsed = a.parse_file(Path::new("t.py"), src).unwrap();
         let nodes = a.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "Widget" && n.kind == NodeKind::Struct));
-        assert!(nodes.iter().any(|n| n.name == "render" && n.kind == NodeKind::Function));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "Widget" && n.kind == NodeKind::Struct)
+        );
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "render" && n.kind == NodeKind::Function)
+        );
     }
 
     #[test]

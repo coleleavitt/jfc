@@ -13,6 +13,7 @@ pub mod openai;
 pub mod openwebui;
 pub mod retry;
 mod sse;
+pub mod unified;
 pub mod vertex;
 pub mod vertex_wizard;
 

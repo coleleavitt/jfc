@@ -55,10 +55,16 @@ impl LanguageAdapter for TypeScriptAdapter {
         let mut parser = Parser::new();
         parser
             .set_language(&self.language_for(path))
-            .map_err(|e| AdapterError::ParseFailed { path: path.to_string_lossy().into(), reason: format!("{e}") })?;
+            .map_err(|e| AdapterError::ParseFailed {
+                path: path.to_string_lossy().into(),
+                reason: format!("{e}"),
+            })?;
         let tree = parser
             .parse(content, None)
-            .ok_or_else(|| AdapterError::ParseFailed { path: path.to_string_lossy().into(), reason: "tree-sitter returned None".into() })?;
+            .ok_or_else(|| AdapterError::ParseFailed {
+                path: path.to_string_lossy().into(),
+                reason: "tree-sitter returned None".into(),
+            })?;
         Ok(ParsedFile {
             tree,
             source: content.to_string(),
@@ -103,7 +109,14 @@ fn walk_ts_node(
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name = text(name_node, source);
                 let qn = qualified(scope, &name);
-                out.push(build_nd(&name, NodeKind::Function, node, path, path_str, &qn));
+                out.push(build_nd(
+                    &name,
+                    NodeKind::Function,
+                    node,
+                    path,
+                    path_str,
+                    &qn,
+                ));
             }
         }
         "class_declaration" => {
@@ -138,7 +151,14 @@ fn walk_ts_node(
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name = text(name_node, source);
                 let qn = qualified(scope, &name);
-                out.push(build_nd(&name, NodeKind::Function, node, path, path_str, &qn));
+                out.push(build_nd(
+                    &name,
+                    NodeKind::Function,
+                    node,
+                    path,
+                    path_str,
+                    &qn,
+                ));
             }
         }
         "lexical_declaration" | "variable_declaration" => {
@@ -298,7 +318,11 @@ mod tests {
         let src = "function hello(name: string): void { console.log(name); }";
         let parsed = adapter.parse_file(path, src).unwrap();
         let nodes = adapter.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "hello" && n.kind == NodeKind::Function));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "hello" && n.kind == NodeKind::Function)
+        );
     }
 
     #[test]
@@ -308,9 +332,21 @@ mod tests {
         let src = "class Widget { render() {} destroy() {} }";
         let parsed = adapter.parse_file(path, src).unwrap();
         let nodes = adapter.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "Widget" && n.kind == NodeKind::Struct));
-        assert!(nodes.iter().any(|n| n.name == "render" && n.kind == NodeKind::Function));
-        assert!(nodes.iter().any(|n| n.name == "destroy" && n.kind == NodeKind::Function));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "Widget" && n.kind == NodeKind::Struct)
+        );
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "render" && n.kind == NodeKind::Function)
+        );
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "destroy" && n.kind == NodeKind::Function)
+        );
     }
 
     #[test]
@@ -320,7 +356,11 @@ mod tests {
         let src = "interface Iterable { next(): void; }";
         let parsed = adapter.parse_file(path, src).unwrap();
         let nodes = adapter.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "Iterable" && n.kind == NodeKind::Trait));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "Iterable" && n.kind == NodeKind::Trait)
+        );
     }
 
     #[test]
@@ -330,7 +370,11 @@ mod tests {
         let src = "enum Direction { Up, Down, Left, Right }";
         let parsed = adapter.parse_file(path, src).unwrap();
         let nodes = adapter.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "Direction" && n.kind == NodeKind::Enum));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "Direction" && n.kind == NodeKind::Enum)
+        );
     }
 
     #[test]
@@ -340,7 +384,11 @@ mod tests {
         let src = "const greet = (name: string) => { return `hi ${name}`; }";
         let parsed = adapter.parse_file(path, src).unwrap();
         let nodes = adapter.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "greet" && n.kind == NodeKind::Function));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "greet" && n.kind == NodeKind::Function)
+        );
     }
 
     #[test]
@@ -370,6 +418,10 @@ function callee() {}
         let src = "function App() { return <div/>; }";
         let parsed = adapter.parse_file(path, src).unwrap();
         let nodes = adapter.extract_nodes(&parsed);
-        assert!(nodes.iter().any(|n| n.name == "App" && n.kind == NodeKind::Function));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.name == "App" && n.kind == NodeKind::Function)
+        );
     }
 }

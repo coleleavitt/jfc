@@ -57,16 +57,76 @@ fn render_ribbon(f: &mut Frame, app: &App, area: Rect) {
         .unwrap_or_else(|| "?".to_owned());
     let branch = app.git_branch.clone().unwrap_or_else(|| "—".to_owned());
     let cost = crate::cost::fmt_cost(crate::cost::total_cost(&app.usage_by_model));
-    let body = format!(
-        " {model} │ {mode_label} │ {cwd} │ {branch} │ {cost} ",
-        model = app.model.as_str(),
-    );
+    // Anthropic OAuth utilization snippet — only rendered when an OAuth
+    // account is configured AND we have at least one utilization datapoint
+    // from a recent response. Keeps the ribbon clean for API-key users.
+    let acct_snippet = format_account_snippet(app);
+    let body = if acct_snippet.is_empty() {
+        format!(
+            " {model} │ {mode_label} │ {cwd} │ {branch} │ {cost} ",
+            model = app.model.as_str(),
+        )
+    } else {
+        format!(
+            " {model} │ {mode_label} │ {cwd} │ {branch} │ {cost} │ {acct_snippet} ",
+            model = app.model.as_str(),
+        )
+    };
     let para = ratatui::widgets::Paragraph::new(body).style(
         t.style_text_primary
             .bg(t.surface_raised)
             .add_modifier(Modifier::BOLD),
     );
     f.render_widget(para, area);
+}
+
+/// Compact OAuth-account utilization summary for the ribbon, e.g.
+/// `[bob@x.com 5h 47% / 7d 12%]` or `[opus weekly · resets 2h]` when
+/// rate-limited. Empty string when no OAuth snapshot is cached.
+fn format_account_snippet(app: &App) -> String {
+    let Some(snap) = app.anthropic_account_snapshot.as_ref() else {
+        return String::new();
+    };
+    let label = snap
+        .email
+        .as_deref()
+        .map(|e| e.split('@').next().unwrap_or(e))
+        .unwrap_or(snap.name.as_str());
+    let mut parts: Vec<String> = Vec::new();
+    parts.push(label.to_owned());
+
+    if let Some(until) = snap.rate_limited_until_ms {
+        let now = crate::providers::anthropic_accounts::now_ms();
+        let remaining_s = (until.saturating_sub(now) / 1000) as u64;
+        let human = if remaining_s >= 3600 {
+            format!("{}h", remaining_s / 3600)
+        } else if remaining_s >= 60 {
+            format!("{}m", remaining_s / 60)
+        } else {
+            format!("{remaining_s}s")
+        };
+        let claim_label = match &snap.claim {
+            Some(crate::providers::unified::ClaimType::SevenDayOpus) => "opus weekly",
+            Some(crate::providers::unified::ClaimType::SevenDaySonnet) => "sonnet weekly",
+            Some(crate::providers::unified::ClaimType::SevenDay) => "weekly",
+            Some(crate::providers::unified::ClaimType::FiveHour) => "5h",
+            Some(crate::providers::unified::ClaimType::Overage) => "overage",
+            Some(crate::providers::unified::ClaimType::Other(s)) => s.as_str(),
+            None => "rate-limit",
+        };
+        parts.push(format!("{claim_label} · resets {human}"));
+    } else {
+        if let Some(u) = snap.utilization_5h {
+            parts.push(format!("5h {}%", (u * 100.0).round() as u32));
+        }
+        if let Some(u) = snap.utilization_7d {
+            parts.push(format!("7d {}%", (u * 100.0).round() as u32));
+        }
+        if snap.is_using_overage {
+            parts.push("·overage·".to_owned());
+        }
+    }
+    parts.join(" ")
 }
 
 /// Easing function for sidebar slide animation.
@@ -2690,6 +2750,8 @@ pub(crate) fn format_subagent_counters(bt: &crate::app::BackgroundTask) -> Strin
     }
     let total_tokens = bt
         .latest_input_tokens
+        .saturating_add(bt.latest_cache_read_tokens)
+        .saturating_add(bt.latest_cache_write_tokens)
         .saturating_add(bt.cumulative_output_tokens);
     if total_tokens > 0 {
         parts.push(format!("{} tok", format_token_count(total_tokens)));
@@ -3255,6 +3317,8 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
             .iter()
             .map(|b| {
                 b.latest_input_tokens
+                    .saturating_add(b.latest_cache_read_tokens)
+                    .saturating_add(b.latest_cache_write_tokens)
                     .saturating_add(b.cumulative_output_tokens)
             })
             .sum();
@@ -6066,6 +6130,8 @@ mod subagent_counter_tests {
             messages: Vec::new(),
             tool_use_count: tools,
             latest_input_tokens: in_tok,
+            latest_cache_read_tokens: 0,
+            latest_cache_write_tokens: 0,
             cumulative_output_tokens: out_tok,
             model_used: None,
             max_input_tokens: None,

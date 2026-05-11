@@ -237,19 +237,17 @@ impl Fingerprintable for CodeGraph {
             })
             .collect();
         edges.sort_by(|a, b| {
-            a.0.cmp(b.0)
-                .then_with(|| a.1.cmp(b.1))
-                .then_with(|| {
-                    // EdgeKind doesn't impl Ord; fall back to fingerprinting
-                    // each EdgeData and comparing those. Same source+target
-                    // with different kinds is rare, so this is cheap in
-                    // practice.
-                    let mut ha = FingerprintHasher::new();
-                    hash_edge_data(&mut ha, a.2);
-                    let mut hb = FingerprintHasher::new();
-                    hash_edge_data(&mut hb, b.2);
-                    ha.finish().as_u64().cmp(&hb.finish().as_u64())
-                })
+            a.0.cmp(b.0).then_with(|| a.1.cmp(b.1)).then_with(|| {
+                // EdgeKind doesn't impl Ord; fall back to fingerprinting
+                // each EdgeData and comparing those. Same source+target
+                // with different kinds is rare, so this is cheap in
+                // practice.
+                let mut ha = FingerprintHasher::new();
+                hash_edge_data(&mut ha, a.2);
+                let mut hb = FingerprintHasher::new();
+                hash_edge_data(&mut hb, b.2);
+                ha.finish().as_u64().cmp(&hb.finish().as_u64())
+            })
         });
 
         hasher.update(&"jfc-graph::CodeGraph::edges");
