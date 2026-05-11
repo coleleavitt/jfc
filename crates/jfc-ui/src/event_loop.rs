@@ -322,6 +322,7 @@ pub(crate) async fn run(
     crate::tools::register_event_sender(tx.clone());
     tracing::info!(target: "jfc::ui::events", "registered AppEvent sender for non-Task agent paths");
     let mut app = App::new(provider, model);
+    restore_persistent_background_agents(&mut app);
     app.providers = providers.clone();
     // Apply the user's persisted theme choice from
     // ~/.config/jfc/config.toml. Unknown / missing names fall back
@@ -1181,7 +1182,7 @@ pub(crate) async fn run(
                         } => {
                             tracing::warn!("[Swarm] Teammate {agent_id} failed: {error}");
                             if let Some(bt) = app.background_tasks.get_mut(&task_id) {
-                                bt.status = crate::types::TaskLifecycle::Completed;
+                                bt.status = crate::types::TaskLifecycle::Failed;
                                 bt.error = Some(error);
                             }
                             if let Some(team_name) = app.team_context.team_name.clone() {
@@ -2099,6 +2100,7 @@ pub(crate) async fn run(
                                 &tx,
                                 std::sync::Arc::clone(&app.dedup_cache),
                                 Some(std::sync::Arc::clone(&app.task_store)),
+                                app.team_context.team_name.clone(),
                                 std::sync::Arc::clone(&app.provider),
                                 app.model.clone(),
                                 app.teammate_event_tx.clone(),
@@ -2997,6 +2999,7 @@ pub(crate) async fn run(
                     // pipes nested-stream chunks the same way so the user
                     // can drill into a running agent and see what it's doing.
                     app.last_active_agent_task = Some(task_id.as_str().to_owned());
+                    crate::daemon::record_background_agent_log(task_id.as_str(), &text);
                     if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
                         // Coalesce with the previous chunk when both came in
                         // rapid succession AND the previous entry doesn't end
@@ -3068,10 +3071,18 @@ pub(crate) async fn run(
                             latest_cache_read_tokens: 0,
                             latest_cache_write_tokens: 0,
                             cumulative_output_tokens: 0,
-                            model_used: model_used.or_else(|| Some(app.model.as_str().to_owned())),
+                            model_used: model_used
+                                .clone()
+                                .or_else(|| Some(app.model.as_str().to_owned())),
                             max_input_tokens,
                             budget_killed: false,
                         },
+                    );
+                    crate::daemon::record_background_agent_started(
+                        task_id.as_str(),
+                        &description,
+                        model_used.or_else(|| Some(app.model.as_str().to_owned())),
+                        None,
                     );
                     let part = MessagePart::TaskStatus(TaskStatusPart {
                         task_id,
@@ -3112,7 +3123,7 @@ pub(crate) async fn run(
                             let elapsed_s = elapsed_ms / 1000;
                             bt.messages.push(format!("[{elapsed_s}s] {tool}"));
                         }
-                        bt.last_tool = last_tool;
+                        bt.last_tool = last_tool.clone();
                         if let Some(n) = tool_use_count {
                             bt.tool_use_count = n;
                         }
@@ -3147,6 +3158,13 @@ pub(crate) async fn run(
                             }
                         }
                     }
+                    crate::daemon::record_background_agent_progress(
+                        task_id.as_str(),
+                        last_tool.as_deref(),
+                        tool_use_count,
+                        input_tokens,
+                        output_tokens,
+                    );
                     if let Some((model, input, output, cache_read, cache_write)) = usage_update {
                         app.usage_by_model.entry(model).or_default().add_delta(
                             input,
@@ -3184,6 +3202,11 @@ pub(crate) async fn run(
                         bt.messages
                             .push(format!("[{elapsed_s}s] ✓ done — {summary}"));
                     }
+                    crate::daemon::record_background_agent_finished(
+                        task_id.as_str(),
+                        crate::daemon::BackgroundAgentStatus::Completed,
+                        &summary,
+                    );
                     for msg in &mut app.messages {
                         for part in &mut msg.parts {
                             if let MessagePart::TaskStatus(ts) = part {
@@ -3204,15 +3227,36 @@ pub(crate) async fn run(
                         "TaskFailed"
                     );
                     use types::TaskLifecycle;
+                    let was_cancelled = error
+                        .trim_start()
+                        .to_ascii_lowercase()
+                        .starts_with("cancelled:");
                     if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
-                        bt.status = TaskLifecycle::Failed;
+                        bt.status = if was_cancelled {
+                            TaskLifecycle::Cancelled
+                        } else {
+                            TaskLifecycle::Failed
+                        };
                         bt.error = Some(error.clone());
                     }
+                    crate::daemon::record_background_agent_finished(
+                        task_id.as_str(),
+                        if was_cancelled {
+                            crate::daemon::BackgroundAgentStatus::Cancelled
+                        } else {
+                            crate::daemon::BackgroundAgentStatus::Failed
+                        },
+                        &error,
+                    );
                     for msg in &mut app.messages {
                         for part in &mut msg.parts {
                             if let MessagePart::TaskStatus(ts) = part {
                                 if ts.task_id == task_id {
-                                    ts.status = TaskLifecycle::Failed;
+                                    ts.status = if was_cancelled {
+                                        TaskLifecycle::Cancelled
+                                    } else {
+                                        TaskLifecycle::Failed
+                                    };
                                     ts.error = Some(error.clone());
                                 }
                             }
@@ -3239,6 +3283,7 @@ pub(crate) async fn run(
                             crate::swarm::TEAM_LEAD_NAME,
                             &team_name,
                         ));
+                        app.task_store = crate::tasks::TaskStore::open_team(&team_name);
                     }
                     // Register the teammate in the in-memory roster. The
                     // render code reads this to draw the teammate tree and
@@ -3360,6 +3405,44 @@ pub(crate) async fn run(
     }
 
     Ok(())
+}
+
+fn restore_persistent_background_agents(app: &mut App) {
+    let paths = crate::daemon::DaemonPaths::default_user();
+    for agent in crate::daemon::background_agents_for_restore(&paths, 20) {
+        let status = match agent.status {
+            crate::daemon::BackgroundAgentStatus::Running => crate::types::TaskLifecycle::Running,
+            crate::daemon::BackgroundAgentStatus::Completed => {
+                crate::types::TaskLifecycle::Completed
+            }
+            crate::daemon::BackgroundAgentStatus::Failed => crate::types::TaskLifecycle::Failed,
+            crate::daemon::BackgroundAgentStatus::Cancelled => {
+                crate::types::TaskLifecycle::Cancelled
+            }
+        };
+        let messages = crate::daemon::read_last_lines(&agent.log_path, 200);
+        app.background_tasks.insert(
+            agent.id.clone(),
+            crate::app::BackgroundTask {
+                task_id: crate::ids::TaskId::from(agent.id),
+                description: agent.description,
+                status,
+                started_at: std::time::Instant::now(),
+                summary: agent.summary,
+                error: agent.error,
+                last_tool: None,
+                messages,
+                tool_use_count: agent.tool_use_count,
+                latest_input_tokens: agent.latest_input_tokens,
+                latest_cache_read_tokens: 0,
+                latest_cache_write_tokens: 0,
+                cumulative_output_tokens: agent.cumulative_output_tokens,
+                model_used: agent.model,
+                max_input_tokens: None,
+                budget_killed: false,
+            },
+        );
+    }
 }
 
 fn draw_synchronized(

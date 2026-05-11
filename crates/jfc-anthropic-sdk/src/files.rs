@@ -10,6 +10,7 @@
 use crate::beta;
 use crate::client::Client;
 use crate::error::{Error, Result};
+use crate::pagination::{ListParams, Page};
 use reqwest::Method;
 use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
@@ -30,6 +31,22 @@ pub struct FileService {
 impl FileService {
     pub fn new(client: Client) -> Self {
         Self { client }
+    }
+
+    pub async fn list(&self) -> Result<Page<FileMetadata>> {
+        self.list_page(&ListParams::default()).await
+    }
+
+    pub async fn list_page(&self, params: &ListParams) -> Result<Page<FileMetadata>> {
+        let resp = self
+            .client
+            .execute_with_retry(|| {
+                self.client
+                    .request(Method::GET, "/v1/beta/files", Some(beta::FILES))
+                    .query(params)
+            })
+            .await?;
+        Ok(resp.json().await?)
     }
 
     pub async fn metadata(&self, file_id: &str) -> Result<FileMetadata> {
@@ -78,21 +95,12 @@ impl FileService {
         let form = Form::new().part("file", part);
         let resp = self
             .client
-            .http()
-            .request(Method::POST, url)
-            .header("anthropic-beta", beta::FILES)
+            .request_url(Method::POST, url, Some(beta::FILES))
             .multipart(form)
             .send()
             .await?;
         if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(Error::Api {
-                status,
-                message: body,
-                request_id: None,
-                body: None,
-            });
+            return Err(crate::client::into_api_error(resp).await);
         }
         Ok(resp.json().await?)
     }

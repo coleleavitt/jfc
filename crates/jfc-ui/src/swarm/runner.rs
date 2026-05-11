@@ -52,6 +52,8 @@ pub struct TeammateRunnerConfig {
     pub model_id: crate::provider::ModelId,
     /// System prompt additions (agent-specific + teammate addendum).
     pub system_prompt: Option<String>,
+    /// Shared task list used by TaskCreate/TaskUpdate/TaskList/TaskDone.
+    pub task_store: Option<std::sync::Arc<crate::tasks::TaskStore>>,
 }
 
 /// Message types the runner can receive from its poll loop.
@@ -70,7 +72,7 @@ pub enum PollResult {
         original_message: String,
     },
     /// A task from the task list is available to claim.
-    TaskAvailable { prompt: String },
+    TaskAvailable { task_id: String, prompt: String },
     /// The teammate was aborted (lifecycle abort signal).
     Aborted,
 }
@@ -92,7 +94,7 @@ pub fn start_teammate(
     event_tx: mpsc::UnboundedSender<TeammateEvent>,
 ) -> (String, watch::Sender<bool>) {
     let (abort_tx, abort_rx) = watch::channel(false);
-    let task_id = format!("teammate-{}", &config.identity.agent_id);
+    let task_id = format!("teammate-{}", config.identity.agent_id);
 
     let identity = config.identity.clone();
     let task_id_clone = task_id.clone();
@@ -209,6 +211,7 @@ async fn run_teammate_loop(
 
     let mut iteration = 0u64;
     let mut conversation_history: Vec<crate::provider::ProviderMessage> = Vec::new();
+    let mut active_task_id: Option<String> = None;
 
     loop {
         // Check abort before processing
@@ -247,6 +250,17 @@ async fn run_teammate_loop(
                 tool_count,
                 last_tool,
             } => {
+                if let (Some(store), Some(task_id)) =
+                    (config.task_store.as_ref(), active_task_id.take())
+                {
+                    let _ = store.update(
+                        &task_id,
+                        crate::tasks::TaskPatch {
+                            status: Some(crate::tasks::TaskStatus::Completed),
+                            ..Default::default()
+                        },
+                    );
+                }
                 let _ = event_tx.send(TeammateEvent::Progress {
                     task_id: task_id.clone(),
                     agent_id: identity.agent_id.clone(),
@@ -290,7 +304,8 @@ async fn run_teammate_loop(
         );
 
         // ─── Poll for next message ───────────────────────────────────────
-        let poll_result = poll_for_next_message(identity, &mut abort_rx).await;
+        let poll_result =
+            poll_for_next_message(identity, config.task_store.clone(), &mut abort_rx).await;
 
         match poll_result {
             PollResult::NewMessage {
@@ -374,11 +389,12 @@ async fn run_teammate_loop(
                     identity.agent_name
                 );
             }
-            PollResult::TaskAvailable { prompt } => {
+            PollResult::TaskAvailable { task_id, prompt } => {
                 debug!(
                     "[InProcessRunner] {} claimed task from task list",
                     identity.agent_name
                 );
+                active_task_id = Some(task_id);
                 current_prompt =
                     format_teammate_message("task-list", &prompt, None, Some("auto-claimed task"));
             }
@@ -401,6 +417,7 @@ async fn run_teammate_loop(
 /// 3. Repeats every POLL_INTERVAL_MS
 async fn poll_for_next_message(
     identity: &TeammateIdentity,
+    task_store: Option<std::sync::Arc<crate::tasks::TaskStore>>,
     abort_rx: &mut watch::Receiver<bool>,
 ) -> PollResult {
     let mut poll_count = 0u32;
@@ -476,8 +493,10 @@ async fn poll_for_next_message(
         }
 
         // Check task list for unclaimed work (auto-claiming)
-        if let Some(prompt) = check_task_list_for_work(identity).await {
-            return PollResult::TaskAvailable { prompt };
+        if let Some((task_id, prompt)) =
+            check_task_list_for_work(identity, task_store.clone()).await
+        {
+            return PollResult::TaskAvailable { task_id, prompt };
         }
 
         // No messages found — continue polling
@@ -486,76 +505,30 @@ async fn poll_for_next_message(
 
 /// Check the team's task list for an unblocked, unowned task to claim.
 /// Returns a formatted prompt if a task was successfully claimed.
-async fn check_task_list_for_work(identity: &TeammateIdentity) -> Option<String> {
-    use crate::swarm::team_helpers;
+async fn check_task_list_for_work(
+    identity: &TeammateIdentity,
+    store: Option<std::sync::Arc<crate::tasks::TaskStore>>,
+) -> Option<(String, String)> {
+    let store = store.unwrap_or_else(|| crate::tasks::TaskStore::open_team(&identity.team_name));
+    let task = store.claim_next_available(&identity.agent_name)?;
+    debug!(
+        "[InProcessRunner] {} auto-claimed task #{}: {}",
+        identity.agent_name, task.id, task.subject
+    );
 
-    // Read the task file from the team's task directory
-    let tasks_dir = team_helpers::tasks_dir(&identity.team_name);
-    let tasks_file = tasks_dir.join("tasks.json");
-
-    let content = tokio::fs::read_to_string(&tasks_file).await.ok()?;
-    let tasks: Vec<serde_json::Value> = serde_json::from_str(&content).ok()?;
-
-    // Find first pending, unowned, unblocked task
-    let completed_ids: std::collections::HashSet<String> = tasks
-        .iter()
-        .filter(|t| t["status"].as_str() == Some("completed"))
-        .filter_map(|t| t["id"].as_str().map(str::to_owned))
-        .collect();
-
-    for task in &tasks {
-        let status = task["status"].as_str().unwrap_or("");
-        if status != "pending" {
-            continue;
-        }
-        // Skip if owned
-        if task["owner"].as_str().is_some_and(|o| !o.is_empty()) {
-            continue;
-        }
-        // Skip if blocked
-        let blocked_by = task["blockedBy"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str())
-                    .any(|id| !completed_ids.contains(id))
-            })
-            .unwrap_or(false);
-        if blocked_by {
-            continue;
-        }
-
-        // Found a claimable task — claim it by writing owner
-        let task_id = task["id"].as_str()?;
-        let subject = task["subject"].as_str().unwrap_or("(unnamed task)");
-        let description = task["description"].as_str().unwrap_or("");
-
-        // Attempt to claim by updating the file (simplified — no lock contention handling)
-        let mut tasks_mut: Vec<serde_json::Value> = tasks.clone();
-        for t in &mut tasks_mut {
-            if t["id"].as_str() == Some(task_id) {
-                t["owner"] = serde_json::Value::String(identity.agent_name.clone());
-                t["status"] = serde_json::Value::String("in_progress".to_owned());
-            }
-        }
-        if let Ok(json) = serde_json::to_string_pretty(&tasks_mut) {
-            let _ = tokio::fs::write(&tasks_file, json).await;
-        }
-
-        debug!(
-            "[InProcessRunner] {} auto-claimed task #{}: {}",
-            identity.agent_name, task_id, subject
-        );
-
-        let mut prompt =
-            format!("Complete all open tasks. Start with task #{task_id}:\n\n {subject}");
-        if !description.is_empty() {
-            prompt.push_str(&format!("\n\n{description}"));
-        }
-        return Some(prompt);
+    let subject = if task.subject.is_empty() {
+        "(unnamed task)"
+    } else {
+        task.subject.as_str()
+    };
+    let mut prompt = format!(
+        "Complete all open tasks. Start with task #{}:\n\n{}",
+        task.id, subject
+    );
+    if !task.description.is_empty() {
+        prompt.push_str(&format!("\n\n{}", task.description));
     }
-
-    None
+    Some((task.id.to_string(), prompt))
 }
 
 // ─── Agent Turn Execution ────────────────────────────────────────────────────
@@ -920,9 +893,15 @@ async fn run_single_turn(
                 }
             }
 
-            let result =
-                tools::execute_tool(kind.clone(), input.clone(), cwd.clone(), None, None, None)
-                    .await;
+            let result = tools::execute_tool(
+                kind.clone(),
+                input.clone(),
+                cwd.clone(),
+                None,
+                config.task_store.clone(),
+                Some(identity.team_name.as_str()),
+            )
+            .await;
 
             tool_results.push(ProviderContent::ToolResult {
                 tool_use_id: id.clone(),
@@ -1112,7 +1091,7 @@ mod tests {
     async fn check_task_list_for_work_returns_none_when_no_tasks_robust() {
         let _g = HomeOverride::new();
         let identity = make_identity();
-        let result = check_task_list_for_work(&identity).await;
+        let result = check_task_list_for_work(&identity, None).await;
         assert!(result.is_none());
     }
 
@@ -1141,18 +1120,17 @@ mod tests {
         .await
         .unwrap();
 
-        let prompt = check_task_list_for_work(&identity).await.unwrap();
+        let (_task_id, prompt) = check_task_list_for_work(&identity, None).await.unwrap();
         assert!(prompt.contains("task #1"));
         assert!(prompt.contains("Implement feature X"));
         assert!(prompt.contains("Use the new API"));
 
         // The task should be marked in_progress with this teammate as owner.
-        let content = tokio::fs::read_to_string(tasks_dir.join("tasks.json"))
-            .await
+        let updated = crate::tasks::TaskStore::open_team(&identity.team_name)
+            .get("1")
             .unwrap();
-        let updated: Vec<serde_json::Value> = serde_json::from_str(&content).unwrap();
-        assert_eq!(updated[0]["status"], "in_progress");
-        assert_eq!(updated[0]["owner"], "alice");
+        assert_eq!(updated.status, crate::tasks::TaskStatus::InProgress);
+        assert_eq!(updated.owner.as_deref(), Some("alice"));
     }
 
     #[tokio::test]
@@ -1179,7 +1157,7 @@ mod tests {
         .unwrap();
 
         // Task already owned by another agent → no claim.
-        assert!(check_task_list_for_work(&identity).await.is_none());
+        assert!(check_task_list_for_work(&identity, None).await.is_none());
     }
 
     #[tokio::test]
@@ -1202,7 +1180,7 @@ mod tests {
         .unwrap();
 
         // Neither task is claimable for `alice` (1 owned, 2 blocked).
-        assert!(check_task_list_for_work(&identity).await.is_none());
+        assert!(check_task_list_for_work(&identity, None).await.is_none());
     }
 
     #[tokio::test]
@@ -1224,7 +1202,7 @@ mod tests {
         .await
         .unwrap();
 
-        let prompt = check_task_list_for_work(&identity).await.unwrap();
+        let (_task_id, prompt) = check_task_list_for_work(&identity, None).await.unwrap();
         assert!(prompt.contains("Now ready"));
     }
 
@@ -1247,7 +1225,7 @@ mod tests {
         .unwrap();
 
         // No `pending` task → nothing to claim.
-        assert!(check_task_list_for_work(&identity).await.is_none());
+        assert!(check_task_list_for_work(&identity, None).await.is_none());
     }
 
     #[tokio::test]
@@ -1269,7 +1247,7 @@ mod tests {
         .await
         .unwrap();
 
-        let prompt = check_task_list_for_work(&identity).await.unwrap();
+        let (_task_id, prompt) = check_task_list_for_work(&identity, None).await.unwrap();
         assert!(prompt.contains("task #1"));
         assert!(prompt.contains("(unnamed task)"));
     }
@@ -1279,6 +1257,7 @@ mod tests {
         // Smoke test the enum so coverage hits the variant constructors.
         let _ = PollResult::Aborted;
         let _ = PollResult::TaskAvailable {
+            task_id: "1".into(),
             prompt: "do it".into(),
         };
         let _ = PollResult::NewMessage {
@@ -1369,6 +1348,7 @@ mod tests {
             provider,
             model_id: crate::provider::ModelId::new("stub-model"),
             system_prompt: Some("be brief".into()),
+            task_store: None,
         };
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1508,6 +1488,7 @@ mod tests {
             provider,
             model_id: crate::provider::ModelId::new("stub-model"),
             system_prompt: None,
+            task_store: None,
         };
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1588,6 +1569,7 @@ mod tests {
             provider,
             model_id: crate::provider::ModelId::new("stub-model"),
             system_prompt: None,
+            task_store: None,
         };
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1663,6 +1645,7 @@ mod tests {
             provider,
             model_id: crate::provider::ModelId::new("stub-model"),
             system_prompt: None,
+            task_store: None,
         };
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();

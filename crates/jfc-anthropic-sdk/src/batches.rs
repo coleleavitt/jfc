@@ -11,8 +11,11 @@
 use crate::beta;
 use crate::client::Client;
 use crate::error::Result;
+use crate::pagination::{ListParams, Page};
+use futures::stream::{Stream, StreamExt};
 use reqwest::Method;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::pin::Pin;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct MessageBatch {
@@ -47,6 +50,26 @@ pub struct MessageBatchService {
 impl MessageBatchService {
     pub fn new(client: Client) -> Self {
         Self { client }
+    }
+
+    pub async fn list(&self) -> Result<Page<MessageBatch>> {
+        self.list_page(&ListParams::default()).await
+    }
+
+    pub async fn list_page(&self, params: &ListParams) -> Result<Page<MessageBatch>> {
+        let resp = self
+            .client
+            .execute_with_retry(|| {
+                self.client
+                    .request(
+                        Method::GET,
+                        "/v1/beta/messages/batches",
+                        Some(beta::MESSAGE_BATCHES),
+                    )
+                    .query(params)
+            })
+            .await?;
+        Ok(resp.json().await?)
     }
 
     pub async fn get(&self, batch_id: &str) -> Result<MessageBatch> {
@@ -92,9 +115,35 @@ impl MessageBatchService {
             .await?;
         Ok(resp.json().await?)
     }
+
+    pub async fn delete(&self, batch_id: &str) -> Result<()> {
+        let path = format!("/v1/beta/messages/batches/{batch_id}");
+        self.client
+            .execute_with_retry(|| {
+                self.client
+                    .request(Method::DELETE, &path, Some(beta::MESSAGE_BATCHES))
+            })
+            .await?;
+        Ok(())
+    }
+
+    pub async fn results(
+        &self,
+        batch_id: &str,
+    ) -> Result<Pin<Box<dyn Stream<Item = reqwest::Result<Vec<u8>>> + Send>>> {
+        let path = format!("/v1/beta/messages/batches/{batch_id}/results");
+        let resp = self
+            .client
+            .execute_with_retry(|| {
+                self.client
+                    .request(Method::GET, &path, Some(beta::MESSAGE_BATCHES))
+            })
+            .await?;
+        Ok(Box::pin(resp.bytes_stream().map(|chunk| chunk.map(|b| b.to_vec()))))
+    }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BatchRequest {
     pub custom_id: String,
     pub params: crate::messages::MessageRequest,

@@ -1893,9 +1893,7 @@ fn execute_task_update_changes_status_normal() {
 }
 
 #[test]
-fn execute_task_update_invalid_status_does_not_set_robust() {
-    // Garbage status string: parser yields None and the patch leaves
-    // status untouched. The update otherwise succeeds.
+fn execute_task_update_invalid_status_fails_robust() {
     let store = TaskStore::in_memory();
     execute_task_create(Some(store.clone()), "x".into(), "y".into(), None, vec![]);
     let r = execute_task_update(
@@ -1906,8 +1904,8 @@ fn execute_task_update_invalid_status_does_not_set_robust() {
         None,
         None,
     );
-    assert!(!r.is_error(), "{}", r.output);
-    assert!(r.output.contains("renamed"), "{}", r.output);
+    assert!(r.is_error(), "{}", r.output);
+    assert!(r.output.contains("Invalid task status"), "{}", r.output);
 }
 
 #[test]

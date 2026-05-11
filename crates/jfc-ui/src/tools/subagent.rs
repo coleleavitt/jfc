@@ -251,6 +251,8 @@ pub async fn execute_task(
     task_id: Option<&str>,
     agent_def: Option<&crate::agents::AgentDef>,
     cwd_override: Option<PathBuf>,
+    task_store: Option<std::sync::Arc<crate::tasks::TaskStore>>,
+    active_team_name: Option<&str>,
 ) -> ExecutionResult {
     execute_task_inner(
         task_input,
@@ -260,6 +262,8 @@ pub async fn execute_task(
         task_id,
         agent_def,
         cwd_override,
+        task_store,
+        active_team_name.map(str::to_owned),
         0,
     )
     .await
@@ -274,6 +278,8 @@ async fn execute_task_inner(
     task_id: Option<&str>,
     agent_def: Option<&crate::agents::AgentDef>,
     cwd_override: Option<PathBuf>,
+    task_store: Option<std::sync::Arc<crate::tasks::TaskStore>>,
+    active_team_name: Option<String>,
     depth: u8,
 ) -> ExecutionResult {
     use crate::provider::{
@@ -365,6 +371,12 @@ async fn execute_task_inner(
     };
 
     'outer: loop {
+        if task_id
+            .map(crate::daemon::background_agent_cancel_requested)
+            .unwrap_or(false)
+        {
+            return ExecutionResult::failure("cancelled: background agent cancellation requested");
+        }
         turn += 1;
         if let Some(cap) = max_turns {
             if turn > cap {
@@ -446,6 +458,14 @@ async fn execute_task_inner(
         let mut reported_input_for_turn = false;
 
         while let Some(event) = stream.next().await {
+            if task_id
+                .map(crate::daemon::background_agent_cancel_requested)
+                .unwrap_or(false)
+            {
+                return ExecutionResult::failure(
+                    "cancelled: background agent cancellation requested",
+                );
+            }
             match event {
                 Ok(StreamEvent::TextDelta { delta, .. }) => {
                     // Pipe deltas through to the task panel so the user
@@ -632,12 +652,22 @@ async fn execute_task_inner(
                         None,
                         nested_agent,
                         Some(cwd.clone()),
+                        task_store.clone(),
+                        active_team_name.clone(),
                         depth + 1,
                     ))
                     .await
                 }
             } else {
-                execute_tool(kind, input, cwd.clone(), None, None, None).await
+                execute_tool(
+                    kind,
+                    input,
+                    cwd.clone(),
+                    None,
+                    task_store.clone(),
+                    active_team_name.as_deref(),
+                )
+                .await
             };
             let is_error = result.is_error();
             // Cap each tool result so a single Read on a multi-MB file

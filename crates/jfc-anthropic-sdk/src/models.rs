@@ -40,4 +40,13 @@ impl ModelService {
             .await?;
         Ok(resp.json().await?)
     }
+
+    pub async fn get(&self, model_id: &str) -> Result<Model> {
+        let path = format!("/v1/models/{model_id}");
+        let resp = self
+            .client
+            .execute_with_retry(|| self.client.request(Method::GET, &path, None))
+            .await?;
+        Ok(resp.json().await?)
+    }
 }

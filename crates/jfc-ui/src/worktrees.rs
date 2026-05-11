@@ -19,7 +19,7 @@
 //! in manual / integration testing. The pure helpers (`validate_name`,
 //! `parse_porcelain_output`) are exercised below.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tokio::process::Command as TokioCommand;
 
@@ -29,6 +29,29 @@ pub struct WorktreeInfo {
     pub path: String,
     pub branch: String,
     pub is_current: bool,
+}
+
+/// Resolve the canonical git repository root for a cwd inside a repository.
+pub async fn find_repo_root_async(cwd: &Path) -> Result<PathBuf, String> {
+    let output = TokioCommand::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .arg("rev-parse")
+        .arg("--show-toplevel")
+        .output()
+        .await
+        .map_err(|e| format!("failed to spawn `git rev-parse --show-toplevel`: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "`git rev-parse --show-toplevel` failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let root = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if root.is_empty() {
+        return Err("`git rev-parse --show-toplevel` returned an empty path".to_owned());
+    }
+    Ok(PathBuf::from(root))
 }
 
 /// Validate a worktree name before it reaches `git`. Names become both a

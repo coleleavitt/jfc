@@ -43,13 +43,18 @@ pub(super) fn execute_task_update(
     let Some(store) = store else {
         return ExecutionResult::failure("Task store not available");
     };
-    let parsed_status = status.as_deref().and_then(|s| match s {
-        "pending" => Some(TaskStatus::Pending),
-        "in_progress" => Some(TaskStatus::InProgress),
-        "completed" => Some(TaskStatus::Completed),
-        "deleted" => Some(TaskStatus::Deleted),
-        _ => None,
-    });
+    let parsed_status = match status.as_deref() {
+        Some("pending") => Some(TaskStatus::Pending),
+        Some("in_progress") => Some(TaskStatus::InProgress),
+        Some("completed") => Some(TaskStatus::Completed),
+        Some("deleted") => Some(TaskStatus::Deleted),
+        Some(other) => {
+            return ExecutionResult::failure(format!(
+                "Invalid task status '{other}'. Expected one of: pending, in_progress, completed, deleted"
+            ));
+        }
+        None => None,
+    };
     let patch = TaskPatch {
         subject,
         description,
@@ -83,7 +88,7 @@ pub(super) fn execute_task_list(
     let mut tasks = store.list(DeletedFilter::Exclude);
     if let Some(sf) = status_filter {
         tasks.retain(|t| {
-            let s = serde_json::to_value(&t.status)
+            let s = serde_json::to_value(t.status)
                 .ok()
                 .and_then(|v| v.as_str().map(str::to_owned));
             s.as_deref() == Some(sf)
