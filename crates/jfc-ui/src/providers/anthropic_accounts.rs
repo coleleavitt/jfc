@@ -10,8 +10,9 @@
 //! - Track per-account runtime state in memory: rate-limit cooldowns and consecutive
 //!   failure counters. Rate-limit `resetTime` may also be persisted on disk for
 //!   cross-process visibility.
-//! - Pick the *best available* account for a request, tier-aware (Max 20x > Max 5x >
-//!   Max > Pro > default > free), preferring the active account if it's healthy enough.
+//! - Pick the *best available* account for a request using a load-balancing score:
+//!   tier/capacity, utilization, daily usage, recent successes, failures, and
+//!   current in-flight requests all feed into the choice.
 //! - Atomic read-modify-write for token rotation, account add, account disable, and
 //!   refresh-token clearing on `invalid_grant`.
 //!
@@ -336,6 +337,10 @@ pub struct RuntimeState {
     /// has served. CC v138 hard-switches to a fallback model when this hits
     /// `OVERLOADED_FALLBACK_THRESHOLD` (3); we mirror that.
     pub consecutive_529s: u32,
+    /// Number of active requests currently using this account in this process.
+    /// This is deliberately runtime-only; cross-process balancing still relies
+    /// on persisted cooldown/usage telemetry.
+    pub in_flight: u32,
 }
 
 impl RuntimeState {
@@ -387,6 +392,41 @@ pub fn tier_rank(tier: Option<&str>) -> u32 {
 #[derive(Clone)]
 pub struct AccountManager {
     inner: Arc<Inner>,
+}
+
+/// Runtime claim for an account selected for an outgoing request. Dropping it
+/// releases the in-flight counter even if the stream is interrupted or the
+/// caller returns through an error path.
+pub struct AccountRequestGuard {
+    manager: AccountManager,
+    account_name: String,
+    released: bool,
+}
+
+impl AccountRequestGuard {
+    fn new(manager: AccountManager, account_name: String) -> Self {
+        Self {
+            manager,
+            account_name,
+            released: false,
+        }
+    }
+}
+
+impl Drop for AccountRequestGuard {
+    fn drop(&mut self) {
+        if self.released {
+            return;
+        }
+        self.released = true;
+        let manager = self.manager.clone();
+        let account_name = self.account_name.clone();
+        if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::spawn(async move {
+                manager.release_in_flight(&account_name).await;
+            });
+        }
+    }
 }
 
 struct Inner {
@@ -552,47 +592,84 @@ impl AccountManager {
         true
     }
 
-    /// Picks the best available account for an outgoing request.
-    ///
-    /// Selection rules (in order):
-    /// 1. The currently-active account if it is usable AND has no failures
-    ///    in the recent window. Stickiness reduces churn between accounts.
-    /// 2. Among all usable accounts, the highest tier. Ties broken by least
-    ///    recently used, then alphabetical name.
-    /// 3. If no account is usable but some have refresh tokens, the one
-    ///    whose disk-persisted `rate_limit_reset_time` is soonest. Caller
-    ///    must decide whether to wait or surface the error.
-    /// 4. `None` — all accounts are exhausted with no path to recovery.
-    pub async fn pick_next(&self) -> Option<Account> {
-        let exclude = std::collections::HashSet::new();
-        self.pick_next_excluding(&exclude).await
+    fn utilization_pressure(account: &Account) -> f64 {
+        account
+            .utilization_5h
+            .into_iter()
+            .chain(account.utilization_7d)
+            .filter(|v| v.is_finite())
+            .map(|v| v.clamp(0.0, 1.0))
+            .fold(0.0, f64::max)
     }
 
-    /// Same as [`Self::pick_next`], but excludes accounts already attempted
-    /// within the caller's current rotation loop.
-    pub async fn pick_next_excluding(
-        &self,
+    fn daily_token_total(account: &Account) -> u64 {
+        account
+            .daily_usage
+            .as_ref()
+            .map(|u| {
+                u.input_tokens
+                    .saturating_add(u.output_tokens)
+                    .saturating_add(u.cache_read_tokens)
+                    .saturating_add(u.cache_write_tokens)
+            })
+            .unwrap_or(0)
+    }
+
+    fn tier_capacity(account: &Account) -> f64 {
+        match tier_rank(account.rate_limit_tier.as_deref()) {
+            100 => 12.0,
+            90 => 10.0,
+            80 => 7.5,
+            70 => 6.0,
+            50 => 4.5,
+            40 => 3.5,
+            10 => 1.5,
+            0 => 2.0,
+            rank => (rank as f64 / 10.0).max(2.0),
+        }
+    }
+
+    fn recent_success_penalty(runtime: &RuntimeState, now: Instant) -> f64 {
+        let Some(last) = runtime.last_success_at else {
+            return 0.0;
+        };
+        let elapsed = now.saturating_duration_since(last).as_secs_f64();
+        if elapsed >= 60.0 {
+            0.0
+        } else {
+            (60.0 - elapsed) / 60.0 * 1.5
+        }
+    }
+
+    fn account_score(
+        account: &Account,
+        runtime: &RuntimeState,
+        now: Instant,
+        max_daily_tokens: u64,
+    ) -> f64 {
+        let daily_pressure = if max_daily_tokens == 0 {
+            0.0
+        } else {
+            Self::daily_token_total(account) as f64 / max_daily_tokens as f64
+        };
+        let denominator = 1.0
+            + (runtime.in_flight as f64 * 1.75)
+            + (Self::utilization_pressure(account) * 4.0)
+            + (daily_pressure * 2.0)
+            + (runtime.consecutive_failures as f64 * 1.25)
+            + Self::recent_success_penalty(runtime, now);
+        Self::tier_capacity(account) / denominator.max(1.0)
+    }
+
+    fn choose_account_from_state(
+        state: &ManagerState,
         exclude: &std::collections::HashSet<String>,
     ) -> Option<Account> {
-        let state = self.inner.state.lock().await;
         let accounts = &state.store.accounts;
         if accounts.is_empty() {
             return None;
         }
-        let active_idx = state.store.active_index.unwrap_or(0);
 
-        // Tier-1: stickiness. If active is usable and clean, prefer it.
-        if let Some(active) = accounts.get(active_idx) {
-            let rt = state.runtime.get(&active.name).cloned().unwrap_or_default();
-            if !exclude.contains(&active.name)
-                && Self::is_account_usable(active, &rt)
-                && rt.consecutive_failures == 0
-            {
-                return Some(active.clone());
-            }
-        }
-
-        // Tier-2: best-tier usable account.
         let mut usable: Vec<(&Account, RuntimeState)> = accounts
             .iter()
             .filter_map(|a| {
@@ -601,18 +678,22 @@ impl AccountManager {
             })
             .collect();
         if !usable.is_empty() {
+            let now = Instant::now();
+            let max_daily_tokens = usable
+                .iter()
+                .map(|(a, _)| Self::daily_token_total(a))
+                .max()
+                .unwrap_or(0);
             usable.sort_by(|(a1, r1), (a2, r2)| {
-                let t1 = tier_rank(a1.rate_limit_tier.as_deref());
-                let t2 = tier_rank(a2.rate_limit_tier.as_deref());
-                t2.cmp(&t1)
-                    .then_with(|| {
-                        // LRU: account with older last_success wins (None = never used = win).
-                        match (r1.last_success_at, r2.last_success_at) {
-                            (None, None) => std::cmp::Ordering::Equal,
-                            (None, Some(_)) => std::cmp::Ordering::Less,
-                            (Some(_), None) => std::cmp::Ordering::Greater,
-                            (Some(t1), Some(t2)) => t1.cmp(&t2),
-                        }
+                let s1 = Self::account_score(a1, r1, now, max_daily_tokens);
+                let s2 = Self::account_score(a2, r2, now, max_daily_tokens);
+                s2.partial_cmp(&s1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| match (r1.last_success_at, r2.last_success_at) {
+                        (None, None) => std::cmp::Ordering::Equal,
+                        (None, Some(_)) => std::cmp::Ordering::Less,
+                        (Some(_), None) => std::cmp::Ordering::Greater,
+                        (Some(t1), Some(t2)) => t1.cmp(&t2),
                     })
                     .then_with(|| a1.name.cmp(&a2.name))
             });
@@ -630,6 +711,52 @@ impl AccountManager {
         }
         waiting.sort_by_key(|a| a.rate_limit_reset_time.unwrap_or(u64::MAX));
         Some(waiting[0].clone())
+    }
+
+    /// Picks the best available account for an outgoing request.
+    ///
+    /// Selection rules (in order):
+    /// 1. Among usable accounts, choose the highest load-balancing score.
+    ///    Capacity/tier increases the score; high utilization, in-flight work,
+    ///    recent successes, daily usage, and failures lower it.
+    /// 2. If no account is usable but some have refresh tokens, the one
+    ///    whose disk-persisted `rate_limit_reset_time` is soonest. Caller
+    ///    must decide whether to wait or surface the error.
+    /// 3. `None` — all accounts are exhausted with no path to recovery.
+    pub async fn pick_next(&self) -> Option<Account> {
+        let exclude = std::collections::HashSet::new();
+        self.pick_next_excluding(&exclude).await
+    }
+
+    /// Same as [`Self::pick_next`], but excludes accounts already attempted
+    /// within the caller's current rotation loop.
+    pub async fn pick_next_excluding(
+        &self,
+        exclude: &std::collections::HashSet<String>,
+    ) -> Option<Account> {
+        let state = self.inner.state.lock().await;
+        Self::choose_account_from_state(&state, exclude)
+    }
+
+    /// Select an account for a real outbound request and increment its
+    /// in-flight counter atomically with the choice. The returned guard releases
+    /// the counter when dropped.
+    pub async fn acquire_next_excluding(
+        &self,
+        exclude: &std::collections::HashSet<String>,
+    ) -> Option<(Account, AccountRequestGuard)> {
+        let mut state = self.inner.state.lock().await;
+        let account = Self::choose_account_from_state(&state, exclude)?;
+        let rt = state.runtime.entry(account.name.clone()).or_default();
+        rt.in_flight = rt.in_flight.saturating_add(1);
+        let guard = AccountRequestGuard::new(self.clone(), account.name.clone());
+        Some((account, guard))
+    }
+
+    async fn release_in_flight(&self, name: &str) {
+        let mut state = self.inner.state.lock().await;
+        let rt = state.runtime.entry(name.to_owned()).or_default();
+        rt.in_flight = rt.in_flight.saturating_sub(1);
     }
 
     /// Mark the currently-active account as having succeeded. Clears the
@@ -1414,6 +1541,80 @@ mod tests {
         mgr.mark_failure("pro").await;
         let picked2 = mgr.pick_next().await.unwrap();
         assert_eq!(picked2.name, "max20x");
+    }
+
+    // Normal: a heavily-utilized high-tier account loses to a lower-tier
+    // account with more headroom. This is the key proactive balancer behavior:
+    // don't wait for a 429 before moving traffic.
+    #[tokio::test]
+    async fn utilization_pressure_drives_selection_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+        let mut maxed = mk_account("maxed", Some("claude_max_20x"));
+        maxed.utilization_5h = Some(0.99);
+        maxed.utilization_7d = Some(0.95);
+        mgr.atomic_add_account(maxed).await.unwrap();
+        mgr.atomic_add_account(mk_account("pro", Some("claude_pro")))
+            .await
+            .unwrap();
+
+        let picked = mgr.pick_next().await.unwrap();
+        assert_eq!(picked.name, "pro");
+    }
+
+    // Normal: same-tier accounts prefer the one with lower daily usage so
+    // long sessions spread cost/quota consumption instead of hammering one
+    // account until cooldown.
+    #[tokio::test]
+    async fn daily_usage_pressure_drives_selection_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+        let mut busy = mk_account("busy", Some("claude_max_5x"));
+        busy.daily_usage = Some(DailyUsage {
+            date: today_iso(),
+            input_tokens: 900_000,
+            output_tokens: 100_000,
+            ..DailyUsage::default()
+        });
+        mgr.atomic_add_account(busy).await.unwrap();
+        mgr.atomic_add_account(mk_account("idle", Some("claude_max_5x")))
+            .await
+            .unwrap();
+
+        let picked = mgr.pick_next().await.unwrap();
+        assert_eq!(picked.name, "idle");
+    }
+
+    // Normal: acquire_next_excluding increments in-flight state atomically
+    // with selection, so concurrent requests spread across equivalent accounts.
+    #[tokio::test]
+    async fn in_flight_claim_drives_selection_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        let mgr = AccountManager::load(path).await.unwrap();
+        mgr.atomic_add_account(mk_account("a", Some("claude_max")))
+            .await
+            .unwrap();
+        mgr.atomic_add_account(mk_account("b", Some("claude_max")))
+            .await
+            .unwrap();
+
+        let exclude = std::collections::HashSet::new();
+        let (first, guard) = mgr.acquire_next_excluding(&exclude).await.unwrap();
+        assert_eq!(first.name, "a");
+
+        let second = mgr.pick_next().await.unwrap();
+        assert_eq!(second.name, "b");
+
+        drop(guard);
+        tokio::task::yield_now().await;
+        let runtime = mgr.list_with_runtime().await;
+        assert!(
+            runtime.iter().all(|(_, rt)| rt.in_flight == 0),
+            "guard drop must release in-flight counters: {runtime:?}"
+        );
     }
 
     // Robust: callers can exclude already-tried accounts within one rotation
