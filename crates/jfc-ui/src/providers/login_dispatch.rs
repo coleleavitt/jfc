@@ -91,8 +91,9 @@ Claude Code OAuth (claudeai) sign-in:
 
   Multi-account rotation: when an account hits 429 / invalid_grant, jfc
   silently switches to the next-best account (tier-ranked, cooldown-aware).
-  The store at ~/.config/opencode/anthropic-accounts.json is shared with
-  opencode so logins from either tool are visible everywhere.";
+  The store is at ~/.config/jfc-anthropic-accounts.json. Set
+  JFC_ANTHROPIC_ACCOUNTS_PATH to use a custom path (e.g. opencode's store
+  at ~/.config/opencode/anthropic-accounts.json to share rotation state).";
 
 const CODEX_OAUTH_BODY: &str = "\
 OpenAI Codex OAuth sign-in:

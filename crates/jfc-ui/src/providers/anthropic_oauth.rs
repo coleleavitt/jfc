@@ -269,32 +269,23 @@ async fn refresh_access_token(
 /// Pure resolver for the Anthropic accounts store path. Inputs are explicit so the
 /// precedence rules can be unit-tested without mutating process state or the filesystem.
 ///
-/// Precedence: `override_env` (set by `JFC_ANTHROPIC_ACCOUNTS_PATH`) → opencode's store
-/// when it exists → jfc's own store as last resort.
-fn resolve_store_path(
-    override_env: Option<&str>,
-    home: &std::path::Path,
-    opencode_exists: bool,
-) -> PathBuf {
+/// Precedence: `override_env` (set by `JFC_ANTHROPIC_ACCOUNTS_PATH`) → canonical
+/// `~/.config/jfc-anthropic-accounts.json`.
+fn resolve_store_path(override_env: Option<&str>, home: &std::path::Path) -> PathBuf {
     if let Some(p) = override_env {
         return PathBuf::from(p);
     }
-    let opencode = home.join(".config/opencode/anthropic-accounts.json");
-    if opencode_exists {
-        return opencode;
-    }
-    home.join(".config/jfc/anthropic-accounts.json")
+    home.join(".config/jfc-anthropic-accounts.json")
 }
 
-/// Resolve the Anthropic accounts store. Prefers `~/.config/opencode/anthropic-accounts.json`
-/// because opencode rotates refresh tokens — using a separate jfc copy causes invalid_grant
-/// after opencode refreshes. Falls back to `~/.config/jfc/anthropic-accounts.json` when
-/// opencode's store is absent. Override with `JFC_ANTHROPIC_ACCOUNTS_PATH`.
+/// Resolve the Anthropic accounts store. Canonical location is
+/// `~/.config/jfc-anthropic-accounts.json`. Override with `JFC_ANTHROPIC_ACCOUNTS_PATH`
+/// (e.g. to point at opencode's `~/.config/opencode/anthropic-accounts.json` if you
+/// want to share rotation state with opencode again).
 pub fn default_store_path() -> PathBuf {
     let override_env = std::env::var("JFC_ANTHROPIC_ACCOUNTS_PATH").ok();
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-    let opencode = home.join(".config/opencode/anthropic-accounts.json");
-    resolve_store_path(override_env.as_deref(), &home, opencode.exists())
+    resolve_store_path(override_env.as_deref(), &home)
 }
 
 fn load_store(path: &PathBuf) -> anyhow::Result<AccountStore> {
@@ -353,8 +344,7 @@ struct TokenState {
 /// v126 cli.js (`GC$()`): Anthropic doesn't expose a model-ACL endpoint, so
 /// account tier is the source of truth for which Opus variant the picker should
 /// surface (see `XwH()` in v126 — `tier_filter` here implements the same rules).
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[derive(Debug, Clone, Default)]
 pub struct OAuthProfile {
     pub subscription_type: Option<String>, // "max" | "pro" | "enterprise" | "team"
     pub seat_tier: Option<String>, // "code_max" | "code_pro" | model id | "opus" | "opusplan" | "opus[1m]" | …
@@ -363,6 +353,73 @@ pub struct OAuthProfile {
     pub display_name: Option<String>,
     pub email: Option<String>,
     pub has_extra_usage_enabled: Option<bool>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct FlatOAuthProfile {
+    subscription_type: Option<String>,
+    seat_tier: Option<String>,
+    rate_limit_tier: Option<String>,
+    billing_type: Option<String>,
+    display_name: Option<String>,
+    email: Option<String>,
+    has_extra_usage_enabled: Option<bool>,
+}
+
+impl<'de> Deserialize<'de> for OAuthProfile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let flat: FlatOAuthProfile = serde_json::from_value(value.clone()).unwrap_or_default();
+        let account = value.get("account").and_then(Value::as_object);
+        let organization = value.get("organization").and_then(Value::as_object);
+
+        let org_str = |key: &str| {
+            organization
+                .and_then(|o| o.get(key))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
+        let account_str = |key: &str| {
+            account
+                .and_then(|a| a.get(key))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
+        let org_bool = |key: &str| {
+            organization
+                .and_then(|o| o.get(key))
+                .and_then(Value::as_bool)
+        };
+
+        let subscription_type = flat.subscription_type.or_else(|| {
+            org_str("organization_type").and_then(|kind| {
+                match kind.as_str() {
+                    "claude_max" => Some("max"),
+                    "claude_pro" => Some("pro"),
+                    "claude_enterprise" => Some("enterprise"),
+                    "claude_team" => Some("team"),
+                    _ => None,
+                }
+                .map(str::to_owned)
+            })
+        });
+
+        Ok(Self {
+            subscription_type,
+            seat_tier: flat.seat_tier.or_else(|| org_str("seat_tier")),
+            rate_limit_tier: flat.rate_limit_tier.or_else(|| org_str("rate_limit_tier")),
+            billing_type: flat.billing_type.or_else(|| org_str("billing_type")),
+            display_name: flat.display_name.or_else(|| account_str("display_name")),
+            email: flat.email.or_else(|| account_str("email")),
+            has_extra_usage_enabled: flat
+                .has_extra_usage_enabled
+                .or_else(|| org_bool("has_extra_usage_enabled")),
+        })
+    }
 }
 
 pub struct AnthropicOAuthProvider {
@@ -445,6 +502,12 @@ impl AnthropicOAuthProvider {
             "fetching OAuth profile"
         );
         let token = self.get_access_token().await?;
+        let account_name = self
+            .token
+            .read()
+            .await
+            .as_ref()
+            .map(|token| token.account_name.clone());
         let resp = self
             .client
             .get("https://api.anthropic.com/api/oauth/profile")
@@ -462,6 +525,19 @@ impl AnthropicOAuthProvider {
             subscription_type = ?profile.subscription_type,
             "OAuth profile fetched successfully"
         );
+        if let Some(account_name) = account_name
+            && let Ok(mgr) = self.account_manager().await
+        {
+            let _ = mgr
+                .atomic_update_profile(
+                    &account_name,
+                    profile.rate_limit_tier.clone(),
+                    profile.subscription_type.clone(),
+                    profile.email.clone(),
+                    None,
+                )
+                .await;
+        }
         *self.profile.write().await = Some(profile.clone());
         Ok(profile)
     }
@@ -1019,32 +1095,16 @@ impl Provider for AnthropicOAuthProvider {
     }
 
     async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
-        tracing::info!(
+        tracing::debug!(
             target: "jfc::provider::anthropic_oauth",
-            "fetching models via models.dev"
+            "using embedded Claude Code OAuth model catalog"
         );
-        // Same upstream as the API-key Anthropic provider, just with OAuth bearer auth,
-        // so the model catalog is identical. Live-fetch from models.dev with a fallback
-        // to the embedded canonical list for offline operation.
-        match super::models_dev::fetch_provider_models(&self.client, "anthropic", "anthropic-oauth")
-            .await
-        {
-            Ok(m) if !m.is_empty() => {
-                tracing::debug!(
-                    target: "jfc::provider::anthropic_oauth",
-                    model_count = m.len(),
-                    "fetch_models succeeded"
-                );
-                Ok(m)
-            }
-            _ => {
-                tracing::debug!(
-                    target: "jfc::provider::anthropic_oauth",
-                    "fetch_models: falling back to static catalog"
-                );
-                Ok(self.available_models())
-            }
-        }
+        // Claude Code OAuth model routing is driven by its embedded first-party
+        // catalog plus account profile gating, not the public models.dev catalog.
+        // Returning the static list here prevents the startup background fetch
+        // from replacing alias/current-model rows with a public catalog that may
+        // lag Claude Code or omit OAuth-only entries.
+        Ok(self.available_models())
     }
 
     #[tracing::instrument(
@@ -2051,37 +2111,25 @@ mod tests {
 
     // ─────────────────────────────────────────────────────────────────────────
     // resolve_store_path — DO-178B §6.4.2 demonstration
-    // Requirement: precedence is env override > opencode store (when present) > jfc store.
+    // Requirement: precedence is env override > canonical jfc-anthropic-accounts.json.
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Normal: explicit env override is honored regardless of which fallback files exist.
+    // Normal: explicit env override wins over the canonical default.
     #[test]
     fn resolve_store_path_env_override_wins_normal() {
         let home = Path::new("/home/u");
-        let resolved = resolve_store_path(Some("/custom/path.json"), home, true);
+        let resolved = resolve_store_path(Some("/custom/path.json"), home);
         assert_eq!(resolved, PathBuf::from("/custom/path.json"));
     }
 
-    // Normal: with no override and opencode's store present, opencode wins.
+    // Normal: with no override, the canonical jfc path under $HOME/.config is used.
     #[test]
-    fn resolve_store_path_prefers_opencode_when_present_normal() {
+    fn resolve_store_path_defaults_to_jfc_canonical_normal() {
         let home = Path::new("/home/u");
-        let resolved = resolve_store_path(None, home, true);
+        let resolved = resolve_store_path(None, home);
         assert_eq!(
             resolved,
-            PathBuf::from("/home/u/.config/opencode/anthropic-accounts.json")
-        );
-    }
-
-    // Normal: opencode missing → fall back to jfc's own path (boundary between the two
-    // configured fallback locations).
-    #[test]
-    fn resolve_store_path_falls_back_to_jfc_when_opencode_missing_normal() {
-        let home = Path::new("/home/u");
-        let resolved = resolve_store_path(None, home, false);
-        assert_eq!(
-            resolved,
-            PathBuf::from("/home/u/.config/jfc/anthropic-accounts.json")
+            PathBuf::from("/home/u/.config/jfc-anthropic-accounts.json")
         );
     }
 
@@ -2092,7 +2140,7 @@ mod tests {
     #[test]
     fn resolve_store_path_empty_override_is_used_verbatim_robust() {
         let home = Path::new("/home/u");
-        let resolved = resolve_store_path(Some(""), home, true);
+        let resolved = resolve_store_path(Some(""), home);
         assert_eq!(resolved, PathBuf::from(""));
     }
 
@@ -2100,10 +2148,10 @@ mod tests {
     // result so the caller can surface a clean error.
     #[test]
     fn resolve_store_path_root_home_no_panic_robust() {
-        let resolved = resolve_store_path(None, Path::new("/"), false);
+        let resolved = resolve_store_path(None, Path::new("/"));
         assert_eq!(
             resolved,
-            PathBuf::from("/.config/jfc/anthropic-accounts.json")
+            PathBuf::from("/.config/jfc-anthropic-accounts.json")
         );
     }
 
@@ -2272,6 +2320,23 @@ mod tests {
         let models = p.available_models();
         assert!(!models.is_empty());
         assert!(models.iter().all(|m| m.provider == "anthropic-oauth"));
+    }
+
+    // Robust: OAuth model discovery must preserve the embedded Claude Code
+    // catalog. The public models.dev catalog can lag or omit Claude Code
+    // OAuth-specific rows, so fetch_models intentionally does no network
+    // replacement for this provider.
+    #[tokio::test]
+    async fn fetch_models_uses_embedded_oauth_catalog_robust() {
+        let p = AnthropicOAuthProvider::new();
+        let fetched = p.fetch_models().await.unwrap();
+        let embedded = p.available_models();
+        assert_eq!(fetched.len(), embedded.len());
+        assert_eq!(
+            fetched.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+            embedded.iter().map(|m| m.id.as_str()).collect::<Vec<_>>()
+        );
+        assert!(fetched.iter().all(|m| m.provider == "anthropic-oauth"));
     }
 
     // ── load_store + write_back_tokens (file I/O via tempfile) ────────────
@@ -2504,6 +2569,34 @@ mod tests {
         assert_eq!(profile.billing_type.as_deref(), Some("credit_card"));
         assert_eq!(profile.display_name.as_deref(), Some("Cole"));
         assert_eq!(profile.email.as_deref(), Some("c@example.com"));
+        assert_eq!(profile.has_extra_usage_enabled, Some(true));
+    }
+
+    // Normal: Claude Code's `/api/oauth/profile` response is nested and
+    // snake_case. The picker needs these fields to apply account-aware model
+    // gating and to show the account status in the footer.
+    #[test]
+    fn oauth_profile_nested_claude_code_shape_normal() {
+        let v = serde_json::json!({
+            "account": {
+                "email": "nested@example.com",
+                "display_name": "Nested User"
+            },
+            "organization": {
+                "organization_type": "claude_max",
+                "seat_tier": "claude-opus-4-6",
+                "rate_limit_tier": "claude_max_20x",
+                "billing_type": "stripe_subscription",
+                "has_extra_usage_enabled": true
+            }
+        });
+        let profile: OAuthProfile = serde_json::from_value(v).unwrap();
+        assert_eq!(profile.subscription_type.as_deref(), Some("max"));
+        assert_eq!(profile.seat_tier.as_deref(), Some("claude-opus-4-6"));
+        assert_eq!(profile.rate_limit_tier.as_deref(), Some("claude_max_20x"));
+        assert_eq!(profile.billing_type.as_deref(), Some("stripe_subscription"));
+        assert_eq!(profile.display_name.as_deref(), Some("Nested User"));
+        assert_eq!(profile.email.as_deref(), Some("nested@example.com"));
         assert_eq!(profile.has_extra_usage_enabled, Some(true));
     }
 
