@@ -168,7 +168,11 @@ pub fn infer_context_window_from_model_name(id: &str, name: Option<&str>) -> usi
             || has(&format!("{major}-{minor}"))
     };
 
-    if has("claude") && has("opus") && has_version("4", "6") {
+    if has("claude") && (has("mythos") || (has("opus") && (has_version("4", "7") || has_version("4", "6")))) {
+        1_000_000
+    } else if has("claude") && has("sonnet") && has_version("4", "6") {
+        1_000_000
+    } else if has("claude") && has("opus") && has_version("4", "5") {
         1_000_000
     } else if has("claude") {
         200_000

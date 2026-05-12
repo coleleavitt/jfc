@@ -11,6 +11,27 @@
 
 use crate::provider::ModelInfo;
 
+fn limits_for_anthropic_model(id: &str) -> (usize, Option<usize>) {
+    let id = id.to_ascii_lowercase();
+    if id.contains("mythos") || id.contains("opus-4-7") || id.contains("opus-4-6") {
+        (1_000_000, Some(128_000))
+    } else if id.contains("sonnet-4-6") {
+        (1_000_000, Some(128_000))
+    } else if id.contains("opus-4-5") {
+        (1_000_000, Some(64_000))
+    } else if id.contains("opus-4-1") || id.contains("opus-4-") {
+        (200_000, Some(32_000))
+    } else if id.contains("sonnet-4-5") || id.contains("3-7-sonnet") || id.contains("sonnet-4-") {
+        (200_000, Some(64_000))
+    } else if id.contains("haiku-4-5") {
+        (200_000, Some(32_000))
+    } else if id.contains("3-5-haiku") {
+        (200_000, Some(8_192))
+    } else {
+        (200_000, None)
+    }
+}
+
 /// Canonical "latest" alias targets — mirrors v126 cli.js alias resolution.
 ///
 /// In v126 the picker leads with three rows (`sonnet` / `haiku` / `opus`) that
@@ -54,7 +75,10 @@ pub fn anthropic_first_party_models(provider_tag: &str) -> Vec<ModelInfo> {
     ]
     .into_iter()
     .map(|(id, display)| {
-        ModelInfo::new(id, display, provider_tag).with_context_window_tokens(200_000)
+        let (context, max_output) = limits_for_anthropic_model(id);
+        ModelInfo::new(id, display, provider_tag)
+            .with_context_window_tokens(context)
+            .with_max_output_tokens(max_output)
     })
     .collect();
 
