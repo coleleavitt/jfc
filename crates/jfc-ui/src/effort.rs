@@ -25,17 +25,38 @@ pub enum ReasoningEffort {
     Low,
     Medium,
     High,
+    XHigh,
+    Max,
 }
 
 impl ReasoningEffort {
+    const ORDERED: [Self; 5] = [Self::Low, Self::Medium, Self::High, Self::XHigh, Self::Max];
+
     /// Parse from user input string.
     pub fn from_str_loose(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "low" | "l" | "1" | "fast" => Some(Self::Low),
             "medium" | "med" | "m" | "2" | "normal" => Some(Self::Medium),
-            "high" | "h" | "3" | "max" | "thorough" => Some(Self::High),
+            "high" | "h" | "3" | "thorough" => Some(Self::High),
+            "xhigh" | "x-high" | "x_high" | "xh" | "4" | "deeper" => Some(Self::XHigh),
+            "max" | "maximum" | "5" | "ultra" => Some(Self::Max),
             _ => None,
         }
+    }
+
+    pub fn next(self) -> Option<Self> {
+        Self::ORDERED
+            .iter()
+            .position(|level| *level == self)
+            .and_then(|idx| Self::ORDERED.get(idx + 1).copied())
+    }
+
+    pub fn previous(self) -> Option<Self> {
+        Self::ORDERED
+            .iter()
+            .position(|level| *level == self)
+            .and_then(|idx| idx.checked_sub(1))
+            .and_then(|idx| Self::ORDERED.get(idx).copied())
     }
 
     /// The API string value to send.
@@ -44,6 +65,8 @@ impl ReasoningEffort {
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
+            Self::XHigh => "xhigh",
+            Self::Max => "max",
         }
     }
 
@@ -52,7 +75,9 @@ impl ReasoningEffort {
         match self {
             Self::Low => "Fast responses, less reasoning depth",
             Self::Medium => "Balanced speed and reasoning",
-            Self::High => "Maximum reasoning depth, slower",
+            Self::High => "Deep reasoning, slower",
+            Self::XHigh => "Extra high reasoning depth",
+            Self::Max => "Maximum reasoning depth, highest token use",
         }
     }
 }
@@ -151,7 +176,11 @@ mod tests {
         );
         assert_eq!(
             ReasoningEffort::from_str_loose("max"),
-            Some(ReasoningEffort::High)
+            Some(ReasoningEffort::Max)
+        );
+        assert_eq!(
+            ReasoningEffort::from_str_loose("x-high"),
+            Some(ReasoningEffort::XHigh)
         );
         assert_eq!(ReasoningEffort::from_str_loose("invalid"), None);
     }
@@ -176,5 +205,19 @@ mod tests {
         assert_eq!(ReasoningEffort::Low.api_value(), "low");
         assert_eq!(ReasoningEffort::Medium.api_value(), "medium");
         assert_eq!(ReasoningEffort::High.api_value(), "high");
+        assert_eq!(ReasoningEffort::XHigh.api_value(), "xhigh");
+        assert_eq!(ReasoningEffort::Max.api_value(), "max");
+    }
+
+    #[test]
+    fn effort_step_helpers() {
+        assert_eq!(ReasoningEffort::Low.next(), Some(ReasoningEffort::Medium));
+        assert_eq!(ReasoningEffort::High.next(), Some(ReasoningEffort::XHigh));
+        assert_eq!(ReasoningEffort::Max.next(), None);
+        assert_eq!(ReasoningEffort::Low.previous(), None);
+        assert_eq!(
+            ReasoningEffort::XHigh.previous(),
+            Some(ReasoningEffort::High)
+        );
     }
 }

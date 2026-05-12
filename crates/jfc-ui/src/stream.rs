@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex as StdMutex, OnceLock},
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use futures::StreamExt;
 use tokio::sync::{Mutex, mpsc};
@@ -17,33 +13,18 @@ use crate::scheduler;
 use crate::tools;
 use crate::types::*;
 
-static OPENAI_PREVIOUS_RESPONSE_ID: OnceLock<StdMutex<Option<String>>> = OnceLock::new();
-
-fn openai_previous_response_id() -> Option<String> {
-    OPENAI_PREVIOUS_RESPONSE_ID
-        .get_or_init(|| StdMutex::new(None))
-        .lock()
-        .ok()
-        .and_then(|guard| guard.clone())
-}
-
-fn set_openai_previous_response_id(response_id: String) {
-    if let Ok(mut guard) = OPENAI_PREVIOUS_RESPONSE_ID
-        .get_or_init(|| StdMutex::new(None))
-        .lock()
-    {
-        *guard = Some(response_id);
-    }
-}
-
-fn clear_openai_previous_response_id() {
-    if let Ok(mut guard) = OPENAI_PREVIOUS_RESPONSE_ID
-        .get_or_init(|| StdMutex::new(None))
-        .lock()
-    {
-        *guard = None;
-    }
-}
+// `previous_response_id` chaining was removed from the OpenAI Responses
+// transmit path. It produced `previous_response_not_found` 400s because the
+// request body sets `"store": false` (see `providers/openai.rs`), which means
+// OpenAI never persists the prior response server-side and can't honor the
+// chain reference. It was also redundant: JFC sends the full conversation
+// history (`responses_input(messages)`) on every turn, so there is no
+// server-side state for the API to *continue from* in the first place.
+//
+// If we ever need true server-side chaining (e.g., to skip resending a huge
+// context), we must (a) set `store: true` on the body, (b) accept the privacy
+// trade-off, and (c) re-introduce a chain-id store keyed by conversation —
+// not a single process-global slot.
 
 /// Reuse the same cap that `ToolOutput::approx_text_len` enforces — the wire
 /// truncation here and the local token estimate must agree to a byte, or
@@ -1480,13 +1461,9 @@ Do not use a colon before tool calls.";
             base
         }
     };
-    if provider.name() == "openai"
-        && let Some(previous_response_id) = openai_previous_response_id()
-    {
-        opts.provider_options
-            .entry("previous_response_id".to_owned())
-            .or_insert(serde_json::json!(previous_response_id));
-    }
+    // (was: inject `previous_response_id` into provider_options for OpenAI.
+    // Removed — incompatible with `store: false` and redundant with
+    // full-history `input`. See note at the top of this file.)
 
     // v132 BeforeStream hook fires after the prompt is fully assembled
     // but before the network call. Handlers that want to inject system
@@ -1770,10 +1747,10 @@ Do not use a colon before tool calls.";
                     stop_reason = r;
                 }
             }
-            StreamEvent::ResponseMetadata { response_id } => {
-                if provider.name() == "openai" {
-                    set_openai_previous_response_id(response_id);
-                }
+            StreamEvent::ResponseMetadata { response_id: _ } => {
+                // We no longer use the response_id for server-side chaining
+                // (see the note at the top of this file). The provider still
+                // emits the metadata event; we just don't act on it.
             }
             StreamEvent::TextDone { .. } | StreamEvent::ThinkingDone { .. } => {}
             StreamEvent::Usage {
@@ -1814,9 +1791,8 @@ Do not use a colon before tool calls.";
         ?stop_reason,
         "stream finished — sending StreamDone"
     );
-    if provider.name() == "openai" && stop_reason != StopReason::ToolUse {
-        clear_openai_previous_response_id();
-    }
+    // (was: clear `openai_previous_response_id` on end_turn. Removed alongside
+    // the inject path — no state to clear.)
 
     // v132 AfterStream hook — fires after the model finished streaming
     // but before the StreamDone AppEvent is sent. Handlers that want
@@ -1838,6 +1814,7 @@ pub fn dispatch_tools_batched(
     dedup: Arc<Mutex<ReadDedupCache>>,
     task_store: Option<Arc<crate::tasks::TaskStore>>,
     active_team_name: Option<String>,
+    current_session_id: Option<String>,
     provider: Arc<dyn crate::provider::Provider>,
     model: crate::provider::ModelId,
     teammate_event_tx: mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
@@ -1929,7 +1906,7 @@ pub fn dispatch_tools_batched(
                     team_name: team_name.clone(),
                     color: Some(color.clone()),
                     plan_mode_required: task_input.mode.as_deref() == Some("plan"),
-                    parent_session_id: String::new(),
+                    parent_session_id: current_session_id.clone().unwrap_or_default(),
                 },
                 prompt: task_input.prompt.clone(),
                 description: task_input.description.clone(),
@@ -2089,10 +2066,12 @@ pub fn dispatch_tools_batched(
             let launch = crate::daemon::BackgroundAgentLaunch {
                 task_id: task_id.clone(),
                 task_input: task_input.clone(),
+                parent_session_id: current_session_id.clone(),
                 model: model.clone(),
                 provider_name: Some(provider.name().to_owned()),
                 agent_def: agent_def.clone(),
                 cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                worker_exe: None,
                 active_team_name: active_team_name_task.clone(),
                 created_at: std::time::SystemTime::now(),
             };

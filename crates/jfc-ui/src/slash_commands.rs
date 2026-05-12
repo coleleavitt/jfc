@@ -16,7 +16,7 @@ pub enum SlashCommand {
     Model(Option<String>),
     /// /stats — show session statistics
     Stats,
-    /// /effort [low|medium|high] — set reasoning effort
+    /// /effort [low|medium|high|xhigh|max] — set reasoning effort
     Effort(Option<String>),
     /// /resume [id] — resume a saved session
     Resume(Option<String>),
@@ -123,7 +123,7 @@ Available commands:
   /compact         Compact conversation history (free up context)
   /clear           Reset conversation (start fresh)
   /model [name]    Show current model or switch to <name>
-  /effort [level]  Set reasoning effort: low, medium, high
+  /effort [level]  Set reasoning effort: low, medium, high, xhigh, max
   /stats           Show session statistics (tokens, cost, turns)
   /resume [id]     Resume a previous session
   /sessions        List saved sessions

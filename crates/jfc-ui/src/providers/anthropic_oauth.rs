@@ -995,6 +995,9 @@ fn build_body(
     } else if let Some(budget) = opts.thinking_budget {
         body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
     }
+    if let Some(effort) = opts.reasoning_effort.as_deref() {
+        body["output_config"] = json!({ "effort": effort });
+    }
     body
 }
 
@@ -1740,6 +1743,13 @@ mod tests {
         let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
         assert_eq!(body["thinking"]["type"], "enabled");
         assert_eq!(body["thinking"]["budget_tokens"], 4096);
+    }
+
+    #[test]
+    fn build_body_reasoning_effort_uses_output_config_normal() {
+        let o = opts("m").reasoning_effort("max");
+        let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
+        assert_eq!(body["output_config"]["effort"], "max");
     }
 
     // strip_block removes the entire `<env>...</env>` span and leaves

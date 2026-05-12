@@ -367,7 +367,7 @@ pub struct StreamOptions {
     pub temperature: Option<f64>,
     /// Nucleus sampling parameter (0.0 - 1.0).
     pub top_p: Option<f64>,
-    /// OpenAI reasoning effort: "low", "medium", "high".
+    /// Provider reasoning effort, e.g. "low", "medium", "high", "xhigh", "max".
     pub reasoning_effort: Option<String>,
     /// Provider-specific options merged into the request body.
     pub provider_options: HashMap<String, serde_json::Value>,

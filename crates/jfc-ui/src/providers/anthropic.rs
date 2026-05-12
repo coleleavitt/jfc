@@ -127,6 +127,9 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
             "budget_tokens": budget,
         });
     }
+    if let Some(effort) = opts.reasoning_effort.as_deref() {
+        body["output_config"] = json!({ "effort": effort });
+    }
 
     body
 }
@@ -483,6 +486,15 @@ mod tests {
     fn build_body_thinking_absent_when_unset_robust() {
         let body = build_body(vec![make_user_msg("hi")], &opts("m"));
         assert!(body.get("thinking").is_none());
+    }
+
+    #[test]
+    fn build_body_reasoning_effort_uses_output_config_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").reasoning_effort("xhigh"),
+        );
+        assert_eq!(body["output_config"]["effort"], "xhigh");
     }
 
     // Normal: build_body preserves message order — user/assistant alternation

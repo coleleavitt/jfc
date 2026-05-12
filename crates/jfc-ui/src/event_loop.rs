@@ -301,6 +301,44 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     });
 }
 
+fn factory_mode_enabled() -> bool {
+    !matches!(
+        std::env::var("JFC_FACTORY_MODE").as_deref(),
+        Ok("0" | "false" | "off" | "no")
+    )
+}
+
+async fn maybe_continue_task_factory(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
+    if !factory_mode_enabled()
+        || app.is_streaming
+        || app.pending_approval.is_some()
+        || !app.approval_queue.is_empty()
+        || !app.pending_tool_calls.is_empty()
+        || !app.queued_prompts.is_empty()
+        || app
+            .background_tasks
+            .values()
+            .any(|task| task.status.is_alive())
+    {
+        return;
+    }
+
+    let Some(task) = app.task_store.claim_next_available("jfc-factory") else {
+        return;
+    };
+    let prompt = format!(
+        "Continue the task queue. Work on task `{}`: {}\n\n{}\n\nWhen this task is done, update its task status before stopping. If more unblocked tasks remain, continue with the next one.",
+        task.id, task.subject, task.description
+    );
+    tracing::info!(
+        target: "jfc::tasks::factory",
+        task_id = %task.id,
+        subject = %task.subject,
+        "auto-continuing next available task"
+    );
+    let _ = tx.send(AppEvent::Submit(prompt)).await;
+}
+
 pub(crate) async fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     providers: Vec<Arc<dyn Provider>>,
@@ -322,7 +360,6 @@ pub(crate) async fn run(
     crate::tools::register_event_sender(tx.clone());
     tracing::info!(target: "jfc::ui::events", "registered AppEvent sender for non-Task agent paths");
     let mut app = App::new(provider, model);
-    restore_persistent_background_agents(&mut app);
     app.providers = providers.clone();
     // Apply the user's persisted theme choice from
     // ~/.config/jfc/config.toml. Unknown / missing names fall back
@@ -524,6 +561,7 @@ pub(crate) async fn run(
             }
         }
     }
+    restore_persistent_background_agents(&mut app);
 
     // Handle --prompt flag: queue an initial prompt to submit after startup
     let queued_initial_prompt = initial_prompt;
@@ -1247,6 +1285,20 @@ pub(crate) async fn run(
                 AppEvent::Tick => {
                     app.spinner_frame = (app.spinner_frame + 1) % crate::app::SPINNER.len();
                     app.check_stream_watchdog();
+
+                    // Detached background workers update their progress in
+                    // `daemon-state.json` (they're a different process — no
+                    // AppEvent channel back to the UI). Re-read once a
+                    // second so the fan row shows live tool/token counts
+                    // instead of frozen zeros.
+                    let detached_sync_due = app
+                        .last_detached_sync_at
+                        .map(|t| t.elapsed() >= std::time::Duration::from_secs(1))
+                        .unwrap_or(true);
+                    if detached_sync_due {
+                        app.last_detached_sync_at = Some(std::time::Instant::now());
+                        sync_detached_background_tasks_from_daemon(&mut app);
+                    }
                     // Auto-clear expired toasts every tick. Cheap (O(N) over
                     // a tiny vec capped at MAX_TOASTS) and the only reliable
                     // place to do it — toasts have no creation-time timer.
@@ -1614,11 +1666,17 @@ pub(crate) async fn run(
                         app.streaming_text.push_str(&chunk);
                         if let Some(idx) = app.streaming_assistant_idx {
                             if let Some(msg) = app.messages.get_mut(idx) {
-                                match msg
-                                    .parts
-                                    .iter_mut()
-                                    .find(|p| matches!(p, MessagePart::Text(_)))
-                                {
+                                // Append to the *last* part if it's still a Text
+                                // segment; otherwise start a new Text part. The
+                                // earlier `.find(|p| matches!(p, Text(_)))`
+                                // pattern always merged into the first Text part,
+                                // which silently glued post-tool text segments
+                                // back into the pre-tool paragraph and dropped
+                                // the natural part-boundary between them. See
+                                // session ses_20260509_205615 msg 649: five
+                                // logical turns collapsed to a single Text part
+                                // with `:`-joined run-on prose.
+                                match msg.parts.last_mut() {
                                     Some(MessagePart::Text(t)) => t.push_str(&chunk),
                                     _ => msg.parts.push(MessagePart::Text(chunk)),
                                 }
@@ -1638,11 +1696,12 @@ pub(crate) async fn run(
                         app.streaming_reasoning.push_str(&chunk);
                         if let Some(idx) = app.streaming_assistant_idx {
                             if let Some(msg) = app.messages.get_mut(idx) {
-                                match msg
-                                    .parts
-                                    .iter_mut()
-                                    .find(|p| matches!(p, MessagePart::Reasoning(_)))
-                                {
+                                // Same fix as the text path above: append to
+                                // the last part if it's still a Reasoning
+                                // segment, otherwise start a new one so a
+                                // post-tool/post-text reasoning block doesn't
+                                // get merged into an earlier thinking segment.
+                                match msg.parts.last_mut() {
                                     Some(MessagePart::Reasoning(t)) => t.push_str(&chunk),
                                     _ => msg.parts.push(MessagePart::Reasoning(chunk)),
                                 }
@@ -2101,6 +2160,9 @@ pub(crate) async fn run(
                                 std::sync::Arc::clone(&app.dedup_cache),
                                 Some(std::sync::Arc::clone(&app.task_store)),
                                 app.team_context.team_name.clone(),
+                                app.current_session_id
+                                    .as_ref()
+                                    .map(|id| id.as_str().to_owned()),
                                 std::sync::Arc::clone(&app.provider),
                                 app.model.clone(),
                                 app.teammate_event_tx.clone(),
@@ -2776,6 +2838,7 @@ pub(crate) async fn run(
                         // typed during streaming.
                         app.turn_started_at = None;
                         drain_queued_prompts(&mut app, &tx).await;
+                        maybe_continue_task_factory(&mut app, &tx).await;
                     }
                 }
                 AppEvent::CompactionStarted => {
@@ -3163,6 +3226,8 @@ pub(crate) async fn run(
                         last_tool.as_deref(),
                         tool_use_count,
                         input_tokens,
+                        cache_read_tokens,
+                        cache_write_tokens,
                         output_tokens,
                     );
                     if let Some((model, input, output, cache_read, cache_write)) = usage_update {
@@ -3407,9 +3472,73 @@ pub(crate) async fn run(
     Ok(())
 }
 
+/// Refresh `app.background_tasks` from the daemon roster for **detached**
+/// background workers (`launch_path.is_some()`).
+///
+/// Background workers run in separate processes, so their TaskProgress events
+/// never reach the UI's `AppEvent` channel — they only flow to `daemon-state
+/// .json` via `record_background_agent_progress`. Without this sync the fan
+/// row for a detached agent shows zero tools/tokens for its entire run.
+///
+/// In-process tasks (`launch_path.is_none()`) are intentionally skipped: they
+/// receive live `TaskProgress` events through the channel and would be
+/// clobbered by stale disk values.
+fn sync_detached_background_tasks_from_daemon(app: &mut App) {
+    let paths = crate::daemon::DaemonPaths::default_user();
+    let Some(state) = crate::daemon::load_state(&paths) else {
+        return;
+    };
+    let session_id = app.current_session_id.as_ref().map(|id| id.as_str());
+    for (id, agent) in &state.background_agents {
+        if agent.launch_path.is_none() {
+            continue;
+        }
+        // Only update agents owned by the current session, mirroring the
+        // restore filter so cross-instance leakage stays fixed.
+        if let Some(sid) = session_id {
+            if agent.parent_session_id.as_deref() != Some(sid) {
+                continue;
+            }
+        } else {
+            continue;
+        }
+        let Some(bt) = app.background_tasks.get_mut(id.as_str()) else {
+            continue;
+        };
+        bt.tool_use_count = agent.tool_use_count;
+        bt.latest_input_tokens = agent.latest_input_tokens;
+        bt.latest_cache_read_tokens = agent.latest_cache_read_tokens;
+        bt.latest_cache_write_tokens = agent.latest_cache_write_tokens;
+        bt.cumulative_output_tokens = agent.cumulative_output_tokens;
+        if let Some(tool) = &agent.last_tool {
+            bt.last_tool = Some(tool.clone());
+        }
+        let new_status = match agent.status {
+            crate::daemon::BackgroundAgentStatus::Running => crate::types::TaskLifecycle::Running,
+            crate::daemon::BackgroundAgentStatus::Completed => {
+                crate::types::TaskLifecycle::Completed
+            }
+            crate::daemon::BackgroundAgentStatus::Failed => crate::types::TaskLifecycle::Failed,
+            crate::daemon::BackgroundAgentStatus::Cancelled => {
+                crate::types::TaskLifecycle::Cancelled
+            }
+        };
+        if bt.status != new_status {
+            bt.status = new_status;
+        }
+        if bt.summary.is_none() && agent.summary.is_some() {
+            bt.summary = agent.summary.clone();
+        }
+        if bt.error.is_none() && agent.error.is_some() {
+            bt.error = agent.error.clone();
+        }
+    }
+}
+
 fn restore_persistent_background_agents(app: &mut App) {
     let paths = crate::daemon::DaemonPaths::default_user();
-    for agent in crate::daemon::background_agents_for_restore(&paths, 20) {
+    let session_id = app.current_session_id.as_ref().map(|id| id.as_str());
+    for agent in crate::daemon::background_agents_for_restore(&paths, session_id, 20) {
         let status = match agent.status {
             crate::daemon::BackgroundAgentStatus::Running => crate::types::TaskLifecycle::Running,
             crate::daemon::BackgroundAgentStatus::Completed => {

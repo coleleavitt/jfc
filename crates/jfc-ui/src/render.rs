@@ -17,6 +17,11 @@ use crate::markdown;
 use crate::theme::Theme;
 use crate::types::*;
 
+/// Easing function for sidebar slide animation.
+fn ease_out_cubic(t: f32) -> f32 {
+    1.0 - (1.0 - t).powi(3)
+}
+
 /// One full UI redraw. The hot path — runs every Tick (~80ms) and
 /// on every input event. Tracing here is at TRACE level so it's
 /// off in normal runs but easy to flip on with
@@ -35,105 +40,6 @@ use crate::types::*;
         follow_bottom = app.follow_bottom,
     ),
 )]
-/// v132 Ribbon header strip: a single row above the message column with
-/// model | mode | cwd | branch | cost. Always-on context the user
-/// glances at without scrolling. Hidden when the `Ribbon` feature gate
-/// flips off (`/feature ribbon off`).
-fn render_ribbon(f: &mut Frame, app: &App, area: Rect) {
-    let t = app.theme;
-    let mode_label = match app.permission_mode {
-        crate::app::PermissionMode::Default => "default",
-        crate::app::PermissionMode::AcceptEdits => "accept-edits",
-        crate::app::PermissionMode::BypassPermissions => "bypass",
-        crate::app::PermissionMode::Auto => "auto",
-        crate::app::PermissionMode::Plan => "plan",
-    };
-    // Use the cached cwd from `App::new` instead of `std::env::current_dir()`
-    // — the ribbon renders every frame, and the syscall showed up at 234×/4s
-    // in strace once message-view CPU was reduced enough to see it.
-    let cwd = std::path::Path::new(&app.cwd)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "?".to_owned());
-    let branch = app.git_branch.clone().unwrap_or_else(|| "—".to_owned());
-    let cost = crate::cost::fmt_cost(crate::cost::total_cost(&app.usage_by_model));
-    // Anthropic OAuth utilization snippet — only rendered when an OAuth
-    // account is configured AND we have at least one utilization datapoint
-    // from a recent response. Keeps the ribbon clean for API-key users.
-    let acct_snippet = format_account_snippet(app);
-    let body = if acct_snippet.is_empty() {
-        format!(
-            " {model} │ {mode_label} │ {cwd} │ {branch} │ {cost} ",
-            model = app.model.as_str(),
-        )
-    } else {
-        format!(
-            " {model} │ {mode_label} │ {cwd} │ {branch} │ {cost} │ {acct_snippet} ",
-            model = app.model.as_str(),
-        )
-    };
-    let para = ratatui::widgets::Paragraph::new(body).style(
-        t.style_text_primary
-            .bg(t.surface_raised)
-            .add_modifier(Modifier::BOLD),
-    );
-    f.render_widget(para, area);
-}
-
-/// Compact OAuth-account utilization summary for the ribbon, e.g.
-/// `[bob@x.com 5h 47% / 7d 12%]` or `[opus weekly · resets 2h]` when
-/// rate-limited. Empty string when no OAuth snapshot is cached.
-fn format_account_snippet(app: &App) -> String {
-    let Some(snap) = app.anthropic_account_snapshot.as_ref() else {
-        return String::new();
-    };
-    let label = snap
-        .email
-        .as_deref()
-        .map(|e| e.split('@').next().unwrap_or(e))
-        .unwrap_or(snap.name.as_str());
-    let mut parts: Vec<String> = Vec::new();
-    parts.push(label.to_owned());
-
-    if let Some(until) = snap.rate_limited_until_ms {
-        let now = crate::providers::anthropic_accounts::now_ms();
-        let remaining_s = (until.saturating_sub(now) / 1000) as u64;
-        let human = if remaining_s >= 3600 {
-            format!("{}h", remaining_s / 3600)
-        } else if remaining_s >= 60 {
-            format!("{}m", remaining_s / 60)
-        } else {
-            format!("{remaining_s}s")
-        };
-        let claim_label = match &snap.claim {
-            Some(crate::providers::unified::ClaimType::SevenDayOpus) => "opus weekly",
-            Some(crate::providers::unified::ClaimType::SevenDaySonnet) => "sonnet weekly",
-            Some(crate::providers::unified::ClaimType::SevenDay) => "weekly",
-            Some(crate::providers::unified::ClaimType::FiveHour) => "5h",
-            Some(crate::providers::unified::ClaimType::Overage) => "overage",
-            Some(crate::providers::unified::ClaimType::Other(s)) => s.as_str(),
-            None => "rate-limit",
-        };
-        parts.push(format!("{claim_label} · resets {human}"));
-    } else {
-        if let Some(u) = snap.utilization_5h {
-            parts.push(format!("5h {}%", (u * 100.0).round() as u32));
-        }
-        if let Some(u) = snap.utilization_7d {
-            parts.push(format!("7d {}%", (u * 100.0).round() as u32));
-        }
-        if snap.is_using_overage {
-            parts.push("·overage·".to_owned());
-        }
-    }
-    parts.join(" ")
-}
-
-/// Easing function for sidebar slide animation.
-fn ease_out_cubic(t: f32) -> f32 {
-    1.0 - (1.0 - t).powi(3)
-}
-
 pub fn frame(f: &mut Frame, app: &mut App) {
     let t = app.theme;
 
@@ -237,20 +143,9 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         crate::diagnostics::unacknowledged(&app.diagnostics, &app.delivered_diagnostics).len();
     let diag_row_height: u16 = if unack_count == 0 { 0 } else { 1 };
 
-    // v132 Ribbon header strip — rendered at the top showing
-    // model | mode | cwd | branch | cost. Suppressed when the Ribbon
-    // feature gate is off so users on tiny terminals can reclaim a row.
-    let ribbon_height: u16 =
-        if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::Ribbon) {
-            1
-        } else {
-            0
-        };
-
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(ribbon_height),
             Constraint::Min(3),
             Constraint::Length(subagent_footer_height),
             Constraint::Length(diag_row_height),
@@ -259,11 +154,6 @@ pub fn frame(f: &mut Frame, app: &mut App) {
             Constraint::Length(2),
         ])
         .split(f.area());
-
-    if ribbon_height > 0 {
-        render_ribbon(f, app, chunks[0]);
-    }
-    let chunks = &chunks[1..];
 
     // TODO: Wire sidebar_progress to App animation fields once Agent A adds them.
     // For now, snap to 0.0/1.0 so the ease_out_cubic path is exercised but
@@ -857,16 +747,21 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     ]));
 
     let provider_name = app.provider.name();
+    let effort_badge = effort_status_badge(app);
+    let provider_suffix = format!(" local · {effort_badge}");
+    let provider_width = inner
+        .width
+        .saturating_sub(2 + provider_suffix.chars().count() as u16)
+        .max(1) as usize;
     footer_lines.push(Line::from(vec![
         Span::styled("● ", Style::default().fg(t.success)),
         Span::styled(
-            truncate_str(provider_name, inner.width.saturating_sub(10) as usize),
+            truncate_str(provider_name, provider_width),
             Style::default()
                 .fg(t.text_primary)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(" "),
-        Span::styled("local", Style::default().fg(t.text_muted)),
+        Span::styled(provider_suffix, Style::default().fg(t.text_muted)),
     ]));
 
     let footer_h: u16 = 3;
@@ -3254,6 +3149,8 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
     // Model is always shown (highest priority)
     badges.push(app.model.to_string());
 
+    badges.push(effort_status_badge(app));
+
     // OAuth profile
     match (&app.subscription_type, &app.seat_tier) {
         (Some(sub), Some(tier)) => badges.push(format!("{}·{}", sub, tier)),
@@ -3422,6 +3319,13 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
 
 fn context_gauge_label(used: usize, max: usize, pct: u32) -> String {
     format!(" ctx {}k / {}k · {}% ", used / 1000, max / 1000, pct)
+}
+
+fn effort_status_badge(app: &App) -> String {
+    match app.effort_state.current {
+        Some(effort) => format!("effort {effort}"),
+        None => "effort default".to_string(),
+    }
 }
 
 /// Top-right toast strip. Renders one row per active toast, color-coded
@@ -3848,6 +3752,7 @@ fn help_overlay(f: &mut Frame, app: &App) {
                 ("Ctrl+R", "retry last prompt"),
                 ("Ctrl+E", "edit + resubmit previous user message"),
                 ("Ctrl+L", "yank file:line ref to clipboard"),
+                ("Alt+./Alt+,", "raise / lower reasoning effort"),
                 ("/export", "save transcript as markdown"),
                 ("/theme", "switch theme"),
                 ("/dump-context", "show what the model sees"),
@@ -3858,6 +3763,7 @@ fn help_overlay(f: &mut Frame, app: &App) {
             &[
                 ("Ctrl+P", "command palette"),
                 ("Ctrl+M", "switch model"),
+                ("Alt+./Alt+,", "raise / lower reasoning effort"),
                 ("Ctrl+B", "toggle sessions sidebar"),
                 ("Ctrl+S/I", "toggle info sidebar"),
                 ("Ctrl+T", "show task panel"),
@@ -5933,6 +5839,21 @@ mod pure_helper_tests {
     fn context_gauge_label_zero_used_robust() {
         let label = context_gauge_label(0, 200_000, 0);
         assert_eq!(label, " ctx 0k / 200k · 0% ");
+    }
+
+    // --- effort_status_badge -----------------------------------------
+
+    #[test]
+    fn effort_status_badge_shows_default_when_unpinned_normal() {
+        let app = fake_app();
+        assert_eq!(effort_status_badge(&app), "effort default".to_string());
+    }
+
+    #[test]
+    fn effort_status_badge_shows_pinned_level_normal() {
+        let mut app = fake_app();
+        app.effort_state.set(crate::effort::ReasoningEffort::XHigh);
+        assert_eq!(effort_status_badge(&app), "effort xhigh".to_string());
     }
 
     // --- provider_color / provider_label -----------------------------

@@ -69,7 +69,14 @@ pub(super) fn tool_body_lines_themed(
                     &diag_lines,
                 )
             } else if looks_like_git_diff_output(s) {
-                produce_git_diff_output_lines(s, "", Some(0), t, tool.display.is_expanded())
+                produce_git_diff_output_lines(
+                    s,
+                    "",
+                    Some(0),
+                    content_w,
+                    t,
+                    tool.display.is_expanded(),
+                )
             } else if matches!(tool.kind, ToolKind::Task) {
                 produce_markdown_block_lines(s, content_w, t)
             } else {
@@ -97,6 +104,7 @@ pub(super) fn tool_body_lines_themed(
                     &lt.content,
                     "",
                     Some(0),
+                    content_w,
                     t,
                     tool.display.is_expanded(),
                 )
@@ -147,6 +155,7 @@ pub(super) fn tool_body_lines_themed(
                     stdout,
                     stderr,
                     *exit_code,
+                    content_w,
                     t,
                     tool.display.is_expanded(),
                 ),
@@ -191,6 +200,7 @@ pub(super) fn tool_body_lines_themed(
                             stdout,
                             stderr,
                             *exit_code,
+                            content_w,
                             t,
                             tool.display.is_expanded(),
                         );
@@ -245,6 +255,7 @@ pub(super) fn tool_body_lines_themed(
                     content,
                     "",
                     Some(0),
+                    content_w,
                     t,
                     tool.display.is_expanded(),
                 );

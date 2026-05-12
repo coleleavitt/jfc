@@ -1,4 +1,5 @@
 use super::assistant_parts::sanitize_terminal_text;
+use super::detection::looks_like_difftastic_output;
 use super::output_style::path_color;
 use super::syntax::{lang_from_path, quote_aware_tokens};
 use super::*;
@@ -610,6 +611,7 @@ pub(super) fn produce_git_diff_output_lines(
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
+    content_w: usize,
     t: Theme,
     expanded: bool,
 ) -> Vec<Line<'static>> {
@@ -634,6 +636,12 @@ pub(super) fn produce_git_diff_output_lines(
     // escapes leak into the rendered Paragraph.
     let cleaned: Vec<String> = stdout.lines().map(sanitize_terminal_text).collect();
     let total = cleaned.len();
+
+    if looks_like_difftastic_output(stdout) {
+        return produce_difftastic_output_lines(
+            &cleaned, stderr, exit_code, content_w, t, expanded,
+        );
+    }
 
     let mut current_lang: Option<String> = None;
     let mut hunk: Vec<(DiffLineKind, String)> = Vec::new();
@@ -800,6 +808,89 @@ pub(super) fn produce_git_diff_output_lines(
         }
     }
     lines
+}
+
+fn produce_difftastic_output_lines(
+    cleaned_stdout: &[String],
+    stderr: &str,
+    exit_code: Option<i32>,
+    content_w: usize,
+    t: Theme,
+    expanded: bool,
+) -> Vec<Line<'static>> {
+    let max_lines = if expanded { 1000usize } else { 200usize };
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if let Some(code) = exit_code {
+        // `git diff` exits 1 when differences exist only when --exit-code is
+        // involved. External diff failures surface as >1 plus stderr.
+        if code > 1 {
+            lines.push(Line::from(Span::styled(
+                format!("[exit {code}]"),
+                Style::default().fg(t.error),
+            )));
+        }
+    }
+
+    let mut body_lines = Vec::new();
+    for clean in cleaned_stdout {
+        let styled = style_difftastic_line(clean, t);
+        body_lines.extend(terminal_output::wrap_styled_line(&styled, content_w));
+    }
+    lines.extend(terminal_output::truncate_lines_middle(
+        body_lines,
+        max_lines,
+        Style::default().fg(t.text_muted),
+    ));
+
+    if !stderr.is_empty() {
+        if !lines.is_empty() {
+            lines.push(Line::from(""));
+        }
+        for sl in stderr.lines() {
+            let line = Line::from(Span::styled(
+                sanitize_terminal_text(sl),
+                Style::default().fg(t.error),
+            ));
+            lines.extend(terminal_output::wrap_styled_line(&line, content_w));
+        }
+    }
+    lines
+}
+
+fn style_difftastic_line(line: &str, t: Theme) -> Line<'static> {
+    let trimmed = line.trim_start();
+    if let Some((path, rest)) = line.split_once(" --- ") {
+        if !path.trim().is_empty() && !rest.trim().is_empty() {
+            return Line::from(vec![
+                Span::styled(path.to_owned(), Style::default().fg(path_color(path, t))),
+                Span::styled(" --- ", Style::default().fg(t.text_muted)),
+                Span::styled(rest.to_owned(), Style::default().fg(t.accent)),
+            ]);
+        }
+    }
+
+    let number_prefix_len = trimmed
+        .char_indices()
+        .take_while(|(_, c)| c.is_ascii_digit() || *c == '.' || c.is_whitespace())
+        .last()
+        .map(|(idx, c)| idx + c.len_utf8())
+        .unwrap_or(0);
+    if number_prefix_len > 0 {
+        let leading = line.len() - trimmed.len();
+        let split = leading + number_prefix_len;
+        return Line::from(vec![
+            Span::styled(line[..split].to_owned(), Style::default().fg(t.text_muted)),
+            Span::styled(
+                line[split..].to_owned(),
+                Style::default().fg(t.text_secondary),
+            ),
+        ]);
+    }
+
+    Line::from(Span::styled(
+        line.to_owned(),
+        Style::default().fg(t.text_secondary),
+    ))
 }
 
 /// Produce `git log` output lines. Detects two formats:

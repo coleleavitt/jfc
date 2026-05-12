@@ -2,11 +2,11 @@
 use super::assistant_parts::{find_tool_at, sanitize_terminal_text, truncate_str};
 use super::bash::{BashCmdKind, classify_bash_cmd};
 use super::core::{build_render_items, is_groupable, severity_rank};
-use super::detection::looks_like_git_diff_output;
+use super::detection::{looks_like_difftastic_output, looks_like_git_diff_output};
 use super::output_style::path_color;
 use super::outputs::{
     GrepLine, grep_target_file, parse_grep_line, parse_grep_no_path, parse_grep_with_sep,
-    produce_command_output_lines, produce_diff_view_lines,
+    produce_command_output_lines, produce_diff_view_lines, produce_git_diff_output_lines,
 };
 use super::syntax::{
     infer_lang_from_bash, infer_lang_from_tool, lang_from_path, looks_like_markdown, redact_quoted,
@@ -1768,6 +1768,47 @@ mod helper_tests {
                     \u{1b}[31m-old\u{1b}[m\n\
                     \u{1b}[32m+new\u{1b}[m\n";
         assert!(looks_like_git_diff_output(diff));
+    }
+
+    #[test]
+    fn looks_like_difftastic_output_accepts_side_by_side_headers_robust() {
+        let dft = "crates/jfc-ui/src/agents.rs --- 1/5 --- Rust\n\
+                   182 pub fn load_skills(      185 pub fn load_skills(\n";
+        assert!(looks_like_difftastic_output(dft));
+
+        let fallback = "crates/jfc-ui/src/providers/anthropic_accounts.rs --- Text (exceeded DFT_GRAPH_LIMIT)\n\
+                        10 //! - Track per-account  10 //! - Track per-account\n";
+        assert!(looks_like_difftastic_output(fallback));
+        assert!(!looks_like_difftastic_output(
+            "--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1 +1 @@"
+        ));
+    }
+
+    #[test]
+    fn difftastic_git_diff_renders_as_preformatted_output_not_file_chunks_robust() {
+        let dft = "crates/jfc-ui/src/providers/anthropic_accounts.rs --- 1/7 --- Text (exceeded DFT_GRAPH_LIMIT)\n\
+10 //! - Track per-account runtime st  10 //! - Track per-account runtime st\n\
+.. ate in memory: rate-limit cooldo  .. ate in memory: rate-limit cooldo\n\
+fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
+        let lines = produce_git_diff_output_lines(
+            dft,
+            "",
+            Some(0),
+            48,
+            Theme::dark(),
+            /*expanded*/ false,
+        );
+        let rendered = lines_to_plain(&lines);
+
+        assert!(rendered.contains("DFT_GRAPH_LIMIT"), "{rendered}");
+        assert!(
+            !rendered.contains("--- 1/1 --- Rust"),
+            "JFC must not chunk-highlight difftastic output as file content:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("[exit 0]"),
+            "successful git diff output should not grow an exit badge:\n{rendered}"
+        );
     }
 
     #[test]

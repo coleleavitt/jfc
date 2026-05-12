@@ -134,6 +134,24 @@ fn input_has_text(app: &App) -> bool {
     app.textarea.lines().iter().any(|line| !line.is_empty())
 }
 
+fn step_reasoning_effort(app: &mut App, raise: bool) {
+    let current = app.effort_state.current.unwrap_or_default();
+    let next = if raise {
+        current.next()
+    } else {
+        current.previous()
+    };
+    let message = match next {
+        Some(level) => app.effort_state.set(level),
+        None if raise => format!("Reasoning effort is already at max ({current})"),
+        None => format!("Reasoning effort is already at min ({current})"),
+    };
+    crate::toast::push_with_cap(
+        &mut app.toasts,
+        crate::toast::Toast::new(crate::toast::ToastKind::Info, message),
+    );
+}
+
 /// Walk back through `messages` collecting `path:line(:col)?`
 /// references from the most recent tool output (Bash stdout/stderr,
 /// Read content, command-output blocks). Stops at the most recent
@@ -505,6 +523,9 @@ fn dispatch_approved_tool(app: &App, tool: ToolCall, tx: &mpsc::Sender<AppEvent>
         Arc::clone(&app.dedup_cache),
         Some(Arc::clone(&app.task_store)),
         app.team_context.team_name.clone(),
+        app.current_session_id
+            .as_ref()
+            .map(|id| id.as_str().to_owned()),
         Arc::clone(&app.provider),
         app.model.clone(),
         app.teammate_event_tx.clone(),
@@ -555,6 +576,9 @@ fn advance_approval_queue(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
             Arc::clone(&app.dedup_cache),
             Some(Arc::clone(&app.task_store)),
             app.team_context.team_name.clone(),
+            app.current_session_id
+                .as_ref()
+                .map(|id| id.as_str().to_owned()),
             Arc::clone(&app.provider),
             app.model.clone(),
             app.teammate_event_tx.clone(),
@@ -1683,6 +1707,14 @@ pub async fn handle_key(
                 let entry = app.reasoning_expanded.entry(last_idx).or_insert(false);
                 *entry = !*entry;
             }
+            return Ok(false);
+        }
+        (KeyModifiers::ALT, KeyCode::Char('.')) => {
+            step_reasoning_effort(app, true);
+            return Ok(false);
+        }
+        (KeyModifiers::ALT, KeyCode::Char(',')) => {
+            step_reasoning_effort(app, false);
             return Ok(false);
         }
         // ─── Diagnostic panel scroll ───────────────────────────────────────
@@ -3883,6 +3915,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                  - Ctrl+M — Model picker\n\
                  - Ctrl+P — Command palette\n\
                  - Ctrl+O — Expand reasoning / open diagnostic panel\n\
+                 - Alt+. / Alt+, — Raise / lower reasoning effort\n\
                  - Ctrl+Y — Yank last assistant message to clipboard\n\
                  - Ctrl+S — Toggle info sidebar\n\
                  - `@` — Autocomplete file paths from cwd\n\
@@ -5420,6 +5453,12 @@ async fn execute_palette_action(app: &mut App, label: &str) {
                 *entry = !*entry;
             }
         }
+        "Raise Reasoning Effort (Alt+.)" => {
+            step_reasoning_effort(app, true);
+        }
+        "Lower Reasoning Effort (Alt+,)" => {
+            step_reasoning_effort(app, false);
+        }
         "Continue Most Recent Session (/continue)" => {
             run_slash_command(app, "/continue").await;
         }
@@ -5454,6 +5493,8 @@ pub fn palette_items(app: &App) -> Vec<&'static str> {
         "Use Tokyo Night Theme (/theme tokyo-night)",
         "Use Gruvbox Theme (/theme gruvbox)",
         "Toggle Thinking (Ctrl+O)",
+        "Raise Reasoning Effort (Alt+.)",
+        "Lower Reasoning Effort (Alt+,)",
         "Show Tasks (/tasks)",
         "Show Help (/help)",
         "Run /sessions",
@@ -7447,6 +7488,42 @@ mod tests {
         .await
         .unwrap();
         assert!(!app.textarea.lines()[0].contains("foo"));
+    }
+
+    #[tokio::test]
+    async fn alt_period_raises_reasoning_effort_normal() {
+        let mut app = test_app();
+        app.effort_state.set(crate::effort::ReasoningEffort::Medium);
+        let (tx, _rx) = channel();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char('.'), KeyModifiers::ALT),
+            &tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            app.effort_state.current,
+            Some(crate::effort::ReasoningEffort::High)
+        );
+    }
+
+    #[tokio::test]
+    async fn alt_comma_lowers_reasoning_effort_normal() {
+        let mut app = test_app();
+        app.effort_state.set(crate::effort::ReasoningEffort::Medium);
+        let (tx, _rx) = channel();
+        handle_key(
+            &mut app,
+            key_mod(KeyCode::Char(','), KeyModifiers::ALT),
+            &tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            app.effort_state.current,
+            Some(crate::effort::ReasoningEffort::Low)
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────
