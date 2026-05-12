@@ -154,7 +154,7 @@ impl BedrockProvider {
             (
                 "anthropic.claude-opus-4-5-20251101-v1:0",
                 "Claude Opus 4.5 (Bedrock)",
-                Some(200_000),
+                Some(1_000_000),
                 Some(64_000),
             ),
             (

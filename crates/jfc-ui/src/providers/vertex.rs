@@ -180,7 +180,7 @@ impl VertexProvider {
             (
                 "claude-opus-4-5@20251101",
                 "Claude Opus 4.5 (Vertex)",
-                Some(200_000),
+                Some(1_000_000),
                 Some(64_000),
             ),
             (
