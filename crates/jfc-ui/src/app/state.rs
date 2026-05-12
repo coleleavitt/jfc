@@ -468,6 +468,10 @@ pub struct App {
     /// CLAUDE.md / agents / settings edits and prepend a system-
     /// reminder on the next outbound prompt.
     pub last_file_watcher_seen: u64,
+    /// Last keybindings-watcher change-counter we observed. Tick handler
+    /// compares against `file_watcher::keybindings_change_counter()` to
+    /// detect `keybindings.toml` edits and hot-reload them.
+    pub last_keybindings_watcher_seen: u64,
     /// Message indices the user pinned via `/pin <idx>`. Compaction
     /// preserves pinned messages verbatim regardless of token pressure.
     /// Stored as indices into `messages` rather than a flag on
@@ -749,6 +753,7 @@ impl App {
             last_heartbeat_at: None,
             last_mcp_refresh_seen: 0,
             last_file_watcher_seen: 0,
+            last_keybindings_watcher_seen: 0,
             pinned_message_indices: std::collections::HashSet::new(),
             verbose_mode: false,
             fast_mode: false,

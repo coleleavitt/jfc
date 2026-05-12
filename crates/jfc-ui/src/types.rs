@@ -751,6 +751,13 @@ pub enum ToolKind {
     ExitWorktree,
     NotebookRead,
     NotebookEdit,
+    /// Anthropic server-side web search tool. The model invokes this as a
+    /// `server_tool_use` block; Anthropic executes it and returns results in
+    /// a subsequent `tool_result`. jfc renders but does not dispatch it.
+    ServerWebSearch,
+    /// Anthropic server-side code execution tool. Same server-side semantics
+    /// as `ServerWebSearch` — rendered for visibility but not locally dispatched.
+    ServerCodeExecution,
     /// Deliberately-named generic tool wrapping a string label —
     /// used by sample harnesses and code that constructs a ToolKind
     /// for a tool whose semantics we know but don't represent as a
@@ -1531,6 +1538,18 @@ impl ToolKind {
             "exitworktree" | "exit_worktree" => Self::ExitWorktree,
             "notebookread" | "notebook_read" => Self::NotebookRead,
             "notebookedit" | "notebook_edit" => Self::NotebookEdit,
+            // Server-side tool invocations arrive with the "server_tool_use:"
+            // prefix injected in sse.rs translate(). Strip it and route to
+            // the server-side variant.
+            _ if name.starts_with("server_tool_use:") => {
+                let inner = &name["server_tool_use:".len()..];
+                let inner_norm = inner.to_ascii_lowercase().replace('_', "");
+                match inner_norm.as_str() {
+                    "websearch" | "websearchtool" => Self::ServerWebSearch,
+                    "codeexecution" => Self::ServerCodeExecution,
+                    _ => Self::Generic(name.to_owned()),
+                }
+            }
             // MCP-namespaced tools route to the Mcp variant. Goes last
             // so it doesn't shadow specific matches.
             _ if name.starts_with("mcp__") => Self::Mcp(name.to_owned()),
@@ -1599,6 +1618,8 @@ impl ToolKind {
             Self::ExitWorktree => "ExitWorktree",
             Self::NotebookRead => "NotebookRead",
             Self::NotebookEdit => "NotebookEdit",
+            Self::ServerWebSearch => "ServerWebSearch",
+            Self::ServerCodeExecution => "ServerCodeExecution",
             Self::Generic(name) => name.as_str(),
             // The advertised name is what the model sent us — surface it
             // verbatim so logs and the transcript identify which name we
@@ -1657,6 +1678,8 @@ impl ToolKind {
             Self::ExitWorktree => "ExitWorktree",
             Self::NotebookRead => "NotebookRead",
             Self::NotebookEdit => "NotebookEdit",
+            Self::ServerWebSearch => "server_tool_use:web_search",
+            Self::ServerCodeExecution => "server_tool_use:code_execution",
             Self::Generic(name) => name.as_str(),
             // Round-trip the advertised name on the wire so a session
             // resumed from disk re-parses to the same UnknownTool kind.
@@ -1898,7 +1921,11 @@ impl ToolInput {
         let kind = ToolKind::from_name(tool_name);
         let needs_object = !matches!(
             kind,
-            ToolKind::Generic(_) | ToolKind::Mcp(_) | ToolKind::UnknownTool { .. }
+            ToolKind::Generic(_)
+                | ToolKind::Mcp(_)
+                | ToolKind::UnknownTool { .. }
+                | ToolKind::ServerWebSearch
+                | ToolKind::ServerCodeExecution
         );
         if needs_object && obj.is_none() {
             return Err(ToolInputError::InvalidShape {
@@ -2205,6 +2232,25 @@ impl ToolInput {
                 cell_id: req_str("cell_id")?,
                 new_source: req_str("new_source")?,
                 edit_mode: opt_str_field("edit_mode"),
+            },
+            // Server-side tools: store a human-readable summary of the input
+            // so the render layer can display query/params without dispatching.
+            ToolKind::ServerWebSearch => Self::Generic {
+                summary: obj
+                    .and_then(|m| m.get("query"))
+                    .and_then(|q| q.as_str())
+                    .map(|q| format!("🔍 {q}"))
+                    .unwrap_or_else(|| v.to_string()),
+            },
+            ToolKind::ServerCodeExecution => Self::Generic {
+                summary: obj
+                    .and_then(|m| m.get("code"))
+                    .and_then(|c| c.as_str())
+                    .map(|c| {
+                        let preview: String = c.chars().take(120).collect();
+                        format!("⚡ {preview}")
+                    })
+                    .unwrap_or_else(|| v.to_string()),
             },
             ToolKind::Generic(_) => Self::Generic {
                 summary: v.to_string(),

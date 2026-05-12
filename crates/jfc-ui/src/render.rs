@@ -3843,6 +3843,43 @@ fn help_overlay(f: &mut Frame, app: &App) {
         }
     }
 
+    // ── Custom keybindings from ~/.config/jfc/keybindings.toml ───────────
+    let custom = crate::keybindings::all_bindings();
+    if !custom.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Custom bindings".to_string(),
+            t.style_accent
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        )));
+        for (key_str, desc) in &custom {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    format!("{key_str:<24}"),
+                    Style::default()
+                        .fg(t.text_primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(desc.clone(), Style::default().fg(t.text_secondary)),
+            ]));
+        }
+    } else {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Custom bindings".to_string(),
+            t.style_accent
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        )));
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                "none — create ~/.config/jfc/keybindings.toml to add your own",
+                Style::default().fg(t.text_muted),
+            ),
+        ]));
+    }
+
     let para = Paragraph::new(lines)
         .style(Style::default().bg(t.surface))
         .scroll((0, 0));

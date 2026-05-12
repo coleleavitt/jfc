@@ -626,6 +626,9 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         ToolKind::MultiEdit => Color::Rgb(160, 230, 170),
         ToolKind::AskUserQuestion => Color::Rgb(255, 200, 240),
         ToolKind::WebFetch | ToolKind::WebSearch => Color::Rgb(120, 200, 220),
+        // Server-side tools: cyan-teal to distinguish them from local WebSearch
+        ToolKind::ServerWebSearch => Color::Rgb(80, 210, 200),
+        ToolKind::ServerCodeExecution => Color::Rgb(200, 160, 80), // amber-gold
         ToolKind::Mcp(_) => Color::Rgb(190, 170, 240),
         ToolKind::CronCreate
         | ToolKind::CronList

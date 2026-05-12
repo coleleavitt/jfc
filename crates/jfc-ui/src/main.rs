@@ -24,6 +24,7 @@ mod idle_prefetch;
 mod ids;
 mod inline_tools;
 mod input;
+mod keybindings;
 mod lsp_client;
 mod lsp_rpc;
 mod managed_session;
@@ -323,6 +324,7 @@ async fn main() -> anyhow::Result<()> {
     // Tick handler in the main loop polls the change counter and
     // emits the reminder when it sees a bump.
     crate::file_watcher::install();
+    crate::keybindings::load();
 
     // Subcommand dispatch must run before any TUI setup — `daemon start`
     // expects a clean stdout, and `daemon status / list / stop / fire`

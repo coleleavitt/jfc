@@ -86,6 +86,14 @@ pub enum ContentBlock {
         #[allow(dead_code)]
         input: Value,
     },
+    /// Anthropic server-side tool invocation (e.g. web_search, code_execution).
+    /// These are executed server-side; jfc renders them but does not dispatch
+    /// them locally. Shape mirrors `tool_use` but uses `server_tool_use` type.
+    ServerToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,6 +143,15 @@ pub enum BlockState {
         name: String,
         input: String,
     },
+    /// Server-side tool invocation block (web_search, code_execution, etc.).
+    /// Input is pre-populated from the start block and emits a prefixed
+    /// ToolDone name so the rendering layer can distinguish server tools
+    /// from locally-dispatched ones.
+    ServerToolUse {
+        id: String,
+        name: String,
+        input: String,
+    },
 }
 
 pub fn parse_stop_reason(s: Option<&str>) -> StopReason {
@@ -180,6 +197,21 @@ pub fn translate(
                     name,
                     input: String::new(),
                 },
+                ContentBlock::ServerToolUse { id, name, input } => {
+                    // Server-side tools send their full input in the start
+                    // block rather than streaming it via InputJsonDelta. We
+                    // pre-populate the input string so it's available at stop.
+                    let input_str = if input.is_null() {
+                        String::new()
+                    } else {
+                        input.to_string()
+                    };
+                    BlockState::ServerToolUse {
+                        id,
+                        name,
+                        input: input_str,
+                    }
+                }
             });
             None
         }
@@ -228,6 +260,23 @@ pub fn translate(
                     tool_use_id: id,
                     input_json: input,
                 }),
+                // Server-side tools emit a prefixed tool name so stream.rs
+                // can recognize them and skip local dispatch.
+                Some(BlockState::ServerToolUse { id, name, input }) => {
+                    tracing::info!(
+                        target: "jfc::provider::anthropic_sse",
+                        index,
+                        tool_name = %name,
+                        tool_use_id = %id,
+                        "server_tool_use block complete"
+                    );
+                    Some(StreamEvent::ToolDone {
+                        index,
+                        tool_name: format!("server_tool_use:{name}"),
+                        tool_use_id: id,
+                        input_json: input,
+                    })
+                }
                 None => None,
             }
         }
@@ -481,6 +530,7 @@ fn log_parsed_event(event: &SseEvent) {
                 ContentBlock::Text { .. } => "text",
                 ContentBlock::Thinking { .. } => "thinking",
                 ContentBlock::ToolUse { .. } => "tool_use",
+                ContentBlock::ServerToolUse { .. } => "server_tool_use",
             };
             if let ContentBlock::ToolUse { id, name, .. } = content_block {
                 tracing::info!(
@@ -489,6 +539,14 @@ fn log_parsed_event(event: &SseEvent) {
                     tool_name = %name,
                     tool_use_id = %id,
                     "content_block_start tool_use"
+                );
+            } else if let ContentBlock::ServerToolUse { id, name, .. } = content_block {
+                tracing::info!(
+                    target: "jfc::provider::anthropic_sse",
+                    index,
+                    tool_name = %name,
+                    tool_use_id = %id,
+                    "content_block_start server_tool_use"
                 );
             } else {
                 tracing::debug!(
@@ -1049,5 +1107,101 @@ mod tests {
         let s = serde_json::Value::String("[1, 2, 3]".to_owned());
         let result = ensure_input_object(&s);
         assert_eq!(result, serde_json::json!({"value": [1, 2, 3]}));
+    }
+
+    // ─── server_tool_use tests ────────────────────────────────────────────────
+
+    #[test]
+    fn server_tool_use_content_block_parses() {
+        let json = r#"{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtool_1","name":"web_search","input":{"query":"rust async"}}}"#;
+        let event: SseEvent = serde_json::from_str(json).expect("server_tool_use must parse");
+        assert!(matches!(
+            event,
+            SseEvent::ContentBlockStart {
+                content_block: ContentBlock::ServerToolUse { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn server_tool_use_block_emits_tool_done_with_prefix() {
+        let (mut blocks, mut sr) = empty_state();
+        translate(
+            SseEvent::ContentBlockStart {
+                index: 0,
+                content_block: ContentBlock::ServerToolUse {
+                    id: "srvtool_1".into(),
+                    name: "web_search".into(),
+                    input: serde_json::json!({"query": "rust async"}),
+                },
+            },
+            &mut blocks,
+            &mut sr,
+        );
+        // Server tools pre-populate input at start, not via deltas
+        assert!(matches!(blocks[0], Some(BlockState::ServerToolUse { .. })));
+
+        let out = translate(
+            SseEvent::ContentBlockStop { index: 0 },
+            &mut blocks,
+            &mut sr,
+        );
+        // ToolDone is emitted with "server_tool_use:" prefix so stream.rs
+        // can route to a non-dispatch path.
+        assert!(
+            matches!(out, Some(StreamEvent::ToolDone { ref tool_name, ref tool_use_id, .. })
+                if tool_name == "server_tool_use:web_search" && tool_use_id == "srvtool_1"),
+            "expected ToolDone with server_tool_use: prefix, got: {out:?}"
+        );
+        assert!(blocks[0].is_none());
+    }
+
+    #[test]
+    fn server_tool_use_null_input_produces_empty_string() {
+        let (mut blocks, mut sr) = empty_state();
+        translate(
+            SseEvent::ContentBlockStart {
+                index: 0,
+                content_block: ContentBlock::ServerToolUse {
+                    id: "srvtool_2".into(),
+                    name: "code_execution".into(),
+                    input: serde_json::Value::Null,
+                },
+            },
+            &mut blocks,
+            &mut sr,
+        );
+        if let Some(Some(BlockState::ServerToolUse { input, .. })) = blocks.get(0) {
+            assert!(input.is_empty(), "null input should become empty string");
+        } else {
+            panic!("expected ServerToolUse block state");
+        }
+    }
+
+    #[test]
+    fn server_tool_use_from_name_routes_to_server_variant() {
+        use crate::types::ToolKind;
+        assert!(
+            matches!(
+                ToolKind::from_name("server_tool_use:web_search"),
+                ToolKind::ServerWebSearch
+            ),
+            "server_tool_use:web_search should map to ServerWebSearch"
+        );
+        assert!(
+            matches!(
+                ToolKind::from_name("server_tool_use:code_execution"),
+                ToolKind::ServerCodeExecution
+            ),
+            "server_tool_use:code_execution should map to ServerCodeExecution"
+        );
+        assert!(
+            matches!(
+                ToolKind::from_name("server_tool_use:unknown_future_tool"),
+                ToolKind::Generic(_)
+            ),
+            "unknown server tool should fall through to Generic"
+        );
     }
 }

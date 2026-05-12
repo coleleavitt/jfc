@@ -1421,6 +1421,20 @@ pub(crate) async fn run(
                         );
                     }
 
+                    // Hot-reload keybindings when keybindings.toml changes.
+                    let cur_kb = crate::file_watcher::keybindings_change_counter();
+                    if cur_kb > app.last_keybindings_watcher_seen {
+                        app.last_keybindings_watcher_seen = cur_kb;
+                        crate::keybindings::load();
+                        toast::push_with_cap(
+                            &mut app.toasts,
+                            toast::Toast::new(
+                                toast::ToastKind::Info,
+                                "keybindings.toml reloaded",
+                            ),
+                        );
+                    }
+
                     // Refresh the worktree count at most once per 10s,
                     // only if we're inside a git repo.
                     let now = std::time::Instant::now();

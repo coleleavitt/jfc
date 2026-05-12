@@ -45,6 +45,24 @@ pub enum SlashCommand {
     Login(Option<String>),
     /// /fast — toggle fast mode (lower-latency inference via beta header)
     Fast,
+    /// /init — generate CLAUDE.md from codebase analysis
+    Init,
+    /// /commit — generate a conventional commit message from staged changes
+    Commit,
+    /// /review — ask the model to review current git changes for bugs/quality
+    Review,
+    /// /skills — list available skills (.claude/skills/*.md, ~/.config/jfc/skills/*.md)
+    Skills,
+    /// /status — show rich session status (model, provider, tokens, cost, MCP, etc.)
+    Status,
+    /// /dream [nightly] — consolidate session learnings into typed memory files
+    Dream(Option<String>),
+    /// /loop [interval] <prompt> — schedule a recurring cron prompt
+    Loop(Option<String>),
+    /// /schedule [list|cancel <id>] — manage cron schedules
+    Schedule(Option<String>),
+    /// /doctor — run diagnostic health check of the jfc installation
+    Doctor,
     /// Unknown command
     Unknown(String),
 }
@@ -79,6 +97,18 @@ impl fmt::Display for SlashCommand {
             Self::Login(Some(p)) => write!(f, "/login {p}"),
             Self::Login(None) => write!(f, "/login"),
             Self::Fast => write!(f, "/fast"),
+            Self::Init => write!(f, "/init"),
+            Self::Commit => write!(f, "/commit"),
+            Self::Review => write!(f, "/review"),
+            Self::Skills => write!(f, "/skills"),
+            Self::Status => write!(f, "/status"),
+            Self::Dream(Some(a)) => write!(f, "/dream {a}"),
+            Self::Dream(None) => write!(f, "/dream"),
+            Self::Loop(Some(a)) => write!(f, "/loop {a}"),
+            Self::Loop(None) => write!(f, "/loop"),
+            Self::Schedule(Some(a)) => write!(f, "/schedule {a}"),
+            Self::Schedule(None) => write!(f, "/schedule"),
+            Self::Doctor => write!(f, "/doctor"),
             Self::Unknown(s) => write!(f, "/{s}"),
         }
     }
@@ -99,7 +129,8 @@ pub fn parse_slash_command(input: &str) -> Option<SlashCommand> {
         "compact" => SlashCommand::Compact,
         "clear" => SlashCommand::Clear,
         "model" | "m" => SlashCommand::Model(arg),
-        "stats" | "status" => SlashCommand::Stats,
+        "stats" => SlashCommand::Stats,
+        "status" => SlashCommand::Status,
         "effort" | "e" => SlashCommand::Effort(arg),
         "resume" | "r" => SlashCommand::Resume(arg),
         "branch" | "br" => SlashCommand::Branch(arg),
@@ -114,6 +145,14 @@ pub fn parse_slash_command(input: &str) -> Option<SlashCommand> {
         "mcp" => SlashCommand::Mcp(arg),
         "login" => SlashCommand::Login(arg),
         "fast" | "f" => SlashCommand::Fast,
+        "init" => SlashCommand::Init,
+        "commit" => SlashCommand::Commit,
+        "review" => SlashCommand::Review,
+        "skills" => SlashCommand::Skills,
+        "dream" | "learn" => SlashCommand::Dream(arg),
+        "loop" | "proactive" => SlashCommand::Loop(arg),
+        "schedule" | "routines" => SlashCommand::Schedule(arg),
+        "doctor" => SlashCommand::Doctor,
         other => SlashCommand::Unknown(other.to_string()),
     };
 
@@ -140,6 +179,15 @@ Available commands:
   /mcp [cmd]       MCP server management (list/restart <name>/logs <name>)
   /daemon [cmd]    Daemon management (start/stop/status/run/cron)
   /fast             Toggle fast mode (lower-latency inference)
+  /init            Generate CLAUDE.md with project documentation
+  /commit          Generate a conventional commit message for staged changes
+  /review          Ask the model to review current git changes for issues
+  /skills          List available skills (.claude/skills/, ~/.config/jfc/skills/)
+  /status          Show rich session status (model, tokens, cost, MCP servers)
+  /dream [nightly] Consolidate session learnings into typed memory files
+  /loop [int] <p>  Schedule a recurring prompt (e.g. /loop 10m check the deploy)
+  /schedule [sub]  Manage cron schedules (list / cancel <id>)
+  /doctor          Run diagnostic health check of the jfc installation
   /login [target]  Sign in: anthropic | claudeai | bedrock | vertex | console
   /help            Show this help
   /exit            Exit the session"
@@ -157,6 +205,10 @@ mod tests {
         assert_eq!(parse_slash_command("/quit"), Some(SlashCommand::Exit));
         assert_eq!(parse_slash_command("/help"), Some(SlashCommand::Help));
         assert_eq!(parse_slash_command("/stats"), Some(SlashCommand::Stats));
+        assert_eq!(parse_slash_command("/status"), Some(SlashCommand::Status));
+        assert_eq!(parse_slash_command("/commit"), Some(SlashCommand::Commit));
+        assert_eq!(parse_slash_command("/review"), Some(SlashCommand::Review));
+        assert_eq!(parse_slash_command("/skills"), Some(SlashCommand::Skills));
     }
 
     #[test]
