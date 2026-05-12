@@ -1733,6 +1733,41 @@ Do not use a colon before tool calls.";
                     }
                 };
                 tool_accum.remove(&index);
+                // Server-side tools (web_search, code_execution) are executed
+                // by Anthropic's infrastructure — jfc must NOT dispatch them.
+                // Mark them Completed immediately so the event_loop routes them
+                // to the messages view as a visual record without ever calling
+                // execute_tool. Results arrive via a subsequent `tool_result`
+                // content block in the next user message.
+                let tool = if matches!(
+                    tool.kind,
+                    ToolKind::ServerWebSearch | ToolKind::ServerCodeExecution
+                ) {
+                    let mut t = tool;
+                    let display_text = match t.kind {
+                        ToolKind::ServerWebSearch => format!(
+                            "🔍 Executed server-side by Anthropic ({})",
+                            t.input.summary()
+                        ),
+                        ToolKind::ServerCodeExecution => format!(
+                            "⚡ Executed server-side by Anthropic ({})",
+                            t.input.summary()
+                        ),
+                        _ => unreachable!(),
+                    };
+                    t.output = ToolOutput::Text(display_text);
+                    let _ = t.mark_running();
+                    let _ = t.mark_completed();
+                    tracing::info!(
+                        target: "jfc::stream",
+                        tool_kind = t.kind.label(),
+                        tool_use_id = %tool_use_id,
+                        "server-side tool marked completed (no local dispatch)"
+                    );
+                    t
+                } else {
+                    tool
+                };
                 let _ = tx.send(AppEvent::StreamTool(tool)).await;
             }
             StreamEvent::Done { stop_reason: r } => {
