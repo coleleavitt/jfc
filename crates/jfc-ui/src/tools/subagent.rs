@@ -115,17 +115,24 @@ fn subagent_model_alias(model: &str, provider_name: &str) -> String {
     }
 }
 
+/// Lazily cached agent-model config. Config is unlikely to change mid-session,
+/// so we parse it once and reuse the `agents` map on every subagent spawn.
+fn cached_agent_models() -> &'static std::collections::HashMap<String, crate::config::AgentConfig> {
+    static CACHE: std::sync::OnceLock<std::collections::HashMap<String, crate::config::AgentConfig>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(|| crate::config::load().agents)
+}
+
 pub(crate) fn selected_subagent_model(
     task_input: &crate::types::TaskInput,
     agent_def: Option<&crate::agents::AgentDef>,
     parent_model: crate::provider::ModelId,
     provider_name: &str,
 ) -> Result<crate::provider::ModelId, String> {
-    let cfg = crate::config::load();
     let config_model = task_input
         .subagent_type
         .as_deref()
-        .and_then(|name| cfg.agents.get(name))
+        .and_then(|name| cached_agent_models().get(name))
         .and_then(|a| a.model.clone())
         .filter(|s| !s.is_empty());
 
