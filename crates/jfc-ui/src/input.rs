@@ -5539,6 +5539,7 @@ pub fn collect_all_models(app: &App) -> Vec<crate::provider::ModelInfo> {
             let models = app
                 .provider_models
                 .get(p.name())
+                .filter(|models| !models.is_empty())
                 .cloned()
                 .unwrap_or_else(|| p.available_models());
             (
@@ -5568,6 +5569,7 @@ pub fn collect_all_models(app: &App) -> Vec<crate::provider::ModelInfo> {
             .flat_map(|(provider_name, _)| {
                 app.provider_models
                     .get(provider_name.as_str())
+                    .filter(|models| !models.is_empty())
                     .cloned()
                     .unwrap_or_else(|| {
                         app.providers
@@ -5915,6 +5917,28 @@ mod tests {
         }
     }
     impl crate::provider::seal::Sealed for TestProvider {}
+
+    struct StaticModelProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for StaticModelProvider {
+        fn name(&self) -> &str {
+            "static"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            vec![ModelInfo::new("static-model", "Static Model", "static")]
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+    impl crate::provider::seal::Sealed for StaticModelProvider {}
 
     /// Test fixture: a fresh `App` plus a paired `(tx, rx)` so tests can both
     /// drive `handle_key` and inspect the AppEvents it emits. Pulled out so
@@ -6401,6 +6425,19 @@ mod tests {
         .await
         .unwrap();
         assert!(app.show_model_picker);
+    }
+
+    #[test]
+    fn collect_all_models_empty_cache_falls_back_to_static_robust() {
+        let mut app = App::new(Arc::new(StaticModelProvider), "static-model");
+        app.provider_models
+            .insert(crate::provider::ProviderId::from("static"), Vec::new());
+
+        let models = collect_all_models(&app);
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].id.as_str(), "static-model");
+        assert_eq!(models[0].provider.as_str(), "static");
     }
 
     #[tokio::test]

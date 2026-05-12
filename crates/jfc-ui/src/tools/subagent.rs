@@ -87,12 +87,30 @@ pub(super) fn filter_tools_for_agent(
 
 fn subagent_model_alias(model: &str, provider_name: &str) -> String {
     match (model.trim().to_ascii_lowercase().as_str(), provider_name) {
+        ("haiku", "anthropic" | "anthropic-oauth") => {
+            crate::providers::anthropic_models::ALIAS_HAIKU.to_string()
+        }
+        ("sonnet", "anthropic" | "anthropic-oauth") => {
+            crate::providers::anthropic_models::ALIAS_SONNET.to_string()
+        }
+        ("opus", "anthropic" | "anthropic-oauth") => {
+            crate::providers::anthropic_models::ALIAS_OPUS.to_string()
+        }
+        ("haiku", "openai") => "gpt-5-mini".to_string(),
+        ("sonnet", "openai") => "gpt-5".to_string(),
+        ("opus", "openai") => "gpt-5.1".to_string(),
+        ("haiku", "codex") => "gpt-5.1-codex-mini".to_string(),
+        ("sonnet", "codex") => "gpt-5.4".to_string(),
+        ("opus", "codex") => "gpt-5.1-codex-max".to_string(),
         ("haiku", "openwebui") => "bedrock-claude-4-5-haiku".to_string(),
         ("sonnet", "openwebui") => "bedrock-claude-4-6-sonnet".to_string(),
         ("opus", "openwebui") => "bedrock-claude-4-6-opus".to_string(),
-        ("haiku", _) => "claude-haiku-4-5".to_string(),
-        ("sonnet", _) => "claude-sonnet-4-6".to_string(),
-        ("opus", _) => "claude-opus-4-6".to_string(),
+        ("haiku", "bedrock") => "anthropic.claude-haiku-4-5-20251001-v1:0".to_string(),
+        ("sonnet", "bedrock") => "anthropic.claude-sonnet-4-5-20250929-v1:0".to_string(),
+        ("opus", "bedrock") => "anthropic.claude-opus-4-5-20251101-v1:0".to_string(),
+        ("haiku", "vertex") => "claude-haiku-4-5@20251001".to_string(),
+        ("sonnet", "vertex") => "claude-sonnet-4-5@20250929".to_string(),
+        ("opus", "vertex") => "claude-opus-4-5@20251101".to_string(),
         _ => model.trim().to_string(),
     }
 }
@@ -214,6 +232,41 @@ mod tests {
 
         unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
         assert_eq!(model.as_str(), "bedrock-claude-4-5-haiku");
+    }
+
+    #[test]
+    fn selected_subagent_model_maps_builtin_tiers_for_openai() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let model = selected_subagent_model(
+            &task_input(None),
+            Some(&agent_model(Some("haiku"))),
+            crate::provider::ModelId::new("gpt-5.5"),
+            "openai",
+        )
+        .unwrap();
+
+        assert_eq!(model.as_str(), "gpt-5-mini");
+    }
+
+    #[test]
+    fn selected_subagent_model_maps_builtin_tiers_for_anthropic_oauth() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let model = selected_subagent_model(
+            &task_input(Some("haiku")),
+            None,
+            crate::provider::ModelId::new("claude-opus-4-7"),
+            "anthropic-oauth",
+        )
+        .unwrap();
+
+        assert_eq!(
+            model.as_str(),
+            crate::providers::anthropic_models::ALIAS_HAIKU
+        );
     }
 
     #[test]
