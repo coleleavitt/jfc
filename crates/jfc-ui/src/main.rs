@@ -93,8 +93,8 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 
 use provider::{ModelId, ModelSpec, Provider};
 use providers::{
-    AnthropicOAuthProvider, AnthropicProvider, BedrockProvider, CodexOAuthProvider, OpenAIProvider,
-    OpenWebUIProvider, VertexProvider,
+    AnthropicOAuthProvider, AnthropicProvider, BedrockProvider, CodexOAuthProvider,
+    LiteLLMProvider, OpenAIProvider, OpenWebUIProvider, VertexProvider,
 };
 
 /// JFC - A TUI assistant for code exploration and development
@@ -165,6 +165,11 @@ enum AuthSubcommand {
         #[command(subcommand)]
         sub: CodexAuthSubcommand,
     },
+    /// LiteLLM proxy instance credentials.
+    Litellm {
+        #[command(subcommand)]
+        sub: LiteLLMAuthSubcommand,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -216,6 +221,23 @@ enum CodexAuthSubcommand {
     /// Show configured Codex OAuth token status.
     Status,
     /// Remove stored Codex OAuth tokens.
+    Logout,
+}
+
+#[derive(Subcommand, Debug)]
+enum LiteLLMAuthSubcommand {
+    /// Configure a LiteLLM proxy instance (API key + base URL).
+    Login {
+        /// Base URL of the LiteLLM proxy (e.g. https://api.example.com/v1).
+        #[arg(long)]
+        url: String,
+        /// API key for authentication.
+        #[arg(long)]
+        key: String,
+    },
+    /// Show configured LiteLLM credentials.
+    Status,
+    /// Remove stored LiteLLM credentials.
     Logout,
 }
 
@@ -518,6 +540,7 @@ async fn run_auth_subcommand(sub: AuthSubcommand) -> anyhow::Result<()> {
     match sub {
         AuthSubcommand::Anthropic { sub } => run_anthropic_auth_subcommand(sub).await,
         AuthSubcommand::Codex { sub } => run_codex_auth_subcommand(sub).await,
+        AuthSubcommand::Litellm { sub } => run_litellm_auth_subcommand(sub).await,
     }
 }
 
@@ -584,6 +607,71 @@ async fn run_codex_auth_subcommand(sub: CodexAuthSubcommand) -> anyhow::Result<(
                 println!("removed Codex OAuth tokens from {}", store.path().display());
             } else {
                 println!("no Codex OAuth tokens found in {}", store.path().display());
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn run_litellm_auth_subcommand(sub: LiteLLMAuthSubcommand) -> anyhow::Result<()> {
+    use crate::providers::litellm;
+
+    let cred_path = litellm::credentials_path();
+    match sub {
+        LiteLLMAuthSubcommand::Login { url, key } => {
+            litellm::save_credentials(&url, &key)?;
+            println!("✓ LiteLLM credentials saved to {}", cred_path.display());
+
+            let client = reqwest::Client::new();
+            let base = url.trim_end_matches('/');
+            match client
+                .get(format!("{base}/models"))
+                .header("Authorization", format!("Bearer {key}"))
+                .timeout(std::time::Duration::from_secs(8))
+                .send()
+                .await
+            {
+                Ok(resp) if resp.status().is_success() => {
+                    println!("✓ Connection verified — instance is reachable");
+                }
+                Ok(resp) => {
+                    println!(
+                        "⚠ Instance returned HTTP {} — credentials may be invalid",
+                        resp.status()
+                    );
+                }
+                Err(e) => {
+                    println!("⚠ Could not reach instance: {e}");
+                    println!("  Credentials are saved; fix the URL and re-run login.");
+                }
+            }
+            Ok(())
+        }
+        LiteLLMAuthSubcommand::Status => {
+            match litellm::load_credentials() {
+                Some(creds) => {
+                    println!("litellm: configured");
+                    println!("url: {}", creds.base_url);
+                    println!(
+                        "key: {}…{}",
+                        &creds.api_key[..creds.api_key.len().min(4)],
+                        &creds.api_key[creds.api_key.len().saturating_sub(4)..]
+                    );
+                    println!("store: {}", cred_path.display());
+                }
+                None => {
+                    println!("litellm: not configured");
+                    println!("  run: jfc auth litellm login --url <URL> --key <KEY>");
+                }
+            }
+            Ok(())
+        }
+        LiteLLMAuthSubcommand::Logout => {
+            if cred_path.exists() {
+                std::fs::remove_file(&cred_path)?;
+                println!("removed LiteLLM credentials from {}", cred_path.display());
+            } else {
+                println!("no LiteLLM credentials found at {}", cred_path.display());
             }
             Ok(())
         }
@@ -1063,6 +1151,7 @@ pub(crate) fn build_providers() -> ProvidersInit {
     let env_model = std::env::var("ANTHROPIC_MODEL")
         .ok()
         .or_else(|| std::env::var("OPENWEBUI_MODEL").ok())
+        .or_else(|| std::env::var("JFC_LITELLM_MODEL").ok())
         .filter(|s| !s.is_empty());
     let cfg_model = config::load().default.model.filter(|s| !s.is_empty());
     let recent_model = crate::app::load_recent_models()
@@ -1116,6 +1205,11 @@ pub(crate) fn build_providers() -> ProvidersInit {
     if let Some(openai) = OpenAIProvider::from_env() {
         providers.push(Arc::new(openai));
         prefer.get_or_insert("openai");
+    }
+
+    if let Some(litellm) = LiteLLMProvider::from_env() {
+        providers.push(Arc::new(litellm));
+        prefer.get_or_insert("litellm");
     }
 
     let codex = CodexOAuthProvider::new();
@@ -1221,7 +1315,17 @@ pub(crate) fn build_providers() -> ProvidersInit {
                 return Some("openai".to_owned());
             }
 
+            let has_litellm_config = providers.iter().any(|p| p.name() == "litellm");
             let looks_proxy_routed = !model_str.is_empty() && !model_str.starts_with("claude-");
+            if has_litellm_config && looks_proxy_routed {
+                tracing::info!(
+                    target: "jfc::startup",
+                    model = %model_str,
+                    "no static match, model looks proxy-routed → litellm"
+                );
+                return Some("litellm".to_owned());
+            }
+
             if has_openwebui_config && looks_proxy_routed {
                 tracing::info!(
                     target: "jfc::startup",
@@ -1300,6 +1404,11 @@ pub(crate) fn provider_for_model(
     let has_openai = providers.iter().any(|p| p.name() == "openai");
     if has_openai && looks_openai_model(model_id) {
         return providers.iter().find(|p| p.name() == "openai").cloned();
+    }
+
+    let has_litellm = providers.iter().any(|p| p.name() == "litellm");
+    if has_litellm && !model_id.starts_with("claude-") {
+        return providers.iter().find(|p| p.name() == "litellm").cloned();
     }
 
     let has_openwebui = providers.iter().any(|p| p.name() == "openwebui");

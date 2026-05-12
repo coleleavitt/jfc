@@ -33,6 +33,8 @@ pub enum LoginDispatch {
     StartBedrockWizard,
     /// `/login vertex` — kick off [`super::vertex_wizard::VertexWizard`].
     StartVertexWizard,
+    /// `/login litellm` — point at the LiteLLM proxy credential file.
+    LiteLlm(String),
     /// `/login console` — treat the same as `anthropic` (Anthropic Console
     /// issues plain API keys that route through `api.anthropic.com`).
     ConsoleApiKey(String),
@@ -48,6 +50,7 @@ impl fmt::Display for LoginDispatch {
             | Self::AnthropicApiKey(s)
             | Self::ClaudeAiOAuth(s)
             | Self::CodexOAuth(s)
+            | Self::LiteLlm(s)
             | Self::ConsoleApiKey(s)
             | Self::Unknown(s) => f.write_str(s),
             Self::StartBedrockWizard => f.write_str("Starting Bedrock wizard…"),
@@ -61,6 +64,7 @@ Choose an authentication target:
   /login anthropic   API key (ANTHROPIC_API_KEY)
   /login claudeai    Claude Code OAuth (Pro / Max / Team)
   /login codex       OpenAI Codex OAuth (ChatGPT Pro / Plus)
+  /login litellm     LiteLLM proxy (base URL + API key)
   /login bedrock     AWS Bedrock (requires `aws` CLI)
   /login vertex      GCP Vertex (requires `gcloud` CLI)
   /login console     Anthropic Console API key";
@@ -95,6 +99,19 @@ Claude Code OAuth (claudeai) sign-in:
   JFC_ANTHROPIC_ACCOUNTS_PATH to use a custom path (e.g. opencode's store
   at ~/.config/opencode/anthropic-accounts.json to share rotation state).";
 
+const LITELLM_BODY: &str = "\
+LiteLLM proxy sign-in:
+  Create or edit ~/.config/jfc/litellm.toml with:
+
+    api_key  = \"sk-…\"
+    base_url = \"http://localhost:4000\"
+
+  Or run interactively:
+    jfc auth litellm login
+
+  Once configured, models are fetched dynamically from the proxy's
+  /v1/models endpoint. Use `litellm/<model>` as the model selector.";
+
 const CODEX_OAUTH_BODY: &str = "\
 OpenAI Codex OAuth sign-in:
   Browser flow:
@@ -127,11 +144,14 @@ pub fn dispatch(arg: Option<&str>) -> LoginDispatch {
             "codex" | "chatgpt" | "openai-oauth" => {
                 LoginDispatch::CodexOAuth(CODEX_OAUTH_BODY.to_owned())
             }
+            "litellm" | "lite-llm" | "lite_llm" => {
+                LoginDispatch::LiteLlm(LITELLM_BODY.to_owned())
+            }
             "bedrock" | "aws" => LoginDispatch::StartBedrockWizard,
             "vertex" | "gcp" | "gcloud" => LoginDispatch::StartVertexWizard,
             "console" => LoginDispatch::ConsoleApiKey(CONSOLE_API_KEY_BODY.to_owned()),
             other => LoginDispatch::Unknown(format!(
-                "Unknown login target {:?}. Try one of: anthropic, claudeai, codex, bedrock, vertex, console.",
+                "Unknown login target {:?}. Try one of: anthropic, claudeai, codex, litellm, bedrock, vertex, console.",
                 other
             )),
         },
@@ -152,6 +172,7 @@ mod tests {
                 assert!(body.contains("vertex"));
                 assert!(body.contains("claudeai"));
                 assert!(body.contains("codex"));
+                assert!(body.contains("litellm"));
                 assert!(body.contains("console"));
             }
             other => panic!("expected ShowChooser, got {other:?}"),
@@ -172,6 +193,10 @@ mod tests {
         assert!(matches!(
             dispatch(Some("codex")),
             LoginDispatch::CodexOAuth(_)
+        ));
+        assert!(matches!(
+            dispatch(Some("litellm")),
+            LoginDispatch::LiteLlm(_)
         ));
         assert!(matches!(
             dispatch(Some("bedrock")),
@@ -218,6 +243,10 @@ mod tests {
         assert!(matches!(
             dispatch(Some("chatgpt")),
             LoginDispatch::CodexOAuth(_)
+        ));
+        assert!(matches!(
+            dispatch(Some("lite-llm")),
+            LoginDispatch::LiteLlm(_)
         ));
     }
 

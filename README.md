@@ -152,7 +152,7 @@ The graph session memoizes query results and invalidates caches after edits. Que
 | Anthropic OAuth | Multi-account Claude.ai OAuth with account list/switch/disable/remove. Sensitive CCH/billing pieces are behind `anthropic-oauth-sensitive`. |
 | OpenAI | OpenAI-compatible chat/responses provider path. |
 | Codex OAuth | ChatGPT/Codex OAuth foundation with browser login, device flow, status, logout, and URL/header rewriting hooks. |
-| OpenWebUI / LiteLLM | OpenAI-compatible local/proxy providers. |
+| OpenWebUI / LiteLLM | OpenAI-compatible local/proxy providers. LiteLLM dynamically fetches all models from the configured instance. |
 | Bedrock / Vertex | Cloud-provider foundations and setup wizards. |
 
 Useful auth commands:
@@ -165,6 +165,9 @@ jfc auth codex login
 jfc auth codex device
 jfc auth codex status
 jfc auth codex logout
+jfc auth litellm login --url <URL> --key <KEY>
+jfc auth litellm status
+jfc auth litellm logout
 ```
 
 Inside the TUI, `/login` shows provider-specific login options.
@@ -340,6 +343,22 @@ mode = "default" # plan | default | accept | auto | bypass
 [daemon]
 max_sessions = 5
 cleanup_after_hours = 24
+
+# Per-subagent model overrides (optional)
+[agents.Explore]
+model = "litellm/qwen/qwen3.6-35b-a3b:coding"
+
+[agents.general-purpose]
+model = "litellm/deepseek-r1"
+
+[agents.Plan]
+model = "claude-opus-4-7"
+
+[agents.verification]
+model = "litellm/qwen/qwen3.6-35b-a3b:coding"
+
+[agents.orchestrator]
+model = "claude-sonnet-4-6"
 ```
 
 Project feature config can live at `.jfc/features.toml`:
@@ -354,10 +373,31 @@ max_concurrent = 10
 
 Agent configs support per-agent model/tool/permission overrides in config and `.claude/agents/*.md` frontmatter. Skills live in `.claude/skills/*.md`.
 
+Built-in subagent types and their defaults:
+
+| Subagent | Default Model | Role |
+| --- | --- | --- |
+| `Explore` | `haiku` | Read-only codebase search and grep |
+| `general-purpose` | inherit (parent) | Multi-step tasks with full tool access |
+| `Plan` | inherit (parent) | Architecture design, read-only planning |
+| `verification` | inherit (parent) | Post-edit testing, tries to break things |
+| `orchestrator` | inherit (parent) | Decomposes broad requests into subtask plans |
+
+Override any subagent's model via `[agents.<name>].model` in config.toml. Resolution order (highest priority first):
+
+1. `CLAUDE_CODE_SUBAGENT_MODEL` env var (global override for all subagents)
+2. Per-call `model` field in the Task tool invocation
+3. `config.toml [agents.<name>].model`
+4. `.claude/agents/<name>.md` frontmatter `model:` field
+5. Parent session model (inherit)
+
 Useful environment knobs:
 
 | Env var | Effect |
 | --- | --- |
+| `JFC_LITELLM_API_KEY` | LiteLLM proxy API key (alternative to `jfc auth litellm login`). |
+| `JFC_LITELLM_API` | LiteLLM proxy base URL (e.g. `https://api.example.com/v1`). |
+| `JFC_LITELLM_MODEL` | Default model to use from the LiteLLM instance. |
 | `JFC_DISABLE_BELL=1` | Silence terminal bell on tool completion. |
 | `JFC_DISABLE_AUTO_COMPACT=1` | Disable auto-compaction. |
 | `JFC_DISABLE_CARGO_CHECK=1` | Skip startup cargo-check diagnostics. |

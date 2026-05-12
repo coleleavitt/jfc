@@ -121,11 +121,20 @@ pub(crate) fn selected_subagent_model(
     parent_model: crate::provider::ModelId,
     provider_name: &str,
 ) -> Result<crate::provider::ModelId, String> {
+    let cfg = crate::config::load();
+    let config_model = task_input
+        .subagent_type
+        .as_deref()
+        .and_then(|name| cfg.agents.get(name))
+        .and_then(|a| a.model.clone())
+        .filter(|s| !s.is_empty());
+
     let raw = std::env::var("CLAUDE_CODE_SUBAGENT_MODEL")
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .or_else(|| task_input.model.clone())
+        .or(config_model)
         .or_else(|| agent_def.and_then(|a| a.model.clone()));
 
     let Some(raw) = raw else {
