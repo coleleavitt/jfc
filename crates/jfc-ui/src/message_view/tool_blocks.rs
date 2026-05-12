@@ -1,5 +1,6 @@
 use super::assistant_parts::{sanitize_terminal_text, truncate_str};
 use super::bash::{BashCmdKind, classify_bash_cmd};
+#[cfg(feature = "anthropic-oauth-sensitive")]
 use super::core::diagnostics_for_path;
 use super::detection::looks_like_git_diff_output;
 use super::output_style::{

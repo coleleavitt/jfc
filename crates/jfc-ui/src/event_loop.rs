@@ -490,6 +490,8 @@ pub(crate) async fn run(
                     // is unaffected and they get evicted by the LRU.
                     if let Ok((cols, _rows)) = crossterm::terminal::size() {
                         let inner_w = (cols as usize).saturating_sub(5);
+                        #[cfg(feature = "anthropic-oauth-sensitive")]
+                        #[cfg(feature = "anthropic-oauth-sensitive")]
                         crate::message_view::warm_tool_height_cache_for_messages(
                             &app.messages,
                             inner_w,
@@ -547,6 +549,8 @@ pub(crate) async fn run(
                 // first render frame doesn't hitch.
                 if let Ok((cols, _rows)) = crossterm::terminal::size() {
                     let inner_w = (cols as usize).saturating_sub(5);
+                    #[cfg(feature = "anthropic-oauth-sensitive")]
+                    #[cfg(feature = "anthropic-oauth-sensitive")]
                     crate::message_view::warm_tool_height_cache_for_messages(
                         &app.messages,
                         inner_w,

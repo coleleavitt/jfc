@@ -58,6 +58,7 @@ const VERSION_CACHE_TTL: Duration = Duration::from_secs(3600);
 const VERSION_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 const TOKEN_REFRESH_TIMEOUT: Duration = Duration::from_secs(15);
 
+#[cfg(feature = "anthropic-oauth-sensitive")]
 const CCH_PLACEHOLDER: &str = "cch=00000";
 
 struct VersionCache {
@@ -144,6 +145,9 @@ fn compute_billing_hash(first_user_message: &str, version: &str) -> String {
     hex::encode(hash)[..3].to_owned()
 }
 
+#[cfg(feature = "anthropic-oauth-sensitive")]
+#[cfg(feature = "anthropic-oauth-sensitive")]
+#[cfg(feature = "anthropic-oauth-sensitive")]
 fn compute_body_attestation(body: &str) -> String {
     let mut mac = HmacSha256::new_from_slice(SALT.as_bytes()).expect("HMAC accepts any key length");
     mac.update(body.as_bytes());
@@ -1085,7 +1089,16 @@ impl Provider for AnthropicOAuthProvider {
         let user_agent = build_user_agent(&version);
         let body_value = build_body(messages, options, &billing_header_text);
         let body_str = serde_json::to_string(&body_value)?;
-        let attested_body = compute_body_attestation(&body_str);
+        let attested_body = {
+            #[cfg(feature = "anthropic-oauth-sensitive")]
+            {
+                compute_body_attestation(&body_str)
+            }
+            #[cfg(not(feature = "anthropic-oauth-sensitive"))]
+            {
+                body_str
+            }
+        };
 
         // Two nested loops:
         //   - Outer: when every account ends up in cooldown mid-rotation, sleep
@@ -1401,7 +1414,16 @@ impl Provider for AnthropicOAuthProvider {
             }
         }
         let body_str = serde_json::to_string(&body_value)?;
-        let attested_body = compute_body_attestation(&body_str);
+        let attested_body = {
+            #[cfg(feature = "anthropic-oauth-sensitive")]
+            {
+                compute_body_attestation(&body_str)
+            }
+            #[cfg(not(feature = "anthropic-oauth-sensitive"))]
+            {
+                body_str
+            }
+        };
         let mgr = self.account_manager().await?;
         let total_wait_started = std::time::Instant::now();
         let mut last_err: Option<anyhow::Error> = None;
@@ -1975,6 +1997,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "anthropic-oauth-sensitive")]
     fn body_attestation_replaces_cch_placeholder() {
         let body = format!(r#"{{"a":1,"{CCH_PLACEHOLDER}":"x"}}"#);
         let result = compute_body_attestation(&body);
@@ -1982,6 +2005,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "anthropic-oauth-sensitive")]
     fn body_attestation_cch_value_is_5_hex_chars() {
         let body = format!(r#"{{"data":"hello","{CCH_PLACEHOLDER}":1}}"#);
         let result = compute_body_attestation(&body);
@@ -1992,6 +2016,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "anthropic-oauth-sensitive")]
     fn body_attestation_is_deterministic() {
         let body = format!(r#"{{"k":"v","{CCH_PLACEHOLDER}":null}}"#);
         assert_eq!(
@@ -2001,6 +2026,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "anthropic-oauth-sensitive")]
     fn body_attestation_only_replaces_first_occurrence() {
         let body = format!("{CCH_PLACEHOLDER}xxx{CCH_PLACEHOLDER}");
         let result = compute_body_attestation(&body);

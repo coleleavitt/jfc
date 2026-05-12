@@ -13,6 +13,7 @@ use crate::types::*;
 
 mod assistant_parts;
 mod bash;
+#[cfg(feature = "anthropic-oauth-sensitive")]
 mod core;
 mod detection;
 mod output_style;
@@ -25,6 +26,7 @@ mod tool_height;
 
 #[allow(unused_imports)]
 pub use assistant_parts::find_tool_at;
+#[cfg(feature = "anthropic-oauth-sensitive")]
 #[allow(unused_imports)]
 pub use core::{
     MessageView, PrebuiltItems, build_render_items_pub, message_view_total_lines,
