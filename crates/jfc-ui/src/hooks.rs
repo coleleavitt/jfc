@@ -98,6 +98,14 @@ pub enum HookPoint {
     OnTaskCreated,
     /// When a task is completed.
     OnTaskCompleted,
+
+    // ── Additional agent lifecycle ──────────────────────────────────────
+    /// When a subagent stops/terminates.
+    SubagentStop,
+    /// When the model's response turn ends (before user sees output).
+    Stop,
+    /// When a tool execution fails with an error.
+    PostToolUseFailure,
 }
 
 /// Action a hook can take.
@@ -135,6 +143,8 @@ pub struct HookContext {
     pub agent_name: Option<String>,
     /// Additional key-value metadata.
     pub extra: Vec<(String, String)>,
+    /// Environment variables to inject into shell hook commands.
+    pub env_vars: Vec<(String, String)>,
 }
 
 impl HookContext {
@@ -148,6 +158,7 @@ impl HookContext {
             file_path: None,
             agent_name: None,
             extra: Vec::new(),
+            env_vars: Vec::new(),
         }
     }
 
@@ -161,6 +172,7 @@ impl HookContext {
             file_path: Some(file_path.to_string()),
             agent_name: None,
             extra: Vec::new(),
+            env_vars: Vec::new(),
         }
     }
 
@@ -174,6 +186,7 @@ impl HookContext {
             file_path: None,
             agent_name: Some(agent_name.to_string()),
             extra: Vec::new(),
+            env_vars: Vec::new(),
         }
     }
 
@@ -191,6 +204,7 @@ impl HookContext {
             file_path: None,
             agent_name: None,
             extra: Vec::new(),
+            env_vars: Vec::new(),
         }
     }
 
@@ -226,6 +240,18 @@ pub enum HookHandler {
     /// only for informational side effects (notifications, log shipping,
     /// metrics).
     ShellCommand { command: String },
+    /// Execute a shell command. Exit 0 = allow (Continue), non-zero = block
+    /// (Abort with stdout as message). Optionally filter by tool name pattern.
+    Shell {
+        /// Shell command to execute.
+        command: String,
+        /// If true, run async (fire-and-forget in a background thread),
+        /// don't block on result.
+        async_mode: bool,
+        /// Optional tool name pattern to match (e.g. "Bash", "Edit|Write").
+        /// `None` matches all tools.
+        matcher: Option<String>,
+    },
     /// Custom function (for testing and extensibility).
     Custom { name: String, action: HookAction },
 }
@@ -298,6 +324,63 @@ impl HookHandler {
                     .env("JFC_AGENT_NAME", ctx.agent_name.as_deref().unwrap_or(""))
                     .spawn();
                 HookAction::Continue
+            }
+            Self::Shell {
+                command,
+                async_mode,
+                matcher,
+            } => {
+                // Check matcher against tool name in ctx
+                if let Some(pattern) = matcher {
+                    let tool_name = ctx.tool_name.as_str();
+                    let matches = pattern.split('|').any(|p| p.trim() == tool_name);
+                    if !matches {
+                        return HookAction::Continue;
+                    }
+                }
+                if *async_mode {
+                    // Fire-and-forget in a background thread
+                    let cmd = command.clone();
+                    let env_vars = ctx.env_vars.clone();
+                    let hook_point_str = format!("{point:?}");
+                    let tool_name = ctx.tool_name.clone();
+                    let session_id = ctx.session_id.clone();
+                    std::thread::spawn(move || {
+                        let _ = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg(&cmd)
+                            .env("JFC_HOOK_POINT", &hook_point_str)
+                            .env("JFC_TOOL_NAME", &tool_name)
+                            .env("JFC_SESSION_ID", &session_id)
+                            .envs(env_vars)
+                            .output();
+                    });
+                    return HookAction::Continue;
+                }
+                // Synchronous: run and check exit status
+                match std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(command)
+                    .env("JFC_HOOK_POINT", format!("{point:?}"))
+                    .env("JFC_TOOL_NAME", &ctx.tool_name)
+                    .env("JFC_SESSION_ID", &ctx.session_id)
+                    .envs(ctx.env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+                    .output()
+                {
+                    Ok(out) if out.status.success() => HookAction::Continue,
+                    Ok(out) => {
+                        let msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        HookAction::Abort(if msg.is_empty() {
+                            format!(
+                                "Hook blocked: exit {}",
+                                out.status.code().unwrap_or(1)
+                            )
+                        } else {
+                            msg
+                        })
+                    }
+                    Err(e) => HookAction::Abort(format!("Hook exec error: {e}")),
+                }
             }
             Self::Custom { action, .. } => action.clone(),
         }
@@ -387,6 +470,94 @@ impl HookRegistry {
     /// Remove all hooks.
     pub fn clear_all(&mut self) {
         self.hooks.clear();
+    }
+
+    /// Register shell hooks from the user config's `[hooks]` section.
+    /// Call once during app initialization after the config is loaded.
+    pub fn register_from_config(&mut self, config: &crate::config::Config) {
+        let Some(hooks_cfg) = &config.hooks else {
+            return;
+        };
+        for entry in &hooks_cfg.pre_tool_use {
+            self.register(
+                HookPoint::BeforeToolDispatch,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.post_tool_use {
+            self.register(
+                HookPoint::AfterToolDispatch,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.post_tool_use_failure {
+            self.register(
+                HookPoint::PostToolUseFailure,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.user_prompt_submit {
+            self.register(
+                HookPoint::OnUserPromptSubmit,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.session_start {
+            self.register(
+                HookPoint::OnSessionStart,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.session_end {
+            self.register(
+                HookPoint::OnSessionEnd,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.stop {
+            self.register(
+                HookPoint::Stop,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
+        for entry in &hooks_cfg.subagent_stop {
+            self.register(
+                HookPoint::SubagentStop,
+                HookHandler::Shell {
+                    command: entry.command.clone(),
+                    async_mode: entry.async_mode,
+                    matcher: entry.matcher.clone(),
+                },
+            );
+        }
     }
 }
 

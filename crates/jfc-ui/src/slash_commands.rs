@@ -43,6 +43,8 @@ pub enum SlashCommand {
     /// /login [provider] — sign in to a provider (anthropic, claudeai, bedrock,
     /// vertex, console). Subcommand selects which wizard to drive.
     Login(Option<String>),
+    /// /fast — toggle fast mode (lower-latency inference via beta header)
+    Fast,
     /// Unknown command
     Unknown(String),
 }
@@ -76,6 +78,7 @@ impl fmt::Display for SlashCommand {
             Self::Mcp(None) => write!(f, "/mcp"),
             Self::Login(Some(p)) => write!(f, "/login {p}"),
             Self::Login(None) => write!(f, "/login"),
+            Self::Fast => write!(f, "/fast"),
             Self::Unknown(s) => write!(f, "/{s}"),
         }
     }
@@ -110,6 +113,7 @@ pub fn parse_slash_command(input: &str) -> Option<SlashCommand> {
         "daemon" | "fleet" => SlashCommand::Daemon(arg),
         "mcp" => SlashCommand::Mcp(arg),
         "login" => SlashCommand::Login(arg),
+        "fast" | "f" => SlashCommand::Fast,
         other => SlashCommand::Unknown(other.to_string()),
     };
 
@@ -135,6 +139,7 @@ Available commands:
   /worktree [cmd]  Worktree management (create/list/remove/switch)
   /mcp [cmd]       MCP server management (list/restart <name>/logs <name>)
   /daemon [cmd]    Daemon management (start/stop/status/run/cron)
+  /fast             Toggle fast mode (lower-latency inference)
   /login [target]  Sign in: anthropic | claudeai | bedrock | vertex | console
   /help            Show this help
   /exit            Exit the session"

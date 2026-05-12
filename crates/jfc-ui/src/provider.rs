@@ -364,6 +364,10 @@ pub struct StreamOptions {
     /// When true, use `{"type": "adaptive"}` instead of budget_tokens.
     /// Required for Opus 4.6+ and Sonnet 4.6+ which reject budget_tokens.
     pub adaptive_thinking: bool,
+    /// Optional display mode for adaptive thinking: `"summarized"` or `"omitted"`.
+    /// When `None`, the field is omitted from the request (Anthropic defaults to `"omitted"`).
+    /// Set to `"summarized"` to receive thinking text in the response.
+    pub thinking_display: Option<String>,
     /// Sampling temperature (0.0 - 2.0).
     pub temperature: Option<f64>,
     /// Nucleus sampling parameter (0.0 - 1.0).
@@ -372,6 +376,13 @@ pub struct StreamOptions {
     pub reasoning_effort: Option<String>,
     /// Provider-specific options merged into the request body.
     pub provider_options: HashMap<String, serde_json::Value>,
+    /// When true, adds `fast-mode-2026-02-01` to the `anthropic-beta` header
+    /// for lower-latency inference. Mirrors v2.1.139's `/fast` command.
+    pub fast_mode: bool,
+    /// Optional agentic loop token budget hint (beta: task-budgets-2026-03-13).
+    /// Minimum 20_000. The model sees a countdown and self-moderates.
+    /// Distinct from max_tokens (which is a hard server-enforced ceiling).
+    pub task_budget_tokens: Option<u64>,
 }
 
 impl StreamOptions {
@@ -383,10 +394,13 @@ impl StreamOptions {
             tools: Vec::new(),
             thinking_budget: None,
             adaptive_thinking: false,
+            thinking_display: None,
             temperature: None,
             top_p: None,
             reasoning_effort: None,
             provider_options: HashMap::new(),
+            fast_mode: false,
+            task_budget_tokens: None,
         }
     }
 
@@ -411,6 +425,13 @@ impl StreamOptions {
         self
     }
 
+    /// Set the display mode for adaptive thinking responses.
+    /// Use `"summarized"` to receive thinking text; `"omitted"` (the default) suppresses it.
+    pub fn thinking_display(mut self, display: impl Into<String>) -> Self {
+        self.thinking_display = Some(display.into());
+        self
+    }
+
     pub fn temperature(mut self, t: f64) -> Self {
         self.temperature = Some(t);
         self
@@ -428,6 +449,19 @@ impl StreamOptions {
 
     pub fn tools(mut self, tools: Vec<ToolDef>) -> Self {
         self.tools = tools;
+        self
+    }
+
+    /// Enable or disable fast mode (lower-latency inference via `fast-mode-2026-02-01` beta).
+    pub fn fast_mode(mut self, v: bool) -> Self {
+        self.fast_mode = v;
+        self
+    }
+
+    /// Set the agentic loop task budget (beta: task-budgets-2026-03-13).
+    /// Minimum 20_000 tokens — values below are clamped up.
+    pub fn task_budget(mut self, tokens: u64) -> Self {
+        self.task_budget_tokens = Some(tokens.max(20_000));
         self
     }
 }

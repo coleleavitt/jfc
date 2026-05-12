@@ -105,9 +105,32 @@ pub struct Config {
     /// signal to call /quit or switch to a cheaper model.
     #[serde(default)]
     pub session_cost_budget_usd: Option<f64>,
+    /// Disable automatic compaction when the context fills.
+    /// Overrides the CLAUDE_CODE_DISABLE_AUTO_COMPACT env var.
+    /// Default true (auto-compact is enabled).
+    #[serde(default = "default_auto_compact_enabled")]
+    pub auto_compact_enabled: bool,
+    /// Override the context window size used for compaction threshold calculation.
+    /// Valid range: 100_000–1_000_000. When None, uses the model's reported window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_compact_window: Option<u32>,
+    /// User-configurable shell hooks. Maps event names to lists of commands.
+    ///
+    /// Example in `jfc.toml`:
+    /// ```toml
+    /// [[hooks.PreToolUse]]
+    /// matcher = "Bash"
+    /// command = "echo 'about to run bash'"
+    /// ```
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hooks: Option<ShellHooksConfig>,
 }
 
 fn default_memory_recall_enabled() -> bool {
+    true
+}
+
+fn default_auto_compact_enabled() -> bool {
     true
 }
 
@@ -134,8 +157,47 @@ impl Default for Config {
             slate_rules: None,
             memory_recall_enabled: default_memory_recall_enabled(),
             session_cost_budget_usd: None,
+            auto_compact_enabled: default_auto_compact_enabled(),
+            auto_compact_window: None,
+            hooks: None,
         }
     }
+}
+
+/// User-configurable shell hooks config, loaded from the `[hooks]` section
+/// of `jfc.toml`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ShellHooksConfig {
+    #[serde(rename = "PreToolUse", default)]
+    pub pre_tool_use: Vec<ShellHookEntry>,
+    #[serde(rename = "PostToolUse", default)]
+    pub post_tool_use: Vec<ShellHookEntry>,
+    #[serde(rename = "PostToolUseFailure", default)]
+    pub post_tool_use_failure: Vec<ShellHookEntry>,
+    #[serde(rename = "UserPromptSubmit", default)]
+    pub user_prompt_submit: Vec<ShellHookEntry>,
+    #[serde(rename = "SessionStart", default)]
+    pub session_start: Vec<ShellHookEntry>,
+    #[serde(rename = "SessionEnd", default)]
+    pub session_end: Vec<ShellHookEntry>,
+    #[serde(rename = "Stop", default)]
+    pub stop: Vec<ShellHookEntry>,
+    #[serde(rename = "SubagentStop", default)]
+    pub subagent_stop: Vec<ShellHookEntry>,
+}
+
+/// A single user-defined shell hook entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ShellHookEntry {
+    /// Optional tool name filter pattern (e.g. "Bash" or "Edit|Write").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matcher: Option<String>,
+    /// Shell command to execute.
+    pub command: String,
+    /// If true, run in background (don't block on result).
+    #[serde(default)]
+    pub async_mode: bool,
 }
 
 /// TOML form of a `slate::RoutingRule`. Lives here (not in `slate.rs`) so the

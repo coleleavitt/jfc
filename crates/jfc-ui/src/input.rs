@@ -3486,6 +3486,23 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 }
             }
         }
+        "/fast" | "/f" => {
+            // Toggle fast mode (lower-latency inference via Anthropic's
+            // `fast-mode-2026-02-01` beta header). Mirrors Claude Code
+            // v2.1.139's `/fast` command (Alt+O keybind).
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            app.fast_mode = !app.fast_mode;
+            crate::effort::set_fast_mode_global(app.fast_mode);
+            app.messages.push(ChatMessage::assistant(format!(
+                "Fast mode: **{}** — {}",
+                if app.fast_mode { "ON" } else { "OFF" },
+                if app.fast_mode {
+                    "requests will use the low-latency inference path"
+                } else {
+                    "requests will use the standard inference path"
+                },
+            )));
+        }
         "/pin" => {
             // Pin a message by transcript index so compaction can't
             // drop it. /pin without an arg pins the most recent

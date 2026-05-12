@@ -13,6 +13,23 @@ use std::sync::RwLock;
 /// through without threading state through every call site.
 static ACTIVE_EFFORT: RwLock<Option<String>> = RwLock::new(None);
 
+/// Process-global fast-mode flag. When true, `stream_response` adds the
+/// `fast-mode-2026-02-01` value to the `anthropic-beta` header so requests
+/// are routed to Anthropic's low-latency inference path.
+/// Mirrors v2.1.139's `/fast` command (Alt+O keybind).
+static ACTIVE_FAST_MODE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Read the process-global fast-mode flag.
+pub fn active_fast_mode() -> bool {
+    ACTIVE_FAST_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Write the process-global fast-mode flag.
+pub fn set_fast_mode_global(enabled: bool) {
+    ACTIVE_FAST_MODE.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Snapshot the global effort param, if any.
 pub fn active_global() -> Option<String> {
     ACTIVE_EFFORT.read().ok().and_then(|g| g.clone())

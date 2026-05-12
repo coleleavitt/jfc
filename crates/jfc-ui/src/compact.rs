@@ -104,28 +104,49 @@ fn blocked_override() -> Option<usize> {
 }
 
 pub fn auto_compact_disabled() -> bool {
-    let disabled = matches!(
+    // Env vars take priority (both legacy spellings honored).
+    let via_env = matches!(
         std::env::var("JFC_DISABLE_COMPACT").as_deref(),
         Ok("1") | Ok("true")
     ) || matches!(
         std::env::var("JFC_DISABLE_AUTO_COMPACT").as_deref(),
         Ok("1") | Ok("true")
     );
-    if disabled {
+    if via_env {
         trace!(target: "jfc::compact", "auto-compact disabled via env var");
+        return true;
     }
-    disabled
+    // Then check config (autoCompactEnabled / auto_compact_enabled).
+    let via_config = !crate::config::load().auto_compact_enabled;
+    if via_config {
+        trace!(target: "jfc::compact", "auto-compact disabled via config auto_compact_enabled=false");
+    }
+    via_config
 }
 
 /// Compute the absolute token offset at which auto-compaction triggers.
 /// Mirrors v126 `gG6` (cli.js:397177-397182).
+///
+/// If `autoCompactWindow` is set in the config (and falls within the valid
+/// range 100_000–1_000_000), that value is used instead of the caller-supplied
+/// `window` argument for the headroom calculation.
 pub fn compact_threshold(window: usize) -> usize {
-    let base = window.saturating_sub(COMPACT_HEADROOM);
+    // Config-level window override (valid range: 100_000–1_000_000).
+    let effective_window = crate::config::load()
+        .auto_compact_window
+        .map(|w| w as usize)
+        .filter(|&w| (100_000..=1_000_000).contains(&w))
+        .unwrap_or(window);
+
+    let base = effective_window.saturating_sub(COMPACT_HEADROOM);
     if let Some(pct) = pct_override() {
-        let from_pct = ((window as f64) * pct / 100.0).floor() as usize;
+        let from_pct = ((effective_window as f64) * pct / 100.0).floor() as usize;
         let threshold = from_pct.min(base);
-        debug!(target: "jfc::compact", window, pct, from_pct, base, threshold, "compact_threshold (pct override)");
+        debug!(target: "jfc::compact", window, effective_window, pct, from_pct, base, threshold, "compact_threshold (pct override)");
         return threshold;
+    }
+    if effective_window != window {
+        debug!(target: "jfc::compact", window, effective_window, base, "compact_threshold (config window override)");
     }
     base
 }

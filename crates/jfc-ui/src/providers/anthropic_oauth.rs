@@ -1068,12 +1068,25 @@ fn build_body(
         body["tools"] = tools;
     }
     if opts.adaptive_thinking {
-        body["thinking"] = json!({ "type": "adaptive" });
+        let mut thinking = json!({ "type": "adaptive" });
+        if let Some(display) = opts.thinking_display.as_deref() {
+            thinking["display"] = json!(display);
+        }
+        body["thinking"] = thinking;
     } else if let Some(budget) = opts.thinking_budget {
         body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
     }
-    if let Some(effort) = opts.reasoning_effort.as_deref() {
-        body["output_config"] = json!({ "effort": effort });
+    {
+        let mut oc = serde_json::Map::new();
+        if let Some(effort) = opts.reasoning_effort.as_deref() {
+            oc.insert("effort".into(), json!(effort));
+        }
+        if let Some(tb) = opts.task_budget_tokens {
+            oc.insert("task_budget".into(), json!({"type": "tokens", "total": tb}));
+        }
+        if !oc.is_empty() {
+            body["output_config"] = serde_json::Value::Object(oc);
+        }
     }
     body
 }
@@ -1157,6 +1170,16 @@ impl Provider for AnthropicOAuthProvider {
             }
         };
 
+        // Build beta header: append fast-mode and/or task-budgets betas as needed.
+        let mut betas_stream = ANTHROPIC_BETA.to_owned();
+        if options.fast_mode {
+            betas_stream.push_str(",fast-mode-2026-02-01");
+        }
+        if options.task_budget_tokens.is_some() {
+            betas_stream.push_str(",task-budgets-2026-03-13");
+        }
+        let beta_header = betas_stream;
+
         // Two nested loops:
         //   - Outer: when every account ends up in cooldown mid-rotation, sleep
         //     until the soonest one recovers and retry (capped at MAX_TOTAL_WAIT).
@@ -1212,7 +1235,7 @@ impl Provider for AnthropicOAuthProvider {
                         .post(API_URL)
                         .header("authorization", format!("Bearer {access_token}"))
                         .header("anthropic-version", ANTHROPIC_VERSION)
-                        .header("anthropic-beta", ANTHROPIC_BETA)
+                        .header("anthropic-beta", beta_header.as_str())
                         .header("content-type", "application/json")
                         .header("user-agent", user_agent.clone())
                         .header("x-app", "cli")
@@ -1490,6 +1513,15 @@ impl Provider for AnthropicOAuthProvider {
                 body_str.clone()
             }
         };
+        // Build beta header: append fast-mode and/or task-budgets betas as needed.
+        let mut betas_complete = ANTHROPIC_BETA.to_owned();
+        if options.fast_mode {
+            betas_complete.push_str(",fast-mode-2026-02-01");
+        }
+        if options.task_budget_tokens.is_some() {
+            betas_complete.push_str(",task-budgets-2026-03-13");
+        }
+        let beta_header_complete = betas_complete;
         let mgr = self.account_manager().await?;
         let total_wait_started = std::time::Instant::now();
         let mut last_err: Option<anyhow::Error> = None;
@@ -1534,7 +1566,7 @@ impl Provider for AnthropicOAuthProvider {
                         .post(API_URL)
                         .header("authorization", format!("Bearer {access_token}"))
                         .header("anthropic-version", ANTHROPIC_VERSION)
-                        .header("anthropic-beta", ANTHROPIC_BETA)
+                        .header("anthropic-beta", beta_header_complete.as_str())
                         .header("content-type", "application/json")
                         .header("user-agent", user_agent.clone())
                         .header("x-app", "cli")

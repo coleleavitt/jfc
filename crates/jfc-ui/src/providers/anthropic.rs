@@ -118,17 +118,28 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
     }
 
     if opts.adaptive_thinking {
-        body["thinking"] = json!({
-            "type": "adaptive",
-        });
+        let mut thinking = json!({ "type": "adaptive" });
+        if let Some(display) = opts.thinking_display.as_deref() {
+            thinking["display"] = json!(display);
+        }
+        body["thinking"] = thinking;
     } else if let Some(budget) = opts.thinking_budget {
         body["thinking"] = json!({
             "type": "enabled",
             "budget_tokens": budget,
         });
     }
-    if let Some(effort) = opts.reasoning_effort.as_deref() {
-        body["output_config"] = json!({ "effort": effort });
+    {
+        let mut oc = serde_json::Map::new();
+        if let Some(effort) = opts.reasoning_effort.as_deref() {
+            oc.insert("effort".into(), json!(effort));
+        }
+        if let Some(tb) = opts.task_budget_tokens {
+            oc.insert("task_budget".into(), json!({"type": "tokens", "total": tb}));
+        }
+        if !oc.is_empty() {
+            body["output_config"] = serde_json::Value::Object(oc);
+        }
     }
 
     body
@@ -199,13 +210,23 @@ impl Provider for AnthropicProvider {
     ) -> anyhow::Result<EventStream> {
         let body = build_body(messages, options);
 
+        // Build beta header: append fast-mode and/or task-budgets betas as needed.
+        let mut betas = ANTHROPIC_BETA.to_owned();
+        if options.fast_mode {
+            betas.push_str(",fast-mode-2026-02-01");
+        }
+        if options.task_budget_tokens.is_some() {
+            betas.push_str(",task-budgets-2026-03-13");
+        }
+        let beta_header = betas;
+
         let send_started = std::time::Instant::now();
         let resp = match super::http::send_with_retry("anthropic.messages", || {
             self.client
                 .post(API_URL)
                 .header("x-api-key", &self.api_key)
                 .header("anthropic-version", ANTHROPIC_VERSION)
-                .header("anthropic-beta", ANTHROPIC_BETA)
+                .header("anthropic-beta", beta_header.as_str())
                 .header("content-type", "application/json")
                 .json(&body)
                 .send()
@@ -531,5 +552,70 @@ mod tests {
     fn build_body_max_tokens_override_normal() {
         let body = build_body(vec![make_user_msg("hi")], &opts("m").max_tokens(64_000));
         assert_eq!(body["max_tokens"], 64_000);
+    }
+
+    // Normal: `.thinking_display("summarized")` injects `display: "summarized"` into
+    // the adaptive thinking block so Opus 4.7 returns thinking text to the caller.
+    #[test]
+    fn build_body_thinking_display_summarized_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").adaptive().thinking_display("summarized"),
+        );
+        assert_eq!(body["thinking"]["type"], "adaptive");
+        assert_eq!(body["thinking"]["display"], "summarized");
+    }
+
+    // Robust: without `.thinking_display()` the `display` key must be absent —
+    // Anthropic defaults to `"omitted"` server-side and sending an explicit
+    // `display: null` could be rejected by strict validators.
+    #[test]
+    fn build_body_thinking_display_absent_when_unset_robust() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").adaptive(),
+        );
+        assert_eq!(body["thinking"]["type"], "adaptive");
+        assert!(
+            body["thinking"].get("display").is_none(),
+            "display key must be absent when thinking_display is not set, got: {}",
+            body["thinking"]
+        );
+    }
+
+    // Normal: task_budget(50_000) produces the correct output_config shape
+    // with type "tokens" and total 50000 as required by the API beta spec.
+    #[test]
+    fn build_body_task_budget_produces_output_config_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").task_budget(50_000),
+        );
+        assert_eq!(body["output_config"]["task_budget"]["type"], "tokens");
+        assert_eq!(body["output_config"]["task_budget"]["total"], 50_000u64);
+    }
+
+    // Robust: task_budget(5_000) is below the API minimum of 20_000 and must
+    // be clamped up. Sending a sub-minimum value would be rejected by the API.
+    #[test]
+    fn build_body_task_budget_clamped_to_minimum_robust() {
+        let o = opts("m").task_budget(5_000);
+        // StreamOptions builder clamps to 20_000.
+        assert_eq!(o.task_budget_tokens, Some(20_000));
+        let body = build_body(vec![make_user_msg("hi")], &o);
+        assert_eq!(body["output_config"]["task_budget"]["total"], 20_000u64);
+    }
+
+    // Normal: when both reasoning_effort and task_budget are set, they must
+    // both appear in a single output_config object (not overwrite each other).
+    #[test]
+    fn build_body_effort_and_task_budget_coexist_in_output_config_normal() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").reasoning_effort("high").task_budget(30_000),
+        );
+        assert_eq!(body["output_config"]["effort"], "high");
+        assert_eq!(body["output_config"]["task_budget"]["type"], "tokens");
+        assert_eq!(body["output_config"]["task_budget"]["total"], 30_000u64);
     }
 }

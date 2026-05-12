@@ -5,3 +5,4 @@ target/
 .env.*
 !.env.example
 .claude/worktrees/
+.jfc-worktrees/

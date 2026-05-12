@@ -748,7 +748,8 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     let provider_name = app.provider.name();
     let effort_badge = effort_status_badge(app);
-    let provider_suffix = format!(" local · {effort_badge}");
+    let fast_badge = if app.fast_mode { " · ⚡ FAST" } else { "" };
+    let provider_suffix = format!(" local · {effort_badge}{fast_badge}");
     let provider_width = inner
         .width
         .saturating_sub(2 + provider_suffix.chars().count() as u16)
@@ -3150,6 +3151,11 @@ fn status(f: &mut Frame, app: &App, area: Rect) {
     badges.push(app.model.to_string());
 
     badges.push(effort_status_badge(app));
+
+    // Fast mode indicator
+    if app.fast_mode {
+        badges.push("⚡ FAST".to_string());
+    }
 
     // OAuth profile
     match (&app.subscription_type, &app.seat_tier) {

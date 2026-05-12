@@ -1450,6 +1450,11 @@ Do not use a colon before tool calls.";
         if let Some(effort) = crate::effort::active_global() {
             base = base.reasoning_effort(effort);
         }
+        // Fast mode: read the process-global flag published by `set_fast_mode_global`
+        // when the user toggles `/fast`. Flows into the `anthropic-beta` header.
+        if crate::effort::active_fast_mode() {
+            base = base.fast_mode(true);
+        }
         if supports_adaptive {
             base.adaptive()
         } else if has_thinking_support {

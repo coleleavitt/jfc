@@ -52,8 +52,16 @@ pub(super) async fn execute_bash_inner(
         .env("HOMEBREW_NO_AUTO_UPDATE", "1")
         .env("PAGER", "cat")
         .env("PIP_NO_INPUT", "1")
-        .env("VISUAL", "")
-        .env_remove("CLICOLOR_FORCE")
+        .env("VISUAL", "");
+    // Expose fast-mode flag so bash scripts can detect it.
+    if crate::effort::active_fast_mode() {
+        cmd.env("CLAUDE_FAST_MODE", "1");
+    }
+    // Expose current model to subprocess (read from env, same as main process).
+    if let Ok(model) = std::env::var("JFC_MODEL").or_else(|_| std::env::var("ANTHROPIC_MODEL")) {
+        cmd.env("CLAUDE_MODEL", model);
+    }
+    cmd.env_remove("CLICOLOR_FORCE")
         .env_remove("COLORTERM")
         .env_remove("EDITOR")
         .env_remove("FORCE_COLOR")

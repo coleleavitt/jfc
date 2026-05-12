@@ -30,6 +30,9 @@ pub enum SseEvent {
         delta: MessageDeltaData,
         #[serde(default)]
         usage: Option<MessageUsage>,
+        /// Present when Anthropic server-side context management is active.
+        #[serde(default)]
+        context_management: Option<ContextManagement>,
     },
     MessageStop,
     Ping,
@@ -99,6 +102,20 @@ pub enum Delta {
 #[derive(Debug, Deserialize)]
 pub struct MessageDeltaData {
     pub stop_reason: Option<String>,
+}
+
+/// Optional server-side context management metadata that Anthropic may attach
+/// to a `message_delta` event when it is managing the context window on behalf
+/// of the caller. The shape is deliberately left open (`Value`) so that new
+/// fields (e.g. `compacted`, `removed_tokens`) don't cause parse failures.
+#[derive(Debug, Deserialize)]
+pub struct ContextManagement {
+    /// True when Anthropic has already compacted earlier turns on the server.
+    #[serde(default)]
+    pub compacted: bool,
+    /// Number of tokens removed by server-side compaction, if reported.
+    #[serde(default)]
+    pub removed_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -214,7 +231,26 @@ pub fn translate(
                 None => None,
             }
         }
-        SseEvent::MessageDelta { delta, usage } => {
+        SseEvent::MessageDelta {
+            delta,
+            usage,
+            context_management,
+        } => {
+            // Log server-side context management metadata when present.
+            if let Some(ref cm) = context_management {
+                tracing::debug!(
+                    target: "jfc::stream",
+                    context_management = ?cm,
+                    "server-side context management active"
+                );
+                if cm.compacted {
+                    tracing::info!(
+                        target: "jfc::stream",
+                        removed_tokens = ?cm.removed_tokens,
+                        "server compacted context (context_management.compacted=true)"
+                    );
+                }
+            }
             *stop_reason = Some(parse_stop_reason(delta.stop_reason.as_deref()));
             usage.map(|usage| StreamEvent::Usage {
                 input_tokens: usage.input_tokens(),
@@ -380,6 +416,27 @@ pub fn into_event_stream(resp: reqwest::Response) -> EventStream {
                         tracing::debug!(target: "jfc::provider::anthropic_sse", "sse [DONE]");
                         return None;
                     }
+                    // `context_hint` is a special SSE event type (not a JSON
+                    // `type` field) that Anthropic sends when the model is
+                    // approaching its context limit. Mirrors v132 cli.js line
+                    // 471490: treat it the same as a prompt_too_long rejection
+                    // so the main loop fires auto-compaction.
+                    if ev.event == "context_hint"
+                        || ev.data.contains("\"context_hint\"")
+                    {
+                        tracing::info!(
+                            target: "jfc::provider::anthropic_sse",
+                            event = %ev.event,
+                            data = %&ev.data[..ev.data.len().min(200)],
+                            "context_hint received — signalling auto-compact"
+                        );
+                        return Some(Ok(StreamEvent::Error {
+                            message: format!(
+                                "auto-compact: context_hint from server ({})",
+                                &ev.data[..ev.data.len().min(120)]
+                            ),
+                        }));
+                    }
                     match serde_json::from_str::<SseEvent>(&ev.data) {
                         Ok(parsed) => {
                             log_parsed_event(&parsed);
@@ -468,12 +525,17 @@ fn log_parsed_event(event: &SseEvent) {
                 "content_block_stop"
             );
         }
-        SseEvent::MessageDelta { delta, usage } => {
+        SseEvent::MessageDelta {
+            delta,
+            usage,
+            context_management,
+        } => {
             tracing::info!(
                 target: "jfc::provider::anthropic_sse",
                 stop_reason = ?delta.stop_reason,
                 input_tokens = usage.as_ref().map(MessageUsage::input_tokens),
                 output_tokens = usage.as_ref().map(MessageUsage::output_total),
+                has_context_management = context_management.is_some(),
                 "message_delta"
             );
         }
@@ -652,6 +714,7 @@ mod tests {
                     stop_reason: Some("end_turn".into()),
                 },
                 usage: None,
+                context_management: None,
             },
             &mut blocks,
             &mut sr,

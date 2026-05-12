@@ -284,7 +284,11 @@ impl Provider for VertexProvider {
             body["tools"] = super::sse::build_tools(&options.tools);
         }
         if options.adaptive_thinking {
-            body["thinking"] = json!({ "type": "adaptive" });
+            let mut thinking = json!({ "type": "adaptive" });
+            if let Some(display) = options.thinking_display.as_deref() {
+                thinking["display"] = json!(display);
+            }
+            body["thinking"] = thinking;
         } else if let Some(budget) = options.thinking_budget {
             body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
         }

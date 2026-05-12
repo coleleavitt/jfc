@@ -476,6 +476,10 @@ pub struct App {
     /// `/verbose` toggle: when true, tool blocks render expanded by
     /// default. When false (default), they preview to N lines.
     pub verbose_mode: bool,
+    /// `/fast` toggle — mirrors Claude Code v2.1.139's `/fast` command (Alt+O).
+    /// When true, the `fast-mode-2026-02-01` beta header is added to every
+    /// Anthropic API request, routing to the lower-latency inference path.
+    pub fast_mode: bool,
     /// Per-session FIFO of tool mutations the user can `/undo`. Each
     /// entry captures `(file_path, prev_content, op_label)` before the
     /// tool runs. Capped at 100 entries (the oldest gets dropped). New
@@ -747,6 +751,7 @@ impl App {
             last_file_watcher_seen: 0,
             pinned_message_indices: std::collections::HashSet::new(),
             verbose_mode: false,
+            fast_mode: false,
             tool_undo_history: std::collections::VecDeque::new(),
             pending_marsh_chunks: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             cost_budget_warned_at: 0,
