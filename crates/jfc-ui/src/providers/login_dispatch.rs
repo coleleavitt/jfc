@@ -27,6 +27,8 @@ pub enum LoginDispatch {
     /// `/login claudeai` — point at the OAuth account store managed by the
     /// existing `opencode auth` flow (or a future jfc-side wizard).
     ClaudeAiOAuth(String),
+    /// `/login codex` — point at OpenAI Codex / ChatGPT OAuth commands.
+    CodexOAuth(String),
     /// `/login bedrock` — kick off [`super::bedrock_wizard::BedrockWizard`].
     StartBedrockWizard,
     /// `/login vertex` — kick off [`super::vertex_wizard::VertexWizard`].
@@ -45,6 +47,7 @@ impl fmt::Display for LoginDispatch {
             Self::ShowChooser(s)
             | Self::AnthropicApiKey(s)
             | Self::ClaudeAiOAuth(s)
+            | Self::CodexOAuth(s)
             | Self::ConsoleApiKey(s)
             | Self::Unknown(s) => f.write_str(s),
             Self::StartBedrockWizard => f.write_str("Starting Bedrock wizard…"),
@@ -57,6 +60,7 @@ const CHOOSER_BODY: &str = "\
 Choose an authentication target:
   /login anthropic   API key (ANTHROPIC_API_KEY)
   /login claudeai    Claude Code OAuth (Pro / Max / Team)
+  /login codex       OpenAI Codex OAuth (ChatGPT Pro / Plus)
   /login bedrock     AWS Bedrock (requires `aws` CLI)
   /login vertex      GCP Vertex (requires `gcloud` CLI)
   /login console     Anthropic Console API key";
@@ -90,6 +94,22 @@ Claude Code OAuth (claudeai) sign-in:
   The store at ~/.config/opencode/anthropic-accounts.json is shared with
   opencode so logins from either tool are visible everywhere.";
 
+const CODEX_OAUTH_BODY: &str = "\
+OpenAI Codex OAuth sign-in:
+  Browser flow:
+    jfc auth codex login
+
+  Headless/device flow:
+    jfc auth codex device
+
+  Other commands:
+    jfc auth codex status
+    jfc auth codex logout
+
+  Codex OAuth tokens are stored in ~/.local/share/jfc/auth.json (or the
+  platform data directory) and route `codex/...` models to ChatGPT's Codex
+  backend with subscription pricing treated as $0.";
+
 /// Dispatch a `/login [arg]` invocation. `arg` is `Some` when the user typed
 /// a sub-target, `None` for the bare `/login`. Sub-target matching is
 /// case-insensitive and trim-aware.
@@ -103,11 +123,14 @@ pub fn dispatch(arg: Option<&str>) -> LoginDispatch {
             "claudeai" | "oauth" | "claude" => {
                 LoginDispatch::ClaudeAiOAuth(CLAUDEAI_OAUTH_BODY.to_owned())
             }
+            "codex" | "chatgpt" | "openai-oauth" => {
+                LoginDispatch::CodexOAuth(CODEX_OAUTH_BODY.to_owned())
+            }
             "bedrock" | "aws" => LoginDispatch::StartBedrockWizard,
             "vertex" | "gcp" | "gcloud" => LoginDispatch::StartVertexWizard,
             "console" => LoginDispatch::ConsoleApiKey(CONSOLE_API_KEY_BODY.to_owned()),
             other => LoginDispatch::Unknown(format!(
-                "Unknown login target {:?}. Try one of: anthropic, claudeai, bedrock, vertex, console.",
+                "Unknown login target {:?}. Try one of: anthropic, claudeai, codex, bedrock, vertex, console.",
                 other
             )),
         },
@@ -127,6 +150,7 @@ mod tests {
                 assert!(body.contains("bedrock"));
                 assert!(body.contains("vertex"));
                 assert!(body.contains("claudeai"));
+                assert!(body.contains("codex"));
                 assert!(body.contains("console"));
             }
             other => panic!("expected ShowChooser, got {other:?}"),
@@ -143,6 +167,10 @@ mod tests {
         assert!(matches!(
             dispatch(Some("claudeai")),
             LoginDispatch::ClaudeAiOAuth(_)
+        ));
+        assert!(matches!(
+            dispatch(Some("codex")),
+            LoginDispatch::CodexOAuth(_)
         ));
         assert!(matches!(
             dispatch(Some("bedrock")),
@@ -186,6 +214,10 @@ mod tests {
             dispatch(Some("gcp")),
             LoginDispatch::StartVertexWizard
         ));
+        assert!(matches!(
+            dispatch(Some("chatgpt")),
+            LoginDispatch::CodexOAuth(_)
+        ));
     }
 
     // Robust: empty / whitespace-only argument behaves like no argument.
@@ -206,6 +238,7 @@ mod tests {
             LoginDispatch::Unknown(msg) => {
                 assert!(msg.contains("snowflake"));
                 assert!(msg.contains("bedrock"));
+                assert!(msg.contains("codex"));
                 assert!(msg.contains("vertex"));
             }
             other => panic!("expected Unknown, got {other:?}"),

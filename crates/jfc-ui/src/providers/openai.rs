@@ -262,7 +262,7 @@ impl Provider for OpenAIProvider {
 
             return Ok(CompletionResponse {
                 content: response_output_text(&body),
-                usage: response_usage(&body).unwrap_or_default().into(),
+                usage: response_usage(&body).unwrap_or_default(),
             });
         }
 
@@ -331,7 +331,7 @@ fn model_uses_responses(id: &str) -> bool {
     id.starts_with("gpt-5") || id.starts_with("o1") || id.starts_with("o3") || id.starts_with("o4")
 }
 
-fn build_responses_body(
+pub(crate) fn build_responses_body(
     messages: Vec<ProviderMessage>,
     options: &StreamOptions,
     stream: bool,
@@ -444,7 +444,7 @@ fn responses_tool(tool: &ToolDef) -> Value {
     })
 }
 
-fn responses_event_stream(resp: reqwest::Response) -> EventStream {
+pub(crate) fn responses_event_stream(resp: reqwest::Response) -> EventStream {
     let event_stream = resp
         .bytes_stream()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
@@ -551,10 +551,10 @@ fn responses_events_from_sse(data: &str) -> Vec<anyhow::Result<StreamEvent>> {
                 .and_then(response_usage)
                 .map(|usage| {
                     vec![Ok(StreamEvent::Usage {
-                        input_tokens: usage.raw_input_tokens() as u32,
-                        output_tokens: usage.completion_tokens as u32,
-                        cache_read_tokens: usage.cache_read_tokens() as u32,
-                        cache_write_tokens: usage.cache_creation_tokens() as u32,
+                        input_tokens: usage.input_tokens as u32,
+                        output_tokens: usage.output_tokens as u32,
+                        cache_read_tokens: usage.cache_read_tokens as u32,
+                        cache_write_tokens: usage.cache_creation_tokens as u32,
                     })]
                 })
                 .unwrap_or_default();
@@ -596,7 +596,7 @@ fn response_error_message(value: &Value) -> String {
         .to_string()
 }
 
-fn response_output_text(value: &Value) -> String {
+pub(crate) fn response_output_text(value: &Value) -> String {
     value
         .get("output")
         .and_then(Value::as_array)
@@ -613,34 +613,37 @@ fn response_output_text(value: &Value) -> String {
         .join("")
 }
 
-fn response_usage(value: &Value) -> Option<ChatUsage> {
+pub(crate) fn response_usage(value: &Value) -> Option<TokenUsage> {
     let usage = value.get("usage")?;
-    Some(ChatUsage {
-        prompt_tokens: usage
-            .get("input_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as usize,
-        completion_tokens: usage
-            .get("output_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as usize,
-        prompt_tokens_details: usage
-            .get("input_tokens_details")
-            .cloned()
-            .and_then(|value| serde_json::from_value(value).ok()),
-        cache_creation_input_tokens: usage
-            .get("cache_creation_input_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as usize,
-        cache_read_input_tokens: usage
-            .get("cache_read_input_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as usize,
-        cache_write_input_tokens: usage
-            .get("cache_write_input_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as usize,
-    })
+    Some(
+        ChatUsage {
+            prompt_tokens: usage
+                .get("input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or_default() as usize,
+            completion_tokens: usage
+                .get("output_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or_default() as usize,
+            prompt_tokens_details: usage
+                .get("input_tokens_details")
+                .cloned()
+                .and_then(|value| serde_json::from_value(value).ok()),
+            cache_creation_input_tokens: usage
+                .get("cache_creation_input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or_default() as usize,
+            cache_read_input_tokens: usage
+                .get("cache_read_input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or_default() as usize,
+            cache_write_input_tokens: usage
+                .get("cache_write_input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or_default() as usize,
+        }
+        .into(),
+    )
 }
 
 #[derive(Debug, Deserialize)]

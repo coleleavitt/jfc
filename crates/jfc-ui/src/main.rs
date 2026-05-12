@@ -92,8 +92,8 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 
 use provider::{ModelId, ModelSpec, Provider};
 use providers::{
-    AnthropicOAuthProvider, AnthropicProvider, BedrockProvider, OpenAIProvider, OpenWebUIProvider,
-    VertexProvider,
+    AnthropicOAuthProvider, AnthropicProvider, BedrockProvider, CodexOAuthProvider, OpenAIProvider,
+    OpenWebUIProvider, VertexProvider,
 };
 
 /// JFC - A TUI assistant for code exploration and development
@@ -145,7 +145,7 @@ enum Command {
         #[command(subcommand)]
         sub: DaemonSubcommand,
     },
-    /// Manage Anthropic OAuth accounts (login, list, switch, disable, remove).
+    /// Manage provider authentication (OAuth/API-key helpers).
     Auth {
         #[command(subcommand)]
         sub: AuthSubcommand,
@@ -158,6 +158,11 @@ enum AuthSubcommand {
     Anthropic {
         #[command(subcommand)]
         sub: AnthropicAuthSubcommand,
+    },
+    /// OpenAI Codex / ChatGPT OAuth commands.
+    Codex {
+        #[command(subcommand)]
+        sub: CodexAuthSubcommand,
     },
 }
 
@@ -199,6 +204,18 @@ enum AnthropicAuthSubcommand {
         /// Account name to remove.
         name: String,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum CodexAuthSubcommand {
+    /// Print the browser URL for ChatGPT/Codex OAuth login.
+    Login,
+    /// Start a device-code login and print the one-time code.
+    Device,
+    /// Show configured Codex OAuth token status.
+    Status,
+    /// Remove stored Codex OAuth tokens.
+    Logout,
 }
 
 #[derive(Subcommand, Debug)]
@@ -498,6 +515,76 @@ async fn run_subcommand(cmd: Command) -> anyhow::Result<()> {
 async fn run_auth_subcommand(sub: AuthSubcommand) -> anyhow::Result<()> {
     match sub {
         AuthSubcommand::Anthropic { sub } => run_anthropic_auth_subcommand(sub).await,
+        AuthSubcommand::Codex { sub } => run_codex_auth_subcommand(sub).await,
+    }
+}
+
+async fn run_codex_auth_subcommand(sub: CodexAuthSubcommand) -> anyhow::Result<()> {
+    use crate::providers::codex_oauth::CodexOAuthProvider;
+    use crate::providers::oauth_core::TokenStore;
+
+    let provider = CodexOAuthProvider::new();
+    match sub {
+        CodexAuthSubcommand::Login => {
+            let redirect_uri = "http://localhost:1455/auth/callback";
+            let req = CodexOAuthProvider::authorize_url(redirect_uri);
+            println!();
+            println!("=== OpenAI Codex OAuth login ===");
+            println!();
+            println!("Open this URL in a browser:");
+            println!();
+            println!("   {}", req.url);
+            println!();
+            println!(
+                "After approving, capture the callback code and exchange it through the Codex OAuth flow."
+            );
+            println!("Device-code flow is also available with: jfc auth codex device");
+            println!("store: {}", provider.store_path().display());
+            Ok(())
+        }
+        CodexAuthSubcommand::Device => {
+            let code = provider.request_device_code().await?;
+            println!();
+            println!("=== OpenAI Codex device login ===");
+            println!();
+            println!("Open: {}", code.verification_url);
+            println!("Code: {}", code.user_code);
+            println!();
+            println!("Waiting for authorization...");
+            provider.poll_device_code(&code).await?;
+            println!(
+                "✓ Codex OAuth tokens stored at {}",
+                provider.store_path().display()
+            );
+            Ok(())
+        }
+        CodexAuthSubcommand::Status => {
+            let store = TokenStore::new(TokenStore::default_path());
+            match store.get("codex")? {
+                Some(crate::providers::oauth_core::AuthMethod::OAuth {
+                    expires_at,
+                    account_id,
+                    ..
+                }) => {
+                    println!("codex: configured");
+                    println!("account: {}", account_id.as_deref().unwrap_or("(unknown)"));
+                    println!("expires_at: {expires_at}");
+                }
+                _ => println!(
+                    "codex: not configured (run `jfc auth codex login` or `jfc auth codex device`)"
+                ),
+            }
+            Ok(())
+        }
+        CodexAuthSubcommand::Logout => {
+            let store = TokenStore::new(TokenStore::default_path());
+            if store.remove("codex")? {
+                println!("removed Codex OAuth tokens from {}", store.path().display());
+            } else {
+                println!("no Codex OAuth tokens found in {}", store.path().display());
+            }
+            Ok(())
+        }
     }
 }
 
@@ -1029,6 +1116,12 @@ pub(crate) fn build_providers() -> ProvidersInit {
         prefer.get_or_insert("openai");
     }
 
+    let codex = CodexOAuthProvider::new();
+    if codex.has_usable_config() {
+        providers.push(Arc::new(codex));
+        prefer.get_or_insert("codex");
+    }
+
     // OpenWebUI is registered as a candidate so its models show up in the picker, but
     // it only becomes the *default* when the user explicitly opts in via OPENWEBUI_BASE_URL.
     let openwebui = OpenWebUIProvider::new();
@@ -1106,6 +1199,16 @@ pub(crate) fn build_providers() -> ProvidersInit {
         static_match.or_else(|| {
             // Tier 3: heuristic — OpenAI-looking ids route to OpenAI, then
             // non-`claude-` ids route to OpenWebUI proxy when configured.
+            let has_codex_config = providers.iter().any(|p| p.name() == "codex");
+            if has_codex_config && looks_codex_model(model_str) {
+                tracing::info!(
+                    target: "jfc::startup",
+                    model = %model_str,
+                    "no static match, model looks Codex-native → codex"
+                );
+                return Some("codex".to_owned());
+            }
+
             let has_openai_config = providers.iter().any(|p| p.name() == "openai");
             if has_openai_config && looks_openai_model(model_str) {
                 tracing::info!(
@@ -1187,6 +1290,11 @@ pub(crate) fn provider_for_model(
     }
     // Tier 3: heuristic — OpenAI-looking ids route to OpenAI first, then
     // non-`claude-` ids route to OpenWebUI proxy.
+    let has_codex = providers.iter().any(|p| p.name() == "codex");
+    if has_codex && looks_codex_model(model_id) {
+        return providers.iter().find(|p| p.name() == "codex").cloned();
+    }
+
     let has_openai = providers.iter().any(|p| p.name() == "openai");
     if has_openai && looks_openai_model(model_id) {
         return providers.iter().find(|p| p.name() == "openai").cloned();
@@ -1204,4 +1312,13 @@ fn looks_openai_model(model_id: &str) -> bool {
         || model_id.starts_with("o1")
         || model_id.starts_with("o3")
         || model_id.starts_with("o4")
+}
+
+fn looks_codex_model(model_id: &str) -> bool {
+    let id = model_id
+        .rsplit('/')
+        .next()
+        .unwrap_or(model_id)
+        .to_ascii_lowercase();
+    id.contains("codex")
 }

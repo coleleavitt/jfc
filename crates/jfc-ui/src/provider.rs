@@ -4,6 +4,7 @@ use std::{borrow::Borrow, collections::HashMap, fmt, ops::Deref, pin::Pin};
 
 use async_trait::async_trait;
 use futures::Stream;
+use reqwest::header::HeaderMap;
 
 macro_rules! string_id {
     ($name:ident) => {
@@ -564,6 +565,25 @@ pub trait Provider: Send + Sync + seal::Sealed {
     /// Fetch models dynamically (e.g. from an API). Defaults to the static list.
     async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
         Ok(self.available_models())
+    }
+
+    /// Ensure provider authentication is currently usable.
+    ///
+    /// API-key providers usually keep the default no-op implementation. OAuth
+    /// providers override this to refresh access tokens before requests.
+    async fn ensure_auth(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Additional auth headers for provider-specific transports.
+    fn auth_headers(&self) -> HeaderMap {
+        HeaderMap::new()
+    }
+
+    /// Optional URL rewrite hook for providers whose auth mode targets a
+    /// different backend than their OpenAI-compatible public API surface.
+    fn rewrite_url(&self, _original: &str) -> Option<String> {
+        None
     }
 
     async fn stream(

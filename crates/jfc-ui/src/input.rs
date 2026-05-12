@@ -3158,6 +3158,9 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 crate::providers::login_dispatch::LoginDispatch::ClaudeAiOAuth(_) => {
                     Some("https://claude.ai/login")
                 }
+                crate::providers::login_dispatch::LoginDispatch::CodexOAuth(_) => {
+                    Some("https://auth.openai.com/codex/device")
+                }
                 _ => None,
             };
             if let Some(url) = url {
