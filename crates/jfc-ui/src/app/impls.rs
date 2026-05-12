@@ -10,8 +10,13 @@ impl App {
     /// Called once per tick so the tick task can adjust its sleep interval.
     pub fn update_wants_animation_frame(&self) {
         use std::sync::atomic::Ordering;
+        let any_alive_background = self
+            .background_tasks
+            .values()
+            .any(|bt| bt.status.is_alive());
         let dominated = self.launched_at.elapsed() < std::time::Duration::from_millis(1500)
             || self.is_streaming
+            || any_alive_background
             || self.scroll_velocity.abs() > 0.5
             || self
                 .toasts

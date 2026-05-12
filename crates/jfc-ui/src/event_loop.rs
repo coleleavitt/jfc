@@ -1297,7 +1297,9 @@ pub(crate) async fn run(
                         .unwrap_or(true);
                     if detached_sync_due {
                         app.last_detached_sync_at = Some(std::time::Instant::now());
-                        sync_detached_background_tasks_from_daemon(&mut app);
+                        if sync_detached_background_tasks_from_daemon(&mut app) {
+                            needs_draw = true;
+                        }
                     }
                     // Auto-clear expired toasts every tick. Cheap (O(N) over
                     // a tiny vec capped at MAX_TOASTS) and the only reliable
@@ -3434,6 +3436,7 @@ pub(crate) async fn run(
             || !app.pending_tool_calls.is_empty()
             || app.pending_approval.is_some()
             || !app.approval_queue.is_empty()
+            || app.background_tasks.values().any(|bt| bt.status.is_alive())
             || app.turn_started_at.is_some();
         if want_streaming_cursor {
             needs_draw = true;
@@ -3483,36 +3486,36 @@ pub(crate) async fn run(
 /// In-process tasks (`launch_path.is_none()`) are intentionally skipped: they
 /// receive live `TaskProgress` events through the channel and would be
 /// clobbered by stale disk values.
-fn sync_detached_background_tasks_from_daemon(app: &mut App) {
-    let paths = crate::daemon::DaemonPaths::default_user();
-    let Some(state) = crate::daemon::load_state(&paths) else {
-        return;
+fn sync_detached_background_tasks_from_daemon(app: &mut App) -> bool {
+    sync_detached_background_tasks_from_daemon_with_paths(
+        app,
+        &crate::daemon::DaemonPaths::default_user(),
+    )
+}
+
+fn sync_detached_background_tasks_from_daemon_with_paths(
+    app: &mut App,
+    paths: &crate::daemon::DaemonPaths,
+) -> bool {
+    let Some(state) = crate::daemon::load_state(paths) else {
+        return false;
     };
-    let session_id = app.current_session_id.as_ref().map(|id| id.as_str());
+    let session_id = app.current_session_id.as_ref().map(|id| id.to_string());
+    let mut changed = false;
     for (id, agent) in &state.background_agents {
         if agent.launch_path.is_none() {
             continue;
         }
         // Only update agents owned by the current session, mirroring the
         // restore filter so cross-instance leakage stays fixed.
-        if let Some(sid) = session_id {
-            if agent.parent_session_id.as_deref() != Some(sid) {
+        if let Some(ref sid) = session_id {
+            if agent.parent_session_id.as_deref() != Some(sid.as_str()) {
                 continue;
             }
         } else {
             continue;
         }
-        let Some(bt) = app.background_tasks.get_mut(id.as_str()) else {
-            continue;
-        };
-        bt.tool_use_count = agent.tool_use_count;
-        bt.latest_input_tokens = agent.latest_input_tokens;
-        bt.latest_cache_read_tokens = agent.latest_cache_read_tokens;
-        bt.latest_cache_write_tokens = agent.latest_cache_write_tokens;
-        bt.cumulative_output_tokens = agent.cumulative_output_tokens;
-        if let Some(tool) = &agent.last_tool {
-            bt.last_tool = Some(tool.clone());
-        }
+
         let new_status = match agent.status {
             crate::daemon::BackgroundAgentStatus::Running => crate::types::TaskLifecycle::Running,
             crate::daemon::BackgroundAgentStatus::Completed => {
@@ -3523,16 +3526,123 @@ fn sync_detached_background_tasks_from_daemon(app: &mut App) {
                 crate::types::TaskLifecycle::Cancelled
             }
         };
-        if bt.status != new_status {
-            bt.status = new_status;
+        let messages = crate::daemon::read_last_lines(&agent.log_path, 200);
+        let entry =
+            app.background_tasks
+                .entry(id.clone())
+                .or_insert_with(|| crate::app::BackgroundTask {
+                    task_id: crate::ids::TaskId::from(id.clone()),
+                    description: agent.description.clone(),
+                    status: new_status,
+                    started_at: instant_from_system_time(agent.started_at),
+                    summary: agent.summary.clone(),
+                    error: agent.error.clone(),
+                    last_tool: agent.last_tool.clone(),
+                    messages: Vec::new(),
+                    tool_use_count: agent.tool_use_count,
+                    latest_input_tokens: agent.latest_input_tokens,
+                    latest_cache_read_tokens: agent.latest_cache_read_tokens,
+                    latest_cache_write_tokens: agent.latest_cache_write_tokens,
+                    cumulative_output_tokens: agent.cumulative_output_tokens,
+                    model_used: agent.model.clone(),
+                    max_input_tokens: None,
+                    budget_killed: false,
+                });
+
+        if entry.description != agent.description {
+            entry.description = agent.description.clone();
+            changed = true;
         }
-        if bt.summary.is_none() && agent.summary.is_some() {
-            bt.summary = agent.summary.clone();
+        if entry.status != new_status {
+            entry.status = new_status;
+            changed = true;
         }
-        if bt.error.is_none() && agent.error.is_some() {
-            bt.error = agent.error.clone();
+        if entry.tool_use_count != agent.tool_use_count {
+            entry.tool_use_count = agent.tool_use_count;
+            changed = true;
+        }
+        if entry.latest_input_tokens != agent.latest_input_tokens {
+            entry.latest_input_tokens = agent.latest_input_tokens;
+            changed = true;
+        }
+        if entry.latest_cache_read_tokens != agent.latest_cache_read_tokens {
+            entry.latest_cache_read_tokens = agent.latest_cache_read_tokens;
+            changed = true;
+        }
+        if entry.latest_cache_write_tokens != agent.latest_cache_write_tokens {
+            entry.latest_cache_write_tokens = agent.latest_cache_write_tokens;
+            changed = true;
+        }
+        if entry.cumulative_output_tokens != agent.cumulative_output_tokens {
+            entry.cumulative_output_tokens = agent.cumulative_output_tokens;
+            changed = true;
+        }
+        if entry.last_tool != agent.last_tool {
+            entry.last_tool = agent.last_tool.clone();
+            changed = true;
+        }
+        if entry.summary != agent.summary {
+            entry.summary = agent.summary.clone();
+            changed = true;
+        }
+        if entry.error != agent.error {
+            entry.error = agent.error.clone();
+            changed = true;
+        }
+        if entry.model_used != agent.model {
+            entry.model_used = agent.model.clone();
+            changed = true;
+        }
+        if entry.messages != messages {
+            entry.messages = messages;
+            changed = true;
+        }
+
+        if update_task_status_parts_for_background_agent(app, id, new_status, agent) {
+            changed = true;
         }
     }
+    changed
+}
+
+fn update_task_status_parts_for_background_agent(
+    app: &mut App,
+    id: &str,
+    status: crate::types::TaskLifecycle,
+    agent: &crate::daemon::BackgroundAgentInfo,
+) -> bool {
+    let task_id = crate::ids::TaskId::from(id.to_owned());
+    let mut changed = false;
+    for msg in &mut app.messages {
+        for part in &mut msg.parts {
+            if let MessagePart::TaskStatus(ts) = part {
+                if ts.task_id == task_id {
+                    if ts.status != status {
+                        ts.status = status;
+                        changed = true;
+                    }
+                    if ts.summary != agent.summary {
+                        ts.summary = agent.summary.clone();
+                        changed = true;
+                    }
+                    if ts.error != agent.error {
+                        ts.error = agent.error.clone();
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+    changed
+}
+
+fn instant_from_system_time(t: std::time::SystemTime) -> std::time::Instant {
+    let elapsed = std::time::SystemTime::now()
+        .duration_since(t)
+        .unwrap_or_default();
+    std::time::Instant::now()
+        .checked_sub(elapsed)
+        .unwrap_or_else(std::time::Instant::now)
 }
 
 fn restore_persistent_background_agents(app: &mut App) {
