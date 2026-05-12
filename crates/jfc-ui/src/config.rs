@@ -924,6 +924,264 @@ model = "openai/gpt-5"
         assert_eq!(back.theme.as_deref(), Some("monokai"));
     }
 
+    // Regression: a real-world user config that previously caused
+    // `save_theme_to` to silently reset the theme back to the default.
+    // The shape was produced by `toml::to_string_pretty` on an older
+    // Config struct — we re-parse and re-serialize it and the theme
+    // must survive end-to-end. If serde rejects ANY of the fields, the
+    // whole config falls back to `Config::default()` and the theme
+    // would silently reset.
+    #[test]
+    fn real_world_config_round_trip_preserves_theme_normal() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"disabled_agents = []
+disabled_tools = []
+theme = "tokyo-night"
+slate_enabled = false
+memory_recall_enabled = true
+auto_compact_enabled = true
+
+[default]
+model = "openwebui/bedrock-claude-4-6-opus"
+fallback_models = []
+disallowed_tools = []
+
+[default.permission]
+
+[default.provider_options]
+
+[agents]
+
+[categories]
+
+[mcp]
+"#,
+        )
+        .unwrap();
+
+        // Parse must succeed and theme must round-trip.
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let cfg: Config = toml::from_str(&raw).expect("real-world config must parse");
+        assert_eq!(cfg.theme.as_deref(), Some("tokyo-night"));
+
+        // Now call save_theme_to with a DIFFERENT theme and confirm
+        // the new theme is persisted (it must not silently revert).
+        save_theme_to(&path, "dracula").expect("save_theme_to");
+        let raw2 = std::fs::read_to_string(&path).unwrap();
+        let cfg2: Config = toml::from_str(&raw2).expect("after save_theme_to");
+        assert_eq!(cfg2.theme.as_deref(), Some("dracula"));
+
+        // And critically: calling save_theme_to with the SAME theme
+        // must leave the theme intact (this is what /theme tokyo-night
+        // followed by a restart does).
+        save_theme_to(&path, "tokyo-night").expect("save_theme_to same");
+        let raw3 = std::fs::read_to_string(&path).unwrap();
+        let cfg3: Config = toml::from_str(&raw3).expect("after second save");
+        assert_eq!(cfg3.theme.as_deref(), Some("tokyo-night"));
+
+        // Now simulate a recompile: re-serialize through to_string_pretty
+        // (which is what save_theme_to itself does internally) and
+        // re-load. This exercises every Serialize→Deserialize edge.
+        let serialized = toml::to_string_pretty(&cfg3).expect("serialize");
+        let cfg4: Config = toml::from_str(&serialized).expect("re-parse after serialize");
+        assert_eq!(
+            cfg4.theme.as_deref(),
+            Some("tokyo-night"),
+            "theme must survive full Serialize→Deserialize round trip — \
+             if this fails, a new field added to Config breaks round-tripping \
+             and silently resets the theme on the next save_theme_to call"
+        );
+    }
+
+    // Regression: every field of Config::default() must survive a full
+    // toml::to_string_pretty → toml::from_str round trip. If any field
+    // has a `serialize`/`deserialize` asymmetry, `save_theme_to` (which
+    // re-serializes the whole struct) silently wipes that field's value
+    // — including potentially the theme — on the next save.
+    #[test]
+    fn config_default_round_trips_robust() {
+        let original = Config::default();
+        let serialized = toml::to_string_pretty(&original).expect("serialize default");
+        let parsed: Config = toml::from_str(&serialized).expect("parse default");
+        // Equality through Config::PartialEq covers every field.
+        assert_eq!(
+            original, parsed,
+            "Config::default round trip drift detected — a field's \
+             serialized form doesn't deserialize back to the same value"
+        );
+    }
+
+    // Regression: simulates the App::new → apply-theme sequence and
+    // asserts the resulting theme on `app.theme` matches the persisted
+    // name. This is the closest unit-level analog to the real startup;
+    // anything that mutates app.theme afterward should be considered a
+    // bug.
+    #[test]
+    fn app_startup_applies_persisted_theme_normal() {
+        use crate::theme::Theme;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"theme = "dracula"
+
+[default]
+model = "anthropic/claude-opus-4-7"
+"#,
+        )
+        .unwrap();
+
+        // Replay event_loop:362-381 logic in isolation. We can't build
+        // a full `App` here (it needs an Arc<dyn Provider>), but the
+        // theme step is the only thing this test cares about.
+        let cfg: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let mut current_theme = Theme::dark(); // matches `App::new`'s default
+        let initial_bg = current_theme.bg;
+
+        if let Some(name) = cfg.theme.as_deref()
+            && let Some(theme) = Theme::by_name(name)
+        {
+            current_theme = theme;
+        }
+
+        // After applying, theme MUST be different from the dark default
+        // (since dracula's bg is distinct). If they're equal something
+        // silently swallowed the apply.
+        assert_ne!(
+            current_theme.bg, initial_bg,
+            "Theme was not applied — startup would leave the user on dark()"
+        );
+    }
+
+    // Regression: simulates the exact startup sequence event_loop::run uses:
+    //   1. read config.toml from disk
+    //   2. toml::from_str::<Config>
+    //   3. Theme::by_name(cfg.theme)
+    // If ANY step silently fails, the theme appears to "reset" on next
+    // launch. This test pins the contract end-to-end so a future Config
+    // schema change can't break it without a loud failure here.
+    #[test]
+    fn startup_theme_resolution_replays_real_world_path_normal() {
+        use crate::theme::Theme;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"theme = "tokyo-night"
+
+[default]
+model = "anthropic/claude-opus-4-7"
+"#,
+        )
+        .unwrap();
+
+        // Step 1+2: read + parse (mirrors `config::load`'s body).
+        let raw = std::fs::read_to_string(&path).expect("read");
+        let cfg: Config = toml::from_str(&raw).expect("parse");
+
+        // Step 3: resolve via Theme::by_name (mirrors event_loop:367-368).
+        let name = cfg.theme.as_deref().expect("theme field present");
+        let resolved = Theme::by_name(name);
+        assert!(
+            resolved.is_some(),
+            "Theme::by_name({:?}) returned None — startup will fall back to dark()",
+            name
+        );
+    }
+
+    // Regression: this is the smoking-gun test. Re-creates the exact
+    // sequence that happens across a "save theme → recompile → restart":
+    //
+    //   1. user runs `/theme tokyo-night` → save_theme_to writes the file
+    //   2. user quits / recompiles / relaunches
+    //   3. event_loop reads config.toml, parses, applies theme
+    //
+    // If step 3 sees a Config with `theme: None` after step 1 saved
+    // `tokyo-night`, the theme has silently reset. This must never happen.
+    #[test]
+    fn save_then_load_preserves_theme_across_simulated_restart_normal() {
+        use crate::theme::Theme;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+
+        // Pre-existing user config (mimics state before /theme).
+        std::fs::write(
+            &path,
+            r#"
+[default]
+model = "openwebui/bedrock-claude-4-6-opus"
+"#,
+        )
+        .unwrap();
+
+        // Step 1: user runs `/theme tokyo-night`.
+        save_theme_to(&path, "tokyo-night").expect("save");
+
+        // Step 2: simulate restart by reading + parsing from scratch.
+        let raw = std::fs::read_to_string(&path).expect("read");
+        let cfg: Config = toml::from_str(&raw).expect(
+            "parse must succeed after save_theme_to — if this fails, save_theme_to is \
+             producing a file the loader can't read back, causing the loader to fall \
+             back to Config::default() and the theme to silently reset",
+        );
+
+        // Step 3: theme must still be tokyo-night.
+        assert_eq!(cfg.theme.as_deref(), Some("tokyo-night"));
+        assert!(Theme::by_name("tokyo-night").is_some());
+
+        // Also: the model the user had before the theme save must survive.
+        assert_eq!(
+            cfg.default.model.as_deref(),
+            Some("openwebui/bedrock-claude-4-6-opus")
+        );
+    }
+
+    // Regression: `save_theme_to` must round-trip every other field
+    // unchanged. We start with a populated config that exercises a
+    // representative slice of the schema, save a new theme, reload,
+    // and verify nothing else moved.
+    #[test]
+    fn save_theme_to_round_trips_all_fields_robust() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+        let mut starting = Config::default();
+        starting.theme = Some("solarized".into());
+        starting.output_style = Some("brief".into());
+        starting.slate_enabled = true;
+        starting.memory_recall_enabled = false;
+        starting.auto_compact_enabled = false;
+        starting.auto_compact_window = Some(500_000);
+        starting.session_cost_budget_usd = Some(10.0);
+        starting.disabled_agents = vec!["foo".into()];
+        starting.default.model = Some("anthropic/claude-opus-4-7".into());
+
+        let initial = toml::to_string_pretty(&starting).expect("serialize starting");
+        std::fs::write(&path, &initial).unwrap();
+
+        save_theme_to(&path, "dracula").expect("save_theme_to");
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let after: Config = toml::from_str(&raw).expect("parse after save");
+        assert_eq!(after.theme.as_deref(), Some("dracula"));
+        assert_eq!(after.output_style.as_deref(), Some("brief"));
+        assert_eq!(after.slate_enabled, true);
+        assert_eq!(after.memory_recall_enabled, false);
+        assert_eq!(after.auto_compact_enabled, false);
+        assert_eq!(after.auto_compact_window, Some(500_000));
+        assert_eq!(after.session_cost_budget_usd, Some(10.0));
+        assert_eq!(after.disabled_agents, vec!["foo".to_string()]);
+        assert_eq!(
+            after.default.model.as_deref(),
+            Some("anthropic/claude-opus-4-7")
+        );
+    }
+
     #[test]
     fn parse_minimal_config_normal() {
         let cfg = parse(
