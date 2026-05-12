@@ -53,7 +53,7 @@ impl GraphSession {
             graph: result.graph,
             symbols,
             events: EventLog::new(),
-            capabilities: CapabilityTree::new(),
+            capabilities: CapabilityTree::from_env(),
             parse_errors: result.parse_errors,
             files_skipped: result.files_skipped,
             query_cache: QueryCache::new(),
@@ -74,10 +74,11 @@ impl GraphSession {
             max_nodes: 50,
         };
         let result = dsl::run_query_expr(query_str, &self.graph, &config)?;
-        Ok(formatting::format_query_result(
+        Ok(formatting::format_query_result_with_capabilities(
             &result,
             &self.graph,
             Some(&self.symbols),
+            Some(&self.capabilities),
             max_tokens,
         ))
     }

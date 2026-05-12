@@ -282,6 +282,11 @@ fn extract_function(
         metadata.insert("async".into(), "true".into());
     }
 
+    let accessed = accessed_field_names(node, source);
+    if !accessed.is_empty() {
+        metadata.insert("accessed_fields".into(), accessed.join(","));
+    }
+
     Some(build_node_data(
         &name,
         NodeKind::Function,
@@ -292,6 +297,28 @@ fn extract_function(
         scope,
         metadata,
     ))
+}
+
+fn accessed_field_names(node: TsNode<'_>, source: &str) -> Vec<String> {
+    fn walk(node: TsNode<'_>, source: &str, out: &mut Vec<String>) {
+        if node.kind() == "field_expression"
+            && let Some(field) = node.child_by_field_name("field")
+        {
+            let name = node_text(field, source);
+            if !name.is_empty() && !out.contains(&name) {
+                out.push(name);
+            }
+        }
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
+            walk(child, source, out);
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(body) = node.child_by_field_name("body") {
+        walk(body, source, &mut out);
+    }
+    out
 }
 
 fn extract_struct(

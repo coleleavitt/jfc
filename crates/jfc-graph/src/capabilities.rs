@@ -32,6 +32,19 @@ pub struct CapabilityTree {
     dependencies: HashMap<Capability, Vec<Capability>>,
 }
 
+impl Capability {
+    pub fn env_name(self) -> &'static str {
+        match self {
+            Self::CallGraph => "JFC_GRAPH_CAP_CALL_GRAPH",
+            Self::TypeUsage => "JFC_GRAPH_CAP_TYPE_USAGE",
+            Self::PartialStruct => "JFC_GRAPH_CAP_PARTIAL_STRUCT",
+            Self::VirtualValidation => "JFC_GRAPH_CAP_VIRTUAL_VALIDATION",
+            Self::Persistence => "JFC_GRAPH_CAP_PERSISTENCE",
+            Self::SymbolEditing => "JFC_GRAPH_CAP_SYMBOL_EDITING",
+        }
+    }
+}
+
 impl CapabilityTree {
     pub fn new() -> Self {
         let mut tree = Self {
@@ -51,6 +64,24 @@ impl CapabilityTree {
         tree.dependencies
             .insert(Capability::PartialStruct, vec![Capability::TypeUsage]);
 
+        tree
+    }
+
+    /// Build the default tree and apply `JFC_GRAPH_CAP_*=0/false/off/no`
+    /// overrides. Disabling a dependency cascades to dependent capabilities.
+    pub fn from_env() -> Self {
+        let mut tree = Self::new();
+        for cap in ALL_CAPABILITIES {
+            if let Ok(value) = std::env::var(cap.env_name()) {
+                let disabled = matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "0" | "false" | "off" | "no" | "disabled"
+                );
+                if disabled {
+                    tree.disable(cap);
+                }
+            }
+        }
         tree
     }
 

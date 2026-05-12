@@ -2,8 +2,10 @@
 
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
+use crate::capabilities::{Capability, CapabilityTree};
 use crate::dsl::QueryResult;
 use crate::graph::CodeGraph;
+use crate::nodes::NodeKind;
 use crate::symbols::SymbolTable;
 
 /// Formatted output from a query with token budget tracking.
@@ -26,6 +28,16 @@ pub fn format_query_result(
     symbols: Option<&SymbolTable>,
     budget: usize,
 ) -> FormattedOutput {
+    format_query_result_with_capabilities(result, graph, symbols, None, budget)
+}
+
+pub fn format_query_result_with_capabilities(
+    result: &QueryResult,
+    graph: &CodeGraph,
+    symbols: Option<&SymbolTable>,
+    capabilities: Option<&CapabilityTree>,
+    budget: usize,
+) -> FormattedOutput {
     let mut lines = Vec::new();
     let mut token_count = 0;
     let mut nodes_shown = 0;
@@ -35,7 +47,7 @@ pub fn format_query_result(
             let handle = symbols
                 .and_then(|s| s.handle_for_node(node_id))
                 .unwrap_or("?");
-            let line = format!(
+            let mut line = format!(
                 "[{}] {:?} {} ({}:{})",
                 handle,
                 node.kind,
@@ -43,6 +55,15 @@ pub fn format_query_result(
                 node.file_path.display(),
                 node.span.start_line
             );
+            if node.kind == NodeKind::Struct
+                && capabilities
+                    .map(|caps| caps.is_enabled(Capability::PartialStruct))
+                    .unwrap_or(true)
+                && let Some(fields) = partial_field_names(node.metadata.get("fields"))
+                && !fields.is_empty()
+            {
+                line.push_str(&format!(" fields={}", fields.join(",")));
+            }
             let line_tokens = line.len() / 4; // rough estimate
             if token_count + line_tokens > budget {
                 break;
@@ -66,6 +87,22 @@ pub fn format_query_result(
         nodes_shown,
         nodes_total: result.nodes.len(),
     }
+}
+
+fn partial_field_names(raw: Option<&String>) -> Option<Vec<String>> {
+    let raw = raw?;
+    let value: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let fields = value
+        .as_array()?
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+        })
+        .collect::<Vec<_>>();
+    Some(fields)
 }
 
 /// Export the graph as Graphviz DOT format.
