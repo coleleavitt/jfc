@@ -60,6 +60,19 @@ fn spawn_watcher() -> Result<(), String> {
         return Err("no candidate paths to watch".into());
     }
 
+    // inotify on Linux fires events for every file in the watched directory,
+    // not just the specific file we registered. We keep an explicit allowlist
+    // of paths and directories so sibling files (sessions/*.json,
+    // anthropic-accounts.json, litellm.toml, …) don't trigger spurious
+    // "Config file changed" toasts on every subagent turn.
+    let config_paths_set: std::collections::HashSet<PathBuf> =
+        config_paths.iter().cloned().collect();
+    let config_dirs_set: std::collections::HashSet<PathBuf> = config_paths
+        .iter()
+        .filter(|p| p.is_dir())
+        .cloned()
+        .collect();
+
     let keybindings_path_clone = keybindings_path.clone();
     let mut watcher =
         notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| match res {
@@ -82,13 +95,40 @@ fn spawn_watcher() -> Result<(), String> {
                             kind = ?event.kind,
                             "keybindings.toml change detected"
                         );
-                    } else {
+                        return;
+                    }
+
+                    // Only fire the config counter when the changed path is an
+                    // explicitly-watched file OR a file inside a watched directory.
+                    // This prevents session saves / token writes to sibling files
+                    // in ~/.config/jfc/ from generating a spurious toast every turn.
+                    let is_watched = event.paths.iter().any(|p| {
+                        // Direct file match (e.g. config.toml, CLAUDE.md).
+                        if config_paths_set.contains(p) {
+                            return true;
+                        }
+                        // File inside a watched directory (e.g. .claude/agents/).
+                        if let Some(parent) = p.parent() {
+                            if config_dirs_set.contains(parent) {
+                                return true;
+                            }
+                        }
+                        false
+                    });
+
+                    if is_watched {
                         CHANGE_COUNTER.fetch_add(1, Ordering::SeqCst);
                         tracing::debug!(
                             target: "jfc::file_watcher",
                             kind = ?event.kind,
                             paths = ?event.paths,
                             "config file change detected"
+                        );
+                    } else {
+                        tracing::trace!(
+                            target: "jfc::file_watcher",
+                            paths = ?event.paths,
+                            "ignoring event for non-watched sibling file"
                         );
                     }
                 }
