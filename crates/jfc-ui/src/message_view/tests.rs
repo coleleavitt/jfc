@@ -1,9 +1,6 @@
 #![cfg(all(test, feature = "anthropic-oauth-sensitive"))]
-#[cfg(feature = "anthropic-oauth-sensitive")]
 use super::assistant_parts::{find_tool_at, sanitize_terminal_text, truncate_str};
 use super::bash::{BashCmdKind, classify_bash_cmd};
-#[cfg(feature = "anthropic-oauth-sensitive")]
-#[cfg(feature = "anthropic-oauth-sensitive")]
 use super::core::{build_render_items, is_groupable, severity_rank};
 use super::detection::{looks_like_difftastic_output, looks_like_git_diff_output};
 use super::output_style::path_color;

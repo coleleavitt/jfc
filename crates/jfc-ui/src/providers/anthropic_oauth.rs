@@ -58,7 +58,6 @@ const VERSION_CACHE_TTL: Duration = Duration::from_secs(3600);
 const VERSION_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 const TOKEN_REFRESH_TIMEOUT: Duration = Duration::from_secs(15);
 
-#[cfg(feature = "anthropic-oauth-sensitive")]
 const CCH_PLACEHOLDER: &str = "cch=00000";
 
 struct VersionCache {
@@ -145,8 +144,6 @@ fn compute_billing_hash(first_user_message: &str, version: &str) -> String {
     hex::encode(hash)[..3].to_owned()
 }
 
-#[cfg(feature = "anthropic-oauth-sensitive")]
-#[cfg(feature = "anthropic-oauth-sensitive")]
 #[cfg(feature = "anthropic-oauth-sensitive")]
 fn compute_body_attestation(body: &str) -> String {
     let mut mac = HmacSha256::new_from_slice(SALT.as_bytes()).expect("HMAC accepts any key length");
@@ -1096,7 +1093,7 @@ impl Provider for AnthropicOAuthProvider {
             }
             #[cfg(not(feature = "anthropic-oauth-sensitive"))]
             {
-                body_str
+                body_str.clone()
             }
         };
 
@@ -1283,7 +1280,16 @@ impl Provider for AnthropicOAuthProvider {
                                 patched["model"] =
                                     Value::String(DEFAULT_OVERLOAD_FALLBACK_MODEL.to_owned());
                                 let patched_str = serde_json::to_string(&patched)?;
-                                effective_body = compute_body_attestation(&patched_str);
+                                effective_body = {
+                                    #[cfg(feature = "anthropic-oauth-sensitive")]
+                                    {
+                                        compute_body_attestation(&patched_str)
+                                    }
+                                    #[cfg(not(feature = "anthropic-oauth-sensitive"))]
+                                    {
+                                        patched_str.clone()
+                                    }
+                                };
                             }
                             last_err = Some(anyhow::anyhow!(
                                 "Anthropic overloaded ({status}) on account '{}': {body}",
@@ -1421,7 +1427,7 @@ impl Provider for AnthropicOAuthProvider {
             }
             #[cfg(not(feature = "anthropic-oauth-sensitive"))]
             {
-                body_str
+                body_str.clone()
             }
         };
         let mgr = self.account_manager().await?;

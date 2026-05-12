@@ -1651,12 +1651,8 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     // is no longer needed — items are required for paint anyway, and
     // `tool_block_height` now memoizes the integer height per terminal-state
     // tool, so the per-item .sum() is a string of hash lookups.
-    #[cfg(feature = "anthropic-oauth-sensitive")]
     let items = crate::message_view::build_render_items_pub(app, inner_width);
-    #[cfg(feature = "anthropic-oauth-sensitive")]
     let total_lines: usize = items.iter().map(|i| i.height(inner_width)).sum();
-    #[cfg(not(feature = "anthropic-oauth-sensitive"))]
-    let total_lines: usize = 0;
 
     let visible = area.height.saturating_sub(2) as usize;
 

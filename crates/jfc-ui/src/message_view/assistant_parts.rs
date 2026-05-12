@@ -1,9 +1,6 @@
-#[cfg(feature = "anthropic-oauth-sensitive")]
-#[cfg(feature = "anthropic-oauth-sensitive")]
 use super::core::RenderItem;
 use super::*;
 
-#[cfg(feature = "anthropic-oauth-sensitive")]
 pub(super) fn render_assistant_text_lines<'a>(
     text: &'a str,
     t: &'a Theme,
@@ -72,7 +69,6 @@ pub(super) fn render_assistant_text_lines<'a>(
     lines
 }
 
-#[cfg(feature = "anthropic-oauth-sensitive")]
 fn streaming_task_footer_lines(app: &App, t: &Theme) -> Vec<Line<'static>> {
     use crate::tasks::{DeletedFilter, TaskStatus};
 
