@@ -652,7 +652,7 @@ async fn run_litellm_auth_subcommand(sub: LiteLLMAuthSubcommand) -> anyhow::Resu
                     println!("url: {}", creds.base_url);
                     println!(
                         "key: {}…{}",
-                        &creds.api_key[..4],
+                        &creds.api_key[..creds.api_key.len().min(4)],
                         &creds.api_key[creds.api_key.len().saturating_sub(4)..]
                     );
                     println!("store: {}", cred_path.display());

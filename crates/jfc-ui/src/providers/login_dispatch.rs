@@ -110,7 +110,7 @@ LiteLLM proxy sign-in:
     jfc auth litellm login
 
   Once configured, models are fetched dynamically from the proxy's
-  /model/info endpoint. Use `litellm/<model>` as the model selector.";
+  /v1/models endpoint. Use `litellm/<model>` as the model selector.";
 
 const CODEX_OAUTH_BODY: &str = "\
 OpenAI Codex OAuth sign-in:

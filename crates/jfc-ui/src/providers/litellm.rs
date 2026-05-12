@@ -22,7 +22,8 @@ pub struct Credentials {
 
 pub fn credentials_path() -> PathBuf {
     dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+        .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config")))
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
         .join("jfc")
         .join("litellm.toml")
 }
@@ -39,11 +40,17 @@ pub fn save_credentials(base_url: &str, api_key: &str) -> anyhow::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let creds = Credentials {
-        api_key: api_key.to_owned(),
+        api_key: api_key.trim().to_owned(),
         base_url: base_url.trim_end_matches('/').to_owned(),
     };
     let serialized = toml::to_string_pretty(&creds)?;
     std::fs::write(&path, serialized)?;
+    // Restrict to owner-only on Unix — API keys must not be world-readable.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    }
     Ok(())
 }
 
