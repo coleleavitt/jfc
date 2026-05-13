@@ -2744,6 +2744,30 @@ pub(crate) async fn run(
                             }
                         }
                         if found {
+                            // If the tool result carries attachments (e.g. a
+                            // PDF loaded by the Read tool), push them onto the
+                            // assistant message that owns the tool call. They'll
+                            // be serialized as ProviderContent::Attachment blocks
+                            // in the next provider request via per-message
+                            // ownership — no global queue needed.
+                            if !result.attachments.is_empty() {
+                                for msg in &mut app.messages {
+                                    if matches!(msg.role, types::Role::Assistant)
+                                        && msg.parts.iter().any(|p| {
+                                            matches!(p, MessagePart::Tool(tc) if tc.id == tool_id)
+                                        })
+                                    {
+                                        tracing::debug!(
+                                            target: "jfc::stream",
+                                            tool_id = %tool_id,
+                                            count = result.attachments.len(),
+                                            "promoting tool result attachments to owning message"
+                                        );
+                                        msg.attachments.extend(result.attachments.clone());
+                                        break;
+                                    }
+                                }
+                            }
                             break;
                         }
                     }

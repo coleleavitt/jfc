@@ -3078,43 +3078,15 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
             });
         }
     }
-    // Drain attachments staged by tool dispatchers (currently: PDFs
-    // ingested by Read). Append them to the LAST non-tool_result user
-    // message — i.e. the user's actual prompt, NOT the synthetic
-    // tool_results message. Anthropic rejects any user message that
-    // mixes tool_result blocks with image/document/text content, so we
-    // must find a clean carrier for the attachments. If no such carrier
-    // exists (e.g. tool fired in the very first turn before the user
-    // sent a prompt — which is unusual but possible via /command-driven
-    // flows), create a fresh user message to carry the attachments.
-    let pending = crate::tools::take_pending_tool_attachments();
-    let pending_count = pending.len();
-    if !pending.is_empty() {
-        let attached: Vec<ProviderContent> = pending
-            .into_iter()
-            .map(ProviderContent::Attachment)
-            .collect();
-        // Find the last user message whose content is NOT tool_result.
-        // Walking from the end skips the synthetic tool_results message
-        // emitted above (which would always be the last user when a
-        // tool just ran) and lands on the prior actual prompt.
-        let target = out.iter_mut().rev().find(|m| {
-            matches!(m.role, ProviderRole::User) && !contains_tool_result(m)
-        });
-        if let Some(last_user) = target {
-            last_user.content.extend(attached);
-        } else {
-            out.push(ProviderMessage {
-                role: ProviderRole::User,
-                content: attached,
-            });
-        }
-    }
+    // Attachments owned by each message are already serialized in the
+    // loop above via `ProviderContent::Attachment` blocks. The global
+    // pending-tool-attachment queue no longer exists; all attachments
+    // travel via per-message `ChatMessage.attachments` fields.
     tracing::debug!(
         target: "jfc::stream",
         input_messages = msgs.len(),
         output_messages = out.len(),
-        tool_use_count, tool_result_count, abandoned_count, pending_count,
+        tool_use_count, tool_result_count, abandoned_count,
         "build_provider_messages_with_tool_results"
     );
     let out = ensure_user_last(out);
@@ -3123,35 +3095,22 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
 }
 
 #[cfg(test)]
-mod pdf_attachment_drain_tests {
+mod attachment_tests {
     use super::*;
     use crate::types::ChatMessage;
 
-    /// Test-isolation lock so this module's tests serialize their
-    /// access to the process-global pending-attachments queue.
-    /// Otherwise running two tests in parallel would leak state
-    /// between them and break the queue-empty assertions.
-    fn drain_test_lock() -> &'static std::sync::Mutex<()> {
-        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-        LOCK.get_or_init(|| std::sync::Mutex::new(()))
-    }
-
-    /// Normal: when a PDF is staged via push_pending_tool_attachment,
-    /// build_provider_messages_with_tool_results drains the queue
-    /// and appends an Attachment content block to the LAST user
-    /// message. Without this glue the model never sees the PDF.
+    /// Normal: PDF on ChatMessage.attachments lands as ProviderContent::Attachment
+    /// in build_provider_messages_with_tool_results. Per-message ownership —
+    /// no global queue.
     #[test]
-    fn pending_pdf_lands_in_last_user_message_normal() {
-        let _guard = drain_test_lock().lock().unwrap_or_else(|p| p.into_inner());
-        let _ = crate::tools::take_pending_tool_attachments();
-
-        let pdf = crate::attachments::Attachment { id: 0,
+    fn per_message_pdf_lands_in_user_message_normal() {
+        let mut user = ChatMessage::user("read this please".to_string());
+        user.attachments = vec![crate::attachments::Attachment {
+            id: 0,
             kind: crate::attachments::AttachmentKind::ApplicationPdf,
             bytes: b"%PDF-1.7\nfake".to_vec(),
-        };
-        crate::tools::push_pending_tool_attachment(pdf);
-
-        let msgs = vec![ChatMessage::user("read this please".to_string())];
+        }];
+        let msgs = vec![user];
         let provider_msgs = build_provider_messages_with_tool_results(&msgs);
         let last_user = provider_msgs
             .iter()
@@ -3162,62 +3121,19 @@ mod pdf_attachment_drain_tests {
             .iter()
             .filter(|c| matches!(c, ProviderContent::Attachment(_)))
             .count();
-        assert_eq!(
-            attachment_count, 1,
-            "expected exactly one attachment on the last user message"
-        );
+        assert_eq!(attachment_count, 1, "expected one attachment on the user message");
     }
 
-    /// Robust: a second build_provider_messages_with_tool_results
-    /// call AFTER the drain must NOT see the PDF again — the queue
-    /// should be empty so the same attachment doesn't replay every
-    /// turn (which would balloon token cost and produce duplicate
-    /// document blocks).
+    /// Normal: pasted image on ChatMessage.attachments lands in the text-only
+    /// build path.
     #[test]
-    fn drain_clears_pending_queue_robust() {
-        let _guard = drain_test_lock().lock().unwrap_or_else(|p| p.into_inner());
-        let _ = crate::tools::take_pending_tool_attachments();
-
-        let pdf = crate::attachments::Attachment { id: 0,
-            kind: crate::attachments::AttachmentKind::ApplicationPdf,
-            bytes: b"%PDF-1.7\n".to_vec(),
-        };
-        crate::tools::push_pending_tool_attachment(pdf);
-
-        let msgs = vec![ChatMessage::user("first".to_string())];
-        let _first_round = build_provider_messages_with_tool_results(&msgs);
-        let second_round = build_provider_messages_with_tool_results(&msgs);
-        let attachment_count = second_round
-            .iter()
-            .flat_map(|m| m.content.iter())
-            .filter(|c| matches!(c, ProviderContent::Attachment(_)))
-            .count();
-        assert_eq!(
-            attachment_count, 0,
-            "second build must not replay the drained attachment"
-        );
-    }
-
-    /// Normal (regression for the pasted-image bug): the text-only
-    /// `build_provider_messages` path also drains the tool-global
-    /// attachment queue so a fresh user turn (no tool history) carries
-    /// the pasted image. Before this fix, only the with-tool-results
-    /// builder drained the queue, and pasted images on the very first
-    /// Normal: pasted images on ChatMessage.attachments land in the
-    /// corresponding user message in the text-only build path. Previously
-    /// these came via the global queue; now they're prompt-local.
-    #[test]
-    fn pending_image_lands_in_text_only_build_normal() {
-        let _guard = drain_test_lock().lock().unwrap_or_else(|p| p.into_inner());
-        let _ = crate::tools::take_pending_tool_attachments();
-
-        let png = crate::attachments::Attachment { id: 0,
+    fn per_message_image_lands_in_text_only_build_normal() {
+        let mut msg = ChatMessage::user("look at this [Image #1]".to_string());
+        msg.attachments = vec![crate::attachments::Attachment {
+            id: 1,
             kind: crate::attachments::AttachmentKind::ImagePng,
             bytes: vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A],
-        };
-
-        let mut msg = ChatMessage::user("look at this [Image #1]".to_string());
-        msg.attachments = vec![png];
+        }];
         let msgs = vec![msg];
         let provider_msgs = build_provider_messages(&msgs);
         let last_user = provider_msgs
@@ -3229,10 +3145,31 @@ mod pdf_attachment_drain_tests {
             .iter()
             .filter(|c| matches!(c, ProviderContent::Attachment(_)))
             .count();
-        assert_eq!(
-            attachment_count, 1,
-            "expected exactly one attachment on the last user message in the text-only path"
-        );
+        assert_eq!(attachment_count, 1, "expected one attachment in text-only path");
+    }
+
+    /// Robust: a second call for the same messages does NOT produce a second
+    /// copy of the attachment (no shared mutable queue to drain twice).
+    #[test]
+    fn second_build_does_not_duplicate_attachment_robust() {
+        let mut user = ChatMessage::user("first".to_string());
+        user.attachments = vec![crate::attachments::Attachment {
+            id: 0,
+            kind: crate::attachments::AttachmentKind::ApplicationPdf,
+            bytes: b"%PDF-1.7\n".to_vec(),
+        }];
+        let msgs = vec![user];
+        let first = build_provider_messages_with_tool_results(&msgs);
+        let second = build_provider_messages_with_tool_results(&msgs);
+        // Both runs should see exactly one attachment — no global state to drain.
+        for round in [&first, &second] {
+            let count = round
+                .iter()
+                .flat_map(|m| m.content.iter())
+                .filter(|c| matches!(c, ProviderContent::Attachment(_)))
+                .count();
+            assert_eq!(count, 1, "each build should see exactly one attachment");
+        }
     }
 }
 

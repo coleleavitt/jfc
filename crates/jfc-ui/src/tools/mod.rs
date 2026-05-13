@@ -270,40 +270,27 @@ pub(crate) fn snapshot_mcp_registry() -> Option<crate::mcp::McpRegistry> {
 /// block instead of being squashed into a base64 text blob the
 /// model can't usefully read.
 ///
-/// Drained by `stream::build_provider_messages_with_tool_results`
-/// just before serialization.
-fn pending_tool_attachments_handle()
--> &'static std::sync::Mutex<Vec<crate::attachments::Attachment>> {
-    static H: OnceLock<std::sync::Mutex<Vec<crate::attachments::Attachment>>> = OnceLock::new();
-    H.get_or_init(|| std::sync::Mutex::new(Vec::new()))
-}
-
-/// Stash an attachment for the next outgoing tool_result message.
-/// Called by tools (currently the Read tool when handed a `.pdf`)
-/// that need to surface a binary blob via Anthropic's `document` or
-/// `image` content block.
-pub(crate) fn push_pending_tool_attachment(att: crate::attachments::Attachment) {
-    if let Ok(mut g) = pending_tool_attachments_handle().lock() {
-        tracing::debug!(
-            target: "jfc::tools::attach",
-            kind = att.kind.mime_type(),
-            bytes = att.bytes.len(),
-            queued = g.len() + 1,
-            "queued attachment for next request"
-        );
-        g.push(att);
-    }
-}
-
-/// Drain every staged attachment. Called from
-/// `stream::build_provider_messages_with_tool_results` so the next
-/// request includes the attachments and the queue resets to empty.
-pub fn take_pending_tool_attachments() -> Vec<crate::attachments::Attachment> {
-    pending_tool_attachments_handle()
-        .lock()
-        .map(|mut g| std::mem::take(&mut *g))
-        .unwrap_or_default()
-}
+// Process-global attachment queue removed.
+//
+// Previously `push_pending_tool_attachment` / `take_pending_tool_attachments`
+// shuttled binary blobs (PDFs from Read, @-mention auto-attaches) through
+// a `static OnceLock<Mutex<Vec<Attachment>>>` and `build_provider_messages_with_tool_results`
+// drained it onto the most recent user message. That had three failure
+// modes:
+//   1. Concurrent streams (multiple agents / parallel turns) could steal
+//      each other's attachments — last writer wins on the global Mutex.
+//   2. Tool-result purity: the drain appended attachments to the most
+//      recent user message, which after a Read tool is the synthetic
+//      `tool_results` user message. Anthropic requires tool_result
+//      blocks to be the ONLY content in their user message.
+//   3. Reading the code required tracing through a side-effecting
+//      drain step instead of seeing data flow through `ExecutionResult`.
+//
+// Replacement: per-message ownership. `ExecutionResult` carries an
+// `attachments: Vec<Attachment>` field; the event-loop `ToolResult`
+// handler moves it onto the owning assistant message's `.attachments`
+// field; `build_provider_messages*` already serializes per-message
+// attachments. No global state, no cross-stream leaks.
 
 /// Drop the cached graph for `cwd` (or every cached graph when `cwd` is
 /// `None`). Called after writes so the next graph query re-parses the
@@ -574,6 +561,15 @@ pub struct ExecutionResult {
     /// a colorized diff in the transcript instead of a flat
     /// "file updated successfully" string.
     pub diff: Option<crate::types::DiffView>,
+    /// Binary attachments produced by this tool (e.g. the PDF the
+    /// Read tool just loaded). The event-loop `ToolResult` handler
+    /// promotes these onto the owning assistant message's
+    /// `.attachments` field so the per-message ownership model carries
+    /// them to the provider. Replaces the previous
+    /// `push_pending_tool_attachment` global queue — per-message
+    /// ownership means cross-session/cross-stream leaks are impossible
+    /// by construction.
+    pub attachments: Vec<crate::attachments::Attachment>,
 }
 
 impl ExecutionResult {
@@ -584,6 +580,7 @@ impl ExecutionResult {
             diagnostics: Vec::new(),
             provenance: None,
             diff: None,
+            attachments: Vec::new(),
         }
     }
 
@@ -595,6 +592,7 @@ impl ExecutionResult {
             outcome: ToolOutcome::Failed,
             provenance: None,
             diff: None,
+            attachments: Vec::new(),
         }
     }
 
@@ -605,6 +603,15 @@ impl ExecutionResult {
 
     pub fn with_diff(mut self, diff: crate::types::DiffView) -> Self {
         self.diff = Some(diff);
+        self
+    }
+
+    /// Attach one or more binary attachments to this tool result.
+    /// The event-loop handler will move them onto the owning assistant
+    /// message at ToolResult time so they're serialized as
+    /// `ProviderContent::Attachment` blocks on the next request.
+    pub fn with_attachments(mut self, atts: Vec<crate::attachments::Attachment>) -> Self {
+        self.attachments = atts;
         self
     }
 

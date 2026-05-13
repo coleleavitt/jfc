@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info, trace, warn};
 
-use super::{ExecutionResult, push_pending_tool_attachment};
+use super::ExecutionResult;
 use crate::context::ReadDedupCache;
 use crate::types::ReplacementMode;
 
@@ -49,20 +49,26 @@ pub(super) async fn execute_read(
         match crate::attachments::read_pdf_file(&path) {
             Ok(att) => {
                 let bytes = att.bytes.len();
-                push_pending_tool_attachment(att);
                 tracing::info!(
                     target: "jfc::tools",
                     file_path,
                     bytes,
-                    "read: staged PDF as attachment"
+                    "read: attached PDF to ExecutionResult"
                 );
-                return ExecutionResult::success(format!(
+                let summary = format!(
                     "Loaded PDF {} ({} bytes). The full document is attached \
                      to this tool_result and will be sent to the model as a \
                      `document` content block — you can reason about its \
                      pages, text, and embedded images directly.",
                     file_path, bytes
-                ));
+                );
+                // Per-message attachment ownership: the event-loop
+                // ToolResult handler moves these onto the owning
+                // assistant message's `.attachments` so they're
+                // serialized as ProviderContent::Attachment alongside
+                // the tool_use call. Replaces the previous global-queue
+                // hand-off.
+                return ExecutionResult::success(summary).with_attachments(vec![att]);
             }
             Err(e) => {
                 tracing::warn!(target: "jfc::tools", file_path, error = %e, "read: PDF load failed");

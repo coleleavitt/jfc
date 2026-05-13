@@ -772,6 +772,37 @@ async fn execute_task_inner(
         } else {
             ExecutionResult::success(format!("{final_text}\n\n[note: {err}]"))
         }
+    } else if final_text.trim().is_empty() {
+        // No tool error, but also no text output. The subagent exited
+        // its inner loop without ever producing a final reply. This
+        // happens when:
+        //   - the provider returned stop_reason=EndTurn with zero
+        //     content blocks (transient gateway hiccup)
+        //   - every assistant turn was tool-only and the last tool
+        //     batch produced no follow-up text before EndTurn fired
+        //   - the subagent was prompted to be silent and complied
+        //     literally (rare but possible)
+        //
+        // Returning success("") makes the parent's auto-continuation
+        // proceed with a blank tool_result — the parent model then has
+        // to fabricate context, which is exactly the hallucination
+        // failure mode we want to avoid. Surface this as a structured
+        // failure instead so the parent sees "subagent produced no
+        // output" and either reissues the Task with a clearer prompt
+        // or asks the user for clarification.
+        tracing::warn!(
+            target: "jfc::tools::subagent",
+            "subagent completed with empty final_text and no error — flagging as failure"
+        );
+        ExecutionResult::failure(
+            "Subagent finished without producing any text output. \
+             This usually means the inner loop ended on a tool batch \
+             with no follow-up reply. Try reissuing the Task with a \
+             clearer prompt that requests a final summary, or ask the \
+             user to clarify what they want the subagent to report \
+             back."
+                .to_owned(),
+        )
     } else {
         ExecutionResult::success(final_text)
     }

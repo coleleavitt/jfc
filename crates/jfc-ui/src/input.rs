@@ -2379,16 +2379,12 @@ async fn handle_submit(
     // user's text. URLs (containing `://`) are skipped — those are
     // user-supplied references, not local paths.
     //
-    // Text @-mentions used to call `append_to_last_user` here, BEFORE
-    // the new user message was pushed (that happens further down at
-    // `app.messages.push(ChatMessage::user(text.clone()))`). That meant
-    // the reminder was tacked onto the PREVIOUS user message — the
-    // model saw the file content attached to the wrong turn. Now we
-    // collect the reminder bodies first and inject them after the new
-    // user message lands. Binary attachments still stage immediately
-    // (they go through the tool-global queue which is drained at
-    // provider-message build time, so ordering doesn't matter there).
+    // Text @-mentions: collect reminder bodies; inject after the new
+    // user message is pushed so they land on the correct turn.
+    // Binary @-mentions: collect locally; attach to the user message
+    // after it's pushed — per-message ownership, no global queue.
     let mut deferred_text_reminders: Vec<String> = Vec::new();
+    let mut mention_attachments: Vec<crate::attachments::Attachment> = Vec::new();
     {
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         for token in text.split_whitespace() {
@@ -2433,7 +2429,7 @@ async fn handle_submit(
             };
             if let Some(kind) = crate::attachments::detect_kind(&bytes) {
                 let att = crate::attachments::Attachment { id: 0, kind, bytes };
-                crate::tools::push_pending_tool_attachment(att);
+                mention_attachments.push(att);
                 tracing::info!(
                     target: "jfc::input::mention",
                     path = %path.display(),
@@ -2709,7 +2705,10 @@ async fn handle_submit(
 
     let assistant_idx = app.messages.len() + 1;
     let mut user_msg = ChatMessage::user(text.clone());
-    user_msg.attachments = submit_attachments;
+    // Combine pasted images ([Image #N] refs) with @-mention binary files.
+    let mut all_attachments = submit_attachments;
+    all_attachments.extend(mention_attachments);
+    user_msg.attachments = all_attachments;
     app.messages.push(user_msg);
     app.tool_ctx.total_user_turns += 1;
 
