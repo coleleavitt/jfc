@@ -3909,7 +3909,15 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
             changed = true;
         }
         if entry.status != new_status {
+            // Detect transitions TO a terminal state (Completed/Failed/
+            // Cancelled). Increment the counter so `handle_submit` can
+            // inject a system_reminder telling the parent model that
+            // agent results are available in the transcript.
+            let was_terminal = entry.status.is_terminal();
             entry.status = new_status;
+            if !was_terminal && new_status.is_terminal() {
+                app.background_tasks_completed_since_last_turn += 1;
+            }
             changed = true;
         }
         if entry.tool_use_count != agent.tool_use_count {

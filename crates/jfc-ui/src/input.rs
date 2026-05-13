@@ -2712,6 +2712,34 @@ async fn handle_submit(
     app.messages.push(user_msg);
     app.tool_ctx.total_user_turns += 1;
 
+    // Inject background-agent completion notification if any detached
+    // agents finished since the last user turn. The counter is
+    // incremented by sync_detached_background_tasks_from_daemon when
+    // agent status transitions to terminal. Drain it here so the model
+    // sees "N agents finished — their summaries are in the transcript"
+    // on this very turn (via the TaskStatus serialization we added to
+    // build_provider_messages). Mirrors oh-my-opencode's
+    // background-task-notification-template.ts pattern.
+    let bg_completed = app.background_tasks_completed_since_last_turn;
+    if bg_completed > 0 {
+        app.background_tasks_completed_since_last_turn = 0;
+        let plural = if bg_completed == 1 { "" } else { "s" };
+        crate::system_reminder::append_to_last_user(
+            &mut app.messages,
+            &format!(
+                "{bg_completed} detached background task{plural} completed since your last turn. \
+                 Their final summaries are visible in the assistant transcript as \
+                 [Background agent: ...] blocks. Review those summaries before responding — \
+                 the user expects you to incorporate or acknowledge completed work."
+            ),
+        );
+        tracing::info!(
+            target: "jfc::background",
+            count = bg_completed,
+            "injected background-agent completion reminder into user turn"
+        );
+    }
+
     // Now that the new user message is the most-recent user message,
     // attach any deferred @-mention text reminders to IT (not the
     // previous turn). See the comment on `deferred_text_reminders` at

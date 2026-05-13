@@ -2677,7 +2677,23 @@ pub fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
                 .parts
                 .iter()
                 .filter_map(|p| match p {
-                    MessagePart::Text(t) if !t.is_empty() => Some(t.as_str()),
+                    MessagePart::Text(t) if !t.is_empty() => Some(t.to_owned()),
+                    // Serialize TaskStatus parts as inline text so the
+                    // model sees completed background agent summaries.
+                    // Without this, detached agents could finish and
+                    // update the UI, but the model never knew.
+                    MessagePart::TaskStatus(ts) if ts.summary.is_some() || ts.error.is_some() => {
+                        let status_label = format!("{:?}", ts.status);
+                        let body = ts
+                            .summary
+                            .as_deref()
+                            .or(ts.error.as_deref())
+                            .unwrap_or("(no output)");
+                        Some(format!(
+                            "[Background agent: {} ({status_label})] {body}",
+                            ts.description
+                        ))
+                    }
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -2940,7 +2956,20 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
             .parts
             .iter()
             .filter_map(|p| match p {
-                MessagePart::Text(t) if !t.is_empty() => Some(t.as_str()),
+                MessagePart::Text(t) if !t.is_empty() => Some(t.to_owned()),
+                // Same TaskStatus serialization as build_provider_messages.
+                MessagePart::TaskStatus(ts) if ts.summary.is_some() || ts.error.is_some() => {
+                    let status_label = format!("{:?}", ts.status);
+                    let body = ts
+                        .summary
+                        .as_deref()
+                        .or(ts.error.as_deref())
+                        .unwrap_or("(no output)");
+                    Some(format!(
+                        "[Background agent: {} ({status_label})] {body}",
+                        ts.description
+                    ))
+                }
                 _ => None,
             })
             .collect::<Vec<_>>()

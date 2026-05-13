@@ -557,6 +557,12 @@ pub struct App {
     pub pasted_images: Vec<crate::attachments::PastedContent>,
     /// Monotonically incrementing counter for paste IDs within a session.
     pub image_counter: u32,
+    /// How many detached background agents transitioned to
+    /// Completed/Failed since the last user submit. Incremented by
+    /// `sync_detached_background_tasks_from_daemon`; drained to 0 and
+    /// surfaced as a system_reminder in `handle_submit` so the parent
+    /// model knows agent results are available in the transcript.
+    pub background_tasks_completed_since_last_turn: u32,
     /// Per-frame map of `(tool_id, screen_rect)` populated by the message
     /// renderer as each `ToolBlock` paints. The mouse handler reads this to
     /// translate a left-click into the tool whose body should expand —
@@ -792,6 +798,7 @@ impl App {
             viewing_task_expanded: std::collections::HashMap::new(),
             pasted_images: Vec::new(),
             image_counter: 0,
+            background_tasks_completed_since_last_turn: 0,
             tool_hit_regions: RefCell::new(Vec::new()),
             render_cache: RefCell::new(RenderCache::new()),
             diff_stats_cache: RefCell::new(None),
