@@ -31,6 +31,14 @@ pub struct TranscriptSearch {
 pub struct QueuedPrompt {
     pub text: String,
     pub is_meta: bool,
+    /// Image/PDF attachments captured at queue time. If the user pasted
+    /// an image and then typed a prompt while another turn was already
+    /// streaming, the image lives on `app.pending_attachments`. Capturing
+    /// it onto the queued entry here pins it to THIS prompt so it
+    /// re-stages atomically when `drain_queued_prompts` promotes the
+    /// entry, regardless of what other paste/clipboard activity has
+    /// happened in the meantime.
+    pub attachments: Vec<crate::attachments::Attachment>,
 }
 
 pub const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

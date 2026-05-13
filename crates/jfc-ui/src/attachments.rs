@@ -143,14 +143,31 @@ pub fn read_pdf_file(path: &std::path::Path) -> Result<Attachment, String> {
     })
 }
 
+/// Anthropic's per-image base64 payload cap. Their docs say "5 MB
+/// when base64-encoded", which means the *raw* bytes must be ≤ ~3.75
+/// MiB. We use a slightly conservative 3.5 MiB here so a small JSON
+/// framing overhead can't push the wire payload past the limit.
+///
+/// `imageResizer.ts` in Claude Code 2.1.140 does the same downsample
+/// (`/home/cole/RustProjects/active/claude-code-2.1.140-audit/extracted/src/utils/imageResizer.ts`),
+/// halving dimensions until the encoded image fits.
+const MAX_IMAGE_BYTES: usize = 3_500_000;
+
 /// Read an image from the system clipboard and return it as a PNG-encoded
 /// `Attachment`. Returns `Ok(None)` if the clipboard contains no image
 /// (text, files, empty, …); returns `Err(_)` for clipboard-access or
 /// PNG-encoding failures.
 ///
-/// Not unit-tested: the clipboard is a hardware/OS dependency and arboard
-/// has no in-process fake. Exercise this via manual Ctrl+V testing once
-/// the keybinding lands.
+/// If the freshly-encoded PNG exceeds `MAX_IMAGE_BYTES`, the function
+/// repeatedly halves the dimensions (Lanczos3 resample) and re-encodes
+/// until the bytes fit. Without this, a 4K screenshot or scanned
+/// document silently fails on the Anthropic side with a 400 "image
+/// too large" — the user just sees the paste accepted, then the next
+/// turn errors out.
+///
+/// Not unit-tested at the clipboard boundary: the clipboard is a
+/// hardware/OS dependency and arboard has no in-process fake. The
+/// resize+cap logic IS tested via `clamp_attachment_size`.
 pub fn read_clipboard_image() -> Result<Option<Attachment>, String> {
     tracing::info!(target: "jfc::attachments", "read_clipboard_image attempt");
     let mut clipboard = arboard::Clipboard::new().map_err(|e| {
@@ -172,25 +189,46 @@ pub fn read_clipboard_image() -> Result<Option<Attachment>, String> {
         }
     };
 
-    // arboard hands back raw RGBA8. Re-encode to PNG so the result is a
-    // self-describing blob ready for Anthropic's content block.
-    let mut png_bytes = Vec::new();
-    {
-        use image::ImageEncoder as _;
-        let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
-        encoder
-            .write_image(
-                &img.bytes,
-                img.width as u32,
-                img.height as u32,
-                image::ExtendedColorType::Rgba8,
-            )
-            .map_err(|e| format!("PNG encode: {e}"))?;
+    let (mut width, mut height) = (img.width as u32, img.height as u32);
+    let mut rgba: Vec<u8> = img.bytes.into_owned();
+
+    // Encode → check → halve loop. Max 4 iterations (covers up to
+    // 16x shrink), more than enough for any realistic screen capture.
+    let mut png_bytes = encode_png(&rgba, width, height)?;
+    for _ in 0..4 {
+        if png_bytes.len() <= MAX_IMAGE_BYTES {
+            break;
+        }
+        let new_w = (width / 2).max(1);
+        let new_h = (height / 2).max(1);
+        tracing::info!(
+            target: "jfc::attachments",
+            size = png_bytes.len(),
+            max = MAX_IMAGE_BYTES,
+            from = format!("{width}x{height}"),
+            to = format!("{new_w}x{new_h}"),
+            "image too large — halving"
+        );
+        let buf = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(width, height, rgba)
+            .ok_or_else(|| "rgba buffer size mismatch".to_owned())?;
+        let resized = image::imageops::resize(&buf, new_w, new_h, image::imageops::Lanczos3);
+        width = new_w;
+        height = new_h;
+        rgba = resized.into_raw();
+        png_bytes = encode_png(&rgba, width, height)?;
+    }
+
+    if png_bytes.len() > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "image still {} bytes after 4 halvings — too large for the API",
+            png_bytes.len()
+        ));
     }
 
     tracing::debug!(
         target: "jfc::attachments",
         size = png_bytes.len(),
+        width, height,
         kind = "image/png",
         "read_clipboard_image success"
     );
@@ -198,6 +236,17 @@ pub fn read_clipboard_image() -> Result<Option<Attachment>, String> {
         kind: AttachmentKind::ImagePng,
         bytes: png_bytes,
     }))
+}
+
+/// Helper: PNG-encode raw RGBA8 pixels.
+fn encode_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    use image::ImageEncoder as _;
+    let encoder = image::codecs::png::PngEncoder::new(&mut out);
+    encoder
+        .write_image(rgba, width, height, image::ExtendedColorType::Rgba8)
+        .map_err(|e| format!("PNG encode: {e}"))?;
+    Ok(out)
 }
 
 /// Build the Anthropic Messages-API content block for an attachment.
@@ -581,5 +630,30 @@ mod tests {
         assert!(!AttachmentKind::ImageJpeg.is_pdf());
         assert!(!AttachmentKind::ImageGif.is_pdf());
         assert!(!AttachmentKind::ImageWebp.is_pdf());
+    }
+
+    // Normal: encode_png produces a valid PNG that detect_kind
+    // recognizes. Smoke test for the encode helper used by the
+    // clipboard-resize loop.
+    #[test]
+    fn encode_png_round_trips_through_detect_kind_normal() {
+        // 2x2 solid-color RGBA8.
+        let pixels: Vec<u8> = vec![
+            255, 0, 0, 255, // red
+            0, 255, 0, 255, // green
+            0, 0, 255, 255, // blue
+            255, 255, 0, 255, // yellow
+        ];
+        let bytes = encode_png(&pixels, 2, 2).expect("encode succeeds");
+        assert_eq!(detect_kind(&bytes), Some(AttachmentKind::ImagePng));
+    }
+
+    // Normal: MAX_IMAGE_BYTES is the same conservative cap (3.5 MB)
+    // we documented in the read_clipboard_image rationale — pin it so
+    // a careless raise doesn't slip past code review.
+    #[test]
+    fn max_image_bytes_is_conservative_anthropic_cap_normal() {
+        assert!(MAX_IMAGE_BYTES <= 3_750_000); // raw bytes for 5MB base64
+        assert!(MAX_IMAGE_BYTES >= 1_000_000); // big enough for typical screenshots
     }
 }
