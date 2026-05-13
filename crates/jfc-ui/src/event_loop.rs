@@ -2190,58 +2190,104 @@ pub(crate) async fn run(
                         app.turn_started_at = None;
                     }
 
-                    // Hallucination guard: if the turn genuinely ended
-                    // (no tools queued, no continuation about to fire)
-                    // and the final assistant message claims a
-                    // side-effect happened without a backing tool call,
-                    // inject a system-reminder and re-run the turn so
-                    // the model either issues the missing call or
-                    // retracts the claim. See `hallucination_guard.rs`
-                    // for the full rationale. Disabled in tests so
-                    // unrelated flows don't auto-continue. Disabled via
-                    // env so users can turn it off if it false-positives
-                    // on their workflows.
+                    // Faithfulness guard (formerly "hallucination guard"):
+                    // if the turn genuinely ended and the final assistant
+                    // message claims a side-effect happened, cross-check
+                    // against the tools that actually ran. The check
+                    // returns a three-state verdict (Backed / Ambiguous /
+                    // Unbacked) per arXiv:2605.10448's evidence-supported
+                    // bounds framing:
+                    //
+                    //   - Backed     → do nothing (the claim is fine)
+                    //   - Ambiguous  → toast + log, but DON'T re-run
+                    //                  (false-positive risk too high to
+                    //                  cost a turn)
+                    //   - Unbacked   → inject system-reminder + re-run
+                    //
+                    // Disabled entirely via JFC_DISABLE_HALLUCINATION_GUARD.
+                    // Detection-only (no re-run, just toast/log) via
+                    // JFC_HALLUCINATION_GUARD_LOG_ONLY — useful for
+                    // tuning the pattern set against real workloads
+                    // without disrupting the user.
                     let guard_disabled = matches!(
                         std::env::var("JFC_DISABLE_HALLUCINATION_GUARD").as_deref(),
                         Ok("1") | Ok("true")
                     );
                     if turn_genuinely_done && !guard_disabled {
-                        let claim_phrase = app
+                        let verdict = app
                             .streaming_assistant_idx
                             .and_then(|idx| app.messages.get(idx))
-                            .and_then(crate::hallucination_guard::check_unbacked_claim);
-                        if let Some(phrase) = claim_phrase {
-                            tracing::warn!(
-                                target: "jfc::hallucination",
-                                matched_phrase = phrase,
-                                "assistant claimed a side-effect without a backing tool call — injecting reminder + re-running turn"
-                            );
-                            crate::toast::push_with_cap(
-                                &mut app.toasts,
-                                crate::toast::Toast::new(
-                                    crate::toast::ToastKind::Warning,
-                                    format!(
-                                        "Detected unbacked claim ({phrase:?}) — asking the model to redo with a real tool call"
+                            .map(crate::hallucination_guard::evaluate);
+                        match verdict {
+                            Some(crate::hallucination_guard::FaithfulnessVerdict::Ambiguous {
+                                phrase,
+                                category,
+                                reason,
+                            }) => {
+                                tracing::info!(
+                                    target: "jfc::hallucination",
+                                    matched_phrase = phrase,
+                                    ?category,
+                                    reason,
+                                    "assistant claim is ambiguous (related tool or negative qualifier present) — logging only"
+                                );
+                                crate::toast::push_with_cap(
+                                    &mut app.toasts,
+                                    crate::toast::Toast::new(
+                                        crate::toast::ToastKind::Info,
+                                        format!(
+                                            "Claim ambiguity ({phrase:?}): {reason}"
+                                        ),
                                     ),
-                                ),
-                            );
-                            crate::system_reminder::append_to_last_user(
-                                &mut app.messages,
-                                &format!(
-                                    "Your previous response claimed `{phrase}` but emitted no tool call — \
-                                     the file/command/action was NOT actually executed. Either issue the \
-                                     correct Write/Edit/Bash/etc. tool call THIS turn, or explicitly \
-                                     retract the claim and say what's blocking you."
-                                ),
-                            );
-                            // Re-run by triggering the agentic loop.
-                            // continue_agentic_loop pushes a fresh
-                            // assistant slot and re-streams; the
-                            // appended system_reminder above sits on
-                            // the last user message so the model sees
-                            // it as part of the turn.
-                            stream::continue_agentic_loop(&mut app, &tx).await;
-                            continue;
+                                );
+                            }
+                            Some(crate::hallucination_guard::FaithfulnessVerdict::Unbacked {
+                                phrase,
+                                category,
+                            }) => {
+                                tracing::warn!(
+                                    target: "jfc::hallucination",
+                                    matched_phrase = phrase,
+                                    ?category,
+                                    "assistant claimed a side-effect without a backing tool call"
+                                );
+                                if crate::hallucination_guard::log_only_mode() {
+                                    crate::toast::push_with_cap(
+                                        &mut app.toasts,
+                                        crate::toast::Toast::new(
+                                            crate::toast::ToastKind::Warning,
+                                            format!(
+                                                "[log-only] Unbacked claim ({phrase:?}) — would have re-run"
+                                            ),
+                                        ),
+                                    );
+                                } else {
+                                    crate::toast::push_with_cap(
+                                        &mut app.toasts,
+                                        crate::toast::Toast::new(
+                                            crate::toast::ToastKind::Warning,
+                                            format!(
+                                                "Unbacked claim ({phrase:?}) — asking the model to redo with a real tool call"
+                                            ),
+                                        ),
+                                    );
+                                    crate::system_reminder::append_to_last_user(
+                                        &mut app.messages,
+                                        &format!(
+                                            "Your previous response claimed `{phrase}` but emitted no \
+                                             matching tool call — the file/command/action was NOT \
+                                             actually executed. Either issue the correct \
+                                             Write/Edit/Bash/etc. tool call THIS turn, or explicitly \
+                                             retract the claim and say what's blocking you."
+                                        ),
+                                    );
+                                    stream::continue_agentic_loop(&mut app, &tx).await;
+                                    continue;
+                                }
+                            }
+                            _ => {
+                                // Backed or non-assistant message — no action.
+                            }
                         }
                     }
 
