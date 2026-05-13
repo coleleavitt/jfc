@@ -274,6 +274,7 @@ fn clear_for_test() {
 mod tests {
     use super::*;
 
+    #[serial_test::serial]
     #[test]
     fn defaults_are_stable_normal() {
         clear_for_test();
@@ -282,6 +283,7 @@ mod tests {
         assert!(!is_enabled(FeatureGate::Finch));
     }
 
+    #[serial_test::serial]
     #[test]
     fn set_overrides_default_normal() {
         clear_for_test();
@@ -304,12 +306,14 @@ mod tests {
         assert!(FeatureGate::from_codename("").is_none());
     }
 
+    #[serial_test::serial]
     #[test]
     fn system_prompt_section_empty_when_no_deviations_robust() {
         clear_for_test();
         assert!(system_prompt_section().is_none());
     }
 
+    #[serial_test::serial]
     #[test]
     fn system_prompt_section_lists_deviations_normal() {
         clear_for_test();
@@ -322,6 +326,7 @@ mod tests {
         assert!(section.contains("ON"));
     }
 
+    #[serial_test::serial]
     #[test]
     fn system_prompt_section_skips_default_overrides_robust() {
         clear_for_test();

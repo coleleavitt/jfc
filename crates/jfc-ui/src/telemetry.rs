@@ -55,6 +55,7 @@ pub fn status_label() -> &'static str {
 mod tests {
     use super::*;
 
+    #[serial_test::serial]
     #[test]
     fn compute_state_default_is_enabled_normal() {
         // SAFETY: single-threaded test scope.
@@ -66,6 +67,7 @@ mod tests {
         assert_eq!(status_label().is_empty(), false);
     }
 
+    #[serial_test::serial]
     #[test]
     fn env_value_off_disables_normal() {
         // Direct compute (bypassing the cache).
@@ -78,6 +80,7 @@ mod tests {
         }
     }
 
+    #[serial_test::serial]
     #[test]
     fn env_value_zero_disables_normal() {
         unsafe {
@@ -89,6 +92,7 @@ mod tests {
         }
     }
 
+    #[serial_test::serial]
     #[test]
     fn env_value_unknown_keeps_default_robust() {
         unsafe {

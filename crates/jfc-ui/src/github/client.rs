@@ -274,24 +274,28 @@ mod tests {
 
     // ---- rate-limit detection --------------------------------------------
 
+    #[serial_test::serial]
     #[test]
     fn is_rate_limit_stderr_detects_canonical_message_normal() {
         let s = "gh: API rate limit exceeded for 1.2.3.4. (See https://...)";
         assert!(is_rate_limit_stderr(s));
     }
 
+    #[serial_test::serial]
     #[test]
     fn is_rate_limit_stderr_detects_secondary_normal() {
         let s = "gh: You have exceeded a secondary rate limit. Please wait...";
         assert!(is_rate_limit_stderr(s));
     }
 
+    #[serial_test::serial]
     #[test]
     fn is_rate_limit_stderr_detects_403_with_rate_limit_normal() {
         let s = "gh: HTTP 403: rate limit exceeded for user";
         assert!(is_rate_limit_stderr(s));
     }
 
+    #[serial_test::serial]
     #[test]
     fn is_rate_limit_stderr_ignores_other_errors_robust() {
         assert!(!is_rate_limit_stderr("gh: Not Found (HTTP 404)"));
@@ -299,6 +303,7 @@ mod tests {
         assert!(!is_rate_limit_stderr("gh: HTTP 500: server error"));
     }
 
+    #[serial_test::serial]
     #[test]
     fn rate_limit_reminder_includes_system_reminder_tags_normal() {
         let r = rate_limit_reminder_from_stderr("API rate limit exceeded for ...");
@@ -307,6 +312,7 @@ mod tests {
         assert!(r.contains("gh api rate_limit"));
     }
 
+    #[serial_test::serial]
     #[test]
     fn format_rate_limit_reminder_extracts_quota_normal() {
         let v = serde_json::json!({
@@ -317,6 +323,7 @@ mod tests {
         assert!(r.contains("1700000000"));
     }
 
+    #[serial_test::serial]
     #[test]
     fn format_rate_limit_reminder_handles_missing_fields_robust() {
         let v = serde_json::json!({});
@@ -329,6 +336,7 @@ mod tests {
     // ---- run() error classification via stub binary ----------------------
 
     /// Spawning a binary that doesn't exist surfaces NotInstalled.
+    #[serial_test::serial]
     #[tokio::test]
     async fn run_missing_binary_returns_not_installed_robust() {
         let client = GhClient::with_bin("/this/path/does/not/exist/gh");
@@ -358,6 +366,7 @@ mod tests {
     /// Pipes stderr through the rate-limit classifier when the binary exits
     /// nonzero with a rate-limit message.
     #[cfg(unix)]
+    #[serial_test::serial]
     #[tokio::test]
     async fn run_classifies_rate_limit_robust() {
         let (_dir, path) =
@@ -375,6 +384,7 @@ mod tests {
 
     /// Auth failure path: stderr mentions `gh auth login` -> NotAuthenticated.
     #[cfg(unix)]
+    #[serial_test::serial]
     #[tokio::test]
     async fn run_classifies_not_authenticated_robust() {
         let (_dir, path) =
@@ -389,6 +399,7 @@ mod tests {
 
     /// Successful invocation: stub script that prints valid JSON to stdout.
     #[cfg(unix)]
+    #[serial_test::serial]
     #[tokio::test]
     async fn run_parses_json_normal() {
         let (_dir, path) = write_shim("#!/bin/sh\necho '{\"login\":\"octocat\",\"id\":1}'\n");

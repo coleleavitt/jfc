@@ -1086,6 +1086,7 @@ mod level_tests {
         assert_eq!(compact_level(W + 999, W), CompactLevel::Blocked);
     }
 
+    #[serial_test::serial]
     #[test]
     fn pct_override_caps_threshold_below_default_normal() {
         let _g = lock();
@@ -1107,6 +1108,7 @@ mod level_tests {
         clear_env();
     }
 
+    #[serial_test::serial]
     #[test]
     fn pct_override_clamped_to_default_when_higher_robust() {
         let _g = lock();
@@ -1119,6 +1121,7 @@ mod level_tests {
         clear_env();
     }
 
+    #[serial_test::serial]
     #[test]
     fn disable_flag_skips_compact_level_robust() {
         let _g = lock();
@@ -1463,6 +1466,7 @@ mod level_tests {
 
     // Robust: when auto-compact is disabled, should_compact only fires at
     // the hard Blocked level (api-enforced ceiling).
+    #[serial_test::serial]
     #[test]
     fn should_compact_disabled_only_blocks_robust() {
         let _g = lock();
@@ -1477,6 +1481,7 @@ mod level_tests {
     }
 
     // Normal: blocked override env var lowers the blocked threshold.
+    #[serial_test::serial]
     #[test]
     fn blocked_override_lowers_threshold_normal() {
         let _g = lock();
@@ -1490,6 +1495,7 @@ mod level_tests {
     }
 
     // Robust: `auto_compact_disabled()` reflects either env var.
+    #[serial_test::serial]
     #[test]
     fn auto_compact_disabled_responds_to_env_robust() {
         let _g = lock();
@@ -1509,6 +1515,7 @@ mod level_tests {
 
     // Robust: zero or invalid pct_override values are ignored — the default
     // threshold applies.
+    #[serial_test::serial]
     #[test]
     fn pct_override_ignores_invalid_values_robust() {
         let _g = lock();

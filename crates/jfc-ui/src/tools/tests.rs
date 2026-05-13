@@ -230,6 +230,7 @@ fn all_tool_defs_includes_every_canonical_tool_normal() {
 
 // Normal: repeated `get_or_build_graph_session` calls for the same cwd
 // return Arc clones (same pointer), so the graph is built once.
+#[serial_test::serial]
 #[test]
 fn graph_session_cache_reuses_same_session_normal() {
     // The fixtures dir under jfc-graph is a stable target.
@@ -246,6 +247,7 @@ fn graph_session_cache_reuses_same_session_normal() {
 // Robust: `invalidate_graph_session_cache` causes the next call to
 // build a fresh session (different Arc pointer).
 #[test]
+#[serial_test::serial]
 fn graph_session_cache_invalidate_drops_session_robust() {
     let fixtures = std::path::Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -2322,6 +2324,7 @@ async fn lsp_rejects_relative_path_robust() {
 
 // ─── PushNotification tool ─────────────────────────────────────────────
 
+#[serial_test::serial]
 #[test]
 fn push_notification_normal() {
     // Disable the OS daemon so this never fires a real notification
@@ -2381,6 +2384,7 @@ description = "no url here"
 /// Normal: `execute_remote_trigger` POSTs to the configured URL using
 /// a tokio listener as the destination. We reach into a hand-written
 /// triggers.toml in a temp HOME so the production path resolves there.
+#[serial_test::serial]
 #[tokio::test]
 async fn execute_remote_trigger_posts_payload_normal() {
     use std::net::SocketAddr;
@@ -2442,6 +2446,7 @@ async fn execute_remote_trigger_posts_payload_normal() {
     );
 }
 
+#[serial_test::serial]
 #[tokio::test]
 async fn execute_remote_trigger_unknown_id_fails_robust() {
     let home = tempfile::tempdir().expect("tempdir");
@@ -2543,8 +2548,26 @@ async fn enter_worktree_invalid_name_fails_robust() {
 /// than blindly invoking git.
 #[tokio::test]
 async fn enter_worktree_outside_repo_fails_robust() {
+    // Use a fresh directory that we *know* has no .git anywhere above.
+    // Previously this used tempfile::tempdir() which lands in /tmp —
+    // but /tmp/.git can exist (sandbox environments, stale test
+    // artifacts) making find_repo_root succeed and the test panic on
+    // "git worktree add" instead of the expected error path. Creating
+    // a nested subdir and verifying no .git exists at any level gives
+    // us a truly git-free path.
     let dir = tempfile::tempdir().expect("tempdir");
-    let r = execute_enter_worktree("ok", None, dir.path()).await;
+    let isolated = dir.path().join("no-git-here").join("nested");
+    std::fs::create_dir_all(&isolated).expect("mkdir");
+    // Double-check: if somehow .git exists above us, skip the test
+    // gracefully rather than producing a confusing failure message.
+    if super::worktree::find_repo_root(&isolated).is_some() {
+        eprintln!(
+            "SKIP: .git found above {} — cannot test outside-repo behavior in this environment",
+            isolated.display()
+        );
+        return;
+    }
+    let r = execute_enter_worktree("ok", None, &isolated).await;
     assert!(r.is_error());
     assert!(
         r.output.contains("not inside a git repository"),

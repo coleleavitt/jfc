@@ -77,8 +77,17 @@ pub fn clear() {
 mod tests {
     use super::*;
 
+    /// Tests share the process-global CACHE. Serialize them so a
+    /// parallel test's `WebFetch` tool call can't `put()` between
+    /// `clear()` and the assertion.
+    fn test_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
     #[test]
     fn put_then_get_returns_body_normal() {
+        let _guard = test_lock().lock().unwrap_or_else(|p| p.into_inner());
         clear();
         put("https://a.example/", "hello".to_string());
         assert_eq!(get("https://a.example/"), Some("hello".to_string()));
@@ -86,12 +95,14 @@ mod tests {
 
     #[test]
     fn miss_returns_none_normal() {
+        let _guard = test_lock().lock().unwrap_or_else(|p| p.into_inner());
         clear();
         assert!(get("https://unknown.example/").is_none());
     }
 
     #[test]
     fn put_overwrites_existing_normal() {
+        let _guard = test_lock().lock().unwrap_or_else(|p| p.into_inner());
         clear();
         put("https://b.example/", "first".to_string());
         put("https://b.example/", "second".to_string());
@@ -100,6 +111,7 @@ mod tests {
 
     #[test]
     fn cap_evicts_oldest_robust() {
+        let _guard = test_lock().lock().unwrap_or_else(|p| p.into_inner());
         clear();
         for i in 0..MAX_ENTRIES {
             put(&format!("https://e{i}.example/"), format!("v{i}"));
