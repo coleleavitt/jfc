@@ -228,6 +228,9 @@ impl EconomyAgentInvoker {
                 description: description.to_owned(),
                 model_used: None,
                 max_input_tokens: None,
+                // Economy solver/validator agents run in-process via the
+                // same Task tool path as ordinary subagents.
+                is_detached: false,
             }) {
                 tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskStarted dropped: channel full");
             }

@@ -3,14 +3,51 @@
 //! Manages the team config file at `~/.claude/teams/{name}/config.json` and
 //! the associated task directory at `~/.claude/tasks/{name}/`.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::fs;
+use tokio::sync::Mutex as AsyncMutex;
 use tracing::debug;
 
 use super::mailbox;
 use super::types::*;
+
+/// Per-team async mutex registry. Member RMW helpers (`add_member`,
+/// `remove_member_*`, `set_member_active`, `set_member_mode`) call
+/// `with_team_lock` to serialize concurrent writes against the same
+/// `config.json` — without this, two spawns racing through `add_member`
+/// would both read the pre-spawn member list, both push their own
+/// member, and the later write would overwrite the earlier one.
+///
+/// The outer `StdMutex` only protects the registry map insertion; the
+/// inner `AsyncMutex` is what callers actually await on.
+fn team_locks() -> &'static StdMutex<HashMap<String, Arc<AsyncMutex<()>>>> {
+    static REGISTRY: OnceLock<StdMutex<HashMap<String, Arc<AsyncMutex<()>>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| StdMutex::new(HashMap::new()))
+}
+
+fn team_lock_for(team_name: &str) -> Arc<AsyncMutex<()>> {
+    let mut map = team_locks().lock().expect("team_locks poisoned");
+    Arc::clone(
+        map.entry(team_name.to_owned())
+            .or_insert_with(|| Arc::new(AsyncMutex::new(()))),
+    )
+}
+
+/// Run `f` while holding the per-team async mutex. Use for any helper
+/// that does read-modify-write of `config.json`.
+async fn with_team_lock<F, Fut, T>(team_name: &str, f: F) -> T
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = T>,
+{
+    let lock = team_lock_for(team_name);
+    let _guard = lock.lock().await;
+    f().await
+}
 
 // ─── Path helpers ────────────────────────────────────────────────────────────
 
@@ -154,47 +191,62 @@ pub async fn delete_team(team_name: &str) -> anyhow::Result<()> {
 // ─── Member Operations ───────────────────────────────────────────────────────
 
 /// Add a member to the team file.
+///
+/// Serializes against `remove_member_*` / `set_member_*` for the same
+/// team via `with_team_lock`. Without the lock, two `add_member` calls
+/// racing during a multi-spawn turn would both observe the pre-spawn
+/// roster, both push their own member, and the later write would clobber
+/// the earlier one — only the last-written teammate would survive in
+/// `config.json`.
 pub async fn add_member(team_name: &str, member: TeamMember) -> anyhow::Result<()> {
-    let mut team_file = read_team_file(team_name)
-        .await
-        .ok_or_else(|| anyhow::anyhow!("Team '{team_name}' not found"))?;
-
-    team_file.members.push(member);
-    write_team_file(team_name, &team_file).await
+    with_team_lock(team_name, || async move {
+        let mut team_file = read_team_file(team_name)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Team '{team_name}' not found"))?;
+        team_file.members.push(member);
+        write_team_file(team_name, &team_file).await
+    })
+    .await
 }
 
 /// Remove a member from the team file by agent ID.
 pub async fn remove_member_by_id(team_name: &str, agent_id: &str) -> anyhow::Result<bool> {
-    let mut team_file = read_team_file(team_name)
-        .await
-        .ok_or_else(|| anyhow::anyhow!("Team '{team_name}' not found"))?;
+    with_team_lock(team_name, || async move {
+        let mut team_file = read_team_file(team_name)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Team '{team_name}' not found"))?;
 
-    let original_len = team_file.members.len();
-    team_file.members.retain(|m| m.agent_id != agent_id);
+        let original_len = team_file.members.len();
+        team_file.members.retain(|m| m.agent_id != agent_id);
 
-    if team_file.members.len() == original_len {
-        return Ok(false);
-    }
+        if team_file.members.len() == original_len {
+            return Ok(false);
+        }
 
-    write_team_file(team_name, &team_file).await?;
-    Ok(true)
+        write_team_file(team_name, &team_file).await?;
+        Ok(true)
+    })
+    .await
 }
 
 /// Remove a member from the team file by name.
 pub async fn remove_member_by_name(team_name: &str, name: &str) -> anyhow::Result<bool> {
-    let mut team_file = read_team_file(team_name)
-        .await
-        .ok_or_else(|| anyhow::anyhow!("Team '{team_name}' not found"))?;
+    with_team_lock(team_name, || async move {
+        let mut team_file = read_team_file(team_name)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Team '{team_name}' not found"))?;
 
-    let original_len = team_file.members.len();
-    team_file.members.retain(|m| m.name != name);
+        let original_len = team_file.members.len();
+        team_file.members.retain(|m| m.name != name);
 
-    if team_file.members.len() == original_len {
-        return Ok(false);
-    }
+        if team_file.members.len() == original_len {
+            return Ok(false);
+        }
 
-    write_team_file(team_name, &team_file).await?;
-    Ok(true)
+        write_team_file(team_name, &team_file).await?;
+        Ok(true)
+    })
+    .await
 }
 
 /// Update a member's active status.
@@ -203,30 +255,36 @@ pub async fn set_member_active(
     member_name: &str,
     is_active: bool,
 ) -> anyhow::Result<()> {
-    let mut team_file = read_team_file(team_name)
-        .await
-        .ok_or_else(|| anyhow::anyhow!("Team '{team_name}' not found"))?;
+    with_team_lock(team_name, || async move {
+        let mut team_file = read_team_file(team_name)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Team '{team_name}' not found"))?;
 
-    if let Some(member) = team_file.members.iter_mut().find(|m| m.name == member_name) {
-        member.is_active = Some(is_active);
-        write_team_file(team_name, &team_file).await?;
-    }
+        if let Some(member) = team_file.members.iter_mut().find(|m| m.name == member_name) {
+            member.is_active = Some(is_active);
+            write_team_file(team_name, &team_file).await?;
+        }
 
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 /// Update a member's permission mode.
 pub async fn set_member_mode(team_name: &str, member_name: &str, mode: &str) -> anyhow::Result<()> {
-    let mut team_file = read_team_file(team_name)
-        .await
-        .ok_or_else(|| anyhow::anyhow!("Team '{team_name}' not found"))?;
+    with_team_lock(team_name, || async move {
+        let mut team_file = read_team_file(team_name)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Team '{team_name}' not found"))?;
 
-    if let Some(member) = team_file.members.iter_mut().find(|m| m.name == member_name) {
-        member.mode = Some(mode.to_owned());
-        write_team_file(team_name, &team_file).await?;
-    }
+        if let Some(member) = team_file.members.iter_mut().find(|m| m.name == member_name) {
+            member.mode = Some(mode.to_owned());
+            write_team_file(team_name, &team_file).await?;
+        }
 
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 /// Get the leader's name from the team file.

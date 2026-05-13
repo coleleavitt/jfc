@@ -38,6 +38,7 @@ use memory::{execute_memory_create, execute_memory_delete};
 use notebook::{execute_notebook_edit, execute_notebook_read};
 use notifications::{execute_push_notification, execute_remote_trigger};
 use search::{execute_glob, execute_grep};
+pub(crate) use swarm::{CURRENT_AGENT_NAME, current_agent_name};
 use swarm::{
     execute_send_message, execute_team_create, execute_team_delete, execute_team_member_mode,
 };
@@ -846,7 +847,17 @@ pub async fn execute_tool(
         }
     }
 
-    let task_store = match (active_team_name, &kind) {
+    // For task tools in team mode, prefer the caller-supplied store if
+    // one was passed (the UI keeps `app.task_store` pointing at the
+    // team's `tasks.json` once team mode is active, and the event-loop
+    // migration runs at TeammateSpawned). Only fall back to
+    // `TaskStore::open_team` when the caller didn't thread a store —
+    // e.g. the swarm runner's tool path. Without this guard, every
+    // concurrent task tool would `open_team` its own fresh
+    // `Arc<TaskStore>`, each with its own private `Mutex<TaskStoreInner>`,
+    // and last-write-wins on `tasks.json` would silently drop sibling
+    // task creates — the "unknown task id t35..t46" symptom.
+    let task_store = match (active_team_name, &kind, task_store.clone()) {
         (
             Some(team_name),
             ToolKind::TaskCreate
@@ -854,7 +865,9 @@ pub async fn execute_tool(
             | ToolKind::TaskList
             | ToolKind::TaskDone
             | ToolKind::TaskGet,
+            None,
         ) => Some(TaskStore::open_team(team_name)),
+        (_, _, Some(store)) => Some(store),
         _ => task_store,
     };
 

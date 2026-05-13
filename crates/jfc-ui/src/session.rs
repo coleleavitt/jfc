@@ -452,9 +452,10 @@ fn extract_first_prompt(messages: &[ChatMessage]) -> Option<String> {
             m.parts.iter().find_map(|p| match p {
                 MessagePart::Text(t) if !t.trim().is_empty() => {
                     let trimmed = t.trim();
-                    // Truncate long prompts for display
+                    // Truncate long prompts for display (floor to char boundary)
                     if trimmed.len() > 100 {
-                        Some(format!("{}…", &trimmed[..100]))
+                        let boundary = trimmed.floor_char_boundary(100);
+                        Some(format!("{}…", &trimmed[..boundary]))
                     } else {
                         Some(trimmed.to_string())
                     }

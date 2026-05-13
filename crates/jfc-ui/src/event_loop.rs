@@ -1759,8 +1759,13 @@ pub(crate) async fn run(
                     // Tool input JSON streaming — accumulate bytes for the spinner's
                     // token estimate and reset the stall timer. Matches v126's
                     // accumulation of input_json_delta into responseLengthRef.
+                    // Also tick `last_stream_event_at` via `record_stream_activity`
+                    // so the watchdog doesn't false-trip during a long Task prompt
+                    // stream (the JSON for a 4-KB prompt arrives over many seconds
+                    // with no other StreamChunk events between).
                     app.streaming_response_bytes += byte_len;
                     app.streaming_last_token_at = Some(std::time::Instant::now());
+                    app.record_stream_activity();
                 }
                 AppEvent::StreamTool(tool) => {
                     app.record_stream_activity();
@@ -2616,8 +2621,39 @@ pub(crate) async fn run(
                         target: "jfc::stream",
                         message_count = app.messages.len(),
                         model = %app.model,
+                        pending_approvals = app.approval_queue.len() + usize::from(app.pending_approval.is_some()),
+                        pending_tool_calls = app.pending_tool_calls.len(),
                         "AppEvent::AllToolsComplete"
                     );
+                    // AllToolsComplete is *batch-local*: it fires when
+                    // the current `dispatch_tools_batched` call finishes
+                    // its tools. The approval path dispatches one tool at
+                    // a time, so this event arrives once per approval —
+                    // not once per turn. Treat the event as authoritative
+                    // for "the local batch ended" only; defer turn-level
+                    // side effects (compaction, queued-prompt drain,
+                    // agentic continuation) until ALL of the following
+                    // are true:
+                    //   - no tool waiting on user approval
+                    //   - no other tools queued for approval
+                    //   - no pending in-flight tool_calls
+                    // Otherwise we'd kick off compaction mid-turn (while
+                    // half the model's tool batch is still queued) and
+                    // re-stream provider requests against an incomplete
+                    // transcript.
+                    let turn_truly_complete = app.pending_approval.is_none()
+                        && app.approval_queue.is_empty()
+                        && app.pending_tool_calls.is_empty();
+                    if !turn_truly_complete {
+                        tracing::debug!(
+                            target: "jfc::stream",
+                            "AllToolsComplete: batch finished but turn still has pending tools — deferring side effects"
+                        );
+                        // No bell either: bell is a "turn done" cue, not a
+                        // "one tool finished" cue. Firing per-approval
+                        // would beep N times for an N-tool turn.
+                        continue;
+                    }
                     // Terminal bell when a tool batch completes — matches
                     // v126's `iterm2_with_bell` / `terminal_bell` behavior
                     // (cli.js:46704). Many users have iTerm2 / WezTerm /
@@ -2924,7 +2960,8 @@ pub(crate) async fn run(
                         new_message_count = messages.len(),
                         "applying compaction result to app state"
                     );
-                    if app.is_streaming {
+                    let was_streaming = app.is_streaming;
+                    if was_streaming {
                         // Defensive: should be unreachable with the synchronous
                         // compacting_started_at guard, but if a stream somehow
                         // started during compaction, don't clobber live state.
@@ -2954,6 +2991,42 @@ pub(crate) async fn run(
                             format!("Compacted — saved ~{saved_k}k tokens"),
                         ),
                     );
+                    // Resume any deferred agentic continuation. When
+                    // compaction was triggered from `AllToolsComplete`,
+                    // that handler's continuation check skipped because
+                    // `compacting_started_at.is_some()`. Without this
+                    // resume the user's tool result never feeds back into
+                    // the model — the turn silently dies right after the
+                    // "Compacted" toast and queued prompts back up while
+                    // the spinner hangs. Mirror AllToolsComplete's gate:
+                    // continue only if the transcript ends on
+                    // tool_results (should_continue_loop=true) and
+                    // there's no other reason to pause.
+                    if !was_streaming
+                        && app.pending_approval.is_none()
+                        && app.approval_queue.is_empty()
+                        && app.pending_tool_calls.is_empty()
+                        && !app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+                        && !app.cancel_token.is_cancelled()
+                        && stream::should_continue_loop(&app.messages)
+                    {
+                        tracing::info!(
+                            target: "jfc::stream",
+                            "agentic loop resuming after CompactionDone — tool results pending"
+                        );
+                        stream::continue_agentic_loop(&mut app, &tx).await;
+                    } else if !was_streaming
+                        && app.pending_approval.is_none()
+                        && app.approval_queue.is_empty()
+                        && app.pending_tool_calls.is_empty()
+                    {
+                        // Compaction landed at end of turn (no pending
+                        // tool results). Drain queued prompts so they
+                        // start now that the context is clean.
+                        app.turn_started_at = None;
+                        drain_queued_prompts(&mut app, &tx).await;
+                        maybe_continue_task_factory(&mut app, &tx).await;
+                    }
                 }
                 AppEvent::CompactionFailed(reason, calibrated_tokens, transient) => {
                     tracing::warn!(
@@ -3147,10 +3220,11 @@ pub(crate) async fn run(
                     description,
                     model_used,
                     max_input_tokens,
+                    is_detached,
                 } => {
                     tracing::info!(
                         target: "jfc::task",
-                        %task_id, %description, ?model_used,
+                        %task_id, %description, ?model_used, is_detached,
                         "TaskStarted"
                     );
                     use types::{TaskLifecycle, TaskStatusPart};
@@ -3177,12 +3251,28 @@ pub(crate) async fn run(
                             budget_killed: false,
                         },
                     );
-                    crate::daemon::record_background_agent_started(
-                        task_id.as_str(),
-                        &description,
-                        model_used.or_else(|| Some(app.model.as_str().to_owned())),
-                        None,
-                    );
+                    // Only register detached workers into the daemon
+                    // roster. For detached agents the worker process
+                    // already wrote pid + launch_path via
+                    // `record_background_agent_started_at`; we still call
+                    // the registry here so the UI-side launch metadata
+                    // (description / model) refreshes, but the PID-write
+                    // contract in `record_background_agent_started_at`
+                    // prevents the UI's own PID from clobbering the
+                    // worker's. Foreground teammates / in-process
+                    // subagents are tracked exclusively via
+                    // `app.background_tasks` — registering them in the
+                    // daemon would make the reconciler mark them stale
+                    // when the UI exits (the user-visible "Done" /
+                    // "Failed" labels in the screenshots).
+                    if is_detached {
+                        crate::daemon::record_background_agent_started(
+                            task_id.as_str(),
+                            &description,
+                            model_used.or_else(|| Some(app.model.as_str().to_owned())),
+                            None,
+                        );
+                    }
                     let part = MessagePart::TaskStatus(TaskStatusPart {
                         task_id,
                         description,

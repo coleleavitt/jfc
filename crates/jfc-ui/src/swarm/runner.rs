@@ -922,15 +922,26 @@ async fn run_single_turn(
                 }
             }
 
-            let result = tools::execute_tool(
-                kind.clone(),
-                input.clone(),
-                cwd.clone(),
-                None,
-                config.task_store.clone(),
-                Some(identity.team_name.as_str()),
-            )
-            .await;
+            // Set the per-task identity so tools that look up the
+            // calling agent (currently only `SendMessage` — the mailbox
+            // needs `from = <teammate-name>` instead of the leader's
+            // hardcoded "team-lead") read the right name. The future is
+            // scoped: outside this `scope` the task-local resolves to
+            // `None`, preserving leader behavior on the leader's own
+            // tool path.
+            let result = tools::CURRENT_AGENT_NAME
+                .scope(
+                    identity.agent_name.clone(),
+                    tools::execute_tool(
+                        kind.clone(),
+                        input.clone(),
+                        cwd.clone(),
+                        None,
+                        config.task_store.clone(),
+                        Some(identity.team_name.as_str()),
+                    ),
+                )
+                .await;
 
             tool_results.push(ProviderContent::ToolResult {
                 tool_use_id: id.clone(),
