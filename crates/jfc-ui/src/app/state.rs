@@ -639,6 +639,11 @@ pub struct App {
     /// `Some(None)` = resolved, not in a git repo.
     /// `Some(Some(path))` = resolved git root directory.
     pub git_root: Option<Option<std::path::PathBuf>>,
+    /// Estimated token count of the system prompt from the last stream
+    /// request. Used by the compaction handler to add overhead to the
+    /// post-compact `approx_tokens` estimate (system prompt + tool defs
+    /// are invisible to the message-only local estimate).
+    pub last_system_prompt_len: Option<usize>,
 }
 
 impl App {
@@ -829,6 +834,7 @@ impl App {
             last_prefetch_at: std::time::Instant::now() - std::time::Duration::from_secs(10),
             prefetch_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             git_root: None,
+            last_system_prompt_len: None,
         };
         // Open the task store with the real session id so tasks persist to disk.
         if let Some(ref sid) = app.current_session_id {

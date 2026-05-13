@@ -2968,10 +2968,17 @@ pub(crate) async fn run(
                         // sending CompactionDone into a stale state.
                         let cancel_compact = app.cancel_token.clone();
                         tokio::spawn(async move {
-                            let options = crate::provider::StreamOptions::new(model.clone());
+                            // Use compaction_model from config if set; otherwise
+                            // fall back to the session's current model.
+                            let compact_model_id = crate::config::load()
+                                .default
+                                .compaction_model
+                                .map(|m| crate::provider::ModelId::new(m))
+                                .unwrap_or_else(|| model.clone());
+                            let options = crate::provider::StreamOptions::new(compact_model_id.clone());
                             tracing::debug!(
                                 target: "jfc::compact",
-                                model = %model,
+                                model = %compact_model_id,
                                 window,
                                 "spawned post-response compaction task"
                             );
@@ -3258,6 +3265,13 @@ pub(crate) async fn run(
                         // ≤ pre-compact; clamping to min protects against
                         // showing the user a count larger than reality.
                         app.tool_ctx.approx_tokens = preserved.min(post_tokens);
+                        // Add a fixed overhead estimate for system prompt, tool defs,
+                        // memories, etc. that the local message estimate doesn't include.
+                        // Without this, the gauge shows "safe" immediately post-compact
+                        // while the next request actually sends system+messages which can
+                        // be 50-100k+ of overhead.
+                        let overhead = app.last_system_prompt_len.unwrap_or(30_000);
+                        app.tool_ctx.approx_tokens = app.tool_ctx.approx_tokens.saturating_add(overhead);
                         app.last_usage_input = 0;
                         // Reset the per-turn baseline so the next
                         // `StreamUsage` cumulative delta builds from 0,
@@ -3391,6 +3405,9 @@ pub(crate) async fn run(
                         "AppEvent::Submit (re-queued after compaction)"
                     );
                     input::handle_submit_text(&mut app, text, &tx).await?;
+                }
+                AppEvent::SystemPromptLen(len) => {
+                    app.last_system_prompt_len = Some(len);
                 }
                 AppEvent::Toast { kind, text } => {
                     // Push onto the auto-expiring strip with the kind's

@@ -56,6 +56,10 @@ pub enum AppEvent {
     /// (provider doesn't support compaction, exhausted attempts) keep the
     /// suppression flag so we don't spam compact requests every tool batch.
     CompactionFailed(String, Option<usize>, bool),
+    /// System prompt token estimate from the most recent stream request.
+    /// Used by the CompactionDone handler to add overhead to the post-
+    /// compact approx_tokens gauge.
+    SystemPromptLen(usize),
     /// Submit a user prompt as if the user typed it and pressed Enter. Used
     /// internally by the pre-submit compaction gate to re-fire the user's
     /// original prompt once compaction has shrunk the context.

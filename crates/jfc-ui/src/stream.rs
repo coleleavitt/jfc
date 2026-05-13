@@ -335,6 +335,28 @@ pub(crate) async fn auto_compact_subagent_history(
         return false;
     }
 
+    // Pre-truncate old tool_result content to 500 chars before building
+    // the compaction transcript. This bounds the compact request's input
+    // so it doesn't itself exceed the model's context window. The most
+    // recent 2 messages are preserved at full fidelity.
+    const PRECOMPACT_MAX_CHARS: usize = 500;
+    let preserve_start = messages.len().saturating_sub(2);
+    for msg in messages.iter_mut().take(preserve_start) {
+        for content in &mut msg.content {
+            if let ProviderContent::ToolResult { content: c, .. } = content {
+                if c.len() > PRECOMPACT_MAX_CHARS {
+                    let boundary = c.floor_char_boundary(PRECOMPACT_MAX_CHARS);
+                    let total = c.len();
+                    *c = format!(
+                        "{}… [pre-compact truncated, {} chars total]",
+                        &c[..boundary],
+                        total
+                    );
+                }
+            }
+        }
+    }
+
     let to_summarize_end = messages.len().saturating_sub(2);
     let mut transcript = String::new();
     for msg in messages.iter().take(to_summarize_end).skip(1) {
@@ -1210,6 +1232,10 @@ Only use emojis if the user explicitly requests it.\n\
 Your responses should be short and concise.\n\
 When referencing specific functions or pieces of code include the pattern file_path:line_number to allow the user to easily navigate to the source.\n\
 Do not use a colon before tool calls.";
+    // Measure component sizes for budget breakdown before they're consumed by format!.
+    let skills_chars = skills_listing.len();
+    let dispatch_chars = dispatch_section.len();
+    let diagnostics_chars = diagnostics_block.len();
     let mut system_prompt = format!(
         "You are jfc, a coding assistant running as a CLI in the user's terminal. \
          You have direct access to the user's filesystem and shell via tools \
@@ -1256,42 +1282,46 @@ Do not use a colon before tool calls.";
         // inject them into the system prompt. Re-loaded on every stream
         // call so newly-saved memories take effect on the next turn.
         let memories = crate::memory::load_all_memories(&cwd_path);
-        if let Some(memories_section) = crate::memory::render_memories_section(&memories) {
-            system_prompt.push_str(&memories_section);
-        }
 
         // Two-phase memory recall (v132 `bt1` / `xt1` / tengu_memory_survey).
-        // After the bulk-injected memory listing, we ask the model which
-        // memories actually apply to *this* user message and synthesize the
-        // hits into a short `<system-reminder>` block. The bulk listing stays
-        // — it's the cheap-but-coarse signal — and the recall block adds the
-        // expensive-but-targeted layer on top. Configurable via
-        // `Config.memory_recall_enabled` (default on); skipped for empty /
-        // slash-command queries since neither benefits from recall.
+        // When recall produces results, it already contains the relevant
+        // subset of memories — dumping all bodies on top just wastes tokens
+        // re-sending what recall already filtered and summarized.
+        // Configurable via `Config.memory_recall_enabled` (default on);
+        // skipped for empty / slash-command queries since neither benefits
+        // from recall.
         let recall_enabled =
             crate::memory_recall::is_enabled(crate::config::load().memory_recall_enabled);
+        let mut recall_block: Option<String> = None;
         if recall_enabled && !memories.is_empty() {
             let last_user_query = last_user_text(&messages);
             if let Some(query) = last_user_query {
                 let trimmed = query.trim();
                 if !trimmed.is_empty() && !trimmed.starts_with('/') {
-                    let block = crate::memory_recall::run_recall(
+                    recall_block = crate::memory_recall::run_recall(
                         trimmed,
                         &memories,
                         provider.clone(),
                         model.clone(),
                     )
                     .await;
-                    if let Some(b) = block {
-                        tracing::debug!(
-                            target: "jfc::stream",
-                            recall_block_len = b.len(),
-                            "appended memory recall block to system prompt"
-                        );
-                        system_prompt.push_str(&b);
-                    }
                 }
             }
+        }
+
+        // Only inject full memory bodies if recall didn't produce results.
+        // When recall works, it already contains the relevant subset —
+        // dumping all bodies on top just wastes tokens re-sending what
+        // recall already filtered and summarized.
+        if let Some(ref b) = recall_block {
+            tracing::debug!(
+                target: "jfc::stream",
+                recall_block_len = b.len(),
+                "using memory recall block (skipping full memory dump)"
+            );
+            system_prompt.push_str(b);
+        } else if let Some(memories_section) = crate::memory::render_memories_section(&memories) {
+            system_prompt.push_str(&memories_section);
         }
 
         // Auto-context: when the previous turn(s) edited files via
@@ -1387,6 +1417,15 @@ Do not use a colon before tool calls.";
     // `modelSupportsThinking` → off, claude.ts:1602).
     let supports_adaptive = model_supports_adaptive_thinking(model.as_str());
     let has_thinking_support = supports_adaptive || model_supports_thinking(model.as_str());
+    tracing::debug!(
+        target: "jfc::stream::budget",
+        skills_chars,
+        dispatch_chars,
+        diagnostics_chars,
+        total_system_chars = system_prompt.len(),
+        estimated_tokens = system_prompt.len() / 4,
+        "system prompt budget breakdown"
+    );
     tracing::info!(
         target: "jfc::stream",
         model = %model,
@@ -1396,6 +1435,8 @@ Do not use a colon before tool calls.";
         tool_count = tools::all_tool_defs().len(),
         "preparing stream request"
     );
+    // Report system prompt size back to App for post-compaction overhead estimate.
+    let _ = tx.try_send(AppEvent::SystemPromptLen(system_prompt.len() / 4));
     let max_out = max_output_tokens_for(model.as_str());
     let mut advertised_tools = tools::all_tool_defs_with_mcp().await;
 
@@ -2689,6 +2730,13 @@ pub fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
                             .as_deref()
                             .or(ts.error.as_deref())
                             .unwrap_or("(no output)");
+                        // Cap at 2000 chars to prevent unbounded prompt growth —
+                        // TaskStatus summaries replay every turn and accumulate fast.
+                        let body = if body.len() > 2000 {
+                            format!("{}… [truncated {} chars]", &body[..body.floor_char_boundary(2000)], body.len())
+                        } else {
+                            body.to_string()
+                        };
                         Some(format!(
                             "[Background agent: {} ({status_label})] {body}",
                             ts.description
@@ -2932,11 +2980,29 @@ fn validate_provider_messages(msgs: &[ProviderMessage]) {
 fn validate_provider_messages(_msgs: &[ProviderMessage]) {}
 
 fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
+    // Microcompact: truncate old tool outputs to save context for the
+    // current task. Mirrors OpenCode's microcompact behavior.
+    const MICROCOMPACT_TURN_THRESHOLD: usize = 10;
+    const MICROCOMPACT_MAX_CHARS: usize = 500;
+
+    // Pre-compute turns_ago for each message index by counting user-role
+    // messages from the end backward.
+    let mut turns_ago_map: Vec<usize> = vec![0; msgs.len()];
+    {
+        let mut user_turns_seen = 0usize;
+        for i in (0..msgs.len()).rev() {
+            if msgs[i].role == Role::User && !msgs[i].queued {
+                user_turns_seen += 1;
+            }
+            turns_ago_map[i] = user_turns_seen;
+        }
+    }
+
     let mut out = Vec::new();
     let mut tool_use_count = 0usize;
     let mut tool_result_count = 0usize;
     let mut abandoned_count = 0usize;
-    for m in msgs {
+    for (msg_idx, m) in msgs.iter().enumerate() {
         // Skip queued-prompt placeholders. They're real ChatMessages in
         // `app.messages` (so the user can see them rendered with the
         // ⏳/⚙ glyph) but they MUST NOT be sent to the provider until
@@ -2965,6 +3031,13 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
                         .as_deref()
                         .or(ts.error.as_deref())
                         .unwrap_or("(no output)");
+                    // Cap at 2000 chars to prevent unbounded prompt growth —
+                    // TaskStatus summaries replay every turn and accumulate fast.
+                    let body = if body.len() > 2000 {
+                        format!("{}… [truncated {} chars]", &body[..body.floor_char_boundary(2000)], body.len())
+                    } else {
+                        body.to_string()
+                    };
                     Some(format!(
                         "[Background agent: {} ({status_label})] {body}",
                         ts.description
@@ -3068,9 +3141,25 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
                             )
                         }
                     };
+                    // Microcompact: for messages > MICROCOMPACT_TURN_THRESHOLD
+                    // user turns ago, cap tool_result content to preserve context
+                    // for the current task.
+                    let capped = cap_tool_result(&result_text);
+                    let content = if turns_ago_map[msg_idx] > MICROCOMPACT_TURN_THRESHOLD
+                        && capped.len() > MICROCOMPACT_MAX_CHARS
+                    {
+                        let boundary = capped.floor_char_boundary(MICROCOMPACT_MAX_CHARS);
+                        format!(
+                            "{}… [older output truncated, {} chars total]",
+                            &capped[..boundary],
+                            capped.len()
+                        )
+                    } else {
+                        capped
+                    };
                     Some(ProviderContent::ToolResult {
                         tool_use_id: tc.id.as_str().to_owned(),
-                        content: cap_tool_result(&result_text),
+                        content,
                         is_error,
                     })
                 }
