@@ -266,6 +266,16 @@ impl TeamContext {
 }
 
 /// Summary info about a spawned teammate (kept in the leader's TeamContext).
+///
+/// `abort_tx` holds the `watch::Sender<bool>` returned by
+/// `swarm::runner::start_teammate`. The receiver inside the teammate's
+/// run loop short-circuits to `Aborted` as soon as the sender is
+/// dropped (because `watch::Receiver::changed()` immediately resolves
+/// `Err(RecvError)` when there are no senders left). Storing it here
+/// keeps the channel alive for the teammate's lifetime — without this,
+/// the previous spawn site at `stream.rs:1962` dropped the sender on
+/// the next line and every teammate was marked "Done" before doing any
+/// real work.
 #[derive(Debug, Clone)]
 pub struct TeammateInfo {
     pub name: String,
@@ -274,6 +284,10 @@ pub struct TeammateInfo {
     pub cwd: String,
     pub spawned_at: Instant,
     pub backend: BackendType,
+    /// Abort handle. Only `Some` when the runtime owns a live in-process
+    /// teammate; daemon-backed entries are `None`. Cloning a watch sender
+    /// is cheap and keeps the channel alive.
+    pub abort_tx: Option<watch::Sender<bool>>,
 }
 
 // ─── Spawn Parameters ────────────────────────────────────────────────────────

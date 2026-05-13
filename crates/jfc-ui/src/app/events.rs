@@ -180,6 +180,14 @@ pub enum AppEvent {
         color: Option<String>,
         agent_type: Option<String>,
         cwd: String,
+        /// Abort handle returned by `swarm::runner::start_teammate`. The
+        /// event handler must move this into
+        /// `app.team_context.teammates[agent_id].abort_tx` so the channel
+        /// stays open for the teammate's lifetime. Dropping it closes the
+        /// channel and the runner's abort_rx.changed() resolves Err on the
+        /// next poll — which the runner treats as Cancelled, lighting up
+        /// every teammate as "Done" before doing any work.
+        abort_tx: Option<tokio::sync::watch::Sender<bool>>,
     },
     /// The model called `ExitPlanMode` and wants the user to see the
     /// plan + transition out of plan mode.

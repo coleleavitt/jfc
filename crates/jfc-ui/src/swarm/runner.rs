@@ -103,12 +103,27 @@ pub fn start_teammate(
         let result = run_teammate_loop(config, abort_rx, event_tx.clone()).await;
 
         match result {
-            Ok(()) => {
+            Ok(TeammateExit::Completed) => {
                 debug!(
                     "[InProcessRunner] Teammate {} completed normally",
                     identity.agent_name
                 );
                 let _ = event_tx.send(TeammateEvent::Completed {
+                    task_id: task_id_clone,
+                    agent_id: identity.agent_id,
+                });
+            }
+            Ok(TeammateExit::Cancelled) => {
+                // Abort signal — either explicit (.send(true)) or the
+                // watch::Sender was dropped. The previous version silently
+                // mapped this to Completed, which lit up every teammate as
+                // ": Done" in the UI before they did any work, because the
+                // spawn site at stream.rs:1962 dropped the abort handle.
+                debug!(
+                    "[InProcessRunner] Teammate {} cancelled",
+                    identity.agent_name
+                );
+                let _ = event_tx.send(TeammateEvent::Cancelled {
                     task_id: task_id_clone,
                     agent_id: identity.agent_id,
                 });
@@ -128,6 +143,15 @@ pub fn start_teammate(
     });
 
     (task_id, abort_tx)
+}
+
+/// Why a teammate's run loop ended. Aborted vs naturally exhausted is a
+/// meaningful distinction for the UI — aborted means "not done yet",
+/// completed means "the agent decided it was finished".
+#[derive(Debug)]
+enum TeammateExit {
+    Completed,
+    Cancelled,
 }
 
 /// Events emitted by the teammate runner back to the leader.
@@ -151,6 +175,11 @@ pub enum TeammateEvent {
     },
     /// Teammate completed and exited its loop.
     Completed { task_id: String, agent_id: String },
+    /// Teammate's run loop was cancelled before natural completion —
+    /// either by an explicit abort signal (ESC×2, kill button) or by the
+    /// abort_tx watch::Sender being dropped. Distinct from Completed so
+    /// the UI can label the row "Cancelled" instead of "Done".
+    Cancelled { task_id: String, agent_id: String },
     /// Teammate encountered a fatal error.
     Failed {
         task_id: String,
@@ -192,7 +221,7 @@ async fn run_teammate_loop(
     config: TeammateRunnerConfig,
     mut abort_rx: watch::Receiver<bool>,
     event_tx: mpsc::UnboundedSender<TeammateEvent>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<TeammateExit> {
     let identity = &config.identity;
     let task_id = format!("teammate-{}", identity.agent_id);
 
@@ -213,14 +242,14 @@ async fn run_teammate_loop(
     let mut conversation_history: Vec<crate::provider::ProviderMessage> = Vec::new();
     let mut active_task_id: Option<String> = None;
 
-    loop {
+    let exit_reason: TeammateExit = loop {
         // Check abort before processing
         if *abort_rx.borrow() {
             debug!(
                 "[InProcessRunner] {} aborted before iteration",
                 identity.agent_name
             );
-            break;
+            break TeammateExit::Cancelled;
         }
 
         iteration += 1;
@@ -271,7 +300,7 @@ async fn run_teammate_loop(
             }
             TurnResult::Aborted => {
                 debug!("[InProcessRunner] {} turn aborted", identity.agent_name);
-                break;
+                break TeammateExit::Cancelled;
             }
             TurnResult::Error(e) => {
                 warn!("[InProcessRunner] {} turn error: {e}", identity.agent_name);
@@ -382,7 +411,7 @@ async fn run_teammate_loop(
                         "[InProcessRunner] {} shutdown approved — exiting",
                         identity.agent_name
                     );
-                    break;
+                    break TeammateExit::Completed;
                 }
                 debug!(
                     "[InProcessRunner] {} shutdown denied — staying alive",
@@ -403,12 +432,12 @@ async fn run_teammate_loop(
                     "[InProcessRunner] {} aborted while waiting",
                     identity.agent_name
                 );
-                break;
+                break TeammateExit::Cancelled;
             }
         }
-    }
+    };
 
-    Ok(())
+    Ok(exit_reason)
 }
 
 /// Poll for the next message or signal. Checks:
@@ -1374,7 +1403,7 @@ mod tests {
                         }
                     }
                     TeammateEvent::Idle { .. } => got_idle = true,
-                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } => {
+                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } | TeammateEvent::Cancelled { .. } => {
                         got_terminal = true;
                         break;
                     }
@@ -1507,7 +1536,7 @@ mod tests {
                     } if t == "Read" => {
                         got_progress_with_tool = true;
                     }
-                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } => {
+                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } | TeammateEvent::Cancelled { .. } => {
                         got_terminal = true;
                         break;
                     }
@@ -1611,7 +1640,7 @@ mod tests {
                             second_text = true;
                         }
                     }
-                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } => {
+                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } | TeammateEvent::Cancelled { .. } => {
                         terminal = true;
                         break;
                     }
@@ -1660,7 +1689,7 @@ mod tests {
             while let Some(ev) = event_rx.recv().await {
                 if matches!(
                     ev,
-                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. }
+                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } | TeammateEvent::Cancelled { .. }
                 ) {
                     saw_terminal = true;
                     break;
@@ -1669,6 +1698,83 @@ mod tests {
         };
         let _ = tokio::time::timeout(std::time::Duration::from_secs(2), drain).await;
         assert!(saw_terminal);
+    }
+
+    // Regression: dropping the abort_tx must emit Cancelled, NOT Completed.
+    //
+    // This is the smoking-gun test for the "all teammates marked Done"
+    // bug. `start_teammate` returns a `watch::Sender<bool>`; if a caller
+    // drops it (the original `stream.rs:1962` bug — leading underscore
+    // made it look like an intentional bind), `watch::Receiver::changed()`
+    // immediately resolves Err and the runner's `tokio::select! { biased; ...}`
+    // returns `TurnResult::Aborted` on the FIRST stream poll. The old
+    // path then ran `Ok(())` → `TeammateEvent::Completed`, which the UI
+    // rendered as ": Done" before the teammate did any work.
+    //
+    // After the fix, the runner returns `Ok(TeammateExit::Cancelled)`
+    // and start_teammate emits `TeammateEvent::Cancelled`. Verifies the
+    // distinction at the event-stream level.
+    #[tokio::test(flavor = "current_thread")]
+    async fn dropping_abort_tx_emits_cancelled_not_completed_normal() {
+        let _g = HomeOverride::new();
+
+        // Provider script: a single text delta then EndTurn — plenty of
+        // work for the runner to actually do if it weren't aborted.
+        let provider: std::sync::Arc<dyn crate::provider::Provider> = std::sync::Arc::new(
+            StubProvider::new(vec![
+                crate::provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "hello".into(),
+                },
+                crate::provider::StreamEvent::Done {
+                    stop_reason: crate::provider::StopReason::EndTurn,
+                },
+            ]),
+        );
+        let identity = make_identity();
+        let config = TeammateRunnerConfig {
+            identity,
+            prompt: "p".into(),
+            description: "d".into(),
+            model: None,
+            agent_type: None,
+            provider,
+            model_id: crate::provider::ModelId::new("stub-model"),
+            system_prompt: None,
+            task_store: None,
+        };
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_task_id, abort_tx) = start_teammate(config, event_tx);
+        // Drop the abort handle IMMEDIATELY — this is the original bug.
+        drop(abort_tx);
+
+        let mut last_terminal: Option<&'static str> = None;
+        let drain = async {
+            while let Some(ev) = event_rx.recv().await {
+                match ev {
+                    TeammateEvent::Completed { .. } => {
+                        last_terminal = Some("Completed");
+                        break;
+                    }
+                    TeammateEvent::Cancelled { .. } => {
+                        last_terminal = Some("Cancelled");
+                        break;
+                    }
+                    TeammateEvent::Failed { .. } => {
+                        last_terminal = Some("Failed");
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        };
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), drain).await;
+        assert_eq!(
+            last_terminal,
+            Some("Cancelled"),
+            "dropping abort_tx must surface as Cancelled, not Completed — \
+             see TeammateInfo.abort_tx and stream.rs spawn site"
+        );
     }
 
     #[test]
@@ -1690,6 +1796,10 @@ mod tests {
                 last_tool: None,
             },
             TeammateEvent::Completed {
+                task_id: "t".into(),
+                agent_id: "a".into(),
+            },
+            TeammateEvent::Cancelled {
                 task_id: "t".into(),
                 agent_id: "a".into(),
             },

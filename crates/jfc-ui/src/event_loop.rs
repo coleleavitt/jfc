@@ -1238,6 +1238,26 @@ pub(crate) async fn run(
                                 });
                             }
                         }
+                        TeammateEvent::Cancelled { task_id, agent_id } => {
+                            tracing::info!("[Swarm] Teammate {agent_id} cancelled");
+                            if let Some(bt) = app.background_tasks.get_mut(&task_id) {
+                                bt.status = crate::types::TaskLifecycle::Cancelled;
+                            }
+                            if let Some(team_name) = app.team_context.team_name.clone() {
+                                let member_name = agent_id
+                                    .split_once('@')
+                                    .map(|(n, _)| n.to_owned())
+                                    .unwrap_or_else(|| agent_id.clone());
+                                tokio::spawn(async move {
+                                    let _ = crate::swarm::team_helpers::set_member_active(
+                                        &team_name,
+                                        &member_name,
+                                        false,
+                                    )
+                                    .await;
+                                });
+                            }
+                        }
                         TeammateEvent::MessageSent {
                             from,
                             to,
@@ -3351,6 +3371,7 @@ pub(crate) async fn run(
                     color,
                     agent_type,
                     cwd,
+                    abort_tx,
                 } => {
                     // Activate the team if this is the first teammate to
                     // join — switches the leader from "no team" to "running
@@ -3364,12 +3385,24 @@ pub(crate) async fn run(
                             crate::swarm::TEAM_LEAD_NAME,
                             &team_name,
                         ));
-                        app.task_store = crate::tasks::TaskStore::open_team(&team_name);
+                        // Activate the team task store. Migrate any tasks
+                        // already created in the session store so IDs
+                        // remain valid — the leader frequently TaskCreates
+                        // a plan before the first teammate spawn, and
+                        // those IDs would otherwise vanish at team
+                        // activation. See `TaskStore::migrate_from`.
+                        let team_store = crate::tasks::TaskStore::open_team(&team_name);
+                        let _ = team_store.migrate_from(&app.task_store);
+                        app.task_store = team_store;
                     }
                     // Register the teammate in the in-memory roster. The
                     // render code reads this to draw the teammate tree and
                     // power per-name lookups; previously the HashMap stayed
-                    // empty regardless of how many teammates spawned.
+                    // empty regardless of how many teammates spawned. The
+                    // `abort_tx` is critical — it keeps the runner's
+                    // watch channel alive for the teammate's lifetime.
+                    // Without storing it here, every teammate was marked
+                    // "Done" on its first poll.
                     app.team_context.teammates.insert(
                         agent_id.clone(),
                         crate::swarm::types::TeammateInfo {
@@ -3379,6 +3412,7 @@ pub(crate) async fn run(
                             cwd,
                             spawned_at: std::time::Instant::now(),
                             backend: crate::swarm::types::BackendType::InProcess,
+                            abort_tx,
                         },
                     );
                 }

@@ -1959,7 +1959,7 @@ pub fn dispatch_tools_batched(
             };
 
             let teammate_event_tx = teammate_event_tx.clone();
-            let (runner_task_id, _abort_tx) =
+            let (runner_task_id, abort_tx) =
                 crate::swarm::runner::start_teammate(config, teammate_event_tx);
             let _ = runner_task_id;
 
@@ -2038,6 +2038,13 @@ pub fn dispatch_tools_batched(
                     .ok()
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_default(),
+                // Hand the abort handle to the main loop. It moves into
+                // app.team_context.teammates[agent_id].abort_tx where it
+                // stays alive for the teammate's lifetime. Previously the
+                // sender was named `_abort_tx` and dropped on the next
+                // line, immediately closing the channel and forcing the
+                // runner into an Aborted exit on its first stream poll.
+                abort_tx: Some(abort_tx),
             });
             let _ = tx_task.try_send(AppEvent::TaskStarted {
                 task_id: crate::ids::TaskId::from(runner_task_id.clone()),

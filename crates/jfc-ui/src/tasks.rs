@@ -267,6 +267,53 @@ impl TaskStore {
         Arc::new(Self::default())
     }
 
+    /// Copy every task from `src` into `self`, preserving ids. Used when
+    /// the leader activates team mode — the active task store is swapped
+    /// from the session store to the team store, and any tasks the user
+    /// or leader created before the spawn would otherwise become
+    /// orphans. Existing tasks in `self` win on id collision (so a team
+    /// roster with hand-edited entries isn't clobbered).
+    ///
+    /// Returns the number of tasks copied. Best-effort: never fails —
+    /// callers that hit a lock-poisoned source store get zero copied
+    /// rather than a propagated panic.
+    pub fn migrate_from(&self, src: &TaskStore) -> usize {
+        let src_inner = match src.inner.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let mut dst_inner = match self.inner.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let mut copied = 0usize;
+        for (id, task) in src_inner.tasks.iter() {
+            if dst_inner.tasks.contains_key(id) {
+                continue;
+            }
+            dst_inner.tasks.insert(id.clone(), task.clone());
+            copied += 1;
+        }
+        if dst_inner.next_id < src_inner.next_id {
+            dst_inner.next_id = src_inner.next_id;
+        }
+        let snapshot = TaskStoreInner {
+            next_id: dst_inner.next_id,
+            tasks: dst_inner.tasks.clone(),
+        };
+        drop(dst_inner);
+        drop(src_inner);
+        if copied > 0 {
+            self.persist(&snapshot);
+            tracing::info!(
+                target: "jfc::tasks",
+                copied,
+                "migrate_from: copied tasks across stores"
+            );
+        }
+        copied
+    }
+
     fn load_inner(path: &PathBuf) -> TaskStoreInner {
         let Some(raw) = std::fs::read_to_string(path).ok() else {
             return TaskStoreInner::default();
@@ -781,5 +828,92 @@ mod tests {
         assert_eq!(s, "\"in_progress\"");
         let parsed: TaskStatus = serde_json::from_str("\"completed\"").unwrap();
         assert_eq!(parsed, TaskStatus::Completed);
+    }
+
+    // Regression: when team mode activates, the leader's previously-created
+    // session tasks must survive. The old code blew away the active store
+    // and every subsequent /TaskUpdate hit "unknown task id t35..." because
+    // the team store had never seen those rows.
+    #[test]
+    fn migrate_from_copies_tasks_across_stores_normal() {
+        let src = TaskStore::in_memory();
+        src.create("a".into(), "d1".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        src.create("b".into(), "d2".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        src.create("c".into(), "d3".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+
+        let dst = TaskStore::in_memory();
+        let copied = dst.migrate_from(&src);
+        assert_eq!(copied, 3);
+        assert!(dst.get(&TaskId::from("t1")).is_some());
+        assert!(dst.get(&TaskId::from("t2")).is_some());
+        assert!(dst.get(&TaskId::from("t3")).is_some());
+
+        // Updates on the new store must succeed — proves IDs landed
+        // intact, not just structurally.
+        let updated = dst
+            .update(
+                &TaskId::from("t2"),
+                TaskPatch {
+                    status: Some(TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .expect("update preserved task id");
+        assert_eq!(updated.status, TaskStatus::Completed);
+    }
+
+    // Robust: migrating into a store that already holds the same ids
+    // keeps the destination's version (so a team file the user
+    // hand-edited isn't clobbered by a stale session task).
+    #[test]
+    fn migrate_from_destination_wins_on_id_collision_robust() {
+        let src = TaskStore::in_memory();
+        src.create("from src".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+
+        let dst = TaskStore::in_memory();
+        dst.create(
+            "from dst".into(),
+            "kept".into(),
+            None,
+            Vec::<TaskId>::new(),
+        )
+        .unwrap();
+
+        let copied = dst.migrate_from(&src);
+        assert_eq!(copied, 0, "id collision must be a no-op");
+        let kept = dst.get(&TaskId::from("t1")).expect("dst task present");
+        assert_eq!(kept.subject, "from dst");
+    }
+
+    // Robust: empty source is a no-op.
+    #[test]
+    fn migrate_from_empty_source_is_noop_robust() {
+        let src = TaskStore::in_memory();
+        let dst = TaskStore::in_memory();
+        assert_eq!(dst.migrate_from(&src), 0);
+    }
+
+    // Regression: next_id advances to the max of (dst, src) so future
+    // creates don't clash with migrated ids.
+    #[test]
+    fn migrate_from_advances_next_id_robust() {
+        let src = TaskStore::in_memory();
+        for _ in 0..5 {
+            src.create("x".into(), "".into(), None, Vec::<TaskId>::new())
+                .unwrap();
+        }
+        // src is now at next_id=5
+        let dst = TaskStore::in_memory();
+        dst.migrate_from(&src);
+
+        let new_task = dst
+            .create("new".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        // Must NOT collide with any of t1..t5
+        assert_eq!(new_task.id, "t6");
     }
 }
