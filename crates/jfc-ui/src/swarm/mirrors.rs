@@ -108,7 +108,7 @@ impl MirrorSession {
     /// Shorthand: emit model text event.
     pub fn model_text(&self, text: &str) {
         let preview = if text.len() > 200 {
-            format!("{}...", &text[..200])
+            format!("{}...", &text[..text.floor_char_boundary(200)])
         } else {
             text.to_string()
         };

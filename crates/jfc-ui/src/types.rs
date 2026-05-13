@@ -1144,7 +1144,7 @@ impl ToolOutput {
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "?".into());
                 let preview = if stdout.len() > 100 {
-                    format!("{}...", &stdout[..100])
+                    format!("{}...", &stdout[..stdout.floor_char_boundary(100)])
                 } else {
                     stdout.clone()
                 };
