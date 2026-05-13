@@ -320,7 +320,15 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     lines.push(section("Context"));
 
-    let total_tokens = (app.last_usage_input as u64).max(app.tool_ctx.approx_tokens as u64);
+    // Always render the calibrated `approx_tokens` (input + output +
+    // cache_read + cache_write) — that's what `recompute_token_estimate`
+    // / StreamUsage / compaction all use. Previously this took
+    // `max(last_usage_input, approx_tokens)`, which was a no-op (approx
+    // always ≥ input alone) but obscured the fact that the sidebar and
+    // bottom-bar gauge were already computing the same thing two
+    // different ways, leaving a maintenance footgun where one could
+    // drift from the other.
+    let total_tokens = app.tool_ctx.approx_tokens as u64;
     let ctx_max = app.selected_context_window_tokens().max(1) as u64;
     let pct = (total_tokens as f64 / ctx_max as f64 * 100.0).min(100.0);
 

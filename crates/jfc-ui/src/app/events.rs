@@ -121,6 +121,18 @@ pub enum AppEvent {
         description: String,
         model_used: Option<String>,
         max_input_tokens: Option<u64>,
+        /// True iff this task is a detached background worker (run via
+        /// `spawn_background_agent_worker`). Detached workers register
+        /// themselves into the daemon roster from their own process with
+        /// the correct PID and launch_path — the UI must NOT overwrite
+        /// that record on TaskStarted. Foreground (in-process) teammates
+        /// and subagents have `is_detached = false`; for those the daemon
+        /// roster is only used as a passive log target, and the
+        /// reconciler later marks them stale when the UI exits.
+        ///
+        /// Default to `false` so legacy/test sites that omit the field
+        /// keep their previous behavior (foreground registration).
+        is_detached: bool,
     },
     TaskProgress {
         task_id: crate::ids::TaskId,

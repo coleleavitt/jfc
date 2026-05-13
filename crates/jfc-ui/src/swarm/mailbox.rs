@@ -77,8 +77,17 @@ pub async fn ensure_inbox_dir(team_name: &str) -> anyhow::Result<()> {
 /// `lockfile` crate. For in-process teammates (our primary mode), the Mutex
 /// in the runner provides the real synchronization; this lock is for
 /// cross-process safety with tmux-based teammates.
+///
+/// **Drop contract**: the `Drop` impl synchronously removes the lockfile.
+/// This is critical because mailbox writes use `?` after acquiring the
+/// lock (read_mailbox / serde_json / fs::write can all fail) — without
+/// `Drop`, an early-return would leak a `.lock` file and the next call
+/// would hang for the 10s timeout before failing. `release(self)` is
+/// kept as an explicit async path for callers that want to await the
+/// FS unlink instead of doing it in `Drop`.
 pub struct FileLock {
     path: PathBuf,
+    released: bool,
 }
 
 impl FileLock {
@@ -92,7 +101,12 @@ impl FileLock {
                 .open(&path)
                 .await
             {
-                Ok(_) => return Ok(Self { path }),
+                Ok(_) => {
+                    return Ok(Self {
+                        path,
+                        released: false,
+                    });
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                     if tokio::time::Instant::now() >= deadline {
                         anyhow::bail!("mailbox lock timeout: {}", path.display());
@@ -104,9 +118,25 @@ impl FileLock {
         }
     }
 
-    /// Release the lock.
-    pub async fn release(self) {
+    /// Release the lock explicitly via tokio's async FS. Equivalent to
+    /// letting the guard drop, but blocks the current task until the
+    /// lockfile is gone.
+    pub async fn release(mut self) {
         let _ = fs::remove_file(&self.path).await;
+        self.released = true;
+    }
+}
+
+impl Drop for FileLock {
+    fn drop(&mut self) {
+        // Best-effort sync cleanup so an error mid-write (or a panic)
+        // can't leave a stale `.lock` file that wedges every subsequent
+        // mailbox operation for the timeout duration. `release()` sets
+        // `released` to skip this path when the caller already cleaned up
+        // via the async path.
+        if !self.released {
+            let _ = std::fs::remove_file(&self.path);
+        }
     }
 }
 

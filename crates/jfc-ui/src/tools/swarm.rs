@@ -94,6 +94,23 @@ pub(super) async fn execute_team_delete(active_team_name: Option<&str>) -> Execu
     }
 }
 
+tokio::task_local! {
+    /// Identity of the agent currently executing a tool. Set by the
+    /// teammate runner around its `execute_tool` call so `SendMessage`
+    /// writes `from = <teammate-name>` instead of the hardcoded
+    /// `team-lead`. Unset on the leader's own tool dispatch path, where
+    /// `team-lead` IS the correct sender.
+    pub static CURRENT_AGENT_NAME: String;
+}
+
+/// Public accessor for the task-local current-agent name. Returns the
+/// stored name if a teammate runner set it for this task scope, else
+/// `None`. Lives in `tools::swarm` because `CURRENT_AGENT_NAME` is the
+/// only piece of teammate identity the tool layer ever needs to read.
+pub fn current_agent_name() -> Option<String> {
+    CURRENT_AGENT_NAME.try_with(|name| name.clone()).ok()
+}
+
 pub(super) async fn execute_send_message(
     to: &str,
     message: &str,
@@ -104,9 +121,15 @@ pub(super) async fn execute_send_message(
     use crate::swarm::types::MailboxMessage;
 
     let team_name = active_team_name.unwrap_or(crate::swarm::DEFAULT_TEAM_NAME);
+    // Use the task-local identity if a teammate runner set it; otherwise
+    // fall back to the leader. Without this, every teammate's
+    // `SendMessage` (which goes through `execute_tool` like any other
+    // tool) wrote `from = team-lead`, so the leader couldn't tell which
+    // teammate actually messaged it and inbox routing collapsed.
+    let from = current_agent_name().unwrap_or_else(|| crate::swarm::TEAM_LEAD_NAME.to_owned());
 
     let msg = MailboxMessage {
-        from: crate::swarm::TEAM_LEAD_NAME.to_owned(),
+        from: from.clone(),
         text: message.to_owned(),
         timestamp: chrono::Utc::now().to_rfc3339(),
         color: None,
@@ -120,7 +143,7 @@ pub(super) async fn execute_send_message(
                 "success": true,
                 "message": format!("Message sent to {to}'s inbox"),
                 "routing": {
-                    "sender": crate::swarm::TEAM_LEAD_NAME,
+                    "sender": from,
                     "target": format!("@{to}"),
                     "summary": summary,
                 }

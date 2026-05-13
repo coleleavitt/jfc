@@ -2051,6 +2051,12 @@ pub fn dispatch_tools_batched(
                 description: format!("spawn teammate: {name}"),
                 model_used: Some(teammate_model_name),
                 max_input_tokens: agent_def.and_then(|a| a.max_input_tokens),
+                // Teammates are in-process (the runner runs inside this
+                // event loop) — DON'T let the UI's TaskStarted handler
+                // register them as detached daemon workers. The daemon
+                // reconciler would later mark them stale when the UI
+                // exits, mis-labeling foreground teammates as Failed.
+                is_detached: false,
             });
 
             let _ = tx_task.try_send(AppEvent::ToolResult {
@@ -2130,6 +2136,13 @@ pub fn dispatch_tools_batched(
                         description: description.clone(),
                         model_used: model_used.clone(),
                         max_input_tokens,
+                        // True detached background worker: the worker
+                        // process already called
+                        // `record_background_agent_started_at` with its
+                        // own PID + launch_path. The UI's TaskStarted
+                        // handler must skip the registry write so it
+                        // doesn't clobber that record.
+                        is_detached: true,
                     });
                     let result_json = serde_json::json!({
                         "status": "background_task_started",
@@ -2223,6 +2236,11 @@ pub fn dispatch_tools_batched(
                     description: description.clone(),
                     model_used: model_used.clone(),
                     max_input_tokens,
+                    // In-process subagent (foreground Task tool, no
+                    // `run_in_background`). Skip daemon registration; the
+                    // BackgroundTask row in `app.background_tasks` is the
+                    // authoritative UI state.
+                    is_detached: false,
                 })
                 .await;
             let started = std::time::Instant::now();
@@ -2240,12 +2258,12 @@ pub fn dispatch_tools_batched(
             let cwd_override = worktree_info
                 .as_ref()
                 .map(|(info, _)| std::path::PathBuf::from(&info.path));
-            crate::daemon::record_background_agent_started(
-                &task_id,
-                &description,
-                model_used.clone(),
-                cwd_override.clone(),
-            );
+            // No daemon registration for in-process subagents — they're
+            // tracked via `app.background_tasks` and the assistant
+            // message's TaskStatus parts. Previously this call planted
+            // them in the daemon roster too, where the reconciler would
+            // later mark them stale at UI exit, confusing the next
+            // session's restored "background agents" list.
             let result = crate::tools::execute_task(
                 &task_input,
                 provider_task.as_ref(),
@@ -2493,6 +2511,13 @@ pub async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     app.streaming_last_token_at = Some(now);
     app.last_usage_output = 0;
     app.usage_apply_baseline = (0, 0, 0, 0);
+    // Clear the thinking timestamps so the next sub-stream's spinner doesn't
+    // render a stale "thought for Ns · almost done thinking" while the new
+    // request is still in-flight. The next ThinkingDelta event will re-stamp
+    // `thinking_started_at`; if the new turn isn't an extended-thinking one,
+    // the spinner correctly shows the composing state instead.
+    app.thinking_started_at = None;
+    app.thinking_ended_at = None;
 
     let provider = app.provider.clone();
     let messages = build_provider_messages_with_tool_results(&app.messages[..assistant_idx]);
