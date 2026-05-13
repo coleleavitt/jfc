@@ -311,16 +311,14 @@ pub(super) fn spawn_background_agent_worker_with_paths(
 /// Top-level entry called from `event_loop`/`stream` to launch a detached
 /// background worker for a Task.
 /// Maximum number of concurrently-running detached background agents.
-/// Prevents a burst of Task(run_in_background=true) calls from forking
-/// unbounded workers. Mirrors OpenCode's `maxConcurrentTasks` and
-/// oh-my-opencode's concurrency-manager cap. Configurable via
-/// `JFC_MAX_BACKGROUND_AGENTS` env (default 8).
+/// By default there is no limit — the agent can fire off as many background
+/// workers as it wants. Set `JFC_MAX_BACKGROUND_AGENTS` to cap it.
 fn max_running_agents() -> usize {
     std::env::var("JFC_MAX_BACKGROUND_AGENTS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .filter(|&n| n > 0)
-        .unwrap_or(8)
+        .unwrap_or(usize::MAX)
 }
 
 pub fn spawn_background_agent_worker(launch: BackgroundAgentLaunch) -> std::io::Result<u32> {

@@ -703,6 +703,7 @@ pub enum ToolKind {
     TaskList,
     TaskDone,
     TaskGet,
+    TaskValidate,
     Task,
     Skill,
     ToolSearch,
@@ -836,6 +837,11 @@ pub enum ToolInput {
         description: String,
         active_form: Option<String>,
         blocked_by: Vec<String>,
+        acceptance_criteria: Option<String>,
+        verification_command: Option<String>,
+        risk: Option<String>,
+        parent_id: Option<String>,
+        kind: Option<String>,
     },
     TaskUpdate {
         task_id: String,
@@ -843,6 +849,11 @@ pub enum ToolInput {
         subject: Option<String>,
         description: Option<String>,
         owner: Option<String>,
+        acceptance_criteria: Option<String>,
+        verification_command: Option<String>,
+        risk: Option<String>,
+        parent_id: Option<String>,
+        kind: Option<String>,
     },
     TaskList {
         status_filter: Option<String>,
@@ -854,6 +865,7 @@ pub enum ToolInput {
     TaskGet {
         task_id: String,
     },
+    TaskValidate,
     Skill {
         name: String,
         args: Option<String>,
@@ -1555,6 +1567,7 @@ impl ToolKind {
             "tasklist" => Self::TaskList,
             "taskdone" => Self::TaskDone,
             "taskget" => Self::TaskGet,
+            "taskvalidate" | "task_validate" => Self::TaskValidate,
             "task" => Self::Task,
             "skill" => Self::Skill,
             "toolsearch" | "toolsearchtool" => Self::ToolSearch,
@@ -1636,6 +1649,7 @@ impl ToolKind {
             Self::TaskList => "TaskList",
             Self::TaskDone => "TaskDone",
             Self::TaskGet => "TaskGet",
+            Self::TaskValidate => "TaskValidate",
             Self::Task => "Task",
             Self::Skill => "Skill",
             Self::ToolSearch => "ToolSearch",
@@ -1698,6 +1712,7 @@ impl ToolKind {
             Self::TaskList => "TaskList",
             Self::TaskDone => "TaskDone",
             Self::TaskGet => "TaskGet",
+            Self::TaskValidate => "TaskValidate",
             Self::Task => "Task",
             Self::Skill => "Skill",
             Self::ToolSearch => "ToolSearch",
@@ -1803,6 +1818,7 @@ impl ToolInput {
             },
             Self::TaskDone { task_id } => format!("done: {task_id}"),
             Self::TaskGet { task_id } => format!("get: {task_id}"),
+            Self::TaskValidate => "validate task graph".into(),
             Self::Task(ti) => ti.summary(),
             Self::Skill { name, args } => match args.as_deref().filter(|s| !s.is_empty()) {
                 Some(a) => format!("{name}: {a}"),
@@ -2069,6 +2085,11 @@ impl ToolInput {
                     description,
                     active_form: opt_str_field("active_form"),
                     blocked_by,
+                    acceptance_criteria: opt_str_field("acceptance_criteria"),
+                    verification_command: opt_str_field("verification_command"),
+                    risk: opt_str_field("risk"),
+                    parent_id: opt_str_field("parent_id"),
+                    kind: opt_str_field("kind"),
                 }
             }
             ToolKind::TaskUpdate => Self::TaskUpdate {
@@ -2077,6 +2098,11 @@ impl ToolInput {
                 subject: opt_str_field("subject"),
                 description: opt_str_field("description"),
                 owner: opt_str_field("owner"),
+                acceptance_criteria: opt_str_field("acceptance_criteria"),
+                verification_command: opt_str_field("verification_command"),
+                risk: opt_str_field("risk"),
+                parent_id: opt_str_field("parent_id"),
+                kind: opt_str_field("kind"),
             },
             ToolKind::TaskList => Self::TaskList {
                 status_filter: opt_str_field("status_filter"),
@@ -2088,6 +2114,7 @@ impl ToolInput {
             ToolKind::TaskGet => Self::TaskGet {
                 task_id: req_str("task_id")?,
             },
+            ToolKind::TaskValidate => Self::TaskValidate,
             ToolKind::Task => Self::Task(TaskInput {
                 description: req_str("description")?,
                 prompt: req_str("prompt")?,
@@ -2416,6 +2443,11 @@ impl ToolInput {
                 description,
                 active_form,
                 blocked_by,
+                acceptance_criteria,
+                verification_command,
+                risk,
+                parent_id,
+                kind,
             } => {
                 let mut v = json!({ "subject": subject, "description": description });
                 if let Some(af) = active_form {
@@ -2423,6 +2455,21 @@ impl ToolInput {
                 }
                 if !blocked_by.is_empty() {
                     v["blocked_by"] = json!(blocked_by);
+                }
+                if let Some(ac) = acceptance_criteria {
+                    v["acceptance_criteria"] = json!(ac);
+                }
+                if let Some(vc) = verification_command {
+                    v["verification_command"] = json!(vc);
+                }
+                if let Some(r) = risk {
+                    v["risk"] = json!(r);
+                }
+                if let Some(pid) = parent_id {
+                    v["parent_id"] = json!(pid);
+                }
+                if let Some(k) = kind {
+                    v["kind"] = json!(k);
                 }
                 v
             }
@@ -2432,6 +2479,11 @@ impl ToolInput {
                 subject,
                 description,
                 owner,
+                acceptance_criteria,
+                verification_command,
+                risk,
+                parent_id,
+                kind,
             } => {
                 let mut v = json!({ "task_id": task_id });
                 if let Some(s) = status {
@@ -2445,6 +2497,21 @@ impl ToolInput {
                 }
                 if let Some(o) = owner {
                     v["owner"] = json!(o);
+                }
+                if let Some(ac) = acceptance_criteria {
+                    v["acceptance_criteria"] = json!(ac);
+                }
+                if let Some(vc) = verification_command {
+                    v["verification_command"] = json!(vc);
+                }
+                if let Some(r) = risk {
+                    v["risk"] = json!(r);
+                }
+                if let Some(pid) = parent_id {
+                    v["parent_id"] = json!(pid);
+                }
+                if let Some(k) = kind {
+                    v["kind"] = json!(k);
                 }
                 v
             }
@@ -2463,6 +2530,7 @@ impl ToolInput {
             }
             Self::TaskDone { task_id } => json!({ "task_id": task_id }),
             Self::TaskGet { task_id } => json!({ "task_id": task_id }),
+            Self::TaskValidate => json!({}),
             Self::Task(ti) => {
                 let mut v = json!({
                     "description": ti.description,

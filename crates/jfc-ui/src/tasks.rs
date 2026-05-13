@@ -148,6 +148,30 @@ impl fmt::Display for TaskError {
 
 impl std::error::Error for TaskError {}
 
+/// Risk level for a task. High-risk tasks require explicit user approval
+/// before the task factory auto-executes them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskRisk {
+    Low,
+    Medium,
+    High,
+}
+
+/// Task kind — enables hierarchical task trees with control-flow semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskKind {
+    /// A high-level grouping of sub-tasks.
+    Milestone,
+    /// A concrete unit of work (default).
+    Task,
+    /// A verification/acceptance check.
+    Check,
+    /// A decision point requiring user input.
+    Decision,
+}
+
 /// A task's lifecycle status. `Deleted` is a tombstone — `TaskList` filters it
 /// out by default but it remains in the store for audit purposes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -196,6 +220,21 @@ pub struct Task {
     /// Monotonic creation counter, used for stable sort by recency.
     #[serde(default)]
     pub created_at_ms: u64,
+    /// Mechanistic pass/fail criteria for verifying task completion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_criteria: Option<String>,
+    /// Shell command to run for confirming done-ness (e.g. `cargo test -p foo`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification_command: Option<String>,
+    /// Risk level — high-risk tasks block auto-execution by the task factory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risk: Option<TaskRisk>,
+    /// Parent task id for hierarchical task trees.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<TaskId>,
+    /// Task kind — milestone, task, check, or decision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<TaskKind>,
 }
 
 impl Task {
@@ -413,6 +452,11 @@ impl TaskStore {
             blocked_by,
             metadata: None,
             created_at_ms: now_ms,
+            acceptance_criteria: None,
+            verification_command: None,
+            risk: None,
+            parent_id: None,
+            kind: None,
         };
         inner.tasks.insert(id, task.clone());
         self.persist(&inner);
@@ -482,6 +526,21 @@ impl TaskStore {
         }
         if let Some(m) = patch.metadata {
             task.metadata = Some(m);
+        }
+        if let Some(ac) = patch.acceptance_criteria {
+            task.acceptance_criteria = Some(ac);
+        }
+        if let Some(vc) = patch.verification_command {
+            task.verification_command = Some(vc);
+        }
+        if let Some(r) = patch.risk {
+            task.risk = Some(r);
+        }
+        if let Some(pid) = patch.parent_id {
+            task.parent_id = Some(pid);
+        }
+        if let Some(k) = patch.kind {
+            task.kind = Some(k);
         }
 
         let updated = task.clone();
@@ -639,6 +698,180 @@ impl TaskStore {
         }
         newly_failed
     }
+
+    /// Create a replan task when a task fails. Returns the new task if created.
+    pub fn create_replan_task(&self, failed_id: &str) -> Option<Task> {
+        let inner = self.inner.lock().unwrap();
+        let failed = inner.tasks.get(failed_id)?;
+        let subject = format!("Diagnose + replan: {}", failed.subject);
+        let description = format!(
+            "Task `{}` ('{}') failed. Investigate root cause and create revised subtasks.\n\
+             Original description: {}",
+            failed.id, failed.subject, failed.description
+        );
+        let parent = failed.id.clone();
+        drop(inner);
+
+        match self.create(subject, description, None, Vec::<TaskId>::new()) {
+            Ok(mut task) => {
+                // Set parent_id to the failed task and kind=decision
+                let patch = TaskPatch {
+                    parent_id: Some(parent),
+                    kind: Some(TaskKind::Decision),
+                    ..Default::default()
+                };
+                if let Ok(updated) = self.update(task.id.as_str(), patch) {
+                    task = updated;
+                }
+                tracing::info!(
+                    target: "jfc::tasks",
+                    failed_id,
+                    replan_id = %task.id,
+                    "create_replan_task: created replan task"
+                );
+                Some(task)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "jfc::tasks",
+                    failed_id,
+                    error = %e,
+                    "create_replan_task: failed to create"
+                );
+                None
+            }
+        }
+    }
+
+    /// Validate the task graph for health issues. Returns a structured report.
+    pub fn validate(&self) -> TaskValidation {
+        let inner = self.inner.lock().unwrap();
+        let tasks: Vec<&Task> = inner
+            .tasks
+            .values()
+            .filter(|t| t.status != TaskStatus::Deleted)
+            .collect();
+
+        let completed_ids: BTreeSet<&TaskId> = tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Completed)
+            .map(|t| &t.id)
+            .collect();
+        let failed_ids: BTreeSet<&TaskId> = tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Failed)
+            .map(|t| &t.id)
+            .collect();
+
+        let mut orphaned = Vec::new();
+        let mut blocked_forever = Vec::new();
+        let mut no_verification = Vec::new();
+        let mut duplicate_subjects = Vec::new();
+        let mut parallelization_opportunities = Vec::new();
+
+        // Detect orphaned tasks (parent_id points to non-existent task)
+        for t in &tasks {
+            if let Some(ref pid) = t.parent_id {
+                if !inner.tasks.contains_key(pid.as_str()) {
+                    orphaned.push(t.id.clone());
+                }
+            }
+        }
+
+        // Detect tasks blocked forever (all blockers are failed/deleted)
+        for t in &tasks {
+            if t.status == TaskStatus::Pending && !t.blocked_by.is_empty() {
+                let all_blockers_dead = t.blocked_by.iter().all(|dep| {
+                    failed_ids.contains(dep) || !inner.tasks.contains_key(dep.as_str())
+                });
+                if all_blockers_dead {
+                    blocked_forever.push(t.id.clone());
+                }
+            }
+        }
+
+        // Detect tasks without verification path
+        for t in &tasks {
+            if t.status != TaskStatus::Completed
+                && t.status != TaskStatus::Deleted
+                && t.acceptance_criteria.is_none()
+                && t.verification_command.is_none()
+                && !matches!(t.kind, Some(TaskKind::Decision) | Some(TaskKind::Milestone))
+            {
+                no_verification.push(t.id.clone());
+            }
+        }
+
+        // Detect duplicate subjects
+        let mut subject_counts: HashMap<&str, Vec<&TaskId>> = HashMap::new();
+        for t in &tasks {
+            if t.status != TaskStatus::Completed {
+                subject_counts
+                    .entry(t.subject.as_str())
+                    .or_default()
+                    .push(&t.id);
+            }
+        }
+        for (subject, ids) in &subject_counts {
+            if ids.len() > 1 {
+                duplicate_subjects.push(format!(
+                    "'{}' used by: {}",
+                    subject,
+                    ids.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ")
+                ));
+            }
+        }
+
+        // Detect parallelization opportunities: sequential tasks with no shared deps
+        let pending: Vec<&Task> = tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Pending)
+            .copied()
+            .collect();
+        for (i, a) in pending.iter().enumerate() {
+            for b in pending.iter().skip(i + 1) {
+                // If a blocks b but they share no common blockers, they might be parallelizable
+                if a.blocked_by == b.blocked_by
+                    && !a.blocked_by.is_empty()
+                    && !b.blocks.contains(&a.id)
+                    && !a.blocks.contains(&b.id)
+                {
+                    parallelization_opportunities.push(format!(
+                        "{} and {} share the same blockers — could run in parallel",
+                        a.id, b.id
+                    ));
+                }
+            }
+        }
+
+        TaskValidation {
+            orphaned_tasks: orphaned,
+            blocked_forever,
+            no_verification_path: no_verification,
+            duplicate_subjects,
+            parallelization_opportunities,
+            total_tasks: tasks.len(),
+            pending_count: tasks.iter().filter(|t| t.status == TaskStatus::Pending).count(),
+            in_progress_count: tasks.iter().filter(|t| t.status == TaskStatus::InProgress).count(),
+            completed_count: completed_ids.len(),
+            failed_count: failed_ids.len(),
+        }
+    }
+}
+
+/// Result of `TaskStore::validate()` — structured health report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskValidation {
+    pub orphaned_tasks: Vec<TaskId>,
+    pub blocked_forever: Vec<TaskId>,
+    pub no_verification_path: Vec<TaskId>,
+    pub duplicate_subjects: Vec<String>,
+    pub parallelization_opportunities: Vec<String>,
+    pub total_tasks: usize,
+    pub pending_count: usize,
+    pub in_progress_count: usize,
+    pub completed_count: usize,
+    pub failed_count: usize,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -650,6 +883,11 @@ pub struct TaskPatch {
     pub owner: Option<String>,
     pub blocked_by: Option<Vec<String>>,
     pub metadata: Option<serde_json::Value>,
+    pub acceptance_criteria: Option<String>,
+    pub verification_command: Option<String>,
+    pub risk: Option<TaskRisk>,
+    pub parent_id: Option<TaskId>,
+    pub kind: Option<TaskKind>,
 }
 
 fn dependency_path_to(inner: &TaskStoreInner, start: &TaskId, target: &str) -> Option<Vec<TaskId>> {

@@ -360,17 +360,28 @@ async fn maybe_continue_task_factory(app: &mut App, tx: &mpsc::Sender<AppEvent>)
         let task_list = pending
             .iter()
             .map(|t| {
-                format!(
+                let mut line = format!(
                     "- {} (blocked_by: {:?}): {}",
                     t.id, t.blocked_by, t.subject
-                )
+                );
+                if let Some(ref risk) = t.risk {
+                    line.push_str(&format!(" [risk: {risk:?}]"));
+                }
+                if let Some(ref ac) = t.acceptance_criteria {
+                    line.push_str(&format!(" | criteria: {ac}"));
+                }
+                if let Some(ref kind) = t.kind {
+                    line.push_str(&format!(" | kind: {kind:?}"));
+                }
+                line
             })
             .collect::<Vec<_>>()
             .join("\n");
         let prompt = format!(
             "Before executing the task queue, verify this plan is sound:\n\n{task_list}\n\n\
              Check for: missing dependencies, circular deps, tasks that should be parallel but are serial, \
-             tasks that are too broad to complete in one agent turn. \
+             tasks that are too broad to complete in one agent turn, high-risk tasks that need user review, \
+             tasks missing acceptance criteria. \
              If the plan is good, say 'Plan verified' and I'll start execution. \
              If changes are needed, use TaskUpdate/TaskCreate/TaskDone to revise, then say 'Plan revised'."
         );
@@ -381,10 +392,47 @@ async fn maybe_continue_task_factory(app: &mut App, tx: &mpsc::Sender<AppEvent>)
     let Some(task) = app.task_store.claim_next_available("jfc-factory") else {
         return;
     };
-    let prompt = format!(
-        "Continue the task queue. Work on task `{}`: {}\n\n{}\n\nWhen this task is done, update its task status before stopping. If more unblocked tasks remain, continue with the next one.",
+
+    // Risk gating: high-risk tasks require explicit user approval.
+    if matches!(task.risk, Some(crate::tasks::TaskRisk::High)) {
+        // Unclaim the task and surface it for approval
+        let _ = app.task_store.update(
+            task.id.as_str(),
+            crate::tasks::TaskPatch {
+                status: Some(crate::tasks::TaskStatus::Pending),
+                owner: None,
+                ..Default::default()
+            },
+        );
+        tracing::info!(
+            target: "jfc::tasks::factory",
+            task_id = %task.id,
+            "high-risk task requires user approval — skipping auto-execution"
+        );
+        let prompt = format!(
+            "Task `{}` ('{}') is marked high-risk. Please review and approve before I execute it.\n\
+             Description: {}\n\
+             Acceptance criteria: {}",
+            task.id,
+            task.subject,
+            task.description,
+            task.acceptance_criteria.as_deref().unwrap_or("(none)")
+        );
+        let _ = tx.send(AppEvent::Submit(prompt)).await;
+        return;
+    }
+
+    let mut prompt = format!(
+        "Continue the task queue. Work on task `{}`: {}\n\n{}",
         task.id, task.subject, task.description
     );
+    if let Some(ref ac) = task.acceptance_criteria {
+        prompt.push_str(&format!("\n\nAcceptance criteria: {ac}"));
+    }
+    if let Some(ref vc) = task.verification_command {
+        prompt.push_str(&format!("\nVerification command: `{vc}`"));
+    }
+    prompt.push_str("\n\nWhen this task is done, update its task status before stopping. If more unblocked tasks remain, continue with the next one.");
     tracing::info!(
         target: "jfc::tasks::factory",
         task_id = %task.id,
@@ -3786,6 +3834,15 @@ pub(crate) async fn run(
                              2. Revise the plan by creating replacement tasks\n\
                              3. Mark the remaining work as not needed via TaskUpdate(status=deleted)"
                         );
+                        // Auto-create a replan task so the factory can pick it up
+                        if let Some(replan) = app.task_store.create_replan_task(task_id.as_str()) {
+                            tracing::info!(
+                                target: "jfc::tasks::factory",
+                                failed_id = %task_id,
+                                replan_id = %replan.id,
+                                "auto-created replan task for failed task"
+                            );
+                        }
                         crate::system_reminder::append_to_last_user(
                             &mut app.messages,
                             &reminder,

@@ -4,7 +4,7 @@ use tracing::{debug, info, warn};
 
 use super::ExecutionResult;
 use super::subagent::execute_skill_in;
-use crate::tasks::{DeletedFilter, TaskPatch, TaskStatus, TaskStore};
+use crate::tasks::{DeletedFilter, TaskKind, TaskPatch, TaskRisk, TaskStatus, TaskStore};
 
 pub(super) fn execute_task_create(
     store: Option<Arc<TaskStore>>,
@@ -12,6 +12,11 @@ pub(super) fn execute_task_create(
     description: String,
     active_form: Option<String>,
     blocked_by: Vec<String>,
+    acceptance_criteria: Option<String>,
+    verification_command: Option<String>,
+    risk: Option<String>,
+    parent_id: Option<String>,
+    kind: Option<String>,
 ) -> ExecutionResult {
     debug!(target: "jfc::tools", %subject, blocked_count = blocked_by.len(), "task_create: creating");
     let Some(store) = store else {
@@ -19,6 +24,36 @@ pub(super) fn execute_task_create(
     };
     match store.create(subject, description, active_form, blocked_by) {
         Ok(task) => {
+            // Apply optional extended fields via a patch
+            let parsed_risk = risk.as_deref().and_then(parse_risk);
+            let parsed_kind = kind.as_deref().and_then(parse_kind);
+            let has_extras = acceptance_criteria.is_some()
+                || verification_command.is_some()
+                || parsed_risk.is_some()
+                || parent_id.is_some()
+                || parsed_kind.is_some();
+            if has_extras {
+                let patch = TaskPatch {
+                    acceptance_criteria,
+                    verification_command,
+                    risk: parsed_risk,
+                    parent_id: parent_id.map(crate::tasks::TaskId::from),
+                    kind: parsed_kind,
+                    ..Default::default()
+                };
+                match store.update(task.id.as_str(), patch) {
+                    Ok(updated) => {
+                        debug!(target: "jfc::tools", task_id = %updated.id, "task_create: success with extras");
+                        return ExecutionResult::success(
+                            serde_json::to_string_pretty(&updated)
+                                .unwrap_or_else(|_| format!("{updated:?}")),
+                        );
+                    }
+                    Err(e) => {
+                        warn!(target: "jfc::tools", error = %e, "task_create: extras patch failed");
+                    }
+                }
+            }
             debug!(target: "jfc::tools", task_id = %task.id, "task_create: success");
             ExecutionResult::success(
                 serde_json::to_string_pretty(&task).unwrap_or_else(|_| format!("{task:?}")),
@@ -38,6 +73,11 @@ pub(super) fn execute_task_update(
     subject: Option<String>,
     description: Option<String>,
     owner: Option<String>,
+    acceptance_criteria: Option<String>,
+    verification_command: Option<String>,
+    risk: Option<String>,
+    parent_id: Option<String>,
+    kind: Option<String>,
 ) -> ExecutionResult {
     debug!(target: "jfc::tools", task_id, status = status.as_deref(), "task_update: updating");
     let Some(store) = store else {
@@ -61,6 +101,11 @@ pub(super) fn execute_task_update(
         description,
         status: parsed_status,
         owner,
+        acceptance_criteria,
+        verification_command,
+        risk: risk.as_deref().and_then(parse_risk),
+        parent_id: parent_id.map(crate::tasks::TaskId::from),
+        kind: kind.as_deref().and_then(parse_kind),
         ..Default::default()
     };
     match store.update(task_id, patch) {
@@ -74,6 +119,36 @@ pub(super) fn execute_task_update(
             warn!(target: "jfc::tools", task_id, error = %e, "task_update: failed");
             ExecutionResult::failure(e.to_string())
         }
+    }
+}
+
+pub(super) fn execute_task_validate(store: Option<Arc<TaskStore>>) -> ExecutionResult {
+    debug!(target: "jfc::tools", "task_validate: validating");
+    let Some(store) = store else {
+        return ExecutionResult::failure("Task store not available");
+    };
+    let validation = store.validate();
+    let output = serde_json::to_string_pretty(&validation)
+        .unwrap_or_else(|_| format!("{validation:?}"));
+    ExecutionResult::success(output)
+}
+
+fn parse_risk(s: &str) -> Option<TaskRisk> {
+    match s {
+        "low" => Some(TaskRisk::Low),
+        "medium" => Some(TaskRisk::Medium),
+        "high" => Some(TaskRisk::High),
+        _ => None,
+    }
+}
+
+fn parse_kind(s: &str) -> Option<TaskKind> {
+    match s {
+        "milestone" => Some(TaskKind::Milestone),
+        "task" => Some(TaskKind::Task),
+        "check" => Some(TaskKind::Check),
+        "decision" => Some(TaskKind::Decision),
+        _ => None,
     }
 }
 

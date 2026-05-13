@@ -36,6 +36,7 @@ mod mentions;
 mod message_view;
 mod notifications;
 mod output_style;
+mod plan_cache;
 mod provider;
 mod providers;
 mod push_notifications;

@@ -1829,7 +1829,7 @@ async fn execute_grep_files_with_matches_mode_normal() {
 
 #[test]
 fn execute_task_create_without_store_fails_robust() {
-    let r = execute_task_create(None, "subj".into(), "desc".into(), None, vec![]);
+    let r = execute_task_create(None, "subj".into(), "desc".into(), None, vec![], None, None, None, None, None);
     assert!(r.is_error());
     assert!(r.output.contains("Task store not available"));
 }
@@ -1843,6 +1843,7 @@ fn execute_task_create_with_store_returns_task_json_normal() {
         "release v1".into(),
         None,
         vec![],
+        None, None, None, None, None,
     );
     assert!(!r.is_error(), "{:?}", r);
     // The output is the JSON of the created task — should mention the
@@ -1860,13 +1861,14 @@ fn execute_task_create_with_unknown_dependency_fails_robust() {
         "y".into(),
         None,
         vec!["t999".into()],
+        None, None, None, None, None,
     );
     assert!(r.is_error(), "{:?}", r);
 }
 
 #[test]
 fn execute_task_update_without_store_fails_robust() {
-    let r = execute_task_update(None, "t1", None, None, None, None);
+    let r = execute_task_update(None, "t1", None, None, None, None, None, None, None, None, None);
     assert!(r.is_error());
 }
 
@@ -1879,6 +1881,7 @@ fn execute_task_update_changes_status_normal() {
         "do alpha".into(),
         None,
         vec![],
+        None, None, None, None, None,
     );
     assert!(!create.is_error());
     // First-created task gets id `t1`.
@@ -1889,6 +1892,7 @@ fn execute_task_update_changes_status_normal() {
         None,
         None,
         None,
+        None, None, None, None, None,
     );
     assert!(!r.is_error(), "{}", r.output);
     assert!(r.output.contains("in_progress"), "{}", r.output);
@@ -1897,7 +1901,7 @@ fn execute_task_update_changes_status_normal() {
 #[test]
 fn execute_task_update_invalid_status_fails_robust() {
     let store = TaskStore::in_memory();
-    execute_task_create(Some(store.clone()), "x".into(), "y".into(), None, vec![]);
+    execute_task_create(Some(store.clone()), "x".into(), "y".into(), None, vec![], None, None, None, None, None);
     let r = execute_task_update(
         Some(store),
         "t1",
@@ -1905,6 +1909,7 @@ fn execute_task_update_invalid_status_fails_robust() {
         Some("renamed".into()),
         None,
         None,
+        None, None, None, None, None,
     );
     assert!(r.is_error(), "{}", r.output);
     assert!(r.output.contains("Invalid task status"), "{}", r.output);
@@ -1913,7 +1918,7 @@ fn execute_task_update_invalid_status_fails_robust() {
 #[test]
 fn execute_task_done_marks_completed_normal() {
     let store = TaskStore::in_memory();
-    execute_task_create(Some(store.clone()), "do".into(), "it".into(), None, vec![]);
+    execute_task_create(Some(store.clone()), "do".into(), "it".into(), None, vec![], None, None, None, None, None);
     let r = execute_task_done(Some(store), "t1");
     assert!(!r.is_error(), "{}", r.output);
     assert!(r.output.contains("completed"), "{}", r.output);
@@ -1941,6 +1946,7 @@ fn execute_task_list_returns_tasks_normal() {
         "first".into(),
         None,
         vec![],
+        None, None, None, None, None,
     );
     execute_task_create(
         Some(store.clone()),
@@ -1948,6 +1954,7 @@ fn execute_task_list_returns_tasks_normal() {
         "second".into(),
         None,
         vec![],
+        None, None, None, None, None,
     );
     let r = execute_task_list(Some(store), None, None);
     assert!(!r.is_error(), "{}", r.output);
@@ -1958,7 +1965,7 @@ fn execute_task_list_returns_tasks_normal() {
 #[test]
 fn execute_task_list_filters_by_owner_robust() {
     let store = TaskStore::in_memory();
-    execute_task_create(Some(store.clone()), "x".into(), "y".into(), None, vec![]);
+    execute_task_create(Some(store.clone()), "x".into(), "y".into(), None, vec![], None, None, None, None, None);
     execute_task_update(
         Some(store.clone()),
         "t1",
@@ -1966,6 +1973,7 @@ fn execute_task_list_filters_by_owner_robust() {
         None,
         None,
         Some("alice".into()),
+        None, None, None, None, None,
     );
     let only_alice = execute_task_list(Some(store.clone()), None, Some("alice"));
     assert!(only_alice.output.contains("alice"), "{}", only_alice.output);
@@ -2223,6 +2231,11 @@ async fn execute_tool_dispatches_task_create_normal() {
             description: "test".into(),
             active_form: None,
             blocked_by: vec![],
+            acceptance_criteria: None,
+            verification_command: None,
+            risk: None,
+            parent_id: None,
+            kind: None,
         },
         PathBuf::from("."),
         None,

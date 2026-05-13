@@ -1106,6 +1106,7 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             description,
             active_form,
             blocked_by,
+            ..
         } => SerializedToolInput::TaskCreate {
             subject: subject.clone(),
             description: description.clone(),
@@ -1118,6 +1119,7 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             subject,
             description,
             owner,
+            ..
         } => SerializedToolInput::TaskUpdate {
             task_id: task_id.clone(),
             status: status.clone(),
@@ -1137,6 +1139,9 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         },
         ToolInput::TaskGet { task_id } => SerializedToolInput::TaskGet {
             task_id: task_id.clone(),
+        },
+        ToolInput::TaskValidate => SerializedToolInput::Generic {
+            summary: "TaskValidate".to_string(),
         },
         ToolInput::Skill { name, args } => SerializedToolInput::Skill {
             name: name.clone(),
@@ -1596,6 +1601,11 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             description,
             active_form,
             blocked_by,
+            acceptance_criteria: None,
+            verification_command: None,
+            risk: None,
+            parent_id: None,
+            kind: None,
         },
         SerializedToolInput::TaskUpdate {
             task_id,
@@ -1609,6 +1619,11 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             subject,
             description,
             owner,
+            acceptance_criteria: None,
+            verification_command: None,
+            risk: None,
+            parent_id: None,
+            kind: None,
         },
         SerializedToolInput::TaskList {
             status_filter,

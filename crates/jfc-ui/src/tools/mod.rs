@@ -44,7 +44,7 @@ use swarm::{
 };
 use tasks::{
     execute_task_create, execute_task_done, execute_task_get, execute_task_list,
-    execute_task_update,
+    execute_task_update, execute_task_validate,
 };
 use worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
 
@@ -987,8 +987,13 @@ pub async fn execute_tool(
                 description,
                 active_form,
                 blocked_by,
+                acceptance_criteria,
+                verification_command,
+                risk,
+                parent_id,
+                kind,
             },
-        ) => execute_task_create(task_store, subject, description, active_form, blocked_by),
+        ) => execute_task_create(task_store, subject, description, active_form, blocked_by, acceptance_criteria, verification_command, risk, parent_id, kind),
         (
             ToolKind::TaskUpdate,
             ToolInput::TaskUpdate {
@@ -997,8 +1002,13 @@ pub async fn execute_tool(
                 subject,
                 description,
                 owner,
+                acceptance_criteria,
+                verification_command,
+                risk,
+                parent_id,
+                kind,
             },
-        ) => execute_task_update(task_store, &task_id, status, subject, description, owner),
+        ) => execute_task_update(task_store, &task_id, status, subject, description, owner, acceptance_criteria, verification_command, risk, parent_id, kind),
         (
             ToolKind::TaskList,
             ToolInput::TaskList {
@@ -1015,6 +1025,9 @@ pub async fn execute_tool(
         }
         (ToolKind::TaskGet, ToolInput::TaskGet { task_id }) => {
             execute_task_get(task_store, &task_id)
+        }
+        (ToolKind::TaskValidate, ToolInput::TaskValidate) => {
+            execute_task_validate(task_store)
         }
         (ToolKind::Task, ToolInput::Task(_)) => {
             ExecutionResult::failure("Task tool must be dispatched via the streaming executor")

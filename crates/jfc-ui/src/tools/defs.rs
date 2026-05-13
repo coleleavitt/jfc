@@ -157,6 +157,28 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                         "type": "array",
                         "items": { "type": "string" },
                         "description": "Task ids that must complete before this task can start"
+                    },
+                    "acceptance_criteria": {
+                        "type": "string",
+                        "description": "Mechanistic pass/fail criteria for verifying task completion (e.g. 'cargo test --lib foo passes')"
+                    },
+                    "verification_command": {
+                        "type": "string",
+                        "description": "Shell command to confirm done-ness (e.g. 'cargo test -p jfc-ui')"
+                    },
+                    "risk": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                        "description": "Risk level. High-risk tasks require user approval before auto-execution."
+                    },
+                    "parent_id": {
+                        "type": "string",
+                        "description": "Parent task id for hierarchical task trees"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": ["milestone", "task", "check", "decision"],
+                        "description": "Task kind: milestone (grouping), task (work unit), check (verification), decision (requires input)"
                     }
                 },
                 "required": ["subject", "description"]
@@ -188,6 +210,28 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                     "owner": {
                         "type": "string",
                         "description": "Assign task to a teammate name"
+                    },
+                    "acceptance_criteria": {
+                        "type": "string",
+                        "description": "Mechanistic pass/fail criteria for verifying task completion"
+                    },
+                    "verification_command": {
+                        "type": "string",
+                        "description": "Shell command to confirm done-ness"
+                    },
+                    "risk": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                        "description": "Risk level"
+                    },
+                    "parent_id": {
+                        "type": "string",
+                        "description": "Parent task id for hierarchical task trees"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": ["milestone", "task", "check", "decision"],
+                        "description": "Task kind"
                     }
                 },
                 "required": ["task_id"]
@@ -238,6 +282,18 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                     }
                 },
                 "required": ["task_id"]
+            }),
+        },
+        ToolDef {
+            name: "TaskValidate".into(),
+            description: "Validate the task graph for health issues. Returns a structured report \
+                identifying orphaned tasks, tasks blocked forever, tasks without verification \
+                criteria, duplicate subjects, and parallelization opportunities. Use after \
+                creating a batch of tasks to check plan soundness.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
             }),
         },
         ToolDef {
