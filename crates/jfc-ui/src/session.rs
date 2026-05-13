@@ -1316,6 +1316,12 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
                 edit_mode.as_deref().unwrap_or("replace"),
             ),
         },
+        ToolInput::ScratchpadRead { key } => SerializedToolInput::Generic {
+            summary: format!("ScratchpadRead: {key}"),
+        },
+        ToolInput::ScratchpadWrite { key, .. } => SerializedToolInput::Generic {
+            summary: format!("ScratchpadWrite: {key}"),
+        },
         ToolInput::Generic { summary } => SerializedToolInput::Generic {
             summary: summary.clone(),
         },

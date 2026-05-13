@@ -1033,5 +1033,37 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                 "required": ["path", "cell_id", "new_source"]
             }),
         },
+        ToolDef {
+            name: "ScratchpadRead".into(),
+            description: "Read a value from the shared inter-agent scratchpad by key. Returns the value if set, or an error if the key doesn't exist. Use this to read findings left by sibling agents.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "The key to read from the scratchpad"
+                    }
+                },
+                "required": ["key"]
+            }),
+        },
+        ToolDef {
+            name: "ScratchpadWrite".into(),
+            description: "Write a key-value pair to the shared inter-agent scratchpad. Other agents (siblings, teammates) can read this value via ScratchpadRead. Use for sharing discovered facts, file paths, intermediate results.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "The key to write to the scratchpad"
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "The value to store"
+                    }
+                },
+                "required": ["key", "value"]
+            }),
+        },
     ]
 }

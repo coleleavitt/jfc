@@ -394,6 +394,10 @@ pub struct App {
     /// Updated by the tool execution loop to show what an in_progress task is
     /// doing (e.g. "Running bash: cargo test", "Reading src/main.rs").
     pub task_activities: HashMap<TaskId, String>,
+    /// Plan verification gate: when true, the plan has already been verified
+    /// for the current batch of pending tasks. Reset to false whenever new
+    /// tasks are created via TaskCreate.
+    pub plan_verified_this_batch: bool,
     pub last_usage_input: u32,
     pub last_usage_output: u32,
     /// Auto-expiring toast queue. Pruned every `Tick`. Pushed via
@@ -759,6 +763,7 @@ impl App {
             task_panel_selected: 0,
             task_panel_state: TableState::default().with_selected(Some(0)),
             task_activities: HashMap::new(),
+            plan_verified_this_batch: false,
             last_usage_input: 0,
             last_usage_output: 0,
             toasts: Vec::new(),

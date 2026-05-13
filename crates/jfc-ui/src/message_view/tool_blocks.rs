@@ -641,6 +641,7 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
             Color::Rgb(180, 220, 180)
         }
         ToolKind::NotebookRead | ToolKind::NotebookEdit => Color::Rgb(255, 170, 100),
+        ToolKind::ScratchpadRead | ToolKind::ScratchpadWrite => Color::Rgb(200, 200, 160), // warm grey
         ToolKind::Generic(_) => t.text_secondary,
         // Unknown tools render in a muted style — they're never
         // dispatched (permission layer denies them), so the row is

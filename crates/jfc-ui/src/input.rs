@@ -4481,6 +4481,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                         crate::tasks::TaskStatus::Completed => "✓",
                         crate::tasks::TaskStatus::InProgress => "⏵",
                         crate::tasks::TaskStatus::Pending => "•",
+                        crate::tasks::TaskStatus::Failed => "✗",
                         crate::tasks::TaskStatus::Deleted => "✗",
                     };
                     let file = t
@@ -4569,6 +4570,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                         crate::tasks::TaskStatus::Pending => "□",
                         crate::tasks::TaskStatus::InProgress => "▣",
                         crate::tasks::TaskStatus::Completed => "✓",
+                        crate::tasks::TaskStatus::Failed => "✗",
                         crate::tasks::TaskStatus::Deleted => "✗",
                     };
                     let owner = t

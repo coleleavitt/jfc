@@ -751,6 +751,8 @@ pub enum ToolKind {
     ExitWorktree,
     NotebookRead,
     NotebookEdit,
+    ScratchpadRead,
+    ScratchpadWrite,
     /// Anthropic server-side web search tool. The model invokes this as a
     /// `server_tool_use` block; Anthropic executes it and returns results in
     /// a subsequent `tool_result`. jfc renders but does not dispatch it.
@@ -1025,6 +1027,13 @@ pub enum ToolInput {
         cell_id: String,
         new_source: String,
         edit_mode: Option<String>,
+    },
+    ScratchpadRead {
+        key: String,
+    },
+    ScratchpadWrite {
+        key: String,
+        value: String,
     },
     Generic {
         summary: String,
@@ -1580,6 +1589,8 @@ impl ToolKind {
             "exitworktree" | "exit_worktree" => Self::ExitWorktree,
             "notebookread" | "notebook_read" => Self::NotebookRead,
             "notebookedit" | "notebook_edit" => Self::NotebookEdit,
+            "scratchpadread" | "scratchpad_read" => Self::ScratchpadRead,
+            "scratchpadwrite" | "scratchpad_write" => Self::ScratchpadWrite,
             // Server-side tool invocations arrive with the "server_tool_use:"
             // prefix injected in sse.rs translate(). Strip it and route to
             // the server-side variant.
@@ -1660,6 +1671,8 @@ impl ToolKind {
             Self::ExitWorktree => "ExitWorktree",
             Self::NotebookRead => "NotebookRead",
             Self::NotebookEdit => "NotebookEdit",
+            Self::ScratchpadRead => "ScratchpadRead",
+            Self::ScratchpadWrite => "ScratchpadWrite",
             Self::ServerWebSearch => "ServerWebSearch",
             Self::ServerCodeExecution => "ServerCodeExecution",
             Self::Generic(name) => name.as_str(),
@@ -1720,6 +1733,8 @@ impl ToolKind {
             Self::ExitWorktree => "ExitWorktree",
             Self::NotebookRead => "NotebookRead",
             Self::NotebookEdit => "NotebookEdit",
+            Self::ScratchpadRead => "ScratchpadRead",
+            Self::ScratchpadWrite => "ScratchpadWrite",
             Self::ServerWebSearch => "server_tool_use:web_search",
             Self::ServerCodeExecution => "server_tool_use:code_execution",
             Self::Generic(name) => name.as_str(),
@@ -1892,6 +1907,8 @@ impl ToolInput {
                 let mode = edit_mode.as_deref().unwrap_or("replace");
                 format!("notebook {mode} {path}#{cell_id}")
             }
+            Self::ScratchpadRead { key } => format!("scratchpad read: {key}"),
+            Self::ScratchpadWrite { key, .. } => format!("scratchpad write: {key}"),
             Self::Generic { summary } => summary.clone(),
         }
     }
@@ -2274,6 +2291,13 @@ impl ToolInput {
                 cell_id: req_str("cell_id")?,
                 new_source: req_str("new_source")?,
                 edit_mode: opt_str_field("edit_mode"),
+            },
+            ToolKind::ScratchpadRead => Self::ScratchpadRead {
+                key: req_str("key")?,
+            },
+            ToolKind::ScratchpadWrite => Self::ScratchpadWrite {
+                key: req_str("key")?,
+                value: req_str("value")?,
             },
             // Server-side tools: store a human-readable summary of the input
             // so the render layer can display query/params without dispatching.
@@ -2697,6 +2721,8 @@ impl ToolInput {
                 }
                 v
             }
+            Self::ScratchpadRead { key } => json!({ "key": key }),
+            Self::ScratchpadWrite { key, value } => json!({ "key": key, "value": value }),
             Self::Generic { summary } => match serde_json::from_str::<serde_json::Value>(summary) {
                 Ok(serde_json::Value::Object(map)) => serde_json::Value::Object(map),
                 Ok(_non_object) => json!({ "input": summary }),

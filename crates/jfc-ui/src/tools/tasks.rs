@@ -47,10 +47,11 @@ pub(super) fn execute_task_update(
         Some("pending") => Some(TaskStatus::Pending),
         Some("in_progress") => Some(TaskStatus::InProgress),
         Some("completed") => Some(TaskStatus::Completed),
+        Some("failed") => Some(TaskStatus::Failed),
         Some("deleted") => Some(TaskStatus::Deleted),
         Some(other) => {
             return ExecutionResult::failure(format!(
-                "Invalid task status '{other}'. Expected one of: pending, in_progress, completed, deleted"
+                "Invalid task status '{other}'. Expected one of: pending, in_progress, completed, failed, deleted"
             ));
         }
         None => None,

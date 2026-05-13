@@ -348,6 +348,40 @@ fn auto_context_queue() -> &'static std::sync::Mutex<Vec<std::path::PathBuf>> {
     QUEUE.get_or_init(|| std::sync::Mutex::new(Vec::new()))
 }
 
+/// Process-global inter-agent scratchpad. A shared key-value store that
+/// subagents and teammates can read/write to coordinate findings without
+/// passing data through the parent model's context. Intentionally global
+/// (unlike the deleted attachment queue which was a bug) — scratchpad is
+/// designed for cross-agent communication.
+fn scratchpad() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
+    static PAD: OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> =
+        OnceLock::new();
+    PAD.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+fn execute_scratchpad_read(key: &str) -> ExecutionResult {
+    match scratchpad().lock() {
+        Ok(map) => match map.get(key) {
+            Some(value) => ExecutionResult::success(value.clone()),
+            None => ExecutionResult::failure(format!(
+                "Key '{key}' not found in scratchpad. Available keys: {}",
+                map.keys().cloned().collect::<Vec<_>>().join(", ")
+            )),
+        },
+        Err(_) => ExecutionResult::failure("Scratchpad lock poisoned"),
+    }
+}
+
+fn execute_scratchpad_write(key: &str, value: &str) -> ExecutionResult {
+    match scratchpad().lock() {
+        Ok(mut map) => {
+            map.insert(key.to_string(), value.to_string());
+            ExecutionResult::success(format!("Written to scratchpad key '{key}' ({} bytes)", value.len()))
+        }
+        Err(_) => ExecutionResult::failure("Scratchpad lock poisoned"),
+    }
+}
+
 /// Record that `path` was edited. Called from the Edit / Write /
 /// symbol_edit tool handlers after a successful write. Cheap — just
 /// appends to a Vec under a Mutex. The actual graph query runs
@@ -2006,6 +2040,12 @@ pub async fn execute_tool(
                 edit_mode,
             },
         ) => execute_notebook_edit(&path, &cell_id, &new_source, edit_mode.as_deref()).await,
+        (ToolKind::ScratchpadRead, ToolInput::ScratchpadRead { key }) => {
+            execute_scratchpad_read(&key)
+        }
+        (ToolKind::ScratchpadWrite, ToolInput::ScratchpadWrite { key, value }) => {
+            execute_scratchpad_write(&key, &value)
+        }
         (kind, _) => ExecutionResult::failure(format!("Tool {:?} not yet implemented", kind)),
     }
 }

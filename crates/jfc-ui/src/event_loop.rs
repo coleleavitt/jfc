@@ -346,6 +346,38 @@ async fn maybe_continue_task_factory(app: &mut App, tx: &mpsc::Sender<AppEvent>)
         return;
     }
 
+    // Plan verification: if this is the first claim after a fresh batch of
+    // tasks was created (no tasks are InProgress yet, and multiple are Pending),
+    // first ask the model to verify the plan is sound before executing.
+    let counts = app.task_store.counts();
+    if counts.pending >= 3 && counts.in_progress == 0 && !app.plan_verified_this_batch {
+        app.plan_verified_this_batch = true;
+        let tasks = app.task_store.list_all();
+        let pending: Vec<_> = tasks
+            .iter()
+            .filter(|t| t.status == crate::tasks::TaskStatus::Pending)
+            .collect();
+        let task_list = pending
+            .iter()
+            .map(|t| {
+                format!(
+                    "- {} (blocked_by: {:?}): {}",
+                    t.id, t.blocked_by, t.subject
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prompt = format!(
+            "Before executing the task queue, verify this plan is sound:\n\n{task_list}\n\n\
+             Check for: missing dependencies, circular deps, tasks that should be parallel but are serial, \
+             tasks that are too broad to complete in one agent turn. \
+             If the plan is good, say 'Plan verified' and I'll start execution. \
+             If changes are needed, use TaskUpdate/TaskCreate/TaskDone to revise, then say 'Plan revised'."
+        );
+        let _ = tx.send(AppEvent::Submit(prompt)).await;
+        return;
+    }
+
     let Some(task) = app.task_store.claim_next_available("jfc-factory") else {
         return;
     };
@@ -2747,6 +2779,13 @@ pub(crate) async fn run(
                                             std::time::Instant::now(),
                                         ));
                                     }
+                                    // Reset plan verification when new tasks are
+                                    // created so the next factory cycle re-verifies.
+                                    if matches!(tc.kind, ToolKind::TaskCreate)
+                                        && matches!(new_status, ToolStatus::Completed)
+                                    {
+                                        app.plan_verified_this_batch = false;
+                                    }
                                     found = true;
                                     break;
                                 }
@@ -3076,6 +3115,40 @@ pub(crate) async fn run(
                         && app.compacting_started_at.is_none()
                         && stream::should_continue_loop(&app.messages)
                     {
+                        // Fan-out consolidation: if multiple parallel agent
+                        // tasks completed in this batch, inject a summary
+                        // so the model sees a coherent digest before responding.
+                        if let Some(last_assistant) = app.messages.iter().rev().find(|m| m.role == Role::Assistant) {
+                            let task_summaries: Vec<String> = last_assistant
+                                .parts
+                                .iter()
+                                .filter_map(|p| {
+                                    if let MessagePart::TaskStatus(ts) = p {
+                                        if ts.status.is_terminal() {
+                                            return ts.summary.clone().or_else(|| ts.error.clone());
+                                        }
+                                    }
+                                    None
+                                })
+                                .collect();
+                            if task_summaries.len() >= 2 {
+                                let task_count = task_summaries.len();
+                                let consolidated = format!(
+                                    "{task_count} parallel agents completed this batch. Their results:\n\n{}",
+                                    task_summaries
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(i, s)| format!("{}. {}", i + 1, s.chars().take(200).collect::<String>()))
+                                        .collect::<Vec<_>>()
+                                        .join("\n")
+                                );
+                                crate::system_reminder::append_to_last_user(
+                                    &mut app.messages,
+                                    &format!("Consolidation of {task_count} parallel agent results:\n\n{consolidated}\n\nSynthesize these results into a coherent response. Deduplicate overlapping findings. Note any contradictions between agents."),
+                                );
+                            }
+                        }
+
                         tracing::info!(
                             target: "jfc::stream",
                             "agentic loop continuing — tools complete, no pending approvals"
@@ -3669,6 +3742,38 @@ pub(crate) async fn run(
                                 }
                             }
                         }
+                    }
+
+                    // Adaptive re-planning: cascade failure to dependent tasks
+                    // and inject a system_reminder to prompt the model to re-plan.
+                    if !was_cancelled && factory_mode_enabled() {
+                        let cascaded_ids = app.task_store.cascade_failure(task_id.as_str());
+                        let subject = app
+                            .task_store
+                            .get(task_id.as_str())
+                            .map(|t| t.subject.clone())
+                            .unwrap_or_default();
+                        let cascaded_str = if cascaded_ids.is_empty() {
+                            "none".to_string()
+                        } else {
+                            cascaded_ids
+                                .iter()
+                                .map(|id| id.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        };
+                        let reminder = format!(
+                            "Task {task_id} ({subject}) failed: {error}. Dependent tasks [{cascaded_str}] have been cancelled. \
+                             Review the failure and either:\n\
+                             1. Fix the issue and re-create the failed task with TaskCreate\n\
+                             2. Revise the plan by creating replacement tasks\n\
+                             3. Mark the remaining work as not needed via TaskUpdate(status=deleted)"
+                        );
+                        crate::system_reminder::append_to_last_user(
+                            &mut app.messages,
+                            &reminder,
+                        );
+                        maybe_continue_task_factory(&mut app, &tx).await;
                     }
                 }
                 AppEvent::TeammateSpawned {

@@ -157,6 +157,7 @@ pub enum TaskStatus {
     Pending,
     InProgress,
     Completed,
+    Failed,
     Deleted,
 }
 
@@ -583,10 +584,60 @@ impl TaskStore {
                 TaskStatus::Pending => c.pending += 1,
                 TaskStatus::InProgress => c.in_progress += 1,
                 TaskStatus::Completed => c.completed += 1,
-                TaskStatus::Deleted => {}
+                TaskStatus::Failed | TaskStatus::Deleted => {}
             }
         }
         c
+    }
+
+    /// List all tasks (excluding deleted). Convenience for plan verification.
+    pub fn list_all(&self) -> Vec<Task> {
+        self.list(DeletedFilter::Exclude)
+    }
+
+    /// Cascade failure: when a task fails, mark all tasks that depend on it
+    /// (directly or transitively) as Failed. Returns the list of newly-failed
+    /// task IDs. Persists after cascade.
+    pub fn cascade_failure(&self, failed_id: &str) -> Vec<TaskId> {
+        let mut inner = self.inner.lock().unwrap();
+        let mut newly_failed = Vec::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(TaskId::new(failed_id.to_string()));
+
+        while let Some(current_id) = queue.pop_front() {
+            // Find all tasks whose blocked_by contains current_id
+            let dependents: Vec<TaskId> = inner
+                .tasks
+                .values()
+                .filter(|t| {
+                    t.blocked_by.contains(&current_id)
+                        && t.status != TaskStatus::Failed
+                        && t.status != TaskStatus::Deleted
+                        && t.status != TaskStatus::Completed
+                })
+                .map(|t| t.id.clone())
+                .collect();
+
+            for dep_id in dependents {
+                if let Some(task) = inner.tasks.get_mut(dep_id.as_str()) {
+                    task.status = TaskStatus::Failed;
+                    newly_failed.push(dep_id.clone());
+                    // Recursively cascade to this task's dependents
+                    queue.push_back(dep_id);
+                }
+            }
+        }
+
+        if !newly_failed.is_empty() {
+            tracing::info!(
+                target: "jfc::tasks",
+                failed_id,
+                cascaded_count = newly_failed.len(),
+                "cascade_failure: propagated failure"
+            );
+            self.persist(&inner);
+        }
+        newly_failed
     }
 }
 

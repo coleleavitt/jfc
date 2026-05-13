@@ -74,6 +74,8 @@ impl PermissionMode {
                 | ToolKind::TeamCreate
                 | ToolKind::TeamDelete
                 | ToolKind::SendMessage
+                | ToolKind::ScratchpadRead
+                | ToolKind::ScratchpadWrite
                 // ExitPlanMode is the *only* way the agent can leave
                 // plan mode programmatically. Auto-approving it lets
                 // the model surface a plan whenever it's ready —
@@ -104,7 +106,9 @@ impl PermissionMode {
                 | ToolKind::ToolSuggest
                 | ToolKind::TeamCreate
                 | ToolKind::TeamDelete
-                | ToolKind::SendMessage => PermissionDecision::Approved,
+                | ToolKind::SendMessage
+                | ToolKind::ScratchpadRead
+                | ToolKind::ScratchpadWrite => PermissionDecision::Approved,
                 _ => PermissionDecision::NeedsPrompt,
             },
             Self::BypassPermissions => PermissionDecision::Approved,
