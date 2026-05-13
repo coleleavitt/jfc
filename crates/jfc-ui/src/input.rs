@@ -3185,7 +3185,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 for (i, s) in sessions.iter().take(20).enumerate() {
                     let prompt = s.first_prompt.as_deref().unwrap_or("(no prompt)");
                     let prompt_display = if prompt.len() > 50 {
-                        format!("{}…", &prompt[..50])
+                        let boundary = prompt.floor_char_boundary(50);
+                        format!("{}…", &prompt[..boundary])
                     } else {
                         prompt.to_string()
                     };

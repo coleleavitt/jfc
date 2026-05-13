@@ -354,7 +354,7 @@ fn render_memory_listing(memories: &[MemoryEntry]) -> String {
             .unwrap_or("unknown.md");
         let preview = mem.body.lines().next().unwrap_or("(empty)").trim();
         let preview = if preview.len() > 200 {
-            format!("{}…", &preview[..200])
+            format!("{}…", &preview[..preview.floor_char_boundary(200)])
         } else {
             preview.to_owned()
         };

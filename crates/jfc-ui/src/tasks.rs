@@ -391,7 +391,7 @@ impl TaskStore {
             }
         }
         let truncated_subject: &str = if subject.len() > 80 {
-            &subject[..80]
+            &subject[..subject.floor_char_boundary(80)]
         } else {
             &subject
         };

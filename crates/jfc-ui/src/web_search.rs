@@ -738,7 +738,7 @@ async fn search_s2_public(query: &str, limit: usize) -> Result<String, String> {
                 // Abstract (truncated).
                 if let Some(abs) = paper.get("abstract").and_then(|v| v.as_str()) {
                     let abs = if abs.len() > 200 {
-                        format!("{}...", &abs[..200])
+                        format!("{}...", &abs[..abs.floor_char_boundary(200)])
                     } else {
                         abs.to_string()
                     };
