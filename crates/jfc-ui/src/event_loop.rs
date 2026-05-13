@@ -156,13 +156,24 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
         let placeholder = format!("{glyph} {text}");
         for msg in app.messages.iter_mut() {
             if msg.role == Role::User {
+                let mut replaced = false;
                 for part in msg.parts.iter_mut() {
                     if let MessagePart::Text(t) = part {
                         if *t == placeholder {
                             *t = text.clone();
+                            replaced = true;
                             break;
                         }
                     }
+                }
+                // Promotion: clear the `queued` flag so
+                // `build_provider_messages*` includes this message in the
+                // next turn. Without this, the queued message's clean
+                // text would replace the placeholder but the flag would
+                // stay `true`, leaving the prompt invisible to the
+                // provider forever.
+                if replaced && msg.queued {
+                    msg.queued = false;
                 }
             }
         }
@@ -2972,9 +2983,40 @@ pub(crate) async fn run(
                         );
                     } else {
                         app.messages = messages;
+                        // Migrate cleanup flags (rapid_refill_count,
+                        // last_compact_turn, etc.) from the compact
+                        // worker's local tool_ctx, but preserve the
+                        // calibrated `approx_tokens` already on app —
+                        // either the wire-reported value from the most
+                        // recent `StreamUsage` or the resume-time anchor
+                        // from `recompute_token_estimate`. Overwriting
+                        // with the post-compaction chars-based estimate
+                        // (`post_tokens`) created a down-then-up flicker:
+                        // gauge would drop to the local estimate (e.g.
+                        // 60k) and then the next stream's first
+                        // `StreamUsage` would snap it back to the
+                        // wire-truth (e.g. 500k, dominated by cache_read
+                        // of the still-cached system prompt + tool defs).
+                        // Recompute from messages so the visible value
+                        // reflects what's actually about to be sent on
+                        // the next turn — both compaction and the
+                        // pre-submit gate now use the same source.
+                        let preserved = app.tool_ctx.approx_tokens;
                         app.tool_ctx = tool_ctx;
-                        app.tool_ctx.approx_tokens = post_tokens;
+                        // Use the smaller of (preserved calibrated value)
+                        // and post_tokens — preserved is wire-truth from
+                        // before compact, post_tokens is a local
+                        // estimate. After compaction the real prompt is
+                        // ≤ pre-compact; clamping to min protects against
+                        // showing the user a count larger than reality.
+                        app.tool_ctx.approx_tokens = preserved.min(post_tokens);
                         app.last_usage_input = 0;
+                        // Reset the per-turn baseline so the next
+                        // `StreamUsage` cumulative delta builds from 0,
+                        // not from pre-compact totals — without this,
+                        // `apply_cumulative` would treat the post-compact
+                        // input as a negative delta and stall.
+                        app.usage_apply_baseline = (0, 0, 0, 0);
                     }
                     app.compacting_started_at = None;
                     app.compacting_output_chars = 0;

@@ -133,14 +133,31 @@ impl App {
             self.last_usage_input = u.input_tokens as u32;
             self.last_usage_output = u.output_tokens as u32;
             let base = u.total_context_tokens() as usize;
-            // Estimate tokens for messages added after the usage-bearing message
-            let tail = &self.messages[idx + 1..];
-            let tail_estimate = crate::compact::estimate_tokens(tail);
+            // Estimate tokens for messages added after the usage-bearing
+            // message — but exclude queued placeholders, since they
+            // aren't actually in the prompt the model sees (see
+            // `build_provider_messages`).
+            let tail: Vec<crate::types::ChatMessage> = self.messages[idx + 1..]
+                .iter()
+                .filter(|m| !m.queued)
+                .cloned()
+                .collect();
+            let tail_estimate = crate::compact::estimate_tokens(&tail);
             self.tool_ctx.approx_tokens = base + tail_estimate;
         } else {
             self.last_usage_input = 0;
             self.last_usage_output = 0;
-            self.tool_ctx.approx_tokens = crate::compact::estimate_tokens(&self.messages);
+            // Same queued filter as above. Without this, queueing a
+            // long prompt during a streaming turn would visibly bump
+            // the context gauge even though that text isn't part of
+            // the current prompt.
+            let unqueued: Vec<crate::types::ChatMessage> = self
+                .messages
+                .iter()
+                .filter(|m| !m.queued)
+                .cloned()
+                .collect();
+            self.tool_ctx.approx_tokens = crate::compact::estimate_tokens(&unqueued);
         }
         tracing::debug!(
             target: "jfc::app",
@@ -245,7 +262,15 @@ impl App {
         // chars/4 heuristic, making the gauge jump down to near-zero.
         let has_usage_based_estimate = self.messages.iter().rev().any(|m| m.usage.is_some());
         if !has_usage_based_estimate {
-            self.tool_ctx.approx_tokens = crate::compact::estimate_tokens(&self.messages);
+            // Exclude queued placeholders — same rationale as
+            // `recompute_token_estimate`.
+            let unqueued: Vec<crate::types::ChatMessage> = self
+                .messages
+                .iter()
+                .filter(|m| !m.queued)
+                .cloned()
+                .collect();
+            self.tool_ctx.approx_tokens = crate::compact::estimate_tokens(&unqueued);
         }
         tracing::info!(
             target: "jfc::app",
