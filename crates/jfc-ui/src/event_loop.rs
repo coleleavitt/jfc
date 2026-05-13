@@ -151,7 +151,26 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     let mut non_meta_texts: Vec<String> = Vec::with_capacity(total - meta_count);
     let mut first_non_meta_text: Option<String> = None;
     for qp in drained {
-        let crate::app::QueuedPrompt { text, is_meta } = qp;
+        let crate::app::QueuedPrompt {
+            text,
+            is_meta,
+            attachments,
+        } = qp;
+        // Re-stage this prompt's attachments BEFORE any slash command
+        // runs (which would also drain). Pushed into the same
+        // process-global queue handle_submit pumps from, so the
+        // submit-time path picks them up just like a fresh paste +
+        // submit would.
+        if !attachments.is_empty() {
+            tracing::info!(
+                target: "jfc::ui::queue",
+                count = attachments.len(),
+                "drain_queued_prompts: re-staging attachments captured at queue time"
+            );
+            for att in attachments {
+                crate::tools::push_pending_tool_attachment(att);
+            }
+        }
         let glyph = if is_meta { "⚙" } else { "⏳" };
         let placeholder = format!("{glyph} {text}");
         for msg in app.messages.iter_mut() {

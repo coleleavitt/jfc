@@ -2166,9 +2166,16 @@ pub async fn handle_key(
                     is_meta,
                     "queued_prompt"
                 );
+                // Capture any pasted attachments onto THIS queued
+                // prompt so they re-stage atomically when the entry
+                // drains. Drained-by-value (`mem::take`) so subsequent
+                // pastes (even before the queue drains) don't pile
+                // onto this prompt.
+                let attachments = std::mem::take(&mut app.pending_attachments);
                 app.queued_prompts.push_back(crate::app::QueuedPrompt {
                     text: text.clone(),
                     is_meta,
+                    attachments,
                 });
                 // Insert as a `queued` user message so the user can SEE
                 // "I queued this" in the transcript, but
@@ -2345,6 +2352,17 @@ async fn handle_submit(
     // it as an attachment so the model sees the content alongside the
     // user's text. URLs (containing `://`) are skipped — those are
     // user-supplied references, not local paths.
+    //
+    // Text @-mentions used to call `append_to_last_user` here, BEFORE
+    // the new user message was pushed (that happens further down at
+    // `app.messages.push(ChatMessage::user(text.clone()))`). That meant
+    // the reminder was tacked onto the PREVIOUS user message — the
+    // model saw the file content attached to the wrong turn. Now we
+    // collect the reminder bodies first and inject them after the new
+    // user message lands. Binary attachments still stage immediately
+    // (they go through the tool-global queue which is drained at
+    // provider-message build time, so ordering doesn't matter there).
+    let mut deferred_text_reminders: Vec<String> = Vec::new();
     {
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         for token in text.split_whitespace() {
@@ -2395,29 +2413,44 @@ async fn handle_submit(
                     path = %path.display(),
                     "@-mention auto-attached image/pdf"
                 );
-            } else {
-                // Plain text: prepend a system-reminder so the model
-                // sees the content inline without us actually adding
-                // it as an attachment block.
-                if let Ok(content) = String::from_utf8(bytes) {
-                    let preview: String = content.chars().take(50_000).collect();
-                    crate::system_reminder::append_to_last_user(
-                        &mut app.messages,
-                        &format!(
-                            "User mentioned `@{rest}` — content of `{}` follows:\n\n```\n{preview}\n```",
-                            path.display()
-                        ),
-                    );
-                    tracing::info!(
-                        target: "jfc::input::mention",
-                        path = %path.display(),
-                        bytes = preview.len(),
-                        "@-mention auto-injected text"
-                    );
-                }
+            } else if let Ok(content) = String::from_utf8(bytes) {
+                let preview: String = content.chars().take(50_000).collect();
+                deferred_text_reminders.push(format!(
+                    "User mentioned `@{rest}` — content of `{}` follows:\n\n```\n{preview}\n```",
+                    path.display()
+                ));
+                tracing::info!(
+                    target: "jfc::input::mention",
+                    path = %path.display(),
+                    bytes = preview.len(),
+                    "@-mention queued text reminder"
+                );
             }
             seen.insert(rest.to_owned());
         }
+    }
+
+    // Drain any clipboard / Ctrl+V images the user pasted into this
+    // turn. They were staged on `app.pending_attachments` by the paste
+    // handlers (event_loop Paste, input.rs Ctrl+V) but had no reader
+    // — so until this drain landed, every pasted image was silently
+    // dropped at submit time. We pipe them into the same process-global
+    // queue PDF-from-Read uses (`tools::push_pending_tool_attachment`),
+    // which `build_provider_messages_with_tool_results` and
+    // `build_provider_messages` both drain when serializing the next
+    // request.
+    if !app.pending_attachments.is_empty() {
+        let drained: Vec<crate::attachments::Attachment> =
+            app.pending_attachments.drain(..).collect();
+        let count = drained.len();
+        for att in drained {
+            crate::tools::push_pending_tool_attachment(att);
+        }
+        tracing::info!(
+            target: "jfc::input::paste",
+            count,
+            "drained pasted attachments into tool-global queue"
+        );
     }
 
     // Edit mode: if the user is editing an earlier message, rewrite
@@ -2632,6 +2665,14 @@ async fn handle_submit(
     let assistant_idx = app.messages.len() + 1;
     app.messages.push(ChatMessage::user(text.clone()));
     app.tool_ctx.total_user_turns += 1;
+
+    // Now that the new user message is the most-recent user message,
+    // attach any deferred @-mention text reminders to IT (not the
+    // previous turn). See the comment on `deferred_text_reminders` at
+    // the scan site for why this had to be split.
+    for body in deferred_text_reminders {
+        crate::system_reminder::append_to_last_user(&mut app.messages, &body);
+    }
 
     // Auto graph-context injection: when the prompt smells like an
     // impact-analysis / refactor-risk / dependency-trace / entrypoint
@@ -4200,6 +4241,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                         app.queued_prompts.push_back(crate::app::QueuedPrompt {
                             text: prompt,
                             is_meta: false,
+                            attachments: Vec::new(),
                         });
                         app.scroll_to_bottom();
                     }
@@ -4262,6 +4304,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 app.queued_prompts.push_back(crate::app::QueuedPrompt {
                     text: prompt,
                     is_meta: false,
+                            attachments: Vec::new(),
                 });
                 app.scroll_to_bottom();
             }
@@ -7562,6 +7605,7 @@ mod tests {
         app.queued_prompts.push_back(crate::app::QueuedPrompt {
             text: "queued".into(),
             is_meta: false,
+                            attachments: Vec::new(),
         });
         // Push the placeholder user message that recall expects to remove.
         app.messages.push(ChatMessage::user("⏳ queued".into()));
