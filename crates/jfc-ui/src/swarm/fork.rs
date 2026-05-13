@@ -125,6 +125,7 @@ mod tests {
                 elapsed: None,
                 usage: None,
                 queued: false,
+                attachments: Vec::new(),
             })
             .collect()
     }

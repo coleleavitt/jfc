@@ -5554,6 +5554,7 @@ mod pure_helper_tests {
             elapsed: None,
             usage: None,
             queued: false,
+            attachments: Vec::new(),
         });
         let cfg = comet_config_from_state(&app, app.theme, 1);
         assert_eq!(cfg.head, app.theme.warning);
@@ -5981,6 +5982,7 @@ mod pure_helper_tests {
             elapsed: None,
             usage: None,
             queued: false,
+            attachments: Vec::new(),
         });
         let stats = collect_diff_stats(&app);
         assert_eq!(stats.total_files, 1);
@@ -6022,7 +6024,8 @@ mod pure_helper_tests {
                 cost_tier: None,
                 elapsed: None,
                 usage: None,
-            queued: false,
+                queued: false,
+                attachments: Vec::new(),
             });
         }
         let stats = collect_diff_stats(&app);

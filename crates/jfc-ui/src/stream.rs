@@ -2680,48 +2680,27 @@ pub fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            if text.is_empty() {
+            if text.is_empty() && m.attachments.is_empty() {
                 return None;
+            }
+            let mut content: Vec<ProviderContent> = Vec::new();
+            if !text.is_empty() {
+                content.push(ProviderContent::Text(text));
+            }
+            // Prompt-local attachments (pasted images) owned by this message
+            for att in &m.attachments {
+                content.push(ProviderContent::Attachment(att.clone()));
             }
             Some(ProviderMessage {
                 role,
-                content: vec![ProviderContent::Text(text)],
+                content,
             })
         })
         .collect();
-    // Drain attachments staged by paste handlers (Ctrl+V / bracketed
-    // paste route through `app.pending_attachments` → drained into the
-    // tool-global queue at handle_submit) and tool dispatchers (PDFs
-    // ingested by Read). Append to the LAST user-role message — that's
-    // the user's prompt we just emitted. The tool-history serializer
-    // (`build_provider_messages_with_tool_results`) does the same drain
-    // at the same point; keeping both call sites in sync prevents
-    // pasted images from disappearing on fresh user turns where no tool
-    // history exists yet.
-    let pending = crate::tools::take_pending_tool_attachments();
-    let pending_count = pending.len();
-    if !pending.is_empty() {
-        let attached: Vec<ProviderContent> = pending
-            .into_iter()
-            .map(ProviderContent::Attachment)
-            .collect();
-        if let Some(last_user) = out
-            .iter_mut()
-            .rfind(|m| matches!(m.role, ProviderRole::User))
-        {
-            last_user.content.extend(attached);
-        } else {
-            out.push(ProviderMessage {
-                role: ProviderRole::User,
-                content: attached,
-            });
-        }
-    }
     tracing::debug!(
         target: "jfc::stream",
         input_messages = msgs.len(),
         output_messages = out.len(),
-        pending_count,
         "build_provider_messages (text-only)"
     );
     ensure_user_last(out)
@@ -2949,6 +2928,10 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
             assistant_content.push(ProviderContent::Text(text.clone()));
         }
         assistant_content.extend(tool_uses);
+        // Prompt-local attachments (pasted images) owned by this message
+        for att in &m.attachments {
+            assistant_content.push(ProviderContent::Attachment(att.clone()));
+        }
 
         if !assistant_content.is_empty() {
             out.push(ProviderMessage {
@@ -3031,7 +3014,7 @@ mod pdf_attachment_drain_tests {
         let _guard = drain_test_lock().lock().unwrap_or_else(|p| p.into_inner());
         let _ = crate::tools::take_pending_tool_attachments();
 
-        let pdf = crate::attachments::Attachment {
+        let pdf = crate::attachments::Attachment { id: 0,
             kind: crate::attachments::AttachmentKind::ApplicationPdf,
             bytes: b"%PDF-1.7\nfake".to_vec(),
         };
@@ -3064,7 +3047,7 @@ mod pdf_attachment_drain_tests {
         let _guard = drain_test_lock().lock().unwrap_or_else(|p| p.into_inner());
         let _ = crate::tools::take_pending_tool_attachments();
 
-        let pdf = crate::attachments::Attachment {
+        let pdf = crate::attachments::Attachment { id: 0,
             kind: crate::attachments::AttachmentKind::ApplicationPdf,
             bytes: b"%PDF-1.7\n".to_vec(),
         };
@@ -3089,19 +3072,22 @@ mod pdf_attachment_drain_tests {
     /// attachment queue so a fresh user turn (no tool history) carries
     /// the pasted image. Before this fix, only the with-tool-results
     /// builder drained the queue, and pasted images on the very first
-    /// user prompt were silently dropped.
+    /// Normal: pasted images on ChatMessage.attachments land in the
+    /// corresponding user message in the text-only build path. Previously
+    /// these came via the global queue; now they're prompt-local.
     #[test]
     fn pending_image_lands_in_text_only_build_normal() {
         let _guard = drain_test_lock().lock().unwrap_or_else(|p| p.into_inner());
         let _ = crate::tools::take_pending_tool_attachments();
 
-        let png = crate::attachments::Attachment {
+        let png = crate::attachments::Attachment { id: 0,
             kind: crate::attachments::AttachmentKind::ImagePng,
             bytes: vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A],
         };
-        crate::tools::push_pending_tool_attachment(png);
 
-        let msgs = vec![ChatMessage::user("look at this".to_string())];
+        let mut msg = ChatMessage::user("look at this [Image #1]".to_string());
+        msg.attachments = vec![png];
+        let msgs = vec![msg];
         let provider_msgs = build_provider_messages(&msgs);
         let last_user = provider_msgs
             .iter()
@@ -3457,6 +3443,7 @@ mod build_provider_messages_tests {
             elapsed: None,
             usage: None,
             queued: false,
+            attachments: Vec::new(),
         };
         let out = build_provider_messages(&[m]);
         assert_eq!(out.len(), 1);
@@ -3479,6 +3466,7 @@ mod build_provider_messages_tests {
             elapsed: None,
             usage: None,
             queued: false,
+            attachments: Vec::new(),
         };
         let out = build_provider_messages(&[m]);
         // Empty input → nothing emitted, ensure_user_last leaves the result
