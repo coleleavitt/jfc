@@ -72,8 +72,20 @@ impl AttachmentKind {
 /// when the request builder finally consumes it.
 #[derive(Debug, Clone)]
 pub struct Attachment {
+    pub id: u32,
     pub kind: AttachmentKind,
     pub bytes: Vec<u8>,
+}
+
+/// An image pasted by the user, tracked per-prompt via `[Image #N]` markers.
+/// Lives in `app.pasted_images` until submit time, when referenced entries
+/// are moved onto the submitted `ChatMessage.attachments`.
+#[derive(Debug, Clone)]
+pub struct PastedContent {
+    pub id: u32,
+    pub attachment: Attachment,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Sniff the image format from the leading magic bytes.
@@ -138,6 +150,7 @@ pub fn read_pdf_file(path: &std::path::Path) -> Result<Attachment, String> {
         "read_pdf_file: loaded PDF"
     );
     Ok(Attachment {
+        id: 0,
         kind: AttachmentKind::ApplicationPdf,
         bytes,
     })
@@ -151,34 +164,161 @@ pub fn read_pdf_file(path: &std::path::Path) -> Result<Attachment, String> {
 /// `imageResizer.ts` in Claude Code 2.1.140 does the same downsample
 /// (`/home/cole/RustProjects/active/claude-code-2.1.140-audit/extracted/src/utils/imageResizer.ts`),
 /// halving dimensions until the encoded image fits.
-const MAX_IMAGE_BYTES: usize = 3_500_000;
+const MAX_IMAGE_BYTES: usize = 3_750_000; // 5MB base64 / (4/3)
 
-/// Read an image from the system clipboard and return it as a PNG-encoded
-/// `Attachment`. Returns `Ok(None)` if the clipboard contains no image
-/// (text, files, empty, …); returns `Err(_)` for clipboard-access or
-/// PNG-encoding failures.
+const MAX_IMAGE_DIMENSION: u32 = 2000;
+const JPEG_QUALITIES: &[u8] = &[80, 60, 40, 20];
+
+/// Extract width/height from encoded image bytes (PNG/JPEG/GIF/WebP).
+pub fn image_dimensions(bytes: &[u8]) -> Result<(u32, u32), String> {
+    let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| format!("image format detection: {e}"))?;
+    let (w, h) = reader
+        .into_dimensions()
+        .map_err(|e| format!("image dimensions: {e}"))?;
+    Ok((w, h))
+}
+
+/// Process raw image bytes: clamp to MAX_IMAGE_DIMENSION, encode as PNG,
+/// fall back to JPEG at decreasing quality if PNG exceeds MAX_IMAGE_BYTES.
+pub fn process_image(raw_bytes: Vec<u8>, _kind: AttachmentKind) -> Result<Attachment, String> {
+    let img = image::load_from_memory(&raw_bytes)
+        .map_err(|e| format!("image decode: {e}"))?;
+
+    // Clamp dimensions
+    let (mut w, mut h) = (img.width(), img.height());
+    let img = if w > MAX_IMAGE_DIMENSION || h > MAX_IMAGE_DIMENSION {
+        let scale = (MAX_IMAGE_DIMENSION as f64 / w.max(h) as f64).min(1.0);
+        let new_w = ((w as f64 * scale) as u32).max(1);
+        let new_h = ((h as f64 * scale) as u32).max(1);
+        tracing::debug!(
+            target: "jfc::attachments",
+            from = format!("{w}x{h}"),
+            to = format!("{new_w}x{new_h}"),
+            "clamping image dimensions"
+        );
+        w = new_w;
+        h = new_h;
+        img.resize_exact(new_w, new_h, image::imageops::FilterType::Lanczos3)
+    } else {
+        img
+    };
+
+    // Try PNG first
+    let mut png_buf = Vec::new();
+    {
+        use image::ImageEncoder as _;
+        let encoder = image::codecs::png::PngEncoder::new(&mut png_buf);
+        encoder
+            .write_image(img.to_rgba8().as_raw(), w, h, image::ExtendedColorType::Rgba8)
+            .map_err(|e| format!("PNG encode: {e}"))?;
+    }
+
+    if png_buf.len() <= MAX_IMAGE_BYTES {
+        return Ok(Attachment {
+            id: 0,
+            kind: AttachmentKind::ImagePng,
+            bytes: png_buf,
+        });
+    }
+
+    // PNG too large — try JPEG at decreasing quality
+    let rgb_img = img.to_rgb8();
+    for &quality in JPEG_QUALITIES {
+        let mut jpeg_buf = Vec::new();
+        {
+            use image::ImageEncoder as _;
+            let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_buf, quality);
+            encoder
+                .write_image(rgb_img.as_raw(), w, h, image::ExtendedColorType::Rgb8)
+                .map_err(|e| format!("JPEG encode (q={quality}): {e}"))?;
+        }
+        if jpeg_buf.len() <= MAX_IMAGE_BYTES {
+            tracing::debug!(
+                target: "jfc::attachments",
+                quality,
+                png_size = png_buf.len(),
+                jpeg_size = jpeg_buf.len(),
+                "fell back to JPEG"
+            );
+            return Ok(Attachment {
+                id: 0,
+                kind: AttachmentKind::ImageJpeg,
+                bytes: jpeg_buf,
+            });
+        }
+    }
+
+    Err(format!(
+        "image still {} bytes after JPEG q=20 — too large for the API",
+        png_buf.len()
+    ))
+}
+
+/// Try shell-based clipboard image acquisition (Linux).
+/// Claude Code 2.1.140 uses this as the primary path on Linux because
+/// arboard's X11/Wayland support is inconsistent across compositors.
+fn read_clipboard_image_shell() -> Result<Option<Vec<u8>>, String> {
+    // Try xclip first (X11)
+    if let Ok(out) = std::process::Command::new("xclip")
+        .args(["-selection", "clipboard", "-t", "image/png", "-o"])
+        .output()
+    {
+        if out.status.success() && !out.stdout.is_empty() {
+            return Ok(Some(out.stdout));
+        }
+    }
+    // Try wl-paste (Wayland)
+    if let Ok(out) = std::process::Command::new("wl-paste")
+        .args(["--type", "image/png"])
+        .output()
+    {
+        if out.status.success() && !out.stdout.is_empty() {
+            return Ok(Some(out.stdout));
+        }
+    }
+    // Try xsel (legacy X11 fallback)
+    if let Ok(out) = std::process::Command::new("xsel")
+        .args(["--clipboard", "--output"])
+        .output()
+    {
+        if out.status.success() && !out.stdout.is_empty() && out.stdout.starts_with(&[0x89, b'P', b'N', b'G']) {
+            return Ok(Some(out.stdout));
+        }
+    }
+    Ok(None)
+}
+
+/// Read an image from the system clipboard and return it as a processed
+/// `Attachment` along with its dimensions (width, height). Returns
+/// `Ok(None)` if the clipboard contains no image (text, files, empty, …);
+/// returns `Err(_)` for clipboard-access or encoding failures.
 ///
-/// If the freshly-encoded PNG exceeds `MAX_IMAGE_BYTES`, the function
-/// repeatedly halves the dimensions (Lanczos3 resample) and re-encodes
-/// until the bytes fit. Without this, a 4K screenshot or scanned
-/// document silently fails on the Anthropic side with a 400 "image
-/// too large" — the user just sees the paste accepted, then the next
-/// turn errors out.
+/// Tries shell-based clipboard tools first (xclip, wl-paste, xsel) for
+/// reliability on Linux, then falls back to arboard.
 ///
-/// Not unit-tested at the clipboard boundary: the clipboard is a
-/// hardware/OS dependency and arboard has no in-process fake. The
-/// resize+cap logic IS tested via `clamp_attachment_size`.
-pub fn read_clipboard_image() -> Result<Option<Attachment>, String> {
+/// Images are processed through `process_image` which clamps dimensions
+/// to MAX_IMAGE_DIMENSION and encodes as PNG (falling back to JPEG if
+/// the result exceeds MAX_IMAGE_BYTES).
+pub fn read_clipboard_image() -> Result<Option<(Attachment, u32, u32)>, String> {
     tracing::info!(target: "jfc::attachments", "read_clipboard_image attempt");
+
+    // Try shell-based acquisition first (more reliable on Linux)
+    if let Ok(Some(png_bytes)) = read_clipboard_image_shell() {
+        tracing::debug!(target: "jfc::attachments", size = png_bytes.len(), "shell clipboard image acquired");
+        let (width, height) = image_dimensions(&png_bytes)?;
+        let processed = process_image(png_bytes, AttachmentKind::ImagePng)?;
+        return Ok(Some((processed, width, height)));
+    }
+
+    // Fall back to arboard
     let mut clipboard = arboard::Clipboard::new().map_err(|e| {
         tracing::warn!(target: "jfc::attachments", error = %e, "clipboard access failed");
         format!("Clipboard: {e}")
     })?;
     let img = match clipboard.get_image() {
         Ok(img) => img,
-        // arboard returns `ContentNotAvailable` when the clipboard is
-        // empty or doesn't carry an image — that's a normal "no image to
-        // paste" case, not an error worth surfacing to the user.
         Err(arboard::Error::ContentNotAvailable) => {
             tracing::debug!(target: "jfc::attachments", "no image in clipboard");
             return Ok(None);
@@ -189,53 +329,21 @@ pub fn read_clipboard_image() -> Result<Option<Attachment>, String> {
         }
     };
 
-    let (mut width, mut height) = (img.width as u32, img.height as u32);
-    let mut rgba: Vec<u8> = img.bytes.into_owned();
+    let (width, height) = (img.width as u32, img.height as u32);
+    let rgba: Vec<u8> = img.bytes.into_owned();
 
-    // Encode → check → halve loop. Max 4 iterations (covers up to
-    // 16x shrink), more than enough for any realistic screen capture.
-    let mut png_bytes = encode_png(&rgba, width, height)?;
-    for _ in 0..4 {
-        if png_bytes.len() <= MAX_IMAGE_BYTES {
-            break;
-        }
-        let new_w = (width / 2).max(1);
-        let new_h = (height / 2).max(1);
-        tracing::info!(
-            target: "jfc::attachments",
-            size = png_bytes.len(),
-            max = MAX_IMAGE_BYTES,
-            from = format!("{width}x{height}"),
-            to = format!("{new_w}x{new_h}"),
-            "image too large — halving"
-        );
-        let buf = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(width, height, rgba)
-            .ok_or_else(|| "rgba buffer size mismatch".to_owned())?;
-        let resized = image::imageops::resize(&buf, new_w, new_h, image::imageops::Lanczos3);
-        width = new_w;
-        height = new_h;
-        rgba = resized.into_raw();
-        png_bytes = encode_png(&rgba, width, height)?;
-    }
-
-    if png_bytes.len() > MAX_IMAGE_BYTES {
-        return Err(format!(
-            "image still {} bytes after 4 halvings — too large for the API",
-            png_bytes.len()
-        ));
-    }
+    // Encode to PNG first so we can run it through process_image
+    let png_bytes = encode_png(&rgba, width, height)?;
+    let processed = process_image(png_bytes, AttachmentKind::ImagePng)?;
 
     tracing::debug!(
         target: "jfc::attachments",
-        size = png_bytes.len(),
+        size = processed.bytes.len(),
         width, height,
-        kind = "image/png",
+        kind = processed.kind.mime_type(),
         "read_clipboard_image success"
     );
-    Ok(Some(Attachment {
-        kind: AttachmentKind::ImagePng,
-        bytes: png_bytes,
-    }))
+    Ok(Some((processed, width, height)))
 }
 
 /// Helper: PNG-encode raw RGBA8 pixels.
@@ -448,7 +556,7 @@ mod tests {
     #[test]
     fn to_anthropic_content_block_shape_normal() {
         let original_bytes = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0xDE, 0xAD];
-        let att = Attachment {
+        let att = Attachment { id: 0,
             kind: AttachmentKind::ImagePng,
             bytes: original_bytes.clone(),
         };
@@ -470,7 +578,7 @@ mod tests {
 
         // Sanity: try the same with a JPEG to confirm media_type tracks
         // the kind, not a hard-coded constant.
-        let att_jpeg = Attachment {
+        let att_jpeg = Attachment { id: 0,
             kind: AttachmentKind::ImageJpeg,
             bytes: vec![0xFF, 0xD8, 0xFF, 0xE0],
         };
@@ -482,14 +590,14 @@ mod tests {
     // arms in mime_type / to_anthropic_content_block.
     #[test]
     fn to_anthropic_content_block_gif_and_webp_normal() {
-        let gif_att = Attachment {
+        let gif_att = Attachment { id: 0,
             kind: AttachmentKind::ImageGif,
             bytes: b"GIF89a-data".to_vec(),
         };
         let gif_block = to_anthropic_content_block(&gif_att);
         assert_eq!(gif_block["source"]["media_type"], "image/gif");
 
-        let webp_att = Attachment {
+        let webp_att = Attachment { id: 0,
             kind: AttachmentKind::ImageWebp,
             bytes: vec![0xAB; 16],
         };
@@ -501,7 +609,7 @@ mod tests {
     // (empty base64 "" is valid).
     #[test]
     fn to_anthropic_content_block_empty_bytes_robust() {
-        let att = Attachment {
+        let att = Attachment { id: 0,
             kind: AttachmentKind::ImagePng,
             bytes: Vec::new(),
         };
@@ -560,7 +668,7 @@ mod tests {
     // the 400 "wrong content block" error from the Anthropic API.
     #[test]
     fn pdf_to_content_block_uses_document_type_normal() {
-        let pdf = Attachment {
+        let pdf = Attachment { id: 0,
             kind: AttachmentKind::ApplicationPdf,
             bytes: b"%PDF-1.7\nfake".to_vec(),
         };

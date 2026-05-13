@@ -156,21 +156,6 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
             is_meta,
             attachments,
         } = qp;
-        // Re-stage this prompt's attachments BEFORE any slash command
-        // runs (which would also drain). Pushed into the same
-        // process-global queue handle_submit pumps from, so the
-        // submit-time path picks them up just like a fresh paste +
-        // submit would.
-        if !attachments.is_empty() {
-            tracing::info!(
-                target: "jfc::ui::queue",
-                count = attachments.len(),
-                "drain_queued_prompts: re-staging attachments captured at queue time"
-            );
-            for att in attachments {
-                crate::tools::push_pending_tool_attachment(att);
-            }
-        }
         let glyph = if is_meta { "⚙" } else { "⏳" };
         let placeholder = format!("{glyph} {text}");
         for msg in app.messages.iter_mut() {
@@ -185,14 +170,22 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
                         }
                     }
                 }
-                // Promotion: clear the `queued` flag so
-                // `build_provider_messages*` includes this message in the
-                // next turn. Without this, the queued message's clean
-                // text would replace the placeholder but the flag would
-                // stay `true`, leaving the prompt invisible to the
-                // provider forever.
-                if replaced && msg.queued {
-                    msg.queued = false;
+                // Promotion: clear the `queued` flag and attach images
+                // so `build_provider_messages*` includes this message
+                // (with its attachments) in the next turn.
+                if replaced {
+                    if msg.queued {
+                        msg.queued = false;
+                    }
+                    if !attachments.is_empty() {
+                        tracing::info!(
+                            target: "jfc::ui::queue",
+                            count = attachments.len(),
+                            "drain_queued_prompts: attaching images to promoted message"
+                        );
+                        msg.attachments = attachments;
+                    }
+                    break;
                 }
             }
         }
@@ -831,15 +824,23 @@ pub(crate) async fn run(
                     // succeeds we attach it; otherwise fall through to
                     // the text path. Mirrors v126's clipboard-image flow.
                     let attached_image = match attachments::read_clipboard_image() {
-                        Ok(Some(att)) => {
+                        Ok(Some((att, w, h))) => {
                             toast::push_with_cap(
                                 &mut app.toasts,
                                 toast::Toast::new(
                                     toast::ToastKind::Info,
-                                    format!("📎 image attached ({} bytes)", att.bytes.len()),
+                                    format!("📎 image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
                                 ),
                             );
-                            app.pending_attachments.push(att);
+                            app.image_counter += 1;
+                            let id = app.image_counter;
+                            app.pasted_images.push(crate::attachments::PastedContent {
+                                id,
+                                attachment: att,
+                                width: w,
+                                height: h,
+                            });
+                            app.textarea.insert_str(&format!("[Image #{id}]"));
                             true
                         }
                         Ok(None) => false,

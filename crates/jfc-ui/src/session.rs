@@ -1404,6 +1404,9 @@ fn deserialize_message(msg: SerializedMessage) -> ChatMessage {
         // unsent queued prompts because drain_queued_prompts runs as
         // part of the turn lifecycle before save_session ever fires.
         queued: false,
+        // Attachments (images) are not persisted in session files — they
+        // would bloat JSON to hundreds of MB. Default to empty on load.
+        attachments: Vec::new(),
     }
 }
 

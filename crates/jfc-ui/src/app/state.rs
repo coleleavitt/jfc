@@ -33,11 +33,9 @@ pub struct QueuedPrompt {
     pub is_meta: bool,
     /// Image/PDF attachments captured at queue time. If the user pasted
     /// an image and then typed a prompt while another turn was already
-    /// streaming, the image lives on `app.pending_attachments`. Capturing
-    /// it onto the queued entry here pins it to THIS prompt so it
-    /// re-stages atomically when `drain_queued_prompts` promotes the
-    /// entry, regardless of what other paste/clipboard activity has
-    /// happened in the meantime.
+    /// streaming, the referenced `[Image #N]` attachments are extracted
+    /// from `app.pasted_images` and pinned to THIS prompt so they
+    /// attach atomically when `drain_queued_prompts` promotes the entry.
     pub attachments: Vec<crate::attachments::Attachment>,
 }
 
@@ -551,9 +549,14 @@ pub struct App {
     /// `.clear()`ed on every switch — entering a task with 121 hidden
     /// lines required pressing `o` again every time.
     pub viewing_task_expanded: std::collections::HashMap<String, std::collections::HashSet<usize>>,
-    /// Drained at submit time; future Ctrl+V handlers push here. Anthropic
-    /// content-block conversion happens at provider-message-build time.
-    pub pending_attachments: Vec<crate::attachments::Attachment>,
+    /// Per-prompt image staging. Each Ctrl+V / bracketed paste of an image
+    /// lands here with a unique `id`; the submit path matches `[Image #N]`
+    /// markers in the textarea and moves referenced entries onto the
+    /// submitted ChatMessage's `attachments` field. Replaces the old
+    /// `pending_attachments → push_pending_tool_attachment` global queue.
+    pub pasted_images: Vec<crate::attachments::PastedContent>,
+    /// Monotonically incrementing counter for paste IDs within a session.
+    pub image_counter: u32,
     /// Per-frame map of `(tool_id, screen_rect)` populated by the message
     /// renderer as each `ToolBlock` paints. The mouse handler reads this to
     /// translate a left-click into the tool whose body should expand —
@@ -787,7 +790,8 @@ impl App {
             leader_key_timeout: None,
             viewing_task_id: None,
             viewing_task_expanded: std::collections::HashMap::new(),
-            pending_attachments: Vec::new(),
+            pasted_images: Vec::new(),
+            image_counter: 0,
             tool_hit_regions: RefCell::new(Vec::new()),
             render_cache: RefCell::new(RenderCache::new()),
             diff_stats_cache: RefCell::new(None),

@@ -1223,6 +1223,11 @@ pub struct ChatMessage {
     /// real submission. Default `false` so existing call sites stay
     /// correct; only the queueing path flips this.
     pub queued: bool,
+    /// Prompt-local image/PDF attachments owned by this message.
+    /// Populated at submit time from `app.pasted_images` by matching
+    /// `[Image #N]` markers in the message text. Replaces the old
+    /// process-global queue for paste-originated images.
+    pub attachments: Vec<crate::attachments::Attachment>,
 }
 
 impl ChatMessage {
@@ -1236,6 +1241,7 @@ impl ChatMessage {
             elapsed: None,
             usage: None,
             queued: false,
+            attachments: Vec::new(),
         }
     }
 
@@ -1252,6 +1258,7 @@ impl ChatMessage {
             elapsed: None,
             usage: None,
             queued: true,
+            attachments: Vec::new(),
         }
     }
 
@@ -1271,6 +1278,7 @@ impl ChatMessage {
             elapsed: None,
             usage: None,
             queued: false,
+            attachments: Vec::new(),
         }
     }
 
@@ -1284,6 +1292,7 @@ impl ChatMessage {
             elapsed: None,
             usage: None,
             queued: false,
+            attachments: Vec::new(),
         }
     }
 
@@ -1307,6 +1316,7 @@ impl ChatMessage {
             elapsed: None,
             usage: None,
             queued: false,
+            attachments: Vec::new(),
         }
     }
 
@@ -4638,6 +4648,7 @@ mod tests {
             elapsed: None,
             usage: None,
             queued: false,
+            attachments: Vec::new(),
         }];
         let err = validate_turn_invariants(&msgs).expect_err("empty user must fail");
         assert_eq!(
@@ -4705,6 +4716,7 @@ mod tests {
             elapsed: None,
             usage: None,
             queued: false,
+            attachments: Vec::new(),
         }];
         let err = validate_turn_invariants(&msgs).expect_err("tool part on user role must fail");
         match err {

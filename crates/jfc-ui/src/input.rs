@@ -1632,15 +1632,23 @@ pub async fn handle_key(
             // clipboard holds an image, attach it; if it holds text,
             // fall through to the textarea's normal paste handling.
             match crate::attachments::read_clipboard_image() {
-                Ok(Some(att)) => {
+                Ok(Some((att, w, h))) => {
                     crate::toast::push_with_cap(
                         &mut app.toasts,
                         crate::toast::Toast::new(
                             crate::toast::ToastKind::Info,
-                            format!("📎 image attached ({} bytes)", att.bytes.len()),
+                            format!("📎 image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
                         ),
                     );
-                    app.pending_attachments.push(att);
+                    app.image_counter += 1;
+                    let id = app.image_counter;
+                    app.pasted_images.push(crate::attachments::PastedContent {
+                        id,
+                        attachment: att,
+                        width: w,
+                        height: h,
+                    });
+                    app.textarea.insert_str(&format!("[Image #{id}]"));
                     return Ok(false);
                 }
                 Ok(None) => {
@@ -2166,12 +2174,30 @@ pub async fn handle_key(
                     is_meta,
                     "queued_prompt"
                 );
-                // Capture any pasted attachments onto THIS queued
-                // prompt so they re-stage atomically when the entry
-                // drains. Drained-by-value (`mem::take`) so subsequent
-                // pastes (even before the queue drains) don't pile
-                // onto this prompt.
-                let attachments = std::mem::take(&mut app.pending_attachments);
+                // Capture referenced [Image #N] attachments onto THIS
+                // queued prompt so they re-stage atomically when the
+                // entry drains. Only matched entries are taken;
+                // unreferenced images are left for later prompts.
+                let attachments: Vec<crate::attachments::Attachment> = {
+                    let re_pattern = regex::Regex::new(r"\[Image #(\d+)\]").unwrap();
+                    let mut referenced_ids: Vec<u32> = Vec::new();
+                    for cap in re_pattern.captures_iter(&text) {
+                        if let Ok(id) = cap[1].parse::<u32>() {
+                            referenced_ids.push(id);
+                        }
+                    }
+                    let mut matched = Vec::new();
+                    let mut remaining = Vec::new();
+                    for pc in std::mem::take(&mut app.pasted_images) {
+                        if referenced_ids.contains(&pc.id) {
+                            matched.push(pc.attachment);
+                        } else {
+                            remaining.push(pc);
+                        }
+                    }
+                    app.pasted_images = remaining;
+                    matched
+                };
                 app.queued_prompts.push_back(crate::app::QueuedPrompt {
                     text: text.clone(),
                     is_meta,
@@ -2406,7 +2432,7 @@ async fn handle_submit(
                 Err(_) => continue,
             };
             if let Some(kind) = crate::attachments::detect_kind(&bytes) {
-                let att = crate::attachments::Attachment { kind, bytes };
+                let att = crate::attachments::Attachment { id: 0, kind, bytes };
                 crate::tools::push_pending_tool_attachment(att);
                 tracing::info!(
                     target: "jfc::input::mention",
@@ -2430,28 +2456,47 @@ async fn handle_submit(
         }
     }
 
-    // Drain any clipboard / Ctrl+V images the user pasted into this
-    // turn. They were staged on `app.pending_attachments` by the paste
-    // handlers (event_loop Paste, input.rs Ctrl+V) but had no reader
-    // — so until this drain landed, every pasted image was silently
-    // dropped at submit time. We pipe them into the same process-global
-    // queue PDF-from-Read uses (`tools::push_pending_tool_attachment`),
-    // which `build_provider_messages_with_tool_results` and
-    // `build_provider_messages` both drain when serializing the next
-    // request.
-    if !app.pending_attachments.is_empty() {
-        let drained: Vec<crate::attachments::Attachment> =
-            app.pending_attachments.drain(..).collect();
-        let count = drained.len();
-        for att in drained {
-            crate::tools::push_pending_tool_attachment(att);
+    // Extract referenced [Image #N] attachments from pasted_images and
+    // attach them to the message that will be submitted. Any pasted
+    // images whose markers the user deleted are dropped with a log.
+    let submit_attachments: Vec<crate::attachments::Attachment> = if !app.pasted_images.is_empty() {
+        // Parse all [Image #N] references from the text
+        let mut referenced_ids: Vec<u32> = Vec::new();
+        let re_pattern = regex::Regex::new(r"\[Image #(\d+)\]").unwrap();
+        for cap in re_pattern.captures_iter(&text) {
+            if let Ok(id) = cap[1].parse::<u32>() {
+                referenced_ids.push(id);
+            }
         }
+
+        let mut matched: Vec<crate::attachments::Attachment> = Vec::new();
+        let mut remaining: Vec<crate::attachments::PastedContent> = Vec::new();
+        for pc in std::mem::take(&mut app.pasted_images) {
+            if referenced_ids.contains(&pc.id) {
+                matched.push(pc.attachment);
+            } else {
+                remaining.push(pc);
+            }
+        }
+
+        // Drop unreferenced (user deleted the marker)
+        if !remaining.is_empty() {
+            tracing::info!(
+                target: "jfc::input::paste",
+                dropped = remaining.len(),
+                "dropping unreferenced pasted images (markers deleted by user)"
+            );
+        }
+
         tracing::info!(
             target: "jfc::input::paste",
-            count,
-            "drained pasted attachments into tool-global queue"
+            matched = matched.len(),
+            "matched [Image #N] attachments for submit"
         );
-    }
+        matched
+    } else {
+        Vec::new()
+    };
 
     // Edit mode: if the user is editing an earlier message, rewrite
     // history at that index and drop everything after before
@@ -2663,7 +2708,9 @@ async fn handle_submit(
     }
 
     let assistant_idx = app.messages.len() + 1;
-    app.messages.push(ChatMessage::user(text.clone()));
+    let mut user_msg = ChatMessage::user(text.clone());
+    user_msg.attachments = submit_attachments;
+    app.messages.push(user_msg);
     app.tool_ctx.total_user_turns += 1;
 
     // Now that the new user message is the most-recent user message,
