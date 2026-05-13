@@ -348,6 +348,43 @@ async fn main() -> anyhow::Result<()> {
     crate::file_watcher::install();
     crate::keybindings::load();
 
+    // One-shot startup compaction of `daemon-state.json`. Long-lived users
+    // accumulate hundreds of completed background-agent records here; the
+    // UI re-reads the file every second on the render thread, so an
+    // unbounded roster turns into a real CPU sink (~38% steady-state on
+    // a 1.4 MB file with ~500 entries). Drop anything past the retention
+    // window AND anything beyond the most-recent cap. Best-effort —
+    // failures are silent because compaction is a hygiene step, not a
+    // correctness invariant.
+    {
+        let paths = crate::daemon::DaemonPaths::default_user();
+        if let Some(mut state) = crate::daemon::load_state(&paths) {
+            let dropped = crate::daemon::compact_background_agents(
+                &mut state,
+                std::time::SystemTime::now(),
+                crate::daemon::TERMINAL_AGENT_RETENTION,
+                crate::daemon::TERMINAL_AGENT_CAP,
+            );
+            if dropped > 0 {
+                if let Err(err) = crate::daemon::save_state(&paths, &state) {
+                    tracing::warn!(
+                        target: "jfc::daemon",
+                        error = %err,
+                        dropped,
+                        "compact_background_agents: save_state failed"
+                    );
+                } else {
+                    tracing::info!(
+                        target: "jfc::daemon",
+                        dropped,
+                        retained = state.background_agents.len(),
+                        "compacted terminal background-agent records on startup"
+                    );
+                }
+            }
+        }
+    }
+
     // Subcommand dispatch must run before any TUI setup — `daemon start`
     // expects a clean stdout, and `daemon status / list / stop / fire`
     // print plain text rather than entering the alt-screen.

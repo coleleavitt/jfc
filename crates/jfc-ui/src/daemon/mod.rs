@@ -69,6 +69,8 @@ pub use registry::{
 pub use runtime::{Daemon, fire_cron_cli, list_string, run_daemon, status_string, stop_daemon};
 pub use state::{
     BackgroundAgentInfo, BackgroundAgentLaunch, BackgroundAgentStatus, DaemonPaths, DaemonState,
-    ScheduledWakeup, SessionId, SessionInfo, SessionStatus, load_state, save_state,
+    ScheduledWakeup, SessionId, SessionInfo, SessionStatus, TERMINAL_AGENT_CAP,
+    TERMINAL_AGENT_RETENTION, compact_background_agents, load_state, load_state_if_changed,
+    save_state, state_file_mtime,
 };
 pub use worker::{run_background_agent_worker, spawn_background_agent_worker};

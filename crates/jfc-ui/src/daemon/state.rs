@@ -296,6 +296,80 @@ pub fn load_state(paths: &DaemonPaths) -> Option<DaemonState> {
     serde_json::from_str(&data).ok()
 }
 
+/// Default retention for terminal (completed/failed/cancelled) background
+/// agents. Anything older than this is dropped on `compact_background_agents`.
+pub const TERMINAL_AGENT_RETENTION: std::time::Duration =
+    std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
+/// Cap on the number of terminal background agents retained regardless of
+/// age. Most recent N are kept; the rest are dropped. Stops the state file
+/// from growing unbounded when the user runs hundreds of background tasks
+/// inside the retention window.
+pub const TERMINAL_AGENT_CAP: usize = 100;
+
+/// Drop terminal (Completed/Failed/Cancelled) background-agent records that
+/// are either older than `retention` or beyond the most-recent `cap`.
+/// Running agents are always retained. Returns the number of records dropped
+/// so callers can decide whether to persist the compacted state.
+pub fn compact_background_agents(
+    state: &mut DaemonState,
+    now: SystemTime,
+    retention: std::time::Duration,
+    cap: usize,
+) -> usize {
+    let initial_count = state.background_agents.len();
+    // First pass: drop records past the retention window.
+    let cutoff = now.checked_sub(retention).unwrap_or(UNIX_EPOCH);
+    state.background_agents.retain(|_, agent| {
+        if !agent.status.is_terminal() {
+            return true;
+        }
+        let ts = agent.completed_at.unwrap_or(agent.updated_at);
+        ts >= cutoff
+    });
+
+    // Second pass: cap the terminal-record count at `cap`.
+    let mut terminal: Vec<(String, SystemTime)> = state
+        .background_agents
+        .iter()
+        .filter(|(_, a)| a.status.is_terminal())
+        .map(|(id, a)| (id.clone(), a.completed_at.unwrap_or(a.updated_at)))
+        .collect();
+    if terminal.len() > cap {
+        terminal.sort_by_key(|(_, ts)| *ts);
+        let drop_count = terminal.len() - cap;
+        for (id, _) in terminal.into_iter().take(drop_count) {
+            state.background_agents.remove(&id);
+        }
+    }
+    initial_count.saturating_sub(state.background_agents.len())
+}
+
+/// Return the mtime of `daemon-state.json`, or `None` if the file is missing
+/// or its metadata can't be read. Callers throttle reads of the (potentially
+/// large) state file by comparing this against a cached value — when the
+/// mtime is unchanged the parse can be skipped entirely.
+pub fn state_file_mtime(paths: &DaemonPaths) -> Option<SystemTime> {
+    std::fs::metadata(&paths.state_file).ok()?.modified().ok()
+}
+
+/// Load daemon state only when the file's mtime is newer than `cached`.
+/// Returns `(state, new_mtime)` when a reload happened, `None` otherwise.
+/// The UI calls this once per tick so a stable file (no new background
+/// workers reporting progress) doesn't trigger a 1.4 MB JSON parse on the
+/// render thread every second.
+pub fn load_state_if_changed(
+    paths: &DaemonPaths,
+    cached: Option<SystemTime>,
+) -> Option<(DaemonState, SystemTime)> {
+    let mtime = state_file_mtime(paths)?;
+    if Some(mtime) == cached {
+        return None;
+    }
+    let state = load_state(paths)?;
+    Some((state, mtime))
+}
+
 /// Save daemon state to disk (atomic write via tempfile + rename).
 pub fn save_state(paths: &DaemonPaths, state: &DaemonState) -> std::io::Result<()> {
     paths.ensure_dirs()?;
@@ -303,4 +377,168 @@ pub fn save_state(paths: &DaemonPaths, state: &DaemonState) -> std::io::Result<(
     let tmp = paths.state_file.with_extension("json.tmp");
     std::fs::write(&tmp, json)?;
     std::fs::rename(&tmp, &paths.state_file)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn agent(
+        id: &str,
+        status: BackgroundAgentStatus,
+        completed_offset: std::time::Duration,
+        now: SystemTime,
+    ) -> BackgroundAgentInfo {
+        let ts = now - completed_offset;
+        BackgroundAgentInfo {
+            id: id.into(),
+            description: "x".into(),
+            parent_session_id: None,
+            status,
+            started_at: ts,
+            updated_at: ts,
+            completed_at: Some(ts),
+            pid: None,
+            model: None,
+            worktree_path: None,
+            log_path: PathBuf::from("/dev/null"),
+            launch_path: None,
+            cancel_requested: false,
+            respawn_count: 0,
+            summary: None,
+            error: None,
+            tool_use_count: 0,
+            latest_input_tokens: 0,
+            latest_cache_read_tokens: 0,
+            latest_cache_write_tokens: 0,
+            cumulative_output_tokens: 0,
+            last_tool: None,
+        }
+    }
+
+    // Normal: compact drops terminal agents older than the retention
+    // window. Running agents are always retained.
+    #[test]
+    fn compact_drops_old_terminal_agents_normal() {
+        let now = SystemTime::now();
+        let mut state = DaemonState::default();
+        state.background_agents.insert(
+            "old".into(),
+            agent(
+                "old",
+                BackgroundAgentStatus::Completed,
+                std::time::Duration::from_secs(8 * 86400),
+                now,
+            ),
+        );
+        state.background_agents.insert(
+            "fresh".into(),
+            agent(
+                "fresh",
+                BackgroundAgentStatus::Completed,
+                std::time::Duration::from_secs(60),
+                now,
+            ),
+        );
+        state.background_agents.insert(
+            "running".into(),
+            agent(
+                "running",
+                BackgroundAgentStatus::Running,
+                std::time::Duration::from_secs(30 * 86400),
+                now,
+            ),
+        );
+        let dropped = compact_background_agents(
+            &mut state,
+            now,
+            std::time::Duration::from_secs(7 * 86400),
+            100,
+        );
+        assert_eq!(dropped, 1);
+        assert!(!state.background_agents.contains_key("old"));
+        assert!(state.background_agents.contains_key("fresh"));
+        assert!(state.background_agents.contains_key("running"));
+    }
+
+    // Normal: when the terminal record count exceeds the cap, the oldest
+    // are dropped first.
+    #[test]
+    fn compact_enforces_cap_keeps_most_recent_normal() {
+        let now = SystemTime::now();
+        let mut state = DaemonState::default();
+        for i in 0..10 {
+            state.background_agents.insert(
+                format!("a{i}"),
+                agent(
+                    &format!("a{i}"),
+                    BackgroundAgentStatus::Completed,
+                    // a0 is oldest, a9 newest
+                    std::time::Duration::from_secs((10 - i) as u64),
+                    now,
+                ),
+            );
+        }
+        let dropped = compact_background_agents(
+            &mut state,
+            now,
+            std::time::Duration::from_secs(86400),
+            3,
+        );
+        assert_eq!(dropped, 7);
+        assert_eq!(state.background_agents.len(), 3);
+        // The three newest (highest i) must survive.
+        for i in 7..10 {
+            assert!(state.background_agents.contains_key(&format!("a{i}")));
+        }
+    }
+
+    // Robust: compact on an empty state is a no-op.
+    #[test]
+    fn compact_noop_on_empty_state_robust() {
+        let mut state = DaemonState::default();
+        let dropped = compact_background_agents(
+            &mut state,
+            SystemTime::now(),
+            std::time::Duration::from_secs(86400),
+            100,
+        );
+        assert_eq!(dropped, 0);
+    }
+
+    // Normal: load_state_if_changed returns None when mtime is unchanged.
+    #[test]
+    fn load_state_if_changed_skips_unchanged_normal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = DaemonPaths::new(tmp.path());
+        save_state(&paths, &DaemonState::default()).unwrap();
+        let first = load_state_if_changed(&paths, None).expect("initial load");
+        let cached = first.1;
+        // Second call with the same mtime returns None.
+        let second = load_state_if_changed(&paths, Some(cached));
+        assert!(
+            second.is_none(),
+            "unchanged file must not re-parse on every poll"
+        );
+    }
+
+    // Robust: load_state_if_changed re-parses when the mtime advances.
+    #[test]
+    fn load_state_if_changed_reloads_when_mtime_changes_robust() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = DaemonPaths::new(tmp.path());
+        save_state(&paths, &DaemonState::default()).unwrap();
+        let first = load_state_if_changed(&paths, None).expect("first");
+        let cached = first.1;
+        // Sleep past the filesystem mtime granularity, then rewrite.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let mut state = DaemonState::default();
+        state.pid = 42;
+        save_state(&paths, &state).unwrap();
+        let second = load_state_if_changed(&paths, Some(cached));
+        assert!(second.is_some(), "modified file must re-parse");
+        let (loaded, new_mtime) = second.unwrap();
+        assert_eq!(loaded.pid, 42);
+        assert!(new_mtime > cached);
+    }
 }

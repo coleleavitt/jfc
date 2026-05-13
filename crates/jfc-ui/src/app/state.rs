@@ -518,6 +518,12 @@ pub struct App {
     /// counters for detached background workers. Throttled in the Tick
     /// handler so we don't hammer the JSON file every frame.
     pub last_detached_sync_at: Option<std::time::Instant>,
+    /// Cached `daemon-state.json` mtime from the last successful parse.
+    /// Used to skip the (potentially MB-sized) read+parse when the file
+    /// hasn't been touched by any background worker since last poll —
+    /// this is the primary CPU-burn fix for sessions with hundreds of
+    /// historical background agents accumulated in the state file.
+    pub last_detached_state_mtime: Option<std::time::SystemTime>,
     pub leader_key_active: bool,
     pub leader_key_timeout: Option<std::time::Instant>,
     pub viewing_task_id: Option<String>,
@@ -768,6 +774,7 @@ impl App {
             anthropic_account_snapshot: None,
             anthropic_snapshot_refreshed_at: None,
             last_detached_sync_at: None,
+            last_detached_state_mtime: None,
             leader_key_active: false,
             leader_key_timeout: None,
             viewing_task_id: None,

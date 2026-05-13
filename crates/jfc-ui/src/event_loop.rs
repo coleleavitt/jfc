@@ -3511,9 +3511,18 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
     app: &mut App,
     paths: &crate::daemon::DaemonPaths,
 ) -> bool {
-    let Some(state) = crate::daemon::load_state(paths) else {
+    // mtime-gate the read. When background workers haven't reported any
+    // progress since our last poll, the daemon-state.json mtime is
+    // unchanged and we can skip the (potentially MB-sized) read + JSON
+    // parse + walk on the render thread. This is the primary CPU-burn
+    // fix for sessions that have accumulated hundreds of completed
+    // background agents in daemon-state.json.
+    let Some((state, mtime)) =
+        crate::daemon::load_state_if_changed(paths, app.last_detached_state_mtime)
+    else {
         return false;
     };
+    app.last_detached_state_mtime = Some(mtime);
     let session_id = app.current_session_id.as_ref().map(|id| id.to_string());
     let mut changed = false;
     for (id, agent) in &state.background_agents {
