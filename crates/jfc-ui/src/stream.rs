@@ -1805,18 +1805,24 @@ Do not use a colon before tool calls.";
                     cache_read_tokens, cache_write_tokens,
                     "stream usage report"
                 );
-                // Usage stats are non-critical; safe to drop under backpressure.
-                if tx
-                    .try_send(AppEvent::StreamUsage {
+                // StreamUsage is CRITICAL state, not telemetry. It
+                // calibrates the context gauge, calibrates the pre-submit
+                // compaction gate, and stamps `usage` onto the streaming
+                // assistant message so session-resume can pick up where
+                // we left off. Dropping it under backpressure used to
+                // leave the gauge stale at the previous turn's count
+                // until a much later usage event suddenly snapped it
+                // forward — the "60k jumped to 500k" symptom users
+                // reported. Use `send().await` so the event waits for
+                // channel capacity instead.
+                let _ = tx
+                    .send(AppEvent::StreamUsage {
                         input_tokens,
                         output_tokens,
                         cache_read_tokens,
                         cache_write_tokens,
                     })
-                    .is_err()
-                {
-                    tracing::trace!(target: "jfc::stream", "StreamUsage dropped (buffer full)");
-                }
+                    .await;
             }
             StreamEvent::Error { message } => {
                 tracing::error!(target: "jfc::stream", %message, "stream error event");
@@ -2656,6 +2662,11 @@ pub fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
     let out: Vec<ProviderMessage> = msgs
         .iter()
         .filter_map(|m| {
+            // Same guard as `build_provider_messages_with_tool_results`:
+            // skip queued placeholders. See the longer rationale there.
+            if m.queued {
+                return None;
+            }
             let role = match m.role {
                 Role::User => ProviderRole::User,
                 Role::Assistant => ProviderRole::Assistant,
@@ -2776,6 +2787,17 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
     let mut tool_result_count = 0usize;
     let mut abandoned_count = 0usize;
     for m in msgs {
+        // Skip queued-prompt placeholders. They're real ChatMessages in
+        // `app.messages` (so the user can see them rendered with the
+        // ⏳/⚙ glyph) but they MUST NOT be sent to the provider until
+        // `drain_queued_prompts` promotes them — otherwise an agentic
+        // continuation that fires while the queue is filling would
+        // serialize the queued user prompt as part of the current turn,
+        // inflating the prompt size and triggering the "context jumped
+        // after I queued a message" symptom.
+        if m.queued {
+            continue;
+        }
         let role = match m.role {
             Role::User => ProviderRole::User,
             Role::Assistant => ProviderRole::Assistant,
@@ -3371,6 +3393,7 @@ mod build_provider_messages_tests {
             cost_tier: None,
             elapsed: None,
             usage: None,
+            queued: false,
         };
         let out = build_provider_messages(&[m]);
         assert_eq!(out.len(), 1);
@@ -3392,6 +3415,7 @@ mod build_provider_messages_tests {
             cost_tier: None,
             elapsed: None,
             usage: None,
+            queued: false,
         };
         let out = build_provider_messages(&[m]);
         // Empty input → nothing emitted, ensure_user_last leaves the result

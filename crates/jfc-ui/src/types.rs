@@ -1211,6 +1211,18 @@ pub struct ChatMessage {
     /// usage block and totals input + cache_read + cache_write +
     /// output.
     pub usage: Option<ModelUsage>,
+    /// True when this user message is a placeholder for a queued
+    /// prompt that hasn't been drained yet. Queued prompts render in
+    /// the transcript so the user can see "I queued this", but they
+    /// MUST be filtered out of `build_provider_messages*` — otherwise
+    /// the agentic continuation that fires while the queue is filling
+    /// would send the queued user prompt to the provider as part of
+    /// the current turn, polluting the prompt and creating the
+    /// "context jumped after queueing a message" symptom. Set to
+    /// `false` after `drain_queued_prompts` promotes the message to a
+    /// real submission. Default `false` so existing call sites stay
+    /// correct; only the queueing path flips this.
+    pub queued: bool,
 }
 
 impl ChatMessage {
@@ -1223,6 +1235,23 @@ impl ChatMessage {
             cost_tier: None,
             elapsed: None,
             usage: None,
+            queued: false,
+        }
+    }
+
+    /// User message that's a placeholder for a queued prompt. Identical
+    /// to `user()` except `queued = true`, which `build_provider_messages*`
+    /// uses to skip the message until `drain_queued_prompts` promotes it.
+    pub fn user_queued(content: String) -> Self {
+        Self {
+            role: Role::User,
+            parts: vec![MessagePart::Text(content)],
+            agent_name: None,
+            model_name: None,
+            cost_tier: None,
+            elapsed: None,
+            usage: None,
+            queued: true,
         }
     }
 
@@ -1241,6 +1270,7 @@ impl ChatMessage {
             cost_tier: None,
             elapsed: None,
             usage: None,
+            queued: false,
         }
     }
 
@@ -1253,6 +1283,7 @@ impl ChatMessage {
             cost_tier: None,
             elapsed: None,
             usage: None,
+            queued: false,
         }
     }
 
@@ -1275,6 +1306,7 @@ impl ChatMessage {
             cost_tier: None,
             elapsed: None,
             usage: None,
+            queued: false,
         }
     }
 
@@ -4605,6 +4637,7 @@ mod tests {
             cost_tier: None,
             elapsed: None,
             usage: None,
+            queued: false,
         }];
         let err = validate_turn_invariants(&msgs).expect_err("empty user must fail");
         assert_eq!(
@@ -4671,6 +4704,7 @@ mod tests {
             cost_tier: None,
             elapsed: None,
             usage: None,
+            queued: false,
         }];
         let err = validate_turn_invariants(&msgs).expect_err("tool part on user role must fail");
         match err {

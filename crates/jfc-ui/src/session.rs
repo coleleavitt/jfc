@@ -527,6 +527,11 @@ pub async fn save_session(
         .map(str::to_owned)
         .or_else(|| prior.as_ref().and_then(|s| s.model.clone()));
 
+    // Drop any queued-prompt placeholders before serializing. They're a
+    // runtime-only construct used to render "⏳ I queued this" in the
+    // transcript; persisting them would make resume re-display unsent
+    // prompts and (worse) `recompute_token_estimate` count their bytes
+    // against the context budget on the next launch.
     let serialized = SerializedSession {
         id: session_id_str.to_owned(),
         created_at,
@@ -535,7 +540,11 @@ pub async fn save_session(
         model: stored_model,
         cwd: stored_cwd,
         title,
-        messages: messages.iter().map(serialize_message).collect(),
+        messages: messages
+            .iter()
+            .filter(|m| !m.queued)
+            .map(serialize_message)
+            .collect(),
     };
 
     if let Ok(json) = serde_json::to_string_pretty(&serialized) {
@@ -1391,6 +1400,10 @@ fn deserialize_message(msg: SerializedMessage) -> ChatMessage {
         cost_tier: msg.cost_tier,
         elapsed: msg.elapsed,
         usage: msg.usage,
+        // Queued is a runtime-only marker — resumed sessions never have
+        // unsent queued prompts because drain_queued_prompts runs as
+        // part of the turn lifecycle before save_session ever fires.
+        queued: false,
     }
 }
 

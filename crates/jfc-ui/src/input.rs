@@ -2170,8 +2170,15 @@ pub async fn handle_key(
                     text: text.clone(),
                     is_meta,
                 });
+                // Insert as a `queued` user message so the user can SEE
+                // "I queued this" in the transcript, but
+                // `build_provider_messages*` will skip it. Without this
+                // flag, `continue_agentic_loop` sent the queued user
+                // text to the provider as if it were part of the current
+                // turn, inflating the prompt and creating the gauge
+                // jump after queuing.
                 app.messages
-                    .push(ChatMessage::user(format!("{glyph} {text}")));
+                    .push(ChatMessage::user_queued(format!("{glyph} {text}")));
                 app.scroll_to_bottom();
             } else {
                 handle_submit(app, text, tx).await?;
@@ -2458,7 +2465,18 @@ async fn handle_submit(
     // hard limit and the provider returns 400 prompt_too_long. v126 cli.js
     // line 382476 shows the same pre-submit check returning a "blocking_limit"
     // result before queryDirect ever fires.
-    let est = crate::compact::estimate_tokens(&app.messages);
+    //
+    // Use `tool_ctx.approx_tokens` (the calibrated wire-truth, kept in sync
+    // by `recompute_token_estimate` on resume and by `StreamUsage` during a
+    // turn) rather than re-running the chars-based `estimate_tokens`
+    // heuristic. The doc comment on `compact::should_compact` warns
+    // explicitly that the raw estimator over-counts tool outputs (it sums
+    // their full byte length while the wire truncates each tool result to
+    // `MAX_TOOL_RESULT_CHARS`), and on prompt-cache-heavy sessions it can
+    // also under-count by missing the cache_read contribution. Using the
+    // calibrated value makes pre-submit and post-tool compaction agree on
+    // when the session is actually full.
+    let est = app.tool_ctx.approx_tokens;
     let level = crate::compact::compact_level(est, app.max_context_tokens);
     let want_compact = matches!(
         level,
@@ -2813,7 +2831,12 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             // command just reminds the user how to retrigger.)
         }
         "/compact" => {
-            let est = crate::compact::estimate_tokens(&app.messages);
+            // Use the calibrated context size (same source as the gauge
+            // and pre-submit gate). Previously this re-ran the raw
+            // `estimate_tokens` heuristic, so the manual report disagreed
+            // with the live gauge and could show "0%" for a session the
+            // sidebar reports as 90%-full.
+            let est = app.tool_ctx.approx_tokens;
             let level = crate::compact::compact_level(est, app.max_context_tokens);
             let pct = if app.max_context_tokens > 0 {
                 (est * 100 / app.max_context_tokens).min(999)
