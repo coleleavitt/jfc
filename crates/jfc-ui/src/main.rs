@@ -67,6 +67,7 @@ mod worktrees;
 #[cfg(feature = "background-agents")]
 mod background;
 mod daemon;
+mod hallucination_guard;
 #[cfg(feature = "hashline")]
 mod hashline;
 #[cfg(feature = "hooks")]

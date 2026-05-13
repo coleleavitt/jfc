@@ -1183,7 +1183,9 @@ pub async fn stream_response(
 ## Using your tools\n\
 Prefer dedicated tools over Bash when one fits (Read, Write, Edit, Glob, Grep) — reserve Bash for shell-only operations.\n\
 You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between the calls, make all of the independent calls in the same block, otherwise you MUST wait for previous calls to finish first to determine the dependent values (do NOT use placeholders or guess missing parameters).\n\
-If the user provides a specific value for a parameter (for example provided in quotes), make sure to use that value EXACTLY. DO NOT make up values for or ask about optional parameters.";
+If the user provides a specific value for a parameter (for example provided in quotes), make sure to use that value EXACTLY. DO NOT make up values for or ask about optional parameters.\n\
+\n\
+**Tool calls are ground truth.** Never claim that you wrote a file, ran a command, deployed something, edited code, sent a message, or executed any other side-effect unless a successful tool call THIS TURN proves it (Write/Edit/Bash/SendMessage/TeamCreate/etc.). If you intend to perform such an action, you MUST emit the corresponding tool call — describing the action in prose does NOT execute it. If you cannot or did not call the tool, say so explicitly (e.g. \"I haven't written the file yet; calling Write now…\") and then issue the call. Phrases like \"Done\", \"wrote\", \"created\", \"updated\", \"deployed\", \"executed\", \"applied the patch\", or \"now writing for real\" are forbidden unless backed by a completed tool call in the current turn.";
 
     let coding_instructions = "\
 ## Doing tasks\n\
@@ -2703,7 +2705,9 @@ pub fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
         output_messages = out.len(),
         "build_provider_messages (text-only)"
     );
-    ensure_user_last(out)
+    let out = ensure_user_last(out);
+    validate_provider_messages(&out);
+    out
 }
 
 /// Ensure the message list ends with a user-role message before sending to
@@ -2776,10 +2780,23 @@ fn ensure_user_last(mut msgs: Vec<ProviderMessage>) -> Vec<ProviderMessage> {
     // messages happen when: (a) a compact_boundary (assistant) is followed by
     // a text-only assistant, (b) queued prompts produce adjacent user
     // messages, (c) filtering removes messages and collapses the alternation.
+    //
+    // CRITICAL: do NOT merge across a `tool_result` boundary. Anthropic's
+    // Messages API validates that any user message containing a
+    // `tool_result` block contains ONLY tool_result blocks (and that the
+    // immediately-preceding assistant message contained matching
+    // `tool_use` IDs). Merging a tool_result user message with a normal
+    // text user message produces a mixed-content user turn that either
+    // gets rejected with `invalid_request_error` or — worse on lenient
+    // gateways — teaches the model that tool results are interchangeable
+    // with chat text. Same rule for the inverse direction.
     let mut merged: Vec<ProviderMessage> = Vec::with_capacity(msgs.len());
     for msg in msgs {
         if let Some(last) = merged.last_mut() {
-            if last.role == msg.role {
+            if last.role == msg.role
+                && !contains_tool_result(last)
+                && !contains_tool_result(&msg)
+            {
                 last.content.extend(msg.content);
                 continue;
             }
@@ -2788,6 +2805,115 @@ fn ensure_user_last(mut msgs: Vec<ProviderMessage>) -> Vec<ProviderMessage> {
     }
     merged
 }
+
+/// True iff the message carries any `ProviderContent::ToolResult` block.
+/// Used by `ensure_user_last` to enforce Anthropic's tool_result purity
+/// rule: a user message that contains tool_result MUST contain only
+/// tool_result, and must not be merged with adjacent normal-text user
+/// messages.
+fn contains_tool_result(msg: &ProviderMessage) -> bool {
+    msg.content
+        .iter()
+        .any(|c| matches!(c, ProviderContent::ToolResult { .. }))
+}
+
+/// Debug-only validator for the post-merge provider message stream.
+///
+/// Anthropic's Messages API enforces several invariants that JFC's
+/// `build_provider_messages*` mutations could violate:
+///
+/// 1. A user message containing `tool_result` MUST contain ONLY
+///    tool_result blocks (no text, no images, no other types).
+/// 2. A `tool_result` user message MUST be immediately preceded by an
+///    assistant message that contains the matching `tool_use` IDs.
+/// 3. Every `tool_use` ID in an assistant message MUST have a matching
+///    `tool_result` in the next user message.
+///
+/// In debug builds we log loud warnings when any of these are violated
+/// so the regression is visible in trace logs before the provider 400s
+/// the request. In release builds this is a no-op. We don't BLOCK the
+/// send — the gateway may be lenient, and a forensic log is more useful
+/// than a hard panic.
+#[cfg(debug_assertions)]
+fn validate_provider_messages(msgs: &[ProviderMessage]) {
+    use std::collections::HashSet;
+    for (i, msg) in msgs.iter().enumerate() {
+        if matches!(msg.role, ProviderRole::User) && contains_tool_result(msg) {
+            // Invariant 1: tool_result purity.
+            let non_tool_result = msg
+                .content
+                .iter()
+                .any(|c| !matches!(c, ProviderContent::ToolResult { .. }));
+            if non_tool_result {
+                tracing::warn!(
+                    target: "jfc::stream::invariants",
+                    msg_index = i,
+                    content_kinds = ?msg.content.iter().map(|c| match c {
+                        ProviderContent::Text(_) => "text",
+                        ProviderContent::ToolUse { .. } => "tool_use",
+                        ProviderContent::ToolResult { .. } => "tool_result",
+                        ProviderContent::Attachment(_) => "attachment",
+                    }).collect::<Vec<_>>(),
+                    "provider message invariant violation: user message contains tool_result mixed with other content"
+                );
+            }
+            // Invariant 2: must follow an assistant with matching tool_use IDs.
+            let tool_result_ids: HashSet<&str> = msg
+                .content
+                .iter()
+                .filter_map(|c| match c {
+                    ProviderContent::ToolResult { tool_use_id, .. } => Some(tool_use_id.as_str()),
+                    _ => None,
+                })
+                .collect();
+            if let Some(prev) = i.checked_sub(1).and_then(|j| msgs.get(j)) {
+                if !matches!(prev.role, ProviderRole::Assistant) {
+                    tracing::warn!(
+                        target: "jfc::stream::invariants",
+                        msg_index = i,
+                        prev_role = ?prev.role,
+                        "provider message invariant violation: tool_result user message not preceded by assistant"
+                    );
+                } else {
+                    let tool_use_ids: HashSet<&str> = prev
+                        .content
+                        .iter()
+                        .filter_map(|c| match c {
+                            ProviderContent::ToolUse { id, .. } => Some(id.as_str()),
+                            _ => None,
+                        })
+                        .collect();
+                    let missing: Vec<&str> = tool_result_ids
+                        .difference(&tool_use_ids)
+                        .copied()
+                        .collect();
+                    let unmatched: Vec<&str> = tool_use_ids
+                        .difference(&tool_result_ids)
+                        .copied()
+                        .collect();
+                    if !missing.is_empty() || !unmatched.is_empty() {
+                        tracing::warn!(
+                            target: "jfc::stream::invariants",
+                            msg_index = i,
+                            tool_result_without_use = ?missing,
+                            tool_use_without_result = ?unmatched,
+                            "provider message invariant violation: tool_use ↔ tool_result IDs do not match"
+                        );
+                    }
+                }
+            } else {
+                tracing::warn!(
+                    target: "jfc::stream::invariants",
+                    msg_index = i,
+                    "provider message invariant violation: leading tool_result user message"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn validate_provider_messages(_msgs: &[ProviderMessage]) {}
 
 fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
     let mut out = Vec::new();
@@ -2953,11 +3079,14 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
         }
     }
     // Drain attachments staged by tool dispatchers (currently: PDFs
-    // ingested by Read). Append them to the LAST user-role message
-    // — that's the tool_results message we just emitted in the loop
-    // above when a Read tool just ran, or the user's prompt when no
-    // tool fired. Skipping the append here would silently lose the
-    // PDF, so this is the load-bearing wire.
+    // ingested by Read). Append them to the LAST non-tool_result user
+    // message — i.e. the user's actual prompt, NOT the synthetic
+    // tool_results message. Anthropic rejects any user message that
+    // mixes tool_result blocks with image/document/text content, so we
+    // must find a clean carrier for the attachments. If no such carrier
+    // exists (e.g. tool fired in the very first turn before the user
+    // sent a prompt — which is unusual but possible via /command-driven
+    // flows), create a fresh user message to carry the attachments.
     let pending = crate::tools::take_pending_tool_attachments();
     let pending_count = pending.len();
     if !pending.is_empty() {
@@ -2965,14 +3094,14 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
             .into_iter()
             .map(ProviderContent::Attachment)
             .collect();
-        // Find the last user message and append; if none exists,
-        // create one (defensive — `ensure_user_last` enforces this
-        // anyway, but doing it eagerly keeps the message structure
-        // predictable).
-        if let Some(last_user) = out
-            .iter_mut()
-            .rfind(|m| matches!(m.role, ProviderRole::User))
-        {
+        // Find the last user message whose content is NOT tool_result.
+        // Walking from the end skips the synthetic tool_results message
+        // emitted above (which would always be the last user when a
+        // tool just ran) and lands on the prior actual prompt.
+        let target = out.iter_mut().rev().find(|m| {
+            matches!(m.role, ProviderRole::User) && !contains_tool_result(m)
+        });
+        if let Some(last_user) = target {
             last_user.content.extend(attached);
         } else {
             out.push(ProviderMessage {
@@ -2988,7 +3117,9 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
         tool_use_count, tool_result_count, abandoned_count, pending_count,
         "build_provider_messages_with_tool_results"
     );
-    ensure_user_last(out)
+    let out = ensure_user_last(out);
+    validate_provider_messages(&out);
+    out
 }
 
 #[cfg(test)]

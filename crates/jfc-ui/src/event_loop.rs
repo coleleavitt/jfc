@@ -2181,12 +2181,68 @@ pub(crate) async fn run(
                     // genuinely concluded — EndTurn stop reason AND no
                     // tools pending. ToolUse means an agentic continuation
                     // is about to fire and the turn timer must keep running.
-                    if stop_reason == crate::provider::StopReason::EndTurn
+                    let turn_genuinely_done = stop_reason
+                        == crate::provider::StopReason::EndTurn
                         && app.pending_approval.is_none()
                         && app.approval_queue.is_empty()
-                        && app.pending_tool_calls.is_empty()
-                    {
+                        && app.pending_tool_calls.is_empty();
+                    if turn_genuinely_done {
                         app.turn_started_at = None;
+                    }
+
+                    // Hallucination guard: if the turn genuinely ended
+                    // (no tools queued, no continuation about to fire)
+                    // and the final assistant message claims a
+                    // side-effect happened without a backing tool call,
+                    // inject a system-reminder and re-run the turn so
+                    // the model either issues the missing call or
+                    // retracts the claim. See `hallucination_guard.rs`
+                    // for the full rationale. Disabled in tests so
+                    // unrelated flows don't auto-continue. Disabled via
+                    // env so users can turn it off if it false-positives
+                    // on their workflows.
+                    let guard_disabled = matches!(
+                        std::env::var("JFC_DISABLE_HALLUCINATION_GUARD").as_deref(),
+                        Ok("1") | Ok("true")
+                    );
+                    if turn_genuinely_done && !guard_disabled {
+                        let claim_phrase = app
+                            .streaming_assistant_idx
+                            .and_then(|idx| app.messages.get(idx))
+                            .and_then(crate::hallucination_guard::check_unbacked_claim);
+                        if let Some(phrase) = claim_phrase {
+                            tracing::warn!(
+                                target: "jfc::hallucination",
+                                matched_phrase = phrase,
+                                "assistant claimed a side-effect without a backing tool call — injecting reminder + re-running turn"
+                            );
+                            crate::toast::push_with_cap(
+                                &mut app.toasts,
+                                crate::toast::Toast::new(
+                                    crate::toast::ToastKind::Warning,
+                                    format!(
+                                        "Detected unbacked claim ({phrase:?}) — asking the model to redo with a real tool call"
+                                    ),
+                                ),
+                            );
+                            crate::system_reminder::append_to_last_user(
+                                &mut app.messages,
+                                &format!(
+                                    "Your previous response claimed `{phrase}` but emitted no tool call — \
+                                     the file/command/action was NOT actually executed. Either issue the \
+                                     correct Write/Edit/Bash/etc. tool call THIS turn, or explicitly \
+                                     retract the claim and say what's blocking you."
+                                ),
+                            );
+                            // Re-run by triggering the agentic loop.
+                            // continue_agentic_loop pushes a fresh
+                            // assistant slot and re-streams; the
+                            // appended system_reminder above sits on
+                            // the last user message so the model sees
+                            // it as part of the turn.
+                            stream::continue_agentic_loop(&mut app, &tx).await;
+                            continue;
+                        }
                     }
 
                     // Auto-save session after each assistant turn completes
@@ -2216,68 +2272,88 @@ pub(crate) async fn run(
                     {
                         drain_queued_prompts(&mut app, &tx).await;
                     }
-                    if stop_reason == crate::provider::StopReason::ToolUse {
-                        if !app.pending_tool_calls.is_empty() {
-                            let calls = std::mem::take(&mut app.pending_tool_calls);
-                            tracing::info!(
-                                target: "jfc::stream",
-                                n = calls.len(),
-                                kinds = ?calls.iter().map(|t| t.kind.label()).collect::<Vec<_>>(),
-                                "stream_done dispatching auto-routed batch"
-                            );
-                            update_task_activities(&mut app, &calls);
-                            stream::dispatch_tools_batched(
-                                calls,
-                                &tx,
-                                std::sync::Arc::clone(&app.dedup_cache),
-                                Some(std::sync::Arc::clone(&app.task_store)),
-                                app.team_context.team_name.clone(),
-                                app.current_session_id
-                                    .as_ref()
-                                    .map(|id| id.as_str().to_owned()),
-                                std::sync::Arc::clone(&app.provider),
-                                app.model.clone(),
-                                app.teammate_event_tx.clone(),
-                                app.cancel_token.clone(),
-                            );
-                        } else if app.pending_approval.is_some() || !app.approval_queue.is_empty() {
-                            tracing::info!(
-                                target: "jfc::stream",
-                                pending_modal = app.pending_approval.is_some(),
-                                queue_depth = app.approval_queue.len(),
-                                "stream_done waiting on approval pipeline"
-                            );
-                            // Tool awaiting user approval — keep streaming_assistant_idx
-                            // alive so the approved/denied tool can be inserted into the
-                            // correct message. AllToolsComplete fires after approval.
-                        } else {
-                            // Upstream returned finish_reason="tool_calls" but sent
-                            // zero tool_call delta chunks (transient LiteLLM/Bedrock
-                            // failure). The assistant message that was pre-pushed to
-                            // history is empty and un-replyable; strip it so the
-                            // next user turn doesn't send a broken conversation turn.
-                            tracing::warn!(
-                                target: "jfc::stream",
-                                streaming_idx = ?app.streaming_assistant_idx,
-                                "stream_done ToolUse with no tools — stripping dangling assistant turn"
-                            );
-                            if let Some(idx) = app.streaming_assistant_idx {
-                                if idx < app.messages.len() {
-                                    let msg = &app.messages[idx];
-                                    let is_empty = msg.parts.is_empty()
+                    // Dispatch any tools that were emitted during streaming,
+                    // regardless of `stop_reason`. Some providers (OpenWebUI,
+                    // LiteLLM, Bedrock proxies, even Anthropic on transient
+                    // fast-paths) return `finish_reason="stop"` while the
+                    // assistant message actually contains tool_use blocks.
+                    // Mirrors OpenCode's `prompt.ts:1382` workaround: "Some
+                    // providers return stop even when the assistant message
+                    // contains tool calls" — keep the loop alive if tools
+                    // exist. Previously the `else` branch below cleared
+                    // pending_tool_calls when stop_reason != ToolUse,
+                    // silently dropping the user's requested tools and
+                    // leaving the model's "I'll write the file now" claim
+                    // unbacked — the "hallucinated Done" symptom.
+                    let has_pending_tools = !app.pending_tool_calls.is_empty();
+                    let waiting_on_approval =
+                        app.pending_approval.is_some() || !app.approval_queue.is_empty();
+                    if has_pending_tools {
+                        let calls = std::mem::take(&mut app.pending_tool_calls);
+                        tracing::info!(
+                            target: "jfc::stream",
+                            n = calls.len(),
+                            ?stop_reason,
+                            kinds = ?calls.iter().map(|t| t.kind.label()).collect::<Vec<_>>(),
+                            "stream_done dispatching auto-routed batch"
+                        );
+                        update_task_activities(&mut app, &calls);
+                        stream::dispatch_tools_batched(
+                            calls,
+                            &tx,
+                            std::sync::Arc::clone(&app.dedup_cache),
+                            Some(std::sync::Arc::clone(&app.task_store)),
+                            app.team_context.team_name.clone(),
+                            app.current_session_id
+                                .as_ref()
+                                .map(|id| id.as_str().to_owned()),
+                            std::sync::Arc::clone(&app.provider),
+                            app.model.clone(),
+                            app.teammate_event_tx.clone(),
+                            app.cancel_token.clone(),
+                        );
+                    } else if waiting_on_approval {
+                        tracing::info!(
+                            target: "jfc::stream",
+                            pending_modal = app.pending_approval.is_some(),
+                            queue_depth = app.approval_queue.len(),
+                            ?stop_reason,
+                            "stream_done waiting on approval pipeline"
+                        );
+                        // Tool awaiting user approval — keep streaming_assistant_idx
+                        // alive so the approved/denied tool can be inserted into the
+                        // correct message. AllToolsComplete fires after approval.
+                    } else if stop_reason == crate::provider::StopReason::ToolUse {
+                        // Upstream returned finish_reason="tool_calls" but sent
+                        // zero tool_call delta chunks (transient LiteLLM/Bedrock
+                        // failure). The assistant message that was pre-pushed to
+                        // history is empty and un-replyable; strip it so the
+                        // next user turn doesn't send a broken conversation turn.
+                        tracing::warn!(
+                            target: "jfc::stream",
+                            streaming_idx = ?app.streaming_assistant_idx,
+                            "stream_done ToolUse with no tools — stripping dangling assistant turn"
+                        );
+                        if let Some(idx) = app.streaming_assistant_idx {
+                            if idx < app.messages.len() {
+                                let msg = &app.messages[idx];
+                                let is_empty = msg.parts.is_empty()
                                     || msg.parts.iter().all(|p| {
                                         matches!(p, MessagePart::Text(t) if t.trim().is_empty())
                                     });
-                                    if is_empty {
-                                        app.messages.remove(idx);
-                                    }
+                                if is_empty {
+                                    app.messages.remove(idx);
                                 }
                             }
-                            app.streaming_assistant_idx = None;
-                            app.scroll_to_bottom();
                         }
+                        app.streaming_assistant_idx = None;
+                        app.scroll_to_bottom();
                     } else {
-                        app.pending_tool_calls.clear();
+                        // Normal EndTurn with no tools — turn is genuinely
+                        // complete. Don't clear pending_tool_calls here;
+                        // the `has_pending_tools` branch above already
+                        // would have taken them. This branch is just the
+                        // "model said its piece and stopped" path.
                         app.streaming_assistant_idx = None;
                         app.scroll_to_bottom();
                     }
