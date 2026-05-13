@@ -1350,6 +1350,15 @@ pub(crate) async fn run(
                         app.last_detached_sync_at = Some(std::time::Instant::now());
                         if sync_detached_background_tasks_from_daemon(&mut app) {
                             needs_draw = true;
+                            // Re-evaluate the task factory after detached
+                            // agents transition. Without this,
+                            // maybe_continue_task_factory's
+                            // `background_tasks.any(is_alive)` gate blocks
+                            // the queue while agents run, but their later
+                            // completion (via daemon sync, not AppEvent)
+                            // never re-triggers the factory — the queue
+                            // stalls until the user sends another prompt.
+                            maybe_continue_task_factory(&mut app, &tx).await;
                         }
                     }
                     // Auto-clear expired toasts every tick. Cheap (O(N) over
