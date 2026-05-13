@@ -154,6 +154,7 @@ mod tests {
 
     // ---- is_gh_installed --------------------------------------------------
 
+    #[serial_test::serial]
     #[test]
     fn is_gh_installed_returns_false_when_path_empty_robust() {
         // Mock by env var: JFC_GH_BIN_OVERRIDE=__none__ forces false even on
@@ -173,6 +174,7 @@ mod tests {
         }
     }
 
+    #[serial_test::serial]
     #[test]
     fn is_gh_installed_with_override_pointing_at_real_file_normal() {
         // Point the override at /bin/sh which always exists — the function

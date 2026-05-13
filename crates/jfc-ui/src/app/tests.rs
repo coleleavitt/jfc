@@ -541,6 +541,7 @@ fn switch_session_none_mints_fresh_id_normal() {
 
 // Normal: a newly-completed task picks up a completion timestamp;
 // a pruned/deleted task is removed.
+#[serial_test::serial]
 #[test]
 fn sync_task_completions_tracks_and_prunes_normal() {
     use crate::tasks::{TaskPatch, TaskStatus};

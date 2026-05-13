@@ -1462,6 +1462,7 @@ mod helper_tests {
 
     // --- tool_title_width_cap ----------------------------------------
 
+    #[serial_test::serial]
     #[test]
     fn tool_title_width_cap_default_is_100_normal() {
         // Without any env override, default is 100.
@@ -1471,6 +1472,7 @@ mod helper_tests {
         assert_eq!(tool_title_width_cap(), 100);
     }
 
+    #[serial_test::serial]
     #[test]
     fn tool_title_width_cap_rejects_too_small_robust() {
         // Values < 20 are rejected by `.filter(|n| *n >= 20)` → fallback to 100.

@@ -162,24 +162,28 @@ mod tests {
 
     // ─── notifications_enabled gating ────────────────────────────────────
 
+    #[serial_test::serial]
     #[test]
     fn notifications_enabled_default_when_var_unset_normal() {
         let _g = EnvGuard::unset("JFC_DISABLE_NOTIFICATIONS");
         assert!(notifications_enabled());
     }
 
+    #[serial_test::serial]
     #[test]
     fn notifications_disabled_with_one_robust() {
         let _g = EnvGuard::set("JFC_DISABLE_NOTIFICATIONS", "1");
         assert!(!notifications_enabled());
     }
 
+    #[serial_test::serial]
     #[test]
     fn notifications_disabled_with_true_robust() {
         let _g = EnvGuard::set("JFC_DISABLE_NOTIFICATIONS", "true");
         assert!(!notifications_enabled());
     }
 
+    #[serial_test::serial]
     #[test]
     fn notifications_enabled_for_unrelated_value_robust() {
         // Anything other than "1" or "true" (e.g. "yes", "on", "0") should
@@ -188,6 +192,7 @@ mod tests {
         assert!(notifications_enabled());
     }
 
+    #[serial_test::serial]
     #[test]
     fn notifications_enabled_for_zero_robust() {
         let _g = EnvGuard::set("JFC_DISABLE_NOTIFICATIONS", "0");
@@ -262,6 +267,7 @@ mod tests {
     /// `notify` spawns a tokio task; we only verify it doesn't panic when
     /// the gate is engaged. (We don't actually want to talk to a daemon
     /// in CI.)
+    #[serial_test::serial]
     #[tokio::test]
     async fn notify_with_disable_gate_is_noop_robust() {
         let _g = EnvGuard::set("JFC_DISABLE_NOTIFICATIONS", "1");
@@ -271,6 +277,7 @@ mod tests {
         tokio::task::yield_now().await;
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn notify_tool_failed_is_noop_when_disabled_robust() {
         let _g = EnvGuard::set("JFC_DISABLE_NOTIFICATIONS", "1");
@@ -278,6 +285,7 @@ mod tests {
         tokio::task::yield_now().await;
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn notify_compact_failed_is_noop_when_disabled_robust() {
         let _g = EnvGuard::set("JFC_DISABLE_NOTIFICATIONS", "1");
@@ -285,6 +293,7 @@ mod tests {
         tokio::task::yield_now().await;
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn notify_turn_complete_below_threshold_skips_normal() {
         // Even with notifications enabled, a short turn doesn't dispatch.

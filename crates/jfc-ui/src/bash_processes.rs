@@ -109,8 +109,18 @@ pub fn clear_for_test() {
 mod tests {
     use super::*;
 
+    /// Tests share the process-global REGISTRY. Serialize them so a
+    /// parallel test's bash execution can't register a PID between
+    /// `clear_for_test` and the assertion — the "random failure under
+    /// `cargo test`" flake that plagued CI.
+    fn test_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
     #[test]
     fn register_and_deregister_normal() {
+        let _guard = test_lock().lock().unwrap_or_else(|p| p.into_inner());
         clear_for_test();
         register(1234);
         register(5678);
@@ -125,6 +135,7 @@ mod tests {
 
     #[test]
     fn deregister_missing_pid_is_noop_robust() {
+        let _guard = test_lock().lock().unwrap_or_else(|p| p.into_inner());
         clear_for_test();
         deregister(99999);
         assert!(snapshot().is_empty());
@@ -132,6 +143,7 @@ mod tests {
 
     #[test]
     fn terminate_all_signals_invalid_pids_robust() {
+        let _guard = test_lock().lock().unwrap_or_else(|p| p.into_inner());
         clear_for_test();
         // Use a PID that is overwhelmingly unlikely to exist. Avoid u32::MAX
         // because it wraps to pid_t -1 which signals ALL user processes!

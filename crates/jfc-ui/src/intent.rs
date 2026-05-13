@@ -1023,6 +1023,7 @@ mod tests {
 
     /// Robust: the env-flag is opt-out — empty / unset / "1" should
     /// stay enabled; the canonical disable values flip it off.
+    #[serial_test::serial]
     #[test]
     fn graph_auto_context_enabled_respects_env_robust() {
         // Use a serialization mutex because env vars are process-global
@@ -1141,6 +1142,7 @@ fn baz() -> i32 { 42 }
 
     /// Robust: when JFC_GRAPH_AUTO_CONTEXT is disabled, the helper is
     /// a no-op even on a graph-flavored intent.
+    #[serial_test::serial]
     #[test]
     fn auto_inject_respects_disable_flag_robust() {
         struct Restore(Option<String>);

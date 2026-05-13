@@ -170,6 +170,7 @@ mod tests {
         assert_eq!(active_profile(tmp.path()).as_deref(), Some("env-profile"));
     }
 
+    #[serial_test::serial]
     #[test]
     fn active_profile_file_used_when_no_env_normal() {
         let tmp = tempfile::TempDir::new().unwrap();
@@ -186,6 +187,7 @@ mod tests {
         assert_eq!(active_profile(tmp.path()).as_deref(), Some("file-profile"));
     }
 
+    #[serial_test::serial]
     #[test]
     fn active_profile_none_when_unset_robust() {
         let tmp = tempfile::TempDir::new().unwrap();
