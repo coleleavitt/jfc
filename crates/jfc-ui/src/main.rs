@@ -699,6 +699,9 @@ async fn run_openwebui_auth_subcommand(sub: OpenWebUIAuthSubcommand) -> anyhow::
                     ..Default::default()
                 },
             )?;
+            // Always make the freshly-logged-in account the active one, even
+            // if a different account was previously current.
+            let _ = set_current(&store_path, &name);
 
             println!("\n✓ logged in as {} <{}> ({})", user.name, user.email, user.role);
             if let Some(c) = cfg {
