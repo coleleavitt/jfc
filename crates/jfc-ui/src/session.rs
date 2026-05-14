@@ -634,7 +634,11 @@ pub async fn load_session_metadata(session_id: &SessionId) -> Option<SessionMeta
     let shallow: SessionMetaShallow = match serde_json::from_str(&content) {
         Ok(s) => s,
         Err(e) => {
-            warn!(target: "jfc::session", session_id = session_id_str, error = %e, "failed to parse session metadata");
+            // Downgrade to debug for schema-mismatch on old sessions — these are
+            // expected when the SerializedToolOutput format changed. The session
+            // remains in the sessions dir but is silently skipped in listings.
+            // A WARN flood of 20+ messages per startup was traced to May 4 sessions.
+            debug!(target: "jfc::session", session_id = session_id_str, error = %e, "skipping old session (schema mismatch — pre-migration format)");
             return None;
         }
     };

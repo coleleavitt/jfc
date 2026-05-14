@@ -507,7 +507,7 @@ async fn execute_task_inner(
 
         let stream = match crate::stream::open_stream_with_bedrock_retries(
             provider,
-            conversation.clone(),
+            std::sync::Arc::new(conversation.clone()),
             &options,
         )
         .await

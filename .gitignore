@@ -6,3 +6,5 @@ target/
 !.env.example
 .claude/worktrees/
 .jfc-worktrees/
+dhat-heap.json
+profiling-results/

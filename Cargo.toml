@@ -48,6 +48,14 @@ debug = "limited"
 lto = "thin"
 codegen-units = 1
 
+# Dedicated profiling profile — full debug symbols, same optimizations as release.
+# Use: cargo build --profile profiling --features dhat-heap
+# or:  cargo flamegraph --profile profiling
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = "none"
+
 [workspace.lints.rust]
 unexpected_cfgs = { level = "allow" }
 

@@ -321,8 +321,15 @@ impl Cli {
     }
 }
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 #[tokio::main(worker_threads = 4)]
 async fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "dhat-heap")]
+    let _dhat_profiler = dhat::Profiler::new_heap();
+
     let cli = Cli::parse();
 
     // Tracing → file under `~/.config/jfc/logs/`. Stderr writes corrupted the
@@ -341,6 +348,9 @@ async fn main() -> anyhow::Result<()> {
     // registered handlers (Logger only, by default — user-defined
     // hooks land via .claude/settings.json in a future pass). Idempotent.
     crate::hooks::init_global(crate::hooks::default_registry());
+
+    // Clean up tool-result spill files older than 24h to prevent unbounded /tmp growth.
+    crate::stream::cleanup_tool_result_spills(std::time::Duration::from_secs(24 * 3600));
 
     // v132 file watcher: install on startup so CLAUDE.md /
     // .claude/agents/*.md / settings.toml edits emit a system-reminder

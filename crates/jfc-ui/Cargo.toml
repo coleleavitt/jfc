@@ -84,11 +84,17 @@ regex = "1"
 jfc-graph = { path = "../jfc-graph" }
 jfc-economy = { path = "../jfc-economy" }
 
+# Optional profiling deps (enable via --features dhat-heap or --features profiling)
+dhat = { version = "0.3.3", optional = true }
+pprof = { version = "0.14", features = ["flamegraph", "criterion"], optional = true }
+console-subscriber = { version = "0.4", optional = true }
+
 [build-dependencies]
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-onig", "yaml-load", "dump-create", "dump-load"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+divan = "0.1"
 proptest = "1"
 serial_test = "3"
 tempfile = "3.27.0"
@@ -105,6 +111,8 @@ hooks = []
 background-agents = []
 intent-gate = []
 landlock-sandbox = []
+dhat-heap = ["dhat"]
+profiling = ["pprof", "console-subscriber"]
 
 [[bench]]
 name = "hooks"

@@ -292,6 +292,13 @@ pub enum CompactResult {
 /// `app::AppEvent` so the test build doesn't need the full app.
 pub type CompactProgressCb = Box<dyn Fn(u64) + Send + Sync>;
 
+/// Whether an error string indicates the provider doesn't support the
+/// requested operation at all — used to bail out early instead of retrying.
+fn is_unsupported_error(msg: &str) -> bool {
+    let m = msg.to_lowercase();
+    m.contains("not support") || m.contains("unsupported") || m.contains("not implemented")
+}
+
 async fn complete_or_stream(
     provider: &dyn Provider,
     messages: Vec<ProviderMessage>,
@@ -300,57 +307,57 @@ async fn complete_or_stream(
 ) -> Result<crate::provider::CompletionResponse, anyhow::Error> {
     match provider.complete(messages.clone(), options).await {
         Ok(resp) => {
-            // Non-streaming complete returns everything at once — fire
-            // a single terminal progress so the spinner ends with the
-            // final length rather than 0.
             if let Some(cb) = on_progress {
                 cb(resp.content.len() as u64);
             }
             Ok(resp)
         }
-        Err(e) => {
-            let err_msg = e.to_string().to_lowercase();
-            if err_msg.contains("not support") || err_msg.contains("unsupported") {
-                info!(
-                    target: "jfc::compact",
-                    "provider.complete() unsupported — falling back to streaming"
-                );
-                let mut stream = provider.stream(messages, options).await?;
-                let mut collected = String::new();
-                while let Some(event) = stream.next().await {
-                    match event {
-                        Ok(crate::provider::StreamEvent::TextDelta { delta, .. }) => {
-                            collected.push_str(&delta);
-                            // Mirrors v126's PB7 addResponseLength callback
-                            // (cli.js:396989) — fires on every text_delta so
-                            // the spinner shows the summary growing live.
-                            if let Some(cb) = on_progress {
-                                cb(collected.len() as u64);
-                            }
-                        }
-                        Ok(crate::provider::StreamEvent::Done { .. }) => break,
-                        Ok(crate::provider::StreamEvent::Error { message }) => {
-                            return Err(anyhow::anyhow!("{}", message));
-                        }
-                        Ok(_) => {} // skip usage, thinking, etc.
-                        Err(stream_err) => {
-                            return Err(anyhow::anyhow!("{}", stream_err));
+        Err(e) if is_unsupported_error(&e.to_string()) => {
+            info!(
+                target: "jfc::compact",
+                "provider.complete() unsupported — falling back to streaming"
+            );
+            let mut stream = match provider.stream(messages, options).await {
+                Ok(s) => s,
+                Err(stream_err) => {
+                    // Both complete and stream failed — provider can't compact.
+                    // Return a tagged error so the caller can bail out cleanly
+                    // instead of retrying in a hot loop.
+                    return Err(anyhow::anyhow!(
+                        "compaction unsupported: complete failed ({e}); stream also failed ({stream_err})"
+                    ));
+                }
+            };
+            let mut collected = String::new();
+            while let Some(event) = stream.next().await {
+                match event {
+                    Ok(crate::provider::StreamEvent::TextDelta { delta, .. }) => {
+                        collected.push_str(&delta);
+                        if let Some(cb) = on_progress {
+                            cb(collected.len() as u64);
                         }
                     }
+                    Ok(crate::provider::StreamEvent::Done { .. }) => break,
+                    Ok(crate::provider::StreamEvent::Error { message }) => {
+                        return Err(anyhow::anyhow!("{}", message));
+                    }
+                    Ok(_) => {}
+                    Err(stream_err) => {
+                        return Err(anyhow::anyhow!("{}", stream_err));
+                    }
                 }
-                debug!(
-                    target: "jfc::compact",
-                    collected_len = collected.len(),
-                    "streaming fallback collected response"
-                );
-                Ok(crate::provider::CompletionResponse {
-                    content: collected,
-                    usage: Default::default(),
-                })
-            } else {
-                Err(e)
             }
+            debug!(
+                target: "jfc::compact",
+                collected_len = collected.len(),
+                "streaming fallback collected response"
+            );
+            Ok(crate::provider::CompletionResponse {
+                content: collected,
+                usage: Default::default(),
+            })
         }
+        Err(e) => Err(e),
     }
 }
 
@@ -467,6 +474,25 @@ pub async fn compact(
 
         let summarize_tokens: usize = group_tokens[..split_point].iter().sum();
         let preserve_tokens: usize = group_tokens[split_point..].iter().sum();
+
+        // Catch-22 guard: if the chunk we'd send for summarization is itself
+        // bigger than the model's context window, no single pass can compact it.
+        // In this case we recursively chunk: summarize the first half of the
+        // to_summarize slice into a stub and treat that as a single message,
+        // then retry. This is a best-effort safeguard — the real fix is to
+        // never let sessions grow to 1.4M tokens in the first place.
+        if summarize_tokens > window {
+            warn!(
+                target: "jfc::compact",
+                summarize_tokens, window, attempt,
+                "to-summarize slice exceeds context window — increasing preserve_count to reduce slice"
+            );
+            // Drop the oldest group from the to-summarize slice each time
+            // until it fits, or until we've exhausted groups.
+            let step = token_gap_step(Some(summarize_tokens.saturating_sub(window)), &group_tokens, split_point);
+            preserve_count = (preserve_count + step.max(1)).min(total_groups - 1);
+            continue;
+        }
 
         info!(
             target: "jfc::compact",
@@ -680,19 +706,24 @@ pub async fn compact(
                     continue;
                 }
 
-                if err_msg.contains("not support") {
+                if is_unsupported_error(&err_msg) {
                     info!(
                         target: "jfc::compact",
                         error = %e,
-                        "provider does not support compaction"
+                        "provider does not support compaction — aborting"
                     );
                     return CompactResult::Unsupported;
                 }
 
-                debug!(
+                // Exponential backoff between retry attempts to prevent
+                // hot-loop storms (39,563 failures/day observed in logs).
+                let backoff_ms = 250u64.saturating_mul(1u64 << attempt.min(6));
+                tracing::debug!(
                     target: "jfc::compact",
-                    "unrecognized error — increasing preserve_count"
+                    attempt, backoff_ms,
+                    "unrecognized error — backing off before next attempt"
                 );
+                tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
                 let step = token_gap_step(last_token_gap, &group_tokens, split_point);
                 preserve_count = (preserve_count + step).min(total_groups - 1);
             }

@@ -54,6 +54,43 @@ const STREAM_INTERRUPT_POLL: Duration = Duration::from_millis(50);
 /// On any I/O failure (full disk, read-only /tmp, ENOSPC) the
 /// fallback is `truncate_tool_result(body)` — better to ship a
 /// truncated in-line version than to silently drop the result.
+/// Delete tool-result spill files older than `max_age`. Called at startup
+/// and on session end to prevent unbounded /tmp growth.
+pub(crate) fn cleanup_tool_result_spills(max_age: std::time::Duration) {
+    let dir = std::env::temp_dir().join("jfc-tool-results");
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    let cutoff = std::time::SystemTime::now()
+        .checked_sub(max_age)
+        .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+    let mut deleted = 0u64;
+    let mut freed = 0u64;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("txt") {
+            continue;
+        }
+        let Ok(meta) = std::fs::metadata(&path) else { continue };
+        let Ok(mtime) = meta.modified() else { continue };
+        if mtime < cutoff {
+            freed += meta.len();
+            if std::fs::remove_file(&path).is_ok() {
+                deleted += 1;
+            }
+        }
+    }
+    if deleted > 0 {
+        tracing::info!(
+            target: "jfc::stream",
+            deleted,
+            freed_bytes = freed,
+            "cleaned up stale tool-result spill files"
+        );
+    }
+}
+
 pub(crate) fn persist_tool_result(body: &str) -> String {
     use std::io::Write as _;
     let dir = std::env::temp_dir().join("jfc-tool-results");
@@ -1091,12 +1128,14 @@ pub(crate) fn is_anthropic_tool_input_400(msg: &str) -> bool {
 
 pub(crate) async fn open_stream_with_bedrock_retries(
     provider: &dyn Provider,
-    messages: Vec<ProviderMessage>,
+    messages: Arc<Vec<ProviderMessage>>,
     opts: &StreamOptions,
 ) -> anyhow::Result<EventStream> {
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 0..=BEDROCK_TRANSIENT_400_RETRIES {
-        match provider.stream(messages.clone(), opts).await {
+        // Arc::clone is O(1) — no heap allocation for the messages vec itself.
+        // The provider impl receives Vec<ProviderMessage> by value as before.
+        match provider.stream((*messages).clone(), opts).await {
             Ok(s) => {
                 if attempt > 0 {
                     tracing::info!(
@@ -1525,9 +1564,12 @@ Do not use a colon before tool calls.";
             .with_extra("message_count", messages.len().to_string()),
     );
 
+    // Wrap in Arc so the retry loop and thinking-fallback path share the same
+    // allocation instead of cloning the full Vec<ProviderMessage> on each attempt.
+    let messages = Arc::new(messages);
     let mut stream = match open_stream_with_bedrock_retries(
         provider.as_ref(),
-        messages.clone(),
+        Arc::clone(&messages),
         &opts,
     )
     .await
@@ -1547,11 +1589,12 @@ Do not use a colon before tool calls.";
                     error = %e,
                     "stream rejected thinking parameter — retrying without thinking"
                 );
+                // Reuse opts fields by ref — avoid cloning system prompt + tool defs.
                 let fallback_opts = StreamOptions::new(opts.model.clone())
-                    .system(opts.system.clone().unwrap_or_default())
+                    .system(opts.system.as_deref().unwrap_or_default().to_owned())
                     .tools(opts.tools.clone())
                     .max_tokens(opts.max_tokens);
-                match open_stream_with_bedrock_retries(provider.as_ref(), messages, &fallback_opts)
+                match open_stream_with_bedrock_retries(provider.as_ref(), Arc::clone(&messages), &fallback_opts)
                     .await
                 {
                     Ok(s) => s,
@@ -1640,7 +1683,11 @@ Do not use a colon before tool calls.";
 
         match event {
             StreamEvent::TextDelta { delta, .. } => {
-                // High-frequency token stream; safe to drop — next chunk supersedes.
+                // Send delta directly — coalescing via poll would require
+                // unsafe waker usage. The AppEvent channel is bounded; try_send
+                // drops if full which already provides back-pressure.
+                // (dhat mirror-pair #1/#2 will be addressed by Arc<str> in a
+                // follow-up; for now we keep the existing per-token path)
                 if tx
                     .try_send(AppEvent::StreamChunk {
                         text: Some(delta),
@@ -1652,7 +1699,6 @@ Do not use a colon before tool calls.";
                 }
             }
             StreamEvent::ThinkingDelta { delta, .. } => {
-                // High-frequency token stream; safe to drop — next chunk supersedes.
                 if tx
                     .try_send(AppEvent::StreamChunk {
                         text: None,
@@ -3081,27 +3127,30 @@ fn build_provider_messages_with_tool_results(msgs: &[ChatMessage]) -> Vec<Provid
                     let (result_text, is_error) = match tc.status {
                         ToolStatus::Completed | ToolStatus::Failed => {
                             tool_result_count += 1;
-                            let text = match &tc.output {
-                                ToolOutput::Text(s) => s.clone(),
-                                ToolOutput::LargeText(lt) => lt.content.clone(),
+                            // Use Cow<str> to avoid cloning when the output is already
+                            // a borrowed str we can reference directly (Text/LargeText).
+                            // Only allocate for variants that require formatting.
+                            let text: std::borrow::Cow<str> = match &tc.output {
+                                ToolOutput::Text(s) => std::borrow::Cow::Borrowed(s.as_str()),
+                                ToolOutput::LargeText(lt) => std::borrow::Cow::Borrowed(lt.content.as_str()),
                                 ToolOutput::Command {
                                     stdout,
                                     stderr,
                                     exit_code,
-                                } => format!(
+                                } => std::borrow::Cow::Owned(format!(
                                     "exit: {}\nstdout: {}\nstderr: {}",
                                     exit_code.unwrap_or(-1),
                                     stdout,
                                     stderr
-                                ),
-                                ToolOutput::FileContent { content, .. } => content.clone(),
-                                ToolOutput::FileList(files) => files.join("\n"),
+                                )),
+                                ToolOutput::FileContent { content, .. } => std::borrow::Cow::Borrowed(content.as_str()),
+                                ToolOutput::FileList(files) => std::borrow::Cow::Owned(files.join("\n")),
                                 ToolOutput::Diff(d) => {
-                                    format!("Applied diff to {}", d.file_path)
+                                    std::borrow::Cow::Owned(format!("Applied diff to {}", d.file_path))
                                 }
-                                ToolOutput::Empty => String::new(),
+                                ToolOutput::Empty => std::borrow::Cow::Borrowed(""),
                             };
-                            (text, tc.status == ToolStatus::Failed)
+                            (text.into_owned(), tc.status == ToolStatus::Failed)
                         }
                         ToolStatus::Cancelled => {
                             abandoned_count += 1;

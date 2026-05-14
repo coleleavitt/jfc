@@ -37,8 +37,8 @@ fn restart_stream_in_place(
     msg.elapsed = None;
     msg.usage = None;
 
-    app.streaming_text.clear();
-    app.streaming_reasoning.clear();
+    app.streaming_text = String::new();
+    app.streaming_reasoning = String::new();
     app.streaming_response_bytes = 0;
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
@@ -269,8 +269,8 @@ async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     let _ = first_non_meta_text;
 
     app.messages.push(ChatMessage::assistant(String::new()));
-    app.streaming_text.clear();
-    app.streaming_reasoning.clear();
+    app.streaming_text = String::new();
+    app.streaming_reasoning = String::new();
     app.streaming_response_bytes = 0;
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
@@ -1084,8 +1084,8 @@ pub(crate) async fn run(
                                             {
                                                 app.messages = messages;
                                                 app.switch_session(Some(id));
-                                                app.streaming_text.clear();
-                                                app.streaming_reasoning.clear();
+                                                app.streaming_text = String::new();
+                                                app.streaming_reasoning = String::new();
                                                 app.streaming_response_bytes = 0;
                                                 app.streaming_assistant_idx = None;
                                                 app.session_selected = idx;
@@ -2257,8 +2257,8 @@ pub(crate) async fn run(
                     if app.thinking_started_at.is_some() && app.thinking_ended_at.is_none() {
                         app.thinking_ended_at = Some(std::time::Instant::now());
                     }
-                    app.streaming_text.clear();
-                    app.streaming_reasoning.clear();
+                    app.streaming_text = String::new();
+                    app.streaming_reasoning = String::new();
                     // Only reset the cumulative token counter when the turn is
                     // truly done. During agentic loops (ToolUse stop_reason), the
                     // counter should keep accumulating so the spinner shows the
@@ -2551,8 +2551,8 @@ pub(crate) async fn run(
                     app.streaming_last_token_at = None;
                     app.thinking_started_at = None;
                     app.thinking_ended_at = None;
-                    app.streaming_text.clear();
-                    app.streaming_reasoning.clear();
+                    app.streaming_text = String::new();
+                    app.streaming_reasoning = String::new();
                     app.render_cache.borrow_mut().clear_streaming();
                     app.streaming_response_bytes = 0;
                     app.streaming_assistant_idx = None;
@@ -2867,27 +2867,9 @@ pub(crate) async fn run(
                             break;
                         }
                     }
-                    // Persist on every ToolResult so reload reflects tool outputs.
-                    // Without this, sessions saved at submit time carry empty
-                    // assistant placeholders + Pending tools — replaying them
-                    // shows a user prompt with nothing under it. v126 cli.js
-                    // saves on every state mutation; jfc previously only saved
-                    // at submit + StreamDone, missing the post-tool state.
-                    if let Some(ref session_id) = app.current_session_id {
-                        let sid = session_id.clone();
-                        let msgs = app.messages.clone();
-                        let cwd = app.cwd.clone();
-                        let model = app.model.clone();
-                        tokio::spawn(async move {
-                            session::save_session(
-                                &sid,
-                                &msgs,
-                                Some(cwd.as_str()),
-                                Some(model.as_str()),
-                            )
-                            .await;
-                        });
-                    }
+                    // Session save is deferred to AllToolsComplete so we write
+                    // once per batch, not once per tool result. This eliminates
+                    // the 650+ disk writes per agentic run observed in profiling.
                 }
                 AppEvent::AllToolsComplete => {
                     tracing::info!(
@@ -2922,10 +2904,24 @@ pub(crate) async fn run(
                             target: "jfc::stream",
                             "AllToolsComplete: batch finished but turn still has pending tools — deferring side effects"
                         );
-                        // No bell either: bell is a "turn done" cue, not a
-                        // "one tool finished" cue. Firing per-approval
-                        // would beep N times for an N-tool turn.
                         continue;
+                    }
+                    // Save session once per completed tool batch (not per tool).
+                    if let Some(ref session_id) = app.current_session_id {
+                        let sid = session_id.clone();
+                        let msgs = app.messages.clone();
+                        let cwd = app.cwd.clone();
+                        let model = app.model.clone();
+                        tokio::spawn(async move {
+                            session::save_session(
+                                &sid,
+                                &msgs,
+                                Some(cwd.as_str()),
+                                Some(model.as_str()),
+                            )
+                            .await;
+                        });
+                        app.last_session_save_at = Some(std::time::Instant::now());
                     }
                     // Terminal bell when a tool batch completes — matches
                     // v126's `iterm2_with_bell` / `terminal_bell` behavior
