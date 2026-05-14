@@ -293,26 +293,35 @@ async fn follow_redirects(
 /* ------------------------- HTML helpers ----------------------- */
 
 fn extract_form_action(html: &str, base_url: &str) -> Option<String> {
-    let re = regex::Regex::new(r#"<form[^>]*action="([^"]+)""#).ok()?;
-    let m = re.captures(html)?;
-    let action = m.get(1)?.as_str().replace("&amp;", "&");
+    // Accept both double and single quotes (some IdPs use single).
+    let re_double = regex::Regex::new(r#"<form[^>]*\baction="([^"]+)""#).ok()?;
+    let re_single = regex::Regex::new(r#"<form[^>]*\baction='([^']+)'"#).ok()?;
+    let action = re_double
+        .captures(html)
+        .or_else(|| re_single.captures(html))
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().replace("&amp;", "&"))?;
     let base = url::Url::parse(base_url).ok()?;
     Some(base.join(&action).ok()?.to_string())
 }
 
 fn extract_hidden_fields(html: &str) -> HashMap<String, String> {
     let mut fields = HashMap::new();
-    let re = regex::Regex::new(r#"<input[^>]*type="hidden"[^>]*>"#).unwrap();
+    let re = regex::Regex::new(r#"<input[^>]*type=["']hidden["'][^>]*>"#).unwrap();
+    let name_re_d = regex::Regex::new(r#"name="([^"]+)""#).unwrap();
+    let name_re_s = regex::Regex::new(r#"name='([^']+)'"#).unwrap();
+    let val_re_d = regex::Regex::new(r#"value="([^"]*)""#).unwrap();
+    let val_re_s = regex::Regex::new(r#"value='([^']*)'"#).unwrap();
     for m in re.find_iter(html) {
         let tag = m.as_str();
-        let name = regex::Regex::new(r#"name="([^"]+)""#)
-            .unwrap()
+        let name = name_re_d
             .captures(tag)
+            .or_else(|| name_re_s.captures(tag))
             .and_then(|c| c.get(1))
             .map(|m| m.as_str().to_owned());
-        let value = regex::Regex::new(r#"value="([^"]*)""#)
-            .unwrap()
+        let value = val_re_d
             .captures(tag)
+            .or_else(|| val_re_s.captures(tag))
             .and_then(|c| c.get(1))
             .map(|m| m.as_str().replace("&amp;", "&"))
             .unwrap_or_default();
@@ -413,6 +422,12 @@ async fn step2_submit_credentials(
         anyhow::bail!("Step 2b: Login failed — invalid NetID or password");
     }
 
+    // Debug dump so step3 has context if it fails.
+    let debug_dir = std::path::PathBuf::from("/tmp/jfc-oidc-debug");
+    let _ = std::fs::create_dir_all(&debug_dir);
+    let _ = std::fs::write(debug_dir.join("step2-after-creds.html"), &r.body);
+    let _ = std::fs::write(debug_dir.join("step2-after-creds.url"), &r.url);
+
     Ok(Step2Out { url: r.url, body: r.body, skipped_credentials: false })
 }
 
@@ -432,11 +447,26 @@ async fn step3_navigate_to_duo(
     let meta_refresh_re = regex::Regex::new(r#"http-equiv="refresh"\s+content="\d+;\s*url=([^"]+)""#).unwrap();
     let exec_re = regex::Regex::new(r"execution=e(\d+)s(\d+)").unwrap();
 
-    for _ in 0..8 {
+    // For debugging: dump each page body to /tmp so we can see what Shibboleth
+    // is actually returning when none of our patterns match. Cleaned up
+    // after successful login.
+    let debug_dir = std::path::PathBuf::from("/tmp/jfc-oidc-debug");
+    let _ = std::fs::create_dir_all(&debug_dir);
+    let _ = std::fs::write(debug_dir.join("step3-initial.html"), &body);
+    let _ = std::fs::write(debug_dir.join("step3-initial.url"), &url);
+
+    // 30 hops: Arizona's Shibboleth flow can take up to e1s11+ depending on
+    // session state, MFA pre-checks, and policy pages. 8 was too tight.
+    for hop in 0..30 {
+        tracing::debug!(target: "jfc::oidc", hop, url = %url, "Step 3: hop");
+        let _ = std::fs::write(debug_dir.join(format!("step3-hop{hop}.html")), &body);
+        let _ = std::fs::write(debug_dir.join(format!("step3-hop{hop}.url")), &url);
+
         if body.contains("duosecurity.com") || url.contains("duosecurity.com") {
             break;
         }
 
+        // 1. Explicit Duo authorize path in the page HTML
         if let Some(m) = duo_auth_re.find(&body) {
             let path = m.as_str().replace("&amp;", "&");
             let abs = url::Url::parse(&url)?.join(&path)?.to_string();
@@ -447,10 +477,12 @@ async fn step3_navigate_to_duo(
             continue;
         }
 
+        // 2. Embedded Duo host directly in body
         if duo_embedded_re.find(&body).is_some() {
             break;
         }
 
+        // 3. JS window.location / meta-refresh redirect
         if let Some(m) = auto_redirect_re.captures(&body).or_else(|| meta_refresh_re.captures(&body)) {
             let next = m.get(1).unwrap().as_str().replace("&amp;", "&");
             let abs = url::Url::parse(&url)?.join(&next)?.to_string();
@@ -461,6 +493,7 @@ async fn step3_navigate_to_duo(
             continue;
         }
 
+        // 4. Shibboleth Spring Web Flow form with _eventId_proceed
         let action = extract_form_action(&body, &url);
         let has_event_proceed = body.contains("_eventId_proceed") || body.contains("_eventId=proceed");
         if let (Some(a), true) = (action, has_event_proceed) {
@@ -474,6 +507,10 @@ async fn step3_navigate_to_duo(
             continue;
         }
 
+        // 5. Increment execution step (e1sN → e1s(N+1)). This is always tried
+        //    when the URL contains execution=... — Arizona's flow needs many
+        //    consecutive GETs advancing through intermediate state nodes that
+        //    don't emit forms or JS redirects.
         if let Some(m) = exec_re.captures(&url) {
             let flow = m.get(1).unwrap().as_str().to_string();
             let step: u32 = m.get(2).unwrap().as_str().parse::<u32>().unwrap_or(0) + 1;
@@ -485,6 +522,8 @@ async fn step3_navigate_to_duo(
             continue;
         }
 
+        // Nothing matched — we're stuck
+        tracing::warn!(target: "jfc::oidc", hop, url = %url, "Step 3: no pattern matched, stopping");
         break;
     }
 
@@ -509,7 +548,12 @@ async fn step3_navigate_to_duo(
     }
 
     let duo_url = duo_url.ok_or_else(|| {
-        anyhow::anyhow!("Step 3: Could not find Duo authorize URL. Current URL: {url}")
+        anyhow::anyhow!(
+            "Step 3: Could not find Duo authorize URL. Last URL: {url}\n\
+             Page hop dumps written to /tmp/jfc-oidc-debug/step3-hopN.html\n\
+             Body preview (first 600 chars):\n{}",
+            &body[..body.len().min(600)]
+        )
     })?;
     Ok((duo_url, body))
 }
