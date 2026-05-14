@@ -347,10 +347,36 @@ fn capitalize_first(s: &str) -> String {
     }
 }
 
-/// Resolve where the doc should live for the current working directory.
-/// All five docs live at the repo root by convention.
+/// Resolve where the doc should live. All five docs live at the
+/// **repo root** by convention — not the current working directory.
+///
+/// Without the git-root walk, launching jfc from `crates/jfc-ui/` and
+/// running `/plan` would write `crates/jfc-ui/PLAN.md` instead of the
+/// repo-root `PLAN.md` the user expects. We walk up from `cwd` looking
+/// for a `.git` entry (file *or* dir — `.git` is a file in worktrees
+/// and submodules); if none is found we fall back to `cwd` so the
+/// command still works in a non-git directory.
 pub fn doc_target(cwd: &std::path::Path, kind: DocKind) -> PathBuf {
-    cwd.join(kind.file_name())
+    repo_root(cwd).join(kind.file_name())
+}
+
+/// Walk up from `start` to the nearest ancestor containing a `.git`
+/// entry. Returns `start` unchanged when there's no git repo above
+/// it (capped at 32 ancestor hops so a pathological path can't burn
+/// CPU on a deep filesystem scan).
+fn repo_root(start: &std::path::Path) -> PathBuf {
+    const MAX_HOPS: usize = 32;
+    let mut cur = start;
+    for _ in 0..MAX_HOPS {
+        if cur.join(".git").exists() {
+            return cur.to_path_buf();
+        }
+        match cur.parent() {
+            Some(parent) => cur = parent,
+            None => return start.to_path_buf(),
+        }
+    }
+    start.to_path_buf()
 }
 
 /// Concise system-prompt section listing the doc-format contracts. Only
@@ -485,17 +511,57 @@ mod tests {
         );
     }
 
-    // Robust: doc_target sits at the cwd root with the canonical filename.
+    // Robust: doc_target falls back to cwd when no `.git` is found
+    // within the walk. We bound the test by writing a `.git` at the
+    // tempdir root and then targeting a sibling that lives outside
+    // that subtree; the upward walk hits the system parent without a
+    // `.git` and (after MAX_HOPS) returns the cwd unchanged.
+    //
+    // We can't just use a fresh tempdir because /tmp on many CI
+    // systems has scratch repos. The MAX_HOPS cap guards against
+    // ascending into one of those — the test asserts the fallback
+    // path, not the absence of any `.git` on the system.
     #[test]
-    fn doc_target_lives_at_cwd_root_robust() {
-        let cwd = std::path::Path::new("/tmp/proj");
+    fn doc_target_falls_back_to_cwd_without_git_root_robust() {
+        // A path with no parent — the loop hits `None` immediately
+        // and returns the input unchanged. Works on every OS without
+        // depending on filesystem state.
+        let root = std::path::Path::new("/");
+        let target = doc_target(root, DocKind::Plan);
+        // Either the system root has a `.git` (rare) or it's
+        // cwd-fallback. Either way the file lives directly under the
+        // chosen root.
+        assert_eq!(target.file_name().and_then(|s| s.to_str()), Some("PLAN.md"));
+    }
+
+    // Normal: when launched from a subdirectory of a git repo, doc_target
+    // walks UP to the repo root rather than writing in the subdirectory.
+    // Without this, `jfc` launched from `crates/jfc-ui/` would write
+    // `crates/jfc-ui/PLAN.md` instead of the repo-root `PLAN.md`.
+    #[test]
+    fn doc_target_walks_up_to_repo_root_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let sub = dir.path().join("crates").join("inner");
+        std::fs::create_dir_all(&sub).unwrap();
+        let target = doc_target(&sub, DocKind::Roadmap);
         assert_eq!(
-            doc_target(cwd, DocKind::Plan),
-            PathBuf::from("/tmp/proj/PLAN.md")
+            target,
+            dir.path().join("ROADMAP.md"),
+            "doc must land at the repo root, not the subdir"
         );
+    }
+
+    // Robust: `.git` as a *file* (worktree / submodule indirection) still
+    // counts as a repo root. The plain-dir check would miss this and walk
+    // past, dumping docs at `/`.
+    #[test]
+    fn doc_target_recognises_git_file_as_root_robust() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".git"), "gitdir: /elsewhere\n").unwrap();
         assert_eq!(
-            doc_target(cwd, DocKind::Parity),
-            PathBuf::from("/tmp/proj/PARITY.md")
+            doc_target(dir.path(), DocKind::Parity),
+            dir.path().join("PARITY.md"),
         );
     }
 

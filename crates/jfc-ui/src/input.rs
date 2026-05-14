@@ -4173,6 +4173,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             } else if crate::goal::is_clear_arg(arg) {
                 let prev = app.goal.take();
                 app.goal_evaluator_in_flight = false;
+                // Drop the sidecar so a future /continue doesn't
+                // revive a goal the user just cancelled.
+                if let Some(sid) = app.current_session_id.as_ref() {
+                    crate::goal::save_sidecar(sid.as_str(), None);
+                }
                 let msg = match prev {
                     Some(g) => format!(
                         "Goal cleared after {} iterations: {}",
@@ -4193,6 +4198,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     Ok(condition) => {
                         let goal = crate::goal::ActiveGoal::new(condition.clone());
                         app.goal = Some(goal);
+                        // Persist the new goal so /continue picks it
+                        // up if the user exits before the next turn.
+                        if let Some(sid) = app.current_session_id.as_ref() {
+                            crate::goal::save_sidecar(sid.as_str(), app.goal.as_ref());
+                        }
                         app.messages.push(ChatMessage::assistant(format!(
                             "Goal set: {condition}\n\nThe agent will keep \
                              working until this condition is met (auto-\
@@ -4207,6 +4217,35 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                                 format!("Goal: {condition}"),
                             ),
                         );
+                        // Kick off work immediately: synthesize the
+                        // Claude-Code-style meta prompt so the agent
+                        // starts acting on the goal instead of sitting
+                        // idle until the next user turn. Only fire
+                        // when the session is genuinely idle (no
+                        // streaming / pending approval / pending
+                        // tools) AND we have an event channel.
+                        let idle = !app.is_streaming
+                            && app.pending_approval.is_none()
+                            && app.approval_queue.is_empty()
+                            && app.pending_tool_calls.is_empty();
+                        if let (true, Some(tx)) = (idle, tx) {
+                            let kickoff = format!(
+                                "A session-scoped stop-condition hook is now \
+                                 active with condition: \"{condition}\".\n\n\
+                                 Briefly acknowledge the goal, then \
+                                 immediately start or continue working toward \
+                                 it. The hook will block stopping until the \
+                                 condition holds (auto-evaluated after each \
+                                 turn, max {} iterations). It auto-clears \
+                                 once the condition is met.",
+                                crate::goal::MAX_ITERATIONS
+                            );
+                            let _ = tx.send(AppEvent::Submit(kickoff)).await;
+                            tracing::info!(
+                                target: "jfc::goal",
+                                "/goal: dispatched kickoff meta-prompt"
+                            );
+                        }
                     }
                     Err(reason) => {
                         app.messages.push(ChatMessage::assistant(reason.to_owned()));
@@ -4894,19 +4933,19 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             handle_init_command(app).await;
         }
         "/plan" => {
-            handle_doc_command(app, crate::document_formats::DocKind::Plan);
+            handle_doc_command(app, crate::document_formats::DocKind::Plan, tx).await;
         }
         "/roadmap" => {
-            handle_doc_command(app, crate::document_formats::DocKind::Roadmap);
+            handle_doc_command(app, crate::document_formats::DocKind::Roadmap, tx).await;
         }
         "/parity" => {
-            handle_doc_command(app, crate::document_formats::DocKind::Parity);
+            handle_doc_command(app, crate::document_formats::DocKind::Parity, tx).await;
         }
         "/philosophy" => {
-            handle_doc_command(app, crate::document_formats::DocKind::Philosophy);
+            handle_doc_command(app, crate::document_formats::DocKind::Philosophy, tx).await;
         }
         "/usage" => {
-            handle_doc_command(app, crate::document_formats::DocKind::Usage);
+            handle_doc_command(app, crate::document_formats::DocKind::Usage, tx).await;
         }
         "/cost" | "/stats" => {
             handle_cost_command(app);
@@ -5470,29 +5509,69 @@ fn save_output_style(name: &str) -> Result<std::path::PathBuf, String> {
 /// `/init` — bootstrap a CLAUDE.md in the current working directory.
 /// Mirrors v132's onboarding flow. If CLAUDE.md already exists, surfaces
 /// `/plan` / `/roadmap` / `/parity` / `/philosophy` / `/usage` —
-/// queue a normal model turn that asks JFC to inspect the project and
+/// start a normal model turn that asks JFC to inspect the project and
 /// then create or update the matching `<KIND>.md` at the repo root via
 /// the existing `Write`/`Edit` tools. The format contract lives in
 /// `document_formats.rs` so the executor (and any future Atlas-style
 /// runner) parses against the same rules the prompt prescribes.
-fn handle_doc_command(app: &mut App, kind: crate::document_formats::DocKind) {
+///
+/// Dispatch shape: if the session is idle (not streaming, no tools
+/// pending) AND we have a `tx` channel, fire `AppEvent::Submit`
+/// immediately so the turn actually starts. If the session is busy —
+/// or we have no channel (the `process_meta_command` re-entry path) —
+/// fall back to enqueueing a `QueuedPrompt` that drains at the next
+/// turn boundary. Without the idle fast-path the user typed `/plan`,
+/// saw "Drafting …", and got no model work until they hit Enter again.
+async fn handle_doc_command(
+    app: &mut App,
+    kind: crate::document_formats::DocKind,
+    tx: Option<&mpsc::Sender<AppEvent>>,
+) {
     let cwd = std::path::PathBuf::from(&app.cwd);
     let target = crate::document_formats::doc_target(&cwd, kind);
     let exists = target.is_file();
     let echo = format!("/{}", kind.verb());
-    app.messages.push(ChatMessage::user(echo));
     let body = kind.prompt_body(&target, exists);
     let action = if exists { "Updating" } else { "Drafting" };
-    app.messages.push(ChatMessage::assistant(format!(
-        "{action} `{}` …",
-        target.display()
-    )));
-    app.queued_prompts.push_back(crate::app::QueuedPrompt {
-        text: body,
-        is_meta: false,
-        attachments: Vec::new(),
-    });
-    app.scroll_to_bottom();
+
+    let idle = !app.is_streaming
+        && app.pending_approval.is_none()
+        && app.approval_queue.is_empty()
+        && app.pending_tool_calls.is_empty();
+
+    if let (true, Some(tx)) = (idle, tx) {
+        // Idle: start the turn now. handle_submit_text owns the
+        // user-message push + streaming setup, so we just hand it the
+        // body. We echo the slash command first so the transcript
+        // shows "/plan" → assistant work, not a bare meta-prompt.
+        app.messages.push(ChatMessage::user(echo));
+        app.scroll_to_bottom();
+        let _ = tx.send(AppEvent::Submit(body)).await;
+        tracing::info!(
+            target: "jfc::doc_command",
+            kind = kind.file_name(),
+            "doc command dispatched immediately (idle session)"
+        );
+    } else {
+        // Busy (or no channel): enqueue. The transcript shows the echo
+        // + a "Drafting …" placeholder so the user knows it landed.
+        app.messages.push(ChatMessage::user(echo));
+        app.messages.push(ChatMessage::assistant(format!(
+            "{action} `{}` … (queued — will run when the current turn finishes)",
+            target.display()
+        )));
+        app.queued_prompts.push_back(crate::app::QueuedPrompt {
+            text: body,
+            is_meta: false,
+            attachments: Vec::new(),
+        });
+        app.scroll_to_bottom();
+        tracing::info!(
+            target: "jfc::doc_command",
+            kind = kind.file_name(),
+            "doc command queued (session busy)"
+        );
+    }
 }
 
 /// `/init` — bootstrap a CLAUDE.md in the current working directory.

@@ -223,14 +223,26 @@ fn render_part_into(part: &MessagePart, out: &mut String) {
 /// Tail-truncate the snapshot so the most recent (and most relevant)
 /// context wins. The evaluator usually cares about the LAST few turns,
 /// not the prologue.
+///
+/// Walks forward from the byte-offset cut point to the next char
+/// boundary instead of slicing at an arbitrary byte. Without this,
+/// a transcript with non-ASCII content (emoji, accented chars, CJK,
+/// any code identifier with `é`) would panic the evaluator call with
+/// "byte index N is not a char boundary." `floor_char_boundary` is
+/// nightly-only so we hand-roll the equivalent using `char_indices`.
 fn truncate_snapshot_tail(out: String) -> String {
     if out.len() <= MAX_SNAPSHOT_CHARS {
         return out;
     }
-    let cut = out.len() - MAX_SNAPSHOT_CHARS;
+    let desired_cut = out.len() - MAX_SNAPSHOT_CHARS;
+    let safe_cut = out
+        .char_indices()
+        .map(|(i, _)| i)
+        .find(|&i| i >= desired_cut)
+        .unwrap_or(out.len());
     format!(
         "[... transcript truncated to last {MAX_SNAPSHOT_CHARS} chars ...]\n{}",
-        &out[cut..]
+        &out[safe_cut..]
     )
 }
 
@@ -389,6 +401,74 @@ pub fn format_exhaustion_banner(goal: &ActiveGoal) -> String {
     )
 }
 
+/// Path to the goal sidecar JSON for a given session id. Lives next
+/// to the session file under `~/.config/jfc/sessions/`. A sidecar
+/// (rather than a new field on `SerializedSession`) keeps the
+/// 28+ `save_session` call sites untouched and lets the goal layer
+/// own its own persistence lifecycle. Missing file = no active goal.
+pub fn sidecar_path(session_id: &str) -> std::path::PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("jfc")
+        .join("sessions")
+        .join(format!("{session_id}.goal.json"))
+}
+
+/// Persist the active goal beside the session journal so resume can
+/// rebuild it. `None` deletes any prior sidecar (the goal cleared,
+/// or completed, or exhausted — we don't want resume to revive a
+/// stale one). Best-effort: failures are logged, never propagated.
+pub fn save_sidecar(session_id: &str, goal: Option<&ActiveGoal>) {
+    let path = sidecar_path(session_id);
+    match goal {
+        Some(g) => {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match serde_json::to_string_pretty(g) {
+                Ok(json) => {
+                    let tmp = path.with_extension("tmp");
+                    if std::fs::write(&tmp, json).is_ok() {
+                        let _ = std::fs::rename(&tmp, &path);
+                        tracing::debug!(
+                            target: "jfc::goal",
+                            session_id,
+                            iterations = g.iterations,
+                            "goal sidecar saved"
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "jfc::goal",
+                        session_id,
+                        error = %e,
+                        "failed to serialize goal sidecar"
+                    );
+                }
+            }
+        }
+        None => {
+            let _ = std::fs::remove_file(&path);
+            tracing::debug!(
+                target: "jfc::goal",
+                session_id,
+                "goal sidecar removed"
+            );
+        }
+    }
+}
+
+/// Load any persisted goal for `session_id`. Returns `None` when the
+/// sidecar is absent, unreadable, or malformed — those all read as
+/// "no active goal." We don't surface load errors to the user
+/// because a corrupted sidecar shouldn't block session resume.
+pub fn load_sidecar(session_id: &str) -> Option<ActiveGoal> {
+    let path = sidecar_path(session_id);
+    let raw = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str::<ActiveGoal>(&raw).ok()
+}
+
 /// System-reminder body injected into the user-side of the conversation
 /// when the evaluator says "not yet met." Tells the agent what's
 /// missing so the next sub-stream can address it directly.
@@ -520,5 +600,89 @@ mod tests {
         let snap = render_snapshot(&[msg]);
         assert!(snap.len() <= MAX_SNAPSHOT_CHARS + 200);
         assert!(snap.contains("transcript truncated"));
+    }
+
+    // Robust: truncate_snapshot_tail never panics on non-ASCII content.
+    // The naive slice (out[cut..]) would panic if `cut` landed inside
+    // a multi-byte UTF-8 sequence. We hand-roll a char-boundary walk
+    // — this test would have caught the original byte-slice bug on a
+    // transcript with emoji, accented identifiers, or CJK.
+    #[test]
+    fn render_snapshot_handles_non_ascii_at_truncation_boundary_robust() {
+        // Each "é" is 2 bytes. We size the body so that the naive
+        // cut would land inside one of them.
+        let body = "é".repeat(MAX_SNAPSHOT_CHARS);
+        let msg = ChatMessage::user(body);
+        let snap = render_snapshot(&[msg]);
+        // Round-trip parse — would panic if the slice was invalid UTF-8.
+        let _ = snap.chars().count();
+        assert!(snap.contains("transcript truncated"));
+    }
+
+    /// Test-local guard that restores `XDG_CONFIG_HOME` on drop.
+    /// Avoids leaking a tmp path into the next test in the same
+    /// process. `serial_test::serial` ensures these tests don't race
+    /// each other, since env vars are process-global.
+    struct XdgGuard {
+        prev: Option<String>,
+    }
+    impl XdgGuard {
+        fn set(path: &std::path::Path) -> Self {
+            let prev = std::env::var("XDG_CONFIG_HOME").ok();
+            unsafe { std::env::set_var("XDG_CONFIG_HOME", path) };
+            Self { prev }
+        }
+    }
+    impl Drop for XdgGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match self.prev.take() {
+                    Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                    None => std::env::remove_var("XDG_CONFIG_HOME"),
+                }
+            }
+        }
+    }
+
+    // Normal: the sidecar round-trips an ActiveGoal through disk so
+    // /continue can rebuild app.goal on resume.
+    #[serial_test::serial]
+    #[test]
+    fn sidecar_round_trips_goal_normal() {
+        let session_id = format!("ses_goal_sidecar_test_{}", std::process::id());
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = XdgGuard::set(tmp.path());
+
+        let mut goal = ActiveGoal::new("ship it".into());
+        goal.iterations = 7;
+        goal.last_unmet_reason = Some("tests still failing".into());
+
+        save_sidecar(&session_id, Some(&goal));
+        let loaded = load_sidecar(&session_id).expect("sidecar present");
+        assert_eq!(loaded.condition, "ship it");
+        assert_eq!(loaded.iterations, 7);
+        assert_eq!(loaded.last_unmet_reason.as_deref(), Some("tests still failing"));
+
+        // Clearing with None removes the file.
+        save_sidecar(&session_id, None);
+        assert!(load_sidecar(&session_id).is_none());
+    }
+
+    // Robust: load_sidecar treats missing / corrupt files as "no goal"
+    // rather than panicking — a busted sidecar shouldn't block resume.
+    #[serial_test::serial]
+    #[test]
+    fn sidecar_corrupt_file_loads_as_none_robust() {
+        let session_id = format!("ses_goal_corrupt_test_{}", std::process::id());
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = XdgGuard::set(tmp.path());
+
+        let path = sidecar_path(&session_id);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "{ not valid json at all").unwrap();
+        assert!(
+            load_sidecar(&session_id).is_none(),
+            "corrupt sidecar must not panic, must read as None"
+        );
     }
 }
