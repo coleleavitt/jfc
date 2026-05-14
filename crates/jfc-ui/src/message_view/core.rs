@@ -44,6 +44,77 @@ pub fn build_render_items_pub<'a>(app: &'a App, inner_w: usize) -> Vec<RenderIte
     build_render_items(app, inner_w)
 }
 
+/// Build render items for an arbitrary message slice — used by the subagent
+/// task view so it shares the same MessageView pipeline as the main chat.
+/// Streaming indicators are disabled since task chat_messages are already
+/// settled (the streaming happens in the subagent process, not in the UI).
+pub fn build_render_items_for_messages<'a>(
+    messages: &'a [crate::types::ChatMessage],
+    app: &'a App,
+    inner_w: usize,
+) -> Vec<RenderItem<'a>> {
+    let t = app.theme;
+    let mut items: Vec<RenderItem<'a>> = Vec::new();
+
+    for msg in messages.iter() {
+        // Skip blank placeholders.
+        let has_content = msg.parts.iter().any(|p| match p {
+            MessagePart::Text(s) | MessagePart::Reasoning(s) => !s.is_empty(),
+            _ => true,
+        });
+        if !has_content {
+            continue;
+        }
+
+        items.push(RenderItem::MessageStart {
+            role: msg.role,
+            is_streaming_placeholder: false,
+        });
+
+        // Role label — "agent tool" for user-role activity entries, "assistant" for text.
+        let label_line = match msg.role {
+            Role::User => Line::from(Span::styled("agent tool", t.user_label())),
+            Role::Assistant => Line::from(Span::styled("assistant", t.asst_label())),
+        };
+        items.push(RenderItem::TextLine(label_line));
+
+        for part in &msg.parts {
+            match part {
+                MessagePart::Text(text) if !text.is_empty() => {
+                    let lines = crate::markdown::to_lines(text, &t, inner_w);
+                    for line in lines {
+                        items.push(RenderItem::TextLine(line));
+                    }
+                }
+                MessagePart::Reasoning(text) if !text.is_empty() => {
+                    // Reasoning blocks: render collapsed in the task view.
+                    let preview: String = text.lines().take(3).collect::<Vec<_>>().join("\n");
+                    let preview_lines = crate::markdown::to_lines(&preview, &t, inner_w);
+                    for line in preview_lines {
+                        items.push(RenderItem::TextLine(line));
+                    }
+                    let hidden = text.lines().count().saturating_sub(3);
+                    if hidden > 0 {
+                        items.push(RenderItem::TextLine(Line::from(Span::styled(
+                            format!("… {hidden} more reasoning lines"),
+                            Style::default().fg(t.text_muted),
+                        ))));
+                    }
+                }
+                MessagePart::Tool(tc) => {
+                    items.push(RenderItem::ToolBlock(tc));
+                }
+                _ => {}
+            }
+        }
+
+        items.push(RenderItem::MessageEnd);
+        items.push(RenderItem::Blank);
+    }
+
+    items
+}
+
 /// Pre-populate the tool-height cache by walking every terminal-state tool in
 /// `messages` and computing its height at the given inner width. Called after
 /// `--continue` / `--resume` loads a long conversation so the *first* render

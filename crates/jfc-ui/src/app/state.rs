@@ -1,4 +1,5 @@
 use std::{cell::RefCell, collections::HashMap, sync::Arc, time::Instant};
+use indexmap::IndexMap;
 
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -58,7 +59,13 @@ pub struct BackgroundTask {
     pub summary: Option<String>,
     pub error: Option<String>,
     pub last_tool: Option<String>,
+    /// Raw string log (kept for daemon log compat and the collapse/expand UI).
     pub messages: Vec<String>,
+    /// Structured message history mirroring the main chat's Vec<ChatMessage>.
+    /// Populated from AgentChunk (assistant text), TaskProgress (tool activity),
+    /// and TaskCompleted/TaskFailed events. Used by the MessageView renderer to
+    /// give the task view the same visual fidelity as the main conversation.
+    pub chat_messages: Vec<crate::types::ChatMessage>,
     /// Cumulative tool invocations the subagent has made this run.
     /// Mirrors v131's `toolUseCount` (cli.2.1.131.beautified.js, `jOH()`).
     pub tool_use_count: u32,
@@ -510,7 +517,11 @@ pub struct App {
     /// warning shown. Prevents toast spam when the same threshold is
     /// crossed multiple times across re-renders.
     pub cost_budget_warned_at: u8,
-    pub background_tasks: HashMap<String, BackgroundTask>,
+    /// Insertion-ordered map of subagent background tasks. IndexMap preserves
+    /// the spawn order so tab cycling, footer tabs, and "jump to latest" all
+    /// operate on a stable, chronological ordering instead of random HashMap
+    /// iteration order.
+    pub background_tasks: IndexMap<String, BackgroundTask>,
     pub show_info_sidebar: bool,
     pub mcp_servers: Vec<crate::types::McpServerInfo>,
     pub lsp_servers: Vec<crate::types::LspServerInfo>,
@@ -793,7 +804,7 @@ impl App {
             tool_undo_history: std::collections::VecDeque::new(),
             pending_marsh_chunks: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             cost_budget_warned_at: 0,
-            background_tasks: HashMap::new(),
+            background_tasks: IndexMap::new(),
             show_info_sidebar: true,
             mcp_servers: Vec::new(),
             lsp_servers: Vec::new(),

@@ -3538,8 +3538,27 @@ pub(crate) async fn run(
                             if let Some(last) = bt.messages.last_mut() {
                                 last.push_str(&text);
                             }
+                            // Also coalesce into the structured chat_messages.
+                            let chat_coalesce = bt
+                                .chat_messages
+                                .last()
+                                .map(|m| m.role == types::Role::Assistant)
+                                .unwrap_or(false);
+                            if chat_coalesce {
+                                if let Some(msg) = bt.chat_messages.last_mut() {
+                                    if let Some(types::MessagePart::Text(t)) = msg.parts.last_mut() {
+                                        t.push_str(&text);
+                                    } else {
+                                        msg.parts.push(types::MessagePart::Text(text));
+                                    }
+                                }
+                            } else {
+                                bt.chat_messages.push(types::ChatMessage::assistant(text));
+                            }
                         } else {
-                            bt.messages.push(text);
+                            bt.messages.push(text.clone());
+                            // Start a new assistant message in the structured log.
+                            bt.chat_messages.push(types::ChatMessage::assistant(text));
                         }
                     }
                 }
@@ -3590,6 +3609,7 @@ pub(crate) async fn run(
                             error: None,
                             last_tool: None,
                             messages: Vec::new(),
+                            chat_messages: Vec::new(),
                             tool_use_count: 0,
                             latest_input_tokens: 0,
                             latest_cache_read_tokens: 0,
@@ -3653,15 +3673,13 @@ pub(crate) async fn run(
                     let mut usage_update: Option<(String, u32, u32, u32, u32)> = None;
                     if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
                         if let Some(ref tool) = last_tool {
-                            // Append a one-line activity entry to the task's
-                            // message log so `messages_task_view` shows what
-                            // the agent has done. Without this the task view
-                            // renders "No messages yet" for the entire run.
-                            // Full subagent StreamChunk routing is a bigger
-                            // refactor; this is the minimum that makes the
-                            // task view useful right now.
                             let elapsed_s = elapsed_ms / 1000;
-                            bt.messages.push(format!("[{elapsed_s}s] {tool}"));
+                            let entry = format!("[{elapsed_s}s] {tool}");
+                            bt.messages.push(entry.clone());
+                            // Push a muted user-role note into the structured log
+                            // so the MessageView renderer can show tool activity
+                            // inline with the assistant's text output.
+                            bt.chat_messages.push(types::ChatMessage::user(entry));
                         }
                         bt.last_tool = last_tool.clone();
                         if let Some(n) = tool_use_count {
@@ -3741,8 +3759,9 @@ pub(crate) async fn run(
                         bt.status = TaskLifecycle::Completed;
                         bt.summary = Some(summary.clone());
                         let elapsed_s = elapsed_ms / 1000;
-                        bt.messages
-                            .push(format!("[{elapsed_s}s] ✓ done — {summary}"));
+                        let entry = format!("[{elapsed_s}s] ✓ done — {summary}");
+                        bt.messages.push(entry.clone());
+                        bt.chat_messages.push(types::ChatMessage::assistant(entry));
                     }
                     crate::daemon::record_background_agent_finished(
                         task_id.as_str(),
@@ -3780,6 +3799,10 @@ pub(crate) async fn run(
                             TaskLifecycle::Failed
                         };
                         bt.error = Some(error.clone());
+                        let prefix = if was_cancelled { "cancelled" } else { "failed" };
+                        let entry = format!("[{prefix}] {error}");
+                        bt.messages.push(entry.clone());
+                        bt.chat_messages.push(types::ChatMessage::assistant(entry));
                     }
                     crate::daemon::record_background_agent_finished(
                         task_id.as_str(),
@@ -4078,6 +4101,7 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
                     error: agent.error.clone(),
                     last_tool: agent.last_tool.clone(),
                     messages: Vec::new(),
+                    chat_messages: Vec::new(),
                     tool_use_count: agent.tool_use_count,
                     latest_input_tokens: agent.latest_input_tokens,
                     latest_cache_read_tokens: agent.latest_cache_read_tokens,
@@ -4218,6 +4242,7 @@ fn restore_persistent_background_agents(app: &mut App) {
                 error: agent.error,
                 last_tool: None,
                 messages,
+                chat_messages: Vec::new(),
                 tool_use_count: agent.tool_use_count,
                 latest_input_tokens: agent.latest_input_tokens,
                 latest_cache_read_tokens: 0,

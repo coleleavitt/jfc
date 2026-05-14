@@ -1948,28 +1948,33 @@ pub(crate) fn task_view_body_lines(
 
 fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
     let t = app.theme;
-    let inner_width = area.width.saturating_sub(2) as usize;
+    // Reserve same width as the main view: borders(2) + padding(2) + scrollbar(1) = 5
+    let inner_width = area.width.saturating_sub(5) as usize;
 
-    let (title_str, body_lines) = match app.background_tasks.get(task_id) {
-        None => (format!("task {task_id} (not found)"), Vec::new()),
+    let (title_str, body_lines, use_message_view) = match app.background_tasks.get(task_id) {
+        None => (format!("task {task_id} (not found)"), Vec::new(), false),
         Some(bt) => {
             let title = format!(
                 " {} · {} ",
                 &bt.task_id.as_str()[..bt.task_id.as_str().len().min(12)],
                 bt.description
             );
-            // Look up per-task expansion state. Empty set means
-            // "nothing manually expanded" — collapse threshold still
-            // applies. For finished tasks the body renderer also
-            // bypasses the threshold so the user sees the full
-            // result without pressing `o`.
-            static EMPTY: std::sync::OnceLock<std::collections::HashSet<usize>> =
-                std::sync::OnceLock::new();
-            let empty = EMPTY.get_or_init(std::collections::HashSet::new);
-            let expanded = app.viewing_task_expanded.get(task_id).unwrap_or(empty);
-            let task_done = matches!(bt.status, crate::types::TaskLifecycle::Completed);
-            let lines = task_view_body_lines(&bt.messages, expanded, &t, inner_width, task_done);
-            (title, lines)
+            // Use the rich MessageView pipeline when we have structured messages.
+            // Fall back to the markdown string renderer for tasks that have no
+            // chat_messages yet (e.g. daemon-launched detached agents whose events
+            // only arrive as TaskProgress strings).
+            let use_mv = !bt.chat_messages.is_empty();
+            if use_mv {
+                (title, Vec::new(), true)
+            } else {
+                static EMPTY: std::sync::OnceLock<std::collections::HashSet<usize>> =
+                    std::sync::OnceLock::new();
+                let empty = EMPTY.get_or_init(std::collections::HashSet::new);
+                let expanded = app.viewing_task_expanded.get(task_id).unwrap_or(empty);
+                let task_done = matches!(bt.status, crate::types::TaskLifecycle::Completed);
+                let lines = task_view_body_lines(&bt.messages, expanded, &t, inner_width, task_done);
+                (title, lines, false)
+            }
         }
     };
 
@@ -1996,91 +2001,162 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
     // hint so the user can tell the difference between "still
     // streaming" and "agent finished its turn, waiting for next ping"
     // without staring at the panel for a few seconds.
-    let mut body_lines = body_lines;
-    if task_is_running {
-        let frame = (app.launched_at.elapsed().as_millis() / 80) as usize;
-        let spinner_glyph = crate::app::SPINNER[frame % crate::app::SPINNER.len()];
-        if !body_lines.is_empty() {
-            body_lines.push(Line::from(""));
-        }
-        body_lines.push(Line::from(vec![
-            Span::styled(
-                spinner_glyph.to_string(),
-                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
-            ),
-            Span::raw("  "),
-            Span::styled("Receiving output…", Style::default().fg(t.text_muted)),
-        ]));
-    } else if task_is_idle {
-        if !body_lines.is_empty() {
-            body_lines.push(Line::from(""));
-        }
-        body_lines.push(Line::from(vec![
-            Span::styled("⏸  ", Style::default().fg(t.text_muted)),
-            Span::styled(
-                "idle — waiting for next message",
-                Style::default()
-                    .fg(t.text_muted)
-                    .add_modifier(Modifier::ITALIC),
-            ),
-        ]));
-    }
-
-    // Compute total *visual* rows accounting for word-wrap. Each
-    // `Line` can occupy more than one visual row when it wraps at
-    // `inner.width`. Counting logical lines (`body_lines.len()`)
-    // undercounts and makes follow_bottom stop short of the true end.
-    let render_width = inner.width;
-    let total_lines: usize = body_lines
-        .iter()
-        .map(|line| {
-            if line.width() == 0 || render_width == 0 {
-                1
-            } else {
-                Paragraph::new(line.clone())
-                    .wrap(ratatui::widgets::Wrap { trim: false })
-                    .line_count(render_width)
-                    .max(1)
-            }
-        })
-        .sum();
     let visible = inner.height as usize;
 
-    // Pin to bottom while the task is streaming so each new chunk is
-    // visible without manual scrolling. If the user explicitly
-    // scrolled up (`follow_bottom` flipped off), respect that instead.
-    if app.follow_bottom || task_is_running {
-        app.scroll_offset = total_lines.saturating_sub(visible);
-    }
+    if use_message_view {
+        // Rich MessageView path — same pipeline as the main chat.
+        use crate::message_view::{MessageView, PrebuiltItems, build_render_items_for_messages};
+        use ratatui::widgets::Widget;
 
-    app.total_lines = total_lines;
-    app.viewport_height = visible;
+        let chat_msgs = app
+            .background_tasks
+            .get(task_id)
+            .map(|bt| bt.chat_messages.as_slice())
+            .unwrap_or(&[]);
 
-    if body_lines.is_empty() {
-        let placeholder_text = if task_is_running {
-            "Waiting for first chunk…"
-        } else {
-            "No messages yet for this background task."
+        // Compute scroll BEFORE borrowing app through items, then assign after.
+        let total_lines_est = {
+            let msgs = app
+                .background_tasks
+                .get(task_id)
+                .map(|bt| bt.chat_messages.as_slice())
+                .unwrap_or(&[]);
+            let est_items = build_render_items_for_messages(msgs, app, inner_width);
+            est_items.iter().map(|i| i.height(inner_width)).sum::<usize>()
         };
-        let placeholder = Paragraph::new(vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                placeholder_text,
-                Style::default().fg(t.text_muted),
-            )),
-        ])
-        .style(Style::default().bg(t.bg));
-        f.render_widget(placeholder, inner);
+        let new_scroll = if app.follow_bottom {
+            total_lines_est.saturating_sub(visible)
+        } else if app.scroll_offset + visible > total_lines_est {
+            total_lines_est.saturating_sub(visible)
+        } else {
+            app.scroll_offset
+        };
+        app.scroll_offset = new_scroll;
+        app.total_lines = total_lines_est;
+        app.viewport_height = visible;
+
+        // Now build items for real (same data, but app.scroll_offset is now settled).
+        let items = build_render_items_for_messages(chat_msgs, app, inner_width);
+        let mv = MessageView {
+            app,
+            prebuilt: Some(PrebuiltItems {
+                items,
+                total_h: total_lines_est,
+                scroll: new_scroll,
+            }),
+        };
+        mv.render(inner, f.buffer_mut());
+
+        // Spinner / idle hint: paint it below the MessageView content
+        // in whatever space remains (or overlap the last row if full).
+        if task_is_running || task_is_idle {
+            let frame = (app.launched_at.elapsed().as_millis() / 80) as usize;
+            let hint_line = if task_is_running {
+                let spinner_glyph = crate::app::SPINNER[frame % crate::app::SPINNER.len()];
+                Line::from(vec![
+                    Span::styled(
+                        spinner_glyph.to_string(),
+                        Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw("  "),
+                    Span::styled("Receiving output…", Style::default().fg(t.text_muted)),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled("⏸  ", Style::default().fg(t.text_muted)),
+                    Span::styled(
+                        "idle — waiting for next message",
+                        Style::default().fg(t.text_muted).add_modifier(Modifier::ITALIC),
+                    ),
+                ])
+            };
+            // Render the hint in a 1-row strip at the bottom of the inner area.
+            if inner.height >= 1 {
+                let hint_area = Rect::new(inner.x, inner.y + inner.height - 1, inner.width, 1);
+                f.render_widget(
+                    Paragraph::new(hint_line).style(Style::default().bg(t.bg)),
+                    hint_area,
+                );
+            }
+        }
     } else {
-        // Use Paragraph::scroll() instead of manual skip/take so
-        // the scroll offset operates in visual rows (matching the
-        // word-wrap-aware total_lines above). Manual skip/take
-        // operates per logical Line which desyncs when lines wrap.
-        let para = Paragraph::new(body_lines)
-            .style(Style::default().bg(t.bg))
-            .wrap(ratatui::widgets::Wrap { trim: false })
-            .scroll((app.scroll_offset as u16, 0));
-        f.render_widget(para, inner);
+        // Legacy string-log path — used for daemon-launched agents whose
+        // events only arrive as TaskProgress strings with no structured data.
+        let mut body_lines = body_lines;
+        if task_is_running {
+            let frame = (app.launched_at.elapsed().as_millis() / 80) as usize;
+            let spinner_glyph = crate::app::SPINNER[frame % crate::app::SPINNER.len()];
+            if !body_lines.is_empty() {
+                body_lines.push(Line::from(""));
+            }
+            body_lines.push(Line::from(vec![
+                Span::styled(
+                    spinner_glyph.to_string(),
+                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("  "),
+                Span::styled("Receiving output…", Style::default().fg(t.text_muted)),
+            ]));
+        } else if task_is_idle {
+            if !body_lines.is_empty() {
+                body_lines.push(Line::from(""));
+            }
+            body_lines.push(Line::from(vec![
+                Span::styled("⏸  ", Style::default().fg(t.text_muted)),
+                Span::styled(
+                    "idle — waiting for next message",
+                    Style::default()
+                        .fg(t.text_muted)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ]));
+        }
+
+        let render_width = inner.width;
+        let total_lines: usize = body_lines
+            .iter()
+            .map(|line| {
+                if line.width() == 0 || render_width == 0 {
+                    1
+                } else {
+                    Paragraph::new(line.clone())
+                        .wrap(ratatui::widgets::Wrap { trim: false })
+                        .line_count(render_width)
+                        .max(1)
+                }
+            })
+            .sum();
+
+        if app.follow_bottom {
+            app.scroll_offset = total_lines.saturating_sub(visible);
+        } else if app.scroll_offset + visible > total_lines {
+            app.scroll_offset = total_lines.saturating_sub(visible);
+        }
+        app.total_lines = total_lines;
+        app.viewport_height = visible;
+
+        if body_lines.is_empty() {
+            let placeholder_text = if task_is_running {
+                "Waiting for first chunk…"
+            } else {
+                "No messages yet for this background task."
+            };
+            let placeholder = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    placeholder_text,
+                    Style::default().fg(t.text_muted),
+                )),
+            ])
+            .style(Style::default().bg(t.bg));
+            f.render_widget(placeholder, inner);
+        } else {
+            let para = Paragraph::new(body_lines)
+                .style(Style::default().bg(t.bg))
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .scroll((app.scroll_offset as u16, 0));
+            f.render_widget(para, inner);
+        }
     }
 }
 
@@ -6106,6 +6182,7 @@ mod subagent_counter_tests {
             error: None,
             last_tool: None,
             messages: Vec::new(),
+            chat_messages: Vec::new(),
             tool_use_count: tools,
             latest_input_tokens: in_tok,
             latest_cache_read_tokens: 0,
