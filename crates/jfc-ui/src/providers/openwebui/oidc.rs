@@ -364,71 +364,106 @@ async fn step2_submit_credentials(
     username: &str,
     password: &str,
 ) -> anyhow::Result<Step2Out> {
-    tracing::info!(target: "jfc::oidc", "Step 2a: Fetching localStorage probe");
-    let probe = follow_redirects(client, jar, shib_url, reqwest::Method::GET, None, &[], 10).await?;
-    let probe_action = extract_form_action(&probe.body, &probe.url)
-        .ok_or_else(|| anyhow::anyhow!("Step 2a: Could not find e1s1 form action"))?;
-    let mut probe_fields = extract_hidden_fields(&probe.body);
-    probe_fields.insert("shib_idp_ls_supported".into(), "true".into());
-    probe_fields.insert("shib_idp_ls_success.shib_idp_session_ss".into(), "true".into());
-    probe_fields.insert("shib_idp_ls_success.shib_idp_persistent_ss".into(), "true".into());
-    probe_fields.entry("_eventId_proceed".into()).or_insert_with(String::new);
+    let debug_dir = std::path::PathBuf::from("/tmp/jfc-oidc-debug");
+    let _ = std::fs::create_dir_all(&debug_dir);
 
-    tracing::info!(target: "jfc::oidc", action = %probe_action, "Step 2a: Submitting localStorage probe");
-    let probe_body = url_encode(&probe_fields);
-    let probe_res = follow_redirects(
-        client, jar, &probe_action, reqwest::Method::POST, Some(&probe_body), &[], 10,
-    )
-    .await?;
+    // Step 2a: GET the initial Shibboleth URL. This may land on a localStorage
+    // probe form (e1s1), or directly on the login form (e1s3 for genai.arizona.edu),
+    // depending on cookies and session state.
+    tracing::info!(target: "jfc::oidc", "Step 2a: GET Shibboleth initial page");
+    let mut r = follow_redirects(client, jar, shib_url, reqwest::Method::GET, None, &[], 10).await?;
+    let _ = std::fs::write(debug_dir.join("step2-initial.html"), &r.body);
+    let _ = std::fs::write(debug_dir.join("step2-initial.url"), &r.url);
 
-    let login_html = probe_res.body;
-    let login_url = probe_res.url;
-    tracing::info!(target: "jfc::oidc", url = %login_url, "Step 2a: Advanced");
+    // Step 2b: walk auto-proceed pages (Shibboleth localStorage probes etc.)
+    // until we find the real login form containing j_username + j_password,
+    // OR we hit Duo / OIDC callback (warm session) and skip credentials.
+    let mut skipped = false;
+    for hop in 0..10 {
+        tracing::debug!(target: "jfc::oidc", hop, url = %r.url, "Step 2: walking pre-login pages");
+        let _ = std::fs::write(debug_dir.join(format!("step2-walk{hop}.html")), &r.body);
+        let _ = std::fs::write(debug_dir.join(format!("step2-walk{hop}.url")), &r.url);
 
-    if !login_html.contains("j_username") || !login_html.contains("j_password") {
-        if login_url.contains("Duo")
-            || login_url.contains("duo")
-            || login_url.contains("execution=e1s3")
-            || login_url.contains("oauth/oidc/callback")
-            || login_html.contains("duo_form")
-            || login_html.contains("duosecurity.com")
+        // Warm session — Shibboleth already trusts us, skip to Duo / OIDC.
+        if r.url.contains("duosecurity.com")
+            || r.url.contains("oauth/oidc/callback")
+            || r.url.contains("/Authn/Duo/2FA/authorize")
+            || r.body.contains("duosecurity.com")
+            || r.body.contains("/Authn/Duo/2FA/authorize")
         {
             tracing::info!(target: "jfc::oidc", "Step 2: Shibboleth session alive — skipping credentials");
-            return Ok(Step2Out { url: login_url, body: login_html, skipped_credentials: true });
+            skipped = true;
+            break;
         }
-        anyhow::bail!("Step 2a: Expected login form on {}", login_url);
+
+        // Real login form found.
+        if r.body.contains("j_username") && r.body.contains("j_password") {
+            tracing::info!(target: "jfc::oidc", url = %r.url, "Step 2: Found real login form");
+            break;
+        }
+
+        // Otherwise it's an auto-proceed page (localStorage probe). POST and continue.
+        let action = match extract_form_action(&r.body, &r.url) {
+            Some(a) => a,
+            None => {
+                anyhow::bail!(
+                    "Step 2: No form action on {} and no j_username found. Body preview:\n{}",
+                    r.url,
+                    &r.body[..r.body.len().min(400)]
+                );
+            }
+        };
+        let mut fields = extract_hidden_fields(&r.body);
+        // Shibboleth localStorage probe fields — harmless on non-probe pages.
+        fields.insert("shib_idp_ls_supported".into(), "true".into());
+        fields.insert("shib_idp_ls_success.shib_idp_session_ss".into(), "true".into());
+        fields.insert("shib_idp_ls_success.shib_idp_persistent_ss".into(), "true".into());
+        fields.entry("_eventId_proceed".into()).or_insert_with(String::new);
+        let body = url_encode(&fields);
+        tracing::info!(target: "jfc::oidc", action = %action, "Step 2: Auto-proceed POST");
+        r = follow_redirects(client, jar, &action, reqwest::Method::POST, Some(&body), &[], 10).await?;
     }
 
-    let login_action = extract_form_action(&login_html, &login_url)
-        .ok_or_else(|| anyhow::anyhow!("Step 2b: Could not find e1s2 login form action"))?;
-    tracing::info!(target: "jfc::oidc", action = %login_action, "Step 2b: Submitting credentials");
+    if skipped {
+        return Ok(Step2Out { url: r.url, body: r.body, skipped_credentials: true });
+    }
 
-    let mut login_fields = extract_hidden_fields(&login_html);
+    // Sanity: we should be sitting on a real login form now.
+    if !(r.body.contains("j_username") && r.body.contains("j_password")) {
+        anyhow::bail!(
+            "Step 2: walked all pre-login hops but never found the login form. Last URL: {}\nBody preview:\n{}",
+            r.url,
+            &r.body[..r.body.len().min(400)]
+        );
+    }
+
+    // Step 2c: submit credentials.
+    let login_action = extract_form_action(&r.body, &r.url)
+        .ok_or_else(|| anyhow::anyhow!("Step 2c: Could not find login form action"))?;
+    tracing::info!(target: "jfc::oidc", action = %login_action, "Step 2c: Submitting credentials");
+
+    let mut login_fields = extract_hidden_fields(&r.body);
     login_fields.insert("j_username".into(), username.to_owned());
     login_fields.insert("j_password".into(), password.to_owned());
     login_fields.insert("_eventId_proceed".into(), String::new());
-
     let login_body = url_encode(&login_fields);
-    let r = follow_redirects(
+    let after = follow_redirects(
         client, jar, &login_action, reqwest::Method::POST, Some(&login_body), &[], 10,
     )
     .await?;
-    tracing::info!(target: "jfc::oidc", url = %r.url, "Step 2b: After credential submit");
+    tracing::info!(target: "jfc::oidc", url = %after.url, "Step 2c: After credential submit");
 
-    let bounced_back = r.url.contains("execution=e1s2") && r.body.contains("j_password");
-    let has_error = r.body.contains("credentials you provided cannot be determined to be authentic")
-        || r.body.contains("login-error");
+    let bounced_back = after.body.contains("j_password");
+    let has_error = after.body.contains("credentials you provided cannot be determined to be authentic")
+        || after.body.contains("login-error");
     if bounced_back || has_error {
-        anyhow::bail!("Step 2b: Login failed — invalid NetID or password");
+        anyhow::bail!("Step 2c: Login failed — invalid NetID or password");
     }
 
-    // Debug dump so step3 has context if it fails.
-    let debug_dir = std::path::PathBuf::from("/tmp/jfc-oidc-debug");
-    let _ = std::fs::create_dir_all(&debug_dir);
-    let _ = std::fs::write(debug_dir.join("step2-after-creds.html"), &r.body);
-    let _ = std::fs::write(debug_dir.join("step2-after-creds.url"), &r.url);
+    let _ = std::fs::write(debug_dir.join("step2-after-creds.html"), &after.body);
+    let _ = std::fs::write(debug_dir.join("step2-after-creds.url"), &after.url);
 
-    Ok(Step2Out { url: r.url, body: r.body, skipped_credentials: false })
+    Ok(Step2Out { url: after.url, body: after.body, skipped_credentials: false })
 }
 
 async fn step3_navigate_to_duo(
