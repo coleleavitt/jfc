@@ -53,6 +53,41 @@ pub enum Intent {
     /// "What does X call / trace from X to Y / callees" — triggers a
     /// `fn("<sym>") | callees | depth 4` injection.
     DependencyTrace,
+    /// "Draft a plan / write a plan for X / make a plan" — the user
+    /// wants a PLAN.md. The dispatcher surfaces a toast suggesting
+    /// `/plan` rather than silently writing the file.
+    DocPlanRequest,
+    /// "Write the roadmap / draft a roadmap / update the roadmap."
+    DocRoadmapRequest,
+    /// "What's our parity status / write PARITY.md / update parity."
+    DocParityRequest,
+    /// "Write the philosophy doc / draft PHILOSOPHY.md."
+    DocPhilosophyRequest,
+    /// "Write usage docs / draft a usage guide / how do I use this."
+    DocUsageRequest,
+    /// Planning-shaped request that should bias the session into Plan
+    /// (read-only) permission mode: "design X", "how should I
+    /// implement Y", "plan the Z refactor". Distinct from the
+    /// Doc*Request intents — this is about *permission posture*, not a
+    /// file. Only acts when `JFC_AUTO_PLAN_MODE=1` (opt-in; false
+    /// positives are annoying when the user wanted to make edits).
+    AutoPlanModeRequest,
+}
+
+impl Intent {
+    /// Whether this intent maps to a project-doc slash command. Used by
+    /// the dispatcher to decide whether to surface a `/plan`-style
+    /// suggestion toast.
+    pub fn doc_command(self) -> Option<&'static str> {
+        match self {
+            Self::DocPlanRequest => Some("/plan"),
+            Self::DocRoadmapRequest => Some("/roadmap"),
+            Self::DocParityRequest => Some("/parity"),
+            Self::DocPhilosophyRequest => Some("/philosophy"),
+            Self::DocUsageRequest => Some("/usage"),
+            _ => None,
+        }
+    }
 }
 
 /// Classification result with confidence.
@@ -84,7 +119,32 @@ pub enum ToolKind {
 pub fn classify(message: &str) -> Classification {
     let lower = message.to_lowercase();
 
-    // ── Graph-flavored intents (checked first; high-precision) ──
+    // ── Doc-request intents (highest precision; checked first) ──
+    // These trigger a one-shot toast suggesting `/plan` etc., so a
+    // false positive is annoying but recoverable. We use high-bar
+    // multi-word phrases ("draft a plan", not just "plan") to keep
+    // the noise floor low.
+    if let Some(intent) = classify_doc_intent(&lower) {
+        return Classification {
+            intent,
+            confidence: 0.9,
+        };
+    }
+
+    // ── Auto-Plan-Mode intent (planning posture, not a file) ──
+    // Checked before graph intents because "should I refactor X" is
+    // both a RefactorRisk signal AND an AutoPlanMode signal — the
+    // permission flip is the higher-leverage answer, and the graph
+    // injection still runs as a side-effect via the explicit
+    // RefactorRisk classifier when the user follow-up confirms.
+    if classify_auto_plan_mode(&lower) {
+        return Classification {
+            intent: Intent::AutoPlanModeRequest,
+            confidence: 0.85,
+        };
+    }
+
+    // ── Graph-flavored intents (high-precision) ──
     if let Some(intent) = classify_graph_intent(&lower) {
         return Classification {
             intent,
@@ -281,6 +341,119 @@ fn classify_graph_intent(lower: &str) -> Option<Intent> {
     }
 
     None
+}
+
+/// Detect a project-doc request from already-lowercased text. Returns
+/// the matching `Doc*Request` intent, or `None` to let later
+/// classifiers run.
+///
+/// The phrasings are deliberately multi-word — matching bare "plan" or
+/// "usage" would fire on almost every coding prompt. We require an
+/// action verb ("draft", "write", "update", "generate", "create",
+/// "refresh") paired with the doc noun, OR a direct question about the
+/// doc's subject ("what's our parity status").
+fn classify_doc_intent(lower: &str) -> Option<Intent> {
+    let has_doc_verb = contains_any(
+        lower,
+        &[
+            "draft ", "write ", "update ", "generate ", "create ", "refresh ", "make ",
+        ],
+    );
+
+    // PARITY — also matches the direct status question, which has no
+    // verb ("what's our parity status with upstream").
+    if contains_any(lower, &["parity.md", "parity status", "parity report"])
+        || (has_doc_verb && lower.contains("parity"))
+    {
+        return Some(Intent::DocParityRequest);
+    }
+
+    // ROADMAP
+    if lower.contains("roadmap.md") || (has_doc_verb && lower.contains("roadmap")) {
+        return Some(Intent::DocRoadmapRequest);
+    }
+
+    // PHILOSOPHY
+    if lower.contains("philosophy.md")
+        || (has_doc_verb && lower.contains("philosophy"))
+        || contains_any(lower, &["philosophy doc", "project philosophy"])
+    {
+        return Some(Intent::DocPhilosophyRequest);
+    }
+
+    // USAGE — guard against "usage" appearing in "token usage" / "memory
+    // usage" / "cpu usage" by requiring the doc verb or the explicit
+    // file / "usage guide" / "usage docs" phrasing.
+    if lower.contains("usage.md")
+        || contains_any(lower, &["usage guide", "usage doc", "usage instructions"])
+        || (has_doc_verb && lower.contains("usage") && !lower.contains(" usage of "))
+    {
+        return Some(Intent::DocUsageRequest);
+    }
+
+    // PLAN — most ambiguous, so the bar is highest. Require an explicit
+    // "plan.md" OR a verb+plan pairing that isn't "plan mode" / "plan to".
+    if lower.contains("plan.md")
+        || contains_any(
+            lower,
+            &[
+                "draft a plan",
+                "write a plan",
+                "write the plan",
+                "draft the plan",
+                "update the plan",
+                "create a plan",
+                "make a plan",
+                "generate a plan",
+                "refresh the plan",
+                "implementation plan document",
+            ],
+        )
+    {
+        return Some(Intent::DocPlanRequest);
+    }
+
+    None
+}
+
+/// Detect a planning-posture request from already-lowercased text.
+/// Returns `true` when the prompt reads as "think before you act" —
+/// the dispatcher uses this (gated by `JFC_AUTO_PLAN_MODE=1`) to flip
+/// the session into Plan permission mode.
+///
+/// Kept separate from `classify_doc_intent` because this is about the
+/// *permission posture* for the upcoming work, not a request to write
+/// a file. False positives flip the agent to read-only mid-session,
+/// which is why the dispatcher gates it behind an opt-in env var.
+fn classify_auto_plan_mode(lower: &str) -> bool {
+    // Strong design / planning verbs paired with scope.
+    let design_phrases = [
+        "design a ",
+        "design the ",
+        "how should i implement",
+        "how should we implement",
+        "how would you implement",
+        "plan the refactor",
+        "plan the rewrite",
+        "plan out ",
+        "come up with a plan",
+        "think through ",
+        "architect the ",
+        "architecture for ",
+        "what's the best way to implement",
+        "what is the best way to implement",
+        "should i refactor",
+        "should we refactor",
+        "approach for refactoring",
+        "before you start",
+        "before we start",
+        "don't write code yet",
+        "do not write code yet",
+        "just plan",
+        "only plan",
+        "plan first",
+    ];
+    contains_any(lower, &design_phrases)
 }
 
 #[inline]
@@ -837,6 +1010,19 @@ pub fn suggested_tools(intent: Intent) -> Vec<ToolKind> {
             ToolKind::Glob,
             ToolKind::Lsp,
         ],
+        // Doc / plan-mode intents are exploration-shaped — the slash
+        // command (or the auto-plan-mode flip) handles the write side.
+        Intent::DocPlanRequest
+        | Intent::DocRoadmapRequest
+        | Intent::DocParityRequest
+        | Intent::DocPhilosophyRequest
+        | Intent::DocUsageRequest
+        | Intent::AutoPlanModeRequest => vec![
+            ToolKind::Read,
+            ToolKind::Grep,
+            ToolKind::Glob,
+            ToolKind::Lsp,
+        ],
     }
 }
 
@@ -852,7 +1038,44 @@ pub fn discouraged_tools(intent: Intent) -> Vec<ToolKind> {
         | Intent::EntrypointDiscovery
         | Intent::RefactorRisk
         | Intent::DependencyTrace => vec![ToolKind::Edit, ToolKind::Write],
+        // Doc requests trigger a slash-command suggestion, not a model
+        // turn that writes the file directly — discourage edits while
+        // we wait for the user's confirmation.
+        Intent::DocPlanRequest
+        | Intent::DocRoadmapRequest
+        | Intent::DocParityRequest
+        | Intent::DocPhilosophyRequest
+        | Intent::DocUsageRequest => vec![ToolKind::Edit, ToolKind::Write],
+        // Auto-plan-mode requests are explicit "don't act yet."
+        Intent::AutoPlanModeRequest => vec![ToolKind::Edit, ToolKind::Write, ToolKind::Bash],
         _ => vec![],
+    }
+}
+
+/// Whether the auto-plan-mode flip is enabled. Off by default — the
+/// false-positive cost (suddenly read-only when the user wanted edits)
+/// is high enough that we make this opt-in. Users set
+/// `JFC_AUTO_PLAN_MODE=1` to turn it on.
+pub fn auto_plan_mode_enabled() -> bool {
+    matches!(
+        std::env::var("JFC_AUTO_PLAN_MODE")
+            .ok()
+            .as_deref()
+            .map(|s| s.trim().to_lowercase()),
+        Some(ref v) if matches!(v.as_str(), "1" | "true" | "on" | "yes")
+    )
+}
+
+/// Whether doc-suggestion toasts are enabled. On by default — non-
+/// destructive (just a toast saying "press /plan"), so opting out is
+/// for users who already know the slash commands.
+pub fn auto_doc_suggest_enabled() -> bool {
+    match std::env::var("JFC_AUTO_DOC_SUGGEST") {
+        Ok(v) => {
+            let v = v.trim().to_lowercase();
+            !matches!(v.as_str(), "0" | "false" | "off" | "no")
+        }
+        Err(_) => true,
     }
 }
 
@@ -1138,6 +1361,145 @@ fn baz() -> i32 { 42 }
             combined.contains("foo") || combined.contains("Hint:"),
             "expected caller `foo` (or fallback nudge) in reminder body, got: {combined}"
         );
+    }
+
+    /// Normal: doc-request intents fire on the expected verb+noun
+    /// phrasings. One assertion per intent, exercising a different
+    /// verb each time so a future keyword-list drift surfaces as
+    /// exactly one failing assertion.
+    #[test]
+    fn intent_classifies_doc_requests_normal() {
+        let cases = [
+            ("draft a plan for the auth refactor", Intent::DocPlanRequest),
+            ("update the plan", Intent::DocPlanRequest),
+            ("write the roadmap", Intent::DocRoadmapRequest),
+            (
+                "what's our parity status with upstream",
+                Intent::DocParityRequest,
+            ),
+            (
+                "generate the philosophy doc",
+                Intent::DocPhilosophyRequest,
+            ),
+            ("write a usage guide", Intent::DocUsageRequest),
+        ];
+        for (prompt, expected) in cases {
+            assert_eq!(
+                classify(prompt).intent,
+                expected,
+                "phrasing failed: {prompt}"
+            );
+        }
+    }
+
+    /// Robust: each doc intent maps to the correct slash command verb.
+    /// Guards against drift between the Intent enum and the slash
+    /// command catalogue.
+    #[test]
+    fn intent_doc_command_round_trip_robust() {
+        assert_eq!(Intent::DocPlanRequest.doc_command(), Some("/plan"));
+        assert_eq!(Intent::DocRoadmapRequest.doc_command(), Some("/roadmap"));
+        assert_eq!(Intent::DocParityRequest.doc_command(), Some("/parity"));
+        assert_eq!(
+            Intent::DocPhilosophyRequest.doc_command(),
+            Some("/philosophy")
+        );
+        assert_eq!(Intent::DocUsageRequest.doc_command(), Some("/usage"));
+        // Non-doc intents return None so the dispatcher can `if let
+        // Some(cmd) = ...` cleanly.
+        assert_eq!(Intent::Chat.doc_command(), None);
+        assert_eq!(Intent::Implementation.doc_command(), None);
+    }
+
+    /// Normal: planning-shaped prompts route to AutoPlanModeRequest.
+    /// Mixes scope verbs and "don't act yet" cues to make sure both
+    /// classifier arms work.
+    #[test]
+    fn intent_classifies_auto_plan_mode_normal() {
+        let prompts = [
+            "design a session-resume protocol",
+            "how should I implement OAuth refresh",
+            "plan the refactor of the streaming layer",
+            "what's the best way to implement caching here",
+            "before you start, just plan how to do this",
+            "don't write code yet — architect the migration",
+        ];
+        for p in prompts {
+            assert_eq!(
+                classify(p).intent,
+                Intent::AutoPlanModeRequest,
+                "phrasing failed: {p}"
+            );
+        }
+    }
+
+    /// Robust: "token usage" / "memory usage" / "cpu usage" do NOT
+    /// trip DocUsageRequest. The classifier requires either an
+    /// explicit verb pairing, the .md filename, or a "guide"/"doc"
+    /// qualifier; bare ambient mentions stay in their original
+    /// bucket.
+    #[test]
+    fn intent_doc_usage_does_not_overmatch_robust() {
+        for p in &[
+            "token usage is high this turn",
+            "memory usage looks fine",
+            "review usage of the cache",
+        ] {
+            let intent = classify(p).intent;
+            assert_ne!(
+                intent,
+                Intent::DocUsageRequest,
+                "ambient 'usage' wrongly classified as doc request: {p}"
+            );
+        }
+    }
+
+    /// Robust: env-flag helpers respect the canonical truthy/falsy
+    /// values. Both helpers are read fresh each call, so a session
+    /// can flip them at runtime without restart.
+    #[serial_test::serial]
+    #[test]
+    fn auto_plan_mode_and_doc_suggest_env_flags_respect_canonical_values_robust() {
+        struct Restore {
+            apm: Option<String>,
+            ads: Option<String>,
+        }
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                unsafe {
+                    match self.apm.take() {
+                        Some(v) => std::env::set_var("JFC_AUTO_PLAN_MODE", v),
+                        None => std::env::remove_var("JFC_AUTO_PLAN_MODE"),
+                    }
+                    match self.ads.take() {
+                        Some(v) => std::env::set_var("JFC_AUTO_DOC_SUGGEST", v),
+                        None => std::env::remove_var("JFC_AUTO_DOC_SUGGEST"),
+                    }
+                }
+            }
+        }
+        let _r = Restore {
+            apm: std::env::var("JFC_AUTO_PLAN_MODE").ok(),
+            ads: std::env::var("JFC_AUTO_DOC_SUGGEST").ok(),
+        };
+
+        // Auto-plan-mode is opt-in: unset / 0 → off; 1/true/on → on.
+        unsafe { std::env::remove_var("JFC_AUTO_PLAN_MODE") };
+        assert!(!auto_plan_mode_enabled(), "default should be OFF");
+        unsafe { std::env::set_var("JFC_AUTO_PLAN_MODE", "0") };
+        assert!(!auto_plan_mode_enabled());
+        for on in ["1", "true", "on", "yes"] {
+            unsafe { std::env::set_var("JFC_AUTO_PLAN_MODE", on) };
+            assert!(auto_plan_mode_enabled(), "value {on:?} should enable");
+        }
+
+        // Doc-suggest is opt-out: unset / anything-not-disabled → on.
+        unsafe { std::env::remove_var("JFC_AUTO_DOC_SUGGEST") };
+        assert!(auto_doc_suggest_enabled(), "default should be ON");
+        for off in ["0", "false", "off", "no"] {
+            unsafe { std::env::set_var("JFC_AUTO_DOC_SUGGEST", off) };
+            assert!(!auto_doc_suggest_enabled(), "value {off:?} should disable");
+        }
     }
 
     /// Robust: when JFC_GRAPH_AUTO_CONTEXT is disabled, the helper is

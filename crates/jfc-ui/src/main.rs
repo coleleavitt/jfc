@@ -136,6 +136,17 @@ struct Cli {
     #[arg(long, short = 'm', value_name = "MODEL")]
     model: Option<String>,
 
+    /// Initial permission mode. Matches Claude Code 2.1.141's
+    /// `--permission-mode` flag: lets a caller boot directly into a
+    /// non-default mode without going through Shift+Tab inside the
+    /// TUI. One of: `default`, `plan`, `accept-edits` (or
+    /// `acceptedits`), `bypass` (or `bypasspermissions`), `auto`.
+    ///
+    /// Unknown values are logged and ignored — we don't refuse to
+    /// boot just because the flag is misspelled.
+    #[arg(long = "permission-mode", value_name = "MODE")]
+    permission_mode: Option<String>,
+
     /// Subcommand. When omitted, jfc launches the interactive TUI.
     #[command(subcommand)]
     command: Option<Command>,
@@ -342,6 +353,44 @@ enum DaemonSubcommand {
     },
 }
 
+/// Parse the `--permission-mode` CLI value into the `PermissionMode`
+/// enum. Accepts the canonical labels jfc uses (`default`, `plan`,
+/// `accept-edits`, `bypass`, `auto`) plus their hyphen-stripped
+/// equivalents (`acceptedits`, `bypasspermissions`) and the v141
+/// `bypassPermissions` casing for parity with Claude Code's spelling.
+///
+/// Returns `None` for `None` input or unknown labels — boot proceeds
+/// in the default mode and the misuse is logged. We don't refuse to
+/// start the TUI just because the flag is misspelled.
+pub(crate) fn parse_permission_mode(raw: Option<&str>) -> Option<crate::app::PermissionMode> {
+    let raw = raw?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let normalized = raw.to_ascii_lowercase().replace('-', "").replace('_', "");
+    let mode = match normalized.as_str() {
+        "default" | "normal" => crate::app::PermissionMode::Default,
+        "plan" => crate::app::PermissionMode::Plan,
+        "acceptedits" | "edits" => crate::app::PermissionMode::AcceptEdits,
+        "bypass" | "bypasspermissions" | "yolo" => crate::app::PermissionMode::BypassPermissions,
+        "auto" => crate::app::PermissionMode::Auto,
+        _ => {
+            tracing::warn!(
+                target: "jfc::cli",
+                raw = %raw,
+                "--permission-mode: unknown value, falling back to Default"
+            );
+            return None;
+        }
+    };
+    tracing::info!(
+        target: "jfc::cli",
+        ?mode,
+        "applied --permission-mode"
+    );
+    Some(mode)
+}
+
 /// Session to load at startup based on CLI args
 pub(crate) enum StartupSession {
     /// No session to load — start fresh
@@ -517,6 +566,8 @@ async fn main() -> anyhow::Result<()> {
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
+    let initial_permission_mode = parse_permission_mode(cli.permission_mode.as_deref());
+
     let result = event_loop::run(
         &mut terminal,
         providers,
@@ -525,6 +576,7 @@ async fn main() -> anyhow::Result<()> {
         oauth_handle,
         startup_session,
         initial_prompt,
+        initial_permission_mode,
     )
     .await;
 
@@ -1717,4 +1769,67 @@ fn looks_codex_model(model_id: &str) -> bool {
         .unwrap_or(model_id)
         .to_ascii_lowercase();
     id.contains("codex")
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    // Normal: each canonical permission-mode label round-trips through
+    // the parser to the matching enum variant.
+    #[test]
+    fn parse_permission_mode_canonical_labels_normal() {
+        assert_eq!(
+            parse_permission_mode(Some("default")),
+            Some(crate::app::PermissionMode::Default)
+        );
+        assert_eq!(
+            parse_permission_mode(Some("plan")),
+            Some(crate::app::PermissionMode::Plan)
+        );
+        assert_eq!(
+            parse_permission_mode(Some("accept-edits")),
+            Some(crate::app::PermissionMode::AcceptEdits)
+        );
+        assert_eq!(
+            parse_permission_mode(Some("bypass")),
+            Some(crate::app::PermissionMode::BypassPermissions)
+        );
+        assert_eq!(
+            parse_permission_mode(Some("auto")),
+            Some(crate::app::PermissionMode::Auto)
+        );
+    }
+
+    // Robust: hyphen-stripped + Claude Code v141 spellings + ambient
+    // casing all map to the same enum variant.
+    #[test]
+    fn parse_permission_mode_accepts_alternate_spellings_robust() {
+        assert_eq!(
+            parse_permission_mode(Some("acceptEdits")),
+            Some(crate::app::PermissionMode::AcceptEdits)
+        );
+        assert_eq!(
+            parse_permission_mode(Some("bypassPermissions")),
+            Some(crate::app::PermissionMode::BypassPermissions)
+        );
+        assert_eq!(
+            parse_permission_mode(Some("ACCEPT_EDITS")),
+            Some(crate::app::PermissionMode::AcceptEdits)
+        );
+        assert_eq!(
+            parse_permission_mode(Some("  Plan  ")),
+            Some(crate::app::PermissionMode::Plan)
+        );
+    }
+
+    // Robust: unknown / empty / None values all return None so boot
+    // falls through to the default mode rather than panicking.
+    #[test]
+    fn parse_permission_mode_returns_none_for_invalid_robust() {
+        assert!(parse_permission_mode(None).is_none());
+        assert!(parse_permission_mode(Some("")).is_none());
+        assert!(parse_permission_mode(Some("   ")).is_none());
+        assert!(parse_permission_mode(Some("not-a-real-mode")).is_none());
+    }
 }

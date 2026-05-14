@@ -457,6 +457,7 @@ pub(crate) async fn run(
     oauth_handle: Option<Arc<crate::providers::AnthropicOAuthProvider>>,
     startup_session: super::StartupSession,
     initial_prompt: Option<String>,
+    initial_permission_mode: Option<crate::app::PermissionMode>,
 ) -> anyhow::Result<()> {
     // Bounded channel capacity for the main AppEvent loop. 1024 accommodates
     // typical streaming bursts (50-200 chunks) with headroom for concurrent tool
@@ -471,6 +472,18 @@ pub(crate) async fn run(
     tracing::info!(target: "jfc::ui::events", "registered AppEvent sender for non-Task agent paths");
     let mut app = App::new(provider, model);
     app.providers = providers.clone();
+    // v141 parity: when the caller passed `--permission-mode`, apply
+    // it before any user prompt so the first turn already runs under
+    // the requested mode. Without this the user would have to
+    // Shift+Tab inside the TUI on every boot.
+    if let Some(mode) = initial_permission_mode {
+        tracing::info!(
+            target: "jfc::ui",
+            ?mode,
+            "applying --permission-mode at startup"
+        );
+        app.permission_mode = mode;
+    }
     // Apply the user's persisted theme choice from
     // ~/.config/jfc/config.toml. Unknown / missing names fall back
     // silently to the default dark theme set by App::new.
