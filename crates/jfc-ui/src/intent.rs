@@ -1316,6 +1316,16 @@ mod tests {
     /// produces a `<system-reminder>` with a bullet-list-of-callers.
     /// This is the end-to-end validation that the auto-injection
     /// path actually appends a reminder to the user message.
+    ///
+    /// `#[serial]` because the test calls `clear_auto_context_cache()`
+    /// — a process-global mutation — and then immediately re-populates
+    /// the cache with a fixture directory. Parallel tests that also
+    /// touch the cache (e.g. `auto_inject_respects_disable_flag_robust`)
+    /// can race the clear-then-insert window and either (a) see a stale
+    /// entry from a different test's cwd, or (b) get their own cwd
+    /// evicted mid-run. Serialising all cache-touching tests eliminates
+    /// the race without changing any of their logic.
+    #[serial_test::serial]
     #[test]
     fn auto_inject_appends_graph_reminder_for_impact_analysis_normal() {
         let tmp = tempfile::tempdir().expect("tempdir");
