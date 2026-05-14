@@ -69,6 +69,7 @@ mod worktrees;
 mod background;
 mod daemon;
 mod hallucination_guard;
+mod slop_guard;
 #[cfg(feature = "hashline")]
 mod hashline;
 #[cfg(feature = "hooks")]

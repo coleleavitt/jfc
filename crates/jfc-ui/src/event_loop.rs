@@ -2973,6 +2973,45 @@ pub(crate) async fn run(
                         });
                         app.last_session_save_at = Some(std::time::Instant::now());
                     }
+
+                    // Slop Guard aggregation: scan the last assistant
+                    // message's tool results for slop_guard findings.
+                    // If any are present, inject a system-reminder so
+                    // the model sees the aggregate findings on its next turn.
+                    {
+                        let marker = crate::tools::SLOP_GUARD_MARKER;
+                        let mut aggregate_findings: Vec<String> = Vec::new();
+                        if let Some(last_assistant) = app.messages.iter().rev().find(|m| m.role == Role::Assistant) {
+                            for part in &last_assistant.parts {
+                                if let MessagePart::Tool(tc) = part {
+                                    let output_text = tc.output.to_api_text();
+                                    if let Some(idx) = output_text.find(marker) {
+                                        let findings = &output_text[idx + marker.len()..];
+                                        if !findings.trim().is_empty() {
+                                            aggregate_findings.push(findings.trim().to_string());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if !aggregate_findings.is_empty() {
+                            let reminder_body = format!(
+                                "Slop Guard detected quality issues in your recent edits. \
+                                 Review and fix these before proceeding:\n\n{}",
+                                aggregate_findings.join("\n\n---\n\n")
+                            );
+                            tracing::debug!(
+                                target: "jfc::slop_guard",
+                                finding_count = aggregate_findings.len(),
+                                "injecting slop_guard system-reminder"
+                            );
+                            crate::system_reminder::append_to_last_user(
+                                &mut app.messages,
+                                &reminder_body,
+                            );
+                        }
+                    }
+
                     // Terminal bell when a tool batch completes — matches
                     // v126's `iterm2_with_bell` / `terminal_bell` behavior
                     // (cli.js:46704). Many users have iTerm2 / WezTerm /

@@ -396,6 +396,75 @@ pub(crate) fn record_edited_file(path: &std::path::Path) {
     }
 }
 
+/// The sentinel marker appended to tool outputs when slop_guard finds issues.
+/// Used by the event loop to detect and aggregate findings across a batch.
+pub(crate) const SLOP_GUARD_MARKER: &str = "\n\n--- Slop Guard ---\n";
+
+/// Run the slop_guard checks on a file that was just written/edited.
+/// Returns the original result with findings appended on success,
+/// or the original result unchanged if slop_guard panics, times out
+/// (>2s), or finds nothing.
+async fn maybe_run_slop_guard(
+    mut result: ExecutionResult,
+    file_path: &Path,
+    file_content: &str,
+    cwd: &Path,
+) -> ExecutionResult {
+    use std::time::Duration;
+
+    // Non-blocking: if slop_guard panics or exceeds 2s, skip silently.
+    // We spawn into a task so panics become JoinErrors instead of unwinding
+    // the caller.
+    let path = file_path.to_path_buf();
+    let content = file_content.to_string();
+    let workspace = cwd.to_path_buf();
+
+    let handle = tokio::spawn(async move {
+        crate::slop_guard::run_all_checks(&path, &content, &workspace).await
+    });
+
+    let guard_result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+
+    match guard_result {
+        Ok(Ok(report)) => {
+            tracing::debug!(
+                target: "jfc::slop_guard",
+                file = %file_path.display(),
+                has_findings = report.has_findings,
+                "slop_guard completed"
+            );
+            if report.has_findings {
+                let formatted = crate::slop_guard::format_report(&report);
+                tracing::debug!(
+                    target: "jfc::slop_guard",
+                    file = %file_path.display(),
+                    findings = %formatted,
+                    "slop_guard findings"
+                );
+                result.output.push_str(SLOP_GUARD_MARKER);
+                result.output.push_str(&formatted);
+            }
+        }
+        Ok(Err(_join_err)) => {
+            // Task panicked — skip silently.
+            tracing::debug!(
+                target: "jfc::slop_guard",
+                file = %file_path.display(),
+                "slop_guard panicked, skipping"
+            );
+        }
+        Err(_timeout) => {
+            tracing::debug!(
+                target: "jfc::slop_guard",
+                file = %file_path.display(),
+                "slop_guard timed out (>2s), skipping"
+            );
+        }
+    }
+
+    result
+}
+
 /// Drain the auto-context queue and render a single Graph Context
 /// block describing callers of any function that lives in a
 /// recently-edited file. Returns `None` when the queue is empty,
@@ -937,6 +1006,8 @@ pub async fn execute_tool(
                 // graph_query reflects the new file content.
                 invalidate_graph_session_cache(Some(&cwd));
                 record_edited_file(Path::new(&file_path));
+                // Slop guard: check the written content for quality issues.
+                return maybe_run_slop_guard(result, Path::new(&file_path), &content, &cwd).await;
             }
             result
         }
@@ -956,6 +1027,9 @@ pub async fn execute_tool(
                 }
                 invalidate_graph_session_cache(Some(&cwd));
                 record_edited_file(Path::new(&file_path));
+                // Slop guard: read the post-edit content and check for quality issues.
+                let post_content = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
+                return maybe_run_slop_guard(result, Path::new(&file_path), &post_content, &cwd).await;
             }
             result
         }
@@ -1469,12 +1543,14 @@ pub async fn execute_tool(
             invalidate_graph_session_cache(Some(&cwd));
             record_edited_file(&entry.file_path);
 
-            ExecutionResult::success(format!(
+            let result = ExecutionResult::success(format!(
                 "Edited symbol '{}' in {}{}",
                 handle,
                 entry.file_path.display(),
                 cascade_summary
-            ))
+            ));
+            // Slop guard: check the new file content for quality issues.
+            maybe_run_slop_guard(result, &entry.file_path, &new_file, &cwd).await
         }
         (
             ToolKind::PostBounty,
@@ -1803,7 +1879,11 @@ pub async fn execute_tool(
                 bytes = content.len(),
                 "MultiEdit applied"
             );
-            ExecutionResult::success(format!("Applied {applied} edits to {file_path}."))
+            invalidate_graph_session_cache(Some(&cwd));
+            record_edited_file(Path::new(&file_path));
+            let result = ExecutionResult::success(format!("Applied {applied} edits to {file_path}."));
+            // Slop guard: check the final content for quality issues.
+            maybe_run_slop_guard(result, Path::new(&file_path), &content, &cwd).await
         }
         (
             ToolKind::AskUserQuestion,
