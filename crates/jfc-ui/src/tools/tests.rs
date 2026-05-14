@@ -2105,6 +2105,7 @@ async fn execute_tool_task_kind_rejects_with_streaming_message_robust() {
             team_name: None,
             mode: None,
             isolation: None,
+            parent_task_id: None,
         }),
         PathBuf::from("."),
         None,

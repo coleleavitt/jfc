@@ -137,6 +137,12 @@ pub enum AppEvent {
         /// Default to `false` so legacy/test sites that omit the field
         /// keep their previous behavior (foreground registration).
         is_detached: bool,
+        /// Queued task id (`t<N>`) this delegation fulfils, if the model
+        /// linked the Task call to a todo via `parent_task_id`. The
+        /// `TaskStarted` handler flips that task to `in_progress`; the
+        /// matching `TaskCompleted`/`TaskFailed` handler flips it to
+        /// `completed`/`failed`. `None` for un-linked ad-hoc delegations.
+        parent_task_id: Option<String>,
     },
     TaskProgress {
         task_id: crate::ids::TaskId,

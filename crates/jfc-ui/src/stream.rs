@@ -2152,6 +2152,7 @@ pub fn dispatch_tools_batched(
                 // reconciler would later mark them stale when the UI
                 // exits, mis-labeling foreground teammates as Failed.
                 is_detached: false,
+                parent_task_id: task_input.parent_task_id.clone(),
             });
 
             let _ = tx_task.try_send(AppEvent::ToolResult {
@@ -2238,6 +2239,7 @@ pub fn dispatch_tools_batched(
                         // handler must skip the registry write so it
                         // doesn't clobber that record.
                         is_detached: true,
+                        parent_task_id: task_input.parent_task_id.clone(),
                     });
                     let result_json = serde_json::json!({
                         "status": "background_task_started",
@@ -2336,6 +2338,7 @@ pub fn dispatch_tools_batched(
                     // BackgroundTask row in `app.background_tasks` is the
                     // authoritative UI state.
                     is_detached: false,
+                    parent_task_id: task_input.parent_task_id.clone(),
                 })
                 .await;
             let started = std::time::Instant::now();

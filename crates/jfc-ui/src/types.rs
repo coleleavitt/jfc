@@ -624,6 +624,14 @@ pub struct TaskInput {
     pub mode: Option<String>,
     /// Isolation mode: "worktree" creates a temp git worktree for the agent.
     pub isolation: Option<String>,
+    /// Queued-task id (`t<N>`) this delegation is fulfilling. When set, the
+    /// runtime auto-transitions that task in the `TaskStore`: InProgress on
+    /// spawn, Completed when the subagent succeeds, Failed when it errors.
+    /// Without it, a delegated agent could finish cleanly while its queued
+    /// todo stayed `in_progress` forever — the Task tool result, the
+    /// background-task UI row, and the persistent TaskStore were three
+    /// loosely-coupled systems with no structured link.
+    pub parent_task_id: Option<String>,
 }
 
 impl TaskInput {
@@ -2126,6 +2134,7 @@ impl ToolInput {
                 team_name: opt_str_field("team_name"),
                 mode: opt_str_field("mode"),
                 isolation: opt_str_field("isolation"),
+                parent_task_id: opt_str_field("parent_task_id"),
             }),
             ToolKind::Skill => Self::Skill {
                 name: opt_str_field("name")
@@ -2545,6 +2554,9 @@ impl ToolInput {
                 }
                 if let Some(m) = &ti.model {
                     v["model"] = json!(m);
+                }
+                if let Some(p) = &ti.parent_task_id {
+                    v["parent_task_id"] = json!(p);
                 }
                 v
             }
@@ -3123,6 +3135,7 @@ mod tests {
             team_name: None,
             mode: None,
             isolation: None,
+            parent_task_id: None,
         };
         assert!(fg.summary().contains("foreground"));
 
@@ -3146,6 +3159,7 @@ mod tests {
             team_name: None,
             mode: None,
             isolation: None,
+            parent_task_id: None,
         });
         let v = input.to_value();
         assert_eq!(v["description"], "research");
@@ -3687,6 +3701,7 @@ mod tests {
             team_name: None,
             mode: None,
             isolation: None,
+            parent_task_id: None,
         }
     }
 

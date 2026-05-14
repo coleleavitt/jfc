@@ -6194,6 +6194,7 @@ mod subagent_counter_tests {
             model_used: None,
             max_input_tokens: None,
             budget_killed: false,
+            parent_task_id: None,
         }
     }
 

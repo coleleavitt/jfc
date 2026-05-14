@@ -42,6 +42,7 @@ fn test_task_input() -> crate::types::TaskInput {
         team_name: None,
         mode: None,
         isolation: None,
+        parent_task_id: None,
     }
 }
 

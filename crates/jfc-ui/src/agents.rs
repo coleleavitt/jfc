@@ -848,8 +848,14 @@ pub fn built_in_agents() -> Vec<AgentDef> {
             model: None, // inherit
             isolation: None,
             skills: Vec::new(),
+            // verification is the one read-only specialist that legitimately
+            // needs the task lifecycle tools: when it's dispatched against a
+            // queued todo it must be able to mark the task done (PASS) or
+            // failed (FAIL). Explore/Plan stay strictly read-only — they
+            // produce findings/plans, they don't own queue entries.
             allowed_tools: vec![
                 "Read".into(), "Glob".into(), "Grep".into(), "Bash".into(),
+                "TaskList".into(), "TaskGet".into(), "TaskUpdate".into(), "TaskDone".into(),
             ],
             disallowed_tools: vec![
                 "Task".into(), "Edit".into(), "Write".into(), "ApplyPatch".into(),
@@ -885,7 +891,9 @@ pub fn built_in_agents() -> Vec<AgentDef> {
             skills: Vec::new(),
             allowed_tools: vec![
                 "Read".into(), "Glob".into(), "Grep".into(), "Bash".into(),
-                "TaskCreate".into(), "TaskList".into(), "AskUserQuestion".into(),
+                "TaskCreate".into(), "TaskList".into(), "TaskGet".into(),
+                "TaskUpdate".into(), "TaskDone".into(), "TaskValidate".into(),
+                "AskUserQuestion".into(),
             ],
             disallowed_tools: vec![
                 "Edit".into(), "Write".into(), "ApplyPatch".into(),

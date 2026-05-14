@@ -187,6 +187,7 @@ mod tests {
             team_name: None,
             mode: None,
             isolation: None,
+            parent_task_id: None,
         }
     }
 

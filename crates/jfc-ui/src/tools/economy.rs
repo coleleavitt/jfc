@@ -231,6 +231,9 @@ impl EconomyAgentInvoker {
                 // Economy solver/validator agents run in-process via the
                 // same Task tool path as ordinary subagents.
                 is_detached: false,
+                // Economy agents aren't linked to a user-facing todo —
+                // they're spawned by the bounty market, not the task queue.
+                parent_task_id: None,
             }) {
                 tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskStarted dropped: channel full");
             }

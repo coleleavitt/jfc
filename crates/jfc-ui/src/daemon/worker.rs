@@ -469,10 +469,20 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
         }
     });
 
-    let task_store = launch
-        .active_team_name
-        .as_deref()
-        .map(crate::tasks::TaskStore::open_team);
+    // Background workers run in their own process, so they need their own
+    // TaskStore handle to honour TaskUpdate/TaskDone/TaskList. In team mode
+    // that's the shared team store; otherwise it's the parent session's
+    // store (`~/.config/jfc/tasks/<session>.json`). Without the non-team
+    // branch, detached agents in a normal session got `None` and every
+    // task tool failed with "Task store not available".
+    let task_store = match (
+        launch.active_team_name.as_deref(),
+        launch.parent_session_id.as_deref(),
+    ) {
+        (Some(team), _) => Some(crate::tasks::TaskStore::open_team(team)),
+        (None, Some(session_id)) => Some(crate::tasks::TaskStore::open(session_id)),
+        (None, None) => None,
+    };
     let started = Instant::now();
     let result = crate::tools::execute_task(
         &launch.task_input,

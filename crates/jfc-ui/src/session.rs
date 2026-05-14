@@ -185,6 +185,8 @@ pub enum SerializedToolInput {
         run_in_background: bool,
         #[serde(default)]
         model: Option<String>,
+        #[serde(default)]
+        parent_task_id: Option<String>,
     },
     TaskCreate {
         subject: String,
@@ -1104,6 +1106,7 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             category: ti.category.clone(),
             run_in_background: ti.run_in_background,
             model: ti.model.clone(),
+            parent_task_id: ti.parent_task_id.clone(),
         },
         ToolInput::TaskCreate {
             subject,
@@ -1583,6 +1586,7 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             category,
             run_in_background,
             model,
+            parent_task_id,
         } => ToolInput::Task(TaskInput {
             description,
             prompt,
@@ -1594,6 +1598,7 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             team_name: None,
             mode: None,
             isolation: None,
+            parent_task_id,
         }),
         SerializedToolInput::TaskCreate {
             subject,

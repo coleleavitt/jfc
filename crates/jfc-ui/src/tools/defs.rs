@@ -400,6 +400,10 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                         "type": "string",
                         "enum": ["worktree"],
                         "description": "Isolation mode. 'worktree' creates a temporary git worktree."
+                    },
+                    "parent_task_id": {
+                        "type": "string",
+                        "description": "Queued task id (e.g. 't3') this delegation fulfils. When set, the runtime auto-marks that task in_progress on spawn, completed on success, and failed on error — so you don't need a separate TaskUpdate/TaskDone call for the delegated work."
                     }
                 },
                 "required": ["description", "prompt", "run_in_background"]

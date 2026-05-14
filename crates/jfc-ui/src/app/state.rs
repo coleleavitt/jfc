@@ -91,6 +91,12 @@ pub struct BackgroundTask {
     /// Set once per task when the budget gets crossed so we don't fire
     /// the kill / toast multiple times.
     pub budget_killed: bool,
+    /// Queued task id (`t<N>`) this delegated agent fulfils, if linked via
+    /// the Task tool's `parent_task_id`. Captured on `TaskStarted` so the
+    /// `TaskCompleted`/`TaskFailed` handlers — which only receive a
+    /// `task_id` (the agent's run id, not the todo id) — can look up which
+    /// `TaskStore` entry to transition. `None` for un-linked delegations.
+    pub parent_task_id: Option<String>,
 }
 
 pub struct App {

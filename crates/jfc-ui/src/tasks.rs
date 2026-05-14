@@ -251,6 +251,13 @@ impl Task {
 pub struct TaskStore {
     inner: Mutex<TaskStoreInner>,
     path: PathBuf,
+    /// Last on-disk modification time this store has observed — either
+    /// because it loaded that revision or wrote it. `reload_if_changed`
+    /// compares the live file mtime against this to decide whether an
+    /// external writer (a detached background worker in its own process)
+    /// has touched the file since. Lock order is always `inner` → this,
+    /// matching `persist`, so the two can't deadlock.
+    disk_mtime: Mutex<Option<std::time::SystemTime>>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -278,9 +285,11 @@ impl TaskStore {
             "TaskStore::open"
         );
         let inner = Self::load_inner(&path);
+        let disk_mtime = Self::file_mtime(&path);
         Arc::new(Self {
             inner: Mutex::new(inner),
             path,
+            disk_mtime: Mutex::new(disk_mtime),
         })
     }
 
@@ -295,9 +304,11 @@ impl TaskStore {
             path = %path.display(),
             "TaskStore::open_team"
         );
+        let disk_mtime = Self::file_mtime(&path);
         Arc::new(Self {
             inner: Mutex::new(Self::load_inner(&path)),
             path,
+            disk_mtime: Mutex::new(disk_mtime),
         })
     }
 
@@ -354,6 +365,48 @@ impl TaskStore {
         copied
     }
 
+    /// Current on-disk modification time of `path`, or `None` if the file
+    /// doesn't exist / can't be stat'd. Used to mtime-gate `reload_if_changed`.
+    fn file_mtime(path: &PathBuf) -> Option<std::time::SystemTime> {
+        std::fs::metadata(path).and_then(|m| m.modified()).ok()
+    }
+
+    /// Re-read the backing file when an external process has modified it
+    /// since this handle last loaded or persisted. Returns `true` if the
+    /// in-memory state changed.
+    ///
+    /// Why: the UI's `TaskStore` is loaded once into a `Mutex` and never
+    /// re-reads. A detached background worker runs in a *separate process*
+    /// with its own handle; its `TaskUpdate`/`TaskDone` writes land in the
+    /// JSON file but the UI handle stays stale forever. The UI's render
+    /// loop calls this once per tick (mtime-gated, so it's a cheap stat
+    /// when nothing changed) to pick up those external writes.
+    ///
+    /// In-memory stores (empty `path`) are always a no-op.
+    pub fn reload_if_changed(&self) -> bool {
+        if self.path.as_os_str().is_empty() {
+            return false;
+        }
+        let current = Self::file_mtime(&self.path);
+        {
+            let seen = self.disk_mtime.lock().unwrap();
+            if *seen == current {
+                return false;
+            }
+        }
+        let fresh = Self::load_inner(&self.path);
+        let mut inner = self.inner.lock().unwrap();
+        *inner = fresh;
+        drop(inner);
+        *self.disk_mtime.lock().unwrap() = current;
+        tracing::debug!(
+            target: "jfc::tasks",
+            path = %self.path.display(),
+            "TaskStore::reload_if_changed — picked up external write"
+        );
+        true
+    }
+
     fn load_inner(path: &PathBuf) -> TaskStoreInner {
         let Some(raw) = std::fs::read_to_string(path).ok() else {
             return TaskStoreInner::default();
@@ -387,8 +440,14 @@ impl TaskStore {
         }
         if let Ok(json) = serde_json::to_string_pretty(inner) {
             let tmp = self.path.with_extension("tmp");
-            if std::fs::write(&tmp, json).is_ok() {
-                let _ = std::fs::rename(&tmp, &self.path);
+            if std::fs::write(&tmp, json).is_ok() && std::fs::rename(&tmp, &self.path).is_ok() {
+                // Record the mtime of the revision we just wrote so a
+                // subsequent `reload_if_changed` doesn't treat our own
+                // write as an external change and clobber newer in-memory
+                // state with a re-read of what we just serialized.
+                if let Ok(mut seen) = self.disk_mtime.lock() {
+                    *seen = Self::file_mtime(&self.path);
+                }
             }
         }
     }
@@ -1184,6 +1243,55 @@ mod tests {
         let src = TaskStore::in_memory();
         let dst = TaskStore::in_memory();
         assert_eq!(dst.migrate_from(&src), 0);
+    }
+
+    // Normal: a store re-reads the backing file when an external process
+    // (a detached background worker) has written to it since the last load.
+    #[test]
+    fn reload_if_changed_picks_up_external_write_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        // Writer process: create a task and persist it.
+        let writer = TaskStore {
+            inner: Mutex::new(TaskStoreInner::default()),
+            path: path.clone(),
+            disk_mtime: Mutex::new(None),
+        };
+        writer
+            .create("written externally".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+
+        // Reader handle: opened before any further writes, sees nothing yet.
+        let reader = TaskStore {
+            inner: Mutex::new(TaskStoreInner::default()),
+            path: path.clone(),
+            disk_mtime: Mutex::new(None),
+        };
+        // mtime starts unset, so the first reload always pulls the file in.
+        assert!(reader.reload_if_changed());
+        assert_eq!(reader.list(DeletedFilter::Exclude).len(), 1);
+        // Second call with no external change is a cheap no-op.
+        assert!(!reader.reload_if_changed());
+
+        // External writer adds another task; the reader picks it up.
+        // Force a distinct mtime — some filesystems have coarse timestamps.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        writer
+            .create("second external".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        assert!(reader.reload_if_changed());
+        assert_eq!(reader.list(DeletedFilter::Exclude).len(), 2);
+    }
+
+    // Robust: an in-memory store (empty path) never reports a reload.
+    #[test]
+    fn reload_if_changed_in_memory_is_noop_robust() {
+        let store = TaskStore::in_memory();
+        store
+            .create("local".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        assert!(!store.reload_if_changed());
+        assert_eq!(store.list(DeletedFilter::Exclude).len(), 1);
     }
 
     // Regression: next_id advances to the max of (dst, src) so future

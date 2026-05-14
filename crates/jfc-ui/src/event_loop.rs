@@ -432,7 +432,14 @@ async fn maybe_continue_task_factory(app: &mut App, tx: &mpsc::Sender<AppEvent>)
     if let Some(ref vc) = task.verification_command {
         prompt.push_str(&format!("\nVerification command: `{vc}`"));
     }
-    prompt.push_str("\n\nWhen this task is done, update its task status before stopping. If more unblocked tasks remain, continue with the next one.");
+    prompt.push_str(&format!(
+        "\n\nWhen this task is done, update its task status before stopping. \
+         If you delegate this work via the Task tool, pass `parent_task_id: \"{}\"` \
+         so the runtime auto-marks the task in_progress/completed/failed as the \
+         subagent runs — no separate TaskUpdate/TaskDone needed. \
+         If more unblocked tasks remain, continue with the next one.",
+        task.id
+    ));
     tracing::info!(
         target: "jfc::tasks::factory",
         task_id = %task.id,
@@ -1428,6 +1435,16 @@ pub(crate) async fn run(
                         .unwrap_or(true);
                     if detached_sync_due {
                         app.last_detached_sync_at = Some(std::time::Instant::now());
+                        // Detached workers (and in non-team mode, the
+                        // session task store) write task updates straight
+                        // to the JSON file from their own process. The UI's
+                        // TaskStore handle is loaded once and never re-reads
+                        // on its own — this mtime-gated reload picks up
+                        // those external TaskUpdate/TaskDone writes so the
+                        // todo panel reflects background-agent progress.
+                        if app.task_store.reload_if_changed() {
+                            needs_draw = true;
+                        }
                         if sync_detached_background_tasks_from_daemon(&mut app) {
                             needs_draw = true;
                             // Re-evaluate the task factory after detached
@@ -3726,13 +3743,34 @@ pub(crate) async fn run(
                     model_used,
                     max_input_tokens,
                     is_detached,
+                    parent_task_id,
                 } => {
                     tracing::info!(
                         target: "jfc::task",
                         %task_id, %description, ?model_used, is_detached,
+                        ?parent_task_id,
                         "TaskStarted"
                     );
                     use types::{TaskLifecycle, TaskStatusPart};
+                    // If this delegation is linked to a queued todo, flip
+                    // that todo to InProgress now so the task panel reflects
+                    // that an agent has picked it up.
+                    if let Some(ref ptid) = parent_task_id {
+                        if let Err(e) = app.task_store.update(
+                            ptid,
+                            crate::tasks::TaskPatch {
+                                status: Some(crate::tasks::TaskStatus::InProgress),
+                                ..Default::default()
+                            },
+                        ) {
+                            tracing::warn!(
+                                target: "jfc::task",
+                                parent_task_id = %ptid,
+                                error = %e,
+                                "TaskStarted: failed to mark linked task in_progress"
+                            );
+                        }
+                    }
                     app.background_tasks.insert(
                         task_id.as_str().to_owned(),
                         app::BackgroundTask {
@@ -3755,6 +3793,7 @@ pub(crate) async fn run(
                                 .or_else(|| Some(app.model.as_str().to_owned())),
                             max_input_tokens,
                             budget_killed: false,
+                            parent_task_id: parent_task_id.clone(),
                         },
                     );
                     // Only register detached workers into the daemon
@@ -3890,6 +3929,7 @@ pub(crate) async fn run(
                         "TaskCompleted"
                     );
                     use types::TaskLifecycle;
+                    let mut linked_task_id: Option<String> = None;
                     if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
                         bt.status = TaskLifecycle::Completed;
                         bt.summary = Some(summary.clone());
@@ -3897,6 +3937,29 @@ pub(crate) async fn run(
                         let entry = format!("[{elapsed_s}s] ✓ done — {summary}");
                         bt.messages.push(entry.clone());
                         bt.chat_messages.push(types::ChatMessage::assistant(entry));
+                        linked_task_id = bt.parent_task_id.clone();
+                    }
+                    // If the model linked this delegation to a queued todo
+                    // via `parent_task_id`, mark that todo Completed in the
+                    // TaskStore. Without this, a foreground subagent could
+                    // finish cleanly while its queued task stayed
+                    // `in_progress` — the Task tool result and the
+                    // persistent todo were never connected.
+                    if let Some(ref ptid) = linked_task_id {
+                        if let Err(e) = app.task_store.update(
+                            ptid,
+                            crate::tasks::TaskPatch {
+                                status: Some(crate::tasks::TaskStatus::Completed),
+                                ..Default::default()
+                            },
+                        ) {
+                            tracing::warn!(
+                                target: "jfc::task",
+                                parent_task_id = %ptid,
+                                error = %e,
+                                "TaskCompleted: failed to mark linked task completed"
+                            );
+                        }
                     }
                     crate::daemon::record_background_agent_finished(
                         task_id.as_str(),
@@ -3927,6 +3990,7 @@ pub(crate) async fn run(
                         .trim_start()
                         .to_ascii_lowercase()
                         .starts_with("cancelled:");
+                    let mut linked_task_id: Option<String> = None;
                     if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
                         bt.status = if was_cancelled {
                             TaskLifecycle::Cancelled
@@ -3938,6 +4002,32 @@ pub(crate) async fn run(
                         let entry = format!("[{prefix}] {error}");
                         bt.messages.push(entry.clone());
                         bt.chat_messages.push(types::ChatMessage::assistant(entry));
+                        linked_task_id = bt.parent_task_id.clone();
+                    }
+                    // Propagate the failure to the linked queued todo. A
+                    // cancelled agent leaves the task Pending (so the queue
+                    // can retry it); a genuine failure marks it Failed so
+                    // the cascade / replan logic below can react.
+                    if let Some(ref ptid) = linked_task_id {
+                        let next_status = if was_cancelled {
+                            crate::tasks::TaskStatus::Pending
+                        } else {
+                            crate::tasks::TaskStatus::Failed
+                        };
+                        if let Err(e) = app.task_store.update(
+                            ptid,
+                            crate::tasks::TaskPatch {
+                                status: Some(next_status),
+                                ..Default::default()
+                            },
+                        ) {
+                            tracing::warn!(
+                                target: "jfc::task",
+                                parent_task_id = %ptid,
+                                error = %e,
+                                "TaskFailed: failed to update linked task status"
+                            );
+                        }
                     }
                     crate::daemon::record_background_agent_finished(
                         task_id.as_str(),
@@ -4245,6 +4335,14 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
                     model_used: agent.model.clone(),
                     max_input_tokens: None,
                     budget_killed: false,
+                    // Detached workers update their linked task in their
+                    // own process (they hold the session/team TaskStore
+                    // directly); the UI picks those writes up via
+                    // `TaskStore::reload_if_changed`. The daemon roster
+                    // doesn't carry the parent_task_id back, so the UI-side
+                    // BackgroundTask row leaves it None — the todo still
+                    // transitions correctly, just not through this struct.
+                    parent_task_id: None,
                 });
 
         if entry.description != agent.description {
@@ -4386,6 +4484,10 @@ fn restore_persistent_background_agents(app: &mut App) {
                 model_used: agent.model,
                 max_input_tokens: None,
                 budget_killed: false,
+                // Restored from the daemon roster, which doesn't persist
+                // the parent_task_id link. The linked todo's status was
+                // already written to the TaskStore JSON by the worker.
+                parent_task_id: None,
             },
         );
     }
