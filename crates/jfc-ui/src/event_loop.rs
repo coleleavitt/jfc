@@ -3371,9 +3371,26 @@ pub(crate) async fn run(
                         // so the spinner stops, then drain any prompts the user
                         // typed during streaming.
                         app.turn_started_at = None;
-                        drain_queued_prompts(&mut app, &tx).await;
-                        maybe_continue_task_factory(&mut app, &tx).await;
+                        // /goal stop-hook: if a goal is active, the agent
+                        // doesn't truly get to stop here. Fire the
+                        // evaluator in the background; the agentic loop
+                        // re-enters when the verdict lands (see
+                        // AppEvent::GoalVerdict). Bail before draining
+                        // queued prompts so a queued prompt can't race
+                        // ahead of the verdict and unset the goal mid-eval.
+                        if dispatch_goal_evaluator_if_active(&mut app, &tx) {
+                            tracing::info!(
+                                target: "jfc::goal",
+                                "goal evaluator dispatched on EndTurn — deferring drain"
+                            );
+                        } else {
+                            drain_queued_prompts(&mut app, &tx).await;
+                            maybe_continue_task_factory(&mut app, &tx).await;
+                        }
                     }
+                }
+                AppEvent::GoalVerdict { ok, reason } => {
+                    handle_goal_verdict(&mut app, &tx, ok, reason).await;
                 }
                 AppEvent::CompactionStarted => {
                     // The compacting_started_at guard is now set synchronously
@@ -4551,6 +4568,141 @@ fn set_terminal_title(app: &App) {
     }
     *guard = title.clone();
     let _ = execute!(io::stdout(), SetTitle(title));
+}
+
+/// Fire the `/goal` evaluator when the user has an active stop
+/// condition and the agent has just settled on EndTurn. Returns `true`
+/// when the dispatch happened (and the caller must NOT drain queued
+/// prompts yet), `false` when there's no active goal so the loop can
+/// proceed normally.
+fn dispatch_goal_evaluator_if_active(
+    app: &mut app::App,
+    tx: &mpsc::Sender<crate::app::AppEvent>,
+) -> bool {
+    let Some(goal) = app.goal.as_ref() else {
+        return false;
+    };
+    if app.goal_evaluator_in_flight {
+        // A prior evaluator is still running — the verdict it returns
+        // will re-drive the loop. Don't double-fire.
+        tracing::debug!(target: "jfc::goal", "evaluator already in flight, skipping");
+        return true;
+    }
+    if goal.is_exhausted() {
+        // Burned the iteration budget. Stamp the failure banner and
+        // clear the goal so the loop can drain queued prompts normally.
+        let banner = crate::goal::format_exhaustion_banner(goal);
+        app.messages.push(types::ChatMessage::assistant(banner));
+        app.goal = None;
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Error,
+                "Goal abandoned — iteration cap reached".to_owned(),
+            ),
+        );
+        return false;
+    }
+    app.goal_evaluator_in_flight = true;
+    let condition = goal.condition.clone();
+    let history = app.messages.clone();
+    let provider = std::sync::Arc::clone(&app.provider);
+    let model = app.model.clone();
+    let cancel = app.cancel_token.clone();
+    let tx_eval = tx.clone();
+    tokio::spawn(async move {
+        // Race against cancellation so an ESC×2 mid-evaluation doesn't
+        // strand a pending verdict for the next turn.
+        let verdict = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
+                tracing::info!(target: "jfc::goal", "evaluator cancelled before reply");
+                return;
+            }
+            v = crate::goal::evaluate(provider.as_ref(), model, &condition, &history) => v,
+        };
+        let event = match verdict {
+            Ok(v) => crate::app::AppEvent::GoalVerdict {
+                ok: v.ok,
+                reason: v.reason,
+            },
+            Err(e) => {
+                tracing::warn!(
+                    target: "jfc::goal",
+                    error = %e,
+                    "evaluator call failed — surfacing as unmet"
+                );
+                crate::app::AppEvent::GoalVerdict {
+                    ok: false,
+                    reason: format!("evaluator error: {e}"),
+                }
+            }
+        };
+        let _ = tx_eval.send(event).await;
+    });
+    true
+}
+
+/// Handle a goal verdict. On success: stamp banner, clear goal, drain
+/// queued prompts. On failure: bump iterations, inject a system-
+/// reminder describing what's missing, restart the agentic loop so the
+/// model can address it.
+async fn handle_goal_verdict(
+    app: &mut app::App,
+    tx: &mpsc::Sender<crate::app::AppEvent>,
+    ok: bool,
+    reason: String,
+) {
+    app.goal_evaluator_in_flight = false;
+    let Some(mut goal) = app.goal.take() else {
+        // User cleared the goal mid-evaluation. Resume the normal
+        // EndTurn flow.
+        drain_queued_prompts(app, tx).await;
+        maybe_continue_task_factory(app, tx).await;
+        return;
+    };
+    if ok {
+        let banner = crate::goal::format_success_banner(&goal, &reason);
+        app.messages.push(types::ChatMessage::assistant(banner));
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Success,
+                "Goal achieved".to_owned(),
+            ),
+        );
+        drain_queued_prompts(app, tx).await;
+        maybe_continue_task_factory(app, tx).await;
+        return;
+    }
+    // Unmet: bump counter, store reason, inject reminder, continue loop.
+    goal.iterations += 1;
+    goal.last_unmet_reason = Some(reason.clone());
+    if goal.is_exhausted() {
+        let banner = crate::goal::format_exhaustion_banner(&goal);
+        app.messages.push(types::ChatMessage::assistant(banner));
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Error,
+                "Goal abandoned — iteration cap reached".to_owned(),
+            ),
+        );
+        drain_queued_prompts(app, tx).await;
+        maybe_continue_task_factory(app, tx).await;
+        return;
+    }
+    let iteration = goal.iterations;
+    let condition = goal.condition.clone();
+    app.goal = Some(goal);
+    let reminder = crate::goal::format_unmet_reminder(&condition, &reason, iteration);
+    crate::system_reminder::append_to_last_user(&mut app.messages, &reminder);
+    tracing::info!(
+        target: "jfc::goal",
+        iteration,
+        "goal unmet — continuing agentic loop"
+    );
+    stream::continue_agentic_loop(app, tx).await;
 }
 
 fn update_task_activities(app: &mut app::App, calls: &[types::ToolCall]) {

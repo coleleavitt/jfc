@@ -635,10 +635,17 @@ pub struct App {
     /// future config-toml field. When false, the slash command surfaces
     /// a hint message instead of running.
     pub advisor_enabled: bool,
-    /// v137 `/goal <condition>` — session-scoped stop condition. When set,
-    /// the agent keeps working until this condition is met. `/goal clear`
-    /// removes it.
-    pub goal_condition: Option<String>,
+    /// v137 `/goal <condition>` — session-scoped stop condition. When
+    /// `Some`, the agentic loop will not let the agent settle on
+    /// `EndTurn` until the evaluator (see `crate::goal::evaluate`)
+    /// returns `ok=true`. The struct carries iteration counter +
+    /// set-at timestamp + last unmet reason so the UI can show
+    /// progress and the loop can refuse to spin forever.
+    pub goal: Option<crate::goal::ActiveGoal>,
+    /// True while a goal evaluator call is in flight. Prevents the
+    /// agentic loop from racing two evaluators against the same
+    /// EndTurn (which would double-charge tokens and could disagree).
+    pub goal_evaluator_in_flight: bool,
     /// Shared flag: true when the UI needs high-frequency ticks (animations,
     /// kinetic scroll, boot sweep). The tick task reads this to choose
     /// `ANIM_TICK_MS` vs `IDLE_TICK_MS`.
@@ -844,7 +851,8 @@ impl App {
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
-            goal_condition: None,
+            goal: None,
+            goal_evaluator_in_flight: false,
             wants_animation_frame: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             scroll_velocity: 0.0,
             last_scroll_tick: std::time::Instant::now(),
