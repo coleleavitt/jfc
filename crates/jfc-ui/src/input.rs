@@ -4088,21 +4088,30 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
         }
         "/goal" => {
             // v137 session-scoped goal. `/goal <condition>` sets a stop
-            // condition — the agent keeps working until it's met.
-            // `/goal clear` removes it. `/goal` alone shows the current state.
+            // condition — the agent keeps working until the evaluator
+            // says it's met (see `crate::goal::evaluate`). `/goal
+            // clear` (or stop/off/reset/none/cancel) removes it.
+            // `/goal` alone shows the current state.
             app.messages.push(ChatMessage::user(text.to_owned()));
             let arg = parts[1..].join(" ");
             let arg = arg.trim();
             if arg.is_empty() {
-                let msg = match &app.goal_condition {
-                    Some(g) => format!("Current goal: {g}\n\nUse `/goal clear` to remove."),
+                let msg = match &app.goal {
+                    Some(g) => format!(
+                        "Current goal ({} iterations): {}\n\nUse `/goal clear` to remove.",
+                        g.iterations, g.condition
+                    ),
                     None => "No goal set. Usage: `/goal <condition>`".to_string(),
                 };
                 app.messages.push(ChatMessage::assistant(msg));
-            } else if arg.eq_ignore_ascii_case("clear") {
-                let prev = app.goal_condition.take();
+            } else if crate::goal::is_clear_arg(arg) {
+                let prev = app.goal.take();
+                app.goal_evaluator_in_flight = false;
                 let msg = match prev {
-                    Some(g) => format!("Goal cleared: {g}"),
+                    Some(g) => format!(
+                        "Goal cleared after {} iterations: {}",
+                        g.iterations, g.condition
+                    ),
                     None => "No goal was set.".to_string(),
                 };
                 app.messages.push(ChatMessage::assistant(msg));
@@ -4114,17 +4123,29 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     ),
                 );
             } else {
-                app.goal_condition = Some(arg.to_string());
-                app.messages.push(ChatMessage::assistant(format!(
-                    "Goal set: {arg}\n\nThe agent will keep working until this condition is met. Use `/goal clear` to cancel."
-                )));
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Success,
-                        format!("Goal: {arg}"),
-                    ),
-                );
+                match crate::goal::validate_condition(arg) {
+                    Ok(condition) => {
+                        let goal = crate::goal::ActiveGoal::new(condition.clone());
+                        app.goal = Some(goal);
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Goal set: {condition}\n\nThe agent will keep \
+                             working until this condition is met (auto-\
+                             evaluated after each turn, max {} iterations). \
+                             Use `/goal clear` to cancel.",
+                            crate::goal::MAX_ITERATIONS
+                        )));
+                        crate::toast::push_with_cap(
+                            &mut app.toasts,
+                            crate::toast::Toast::new(
+                                crate::toast::ToastKind::Success,
+                                format!("Goal: {condition}"),
+                            ),
+                        );
+                    }
+                    Err(reason) => {
+                        app.messages.push(ChatMessage::assistant(reason.to_owned()));
+                    }
+                }
             }
         }
         "/help" => {

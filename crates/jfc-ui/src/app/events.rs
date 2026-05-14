@@ -221,4 +221,12 @@ pub enum AppEvent {
     EnterPlanModeRequested {
         reason: String,
     },
+    /// Verdict from the `/goal` stop-condition evaluator. Emitted by a
+    /// background task spawned at EndTurn when `app.goal.is_some()`.
+    /// The event_loop handler decides whether to inject a continuation
+    /// reminder (`ok=false`) or stamp a success banner (`ok=true`).
+    GoalVerdict {
+        ok: bool,
+        reason: String,
+    },
 }
