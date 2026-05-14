@@ -1986,12 +1986,14 @@ pub async fn handle_key(
                 return Ok(false);
             }
 
-            // Double-tap ESC interrupts active work — streaming, the
-            // agentic continuation loop, and the subagent runner all
-            // poll `interrupt_flag` between iterations. Single ESC just
-            // hints; the second within `DOUBLE_TAP_MS` flips the flag
-            // and the in-flight tasks unwind. Mirrors Claude Code's ESC
-            // behavior: one ESC arms the cancel, two confirms.
+            // Double-tap ESC to instantly kill active work:
+            //   1st ESC → toast "Press ESC again to interrupt", arm the timer
+            //   2nd ESC (within 600ms) → cancel_token.cancel() which fires
+            //     the select! arm in stream_response instantly (no 50ms poll)
+            //     + SIGTERM all bash + set interrupt_flag for legacy callers
+            //
+            // This gives the user a confirmation step (prevents accidental
+            // kills) while making the actual kill truly instant when confirmed.
             const DOUBLE_TAP_MS: u128 = 600;
             let active = app.is_streaming
                 || app.compacting_started_at.is_some()
@@ -2002,24 +2004,18 @@ pub async fn handle_key(
                     .any(|bt| matches!(bt.status, crate::types::TaskLifecycle::Running));
             if active {
                 let now = std::time::Instant::now();
-                let recent = app
+                let armed = app
                     .last_esc_at
                     .map(|t| now.duration_since(t).as_millis() < DOUBLE_TAP_MS)
                     .unwrap_or(false);
-                if recent {
+                if armed {
+                    // 2nd ESC — INSTANT KILL. CancellationToken wakes the
+                    // select! in stream_response on the next scheduler tick.
                     app.interrupt_flag
                         .store(true, std::sync::atomic::Ordering::SeqCst);
-                    // wg-async: cancel the per-turn token so any spawned
-                    // task that wired its `select!` against `cancelled()`
-                    // unwinds in the next tokio scheduler tick — no
-                    // polling latency. Legacy AtomicBool-only callers
-                    // still observe the flag above.
                     app.cancel_token.cancel();
                     app.last_esc_at = None;
-                    // v132: SIGTERM any in-flight bash subprocesses so the
-                    // user's resources aren't held by a runaway script
-                    // after they've already given up. Best-effort — kills
-                    // are async-signal-safe so this can't deadlock.
+                    // SIGTERM all in-flight bash subprocesses immediately.
                     let killed = crate::bash_processes::terminate_all();
                     if killed > 0 {
                         tracing::info!(
@@ -2034,15 +2030,16 @@ pub async fn handle_key(
                             crate::toast::ToastKind::Warning,
                             if killed > 0 {
                                 format!(
-                                    "⏹ Interrupting… (SIGTERMed {killed} bash process{})",
+                                    "⏹ Interrupted (killed {killed} process{})",
                                     if killed == 1 { "" } else { "es" }
                                 )
                             } else {
-                                "⏹ Interrupting…".to_owned()
+                                "⏹ Interrupted".to_owned()
                             },
                         ),
                     );
                 } else {
+                    // 1st ESC — arm the double-tap timer + hint.
                     app.last_esc_at = Some(now);
                     crate::toast::push_with_cap(
                         &mut app.toasts,
@@ -8292,16 +8289,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn esc_first_then_second_arms_then_interrupts_normal() {
+    async fn esc_double_tap_while_streaming_interrupts_instantly_normal() {
         let mut app = test_app();
         app.is_streaming = true;
         let (tx, _rx) = channel();
-        // First Esc: arms.
+        // 1st ESC: arms the timer, shows hint.
         handle_key(&mut app, key(KeyCode::Esc), &tx).await.unwrap();
-        assert!(app.last_esc_at.is_some());
-        // Second Esc immediately: triggers interrupt.
+        assert!(app.last_esc_at.is_some(), "1st ESC should arm the timer");
+        assert!(
+            !app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst),
+            "1st ESC should NOT fire interrupt"
+        );
+        // 2nd ESC: instantly kills.
         handle_key(&mut app, key(KeyCode::Esc), &tx).await.unwrap();
-        assert!(app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(
+            app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst),
+            "2nd ESC must set interrupt_flag"
+        );
+        assert!(app.cancel_token.is_cancelled(), "2nd ESC must cancel the token");
+        assert!(app.last_esc_at.is_none(), "timer cleared after kill");
     }
 
     #[tokio::test]

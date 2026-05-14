@@ -2500,6 +2500,56 @@ pub(crate) async fn run(
                         error = %e,
                         "AppEvent::StreamError — resetting stream state"
                     );
+
+                    // ─── Synthetic tool_result injection on interrupt ────────
+                    // When a stream is interrupted with pending/running tool_use
+                    // entries in the conversation, inject a user-message with
+                    // tool_result is_error=true for each dangling tool_use.
+                    // Without this, the next API call fails because Anthropic's
+                    // API requires every tool_use to have a matching tool_result.
+                    // Mirrors claude-code 2.1.141's createSyntheticErrorMessage.
+                    if e.contains("Interrupted by user") {
+                        if let Some(assistant_idx) = app.streaming_assistant_idx {
+                            if let Some(msg) = app.messages.get(assistant_idx) {
+                                let dangling_tool_ids: Vec<crate::ids::ToolId> = msg
+                                    .parts
+                                    .iter()
+                                    .filter_map(|p| {
+                                        if let types::MessagePart::Tool(tc) = p {
+                                            if matches!(
+                                                tc.status,
+                                                types::ToolStatus::Pending | types::ToolStatus::Running
+                                            ) {
+                                                return Some(tc.id.clone());
+                                            }
+                                        }
+                                        None
+                                    })
+                                    .collect();
+                                if !dangling_tool_ids.is_empty() {
+                                    tracing::info!(
+                                        target: "jfc::stream",
+                                        count = dangling_tool_ids.len(),
+                                        "injecting synthetic tool_result for interrupted tool_use(s)"
+                                    );
+                                    // Mark each tool as Failed in the assistant message.
+                                    if let Some(msg) = app.messages.get_mut(assistant_idx) {
+                                        for part in &mut msg.parts {
+                                            if let types::MessagePart::Tool(tc) = part {
+                                                if dangling_tool_ids.contains(&tc.id) {
+                                                    tc.status = types::ToolStatus::Failed;
+                                                    tc.output = types::ToolOutput::Text(
+                                                        "[Request interrupted by user]".to_owned(),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // ─── End synthetic tool_result injection ─────────────────
                     let auto_retry_openwebui_signal =
                         e.starts_with(crate::providers::openwebui::AUTO_RETRY_SENTINEL);
                     let auto_retry_anthropic_oauth_signal =
