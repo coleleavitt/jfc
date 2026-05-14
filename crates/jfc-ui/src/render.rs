@@ -1660,7 +1660,8 @@ fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     // is no longer needed — items are required for paint anyway, and
     // `tool_block_height` now memoizes the integer height per terminal-state
     // tool, so the per-item .sum() is a string of hash lookups.
-    let items = crate::message_view::build_render_items_pub(app, inner_width);
+    let render_ctx = crate::message_view::RenderCtx::from_app(app);
+    let items = crate::message_view::build_render_items_pub(&render_ctx, inner_width);
     let total_lines: usize = items.iter().map(|i| i.height(inner_width)).sum();
 
     let visible = area.height.saturating_sub(2) as usize;
@@ -2005,7 +2006,7 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
 
     if use_message_view {
         // Rich MessageView path — same pipeline as the main chat.
-        use crate::message_view::{MessageView, PrebuiltItems, build_render_items_for_messages};
+        use crate::message_view::{MessageView, PrebuiltItems, RenderCtx, build_render_items_ctx};
         use ratatui::widgets::Widget;
 
         let chat_msgs = app
@@ -2021,7 +2022,8 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
                 .get(task_id)
                 .map(|bt| bt.chat_messages.as_slice())
                 .unwrap_or(&[]);
-            let est_items = build_render_items_for_messages(msgs, app, inner_width);
+            let ctx = RenderCtx::from_task(msgs, app);
+            let est_items = build_render_items_ctx(&ctx, inner_width);
             est_items.iter().map(|i| i.height(inner_width)).sum::<usize>()
         };
         let new_scroll = if app.follow_bottom {
@@ -2036,7 +2038,8 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
         app.viewport_height = visible;
 
         // Now build items for real (same data, but app.scroll_offset is now settled).
-        let items = build_render_items_for_messages(chat_msgs, app, inner_width);
+        let ctx = RenderCtx::from_task(chat_msgs, app);
+        let items = build_render_items_ctx(&ctx, inner_width);
         let mv = MessageView {
             app,
             prebuilt: Some(PrebuiltItems {

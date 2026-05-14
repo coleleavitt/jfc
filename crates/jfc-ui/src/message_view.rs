@@ -27,8 +27,9 @@ mod tool_height;
 pub use assistant_parts::find_tool_at;
 #[allow(unused_imports)]
 pub use core::{
-    MessageView, PrebuiltItems, RenderItem, build_render_items_for_messages,
-    build_render_items_pub, message_view_total_lines, warm_tool_height_cache_for_messages,
+    MessageView, PrebuiltItems, RenderCtx, RenderItem,
+    build_render_items_ctx, build_render_items_pub,
+    message_view_total_lines, warm_tool_height_cache_for_messages,
 };
 #[allow(unused_imports)]
 pub use outputs::diff_lang;

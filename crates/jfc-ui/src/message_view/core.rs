@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -38,81 +41,70 @@ pub struct PrebuiltItems<'a> {
     pub scroll: usize,
 }
 
-/// Public entry to `build_render_items` for callers in sibling modules
-/// (`render::messages`) that want to share one items vec with the widget.
-pub fn build_render_items_pub<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
-    build_render_items(app, inner_w)
+/// Rendering context — carries exactly what the item-builder needs from the
+/// app so the same function serves both the main chat and the task view.
+pub struct RenderCtx<'a> {
+    pub messages: &'a [crate::types::ChatMessage],
+    pub streaming_idx: Option<usize>,
+    pub is_streaming: bool,
+    pub reasoning_expanded: &'a HashMap<usize, bool>,
+    pub tool_group_expanded: &'a std::collections::HashSet<String>,
+    pub render_cache: &'a RefCell<crate::render_cache::RenderCache>,
+    pub theme: crate::theme::Theme,
+    pub launched_at: std::time::Instant,
+    pub diagnostics: &'a [crate::diagnostics::DiagnosticEntry],
 }
 
-/// Build render items for an arbitrary message slice — used by the subagent
-/// task view so it shares the same MessageView pipeline as the main chat.
-/// Streaming indicators are disabled since task chat_messages are already
-/// settled (the streaming happens in the subagent process, not in the UI).
-pub fn build_render_items_for_messages<'a>(
-    messages: &'a [crate::types::ChatMessage],
-    app: &'a App,
-    inner_w: usize,
-) -> Vec<RenderItem<'a>> {
-    let t = app.theme;
-    let mut items: Vec<RenderItem<'a>> = Vec::new();
-
-    for msg in messages.iter() {
-        // Skip blank placeholders.
-        let has_content = msg.parts.iter().any(|p| match p {
-            MessagePart::Text(s) | MessagePart::Reasoning(s) => !s.is_empty(),
-            _ => true,
-        });
-        if !has_content {
-            continue;
+impl<'a> RenderCtx<'a> {
+    /// Main-chat path: pull everything from the live `App`.
+    pub fn from_app(app: &'a App) -> Self {
+        Self {
+            messages: &app.messages,
+            streaming_idx: app.streaming_assistant_idx,
+            is_streaming: app.is_streaming,
+            reasoning_expanded: &app.reasoning_expanded,
+            tool_group_expanded: &app.tool_group_expanded,
+            render_cache: &app.render_cache,
+            theme: app.theme,
+            launched_at: app.launched_at,
+            diagnostics: &app.diagnostics,
         }
-
-        items.push(RenderItem::MessageStart {
-            role: msg.role,
-            is_streaming_placeholder: false,
-        });
-
-        // Role label — "agent tool" for user-role activity entries, "assistant" for text.
-        let label_line = match msg.role {
-            Role::User => Line::from(Span::styled("agent tool", t.user_label())),
-            Role::Assistant => Line::from(Span::styled("assistant", t.asst_label())),
-        };
-        items.push(RenderItem::TextLine(label_line));
-
-        for part in &msg.parts {
-            match part {
-                MessagePart::Text(text) if !text.is_empty() => {
-                    let lines = crate::markdown::to_lines(text, &t, inner_w);
-                    for line in lines {
-                        items.push(RenderItem::TextLine(line));
-                    }
-                }
-                MessagePart::Reasoning(text) if !text.is_empty() => {
-                    // Reasoning blocks: render collapsed in the task view.
-                    let preview: String = text.lines().take(3).collect::<Vec<_>>().join("\n");
-                    let preview_lines = crate::markdown::to_lines(&preview, &t, inner_w);
-                    for line in preview_lines {
-                        items.push(RenderItem::TextLine(line));
-                    }
-                    let hidden = text.lines().count().saturating_sub(3);
-                    if hidden > 0 {
-                        items.push(RenderItem::TextLine(Line::from(Span::styled(
-                            format!("… {hidden} more reasoning lines"),
-                            Style::default().fg(t.text_muted),
-                        ))));
-                    }
-                }
-                MessagePart::Tool(tc) => {
-                    items.push(RenderItem::ToolBlock(tc));
-                }
-                _ => {}
-            }
-        }
-
-        items.push(RenderItem::MessageEnd);
-        items.push(RenderItem::Blank);
     }
 
-    items
+    /// Task-view path: render `messages` with no streaming state, no
+    /// reasoning expansion, no diagnostics.
+    pub fn from_task(messages: &'a [crate::types::ChatMessage], app: &'a App) -> Self {
+        static EMPTY_REASONING: std::sync::OnceLock<HashMap<usize, bool>> =
+            std::sync::OnceLock::new();
+        static EMPTY_GROUPS: std::sync::OnceLock<std::collections::HashSet<String>> =
+            std::sync::OnceLock::new();
+        static EMPTY_DIAG: &[crate::diagnostics::DiagnosticEntry] = &[];
+        Self {
+            messages,
+            streaming_idx: None,
+            is_streaming: false,
+            reasoning_expanded: EMPTY_REASONING.get_or_init(HashMap::new),
+            tool_group_expanded: EMPTY_GROUPS.get_or_init(std::collections::HashSet::new),
+            render_cache: &app.render_cache,
+            theme: app.theme,
+            launched_at: app.launched_at,
+            diagnostics: EMPTY_DIAG,
+        }
+    }
+}
+
+/// Single canonical item-builder used by both views. Takes a `RenderCtx`
+/// instead of `&App` so it works for any message slice.
+pub fn build_render_items_ctx<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<RenderItem<'a>> {
+    build_render_items_inner(ctx, inner_w)
+}
+
+/// Public entry to `build_render_items` for callers in sibling modules
+/// (`render::messages`) that want to share one items vec with the widget.
+/// Takes `ctx` directly so the caller controls the lifetime — the returned
+/// items borrow from `ctx.messages` which must outlive the items vec.
+pub fn build_render_items_pub<'a>(ctx: &'a RenderCtx<'a>, inner_w: usize) -> Vec<RenderItem<'a>> {
+    build_render_items_inner(ctx, inner_w)
 }
 
 /// Pre-populate the tool-height cache by walking every terminal-state tool in
@@ -154,7 +146,7 @@ pub fn warm_tool_height_cache_for_messages(messages: &[crate::types::ChatMessage
 /// O(parts). The previous "fast-path predictor" was a premature
 /// optimization that traded ~ms per frame for permanent drift bugs.
 pub fn message_view_total_lines(app: &App, inner_w: usize) -> usize {
-    build_render_items(app, inner_w)
+    build_render_items_inner(&RenderCtx::from_app(app), inner_w)
         .iter()
         .map(|i| i.height(inner_w))
         .sum()
@@ -166,10 +158,12 @@ impl Widget for MessageView<'_> {
         let width = area.width;
         let inner_w = width as usize;
 
+        // Build ctx before the match so it lives long enough for items to borrow from it.
+        let fallback_ctx = RenderCtx::from_app(self.app);
         let (items, total_h, prebuilt_scroll) = match self.prebuilt {
             Some(p) => (p.items, p.total_h, Some(p.scroll)),
             None => {
-                let items = build_render_items(self.app, inner_w);
+                let items = build_render_items_inner(&fallback_ctx, inner_w);
                 let total_h: usize = items.iter().map(|i| i.height(inner_w)).sum();
                 (items, total_h, None)
             }
@@ -402,7 +396,7 @@ impl Widget for MessageView<'_> {
 
 pub enum RenderItem<'a> {
     TextLine(Line<'a>),
-    /// Carries `&App` so the renderer can read `app.diagnostics`
+    /// Carries `&App` so the renderer can read `ctx.diagnostics`
     /// when rendering a Read result — without piping the whole App
     /// through the render-stack as a separate parameter at every
     /// helper. Only the tool-block path needs it; other items don't.
@@ -417,7 +411,7 @@ pub enum RenderItem<'a> {
     /// Collapsed group of consecutive same-kind tool calls (Read,
     /// Glob, Grep, Search). Renders as a single one-line teaser
     /// "▶ N reads · click to expand"; click on the row or `o` flips
-    /// `app.tool_group_expanded` and the next render emits each
+    /// `ctx.tool_group_expanded` and the next render emits each
     /// tool individually.
     ToolGroup {
         key: String,
@@ -526,7 +520,7 @@ impl<'a> RenderItem<'a> {
 
 /// Build a `HashMap<line_number, Severity>` for the file path
 /// referenced by `input` (Read/Edit/Write), pulling from
-/// `app.diagnostics`. Returns an empty map when the input isn't a
+/// `ctx.diagnostics`. Returns an empty map when the input isn't a
 /// file-tool or no diagnostics match. The lookup uses the basename
 /// when the diagnostic stores a relative path that doesn't match
 /// the absolute one from the tool input — robust against either
@@ -592,11 +586,11 @@ pub(super) fn is_groupable(kind: &ToolKind) -> bool {
     )
 }
 
-pub(super) fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<RenderItem<'a>> {
-    let t = app.theme;
+fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<RenderItem<'a>> {
+    let t = ctx.theme;
     let mut items: Vec<RenderItem<'a>> = Vec::new();
 
-    for (idx, msg) in app.messages.iter().enumerate() {
+    for (idx, msg) in ctx.messages.iter().enumerate() {
         // The streaming-placeholder assistant message gets mutated in place
         // by the StreamChunk handler — text/reasoning chunks append to its
         // parts as they arrive. We render it inline like any other message
@@ -606,7 +600,7 @@ pub(super) fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<Render
         // empty Reasoning), skip it so we don't show a label with nothing
         // under it — the dedicated spinner row above the input is the
         // visual cue that work is in flight.
-        let is_streaming_placeholder = app.streaming_assistant_idx == Some(idx) && app.is_streaming;
+        let is_streaming_placeholder = ctx.streaming_idx == Some(idx) && ctx.is_streaming;
         if is_streaming_placeholder {
             let has_content = msg.parts.iter().any(|p| match p {
                 MessagePart::Text(s) => !s.is_empty(),
@@ -640,7 +634,7 @@ pub(super) fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<Render
             Role::Assistant => {
                 let mut spans = Vec::new();
                 if is_streaming_placeholder && !crate::spinner::reduced_motion() {
-                    let phase = (app.launched_at.elapsed().as_millis() % 1200) as f32 / 1200.0;
+                    let phase = (ctx.launched_at.elapsed().as_millis() % 1200) as f32 / 1200.0;
                     let intensity = if phase < 0.5 {
                         phase * 2.0
                     } else {
@@ -656,7 +650,7 @@ pub(super) fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<Render
         };
         items.push(RenderItem::TextLine(label_line));
 
-        let reasoning_expanded = app.reasoning_expanded.get(&idx).copied().unwrap_or(false);
+        let reasoning_expanded = ctx.reasoning_expanded.get(&idx).copied().unwrap_or(false);
 
         // Walk parts with peek-ahead so consecutive groupable tools
         // (Read/Glob/Grep) collapse into a single ToolGroup row when
@@ -684,7 +678,7 @@ pub(super) fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<Render
                     }
                     let run_len = run_end - p;
                     let group_key = format!("{}:{}", idx, first_tool.id);
-                    let expanded = app.tool_group_expanded.contains(&group_key);
+                    let expanded = ctx.tool_group_expanded.contains(&group_key);
                     if run_len >= MIN_GROUP_LEN && !expanded {
                         items.push(RenderItem::ToolGroup {
                             key: group_key,
@@ -720,7 +714,7 @@ pub(super) fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<Render
                         // chunk can mutate it.
                         let theme = t;
                         let width = inner_w as u16;
-                        let mut cache = app.render_cache.borrow_mut();
+                        let mut cache = ctx.render_cache.borrow_mut();
                         if let Some(lines) = cache.get_streaming(idx, width, text) {
                             lines.to_vec()
                         } else {
@@ -729,7 +723,7 @@ pub(super) fn build_render_items<'a>(app: &'a App, inner_w: usize) -> Vec<Render
                             lines
                         }
                     } else {
-                        let mut cache = app.render_cache.borrow_mut();
+                        let mut cache = ctx.render_cache.borrow_mut();
                         let width = inner_w as u16;
                         let theme = t;
                         cache

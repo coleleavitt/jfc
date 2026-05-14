@@ -1,7 +1,7 @@
 #![cfg(all(test, feature = "anthropic-oauth-sensitive"))]
 use super::assistant_parts::{find_tool_at, sanitize_terminal_text, truncate_str};
 use super::bash::{BashCmdKind, classify_bash_cmd};
-use super::core::{build_render_items, is_groupable, severity_rank};
+use super::core::{build_render_items_ctx, RenderCtx, is_groupable, severity_rank};
 use super::detection::{looks_like_difftastic_output, looks_like_git_diff_output};
 use super::output_style::path_color;
 use super::outputs::{
@@ -2218,7 +2218,8 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
     // get one of these cases added; if the predictor diverges, the test
     // fails before the user sees a clipped scroll.
     fn renderer_total_height(app: &App, inner_w: usize) -> usize {
-        build_render_items(app, inner_w)
+        let ctx = RenderCtx::from_app(app);
+        build_render_items_ctx(&ctx, inner_w)
             .iter()
             .map(|i| i.height(inner_w))
             .sum()
