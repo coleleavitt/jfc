@@ -1398,6 +1398,18 @@ Do not use a colon before tool calls.";
         system_prompt.push_str(&gates);
     }
 
+    // Project document format rules. Only emitted when at least one of
+    // PLAN/ROADMAP/PARITY/PHILOSOPHY/USAGE actually lives in this
+    // workspace — otherwise we'd be pinning prompt cost on contracts
+    // the project hasn't opted into. The slash commands `/plan` etc.
+    // are how these files come into existence; once they do, every
+    // subsequent turn sees the parser anchors so edits stay compliant.
+    let doc_cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    if let Some(doc_rules) = crate::document_formats::system_prompt_section(&doc_cwd) {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(&doc_rules);
+    }
+
     // v132 Marsh: drain any bash chunks the streaming tool buffered
     // since the last outbound prompt and prepend them as a
     // `<system-reminder>` so the model sees what shell commands

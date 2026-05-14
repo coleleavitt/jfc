@@ -63,6 +63,16 @@ pub enum SlashCommand {
     Schedule(Option<String>),
     /// /doctor — run diagnostic health check of the jfc installation
     Doctor,
+    /// /plan — draft or update PLAN.md (Atlas-compatible task contract)
+    Plan,
+    /// /roadmap — draft or update ROADMAP.md (stable-id decimal phases)
+    Roadmap,
+    /// /parity — draft or update PARITY.md (lane checkpoints + evidence)
+    Parity,
+    /// /philosophy — draft or update PHILOSOPHY.md
+    Philosophy,
+    /// /usage — draft or update USAGE.md (operator-focused commands)
+    Usage,
     /// Unknown command
     Unknown(String),
 }
@@ -109,6 +119,11 @@ impl fmt::Display for SlashCommand {
             Self::Schedule(Some(a)) => write!(f, "/schedule {a}"),
             Self::Schedule(None) => write!(f, "/schedule"),
             Self::Doctor => write!(f, "/doctor"),
+            Self::Plan => write!(f, "/plan"),
+            Self::Roadmap => write!(f, "/roadmap"),
+            Self::Parity => write!(f, "/parity"),
+            Self::Philosophy => write!(f, "/philosophy"),
+            Self::Usage => write!(f, "/usage"),
             Self::Unknown(s) => write!(f, "/{s}"),
         }
     }
@@ -153,6 +168,11 @@ pub fn parse_slash_command(input: &str) -> Option<SlashCommand> {
         "loop" | "proactive" => SlashCommand::Loop(arg),
         "schedule" | "routines" => SlashCommand::Schedule(arg),
         "doctor" => SlashCommand::Doctor,
+        "plan" => SlashCommand::Plan,
+        "roadmap" => SlashCommand::Roadmap,
+        "parity" => SlashCommand::Parity,
+        "philosophy" => SlashCommand::Philosophy,
+        "usage" => SlashCommand::Usage,
         other => SlashCommand::Unknown(other.to_string()),
     };
 
@@ -188,6 +208,11 @@ Available commands:
   /loop [int] <p>  Schedule a recurring prompt (e.g. /loop 10m check the deploy)
   /schedule [sub]  Manage cron schedules (list / cancel <id>)
   /doctor          Run diagnostic health check of the jfc installation
+  /plan            Draft or update PLAN.md (Atlas-compatible task contract)
+  /roadmap         Draft or update ROADMAP.md (stable-id decimal phases)
+  /parity          Draft or update PARITY.md (lane checkpoints + evidence)
+  /philosophy      Draft or update PHILOSOPHY.md (project rationale)
+  /usage           Draft or update USAGE.md (operator-focused commands)
   /login [target]  Sign in: anthropic | claudeai | bedrock | vertex | console
   /help            Show this help
   /exit            Exit the session"
@@ -304,6 +329,27 @@ mod tests {
             parse_slash_command("/login console"),
             Some(SlashCommand::Login(Some("console".to_string())))
         );
+    }
+
+    // Normal: the five project-doc verbs parse without arguments.
+    #[test]
+    fn parse_project_doc_commands_normal() {
+        assert_eq!(parse_slash_command("/plan"), Some(SlashCommand::Plan));
+        assert_eq!(parse_slash_command("/roadmap"), Some(SlashCommand::Roadmap));
+        assert_eq!(parse_slash_command("/parity"), Some(SlashCommand::Parity));
+        assert_eq!(
+            parse_slash_command("/philosophy"),
+            Some(SlashCommand::Philosophy)
+        );
+        assert_eq!(parse_slash_command("/usage"), Some(SlashCommand::Usage));
+    }
+
+    // Robust: case-insensitive parsing covers the doc verbs.
+    #[test]
+    fn parse_project_doc_case_insensitive_robust() {
+        assert_eq!(parse_slash_command("/PLAN"), Some(SlashCommand::Plan));
+        assert_eq!(parse_slash_command("/Roadmap"), Some(SlashCommand::Roadmap));
+        assert_eq!(parse_slash_command("/PARITY"), Some(SlashCommand::Parity));
     }
 
     // Robust: /login with extra whitespace round-trips through trim.

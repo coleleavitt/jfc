@@ -12,6 +12,7 @@ mod cost;
 mod credential_vault;
 mod diagnostics;
 mod diagnostics_producer;
+mod document_formats;
 mod effort;
 mod env_context;
 mod event_loop;

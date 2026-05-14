@@ -3644,6 +3644,11 @@ const SLASH_COMMANDS: &[(&str, &str)] = &[
         "/setup-github-actions",
         "scaffold .github/workflows/jfc-review.yml",
     ),
+    ("/plan", "draft or update PLAN.md (Atlas-compatible)"),
+    ("/roadmap", "draft or update ROADMAP.md (stable decimal IDs)"),
+    ("/parity", "draft or update PARITY.md (evidence required)"),
+    ("/philosophy", "draft or update PHILOSOPHY.md"),
+    ("/usage", "draft or update USAGE.md (operator commands)"),
 ];
 
 /// Returns the `/<prefix>` the user is currently typing, when the

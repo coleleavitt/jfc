@@ -4806,6 +4806,21 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
         "/init" => {
             handle_init_command(app).await;
         }
+        "/plan" => {
+            handle_doc_command(app, crate::document_formats::DocKind::Plan);
+        }
+        "/roadmap" => {
+            handle_doc_command(app, crate::document_formats::DocKind::Roadmap);
+        }
+        "/parity" => {
+            handle_doc_command(app, crate::document_formats::DocKind::Parity);
+        }
+        "/philosophy" => {
+            handle_doc_command(app, crate::document_formats::DocKind::Philosophy);
+        }
+        "/usage" => {
+            handle_doc_command(app, crate::document_formats::DocKind::Usage);
+        }
         "/cost" | "/stats" => {
             handle_cost_command(app);
         }
@@ -5367,6 +5382,33 @@ fn save_output_style(name: &str) -> Result<std::path::PathBuf, String> {
 
 /// `/init` — bootstrap a CLAUDE.md in the current working directory.
 /// Mirrors v132's onboarding flow. If CLAUDE.md already exists, surfaces
+/// `/plan` / `/roadmap` / `/parity` / `/philosophy` / `/usage` —
+/// queue a normal model turn that asks JFC to inspect the project and
+/// then create or update the matching `<KIND>.md` at the repo root via
+/// the existing `Write`/`Edit` tools. The format contract lives in
+/// `document_formats.rs` so the executor (and any future Atlas-style
+/// runner) parses against the same rules the prompt prescribes.
+fn handle_doc_command(app: &mut App, kind: crate::document_formats::DocKind) {
+    let cwd = std::path::PathBuf::from(&app.cwd);
+    let target = crate::document_formats::doc_target(&cwd, kind);
+    let exists = target.is_file();
+    let echo = format!("/{}", kind.verb());
+    app.messages.push(ChatMessage::user(echo));
+    let body = kind.prompt_body(&target, exists);
+    let action = if exists { "Updating" } else { "Drafting" };
+    app.messages.push(ChatMessage::assistant(format!(
+        "{action} `{}` …",
+        target.display()
+    )));
+    app.queued_prompts.push_back(crate::app::QueuedPrompt {
+        text: body,
+        is_meta: false,
+        attachments: Vec::new(),
+    });
+    app.scroll_to_bottom();
+}
+
+/// `/init` — bootstrap a CLAUDE.md in the current working directory.
 /// the path so the user can edit it; otherwise writes a starter template
 /// and prompts the user to fill it in. Reload happens lazily on next
 /// turn via `ClaudeMdHierarchy::load`.
