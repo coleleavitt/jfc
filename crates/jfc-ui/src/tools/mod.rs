@@ -2139,6 +2139,12 @@ pub async fn execute_tool(
         (ToolKind::ScratchpadWrite, ToolInput::ScratchpadWrite { key, value }) => {
             execute_scratchpad_write(&key, &value)
         }
-        (kind, _) => ExecutionResult::failure(format!("Tool {:?} not yet implemented", kind)),
+        (kind, input) => ExecutionResult::failure(format!(
+            "tool input mismatch: {kind:?} was paired with an incompatible \
+             ToolInput variant ({}). This is a routing bug — the tool's \
+             implementation exists but the parsed input didn't match its \
+             expected shape.",
+            input.summary()
+        )),
     }
 }

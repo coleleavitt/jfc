@@ -2118,8 +2118,10 @@ async fn execute_tool_task_kind_rejects_with_streaming_message_robust() {
 
 #[tokio::test]
 async fn execute_tool_kind_input_mismatch_falls_through_robust() {
-    // Mismatched kind/input pair returns "not yet implemented" so a
-    // routing bug surfaces clearly rather than silently dropping.
+    // Mismatched kind/input pair returns a "tool input mismatch" routing
+    // error so the bug surfaces clearly rather than being mislabeled as
+    // an unimplemented tool — the implementation exists, the input shape
+    // is just wrong.
     let r = execute_tool(
         ToolKind::Bash,
         ToolInput::Generic {
@@ -2132,7 +2134,7 @@ async fn execute_tool_kind_input_mismatch_falls_through_robust() {
     )
     .await;
     assert!(r.is_error());
-    assert!(r.output.contains("not yet implemented"), "{}", r.output);
+    assert!(r.output.contains("tool input mismatch"), "{}", r.output);
 }
 
 #[tokio::test]

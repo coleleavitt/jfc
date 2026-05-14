@@ -295,7 +295,11 @@ impl App {
         // Permission mode takes priority
         match self.permission_mode.auto_approves(tool) {
             PermissionDecision::Approved => return false,
-            PermissionDecision::Denied(_) => return false, // caller checks tool_denied_by_mode
+            // Denied tools don't need a *prompt* — but they must not be
+            // dispatched either. The StreamTool handler checks
+            // `tool_denied_by_mode` before routing and short-circuits
+            // denied tools into a Failed transcript entry.
+            PermissionDecision::Denied(_) => return false,
             PermissionDecision::NeedsClassifier => return false, // auto-mode classifier handles
             PermissionDecision::NeedsPrompt => {}
         }

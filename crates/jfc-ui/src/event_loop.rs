@@ -1903,10 +1903,56 @@ pub(crate) async fn run(
                         streaming_idx = ?app.streaming_assistant_idx,
                         "StreamTool received"
                     );
+                    // Guard 1: a tool that arrived already terminal (the stream
+                    // layer builds `ToolCall::new_failed` for malformed provider
+                    // input — bad JSON or schema mismatch) must NOT be dispatched.
+                    // Dispatching it routes a `kind`/`input` mismatch into
+                    // `execute_tool`, which falls through to the catch-all arm and
+                    // clobbers the original diagnostic with a misleading error.
+                    // Just record it in the transcript so the model sees the
+                    // tool_result it can react to.
+                    if tool.status.is_terminal() {
+                        tracing::info!(
+                            target: "jfc::ui::tool",
+                            tool_kind = tool.kind.label(),
+                            tool_id = %tool.id,
+                            status = tool.status.label(),
+                            "route=terminal_on_arrival (no dispatch)"
+                        );
+                        if let Some(idx) = app.streaming_assistant_idx {
+                            if let Some(msg) = app.messages.get_mut(idx) {
+                                msg.parts.push(MessagePart::Tool(tool));
+                            }
+                        }
+                    } else if let Some(reason) = app.tool_denied_by_mode(&tool) {
+                        // Guard 2: the active permission mode auto-denies this
+                        // tool (e.g. Plan mode blocking a Write, or an
+                        // UnknownTool in any mode). `tool_needs_approval` returns
+                        // false for `Denied`, so without this guard the tool
+                        // would fall into the no-approval auto-dispatch branch
+                        // and execute anyway. Mark it Failed with the denial
+                        // reason and record it instead.
+                        tracing::info!(
+                            target: "jfc::ui::tool",
+                            tool_kind = tool.kind.label(),
+                            tool_id = %tool.id,
+                            reason,
+                            "route=denied_by_mode (no dispatch)"
+                        );
+                        let mut tool = tool;
+                        let _ = tool.mark_failed();
+                        tool.output = ToolOutput::Text(format!(
+                            "Denied by permission mode: {reason}"
+                        ));
+                        if let Some(idx) = app.streaming_assistant_idx {
+                            if let Some(msg) = app.messages.get_mut(idx) {
+                                msg.parts.push(MessagePart::Tool(tool));
+                            }
+                        }
+                    } else if app.auto_mode.enabled {
                     // v126 auto-mode: when enabled, every tool call is sent to a
                     // classifier LLM that returns block/allow with a reason. The
                     // user is never prompted. Disabled (default) → original flow.
-                    if app.auto_mode.enabled {
                         tracing::info!(
                             target: "jfc::ui::tool",
                             tool_id = %tool.id,
