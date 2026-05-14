@@ -16,54 +16,55 @@ use crate::provider::{
 
 pub(crate) const AUTO_RETRY_SENTINEL: &str = "auto-retry-openwebui:";
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Account {
-    name: String,
-    base_url: String,
-    token: String,
-    disabled: Option<bool>,
-}
+// Re-export the new modular auth types so external callers (CLI, etc.) can
+// reach them through `providers::openwebui::*`.
+pub use super::openwebui_jwt::{is_token_expired, parse_jwt_claims, token_expires_at_ms};
+pub use super::openwebui_oidc::{oidc_login, DuoMethod, OidcLoginOptions, OidcLoginResult};
+pub use super::openwebui_store::{
+    default_store_path, get_current, list as list_accounts, load_store, remove as remove_account,
+    save_store, set_current, upsert as upsert_account, Account, AccountStore,
+};
+pub use super::openwebui_verify::{
+    fetch_instance_config, normalize_base_url, verify_token, InstanceConfig, VerifiedUser,
+};
 
-#[derive(Debug, Deserialize)]
-struct AccountStore {
-    accounts: std::collections::HashMap<String, Account>,
-    current: Option<String>,
-}
-
-/// Resolve the OpenWebUI accounts store. Prefers `~/.config/opencode/openwebui-accounts.json`,
-/// falls back to `~/.config/jfc/openwebui-accounts.json`. Override with
-/// `JFC_OPENWEBUI_ACCOUNTS_PATH`.
-fn default_store_path() -> PathBuf {
-    if let Ok(p) = std::env::var("JFC_OPENWEBUI_ACCOUNTS_PATH") {
-        return PathBuf::from(p);
-    }
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-    let opencode = home.join(".config/opencode/openwebui-accounts.json");
-    if opencode.exists() {
-        return opencode;
-    }
-    home.join(".config/jfc/openwebui-accounts.json")
-}
-
+/// Backwards-compat shim so the existing test-suite that calls `load_account(path)`
+/// continues to compile against the new modular store.
+#[cfg(test)]
 fn load_account(path: &PathBuf) -> anyhow::Result<Account> {
-    let raw = std::fs::read_to_string(path)?;
-    let store: AccountStore = serde_json::from_str(&raw)?;
+    let store = load_store(path);
+    get_current(&store).ok_or_else(|| anyhow::anyhow!("no enabled OpenWebUI accounts in store"))
+}
 
-    if let Some(name) = &store.current {
-        if let Some(acct) = store.accounts.get(name) {
-            if !acct.disabled.unwrap_or(false) {
-                return Ok(acct.clone());
-            }
+/// Loads the active account, preferring (in order):
+///   1. `OPENWEBUI_BASE_URL` + `OPENWEBUI_TOKEN` (or `OPENWEBUI_API_KEY`) env vars
+///   2. The current/first-enabled account from the persisted store
+///
+/// This fixes the bug where `OPENWEBUI_BASE_URL` alone made `has_usable_config`
+/// return true but actual requests failed because no token source existed.
+fn load_active_account(store_path: &std::path::Path) -> anyhow::Result<Account> {
+    if let Ok(base_url) = std::env::var("OPENWEBUI_BASE_URL") {
+        let token = std::env::var("OPENWEBUI_TOKEN")
+            .or_else(|_| std::env::var("OPENWEBUI_API_KEY"))
+            .ok();
+        if let Some(t) = token {
+            return Ok(Account {
+                name: "env".into(),
+                base_url,
+                token: t,
+                ..Default::default()
+            });
         }
+        // Base URL without token → fall through and try the store; the store's
+        // active account may belong to that same base URL.
     }
-
-    store
-        .accounts
-        .values()
-        .find(|a| !a.disabled.unwrap_or(false))
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("no enabled OpenWebUI accounts in store"))
+    let store = load_store(store_path);
+    get_current(&store).ok_or_else(|| {
+        anyhow::anyhow!(
+            "no enabled OpenWebUI accounts in store at {} (set OPENWEBUI_TOKEN or run `jfc auth openwebui login`)",
+            store_path.display()
+        )
+    })
 }
 
 pub struct OpenWebUIProvider {
@@ -85,20 +86,98 @@ impl OpenWebUIProvider {
         }
     }
 
-    /// True when an enabled account exists in the resolved store, or when the legacy
-    /// `OPENWEBUI_BASE_URL` env var is set (preserves prior auto-registration behavior).
+    /// True when an active account is resolvable: env-vars (`OPENWEBUI_BASE_URL` +
+    /// `OPENWEBUI_TOKEN`) OR an enabled entry in the persisted store.
+    /// The previous behavior allowed `OPENWEBUI_BASE_URL` alone, which then
+    /// failed at request time because no token source existed.
     pub fn has_usable_config(&self) -> bool {
-        let result = if std::env::var("OPENWEBUI_BASE_URL").is_ok() {
-            true
-        } else {
-            load_account(&self.store_path).is_ok()
-        };
+        let result = load_active_account(&self.store_path).is_ok();
         tracing::trace!(
             target: "jfc::provider::openwebui",
             result,
             "has_usable_config"
         );
         result
+    }
+
+    /// Load the active account, and if its JWT is expired (or near expiring),
+    /// refresh it via OIDC + Duo using the OWUI_* env vars. If refresh fails
+    /// or env vars aren't set, returns the (possibly expired) account anyway
+    /// — a 401 from the upstream is more informative than blocking up-front.
+    pub async fn acquire_account_with_refresh(&self) -> anyhow::Result<Account> {
+        let mut account = load_active_account(&self.store_path)?;
+
+        // Skip expiry check for env-only accounts — the user controls their
+        // own token rotation in that case.
+        let is_env_only = account.name == "env";
+        if is_env_only {
+            return Ok(account);
+        }
+
+        // 60 s skew lets a request that's currently in flight finish before
+        // we proactively refresh.
+        if is_token_expired(&account.token, 60_000) {
+            tracing::info!(
+                target: "jfc::provider::openwebui",
+                account = %account.name,
+                expires_at = ?account.expires_at,
+                "token expired or near expiry — attempting auto-refresh"
+            );
+            match self.refresh_active_account().await {
+                Ok(refreshed) => {
+                    tracing::info!(
+                        target: "jfc::provider::openwebui",
+                        account = %refreshed.name,
+                        new_expires_at = ?refreshed.expires_at,
+                        "auto-refresh succeeded"
+                    );
+                    account = refreshed;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "jfc::provider::openwebui",
+                        error = %e,
+                        "auto-refresh failed — continuing with old token (request may 401)"
+                    );
+                }
+            }
+        }
+        Ok(account)
+    }
+
+    /// Refresh the active account's token via OIDC + Duo, using OWUI_USERNAME /
+    /// OWUI_PASSWORD / OWUI_DUO_PASSCODE env vars. Persists the new token.
+    /// Returns the refreshed account.
+    pub async fn refresh_active_account(&self) -> anyhow::Result<Account> {
+        let username = std::env::var("OWUI_USERNAME")
+            .map_err(|_| anyhow::anyhow!("OWUI_USERNAME not set"))?;
+        let password = std::env::var("OWUI_PASSWORD")
+            .map_err(|_| anyhow::anyhow!("OWUI_PASSWORD not set"))?;
+        let passcode = std::env::var("OWUI_DUO_PASSCODE").ok();
+        let method = if passcode.is_some() {
+            DuoMethod::Passcode
+        } else {
+            DuoMethod::Push
+        };
+
+        let mut current = load_active_account(&self.store_path)?;
+        let mut opts = OidcLoginOptions::new(&current.base_url, &username, &password);
+        opts.duo_passcode = passcode;
+        opts.duo_method = method;
+
+        let result = oidc_login(opts).await?;
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        current.token = result.token;
+        current.expires_at = Some(result.expires_at);
+        current.updated_at = Some(now_ms);
+        if current.created_at.is_none() {
+            current.created_at = Some(now_ms);
+        }
+        upsert_account(&self.store_path, current.clone())?;
+        Ok(current)
     }
 }
 
@@ -1880,12 +1959,7 @@ impl Provider for OpenWebUIProvider {
     /// whatever the admin has wired up (Bedrock, Vertex, Ollama, OpenAI, …) so the picker
     /// can never know it ahead of time — the only correct thing to do is ask the server.
     async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
-        let account = load_account(&self.store_path).map_err(|e| {
-            anyhow::anyhow!(
-                "cannot load openwebui accounts from {}: {e}",
-                self.store_path.display()
-            )
-        })?;
+        let account = self.acquire_account_with_refresh().await?;
 
         let base_url = account.base_url.trim_end_matches('/');
         tracing::info!(
@@ -1938,12 +2012,7 @@ impl Provider for OpenWebUIProvider {
         messages: Vec<ProviderMessage>,
         options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
-        let account = load_account(&self.store_path).map_err(|e| {
-            anyhow::anyhow!(
-                "cannot load openwebui accounts from {}: {e}",
-                self.store_path.display()
-            )
-        })?;
+        let account = self.acquire_account_with_refresh().await?;
 
         let base_url = account.base_url.trim_end_matches('/');
         let url = format!("{}/api/chat/completions", base_url);
@@ -2012,11 +2081,53 @@ impl Provider for OpenWebUIProvider {
             let should_retry =
                 super::retry::should_retry_status(status.as_u16(), Some(resp.headers()));
             let text = resp.text().await.unwrap_or_default();
-            // Route through `friendly_error_message` so 401/403/429/5xx
-            // get a human-readable hint instead of dumping the raw
-            // upstream JSON. Falls back to the literal status+body for
-            // anything we don't have a recipe for.
+
+            // 401/403 → token rejected. Try one OIDC re-auth with the env
+            // creds, then re-issue the request. Mirrors fetch.ts:550.
+            if matches!(status.as_u16(), 401 | 403)
+                && std::env::var("OWUI_USERNAME").is_ok()
+                && std::env::var("OWUI_PASSWORD").is_ok()
+            {
+                tracing::info!(
+                    target: "jfc::provider::openwebui",
+                    status = %status,
+                    "auth rejected — attempting OIDC re-login then retry once"
+                );
+                if let Ok(refreshed) = self.refresh_active_account().await {
+                    let retry_resp = self
+                        .client
+                        .post(&url)
+                        .header("authorization", format!("Bearer {}", refreshed.token))
+                        .header("accept", "application/json")
+                        .header("content-type", "application/json")
+                        .header("connection", "keep-alive")
+                        .header("x-litellm-stream-timeout", "600")
+                        .header("x-litellm-timeout", "600")
+                        .json(&body)
+                        .send()
+                        .await;
+                    if let Ok(r) = retry_resp {
+                        if r.status().is_success() {
+                            return Ok(openai_compatible_event_stream(r));
+                        }
+                    }
+                }
+            }
+
+            // Friendly translation for non-recoverable errors. Falls back to
+            // raw status+body for anything we don't have a recipe for.
             let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+
+            // Detect HTML/nginx proxy errors and translate into clean JSON.
+            // Mirrors opencode-openwebui-auth/src/plugin/fetch.ts:656.
+            if text.contains("<html") || text.contains("<!DOCTYPE") {
+                anyhow::bail!(
+                    "OpenWebUI proxy error {status}: upstream returned HTML (nginx/proxy). \
+                     The OWUI base URL or load balancer is misconfigured.\n  body preview: {}",
+                    &text[..text.len().min(400)]
+                );
+            }
+
             if should_retry {
                 anyhow::bail!(
                     "{AUTO_RETRY_SENTINEL}OpenWebUI API error {status}: {friendly}\n  raw: {text}"

@@ -172,6 +172,46 @@ enum AuthSubcommand {
         #[command(subcommand)]
         sub: LiteLLMAuthSubcommand,
     },
+    /// OpenWebUI account commands (Shibboleth + Duo OIDC, manual JWT, etc.).
+    Openwebui {
+        #[command(subcommand)]
+        sub: OpenWebUIAuthSubcommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum OpenWebUIAuthSubcommand {
+    /// Automated OIDC login (Shibboleth + Duo 2FA). Requires OWUI_USERNAME +
+    /// OWUI_PASSWORD env vars; OWUI_DUO_PASSCODE is optional (uses push if unset).
+    Login {
+        /// OpenWebUI base URL (default: $OWUI_BASE_URL or https://chat.ai2s.org).
+        base_url: Option<String>,
+    },
+    /// Add an account by manually pasting a JWT.
+    Add {
+        /// OpenWebUI base URL.
+        base_url: String,
+        /// JWT cookie value (3-segment).
+        token: String,
+    },
+    /// List configured accounts.
+    List,
+    /// Switch to a different account.
+    Use {
+        /// Account name (e.g. user@example.com@chat.example.com).
+        name: String,
+    },
+    /// Remove an account.
+    Remove {
+        /// Account name.
+        name: String,
+    },
+    /// List models accessible to the active account.
+    Models,
+    /// Verify the active account's token + show user identity.
+    Whoami,
+    /// Show OpenWebUI instance config (name, version, features).
+    Config,
 }
 
 #[derive(Subcommand, Debug)]
@@ -590,7 +630,197 @@ async fn run_auth_subcommand(sub: AuthSubcommand) -> anyhow::Result<()> {
         AuthSubcommand::Anthropic { sub } => run_anthropic_auth_subcommand(sub).await,
         AuthSubcommand::Codex { sub } => run_codex_auth_subcommand(sub).await,
         AuthSubcommand::Litellm { sub } => run_litellm_auth_subcommand(sub).await,
+        AuthSubcommand::Openwebui { sub } => run_openwebui_auth_subcommand(sub).await,
     }
+}
+
+async fn run_openwebui_auth_subcommand(sub: OpenWebUIAuthSubcommand) -> anyhow::Result<()> {
+    use crate::providers::openwebui::{
+        default_store_path, fetch_instance_config, get_current, list_accounts, load_store,
+        normalize_base_url, oidc_login, parse_jwt_claims, remove_account, set_current,
+        upsert_account, verify_token, Account, DuoMethod, OidcLoginOptions,
+    };
+
+    let store_path = default_store_path();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+    let default_base = std::env::var("OWUI_BASE_URL")
+        .unwrap_or_else(|_| "https://chat.ai2s.org".to_owned());
+
+    fn now_ms() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0)
+    }
+
+    match sub {
+        OpenWebUIAuthSubcommand::Login { base_url } => {
+            let base = normalize_base_url(&base_url.unwrap_or(default_base))?;
+            let username = std::env::var("OWUI_USERNAME")
+                .map_err(|_| anyhow::anyhow!("OWUI_USERNAME env var required"))?;
+            let password = std::env::var("OWUI_PASSWORD")
+                .map_err(|_| anyhow::anyhow!("OWUI_PASSWORD env var required"))?;
+            let passcode = std::env::var("OWUI_DUO_PASSCODE").ok();
+            let method = if passcode.is_some() {
+                DuoMethod::Passcode
+            } else {
+                DuoMethod::Push
+            };
+
+            println!("→ logging in to {base} as {username}...");
+            if matches!(method, DuoMethod::Push) {
+                println!("→ no OWUI_DUO_PASSCODE set — sending Duo Push (approve on your phone)");
+            } else {
+                println!("→ using OWUI_DUO_PASSCODE for 2FA");
+            }
+
+            let mut opts = OidcLoginOptions::new(&base, &username, &password);
+            opts.duo_passcode = passcode;
+            opts.duo_method = method;
+            let result = oidc_login(opts).await?;
+
+            let user = verify_token(&client, &base, &result.token).await?;
+            let cfg = fetch_instance_config(&client, &base).await.ok();
+            let host = url::Url::parse(&base)?.host_str().unwrap_or("").to_owned();
+            let name = format!("{}@{}", user.email, host);
+            let now = now_ms();
+
+            upsert_account(
+                &store_path,
+                Account {
+                    name: name.clone(),
+                    base_url: base.clone(),
+                    token: result.token,
+                    expires_at: Some(result.expires_at),
+                    created_at: Some(now),
+                    updated_at: Some(now),
+                    ..Default::default()
+                },
+            )?;
+
+            println!("\n✓ logged in as {} <{}> ({})", user.name, user.email, user.role);
+            if let Some(c) = cfg {
+                println!("  instance: {} v{}", c.name, c.version);
+            }
+            let exp = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(result.expires_at)
+                .map(|d| d.to_rfc3339())
+                .unwrap_or_else(|| "?".into());
+            println!("  token expires: {exp}");
+            println!("  account stored as: {name}");
+        }
+        OpenWebUIAuthSubcommand::Add { base_url, token } => {
+            let base = normalize_base_url(&base_url)?;
+            let claims = parse_jwt_claims(&token)
+                .ok_or_else(|| anyhow::anyhow!("token does not decode as a JWT"))?;
+            let user = verify_token(&client, &base, &token).await?;
+            let cfg = fetch_instance_config(&client, &base).await.ok();
+            let host = url::Url::parse(&base)?.host_str().unwrap_or("").to_owned();
+            let name = format!("{}@{}", user.email, host);
+            let now = now_ms();
+            upsert_account(
+                &store_path,
+                Account {
+                    name: name.clone(),
+                    base_url: base,
+                    token,
+                    expires_at: Some(claims.exp * 1000),
+                    created_at: Some(now),
+                    updated_at: Some(now),
+                    ..Default::default()
+                },
+            )?;
+            let exp = chrono::DateTime::<chrono::Utc>::from_timestamp(claims.exp, 0)
+                .map(|d| d.to_rfc3339())
+                .unwrap_or_else(|| "?".into());
+            println!(
+                "✓ added {name} (instance={} v{}, expires={exp})",
+                cfg.as_ref().map(|c| c.name.as_str()).unwrap_or("unknown"),
+                cfg.as_ref().map(|c| c.version.as_str()).unwrap_or("?")
+            );
+        }
+        OpenWebUIAuthSubcommand::List => {
+            let store = load_store(&store_path);
+            let current = store.current.clone();
+            let accounts = list_accounts(&store);
+            if accounts.is_empty() {
+                println!("(no accounts)");
+            } else {
+                for a in accounts {
+                    let star = if Some(&a.name) == current.as_ref() { "*" } else { " " };
+                    let exp = a
+                        .expires_at
+                        .and_then(chrono::DateTime::<chrono::Utc>::from_timestamp_millis)
+                        .map(|d| d.to_rfc3339())
+                        .unwrap_or_else(|| "?".into());
+                    println!("{star} {:48}  {}  expires={exp}", a.name, a.base_url);
+                }
+            }
+        }
+        OpenWebUIAuthSubcommand::Use { name } => {
+            if !set_current(&store_path, &name)? {
+                anyhow::bail!("no account named {name}");
+            }
+            println!("current → {name}");
+        }
+        OpenWebUIAuthSubcommand::Remove { name } => {
+            remove_account(&store_path, &name)?;
+            println!("removed {name}");
+        }
+        OpenWebUIAuthSubcommand::Models => {
+            let store = load_store(&store_path);
+            let account = get_current(&store).ok_or_else(|| anyhow::anyhow!("no current account"))?;
+            let res: serde_json::Value = client
+                .get(format!("{}/api/models", account.base_url.trim_end_matches('/')))
+                .header("Authorization", format!("Bearer {}", account.token))
+                .header("Accept", "application/json")
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
+            if let Some(arr) = res.get("data").and_then(|v| v.as_array()) {
+                for m in arr {
+                    let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+                    let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    println!("{id:48}  {name}");
+                }
+                println!("\n{} model(s) accessible to {}", arr.len(), account.name);
+            }
+        }
+        OpenWebUIAuthSubcommand::Whoami => {
+            let store = load_store(&store_path);
+            let account = get_current(&store).ok_or_else(|| anyhow::anyhow!("no current account"))?;
+            let user = verify_token(&client, &account.base_url, &account.token).await?;
+            println!(
+                "{}\n  {} {} <{}>",
+                account.name, user.role, user.id, user.email
+            );
+        }
+        OpenWebUIAuthSubcommand::Config => {
+            let store = load_store(&store_path);
+            let base = get_current(&store).map(|a| a.base_url).unwrap_or(default_base);
+            let cfg = fetch_instance_config(&client, &base).await?;
+            println!("instance:  {} v{}", cfg.name, cfg.version);
+            println!("baseUrl:   {base}");
+            println!("status:    {}", if cfg.status { "online" } else { "offline" });
+            let enabled: Vec<&String> = cfg
+                .features
+                .iter()
+                .filter(|(_, v)| v.as_bool().unwrap_or(false))
+                .map(|(k, _)| k)
+                .collect();
+            if enabled.is_empty() {
+                println!("features:  (none enabled)");
+            } else {
+                let mut joined: Vec<&str> = enabled.iter().map(|s| s.as_str()).collect();
+                joined.sort();
+                println!("features:  {}", joined.join(", "));
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn run_codex_auth_subcommand(sub: CodexAuthSubcommand) -> anyhow::Result<()> {

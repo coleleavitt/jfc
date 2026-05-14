@@ -82,6 +82,9 @@ notify = "8"
 # `tracing-subscriber`'s env-filter, so this is essentially free.
 regex = "1"
 indexmap = "2"
+url = "2"
+urlencoding = "2"
+serde_urlencoded = "0.7"
 jfc-graph = { path = "../jfc-graph" }
 jfc-economy = { path = "../jfc-economy" }
 
