@@ -466,6 +466,39 @@ async fn step2_submit_credentials(
             break;
         }
 
+        // Landed back on OpenWebUI without a token — stale OIDC state (expired
+        // conversation, replayed flow, or CSRF mismatch). The probe we just
+        // POST'd used a stale execution ID and Shibboleth bounced us back.
+        // Bail with a clear message so oidc_login can restart cleanly.
+        if r.url.contains("genai.arizona.edu")
+            || r.url.contains("chat.ai2s.org")
+            || (!r.url.contains("shibboleth") && !r.url.contains("duosecurity") && {
+                let rhost = url::Url::parse(&r.url)
+                    .ok().and_then(|u| u.host_str().map(|s| s.to_owned()))
+                    .unwrap_or_default();
+                let shost = url::Url::parse(shib_url)
+                    .ok().and_then(|u| u.host_str().map(|s| s.to_owned()))
+                    .unwrap_or_default();
+                !shost.is_empty() && rhost != shost
+            })
+        {
+            // Check for token cookie — if present we're actually logged in.
+            let owui_host = url::Url::parse(&r.url)
+                .ok().and_then(|u| u.host_str().map(|s| s.to_owned()))
+                .unwrap_or_default();
+            if jar.get(&owui_host, "token").is_some() {
+                tracing::info!(target: "jfc::oidc", "Step 2: Already authenticated via token cookie");
+                skipped = true;
+                break;
+            }
+            anyhow::bail!(
+                "Step 2: OIDC state expired — Shibboleth redirected us back to OpenWebUI ({}) \
+                 without a token. This usually means a previous incomplete login left stale cookies. \
+                 Delete ~/.config/opencode/openwebui-cookies.json and retry.",
+                r.url
+            );
+        }
+
         // Real login form found.
         if r.body.contains("j_username") && r.body.contains("j_password") {
             tracing::info!(target: "jfc::oidc", url = %r.url, "Step 2: Found real login form");
