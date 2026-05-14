@@ -1,5 +1,10 @@
 #![allow(dead_code)]
 
+pub mod jwt;
+pub mod oidc;
+pub mod store;
+pub mod verify;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -18,13 +23,13 @@ pub(crate) const AUTO_RETRY_SENTINEL: &str = "auto-retry-openwebui:";
 
 // Re-export the new modular auth types so external callers (CLI, etc.) can
 // reach them through `providers::openwebui::*`.
-pub use super::openwebui_jwt::{is_token_expired, parse_jwt_claims, token_expires_at_ms};
-pub use super::openwebui_oidc::{oidc_login, DuoMethod, OidcLoginOptions, OidcLoginResult};
-pub use super::openwebui_store::{
+pub use self::jwt::{is_token_expired, parse_jwt_claims, token_expires_at_ms};
+pub use self::oidc::{oidc_login, DuoMethod, OidcLoginOptions, OidcLoginResult};
+pub use self::store::{
     default_store_path, get_current, list as list_accounts, load_store, remove as remove_account,
     save_store, set_current, upsert as upsert_account, Account, AccountStore,
 };
-pub use super::openwebui_verify::{
+pub use self::verify::{
     fetch_instance_config, normalize_base_url, verify_token, InstanceConfig, VerifiedUser,
 };
 

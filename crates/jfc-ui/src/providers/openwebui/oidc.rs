@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::openwebui_jwt::token_expires_at_ms;
+use super::jwt::token_expires_at_ms;
 
 const UA: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:149.0) Gecko/20100101 Firefox/149.0";
 
