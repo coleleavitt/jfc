@@ -587,6 +587,19 @@ pub(crate) async fn run(
                     app.current_session_id = Some(session_id.clone());
                     // Re-open task store so tasks from the resumed session are loaded.
                     app.task_store = crate::tasks::TaskStore::open(session_id.as_str());
+                    // Rebuild any active stop-condition from the goal
+                    // sidecar — without this, /continue forgets the
+                    // user's goal and the next EndTurn settles silently.
+                    if let Some(goal) = crate::goal::load_sidecar(session_id.as_str()) {
+                        tracing::info!(
+                            target: "jfc::goal",
+                            session_id = %session_id,
+                            condition = %goal.condition,
+                            iterations = goal.iterations,
+                            "restored goal from sidecar"
+                        );
+                        app.goal = Some(goal);
+                    }
                     if let Some(model_id) = saved_model {
                         if let Some(p) = super::provider_for_model(&app.providers, &model_id) {
                             tracing::info!(
@@ -652,6 +665,17 @@ pub(crate) async fn run(
                 app.current_session_id = Some(session_id.clone());
                 // Re-open task store so tasks from the resumed session are loaded.
                 app.task_store = crate::tasks::TaskStore::open(session_id.as_str());
+                // Rebuild any active stop-condition from the goal sidecar.
+                if let Some(goal) = crate::goal::load_sidecar(session_id.as_str()) {
+                    tracing::info!(
+                        target: "jfc::goal",
+                        session_id = %session_id,
+                        condition = %goal.condition,
+                        iterations = goal.iterations,
+                        "restored goal from sidecar"
+                    );
+                    app.goal = Some(goal);
+                }
                 if let Some(model_id) = saved_model {
                     if let Some(p) = super::provider_for_model(&app.providers, &model_id) {
                         tracing::info!(
@@ -4656,10 +4680,14 @@ fn dispatch_goal_evaluator_if_active(
     true
 }
 
-/// Handle a goal verdict. On success: stamp banner, clear goal, drain
-/// queued prompts. On failure: bump iterations, inject a system-
-/// reminder describing what's missing, restart the agentic loop so the
-/// model can address it.
+/// Handle a goal verdict. On success: append the banner to the
+/// current assistant message (NOT a new one — would violate the
+/// consecutive-assistant invariant) and clear the goal. On unmet:
+/// push a fresh user/meta turn carrying the "what's missing" reminder
+/// (NOT patched into the prior user msg — chronology would be wrong
+/// and the provider's "Continue from where you left off." fallback
+/// would beat the evaluator's actual diagnostic), then restart the
+/// agentic loop.
 async fn handle_goal_verdict(
     app: &mut app::App,
     tx: &mpsc::Sender<crate::app::AppEvent>,
@@ -4670,13 +4698,14 @@ async fn handle_goal_verdict(
     let Some(mut goal) = app.goal.take() else {
         // User cleared the goal mid-evaluation. Resume the normal
         // EndTurn flow.
+        persist_goal_for_session(app);
         drain_queued_prompts(app, tx).await;
         maybe_continue_task_factory(app, tx).await;
         return;
     };
     if ok {
         let banner = crate::goal::format_success_banner(&goal, &reason);
-        app.messages.push(types::ChatMessage::assistant(banner));
+        append_to_last_assistant_or_push(&mut app.messages, &banner);
         crate::toast::push_with_cap(
             &mut app.toasts,
             crate::toast::Toast::new(
@@ -4684,6 +4713,9 @@ async fn handle_goal_verdict(
                 "Goal achieved".to_owned(),
             ),
         );
+        // Goal completed → take() already cleared it, persist removes
+        // the sidecar so a future /continue doesn't revive it.
+        persist_goal_for_session(app);
         drain_queued_prompts(app, tx).await;
         maybe_continue_task_factory(app, tx).await;
         return;
@@ -4693,7 +4725,7 @@ async fn handle_goal_verdict(
     goal.last_unmet_reason = Some(reason.clone());
     if goal.is_exhausted() {
         let banner = crate::goal::format_exhaustion_banner(&goal);
-        app.messages.push(types::ChatMessage::assistant(banner));
+        append_to_last_assistant_or_push(&mut app.messages, &banner);
         crate::toast::push_with_cap(
             &mut app.toasts,
             crate::toast::Toast::new(
@@ -4701,6 +4733,9 @@ async fn handle_goal_verdict(
                 "Goal abandoned — iteration cap reached".to_owned(),
             ),
         );
+        // Goal abandoned — `goal` is dropped here (never put back on
+        // `app`), so persist removes the sidecar.
+        persist_goal_for_session(app);
         drain_queued_prompts(app, tx).await;
         maybe_continue_task_factory(app, tx).await;
         return;
@@ -4708,14 +4743,62 @@ async fn handle_goal_verdict(
     let iteration = goal.iterations;
     let condition = goal.condition.clone();
     app.goal = Some(goal);
+    // Persist the bumped iteration count so a /continue mid-loop
+    // resumes from the right iteration rather than restarting at 0.
+    persist_goal_for_session(app);
     let reminder = crate::goal::format_unmet_reminder(&condition, &reason, iteration);
-    crate::system_reminder::append_to_last_user(&mut app.messages, &reminder);
+    // Push a fresh user-role turn that carries the reminder. The
+    // transcript shape becomes `[..., assistant, user(reminder),
+    // assistant(new)]` — clean alternation, the reminder is the
+    // newest content the next stream sees, and the provider doesn't
+    // fall back to its generic "Continue from where you left off."
+    // because the trailing user message has real content. We wrap the
+    // body in a <system-reminder> so the model treats it as
+    // background context, not a user instruction.
+    let body = crate::system_reminder::format(&reminder);
+    app.messages.push(crate::types::ChatMessage::user(body));
     tracing::info!(
         target: "jfc::goal",
         iteration,
-        "goal unmet — continuing agentic loop"
+        "goal unmet — pushed fresh user turn + continuing agentic loop"
     );
     stream::continue_agentic_loop(app, tx).await;
+}
+
+/// Append `body` as a new `MessagePart::Text` on the last assistant
+/// message (preferring the streaming one if set, else the final
+/// assistant in `messages`). Falls back to pushing a fresh assistant
+/// message ONLY when no assistant exists — because the transcript
+/// invariants forbid two consecutive assistants. The fallback path is
+/// for the edge case where the goal evaluator returns before any
+/// assistant turn has run.
+fn append_to_last_assistant_or_push(messages: &mut Vec<types::ChatMessage>, body: &str) {
+    use crate::types::{MessagePart, Role};
+    let target_idx = messages
+        .iter()
+        .rposition(|m| m.role == Role::Assistant);
+    let appended = format!("\n\n{body}");
+    if let Some(idx) = target_idx {
+        messages[idx]
+            .parts
+            .push(MessagePart::Text(appended));
+        return;
+    }
+    // No assistant in the transcript yet — push one. Safe because
+    // there can't be a "consecutive assistant" violation when no
+    // assistant exists.
+    messages.push(crate::types::ChatMessage::assistant(body.to_owned()));
+}
+
+/// Mirror `app.goal` to the sidecar file beside the session journal.
+/// Called at every goal mutation point (set / clear / unmet bump /
+/// success / exhaustion) so `/continue` rebuilds the same state.
+/// No-op when there's no current session yet.
+fn persist_goal_for_session(app: &app::App) {
+    let Some(sid) = app.current_session_id.as_ref() else {
+        return;
+    };
+    crate::goal::save_sidecar(sid.as_str(), app.goal.as_ref());
 }
 
 fn update_task_activities(app: &mut app::App, calls: &[types::ToolCall]) {
