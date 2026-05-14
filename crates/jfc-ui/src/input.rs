@@ -2763,7 +2763,10 @@ async fn handle_submit(
     // fail to resolve at compile time — see Cargo.toml `[features]`.
     #[cfg(feature = "intent-gate")]
     {
-        let intent_for_inject = crate::intent::classify(&text).intent;
+        let classification = crate::intent::classify(&text);
+        let intent_for_inject = classification.intent;
+
+        // (1) Graph-flavored intents → auto-inject structural context.
         if crate::intent::is_graph_intent(intent_for_inject) {
             let cwd = std::path::PathBuf::from(&app.cwd);
             let injected = crate::intent::auto_inject_graph_context(
@@ -2779,6 +2782,69 @@ async fn handle_submit(
                     "auto graph-context injected"
                 );
             }
+        }
+
+        // (2) Doc-request intents → suggest the matching slash command
+        // via a toast. We never auto-run the command (writing a file
+        // the user didn't explicitly ask for is destructive) — the
+        // toast is a one-keystroke nudge. Suppressed via
+        // JFC_AUTO_DOC_SUGGEST=0.
+        if let Some(cmd) = intent_for_inject.doc_command() {
+            if crate::intent::auto_doc_suggest_enabled() {
+                tracing::info!(
+                    target: "jfc::intent::doc_suggest",
+                    intent = ?intent_for_inject,
+                    cmd,
+                    "doc-request detected — surfacing slash-command suggestion"
+                );
+                crate::toast::push_with_cap(
+                    &mut app.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Info,
+                        format!(
+                            "This looks like a doc request — type `{cmd}` to draft \
+                             it with the strict format contract."
+                        ),
+                    ),
+                );
+            }
+        }
+
+        // (3) Auto-Plan-Mode: planning-shaped prompts flip the session
+        // into Plan (read-only) permission mode — but only when the
+        // user opted in via JFC_AUTO_PLAN_MODE=1, and only when we're
+        // not already in a more-restrictive-or-equal mode. The user
+        // can Shift+Tab back out immediately.
+        if intent_for_inject == crate::intent::Intent::AutoPlanModeRequest
+            && crate::intent::auto_plan_mode_enabled()
+            && !matches!(
+                app.permission_mode,
+                crate::app::PermissionMode::Plan | crate::app::PermissionMode::Auto
+            )
+        {
+            let from = app.permission_mode;
+            app.permission_mode = crate::app::PermissionMode::Plan;
+            tracing::info!(
+                target: "jfc::intent::auto_plan_mode",
+                ?from,
+                "planning-shaped prompt — auto-flipped to Plan mode"
+            );
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Info,
+                    "Planning request detected — switched to Plan mode \
+                     (read-only). Shift+Tab to change."
+                        .to_string(),
+                ),
+            );
+            crate::system_reminder::append_to_last_user(
+                &mut app.messages,
+                "Permission mode auto-switched to `Plan` (read-only) because \
+                 this request reads as planning/design work. Investigate and \
+                 produce a plan; use ExitPlanMode with a finalized plan when \
+                 you're ready to make edits.",
+            );
         }
     }
 
