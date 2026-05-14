@@ -340,15 +340,85 @@ fn url_encode(pairs: &HashMap<String, String>) -> String {
 
 /* ------------------------- Step implementations ----------------------- */
 
-async fn step1_initiate_oidc(client: &reqwest::Client, jar: &mut CookieJar, base_url: &str) -> anyhow::Result<String> {
+/// Outcome of `step1_initiate_oidc`. Either we landed on Shibboleth and need
+/// to continue with steps 2-6, or the IdP recognized our existing session
+/// cookies and short-circuited straight to OpenWebUI with a `token` cookie.
+enum Step1Outcome {
+    /// Need to continue the flow at this Shibboleth URL.
+    Shibboleth(String),
+    /// Already logged in — `token` cookie was set on OpenWebUI's origin.
+    AlreadyAuthenticated(OidcLoginResult),
+}
+
+async fn step1_initiate_oidc(
+    client: &reqwest::Client,
+    jar: &mut CookieJar,
+    base_url: &str,
+) -> anyhow::Result<Step1Outcome> {
     tracing::info!(target: "jfc::oidc", "Step 1: Initiating OIDC login");
     let url = format!("{base_url}/oauth/oidc/login");
     let r = follow_redirects(client, jar, &url, reqwest::Method::GET, None, &[], 10).await?;
-    if !r.url.contains("shibboleth.arizona.edu") && !r.url.contains("webauth.arizona.edu") {
-        anyhow::bail!("Step 1: Expected redirect to Shibboleth, got {}", r.url);
+
+    // Dump for debugging.
+    let debug_dir = std::path::PathBuf::from("/tmp/jfc-oidc-debug");
+    let _ = std::fs::create_dir_all(&debug_dir);
+    let _ = std::fs::write(debug_dir.join("step1-final.html"), &r.body);
+    let _ = std::fs::write(debug_dir.join("step1-final.url"), &r.url);
+
+    // Already-authenticated short-circuit. The IdP may decide our existing
+    // Shibboleth session cookies are still valid and bounce us straight back
+    // to OpenWebUI with a token. In that case we never see Shibboleth — the
+    // final URL is OpenWebUI's origin and a `token` cookie is sitting in the
+    // jar. Detect that and return success without running steps 2-6.
+    let base_host = url::Url::parse(base_url)?
+        .host_str()
+        .unwrap_or("")
+        .to_owned();
+    let final_host = url::Url::parse(&r.url)
+        .ok()
+        .and_then(|u| u.host_str().map(|s| s.to_owned()))
+        .unwrap_or_default();
+
+    if final_host == base_host {
+        if let Some(token) = jar.get(&base_host, "token").map(str::to_owned) {
+            tracing::info!(
+                target: "jfc::oidc",
+                url = %r.url,
+                "Step 1: IdP recognized existing session — already authenticated"
+            );
+            let oauth_id_token = jar.get(&base_host, "oauth_id_token").unwrap_or("").to_owned();
+            let oauth_session_id = jar.get(&base_host, "oauth_session_id").unwrap_or("").to_owned();
+            let default_expiry_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64 + 28 * 24 * 60 * 60 * 1000)
+                .unwrap_or(0);
+            let expires_at = super::jwt::token_expires_at_ms(&token).unwrap_or(default_expiry_ms);
+            return Ok(Step1Outcome::AlreadyAuthenticated(OidcLoginResult {
+                token,
+                oauth_id_token,
+                oauth_session_id,
+                expires_at,
+            }));
+        }
+        // Same host but no token cookie — likely an error or unexpected
+        // redirect. Fall through to the normal "expected Shibboleth" error
+        // so the user gets a clear diagnostic instead of a hang.
+    }
+
+    if !r.url.contains("shibboleth.arizona.edu")
+        && !r.url.contains("webauth.arizona.edu")
+        && !r.url.contains("shibboleth")
+    {
+        anyhow::bail!(
+            "Step 1: Expected redirect to Shibboleth or back to OpenWebUI with token cookie, \
+             got URL {} (no token cookie on host {}). Body preview:\n{}",
+            r.url,
+            base_host,
+            &r.body[..r.body.len().min(400)]
+        );
     }
     tracing::info!(target: "jfc::oidc", url = %r.url, "Step 1: Landed on Shibboleth");
-    Ok(r.url)
+    Ok(Step1Outcome::Shibboleth(r.url))
 }
 
 struct Step2Out {
@@ -1127,7 +1197,13 @@ pub async fn oidc_login(opts: OidcLoginOptions) -> anyhow::Result<OidcLoginResul
     let mut jar = load_cookie_jar().unwrap_or_default();
     let base_url = opts.base_url.trim_end_matches('/').to_owned();
 
-    let shib_url = step1_initiate_oidc(&client, &mut jar, &base_url).await?;
+    let shib_url = match step1_initiate_oidc(&client, &mut jar, &base_url).await? {
+        Step1Outcome::Shibboleth(u) => u,
+        Step1Outcome::AlreadyAuthenticated(result) => {
+            save_cookie_jar(&jar);
+            return Ok(result);
+        }
+    };
     let step2 = step2_submit_credentials(&client, &mut jar, &shib_url, &opts.username, &opts.password).await?;
 
     if step2.url.contains("oauth/oidc/callback") || step2.url.contains(&format!("{base_url}/auth")) {
