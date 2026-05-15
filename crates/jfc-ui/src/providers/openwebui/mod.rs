@@ -13,12 +13,12 @@ use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::provider::{
+use jfc_provider::{
     EventStream, ModelInfo, Provider, ProviderContent, ProviderMessage, ProviderRole, StopReason,
     StreamConvention, StreamEvent, StreamOptions,
 };
 
-pub(crate) const AUTO_RETRY_SENTINEL: &str = "auto-retry-openwebui:";
+pub(crate) const AUTO_RETRY_SENTINEL: &str = jfc_provider::retry::OPENWEBUI_AUTO_RETRY_SENTINEL;
 
 // Re-export the new modular auth types so external callers (CLI, etc.) can
 // reach them through `providers::openwebui::*`.
@@ -83,7 +83,7 @@ impl OpenWebUIProvider {
             "OpenWebUIProvider::new"
         );
         Self {
-            client: super::http::streaming_client(),
+            client: jfc_provider::http::streaming_client(),
             store_path,
         }
     }
@@ -381,7 +381,7 @@ mod tests {
     }
 
     // ── Tool wire-format (the file-system-write bug fix) ──────────────────
-    use crate::provider::ToolDef;
+    use jfc_provider::ToolDef;
 
     fn opts_with_bash_tool() -> StreamOptions {
         StreamOptions::new("any-model").tools(vec![ToolDef {
@@ -1933,7 +1933,7 @@ pub(crate) fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -
     body
 }
 
-impl crate::provider::seal::Sealed for OpenWebUIProvider {}
+impl jfc_provider::seal::Sealed for OpenWebUIProvider {}
 
 #[async_trait]
 impl Provider for OpenWebUIProvider {
@@ -2035,7 +2035,7 @@ impl Provider for OpenWebUIProvider {
         // Bedrock-on-OWUI deployments) to honor a long upstream timeout —
         // tool-call streams can exceed LiteLLM's default of 60s.
         let send_started = std::time::Instant::now();
-        let resp = match super::http::send_with_retry("openwebui.chat/completions", || {
+        let resp = match jfc_provider::http::send_with_retry("openwebui.chat/completions", || {
             self.client
                 .post(&url)
                 .header("authorization", format!("Bearer {}", account.token))
@@ -2051,7 +2051,7 @@ impl Provider for OpenWebUIProvider {
         {
             Ok(r) => r,
             Err(e) => {
-                let cause = super::http::classify_send_error(&e);
+                let cause = jfc_provider::http::classify_send_error(&e);
                 tracing::warn!(
                     target: "jfc::provider::openwebui",
                     url = %url,
@@ -2068,7 +2068,7 @@ impl Provider for OpenWebUIProvider {
             }
         };
 
-        super::http::report_first_byte_latency(
+        jfc_provider::http::report_first_byte_latency(
             "openwebui.chat/completions",
             send_started.elapsed(),
         );
@@ -2083,7 +2083,7 @@ impl Provider for OpenWebUIProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let should_retry =
-                super::retry::should_retry_status(status.as_u16(), Some(resp.headers()));
+                jfc_provider::retry::should_retry_status(status.as_u16(), Some(resp.headers()));
             let text = resp.text().await.unwrap_or_default();
 
             // 401/403 → token rejected. Try one OIDC re-auth with the env
@@ -2120,7 +2120,7 @@ impl Provider for OpenWebUIProvider {
 
             // Friendly translation for non-recoverable errors. Falls back to
             // raw status+body for anything we don't have a recipe for.
-            let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+            let friendly = jfc_provider::retry::friendly_error_message(status.as_u16(), &text);
 
             // Detect HTML/nginx proxy errors and translate into clean JSON.
             // Mirrors opencode-openwebui-auth/src/plugin/fetch.ts:656.

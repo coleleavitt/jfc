@@ -1,6 +1,6 @@
 use futures::StreamExt;
 
-use crate::provider::{
+use jfc_provider::{
     Provider, ProviderContent, ProviderMessage, ProviderRole, StreamEvent, StreamOptions,
 };
 
@@ -93,7 +93,7 @@ pub(crate) fn extract_summary_tag(s: &str) -> Option<String> {
 pub(crate) async fn auto_compact_subagent_history(
     messages: &mut Vec<ProviderMessage>,
     provider: &dyn Provider,
-    model: crate::provider::ModelId,
+    model: jfc_provider::ModelId,
 ) -> bool {
     let total_bytes: usize = messages.iter().map(estimate_provider_message_bytes).sum();
     let est_tokens = total_bytes / BYTES_PER_TOKEN;
@@ -395,7 +395,7 @@ mod auto_compact_tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
-    use crate::provider::{EventStream, ModelId, ModelInfo, StopReason};
+    use jfc_provider::{EventStream, ModelId, ModelInfo, StopReason};
 
     struct CannedSummaryProvider {
         reply: String,
@@ -437,7 +437,7 @@ mod auto_compact_tests {
             Ok(Box::pin(futures::stream::iter(events)))
         }
     }
-    impl crate::provider::seal::Sealed for CannedSummaryProvider {}
+    impl jfc_provider::seal::Sealed for CannedSummaryProvider {}
 
     struct ErrorProvider;
 
@@ -457,7 +457,7 @@ mod auto_compact_tests {
             Err(anyhow::anyhow!("simulated stream failure"))
         }
     }
-    impl crate::provider::seal::Sealed for ErrorProvider {}
+    impl jfc_provider::seal::Sealed for ErrorProvider {}
 
     fn user_text(s: &str) -> ProviderMessage {
         ProviderMessage {

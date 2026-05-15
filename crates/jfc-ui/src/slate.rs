@@ -24,7 +24,7 @@
 //! consumers see the unchanged "use whatever model is pinned on App" behavior;
 //! the routing module compiles in but does nothing at runtime.
 
-use crate::provider::ModelId;
+use jfc_provider::ModelId;
 use serde::{Deserialize, Serialize};
 
 /// Coarse category the classifier assigns to each user query. Routing rules

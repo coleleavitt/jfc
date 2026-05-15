@@ -9,6 +9,10 @@
 use std::time::Duration;
 use tracing::{debug, warn};
 
+pub const ANTHROPIC_AUTO_RETRY_SENTINEL: &str = "auto-retry-anthropic:";
+pub const ANTHROPIC_OAUTH_AUTO_RETRY_SENTINEL: &str = "auto-retry-anthropic-oauth:";
+pub const OPENWEBUI_AUTO_RETRY_SENTINEL: &str = "auto-retry-openwebui:";
+
 /// Configuration for retry behavior.
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
@@ -90,19 +94,19 @@ pub struct RetryableStreamError<'a> {
 /// subagents, and teammate runners all use this so 429/529/5xx recovery stays
 /// consistent instead of each path deciding independently.
 pub fn retryable_stream_error(message: &str) -> Option<RetryableStreamError<'_>> {
-    if let Some(stripped) = message.strip_prefix(super::anthropic::AUTO_RETRY_SENTINEL) {
+    if let Some(stripped) = message.strip_prefix(ANTHROPIC_AUTO_RETRY_SENTINEL) {
         return Some(RetryableStreamError {
             provider: "anthropic",
             message: stripped,
         });
     }
-    if let Some(stripped) = message.strip_prefix(super::anthropic_oauth::AUTO_RETRY_SENTINEL) {
+    if let Some(stripped) = message.strip_prefix(ANTHROPIC_OAUTH_AUTO_RETRY_SENTINEL) {
         return Some(RetryableStreamError {
             provider: "anthropic-oauth",
             message: stripped,
         });
     }
-    if let Some(stripped) = message.strip_prefix(super::openwebui::AUTO_RETRY_SENTINEL) {
+    if let Some(stripped) = message.strip_prefix(OPENWEBUI_AUTO_RETRY_SENTINEL) {
         return Some(RetryableStreamError {
             provider: "openwebui",
             message: stripped,
@@ -389,7 +393,7 @@ mod tests {
     fn retryable_stream_error_strips_provider_sentinels_normal() {
         let message = format!(
             "{}Anthropic transient API error 529: overloaded",
-            super::super::anthropic::AUTO_RETRY_SENTINEL
+            ANTHROPIC_AUTO_RETRY_SENTINEL
         );
         let signal = retryable_stream_error(&message).expect("sentinel should classify");
         assert_eq!(signal.provider, "anthropic");
@@ -400,7 +404,7 @@ mod tests {
 
         let message = format!(
             "{}OpenWebUI API error 503: unavailable",
-            super::super::openwebui::AUTO_RETRY_SENTINEL
+            OPENWEBUI_AUTO_RETRY_SENTINEL
         );
         let signal = retryable_stream_error(&message).expect("openwebui sentinel should classify");
         assert_eq!(signal.provider, "openwebui");

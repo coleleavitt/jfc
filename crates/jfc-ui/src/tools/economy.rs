@@ -107,8 +107,8 @@ impl jfc_economy::reporting::SwarmProvider for EconomySwarmProvider {
 /// callback when the provider emits one, otherwise from a 4-chars-
 /// per-token byte estimate.
 pub(crate) struct EconomyAgentInvoker {
-    provider: std::sync::Arc<dyn crate::provider::Provider>,
-    model: crate::provider::ModelId,
+    provider: std::sync::Arc<dyn jfc_provider::Provider>,
+    model: jfc_provider::ModelId,
     /// Optional UI event channel — when set, every solver / validator
     /// invocation emits TaskStarted before streaming, AgentChunk for
     /// each text delta, and TaskCompleted/Failed at the end. This is
@@ -119,8 +119,8 @@ pub(crate) struct EconomyAgentInvoker {
 
 impl EconomyAgentInvoker {
     pub fn new(
-        provider: std::sync::Arc<dyn crate::provider::Provider>,
-        model: crate::provider::ModelId,
+        provider: std::sync::Arc<dyn jfc_provider::Provider>,
+        model: jfc_provider::ModelId,
     ) -> Self {
         Self {
             provider,
@@ -142,8 +142,8 @@ impl EconomyAgentInvoker {
         max_tokens: u64,
         task_id: Option<&str>,
     ) -> Result<(String, u64), String> {
-        use crate::provider::*;
         use futures::StreamExt;
+        use jfc_provider::*;
         let opts = StreamOptions::new(self.model.clone())
             .system(system)
             .max_tokens(max_tokens.min(u32::MAX as u64) as u32);

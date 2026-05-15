@@ -10,7 +10,6 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::mpsc;
 
 use crate::app::{self, ANIM_TICK_MS, App, IDLE_TICK_MS, NetworkRecoveryProvider, PendingApproval};
-use crate::provider::{ModelId, Provider, ProviderId};
 use crate::runtime::{
     APP_EVENT_BUFFER, AppEvent, CompactionEvent, EventReceiver, EventSender, GoalEvent,
     ProviderEvent, StreamEvent, TaskEvent, TeamEvent, ToolEvent, UiEvent,
@@ -23,8 +22,9 @@ use crate::runtime::{
 use crate::types::*;
 use crate::{
     attachments, config, diagnostics_producer, input, lsp_client, message_view, render, session,
-    slate, stream, tasks, toast, types,
+    slate, stream, toast, types,
 };
+use jfc_provider::{ModelId, Provider, ProviderId};
 
 pub(crate) async fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -94,7 +94,7 @@ pub(crate) async fn run(
     // users). The gate flips itself off after the first successful
     // turn so the overlay doesn't repeat.
     if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::Finch) {
-        let session_dir_empty = std::fs::read_dir(crate::session::sessions_dir())
+        let session_dir_empty = std::fs::read_dir(jfc_session::sessions_dir())
             .map(|mut it| it.next().is_none())
             .unwrap_or(true);
         if session_dir_empty {
@@ -141,9 +141,9 @@ pub(crate) async fn run(
             let cwd_str = std::env::current_dir()
                 .ok()
                 .map(|p| p.display().to_string());
-            let id = match session::most_recent_session_for_cwd(cwd_str.as_deref()).await {
+            let id = match jfc_session::most_recent_session_for_cwd(cwd_str.as_deref()).await {
                 Some(id) => Some(id),
-                None => session::most_recent_session().await, // legacy fallback
+                None => jfc_session::most_recent_session().await, // legacy fallback
             };
             if let Some(session_id) = id {
                 if let Some((messages, saved_model)) =
@@ -160,7 +160,7 @@ pub(crate) async fn run(
                     app.messages = messages;
                     app.current_session_id = Some(session_id.clone());
                     // Re-open task store so tasks from the resumed session are loaded.
-                    app.task_store = crate::tasks::TaskStore::open(session_id.as_str());
+                    app.task_store = jfc_session::TaskStore::open(session_id.as_str());
                     // Rebuild any active stop-condition from the goal
                     // sidecar — without this, /continue forgets the
                     // user's goal and the next EndTurn settles silently.
@@ -220,14 +220,14 @@ pub(crate) async fn run(
                     saved_model = ?saved_model,
                     "resuming specific session"
                 );
-                let session_cwd = session::load_session_metadata(&session_id)
+                let session_cwd = jfc_session::load_session_metadata(&session_id)
                     .await
                     .and_then(|m| m.cwd);
                 let current_cwd = std::env::current_dir()
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 if let Some(msg) =
-                    session::cwd_mismatch_message(session_cwd.as_deref(), &current_cwd)
+                    jfc_session::cwd_mismatch_message(session_cwd.as_deref(), &current_cwd)
                 {
                     tracing::warn!(
                         target: "jfc::session",
@@ -238,7 +238,7 @@ pub(crate) async fn run(
                 app.messages = messages;
                 app.current_session_id = Some(session_id.clone());
                 // Re-open task store so tasks from the resumed session are loaded.
-                app.task_store = crate::tasks::TaskStore::open(session_id.as_str());
+                app.task_store = jfc_session::TaskStore::open(session_id.as_str());
                 // Rebuild any active stop-condition from the goal sidecar.
                 if let Some(goal) = crate::goal::load_sidecar(session_id.as_str()) {
                     tracing::info!(
@@ -430,7 +430,7 @@ pub(crate) async fn run(
         let session_id = app
             .current_session_id
             .clone()
-            .unwrap_or_else(session::generate_session_id);
+            .unwrap_or_else(jfc_session::generate_session_id);
         {
             let sid = session_id.clone();
             let msgs = app.messages.clone();
@@ -667,7 +667,7 @@ pub(crate) async fn run(
                                 // Skip the empty/no-sessions placeholder row.
                                 if !app.session_meta.is_empty() {
                                     let cwd = app.cwd.clone();
-                                    let (this_project, other) = crate::session::group_by_cwd(
+                                    let (this_project, other) = jfc_session::group_by_cwd(
                                         app.session_meta.clone(),
                                         Some(cwd.as_str()),
                                     );
@@ -1781,7 +1781,7 @@ pub(crate) async fn run(
                     // `turn_started_at` (still set at this point — we only
                     // clear it in the next block once the EndTurn condition
                     // is verified) so it covers tools + thinking + final text.
-                    let turn_done = stop_reason == crate::provider::StopReason::EndTurn
+                    let turn_done = stop_reason == jfc_provider::StopReason::EndTurn
                         && app.pending_approval.is_none()
                         && app.approval_queue.is_empty()
                         && app.pending_tool_calls.is_empty();
@@ -1950,7 +1950,7 @@ pub(crate) async fn run(
                     // genuinely concluded — EndTurn stop reason AND no
                     // tools pending. ToolUse means an agentic continuation
                     // is about to fire and the turn timer must keep running.
-                    let turn_genuinely_done = stop_reason == crate::provider::StopReason::EndTurn
+                    let turn_genuinely_done = stop_reason == jfc_provider::StopReason::EndTurn
                         && app.pending_approval.is_none()
                         && app.approval_queue.is_empty()
                         && app.pending_tool_calls.is_empty();
@@ -2076,7 +2076,7 @@ pub(crate) async fn run(
                     }
                     // v126 queued-prompt drain on plain end_turn: model finished
                     // without tools to call → if anything's queued, fire it now.
-                    if stop_reason == crate::provider::StopReason::EndTurn
+                    if stop_reason == jfc_provider::StopReason::EndTurn
                         && app.pending_approval.is_none()
                         && app.approval_queue.is_empty()
                         && app.pending_tool_calls.is_empty()
@@ -2135,7 +2135,7 @@ pub(crate) async fn run(
                         // Tool awaiting user approval — keep streaming_assistant_idx
                         // alive so the approved/denied tool can be inserted into the
                         // correct message. AllToolsComplete fires after approval.
-                    } else if stop_reason == crate::provider::StopReason::ToolUse {
+                    } else if stop_reason == jfc_provider::StopReason::ToolUse {
                         // Upstream returned finish_reason="tool_calls" but sent
                         // zero tool_call delta chunks (transient LiteLLM/Bedrock
                         // failure). The assistant message that was pre-pushed to
@@ -2826,10 +2826,10 @@ pub(crate) async fn run(
                             let compact_model_id = crate::config::load()
                                 .default
                                 .compaction_model
-                                .map(crate::provider::ModelId::new)
+                                .map(jfc_provider::ModelId::new)
                                 .unwrap_or_else(|| model.clone());
                             let options =
-                                crate::provider::StreamOptions::new(compact_model_id.clone());
+                                jfc_provider::StreamOptions::new(compact_model_id.clone());
                             tracing::debug!(
                                 target: "jfc::compact",
                                 model = %compact_model_id,
@@ -3463,8 +3463,8 @@ pub(crate) async fn run(
                             .or_else(|| Some(app.model.as_str().to_owned()));
                         if let Err(e) = app.task_store.update(
                             ptid,
-                            crate::tasks::TaskPatch {
-                                status: Some(crate::tasks::TaskStatus::InProgress),
+                            jfc_session::TaskPatch {
+                                status: Some(jfc_session::TaskStatus::InProgress),
                                 metadata: Some(serde_json::json!({
                                     "agent_task_id": task_id.as_str(),
                                     "model": linked_model,
@@ -3657,8 +3657,8 @@ pub(crate) async fn run(
                     if let Some(ref ptid) = linked_task_id {
                         if let Err(e) = app.task_store.update(
                             ptid,
-                            crate::tasks::TaskPatch {
-                                status: Some(crate::tasks::TaskStatus::Completed),
+                            jfc_session::TaskPatch {
+                                status: Some(jfc_session::TaskStatus::Completed),
                                 ..Default::default()
                             },
                         ) {
@@ -3719,13 +3719,13 @@ pub(crate) async fn run(
                     // the cascade / replan logic below can react.
                     if let Some(ref ptid) = linked_task_id {
                         let next_status = if was_cancelled {
-                            crate::tasks::TaskStatus::Pending
+                            jfc_session::TaskStatus::Pending
                         } else {
-                            crate::tasks::TaskStatus::Failed
+                            jfc_session::TaskStatus::Failed
                         };
                         if let Err(e) = app.task_store.update(
                             ptid,
-                            crate::tasks::TaskPatch {
+                            jfc_session::TaskPatch {
                                 status: Some(next_status),
                                 ..Default::default()
                             },
@@ -3827,7 +3827,7 @@ pub(crate) async fn run(
                         // a plan before the first teammate spawn, and
                         // those IDs would otherwise vanish at team
                         // activation. See `TaskStore::migrate_from`.
-                        let team_store = crate::tasks::TaskStore::open_team(&team_name);
+                        let team_store = jfc_session::TaskStore::open_team(&team_name);
                         let _ = team_store.migrate_from(&app.task_store);
                         app.task_store = team_store;
                     }

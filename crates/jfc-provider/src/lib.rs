@@ -6,6 +6,9 @@ use async_trait::async_trait;
 use futures::Stream;
 use reqwest::header::HeaderMap;
 
+pub mod http;
+pub mod retry;
+
 macro_rules! string_id {
     ($name:ident) => {
         #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

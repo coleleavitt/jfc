@@ -8,7 +8,7 @@ use crate::types::{
     ToolOutput, ToolStatus, validate_turn_invariants,
 };
 
-pub use jfc_session::{
+use jfc_session::{
     SessionMetadata, cwd_mismatch_message, format_session_id_timestamp, generate_session_id,
     group_by_cwd, list_session_ids_only, list_sessions, list_sessions_filtered,
     list_sessions_with_metadata, load_session_metadata, most_recent_session,

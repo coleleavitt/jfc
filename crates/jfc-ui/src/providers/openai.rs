@@ -3,7 +3,7 @@ use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::provider::{
+use jfc_provider::{
     CompletionResponse, EventStream, ModelId, ModelInfo, Provider, ProviderContent, ProviderId,
     ProviderMessage, ProviderRole, StopReason, StreamConvention, StreamEvent, StreamOptions,
     TokenUsage, ToolDef,
@@ -76,7 +76,7 @@ impl OpenAIProvider {
 
     pub fn new(api_key: impl Into<String>, base_url: impl Into<String>) -> Self {
         Self {
-            client: super::http::streaming_client(),
+            client: jfc_provider::http::streaming_client(),
             api_key: api_key.into(),
             base_url: base_url.into().trim_end_matches('/').to_owned(),
         }
@@ -120,7 +120,7 @@ impl OpenAIProvider {
     }
 }
 
-impl crate::provider::seal::Sealed for OpenAIProvider {}
+impl jfc_provider::seal::Sealed for OpenAIProvider {}
 
 #[async_trait]
 impl Provider for OpenAIProvider {
@@ -176,7 +176,7 @@ impl Provider for OpenAIProvider {
             let body = build_responses_body(messages, options, true);
             let url = self.responses_url();
             let send_started = std::time::Instant::now();
-            let resp = match super::http::send_with_retry("openai.responses", || {
+            let resp = match jfc_provider::http::send_with_retry("openai.responses", || {
                 self.client
                     .post(&url)
                     .bearer_auth(&self.api_key)
@@ -187,7 +187,7 @@ impl Provider for OpenAIProvider {
             {
                 Ok(r) => r,
                 Err(e) => {
-                    let cause = super::http::classify_send_error(&e);
+                    let cause = jfc_provider::http::classify_send_error(&e);
                     tracing::warn!(
                         target: "jfc::provider::openai",
                         url = %url,
@@ -198,11 +198,14 @@ impl Provider for OpenAIProvider {
                     anyhow::bail!("OpenAI request failed: {cause} ({e})");
                 }
             };
-            super::http::report_first_byte_latency("openai.responses", send_started.elapsed());
+            jfc_provider::http::report_first_byte_latency(
+                "openai.responses",
+                send_started.elapsed(),
+            );
             if !resp.status().is_success() {
                 let status = resp.status();
                 let text = resp.text().await.unwrap_or_default();
-                let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+                let friendly = jfc_provider::retry::friendly_error_message(status.as_u16(), &text);
                 anyhow::bail!("OpenAI API error {status}: {friendly}\n  raw: {text}");
             }
             return Ok(responses_event_stream(resp));
@@ -211,7 +214,7 @@ impl Provider for OpenAIProvider {
         let body = super::openwebui::build_body(messages, options);
         let url = self.chat_url();
         let send_started = std::time::Instant::now();
-        let resp = match super::http::send_with_retry("openai.chat/completions", || {
+        let resp = match jfc_provider::http::send_with_retry("openai.chat/completions", || {
             self.client
                 .post(&url)
                 .bearer_auth(&self.api_key)
@@ -222,7 +225,7 @@ impl Provider for OpenAIProvider {
         {
             Ok(r) => r,
             Err(e) => {
-                let cause = super::http::classify_send_error(&e);
+                let cause = jfc_provider::http::classify_send_error(&e);
                 tracing::warn!(
                     target: "jfc::provider::openai",
                     url = %url,
@@ -233,11 +236,14 @@ impl Provider for OpenAIProvider {
                 anyhow::bail!("OpenAI request failed: {cause} ({e})");
             }
         };
-        super::http::report_first_byte_latency("openai.chat/completions", send_started.elapsed());
+        jfc_provider::http::report_first_byte_latency(
+            "openai.chat/completions",
+            send_started.elapsed(),
+        );
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+            let friendly = jfc_provider::retry::friendly_error_message(status.as_u16(), &text);
             anyhow::bail!("OpenAI API error {status}: {friendly}\n  raw: {text}");
         }
         Ok(super::openwebui::openai_compatible_event_stream(resp))

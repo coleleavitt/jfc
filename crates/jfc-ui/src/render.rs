@@ -598,18 +598,18 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     // Tasks section - show pending/in-progress todos
-    let tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
+    let tasks = app.task_store.list(jfc_session::DeletedFilter::Exclude);
     let pending: Vec<_> = tasks
         .iter()
-        .filter(|t| t.status == crate::tasks::TaskStatus::Pending)
+        .filter(|t| t.status == jfc_session::TaskStatus::Pending)
         .collect();
     let in_progress: Vec<_> = tasks
         .iter()
-        .filter(|t| t.status == crate::tasks::TaskStatus::InProgress)
+        .filter(|t| t.status == jfc_session::TaskStatus::InProgress)
         .collect();
     let completed: Vec<_> = tasks
         .iter()
-        .filter(|t| t.status == crate::tasks::TaskStatus::Completed)
+        .filter(|t| t.status == jfc_session::TaskStatus::Completed)
         .collect();
 
     let task_total = pending.len() + in_progress.len() + completed.len();
@@ -2123,7 +2123,7 @@ fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
 /// when the task list is empty so the renderer can shrink to a 1-row
 /// spinner instead of leaving a blank second line.
 fn next_open_task_subject(app: &App) -> Option<String> {
-    use crate::tasks::DeletedFilter;
+    use jfc_session::DeletedFilter;
     let tasks = app.task_store.list(DeletedFilter::Exclude);
     pick_next_open_task(&tasks).map(|t| t.subject.clone())
 }
@@ -2134,8 +2134,8 @@ fn next_open_task_subject(app: &App) -> Option<String> {
 /// active. Returns `None` when nothing is open. Extracted from
 /// `next_open_task_subject` so unit tests can exercise the priority
 /// rules without building an `App` fixture.
-fn pick_next_open_task(tasks: &[crate::tasks::Task]) -> Option<&crate::tasks::Task> {
-    use crate::tasks::TaskStatus;
+fn pick_next_open_task(tasks: &[jfc_session::Task]) -> Option<&jfc_session::Task> {
+    use jfc_session::TaskStatus;
     tasks
         .iter()
         .find(|t| matches!(t.status, TaskStatus::InProgress))
@@ -2149,7 +2149,7 @@ fn pick_next_open_task(tasks: &[crate::tasks::Task]) -> Option<&crate::tasks::Ta
 #[cfg(test)]
 mod next_task_tests {
     use super::*;
-    use crate::tasks::{DeletedFilter, TaskStore};
+    use jfc_session::{DeletedFilter, TaskStore};
 
     #[test]
     fn empty_store_returns_none_normal() {
@@ -2198,8 +2198,8 @@ mod next_task_tests {
         store
             .update(
                 active.id.as_str(),
-                crate::tasks::TaskPatch {
-                    status: Some(crate::tasks::TaskStatus::InProgress),
+                jfc_session::TaskPatch {
+                    status: Some(jfc_session::TaskStatus::InProgress),
                     ..Default::default()
                 },
             )
@@ -2228,8 +2228,8 @@ mod next_task_tests {
         store
             .update(
                 t.id.as_str(),
-                crate::tasks::TaskPatch {
-                    status: Some(crate::tasks::TaskStatus::Completed),
+                jfc_session::TaskPatch {
+                    status: Some(jfc_session::TaskStatus::Completed),
                     ..Default::default()
                 },
             )
@@ -2255,8 +2255,8 @@ mod next_task_tests {
         store
             .update(
                 done.id.as_str(),
-                crate::tasks::TaskPatch {
-                    status: Some(crate::tasks::TaskStatus::Completed),
+                jfc_session::TaskPatch {
+                    status: Some(jfc_session::TaskStatus::Completed),
                     ..Default::default()
                 },
             )
@@ -4216,7 +4216,7 @@ mod pure_helper_tests {
     use super::*;
     use std::sync::Arc;
 
-    use crate::provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
     use ratatui_textarea::TextArea;
 
     /// Stub provider for `App::new` — none of the helpers under test
@@ -4239,7 +4239,7 @@ mod pure_helper_tests {
             Ok(Box::pin(futures::stream::empty()))
         }
     }
-    impl crate::provider::seal::Sealed for TestProvider {}
+    impl jfc_provider::seal::Sealed for TestProvider {}
 
     fn fake_app() -> App {
         App::new(Arc::new(TestProvider), "test-model")

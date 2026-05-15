@@ -4,7 +4,7 @@ use tracing::{debug, info, warn};
 
 use super::ExecutionResult;
 use super::subagent::execute_skill_in;
-use crate::tasks::{DeletedFilter, TaskKind, TaskPatch, TaskRisk, TaskStatus, TaskStore};
+use jfc_session::{DeletedFilter, TaskKind, TaskPatch, TaskRisk, TaskStatus, TaskStore};
 
 pub(super) fn execute_task_create(
     store: Option<Arc<TaskStore>>,
@@ -37,7 +37,7 @@ pub(super) fn execute_task_create(
                     acceptance_criteria,
                     verification_command,
                     risk: parsed_risk,
-                    parent_id: parent_id.map(crate::tasks::TaskId::from),
+                    parent_id: parent_id.map(jfc_session::TaskId::from),
                     kind: parsed_kind,
                     ..Default::default()
                 };
@@ -104,7 +104,7 @@ pub(super) fn execute_task_update(
         acceptance_criteria,
         verification_command,
         risk: risk.as_deref().and_then(parse_risk),
-        parent_id: parent_id.map(crate::tasks::TaskId::from),
+        parent_id: parent_id.map(jfc_session::TaskId::from),
         kind: kind.as_deref().and_then(parse_kind),
         ..Default::default()
     };

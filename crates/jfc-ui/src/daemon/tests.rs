@@ -51,7 +51,7 @@ fn test_launch(cwd: PathBuf) -> BackgroundAgentLaunch {
         task_id: "task-worker".to_owned(),
         task_input: test_task_input(),
         parent_session_id: Some("ses-owner".to_owned()),
-        model: crate::provider::ModelId::new("claude-sonnet-4-5"),
+        model: jfc_provider::ModelId::new("claude-sonnet-4-5"),
         provider_name: Some("anthropic".to_owned()),
         agent_def: None,
         cwd,

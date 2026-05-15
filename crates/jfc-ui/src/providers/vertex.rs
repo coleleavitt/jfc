@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::Mutex;
 
-use crate::provider::{
+use jfc_provider::{
     EventStream, ModelId, ModelInfo, Provider, ProviderId, ProviderMessage, StreamConvention,
     StreamOptions,
 };
@@ -129,7 +129,7 @@ impl VertexProvider {
             "VertexProvider::new"
         );
         Self {
-            client: super::http::streaming_client(),
+            client: jfc_provider::http::streaming_client(),
             config_path,
             config,
             token_cache: Mutex::new(None),
@@ -239,7 +239,7 @@ impl Default for VertexProvider {
     }
 }
 
-impl crate::provider::seal::Sealed for VertexProvider {}
+impl jfc_provider::seal::Sealed for VertexProvider {}
 
 #[async_trait]
 impl Provider for VertexProvider {

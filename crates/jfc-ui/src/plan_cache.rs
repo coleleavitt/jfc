@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::tasks::{Task, TaskKind, TaskRisk};
+use jfc_session::{Task, TaskKind, TaskRisk};
 
 /// A cached plan entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,13 +205,13 @@ fn task_to_plan_task(task: &Task) -> PlanTask {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::TaskStatus;
+    use jfc_session::TaskStatus;
 
     #[test]
     fn fingerprint_is_stable_normal() {
         let tasks = vec![
             Task {
-                id: crate::tasks::TaskId::new("t1"),
+                id: jfc_session::TaskId::new("t1"),
                 subject: "Fix auth".into(),
                 description: "".into(),
                 active_form: None,
@@ -228,7 +228,7 @@ mod tests {
                 kind: None,
             },
             Task {
-                id: crate::tasks::TaskId::new("t2"),
+                id: jfc_session::TaskId::new("t2"),
                 subject: "Add tests".into(),
                 description: "".into(),
                 active_form: None,

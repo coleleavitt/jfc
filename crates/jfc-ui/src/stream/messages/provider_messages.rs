@@ -1,5 +1,5 @@
-use crate::provider::{ProviderContent, ProviderMessage, ProviderRole};
 use crate::types::{ChatMessage, MessagePart};
+use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole};
 
 use super::attachments::push_attachments;
 use super::tool_wire::{ToolWireCounters, tool_result_content, tool_use_content};

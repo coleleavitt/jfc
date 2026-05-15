@@ -10,12 +10,18 @@ use jfc_core::SessionId;
 use tracing::debug;
 
 mod catalog;
+mod task_store;
 
 pub use catalog::{
     SessionMetadata, cwd_mismatch_message, format_session_id_timestamp, group_by_cwd,
     list_session_ids_only, list_sessions, list_sessions_filtered, list_sessions_with_metadata,
     load_session_metadata, most_recent_session, most_recent_session_for_cwd, relative_time,
     shorten_cwd,
+};
+pub use task_store::{
+    DeletedFilter, Task, TaskCounts, TaskError, TaskId, TaskKind, TaskPatch, TaskRisk, TaskStatus,
+    TaskStore, TaskValidation, task_store_path, task_stores_dir, team_task_store_path,
+    team_tasks_dir,
 };
 
 pub fn sessions_dir() -> PathBuf {

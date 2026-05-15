@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use crate::provider::{EventStream, Provider, ProviderMessage, StreamOptions};
+use jfc_provider::{EventStream, Provider, ProviderMessage, StreamOptions};
 
 const BEDROCK_TRANSIENT_400_RETRIES: u32 = 3;
 

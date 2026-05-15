@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use crate::provider::ProviderContent;
 use crate::stream::tool_results::cap_tool_result;
 use crate::types::{ToolCall, ToolOutput, ToolStatus};
+use jfc_provider::ProviderContent;
 
 const MICROCOMPACT_TURN_THRESHOLD: usize = 10;
 const MICROCOMPACT_MAX_CHARS: usize = 500;

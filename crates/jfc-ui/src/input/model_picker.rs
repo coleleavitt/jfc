@@ -106,7 +106,7 @@ fn close_model_picker(app: &mut App) {
     app.model_picker_state.select(Some(0));
 }
 
-pub fn filtered_models(app: &App) -> Vec<crate::provider::ModelInfo> {
+pub fn filtered_models(app: &App) -> Vec<jfc_provider::ModelInfo> {
     if app.model_picker_filter.is_empty() {
         app.model_picker_models.clone()
     } else {

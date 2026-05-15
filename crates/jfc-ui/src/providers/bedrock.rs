@@ -27,7 +27,7 @@ use std::process::Stdio;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::provider::{
+use jfc_provider::{
     EventStream, ModelId, ModelInfo, Provider, ProviderId, ProviderMessage, StreamConvention,
     StreamEvent, StreamOptions,
 };
@@ -198,7 +198,7 @@ impl Default for BedrockProvider {
     }
 }
 
-impl crate::provider::seal::Sealed for BedrockProvider {}
+impl jfc_provider::seal::Sealed for BedrockProvider {}
 
 #[async_trait]
 impl Provider for BedrockProvider {

@@ -78,7 +78,7 @@ Use the MemoryCreate tool for new memories and MemoryDelete for stale ones.{cron
     let session_id = app
         .current_session_id
         .clone()
-        .unwrap_or_else(crate::session::generate_session_id);
+        .unwrap_or_else(jfc_session::generate_session_id);
     {
         let sid = session_id.clone();
         let msgs = app.messages.clone();
@@ -230,7 +230,7 @@ Then immediately execute the prompt now (do not wait for the first cron fire)."
     let session_id = app
         .current_session_id
         .clone()
-        .unwrap_or_else(crate::session::generate_session_id);
+        .unwrap_or_else(jfc_session::generate_session_id);
     {
         let sid = session_id.clone();
         let msgs = app.messages.clone();
@@ -340,7 +340,7 @@ and display the results in a readable table with columns: id, schedule, command,
     let session_id = app
         .current_session_id
         .clone()
-        .unwrap_or_else(crate::session::generate_session_id);
+        .unwrap_or_else(jfc_session::generate_session_id);
     {
         let sid = session_id.clone();
         let msgs = app.messages.clone();

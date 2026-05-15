@@ -9,13 +9,13 @@ use tokio::sync::Mutex;
 
 use crate::auto_mode::AutoModeConfig;
 use crate::context::{ReadDedupCache, ToolContext};
-use crate::provider::{ModelId, ModelInfo, Provider, ProviderId};
 use crate::query::QueryCache;
 use crate::render_cache::RenderCache;
 use crate::slate::SlateRouter;
-use crate::tasks::TaskId;
 use crate::theme::Theme;
 use crate::types::*;
+use jfc_provider::{ModelId, ModelInfo, Provider, ProviderId};
+use jfc_session::TaskId;
 
 use super::{PendingApproval, PermissionMode, load_recent_models};
 
@@ -430,7 +430,7 @@ pub struct App {
     /// sidebar opens. Storing here keeps render() pure of disk I/O. Replaced
     /// the raw-id `session_ids` cache so the sidebar can show titles, cwd
     /// badges, and relative timestamps instead of `ses_2026...` ids.
-    pub session_meta: Vec<crate::session::SessionMetadata>,
+    pub session_meta: Vec<jfc_session::SessionMetadata>,
     /// Currently-selected sidebar row.
     pub session_selected: usize,
     /// State for the sidebar `List` widget — drives auto-scroll when the
@@ -447,7 +447,7 @@ pub struct App {
     /// v126 task/todo store. Persists to `~/.config/jfc/tasks/<session>.json`
     /// so todos survive session resume and compaction. Reused across the
     /// agent's turns; the slash commands `/task-*` poke it directly.
-    pub task_store: std::sync::Arc<crate::tasks::TaskStore>,
+    pub task_store: std::sync::Arc<jfc_session::TaskStore>,
     /// Records when each task transitioned to `Completed` so the footer can
     /// keep showing them for 30 seconds with dimmed/strikethrough styling.
     pub task_completion_times: HashMap<TaskId, Instant>,
@@ -833,7 +833,7 @@ impl App {
             session_meta: Vec::new(),
             session_selected: 0,
             session_list_state: ratatui::widgets::ListState::default(),
-            current_session_id: Some(crate::session::generate_session_id()),
+            current_session_id: Some(jfc_session::generate_session_id()),
             auto_mode: crate::auto_mode::load_config(),
             permission_mode: PermissionMode::Default,
             // Tasks are scoped per-session (mirrors v126 cli.js:271505 keying
@@ -844,7 +844,7 @@ impl App {
             // changes (load from sidebar, /continue, /clear).
             // NOTE: initialized as in_memory here; re-opened with the real
             // session_id after construction (see below).
-            task_store: crate::tasks::TaskStore::in_memory(),
+            task_store: jfc_session::TaskStore::in_memory(),
             task_completion_times: HashMap::new(),
             show_task_panel: false,
             task_panel_selected: 0,
@@ -921,7 +921,7 @@ impl App {
         };
         // Open the task store with the real session id so tasks persist to disk.
         if let Some(ref sid) = app.current_session_id {
-            app.task_store = crate::tasks::TaskStore::open(sid.as_str());
+            app.task_store = jfc_session::TaskStore::open(sid.as_str());
         }
         app.sync_selected_context_window();
         tracing::info!(

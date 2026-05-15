@@ -5,10 +5,10 @@ pub(super) fn render_assistant_text_lines<'a>(
     text: &'a str,
     t: &'a Theme,
     width: usize,
-    convention: crate::provider::StreamConvention,
+    convention: jfc_provider::StreamConvention,
 ) -> Vec<Line<'static>> {
     use crate::inline_tools::{self, Segment as InlineSeg};
-    use crate::provider::StreamConvention as SC;
+    use jfc_provider::StreamConvention as SC;
 
     let needs_inline = matches!(convention, SC::InlineXmlTags)
         || (matches!(convention, SC::AnthropicNative | SC::OpenAiNative)
@@ -70,7 +70,7 @@ pub(super) fn render_assistant_text_lines<'a>(
 }
 
 fn streaming_task_footer_lines(app: &App, t: &Theme) -> Vec<Line<'static>> {
-    use crate::tasks::{DeletedFilter, TaskStatus};
+    use jfc_session::{DeletedFilter, TaskStatus};
 
     let tasks = app.task_store.list(DeletedFilter::Exclude);
     if tasks.is_empty() {
@@ -87,7 +87,7 @@ fn streaming_task_footer_lines(app: &App, t: &Theme) -> Vec<Line<'static>> {
 
     let fade_dur = std::time::Duration::from_secs(30);
     let now = std::time::Instant::now();
-    let recently_completed: Vec<&crate::tasks::Task> = tasks
+    let recently_completed: Vec<&jfc_session::Task> = tasks
         .iter()
         .filter(|tk| {
             tk.status == TaskStatus::Completed
@@ -98,7 +98,7 @@ fn streaming_task_footer_lines(app: &App, t: &Theme) -> Vec<Line<'static>> {
         })
         .collect();
 
-    let open_tasks: Vec<&crate::tasks::Task> = tasks
+    let open_tasks: Vec<&jfc_session::Task> = tasks
         .iter()
         .filter(|tk| matches!(tk.status, TaskStatus::Pending | TaskStatus::InProgress))
         .collect();

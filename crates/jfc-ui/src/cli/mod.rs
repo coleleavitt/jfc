@@ -23,10 +23,10 @@ mod terminal;
 
 pub(crate) use provider_bootstrap::{build_providers, provider_for_model};
 
-use crate::provider::ModelId;
 use auth::{AuthSubcommand, run_auth_subcommand};
 use daemon::{DaemonSubcommand, compact_terminal_agents_on_startup, run_daemon_subcommand};
 use headless::{run_print_mode, run_remote_session};
+use jfc_provider::ModelId;
 use logging::init_tracing;
 use terminal::{enable_keyboard_enhancement, install_terminal_panic_hook};
 

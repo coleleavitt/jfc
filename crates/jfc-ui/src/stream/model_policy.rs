@@ -1,4 +1,4 @@
-use crate::provider::StreamOptions;
+use jfc_provider::StreamOptions;
 
 const LEGACY_THINKING_BUDGET_TOKENS: u32 = 16_384;
 

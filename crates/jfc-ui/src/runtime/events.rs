@@ -2,8 +2,8 @@ use crossterm::event::Event;
 use tokio::sync::mpsc;
 
 use super::ExecutionResult;
-use crate::provider::{ModelInfo, ProviderId, StopReason};
 use crate::types::{ChatMessage, ToolCall};
+use jfc_provider::{ModelInfo, ProviderId, StopReason};
 
 /// Bounded channel capacity for the main runtime event loop. 1024 accommodates
 /// typical streaming bursts (50-200 chunks) with headroom for concurrent tool

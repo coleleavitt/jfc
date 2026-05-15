@@ -39,6 +39,52 @@ pub use jfc_core::{
     TodoTaskId as TaskId,
 };
 
+pub fn task_stores_dir() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("jfc")
+        .join("tasks")
+}
+
+pub fn task_store_path(session_id: &str) -> PathBuf {
+    task_stores_dir().join(format!("{session_id}.json"))
+}
+
+pub fn team_tasks_dir(team_name: &str) -> PathBuf {
+    let home = std::env::var_os("JFC_SWARM_HOME_OVERRIDE")
+        .map(PathBuf::from)
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| PathBuf::from("."));
+    home.join(".claude")
+        .join("tasks")
+        .join(sanitize_path_component(team_name))
+}
+
+pub fn team_task_store_path(team_name: &str) -> PathBuf {
+    team_tasks_dir(team_name).join("tasks.json")
+}
+
+fn sanitize_path_component(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .to_lowercase()
+}
+
+fn floor_char_boundary(value: &str, index: usize) -> usize {
+    let mut boundary = index.min(value.len());
+    while !value.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    boundary
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeletedFilter {
     Exclude,
@@ -79,11 +125,7 @@ impl TaskStore {
     /// `~/.config/jfc/tasks/<session>.json`. A fresh store is returned if the
     /// file doesn't exist or is malformed (we never panic on user data).
     pub fn open(session_id: &str) -> Arc<Self> {
-        let path = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("jfc")
-            .join("tasks")
-            .join(format!("{session_id}.json"));
+        let path = task_store_path(session_id);
         tracing::info!(
             target: "jfc::tasks",
             session_id,
@@ -103,7 +145,7 @@ impl TaskStore {
     /// Claude-compatible swarm storage (`~/.claude/tasks/<team>/tasks.json`)
     /// so the leader and in-process teammates coordinate over one list.
     pub fn open_team(team_name: &str) -> Arc<Self> {
-        let path = crate::swarm::team_helpers::tasks_dir(team_name).join("tasks.json");
+        let path = team_task_store_path(team_name);
         tracing::info!(
             target: "jfc::tasks",
             team_name,
@@ -296,7 +338,7 @@ impl TaskStore {
             }
         }
         let truncated_subject: &str = if subject.len() > 80 {
-            &subject[..subject.floor_char_boundary(80)]
+            &subject[..floor_char_boundary(&subject, 80)]
         } else {
             &subject
         };

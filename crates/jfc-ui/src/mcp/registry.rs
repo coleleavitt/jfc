@@ -25,7 +25,7 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::config::McpServerConfig;
-use crate::provider::ToolDef;
+use jfc_provider::ToolDef;
 
 use super::protocol::{self, McpTool, ToolCallOutcome};
 use super::transport::{RequestError, SpawnConfig, Transport};

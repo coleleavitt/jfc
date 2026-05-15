@@ -4,9 +4,9 @@ use futures::StreamExt;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::provider::{EventStream, StopReason, StreamEvent};
 use crate::runtime::{AppEvent, StreamEvent as RuntimeStreamEvent};
 use crate::types::{ToolCall, ToolInput, ToolKind, ToolOutput};
+use jfc_provider::{EventStream, StopReason, StreamEvent};
 
 const STREAM_INTERRUPT_POLL: Duration = Duration::from_millis(50);
 

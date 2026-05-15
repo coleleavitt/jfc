@@ -1,8 +1,8 @@
 use crate::{
     app::App,
     runtime::{AppEvent, EventSender, UiEvent},
-    tasks::{TaskPatch, TaskRisk, TaskStatus},
 };
+use jfc_session::{TaskPatch, TaskRisk, TaskStatus};
 
 pub(crate) fn factory_mode_enabled() -> bool {
     !matches!(

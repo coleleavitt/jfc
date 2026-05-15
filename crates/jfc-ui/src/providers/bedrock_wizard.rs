@@ -2,7 +2,7 @@
 //! `tengu_oauth_bedrock_wizard`.
 //!
 //! Splitting this wizard into its own module keeps [`super::bedrock`] focused
-//! on the runtime [`crate::provider::Provider`] surface and concentrates all
+//! on the runtime [`jfc_provider::Provider`] surface and concentrates all
 //! the user-facing prose / pre-flight checks here.
 //!
 //! The wizard is implemented as a *non-interactive* state machine: the

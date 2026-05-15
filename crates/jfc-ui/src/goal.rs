@@ -18,10 +18,10 @@
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
-use crate::provider::{
+use crate::types::{ChatMessage, MessagePart, Role};
+use jfc_provider::{
     ModelId, Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions,
 };
-use crate::types::{ChatMessage, MessagePart, Role};
 
 /// Hard cap on the condition body to mirror Claude Code's 4000-char ceiling.
 /// Prevents the user from accidentally pasting a 100KB prompt and

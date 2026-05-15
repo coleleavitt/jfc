@@ -1,4 +1,4 @@
-use crate::provider::ToolDef;
+use jfc_provider::ToolDef;
 
 pub fn all_tool_defs() -> Vec<ToolDef> {
     vec![

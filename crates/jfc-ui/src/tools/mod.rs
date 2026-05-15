@@ -460,15 +460,15 @@ fn collusion_detector() -> &'static std::sync::Mutex<jfc_economy::collusion::Col
 /// without restarting the process.
 fn active_provider_handle() -> &'static std::sync::RwLock<
     Option<(
-        std::sync::Arc<dyn crate::provider::Provider>,
-        crate::provider::ModelId,
+        std::sync::Arc<dyn jfc_provider::Provider>,
+        jfc_provider::ModelId,
     )>,
 > {
     static H: OnceLock<
         std::sync::RwLock<
             Option<(
-                std::sync::Arc<dyn crate::provider::Provider>,
-                crate::provider::ModelId,
+                std::sync::Arc<dyn jfc_provider::Provider>,
+                jfc_provider::ModelId,
             )>,
         >,
     > = OnceLock::new();
@@ -480,8 +480,8 @@ fn active_provider_handle() -> &'static std::sync::RwLock<
 /// this multiple times overwrites the previous handle, which is
 /// the right behavior for a model-switch flow.
 pub fn register_active_provider(
-    provider: std::sync::Arc<dyn crate::provider::Provider>,
-    model: crate::provider::ModelId,
+    provider: std::sync::Arc<dyn jfc_provider::Provider>,
+    model: jfc_provider::ModelId,
 ) {
     if let Ok(mut g) = active_provider_handle().write() {
         *g = Some((provider, model));
@@ -491,8 +491,8 @@ pub fn register_active_provider(
 /// Snapshot the active provider + model. None when main.rs hasn't
 /// registered one yet (early-boot tool calls, tests).
 pub(crate) fn snapshot_active_provider() -> Option<(
-    std::sync::Arc<dyn crate::provider::Provider>,
-    crate::provider::ModelId,
+    std::sync::Arc<dyn jfc_provider::Provider>,
+    jfc_provider::ModelId,
 )> {
     active_provider_handle().read().ok().and_then(|g| {
         g.as_ref()
@@ -829,9 +829,9 @@ unsafe extern "C" {
 }
 
 use crate::context::ReadDedupCache;
-use crate::provider::ToolDef;
-use crate::tasks::TaskStore;
 use crate::types::{ToolInput, ToolKind};
+use jfc_provider::ToolDef;
+use jfc_session::TaskStore;
 
 pub async fn all_tool_defs_with_mcp() -> Vec<ToolDef> {
     let mut tools = all_tool_defs();
@@ -1684,7 +1684,7 @@ pub async fn execute_tool(
                                 file_disp,
                             );
                             let active = format!("Updating call sites in {file_disp}");
-                            match ts.create::<crate::tasks::TaskId>(
+                            match ts.create::<jfc_session::TaskId>(
                                 subject,
                                 ct.instruction.clone(),
                                 Some(active),
@@ -1704,7 +1704,7 @@ pub async fn execute_tool(
                                     });
                                     let _ = ts.update(
                                         t.id.as_str(),
-                                        crate::tasks::TaskPatch {
+                                        jfc_session::TaskPatch {
                                             metadata: Some(metadata),
                                             ..Default::default()
                                         },

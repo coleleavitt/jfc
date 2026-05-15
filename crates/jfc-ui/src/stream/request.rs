@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::provider::{
+use crate::tools;
+use jfc_provider::{
     ModelId, Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions,
 };
-use crate::tools;
 
 use super::model_policy::{max_output_tokens_for, thinking_mode_for};
 

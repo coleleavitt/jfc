@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::provider::{
+use jfc_provider::{
     EventStream, ModelInfo, Provider, ProviderMessage, StreamConvention, StreamOptions,
 };
 
@@ -11,7 +11,7 @@ const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const ANTHROPIC_BETA: &str = "interleaved-thinking-2025-05-14";
 
-pub(crate) const AUTO_RETRY_SENTINEL: &str = "auto-retry-anthropic:";
+pub(crate) const AUTO_RETRY_SENTINEL: &str = jfc_provider::retry::ANTHROPIC_AUTO_RETRY_SENTINEL;
 
 pub struct AnthropicProvider {
     client: reqwest::Client,
@@ -21,7 +21,7 @@ pub struct AnthropicProvider {
 impl AnthropicProvider {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
-            client: super::http::streaming_client(),
+            client: jfc_provider::http::streaming_client(),
             api_key: api_key.into(),
         }
     }
@@ -175,7 +175,7 @@ fn system_blocks(system: &str) -> serde_json::Value {
     json!(blocks)
 }
 
-impl crate::provider::seal::Sealed for AnthropicProvider {}
+impl jfc_provider::seal::Sealed for AnthropicProvider {}
 
 #[async_trait]
 impl Provider for AnthropicProvider {
@@ -230,7 +230,7 @@ impl Provider for AnthropicProvider {
         let beta_header = betas;
 
         let send_started = std::time::Instant::now();
-        let resp = match super::http::send_with_retry("anthropic.messages", || {
+        let resp = match jfc_provider::http::send_with_retry("anthropic.messages", || {
             self.client
                 .post(API_URL)
                 .header("x-api-key", &self.api_key)
@@ -244,7 +244,7 @@ impl Provider for AnthropicProvider {
         {
             Ok(r) => r,
             Err(e) => {
-                let cause = super::http::classify_send_error(&e);
+                let cause = jfc_provider::http::classify_send_error(&e);
                 tracing::warn!(
                     target: "jfc::provider::anthropic",
                     error = %e,
@@ -259,7 +259,7 @@ impl Provider for AnthropicProvider {
             }
         };
 
-        super::http::report_first_byte_latency("anthropic.messages", send_started.elapsed());
+        jfc_provider::http::report_first_byte_latency("anthropic.messages", send_started.elapsed());
         let status = resp.status();
         let content_type = resp
             .headers()
@@ -296,7 +296,7 @@ impl Provider for AnthropicProvider {
             // semantic kind first gives the user a one-line cause
             // before we dump the raw body.
             let kind = anthropic_error_type(&text);
-            let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+            let friendly = jfc_provider::retry::friendly_error_message(status.as_u16(), &text);
             if should_auto_retry_status(status.as_u16(), kind) {
                 anyhow::bail!(
                     "{AUTO_RETRY_SENTINEL}Anthropic transient API error {status}: {friendly}"
@@ -346,7 +346,7 @@ impl Provider for AnthropicProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{
+    use jfc_provider::{
         Provider, ProviderContent, ProviderMessage, ProviderRole, StreamConvention, StreamOptions,
         ToolDef,
     };

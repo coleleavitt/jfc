@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use crate::provider::{ModelId, ModelSpec, Provider};
 use crate::providers::{
     AnthropicOAuthProvider, AnthropicProvider, BedrockProvider, CodexOAuthProvider,
     LiteLLMProvider, OpenAIProvider, OpenWebUIProvider, VertexProvider,
 };
+use jfc_provider::{ModelId, ModelSpec, Provider};
 
 /// Result of `build_providers()`. We keep a typed `Arc<AnthropicOAuthProvider>` next
 /// to the trait-object list so the OAuth-specific profile fetch can run without
