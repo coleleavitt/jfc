@@ -524,6 +524,39 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: "code_index".into(),
+            description: "Return a compact API/symbol index from the cached project code graph. \
+                Use this before broad file reads when you need to discover modules, functions, \
+                structs, enums, traits, or chainable symbol handles. Optional filters keep output \
+                small: `path` narrows to a file/directory, `query` matches symbol names or paths, \
+                and `kind` accepts function|struct|enum|module|trait. Output is grouped by file \
+                and includes handles like `fn:crate::module::name` for graph_query or symbol_edit."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Optional file or directory substring to filter symbols, relative or absolute."
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Optional case-insensitive substring matched against symbol names, qualified names, and file paths."
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "Optional symbol kind filter.",
+                        "enum": ["function", "struct", "enum", "module", "trait"]
+                    },
+                    "max_entries": {
+                        "type": "number",
+                        "description": "Maximum symbols to show. Default 80, capped at 200."
+                    }
+                },
+                "required": []
+            }),
+        },
+        ToolDef {
             name: "graph_query".into(),
             description: "Query the project's code graph using a pipe-based DSL with set algebra and path patterns. \
                 Surgically find callers, callees, type usages, or trace data taint without loading whole files. \

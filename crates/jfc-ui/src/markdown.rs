@@ -1342,7 +1342,7 @@ where
     fn push_line(&mut self, line: Line<'static>) {
         let style = self.line_styles.last().copied().unwrap_or_default();
         let mut line = line.patch_style(style);
-        let prefixes: Vec<Span<'static>> = self.line_prefixes.iter().cloned().collect();
+        let prefixes: Vec<Span<'static>> = self.line_prefixes.to_vec();
         if !prefixes.is_empty() {
             for (i, prefix) in prefixes.into_iter().rev().enumerate() {
                 if i == 0 {

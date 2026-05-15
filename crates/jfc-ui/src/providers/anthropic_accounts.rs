@@ -265,7 +265,7 @@ pub struct AccountSnapshot {
 
 /// One stream's worth of token usage to record. Constructed in the OAuth
 /// stream wrapper from the cumulative-delta logic that's already in
-/// `event_loop.rs::AppEvent::StreamUsage`.
+/// `event_loop.rs::StreamEvent::Usage`.
 #[derive(Debug, Clone, Default)]
 pub struct UsageDelta {
     pub input_tokens: u64,

@@ -49,7 +49,6 @@ serde_json = { workspace = true }
 unicode-segmentation = { workspace = true }
 serde = { workspace = true }
 reqwest = { workspace = true }
-eventsource-stream = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 async-trait = "0.1"
@@ -70,6 +69,10 @@ clap = { version = "4", features = ["derive"] }
 rand = "0.10.1"
 libc = "0.2.186"
 jfc-anthropic-sdk = { path = "../jfc-anthropic-sdk" }
+jfc-auth = { path = "../jfc-auth" }
+jfc-core = { path = "../jfc-core" }
+jfc-provider = { path = "../jfc-provider" }
+jfc-session = { path = "../jfc-session" }
 # OS-level desktop notifications. Fire-and-forget: when a long-running
 # turn completes or a tool fails while jfc isn't focused, the user gets
 # a tray bubble instead of having to refocus to check. Disabled when

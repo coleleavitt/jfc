@@ -1,7 +1,7 @@
 //! Real LSP client: spawns a language-server process (rust-analyzer for
 //! `.rs` projects, zls for `.zig`) and routes inbound
 //! `textDocument/publishDiagnostics` notifications into the app's event
-//! loop as `AppEvent::DiagnosticsUpdated`.
+//! loop as `AppEvent::Provider(ProviderEvent::DiagnosticsUpdated)`.
 //!
 //! ## Architecture (Helix / rust-analyzer pattern, NOT tower-lsp)
 //!
@@ -14,7 +14,7 @@
 //! 2. **stdout-reader** — accumulates bytes into a buffer, then loops
 //!    calling `lsp_rpc::try_parse(&buf)`. Each successful parse drains
 //!    the consumed bytes from the front of the buffer. On
-//!    `publishDiagnostics`, sends `AppEvent::DiagnosticsUpdated` upstream.
+//!    `publishDiagnostics`, sends `ProviderEvent::DiagnosticsUpdated` upstream.
 //! 3. **stdin-writer** — pulls `Vec<u8>` framed messages off an
 //!    `mpsc::UnboundedReceiver` and writes each to the child's stdin.
 //!    The producer side of that channel is the `LspClient.stdin_tx`
@@ -58,8 +58,8 @@ use tokio::process::{Child, Command};
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio::sync::oneshot;
 
-use crate::app::AppEvent;
 use crate::lsp_rpc;
+use crate::runtime::{AppEvent, ProviderEvent};
 
 /// Re-export from jfc-graph for convenience.
 pub use jfc_graph::enrichment::LspLocation;
@@ -486,7 +486,11 @@ async fn handle_inbound(
         let Some((_uri, entries)) = lsp_rpc::parse_publish_diagnostics(params) else {
             return;
         };
-        let _ = app_tx.send(AppEvent::DiagnosticsUpdated { entries }).await;
+        let _ = app_tx
+            .send(AppEvent::Provider(ProviderEvent::DiagnosticsUpdated {
+                entries,
+            }))
+            .await;
     }
 }
 

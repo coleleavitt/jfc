@@ -14,7 +14,6 @@
 use crate::beta;
 use crate::client::Client;
 use crate::error::{Error, Result};
-use eventsource_stream::Eventsource;
 use futures::stream::{Stream, StreamExt};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -304,8 +303,7 @@ impl SessionService {
                 resp.status()
             )));
         }
-        let bytes = resp.bytes_stream();
-        let events = bytes.eventsource().filter_map(|ev| async move {
+        let events = crate::sse::response_event_stream(resp).filter_map(|ev| async move {
             match ev {
                 Ok(event) => {
                     if event.data.is_empty() {

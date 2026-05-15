@@ -99,10 +99,7 @@ impl Overlay {
     /// Returns the list of real-filesystem paths that were updated.
     pub fn commit_changes(&mut self) -> io::Result<Vec<PathBuf>> {
         if self.consumed {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "overlay already consumed",
-            ));
+            return Err(io::Error::other("overlay already consumed"));
         }
         let mut updated = Vec::with_capacity(self.written.len());
         for rel in &self.written {
@@ -176,7 +173,7 @@ fn remove_with_retry(path: &Path, attempts: u32) -> io::Result<()> {
             Err(e) => last = Some(e),
         }
     }
-    Err(last.unwrap_or_else(|| io::Error::new(io::ErrorKind::Other, "remove failed")))
+    Err(last.unwrap_or_else(|| io::Error::other("remove failed")))
 }
 
 #[cfg(test)]

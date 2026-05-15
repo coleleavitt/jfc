@@ -22,7 +22,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 pub use overlay::{Overlay, default_base};
-pub use safety::SafetyError;
 
 /// State machine for a single tool's speculative execution.
 ///
@@ -143,7 +142,7 @@ impl SpeculationSession {
                 let mut overlay = self
                     .overlay
                     .take()
-                    .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "overlay missing"))?;
+                    .ok_or_else(|| io::Error::other("overlay missing"))?;
                 let updated = overlay.commit_changes()?;
                 self.state = SpeculationState::Committed;
                 Ok(updated)

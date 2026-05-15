@@ -97,8 +97,10 @@ pub fn save_plan(summary: &str, tasks: &[Task], outcome: PlanOutcome) {
 pub fn find_similar_plan(query: &str) -> Option<PlanEntry> {
     let dir = plans_dir();
     let entries = std::fs::read_dir(&dir).ok()?;
-    let query_words: std::collections::HashSet<&str> =
-        query.split_whitespace().map(|w| w.to_lowercase().leak() as &str).collect();
+    let query_words: std::collections::HashSet<&str> = query
+        .split_whitespace()
+        .map(|w| w.to_lowercase().leak() as &str)
+        .collect();
 
     if query_words.is_empty() {
         return None;
@@ -123,10 +125,13 @@ pub fn find_similar_plan(query: &str) -> Option<PlanEntry> {
         let plan_text = format!(
             "{} {}",
             plan.summary,
-            plan.tasks.iter().map(|t| t.subject.as_str()).collect::<Vec<_>>().join(" ")
+            plan.tasks
+                .iter()
+                .map(|t| t.subject.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
         );
-        let plan_words: std::collections::HashSet<&str> =
-            plan_text.split_whitespace().collect();
+        let plan_words: std::collections::HashSet<&str> = plan_text.split_whitespace().collect();
 
         let intersection = query_words.intersection(&plan_words).count();
         let union = query_words.union(&plan_words).count();
@@ -136,10 +141,8 @@ pub fn find_similar_plan(query: &str) -> Option<PlanEntry> {
             0.0
         };
 
-        if jaccard > 0.3 {
-            if best.as_ref().map_or(true, |(score, _)| jaccard > *score) {
-                best = Some((jaccard, plan));
-            }
+        if jaccard > 0.3 && best.as_ref().map_or(true, |(score, _)| jaccard > *score) {
+            best = Some((jaccard, plan));
         }
     }
 
@@ -156,12 +159,7 @@ pub fn list_plans() -> Vec<PlanEntry> {
 
     let mut plans: Vec<PlanEntry> = entries
         .flatten()
-        .filter(|e| {
-            e.path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                == Some("json")
-        })
+        .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
         .filter_map(|e| {
             let content = std::fs::read_to_string(e.path()).ok()?;
             serde_json::from_str(&content).ok()
@@ -191,7 +189,11 @@ fn task_to_plan_task(task: &Task) -> PlanTask {
     PlanTask {
         subject: task.subject.clone(),
         description: task.description.clone(),
-        blocked_by: task.blocked_by.iter().map(|id| id.as_str().to_owned()).collect(),
+        blocked_by: task
+            .blocked_by
+            .iter()
+            .map(|id| id.as_str().to_owned())
+            .collect(),
         acceptance_criteria: task.acceptance_criteria.clone(),
         verification_command: task.verification_command.clone(),
         risk: task.risk,

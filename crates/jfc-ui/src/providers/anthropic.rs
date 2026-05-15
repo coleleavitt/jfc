@@ -11,6 +11,8 @@ const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const ANTHROPIC_BETA: &str = "interleaved-thinking-2025-05-14";
 
+pub(crate) const AUTO_RETRY_SENTINEL: &str = "auto-retry-anthropic:";
+
 pub struct AnthropicProvider {
     client: reqwest::Client,
     api_key: String,
@@ -57,6 +59,13 @@ fn anthropic_error_type(body: &str) -> Option<&'static str> {
         }
     }
     None
+}
+
+fn should_auto_retry_status(status: u16, kind: Option<&str>) -> bool {
+    matches!(
+        kind,
+        Some("overloaded_error" | "rate_limit_error" | "api_error")
+    ) || matches!(status, 408 | 409 | 429 | 500..=599)
 }
 
 fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_json::Value {
@@ -288,6 +297,11 @@ impl Provider for AnthropicProvider {
             // before we dump the raw body.
             let kind = anthropic_error_type(&text);
             let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+            if should_auto_retry_status(status.as_u16(), kind) {
+                anyhow::bail!(
+                    "{AUTO_RETRY_SENTINEL}Anthropic transient API error {status}: {friendly}"
+                );
+            }
             match kind {
                 Some("authentication_error") => anyhow::bail!(
                     "Authentication failed — check your API key or token. \
@@ -384,6 +398,27 @@ mod tests {
         );
         // Outer `"type":"error"` alone — no inner error object — None.
         assert_eq!(anthropic_error_type("{\"type\":\"error\"}"), None);
+    }
+
+    #[test]
+    fn should_auto_retry_status_covers_overload_and_500_normal() {
+        assert!(should_auto_retry_status(529, None));
+        assert!(should_auto_retry_status(500, None));
+        assert!(should_auto_retry_status(503, Some("api_error")));
+        assert!(should_auto_retry_status(429, Some("rate_limit_error")));
+        assert!(should_auto_retry_status(408, None));
+        assert!(should_auto_retry_status(409, None));
+        assert!(should_auto_retry_status(503, Some("overloaded_error")));
+    }
+
+    #[test]
+    fn should_auto_retry_status_leaves_permanent_errors_robust() {
+        assert!(!should_auto_retry_status(
+            400,
+            Some("invalid_request_error")
+        ));
+        assert!(!should_auto_retry_status(401, Some("authentication_error")));
+        assert!(!should_auto_retry_status(413, Some("request_too_large")));
     }
 
     // Normal: a fresh provider exposes the expected name / convention pair so
@@ -571,10 +606,7 @@ mod tests {
     // `display: null` could be rejected by strict validators.
     #[test]
     fn build_body_thinking_display_absent_when_unset_robust() {
-        let body = build_body(
-            vec![make_user_msg("hi")],
-            &opts("m").adaptive(),
-        );
+        let body = build_body(vec![make_user_msg("hi")], &opts("m").adaptive());
         assert_eq!(body["thinking"]["type"], "adaptive");
         assert!(
             body["thinking"].get("display").is_none(),
@@ -587,10 +619,7 @@ mod tests {
     // with type "tokens" and total 50000 as required by the API beta spec.
     #[test]
     fn build_body_task_budget_produces_output_config_normal() {
-        let body = build_body(
-            vec![make_user_msg("hi")],
-            &opts("m").task_budget(50_000),
-        );
+        let body = build_body(vec![make_user_msg("hi")], &opts("m").task_budget(50_000));
         assert_eq!(body["output_config"]["task_budget"]["type"], "tokens");
         assert_eq!(body["output_config"]["task_budget"]["total"], 50_000u64);
     }

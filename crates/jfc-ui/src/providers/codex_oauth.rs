@@ -349,12 +349,6 @@ impl CodexOAuthProvider {
     }
 }
 
-impl From<std::path::PathBuf> for TokenStore {
-    fn from(path: std::path::PathBuf) -> Self {
-        TokenStore::new(path)
-    }
-}
-
 impl crate::provider::seal::Sealed for CodexOAuthProvider {}
 
 #[async_trait]

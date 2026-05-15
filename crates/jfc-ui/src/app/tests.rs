@@ -697,6 +697,10 @@ fn is_readonly_bash_recognises_examples_robust() {
         "cargo check",
         "cargo test --bin jfc",
         "rg pattern",
+        "# Check endpoints are available\n\
+         grep -r \"client\\|account\\|portfolio\" /tmp/report.md 2>/dev/null | head -50",
+        "find /tmp/project/src -name \"*.rs\" | sort",
+        "RUST_BACKTRACE=1 cargo test -p jfc-ui",
     ] {
         assert!(is_readonly_bash(cmd), "expected read-only: {cmd}");
     }
@@ -707,11 +711,15 @@ fn is_readonly_bash_recognises_examples_robust() {
         "mv a b",
         "cp a b",
         "echo hello > file",
+        "grep foo file > out.txt",
+        "grep foo file | xargs rm -rf",
+        "find . -delete",
+        "find . -exec rm {} \\;",
+        "sed -i s/a/b/g file",
+        "pwd\nls",
+        "echo \"$(rm -rf /tmp/x)\"",
+        "echo \"`rm -rf /tmp/x`\"",
     ] {
-        // `echo` *is* in the read-only list, so skip that one.
-        if cmd.starts_with("echo") {
-            continue;
-        }
         assert!(!is_readonly_bash(cmd), "expected write: {cmd}");
     }
 }

@@ -17,8 +17,7 @@ static ACTIVE_EFFORT: RwLock<Option<String>> = RwLock::new(None);
 /// `fast-mode-2026-02-01` value to the `anthropic-beta` header so requests
 /// are routed to Anthropic's low-latency inference path.
 /// Mirrors v2.1.139's `/fast` command (Alt+O keybind).
-static ACTIVE_FAST_MODE: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static ACTIVE_FAST_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Read the process-global fast-mode flag.
 pub fn active_fast_mode() -> bool {
@@ -38,8 +37,10 @@ pub fn active_global() -> Option<String> {
 /// Reasoning effort levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ReasoningEffort {
     Low,
+    #[default]
     Medium,
     High,
     XHigh,
@@ -102,12 +103,6 @@ impl ReasoningEffort {
 impl fmt::Display for ReasoningEffort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.api_value())
-    }
-}
-
-impl Default for ReasoningEffort {
-    fn default() -> Self {
-        Self::Medium
     }
 }
 

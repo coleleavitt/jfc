@@ -118,8 +118,9 @@ fn subagent_model_alias(model: &str, provider_name: &str) -> String {
 /// Lazily cached agent-model config. Config is unlikely to change mid-session,
 /// so we parse it once and reuse the `agents` map on every subagent spawn.
 fn cached_agent_models() -> &'static std::collections::HashMap<String, crate::config::AgentConfig> {
-    static CACHE: std::sync::OnceLock<std::collections::HashMap<String, crate::config::AgentConfig>> =
-        std::sync::OnceLock::new();
+    static CACHE: std::sync::OnceLock<
+        std::collections::HashMap<String, crate::config::AgentConfig>,
+    > = std::sync::OnceLock::new();
     CACHE.get_or_init(|| crate::config::load().agents)
 }
 
@@ -169,7 +170,14 @@ pub(crate) fn selected_subagent_model(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, path::PathBuf, sync::Mutex};
+    use std::{
+        collections::{HashMap, VecDeque},
+        path::PathBuf,
+        sync::{
+            Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
 
     use super::*;
 
@@ -301,6 +309,91 @@ mod tests {
 
         assert!(error.contains("provider switching for subagents is not wired yet"));
     }
+
+    struct ScriptedProvider {
+        scripts: Mutex<VecDeque<Vec<crate::provider::StreamEvent>>>,
+        calls: AtomicUsize,
+    }
+
+    impl ScriptedProvider {
+        fn new(scripts: Vec<Vec<crate::provider::StreamEvent>>) -> Self {
+            Self {
+                scripts: Mutex::new(scripts.into()),
+                calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::provider::Provider for ScriptedProvider {
+        fn name(&self) -> &str {
+            "anthropic"
+        }
+
+        fn available_models(&self) -> Vec<crate::provider::ModelInfo> {
+            vec![]
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<crate::provider::ProviderMessage>,
+            _options: &crate::provider::StreamOptions,
+        ) -> anyhow::Result<crate::provider::EventStream> {
+            use futures::stream;
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let events = self
+                .scripts
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| anyhow::anyhow!("scripts exhausted"))?;
+            Ok(Box::pin(stream::iter(events.into_iter().map(Ok))))
+        }
+    }
+
+    impl crate::provider::seal::Sealed for ScriptedProvider {}
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn execute_task_retries_retryable_stream_error_normal() {
+        let provider = ScriptedProvider::new(vec![
+            vec![crate::provider::StreamEvent::Error {
+                message: format!(
+                    "{}Anthropic transient API error 529: overloaded",
+                    crate::providers::anthropic::AUTO_RETRY_SENTINEL
+                ),
+            }],
+            vec![
+                crate::provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "recovered".into(),
+                },
+                crate::provider::StreamEvent::Done {
+                    stop_reason: crate::provider::StopReason::EndTurn,
+                },
+            ],
+        ]);
+
+        let result = execute_task(
+            &task_input(None),
+            &provider,
+            crate::provider::ModelId::new("claude-opus-4-7"),
+            None,
+            None,
+            Some(&agent_model(None)),
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(
+            !result.is_error(),
+            "subagent should recover: {}",
+            result.output
+        );
+        assert_eq!(result.output, "recovered");
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+    }
 }
 
 /// Run a subagent. The agent gets its own system prompt, tool catalogue
@@ -317,7 +410,7 @@ pub async fn execute_task(
     task_input: &crate::types::TaskInput,
     provider: &dyn crate::provider::Provider,
     model_id: crate::provider::ModelId,
-    tx: Option<&tokio::sync::mpsc::Sender<crate::app::AppEvent>>,
+    tx: Option<&tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>,
     task_id: Option<&str>,
     agent_def: Option<&crate::agents::AgentDef>,
     cwd_override: Option<PathBuf>,
@@ -344,7 +437,7 @@ async fn execute_task_inner(
     task_input: &crate::types::TaskInput,
     provider: &dyn crate::provider::Provider,
     model_id: crate::provider::ModelId,
-    tx: Option<&tokio::sync::mpsc::Sender<crate::app::AppEvent>>,
+    tx: Option<&tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>,
     task_id: Option<&str>,
     agent_def: Option<&crate::agents::AgentDef>,
     cwd_override: Option<PathBuf>,
@@ -417,7 +510,7 @@ async fn execute_task_inner(
     // Claude Code's `toolUseCount` / `cumulativeOutputTokens` fields.
     let mut total_tool_uses: u32 = 0;
     let started_at = std::time::Instant::now();
-    let emit_progress = |tx: Option<&tokio::sync::mpsc::Sender<crate::app::AppEvent>>,
+    let emit_progress = |tx: Option<&tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>,
                          id: Option<&str>,
                          last_tool: Option<String>,
                          tool_use_count: Option<u32>,
@@ -427,16 +520,18 @@ async fn execute_task_inner(
                          output_tokens: Option<u64>| {
         if let (Some(tx), Some(id)) = (tx, id) {
             // TaskProgress is non-critical; the next progress update supersedes this one.
-            let _ = tx.try_send(crate::app::AppEvent::TaskProgress {
-                task_id: crate::ids::TaskId::from(id),
-                last_tool,
-                elapsed_ms: started_at.elapsed().as_millis() as u64,
-                tool_use_count,
-                input_tokens,
-                cache_read_tokens,
-                cache_write_tokens,
-                output_tokens,
-            });
+            let _ = tx.try_send(crate::runtime::AppEvent::Task(
+                crate::runtime::TaskEvent::Progress {
+                    task_id: crate::ids::TaskId::from(id),
+                    last_tool,
+                    elapsed_ms: started_at.elapsed().as_millis() as u64,
+                    tool_use_count,
+                    input_tokens,
+                    cache_read_tokens,
+                    cache_write_tokens,
+                    output_tokens,
+                },
+            ));
         }
     };
 
@@ -506,115 +601,188 @@ async fn execute_task_inner(
             );
         }
 
-        let stream = match crate::stream::open_stream_with_bedrock_retries(
-            provider,
-            std::sync::Arc::new(conversation.clone()),
-            &options,
-        )
-        .await
-        {
-            Ok(s) => s,
-            Err(e) => return ExecutionResult::failure(format!("Subagent stream error: {e}")),
-        };
-        tokio::pin!(stream);
-
         // Per-iteration accumulators. `tool_uses` collects every
         // tool_use block the model emits this turn so we can execute
         // them in order and feed the results back on the next pass.
-        let mut turn_text = String::new();
-        let mut tool_uses: Vec<(String, String, String)> = Vec::new(); // (id, name, input_json)
-        let mut stop_reason: Option<StopReason> = None;
-        let mut usage_baseline = (0u32, 0u32, 0u32, 0u32);
-        let mut reported_input_for_turn = false;
-
-        while let Some(event) = stream.next().await {
-            if task_id
-                .map(crate::daemon::background_agent_cancel_requested)
-                .unwrap_or(false)
+        let mut stream_retry_attempt = 0u32;
+        let (turn_text, tool_uses, stop_reason) = loop {
+            let stream = match crate::stream::open_stream_with_bedrock_retries(
+                provider,
+                std::sync::Arc::new(conversation.clone()),
+                &options,
+            )
+            .await
             {
-                return ExecutionResult::failure(
-                    "cancelled: background agent cancellation requested",
-                );
-            }
-            match event {
-                Ok(StreamEvent::TextDelta { delta, .. }) => {
-                    // Pipe deltas through to the task panel so the user
-                    // sees the subagent's prose stream live.
-                    if let (Some(tx), Some(id)) = (tx, task_id) {
-                        let _ = tx
-                            .send(crate::app::AppEvent::AgentChunk {
-                                task_id: crate::ids::TaskId::from(id),
-                                text: delta.clone(),
-                            })
-                            .await;
+                Ok(s) => s,
+                Err(e) => {
+                    let message = e.to_string();
+                    if let Some(retry) = crate::providers::retry::retryable_stream_error(&message) {
+                        let delay =
+                            crate::providers::retry::stream_retry_delay(stream_retry_attempt);
+                        tracing::warn!(
+                            target: "jfc::tools::subagent",
+                            task_id = ?task_id,
+                            turn,
+                            retry_attempt = stream_retry_attempt + 1,
+                            provider = retry.provider,
+                            delay_ms = delay.as_millis() as u64,
+                            error = %retry.message,
+                            "subagent stream open hit retryable provider error"
+                        );
+                        stream_retry_attempt = stream_retry_attempt.saturating_add(1);
+                        tokio::time::sleep(delay).await;
+                        if task_id
+                            .map(crate::daemon::background_agent_cancel_requested)
+                            .unwrap_or(false)
+                        {
+                            return ExecutionResult::failure(
+                                "cancelled: background agent cancellation requested",
+                            );
+                        }
+                        continue;
                     }
-                    turn_text.push_str(&delta);
+                    return ExecutionResult::failure(format!("Subagent stream error: {e}"));
                 }
-                Ok(StreamEvent::TextDone { text: t, .. }) => {
-                    if turn_text.is_empty() {
-                        turn_text = t;
+            };
+            tokio::pin!(stream);
+
+            let mut turn_text = String::new();
+            let mut tool_uses: Vec<(String, String, String)> = Vec::new(); // (id, name, input_json)
+            let mut stop_reason: Option<StopReason> = None;
+            let mut usage_baseline = (0u32, 0u32, 0u32, 0u32);
+            let mut reported_input_for_turn = false;
+            let mut retryable_stream_error: Option<String> = None;
+
+            while let Some(event) = stream.next().await {
+                if task_id
+                    .map(crate::daemon::background_agent_cancel_requested)
+                    .unwrap_or(false)
+                {
+                    return ExecutionResult::failure(
+                        "cancelled: background agent cancellation requested",
+                    );
+                }
+                match event {
+                    Ok(StreamEvent::TextDelta { delta, .. }) => {
+                        // Pipe deltas through to the task panel so the user
+                        // sees the subagent's prose stream live.
+                        if let (Some(tx), Some(id)) = (tx, task_id) {
+                            let _ = tx
+                                .send(crate::runtime::AppEvent::Task(
+                                    crate::runtime::TaskEvent::AgentChunk {
+                                        task_id: crate::ids::TaskId::from(id),
+                                        text: delta.clone(),
+                                    },
+                                ))
+                                .await;
+                        }
+                        turn_text.push_str(&delta);
                     }
-                }
-                Ok(StreamEvent::ToolDone {
-                    tool_name,
-                    tool_use_id,
-                    input_json,
-                    ..
-                }) => {
-                    tool_uses.push((tool_use_id, tool_name, input_json));
-                }
-                Ok(StreamEvent::Usage {
-                    input_tokens,
-                    output_tokens,
-                    cache_read_tokens,
-                    cache_write_tokens,
-                }) => {
-                    let output_delta = output_tokens.saturating_sub(usage_baseline.1);
-                    usage_baseline = (
+                    Ok(StreamEvent::TextDone { text: t, .. }) => {
+                        if turn_text.is_empty() {
+                            turn_text = t;
+                        }
+                    }
+                    Ok(StreamEvent::ToolDone {
+                        tool_name,
+                        tool_use_id,
+                        input_json,
+                        ..
+                    }) => {
+                        tool_uses.push((tool_use_id, tool_name, input_json));
+                    }
+                    Ok(StreamEvent::Usage {
                         input_tokens,
                         output_tokens,
                         cache_read_tokens,
                         cache_write_tokens,
-                    );
-                    // Surface this turn's input + output tokens to the
-                    // parent fan UI. Input/cache are sent once per API
-                    // round-trip so the session cost ledger can add the
-                    // request once; output remains a streaming delta.
-                    let input_update = if reported_input_for_turn {
-                        None
-                    } else {
-                        reported_input_for_turn = true;
-                        Some((
-                            input_tokens as u64,
-                            cache_read_tokens as u64,
-                            cache_write_tokens as u64,
-                        ))
-                    };
-                    emit_progress(
-                        tx,
-                        task_id,
-                        None,
-                        None,
-                        input_update.map(|(input, _, _)| input),
-                        input_update.map(|(_, cache_read, _)| cache_read),
-                        input_update.map(|(_, _, cache_write)| cache_write),
-                        Some(output_delta as u64),
-                    );
+                    }) => {
+                        let output_delta = output_tokens.saturating_sub(usage_baseline.1);
+                        usage_baseline = (
+                            input_tokens,
+                            output_tokens,
+                            cache_read_tokens,
+                            cache_write_tokens,
+                        );
+                        // Surface this turn's input + output tokens to the
+                        // parent fan UI. Input/cache are sent once per API
+                        // round-trip so the session cost ledger can add the
+                        // request once; output remains a streaming delta.
+                        let input_update = if reported_input_for_turn {
+                            None
+                        } else {
+                            reported_input_for_turn = true;
+                            Some((
+                                input_tokens as u64,
+                                cache_read_tokens as u64,
+                                cache_write_tokens as u64,
+                            ))
+                        };
+                        emit_progress(
+                            tx,
+                            task_id,
+                            None,
+                            None,
+                            input_update.map(|(input, _, _)| input),
+                            input_update.map(|(_, cache_read, _)| cache_read),
+                            input_update.map(|(_, _, cache_write)| cache_write),
+                            Some(output_delta as u64),
+                        );
+                    }
+                    Ok(StreamEvent::Done { stop_reason: sr }) => {
+                        stop_reason = Some(sr);
+                    }
+                    Ok(StreamEvent::Error { message }) => {
+                        if crate::providers::retry::retryable_stream_error(&message).is_some() {
+                            retryable_stream_error = Some(message);
+                            break;
+                        }
+                        last_error = Some(message);
+                        break 'outer;
+                    }
+                    Err(e) => {
+                        let message = e.to_string();
+                        if crate::providers::retry::retryable_stream_error(&message).is_some() {
+                            retryable_stream_error = Some(message);
+                            break;
+                        }
+                        last_error = Some(message);
+                        break 'outer;
+                    }
+                    Ok(_) => {}
                 }
-                Ok(StreamEvent::Done { stop_reason: sr }) => {
-                    stop_reason = Some(sr);
-                }
-                Ok(StreamEvent::Error { message }) => {
-                    last_error = Some(message);
-                    break 'outer;
-                }
-                Err(e) => {
-                    last_error = Some(e.to_string());
-                    break 'outer;
-                }
-                Ok(_) => {}
             }
-        }
+
+            if let Some(message) = retryable_stream_error {
+                let Some(retry) = crate::providers::retry::retryable_stream_error(&message) else {
+                    unreachable!("message was classified above");
+                };
+                let delay = crate::providers::retry::stream_retry_delay(stream_retry_attempt);
+                tracing::warn!(
+                    target: "jfc::tools::subagent",
+                    task_id = ?task_id,
+                    turn,
+                    retry_attempt = stream_retry_attempt + 1,
+                    provider = retry.provider,
+                    delay_ms = delay.as_millis() as u64,
+                    error = %retry.message,
+                    "subagent stream event hit retryable provider error"
+                );
+                stream_retry_attempt = stream_retry_attempt.saturating_add(1);
+                tokio::time::sleep(delay).await;
+                if task_id
+                    .map(crate::daemon::background_agent_cancel_requested)
+                    .unwrap_or(false)
+                {
+                    return ExecutionResult::failure(
+                        "cancelled: background agent cancellation requested",
+                    );
+                }
+                continue;
+            }
+
+            break (turn_text, tool_uses, stop_reason);
+        };
 
         // Append the assistant turn (text + tool_uses, if any) so the
         // next iteration's request reflects the running history.

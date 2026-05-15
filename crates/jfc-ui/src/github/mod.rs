@@ -26,7 +26,7 @@ pub mod autofix;
 pub mod client;
 pub mod install;
 
-pub use client::{GhClient, GhError, Pr, PrComment};
+pub use client::GhClient;
 
 /// Repository coordinates parsed from a git remote URL.
 ///

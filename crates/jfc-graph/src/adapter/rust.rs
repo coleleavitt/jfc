@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use tracing::warn;
-use tree_sitter::{Node as TsNode, Parser};
+use tree_sitter::{Node as TsNode, Parser, Tree};
 
 use crate::adapter::{AdapterError, LanguageAdapter, ParseOutcome, ParsedFile, first_syntax_error};
 use crate::edges::{EdgeData, EdgeKind};
@@ -23,6 +23,19 @@ impl RustAdapter {
             parser: Mutex::new(parser),
         }
     }
+
+    fn parse_tree(&self, path: &Path, content: &str) -> Result<Tree, AdapterError> {
+        let mut parser = self.parser.lock().map_err(|_| AdapterError::ParseFailed {
+            path: path.display().to_string(),
+            reason: "rust parser mutex poisoned".into(),
+        })?;
+        parser
+            .parse(content, None)
+            .ok_or_else(|| AdapterError::ParseFailed {
+                path: path.display().to_string(),
+                reason: "tree-sitter returned None".into(),
+            })
+    }
 }
 
 impl Default for RustAdapter {
@@ -41,15 +54,7 @@ impl LanguageAdapter for RustAdapter {
     }
 
     fn parse_file(&self, path: &Path, content: &str) -> Result<ParsedFile, AdapterError> {
-        let tree = self
-            .parser
-            .lock()
-            .unwrap()
-            .parse(content, None)
-            .ok_or_else(|| AdapterError::ParseFailed {
-                path: path.display().to_string(),
-                reason: "tree-sitter returned None".into(),
-            })?;
+        let tree = self.parse_tree(path, content)?;
 
         if let Some(err) = first_syntax_error(&tree, path, content) {
             // Surface the typed error. Callers that want the partial tree
@@ -65,15 +70,7 @@ impl LanguageAdapter for RustAdapter {
     }
 
     fn parse_file_lenient(&self, path: &Path, content: &str) -> Result<ParseOutcome, AdapterError> {
-        let tree = self
-            .parser
-            .lock()
-            .unwrap()
-            .parse(content, None)
-            .ok_or_else(|| AdapterError::ParseFailed {
-                path: path.display().to_string(),
-                reason: "tree-sitter returned None".into(),
-            })?;
+        let tree = self.parse_tree(path, content)?;
 
         let error = first_syntax_error(&tree, path, content);
         let parsed = ParsedFile {
@@ -207,9 +204,7 @@ fn extract_nodes_recursive(
 
                     if let Some(body) = child.child_by_field_name("body") {
                         let mut new_scope: Vec<&str> = scope.to_vec();
-                        let name_in_source =
-                            &source[child.child_by_field_name("name").unwrap().byte_range()];
-                        new_scope.push(name_in_source);
+                        new_scope.push(name.as_str());
                         extract_nodes_recursive(
                             body,
                             source,
@@ -416,7 +411,7 @@ fn extract_trait(
 
     let mut method_names: Vec<String> = Vec::new();
     if let Some(body) = node.child_by_field_name("body") {
-        let trait_name = &source[node.child_by_field_name("name").unwrap().byte_range()];
+        let trait_name = name.as_str();
         let mut method_cursor = body.walk();
         for item in body.named_children(&mut method_cursor) {
             if item.kind() == "function_signature_item" || item.kind() == "function_item" {

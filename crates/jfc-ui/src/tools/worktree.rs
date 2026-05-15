@@ -11,9 +11,11 @@ pub(super) async fn execute_enter_plan_mode(reason: &str) -> ExecutionResult {
     };
     let reason = reason.to_owned();
     if let Err(e) = tx
-        .send(crate::app::AppEvent::EnterPlanModeRequested {
-            reason: reason.clone(),
-        })
+        .send(crate::runtime::AppEvent::Ui(
+            crate::runtime::UiEvent::EnterPlanModeRequested {
+                reason: reason.clone(),
+            },
+        ))
         .await
     {
         return ExecutionResult::failure(format!("enter_plan_mode: send failed: {e}"));

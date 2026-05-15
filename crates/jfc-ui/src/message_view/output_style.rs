@@ -188,9 +188,8 @@ pub(super) fn colorize_git_commit_line(
     if line.starts_with('[') {
         let close = line.find(']')?;
         let inside = &line[1..close];
-        let mut parts = inside.splitn(2, ' ');
-        let branch = parts.next()?;
-        let hash = parts.next()?;
+        let (branch, hash) = inside.split_once(' ')?;
+
         let subject = &line[close + 1..];
         if !hash.chars().all(|c| c.is_ascii_hexdigit()) {
             return None;
@@ -409,10 +408,9 @@ pub(super) fn colorize_diagnostic_prefix(
         ("note: ", Style::default().fg(t.accent), r)
     } else if let Some(r) = trimmed.strip_prefix("help: ") {
         ("help: ", Style::default().fg(t.success), r)
-    } else if let Some(r) = trimmed.strip_prefix("usage: ") {
-        ("usage: ", Style::default().fg(t.warning), r)
     } else {
-        return None;
+        let r = trimmed.strip_prefix("usage: ")?;
+        ("usage: ", Style::default().fg(t.warning), r)
     };
     Some(vec![
         Span::styled(leading_ws.to_owned(), Style::default().fg(fallback)),

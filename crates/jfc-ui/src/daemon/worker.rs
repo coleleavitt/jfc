@@ -434,17 +434,18 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
         );
     }
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::app::AppEvent>(512);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::runtime::AppEvent>(512);
     let event_task_id = launch.task_id.clone();
     let event_collector = tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
             match event {
-                crate::app::AppEvent::AgentChunk { task_id, text }
-                    if task_id.as_str() == event_task_id =>
-                {
+                crate::runtime::AppEvent::Task(crate::runtime::TaskEvent::AgentChunk {
+                    task_id,
+                    text,
+                }) if task_id.as_str() == event_task_id => {
                     record_background_agent_log(&event_task_id, &text);
                 }
-                crate::app::AppEvent::TaskProgress {
+                crate::runtime::AppEvent::Task(crate::runtime::TaskEvent::Progress {
                     task_id,
                     last_tool,
                     tool_use_count,
@@ -453,7 +454,7 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
                     cache_write_tokens,
                     output_tokens,
                     ..
-                } if task_id.as_str() == event_task_id => {
+                }) if task_id.as_str() == event_task_id => {
                     record_background_agent_progress(
                         &event_task_id,
                         last_tool.as_deref(),

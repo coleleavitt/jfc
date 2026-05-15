@@ -2,7 +2,7 @@
 //!
 //! Spawns `cargo check --message-format=json` as a background watcher and
 //! converts each compiler-message JSON line into a `DiagnosticEntry`.
-//! Emits `AppEvent::DiagnosticsUpdated { entries }` whenever the build
+//! Emits `ProviderEvent::DiagnosticsUpdated { entries }` whenever the build
 //! completes (one snapshot per check run, replacing whatever was there).
 //!
 //! This is the most useful "LSP-style" producer for a Rust project —
@@ -32,8 +32,8 @@
 //! }}
 //! ```
 
-use crate::app::AppEvent;
 use crate::diagnostics::{DiagnosticEntry, Severity};
+use crate::runtime::{AppEvent, ProviderEvent};
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -43,7 +43,7 @@ use tokio::sync::mpsc::Sender;
 
 /// Spawn `cargo check --message-format=json` from `cwd`. Streams each
 /// line through `parse_cargo_message`; on process exit, sends one
-/// `AppEvent::DiagnosticsUpdated` carrying the accumulated set. Errors
+/// `ProviderEvent::DiagnosticsUpdated` carrying the accumulated set. Errors
 /// (cargo missing, non-cargo project) silently no-op — better to leave
 /// the row blank than spam the user.
 pub async fn run_once(cwd: PathBuf, tx: Sender<AppEvent>) {
@@ -85,7 +85,11 @@ pub async fn run_once(cwd: PathBuf, tx: Sender<AppEvent>) {
         count = entries.len(),
         "cargo check complete"
     );
-    let _ = tx.send(AppEvent::DiagnosticsUpdated { entries }).await;
+    let _ = tx
+        .send(AppEvent::Provider(ProviderEvent::DiagnosticsUpdated {
+            entries,
+        }))
+        .await;
 }
 
 #[derive(Deserialize)]

@@ -1,5 +1,5 @@
-use std::{cell::RefCell, collections::HashMap, sync::Arc, time::Instant};
 use indexmap::IndexMap;
+use std::{cell::RefCell, collections::HashMap, sync::Arc, time::Instant};
 
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -38,6 +38,51 @@ pub struct QueuedPrompt {
     /// from `app.pasted_images` and pinned to THIS prompt so they
     /// attach atomically when `drain_queued_prompts` promotes the entry.
     pub attachments: Vec<crate::attachments::Attachment>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkRecoveryProvider {
+    Anthropic,
+    AnthropicOAuth,
+    OpenWebUI,
+}
+
+impl NetworkRecoveryProvider {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::AnthropicOAuth => "anthropic-oauth",
+            Self::OpenWebUI => "openwebui",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkRecoveryReason {
+    Overloaded,
+    RateLimited,
+    ServerError,
+    Transient,
+}
+
+impl NetworkRecoveryReason {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Overloaded => "overloaded",
+            Self::RateLimited => "rate limited",
+            Self::ServerError => "server error",
+            Self::Transient => "retryable",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NetworkRecoveryStatus {
+    pub provider: NetworkRecoveryProvider,
+    pub reason: NetworkRecoveryReason,
+    pub status_code: Option<u16>,
+    pub attempts: u32,
+    pub updated_at: Instant,
 }
 
 pub const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -113,6 +158,15 @@ pub struct App {
     /// for the spinner's token estimate (matches v126's `responseLengthRef.current / 4`).
     /// Reset at the start of each streaming turn.
     pub streaming_response_bytes: usize,
+    /// Visible while a provider is silently retrying a transient network/API
+    /// failure. The spinner replaces its normal cycling verb with this code
+    /// until the next real stream byte arrives.
+    pub network_recovery_status: Option<NetworkRecoveryStatus>,
+    pub network_recovery_attempts: u32,
+    /// Latest status.claude.com heartbeat. This is intentionally
+    /// best-effort UI context, not a dependency for provider requests.
+    pub claude_status: Option<crate::claude_status::ClaudeStatusSnapshot>,
+    pub claude_status_error: Option<String>,
     pub streaming_assistant_idx: Option<usize>,
     pub is_streaming: bool,
     /// Updated on every inbound stream event (chunk, tool delta, done, error).
@@ -413,8 +467,8 @@ pub struct App {
     pub plan_verified_this_batch: bool,
     pub last_usage_input: u32,
     pub last_usage_output: u32,
-    /// Auto-expiring toast queue. Pruned every `Tick`. Pushed via
-    /// `AppEvent::Toast` from anywhere in the app (compaction milestones,
+    /// Auto-expiring toast queue. Pruned every `UiEvent::Tick`. Pushed via
+    /// `AppEvent::Ui(UiEvent::Toast)` from anywhere in the app (compaction milestones,
     /// session save success, classifier blocks). Mirrors v126's terminal
     /// `notification()` for non-blocking status surfacing.
     pub toasts: Vec<crate::toast::Toast>,
@@ -431,7 +485,7 @@ pub struct App {
     /// Active LSP diagnostics, keyed by file path. Rendered as a one-line
     /// `Found N new diagnostic issue(s) in M file(s) (ctrl+o to expand)`
     /// row above the spinner when non-empty. Updated by
-    /// `AppEvent::DiagnosticsUpdated`. Mirrors v126 cli.js:338030-338040.
+    /// `AppEvent::Provider(ProviderEvent::DiagnosticsUpdated)`. Mirrors v126 cli.js:338030-338040.
     pub diagnostics: Vec<crate::diagnostics::DiagnosticEntry>,
     /// Whether the Ctrl+O diagnostic-expansion panel is open. v126 cli.js
     /// :338038 advertises `(ctrl+o to expand)` on the summary row; this
@@ -557,8 +611,8 @@ pub struct App {
     /// Set of `BackgroundTask.messages` indices the user expanded with `o`
     /// while drilled into the subagent task view. Long entries (>80 lines or
     /// >5 KB) collapse to a 5-line preview by default; presence in this set
-    /// flips them to fully expanded. Cleared whenever `viewing_task_id`
-    /// changes so expansion state is per-drill-in, not sticky across tasks.
+    /// > flips them to fully expanded. Cleared whenever `viewing_task_id`
+    /// > changes so expansion state is per-drill-in, not sticky across tasks.
     ///
     /// TODO Phase B: once `BackgroundTask.messages` migrates to
     /// `Vec<ChatMessage>` and the subagent view renders through the same
@@ -694,6 +748,10 @@ impl App {
             streaming_text: String::new(),
             streaming_reasoning: String::new(),
             streaming_response_bytes: 0,
+            network_recovery_status: None,
+            network_recovery_attempts: 0,
+            claude_status: None,
+            claude_status_error: None,
             streaming_assistant_idx: None,
             streaming_started_at: None,
             streaming_last_token_at: None,

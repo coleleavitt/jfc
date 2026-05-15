@@ -1071,7 +1071,7 @@ pub fn parallel_edit_groups(graph: &CodeGraph) -> Vec<ParallelGroup> {
         .into_iter()
         .map(|(color, members)| ParallelGroup { color, members })
         .collect();
-    result.sort_by(|a, b| b.members.len().cmp(&a.members.len()));
+    result.sort_by_key(|group| std::cmp::Reverse(group.members.len()));
     result
 }
 
@@ -2052,7 +2052,7 @@ mod tests {
         let mut g = CodeGraph::new();
         let a = g.add_node(node("a"));
         let b = g.add_node(node("b"));
-        let c = g.add_node(node("c")); // isolated
+        let _c = g.add_node(node("c")); // isolated
         g.add_edge(&a, &b, edge()).unwrap();
 
         assert_eq!(independent_module_count(&g), 2);

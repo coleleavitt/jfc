@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
@@ -9,6 +7,17 @@ use crate::types::{
     ReplacementMode, Role, TaskInput, TaskLifecycle, TaskStatusPart, ToolCall, ToolInput, ToolKind,
     ToolOutput, ToolStatus, validate_turn_invariants,
 };
+
+pub use jfc_session::{
+    SessionMetadata, cwd_mismatch_message, format_session_id_timestamp, generate_session_id,
+    group_by_cwd, list_session_ids_only, list_sessions, list_sessions_filtered,
+    list_sessions_with_metadata, load_session_metadata, most_recent_session,
+    most_recent_session_for_cwd, relative_time, sessions_dir, shorten_cwd,
+};
+
+fn default_true() -> bool {
+    true
+}
 
 /// Session metadata stored alongside messages
 #[derive(Serialize, Deserialize)]
@@ -186,6 +195,14 @@ pub enum SerializedToolInput {
         #[serde(default)]
         model: Option<String>,
         #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        team_name: Option<String>,
+        #[serde(default)]
+        mode: Option<String>,
+        #[serde(default)]
+        isolation: Option<String>,
+        #[serde(default)]
         parent_task_id: Option<String>,
     },
     TaskCreate {
@@ -195,6 +212,16 @@ pub enum SerializedToolInput {
         active_form: Option<String>,
         #[serde(default)]
         blocked_by: Vec<String>,
+        #[serde(default)]
+        acceptance_criteria: Option<String>,
+        #[serde(default)]
+        verification_command: Option<String>,
+        #[serde(default)]
+        risk: Option<String>,
+        #[serde(default)]
+        parent_id: Option<String>,
+        #[serde(default)]
+        kind: Option<String>,
     },
     TaskUpdate {
         task_id: String,
@@ -206,6 +233,16 @@ pub enum SerializedToolInput {
         description: Option<String>,
         #[serde(default)]
         owner: Option<String>,
+        #[serde(default)]
+        acceptance_criteria: Option<String>,
+        #[serde(default)]
+        verification_command: Option<String>,
+        #[serde(default)]
+        risk: Option<String>,
+        #[serde(default)]
+        parent_id: Option<String>,
+        #[serde(default)]
+        kind: Option<String>,
     },
     TaskList {
         #[serde(default)]
@@ -232,6 +269,127 @@ pub enum SerializedToolInput {
     },
     MemoryDelete {
         path: String,
+    },
+    TaskValidate,
+    ToolSearch {
+        query: String,
+        #[serde(default)]
+        limit: Option<u64>,
+    },
+    ToolSuggest {
+        intent: String,
+        #[serde(default)]
+        limit: Option<u64>,
+    },
+    TeamCreate {
+        team_name: String,
+        #[serde(default)]
+        description: Option<String>,
+    },
+    TeamDelete,
+    SendMessage {
+        to: String,
+        message: String,
+        #[serde(default)]
+        summary: Option<String>,
+    },
+    TeamMemberMode {
+        member_name: String,
+        mode: String,
+    },
+    CodeIndex {
+        #[serde(default)]
+        path: Option<String>,
+        #[serde(default)]
+        query: Option<String>,
+        #[serde(default)]
+        kind: Option<String>,
+        #[serde(default)]
+        max_entries: Option<usize>,
+    },
+    GraphQuery {
+        query: String,
+        #[serde(default)]
+        max_tokens: Option<usize>,
+        #[serde(default)]
+        include_handles: Option<bool>,
+    },
+    PostBounty {
+        description: String,
+        budget: u64,
+        acceptance_criteria: String,
+        #[serde(default)]
+        max_solvers: Option<u8>,
+        #[serde(default)]
+        auto_dispatch: bool,
+    },
+    MarketStatus {
+        #[serde(default)]
+        bounty_id: Option<String>,
+    },
+    RunBounty {
+        bounty_id: String,
+        #[serde(default)]
+        max_solvers: Option<u8>,
+    },
+    RunCoverage {
+        #[serde(default)]
+        lcov_path: Option<String>,
+        #[serde(default = "default_true")]
+        include_untested_list: bool,
+    },
+    SymbolEdit {
+        handle: String,
+        new_content: String,
+        #[serde(default)]
+        validate: bool,
+        #[serde(default, rename = "dispatch_cascade")]
+        dispatch_cascade: bool,
+    },
+    ExitPlanMode {
+        plan: String,
+    },
+    MultiEdit {
+        file_path: String,
+        edits: serde_json::Value,
+    },
+    AskUserQuestion {
+        question: String,
+        options: serde_json::Value,
+        #[serde(default)]
+        multi_select: bool,
+    },
+    WebFetch {
+        url: String,
+        #[serde(default)]
+        prompt: Option<String>,
+    },
+    WebSearch {
+        query: String,
+        #[serde(default)]
+        max_results: Option<u32>,
+    },
+    Mcp {
+        name: String,
+        arguments: serde_json::Value,
+    },
+    CronCreate {
+        schedule: String,
+        command: String,
+        description: String,
+    },
+    CronList,
+    CronDelete {
+        id: String,
+    },
+    ScheduleWakeup {
+        delay_seconds: u32,
+        prompt: String,
+        reason: String,
+    },
+    Monitor {
+        command: String,
+        until: String,
     },
     Lsp {
         kind: String,
@@ -267,6 +425,13 @@ pub enum SerializedToolInput {
         new_source: String,
         #[serde(default)]
         edit_mode: Option<String>,
+    },
+    ScratchpadRead {
+        key: String,
+    },
+    ScratchpadWrite {
+        key: String,
+        value: String,
     },
     Generic {
         summary: String,
@@ -429,20 +594,6 @@ pub struct SerializedDiffLine {
     #[serde(default)]
     pub new_line: Option<usize>,
     pub content: String,
-}
-
-pub fn sessions_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("jfc")
-        .join("sessions")
-}
-
-pub fn generate_session_id() -> SessionId {
-    let now = chrono::Utc::now();
-    let id = SessionId::new(format!("ses_{}", now.format("%Y%m%d_%H%M%S")));
-    debug!(target: "jfc::session", %id, "generated session id");
-    id
 }
 
 /// Extract the first meaningful user prompt from messages for display in session list
@@ -620,330 +771,6 @@ pub async fn load_session_with_model(
     Some((messages, model))
 }
 
-/// Load session metadata without full message deserialization. The
-/// picker only needs the session header fields plus a message count —
-/// it never inspects tool inputs or message parts. Previously this
-/// went through the full `SerializedSession` deserializer, so a single
-/// schema drift in any message (e.g. an old `Tool { input: ... }`
-/// entry written before a field was added) failed the whole session
-/// and the picker dropped it from the sidebar. Now we deserialize a
-/// lightweight `SessionMetaShallow` that treats `messages` as opaque
-/// JSON values; the Tool-input shape never gates picker visibility.
-pub async fn load_session_metadata(session_id: &SessionId) -> Option<SessionMetadata> {
-    let session_id_str = session_id.as_str();
-    let path = sessions_dir().join(format!("{session_id_str}.json"));
-    let content = tokio::fs::read_to_string(&path).await.ok()?;
-    let shallow: SessionMetaShallow = match serde_json::from_str(&content) {
-        Ok(s) => s,
-        Err(e) => {
-            // Downgrade to debug for schema-mismatch on old sessions — these are
-            // expected when the SerializedToolOutput format changed. The session
-            // remains in the sessions dir but is silently skipped in listings.
-            // A WARN flood of 20+ messages per startup was traced to May 4 sessions.
-            debug!(target: "jfc::session", session_id = session_id_str, error = %e, "skipping old session (schema mismatch — pre-migration format)");
-            return None;
-        }
-    };
-    let message_count = shallow.messages.len();
-    debug!(target: "jfc::session", session_id = session_id_str, message_count, "loaded session metadata");
-    Some(SessionMetadata {
-        id: SessionId::new(shallow.id),
-        created_at: shallow.created_at,
-        updated_at: shallow.updated_at,
-        first_prompt: shallow.first_prompt,
-        cwd: shallow.cwd,
-        title: shallow.title,
-        message_count,
-    })
-}
-
-/// Shallow view used only for the picker. `messages` is parsed as
-/// opaque JSON values so a malformed message body never invalidates
-/// the whole header. Full-fidelity deserialization is reserved for
-/// the resume path (`load_session`) where missing fields would
-/// actually matter.
-#[derive(Deserialize)]
-struct SessionMetaShallow {
-    id: String,
-    created_at: String,
-    #[serde(default)]
-    updated_at: Option<String>,
-    #[serde(default)]
-    first_prompt: Option<String>,
-    #[serde(default)]
-    cwd: Option<String>,
-    #[serde(default)]
-    title: Option<String>,
-    #[serde(default)]
-    messages: Vec<serde_json::Value>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SessionMetadata {
-    pub id: SessionId,
-    pub created_at: String,
-    pub updated_at: Option<String>,
-    pub first_prompt: Option<String>,
-    /// Working directory the session was created in. `None` for legacy
-    /// sessions saved before the field landed — those are visible only
-    /// in "show all" listings, and consumers must treat `None` as "no
-    /// warning" (see `cwd_mismatch_message`).
-    pub cwd: Option<String>,
-    /// User-set title (`/rename` slash). `None` falls back to first_prompt.
-    pub title: Option<String>,
-    pub message_count: usize,
-}
-
-impl SessionMetadata {
-    /// v126 title precedence: customTitle → firstPrompt → formatted-id-timestamp.
-    /// Picks the best human-readable label for the picker / sidebar.
-    pub fn display_title(&self) -> String {
-        if let Some(t) = self.title.as_deref().filter(|s| !s.trim().is_empty()) {
-            return t.trim().to_owned();
-        }
-        if let Some(prompt) = self.first_prompt.as_deref() {
-            let trimmed = prompt.trim();
-            if !trimmed.is_empty() {
-                // First line only — multi-line prompts blow up the row.
-                let first_line = trimmed.lines().next().unwrap_or(trimmed);
-                const MAX: usize = 60;
-                if first_line.chars().count() > MAX {
-                    let truncated: String = first_line.chars().take(MAX).collect();
-                    return format!("{truncated}…");
-                }
-                return first_line.to_owned();
-            }
-        }
-        // Fallback: pretty-print the timestamp from the id.
-        format_session_id_timestamp(self.id.as_str())
-    }
-
-    /// Best timestamp to compare/display: prefers `updated_at`, falls back
-    /// to `created_at`. Always returns *some* string so callers don't have
-    /// to thread through `Option`.
-    pub fn last_activity(&self) -> &str {
-        self.updated_at.as_deref().unwrap_or(&self.created_at)
-    }
-}
-
-/// Convert a session id like `ses_20260503_212945` into a friendly
-/// `2026-05-03 21:29` for fallback display.
-pub fn format_session_id_timestamp(id: &str) -> String {
-    let cleaned = id.strip_prefix("ses_").unwrap_or(id);
-    let mut parts = cleaned.splitn(2, '_');
-    let date = parts.next().unwrap_or("");
-    let time = parts.next().unwrap_or("");
-    if date.len() == 8 && time.len() >= 4 {
-        format!(
-            "{}-{}-{} {}:{}",
-            &date[..4],
-            &date[4..6],
-            &date[6..8],
-            &time[..2],
-            &time[2..4]
-        )
-    } else {
-        id.to_owned()
-    }
-}
-
-/// Split sessions into `(this_project, other_projects)` based on whether
-/// each session's `cwd` matches `current_cwd`. Sessions with `cwd: None`
-/// always land in `other_projects`. Order within each group is preserved
-/// (callers are expected to have already sorted by recency).
-///
-/// Pure helper — kept free of `App` so it can be unit-tested with synthetic
-/// `SessionMetadata`.
-pub fn group_by_cwd(
-    sessions: Vec<SessionMetadata>,
-    current_cwd: Option<&str>,
-) -> (Vec<SessionMetadata>, Vec<SessionMetadata>) {
-    let mut this_project = Vec::new();
-    let mut other = Vec::new();
-    for s in sessions {
-        match (current_cwd, s.cwd.as_deref()) {
-            (Some(cur), Some(sc)) if sc == cur => this_project.push(s),
-            _ => other.push(s),
-        }
-    }
-    (this_project, other)
-}
-
-/// Render the cwd in shortened form for the sidebar's secondary line:
-/// home directory becomes `~`, paths under home become `~/rest`, and
-/// other absolute paths are shown as their basename. Returns `"—"` when
-/// the cwd is missing (legacy session) so the row still has *something*
-/// to show in the muted slot.
-pub fn shorten_cwd(cwd: Option<&str>) -> String {
-    let Some(cwd) = cwd else {
-        return "—".to_owned();
-    };
-    let home = dirs::home_dir().and_then(|p| p.to_str().map(str::to_owned));
-    if let Some(home) = home {
-        if cwd == home {
-            return "~".to_owned();
-        }
-        if let Some(rest) = cwd.strip_prefix(&format!("{home}/")) {
-            return format!("~/{rest}");
-        }
-    }
-    // Not under home: show the basename so we don't blow up narrow sidebars
-    // with a long absolute path. Strip trailing slash first; bare `/` stays
-    // as `/` (root) rather than collapsing to an empty string.
-    let trimmed = cwd.trim_end_matches('/');
-    if trimmed.is_empty() {
-        return "/".to_owned();
-    }
-    trimmed
-        .rsplit('/')
-        .next()
-        .filter(|s| !s.is_empty())
-        .unwrap_or(trimmed)
-        .to_owned()
-}
-
-/// Format a delta between an RFC3339 timestamp and `now` as a short
-/// human label like `"14m ago"`, `"3h ago"`, `"2d ago"`. Falls back to
-/// `"—"` when the input doesn't parse. Compact form is used because
-/// the sidebar's secondary line is shared with the cwd badge and msg
-/// count and panics on width.
-pub fn relative_time(timestamp: &str, now: chrono::DateTime<chrono::Utc>) -> String {
-    let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(timestamp) else {
-        return "—".to_owned();
-    };
-    let parsed_utc = parsed.with_timezone(&chrono::Utc);
-    let delta = now.signed_duration_since(parsed_utc);
-    let secs = delta.num_seconds();
-    if secs < 0 {
-        // Future timestamp (clock skew) — just say "now".
-        return "now".to_owned();
-    }
-    if secs < 60 {
-        return "just now".to_owned();
-    }
-    let mins = delta.num_minutes();
-    if mins < 60 {
-        return format!("{mins}m ago");
-    }
-    let hours = delta.num_hours();
-    if hours < 24 {
-        return format!("{hours}h ago");
-    }
-    let days = delta.num_days();
-    if days < 30 {
-        return format!("{days}d ago");
-    }
-    let months = days / 30;
-    if months < 12 {
-        return format!("{months}mo ago");
-    }
-    let years = days / 365;
-    format!("{years}y ago")
-}
-
-/// Pure helper: produces a warning message when a resumed session's
-/// recorded cwd differs from the current cwd. Returns `None` if the
-/// session has no cwd (legacy file), if the current cwd is empty (we
-/// can't compare to anything meaningful), or if the two paths match.
-///
-/// Mirrors codex-rs `tui/src/session_resume.rs:99-111` — the surface
-/// is informational; the resume still proceeds.
-pub fn cwd_mismatch_message(session_cwd: Option<&str>, current_cwd: &str) -> Option<String> {
-    let session_cwd = session_cwd?;
-    if current_cwd.is_empty() {
-        return None;
-    }
-    if session_cwd == current_cwd {
-        return None;
-    }
-    Some(format!(
-        "Session was created in {session_cwd}; current cwd is {current_cwd}"
-    ))
-}
-
-pub async fn list_sessions() -> Vec<SessionId> {
-    let dir = sessions_dir();
-    debug!(target: "jfc::session", dir = %dir.display(), "listing sessions");
-    let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
-        debug!(target: "jfc::session", dir = %dir.display(), "sessions directory not readable");
-        return vec![];
-    };
-    let mut ids: Vec<SessionId> = Vec::new();
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if let Some(id) = name.strip_suffix(".json") {
-            ids.push(SessionId::new(id));
-        }
-    }
-    ids.sort_by(|a, b| b.as_str().cmp(a.as_str())); // newest first
-    debug!(target: "jfc::session", count = ids.len(), "sessions listed");
-    ids
-}
-
-/// List sessions with metadata, sorted by most recent update.
-/// When `cwd_filter` is `Some(path)`, only sessions whose `cwd` matches
-/// (or whose cwd is unset — legacy) are returned. Pass `None` for the
-/// "show all" mode (mirrors codex-rs `--show-all` / v126's all-sessions).
-pub async fn list_sessions_with_metadata() -> Vec<SessionMetadata> {
-    list_sessions_filtered(None).await
-}
-
-pub async fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMetadata> {
-    debug!(target: "jfc::session", ?cwd_filter, "listing sessions with filter");
-    let ids = list_sessions().await;
-    // v132 lazy/parallel session loading. The previous serial loop did
-    // one tokio::fs::read per session; with hundreds of sessions in
-    // ~/.config/jfc/sessions/ that's a ~50ms × N stall on startup.
-    // join_all hands every metadata read to the runtime concurrently
-    // — bound by the number of file descriptors, not session count —
-    // dropping wall-clock from ~5s to ~150ms on a 100-session vault.
-    let metas = futures::future::join_all(ids.iter().map(|id| load_session_metadata(id))).await;
-    let mut sessions: Vec<SessionMetadata> = metas
-        .into_iter()
-        .flatten()
-        .filter(|meta| match cwd_filter {
-            None => true,
-            Some(target) => meta.cwd.as_deref().is_none_or(|c| c == target),
-        })
-        .collect();
-    sessions.sort_by(|a, b| {
-        let a_time = a.updated_at.as_ref().unwrap_or(&a.created_at);
-        let b_time = b.updated_at.as_ref().unwrap_or(&b.created_at);
-        b_time.cmp(a_time)
-    });
-    info!(target: "jfc::session", count = sessions.len(), ?cwd_filter, "sessions filtered (parallel)");
-    sessions
-}
-
-/// Lazy variant: list session IDs *only* (sorted by mtime descending)
-/// without reading metadata for each. Use when the caller only needs
-/// the IDs (e.g. /resume autocomplete) — saves the per-session JSON
-/// read.
-pub async fn list_session_ids_only() -> Vec<SessionId> {
-    list_sessions().await
-}
-
-/// Most recent session for the *current cwd*. Mirrors v126
-/// (cli.js:480735-480741) and codex-rs default behavior — `--continue`
-/// in project A doesn't accidentally resume a session from project B.
-/// Pass `None` for the legacy globally-most-recent behavior.
-pub async fn most_recent_session_for_cwd(cwd: Option<&str>) -> Option<SessionId> {
-    let result = list_sessions_filtered(cwd)
-        .await
-        .into_iter()
-        .next()
-        .map(|s| s.id);
-    debug!(target: "jfc::session", ?cwd, found = result.is_some(), "most recent session for cwd");
-    result
-}
-
-/// Globally most-recent session id (legacy callers + `--global` flag).
-pub async fn most_recent_session() -> Option<SessionId> {
-    let result = list_sessions().await.into_iter().next();
-    debug!(target: "jfc::session", found = result.is_some(), "most recent session (global)");
-    result
-}
-
 /// Set the user-defined title on a session (`/rename` slash). Returns
 /// silently on I/O failures — title is cosmetic, shouldn't block the
 /// chat. Mirrors v126's `customTitle` field (cli.js:39786) which sits
@@ -1106,6 +933,10 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             category: ti.category.clone(),
             run_in_background: ti.run_in_background,
             model: ti.model.clone(),
+            name: ti.name.clone(),
+            team_name: ti.team_name.clone(),
+            mode: ti.mode.clone(),
+            isolation: ti.isolation.clone(),
             parent_task_id: ti.parent_task_id.clone(),
         },
         ToolInput::TaskCreate {
@@ -1113,12 +944,21 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             description,
             active_form,
             blocked_by,
-            ..
+            acceptance_criteria,
+            verification_command,
+            risk,
+            parent_id,
+            kind,
         } => SerializedToolInput::TaskCreate {
             subject: subject.clone(),
             description: description.clone(),
             active_form: active_form.clone(),
             blocked_by: blocked_by.clone(),
+            acceptance_criteria: acceptance_criteria.clone(),
+            verification_command: verification_command.clone(),
+            risk: risk.clone(),
+            parent_id: parent_id.clone(),
+            kind: kind.clone(),
         },
         ToolInput::TaskUpdate {
             task_id,
@@ -1126,13 +966,22 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             subject,
             description,
             owner,
-            ..
+            acceptance_criteria,
+            verification_command,
+            risk,
+            parent_id,
+            kind,
         } => SerializedToolInput::TaskUpdate {
             task_id: task_id.clone(),
             status: status.clone(),
             subject: subject.clone(),
             description: description.clone(),
             owner: owner.clone(),
+            acceptance_criteria: acceptance_criteria.clone(),
+            verification_command: verification_command.clone(),
+            risk: risk.clone(),
+            parent_id: parent_id.clone(),
+            kind: kind.clone(),
         },
         ToolInput::TaskList {
             status_filter,
@@ -1147,26 +996,18 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::TaskGet { task_id } => SerializedToolInput::TaskGet {
             task_id: task_id.clone(),
         },
-        ToolInput::TaskValidate => SerializedToolInput::Generic {
-            summary: "TaskValidate".to_string(),
-        },
+        ToolInput::TaskValidate => SerializedToolInput::TaskValidate,
         ToolInput::Skill { name, args } => SerializedToolInput::Skill {
             name: name.clone(),
             args: args.clone(),
         },
-        ToolInput::ToolSearch { query, limit } => SerializedToolInput::Generic {
-            summary: serde_json::json!({
-                "query": query,
-                "limit": limit,
-            })
-            .to_string(),
+        ToolInput::ToolSearch { query, limit } => SerializedToolInput::ToolSearch {
+            query: query.clone(),
+            limit: *limit,
         },
-        ToolInput::ToolSuggest { intent, limit } => SerializedToolInput::Generic {
-            summary: serde_json::json!({
-                "intent": intent,
-                "limit": limit,
-            })
-            .to_string(),
+        ToolInput::ToolSuggest { intent, limit } => SerializedToolInput::ToolSuggest {
+            intent: intent.clone(),
+            limit: *limit,
         },
         ToolInput::MemoryCreate {
             level,
@@ -1185,158 +1026,197 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::TeamCreate {
             team_name,
             description,
-        } => SerializedToolInput::Generic {
-            // Preserve the description in the summary so a resumed
-            // session shows what the team was created for, not just
-            // its name. Previously `description` was destructured but
-            // never used — silent data loss on resume.
-            summary: match description.as_deref().filter(|s| !s.is_empty()) {
-                Some(d) => format!("TeamCreate: {team_name} — {d}"),
-                None => format!("TeamCreate: {team_name}"),
-            },
+        } => SerializedToolInput::TeamCreate {
+            team_name: team_name.clone(),
+            description: description.clone(),
         },
-        ToolInput::TeamDelete => SerializedToolInput::Generic {
-            summary: "TeamDelete".to_owned(),
+        ToolInput::TeamDelete => SerializedToolInput::TeamDelete,
+        ToolInput::SendMessage {
+            to,
+            message,
+            summary,
+        } => SerializedToolInput::SendMessage {
+            to: to.clone(),
+            message: message.clone(),
+            summary: summary.clone(),
         },
-        ToolInput::SendMessage { to, summary, .. } => SerializedToolInput::Generic {
-            summary: format!(
-                "SendMessage to {to}: {}",
-                summary.as_deref().unwrap_or("(message)")
-            ),
+        ToolInput::TeamMemberMode { member_name, mode } => SerializedToolInput::TeamMemberMode {
+            member_name: member_name.clone(),
+            mode: mode.clone(),
         },
-        ToolInput::TeamMemberMode { member_name, mode } => SerializedToolInput::Generic {
-            summary: format!("TeamMemberMode {member_name}: {mode}"),
+        ToolInput::CodeIndex {
+            path,
+            query,
+            kind,
+            max_entries,
+        } => SerializedToolInput::CodeIndex {
+            path: path.clone(),
+            query: query.clone(),
+            kind: kind.clone(),
+            max_entries: *max_entries,
         },
         ToolInput::GraphQuery {
-            query, max_tokens, ..
-        } => SerializedToolInput::Generic {
-            summary: format!(
-                "GraphQuery(budget={}): {}",
-                max_tokens.unwrap_or(4000),
-                query
-            ),
+            query,
+            max_tokens,
+            include_handles,
+        } => SerializedToolInput::GraphQuery {
+            query: query.clone(),
+            max_tokens: *max_tokens,
+            include_handles: *include_handles,
         },
-        ToolInput::RunCoverage { lcov_path, .. } => SerializedToolInput::Generic {
-            summary: format!("RunCoverage({})", lcov_path.as_deref().unwrap_or("auto")),
+        ToolInput::RunCoverage {
+            lcov_path,
+            include_untested_list,
+        } => SerializedToolInput::RunCoverage {
+            lcov_path: lcov_path.clone(),
+            include_untested_list: *include_untested_list,
         },
-        ToolInput::SymbolEdit { handle, .. } => SerializedToolInput::Generic {
-            summary: format!("SymbolEdit: {handle}"),
+        ToolInput::SymbolEdit {
+            handle,
+            new_content,
+            validate,
+            dispatch_cascade,
+        } => SerializedToolInput::SymbolEdit {
+            handle: handle.clone(),
+            new_content: new_content.clone(),
+            validate: *validate,
+            dispatch_cascade: *dispatch_cascade,
         },
         ToolInput::PostBounty {
             description,
             budget,
-            ..
-        } => SerializedToolInput::Generic {
-            summary: format!(
-                "PostBounty({budget} tok): {}",
-                description.chars().take(60).collect::<String>()
-            ),
+            acceptance_criteria,
+            max_solvers,
+            auto_dispatch,
+        } => SerializedToolInput::PostBounty {
+            description: description.clone(),
+            budget: *budget,
+            acceptance_criteria: acceptance_criteria.clone(),
+            max_solvers: *max_solvers,
+            auto_dispatch: *auto_dispatch,
         },
-        ToolInput::MarketStatus { bounty_id } => SerializedToolInput::Generic {
-            summary: match bounty_id {
-                Some(id) => format!("MarketStatus: {id}"),
-                None => "MarketStatus".into(),
-            },
+        ToolInput::MarketStatus { bounty_id } => SerializedToolInput::MarketStatus {
+            bounty_id: bounty_id.clone(),
         },
-        ToolInput::RunBounty { bounty_id, .. } => SerializedToolInput::Generic {
-            summary: format!("RunBounty: {bounty_id}"),
+        ToolInput::RunBounty {
+            bounty_id,
+            max_solvers,
+        } => SerializedToolInput::RunBounty {
+            bounty_id: bounty_id.clone(),
+            max_solvers: *max_solvers,
         },
-        ToolInput::ExitPlanMode { plan } => SerializedToolInput::Generic {
-            summary: format!("ExitPlanMode: {plan}"),
+        ToolInput::ExitPlanMode { plan } => {
+            SerializedToolInput::ExitPlanMode { plan: plan.clone() }
+        }
+        ToolInput::MultiEdit { file_path, edits } => SerializedToolInput::MultiEdit {
+            file_path: file_path.clone(),
+            edits: edits.clone(),
         },
-        ToolInput::MultiEdit { file_path, edits } => SerializedToolInput::Generic {
-            summary: format!(
-                "MultiEdit: {file_path} ({} edits)",
-                edits.as_array().map(|a| a.len()).unwrap_or(0)
-            ),
+        ToolInput::AskUserQuestion {
+            question,
+            options,
+            multi_select,
+        } => SerializedToolInput::AskUserQuestion {
+            question: question.clone(),
+            options: options.clone(),
+            multi_select: *multi_select,
         },
-        ToolInput::AskUserQuestion { question, .. } => SerializedToolInput::Generic {
-            summary: format!("AskUserQuestion: {question}"),
+        ToolInput::WebFetch { url, prompt } => SerializedToolInput::WebFetch {
+            url: url.clone(),
+            prompt: prompt.clone(),
         },
-        ToolInput::WebFetch { url, .. } => SerializedToolInput::Generic {
-            summary: format!("WebFetch: {url}"),
+        ToolInput::WebSearch { query, max_results } => SerializedToolInput::WebSearch {
+            query: query.clone(),
+            max_results: *max_results,
         },
-        ToolInput::WebSearch { query, .. } => SerializedToolInput::Generic {
-            summary: format!("WebSearch: {query}"),
-        },
-        ToolInput::Mcp { name, arguments } => SerializedToolInput::Generic {
-            summary: format!("{name}: {arguments}"),
+        ToolInput::Mcp { name, arguments } => SerializedToolInput::Mcp {
+            name: name.clone(),
+            arguments: arguments.clone(),
         },
         ToolInput::CronCreate {
             schedule,
+            command,
             description,
-            ..
-        } => SerializedToolInput::Generic {
-            summary: format!("CronCreate({schedule}): {description}"),
+        } => SerializedToolInput::CronCreate {
+            schedule: schedule.clone(),
+            command: command.clone(),
+            description: description.clone(),
         },
-        ToolInput::CronList => SerializedToolInput::Generic {
-            summary: "CronList".into(),
-        },
-        ToolInput::CronDelete { id } => SerializedToolInput::Generic {
-            summary: format!("CronDelete: {id}"),
-        },
+        ToolInput::CronList => SerializedToolInput::CronList,
+        ToolInput::CronDelete { id } => SerializedToolInput::CronDelete { id: id.clone() },
         ToolInput::ScheduleWakeup {
             delay_seconds,
+            prompt,
             reason,
-            ..
-        } => SerializedToolInput::Generic {
-            summary: format!("ScheduleWakeup({delay_seconds}s): {reason}"),
+        } => SerializedToolInput::ScheduleWakeup {
+            delay_seconds: *delay_seconds,
+            prompt: prompt.clone(),
+            reason: reason.clone(),
         },
-        ToolInput::Monitor { command, until } => SerializedToolInput::Generic {
-            summary: format!(
-                "Monitor `{}` until /{until}/",
-                command.chars().take(40).collect::<String>()
-            ),
+        ToolInput::Monitor { command, until } => SerializedToolInput::Monitor {
+            command: command.clone(),
+            until: until.clone(),
         },
         ToolInput::Lsp {
-            kind, file, line, ..
-        } => SerializedToolInput::Generic {
-            summary: format!("LSP {kind} {file}:{line}"),
+            kind,
+            file,
+            line,
+            column,
+        } => SerializedToolInput::Lsp {
+            kind: kind.clone(),
+            file: file.clone(),
+            line: *line,
+            column: *column,
         },
-        ToolInput::PushNotification { message, title } => SerializedToolInput::Generic {
-            summary: match title {
-                Some(t) => format!("PushNotification: {t}: {message}"),
-                None => format!("PushNotification: {message}"),
-            },
+        ToolInput::PushNotification { message, title } => SerializedToolInput::PushNotification {
+            message: message.clone(),
+            title: title.clone(),
         },
-        ToolInput::RemoteTrigger { trigger_id, .. } => SerializedToolInput::Generic {
-            summary: format!("RemoteTrigger: {trigger_id}"),
+        ToolInput::RemoteTrigger {
+            trigger_id,
+            payload,
+        } => SerializedToolInput::RemoteTrigger {
+            trigger_id: trigger_id.clone(),
+            payload: payload.clone(),
         },
-        ToolInput::EnterPlanMode { reason } => SerializedToolInput::Generic {
-            summary: format!("EnterPlanMode: {reason}"),
+        ToolInput::EnterPlanMode { reason } => SerializedToolInput::EnterPlanMode {
+            reason: reason.clone(),
         },
-        ToolInput::EnterWorktree { name, branch } => SerializedToolInput::Generic {
-            summary: match branch {
-                Some(b) => format!("EnterWorktree: {name} ({b})"),
-                None => format!("EnterWorktree: {name}"),
-            },
+        ToolInput::EnterWorktree { name, branch } => SerializedToolInput::EnterWorktree {
+            name: name.clone(),
+            branch: branch.clone(),
         },
-        ToolInput::ExitWorktree => SerializedToolInput::Generic {
-            summary: "ExitWorktree".into(),
-        },
-        ToolInput::NotebookRead { path } => SerializedToolInput::Generic {
-            summary: format!("NotebookRead: {path}"),
-        },
+        ToolInput::ExitWorktree => SerializedToolInput::ExitWorktree,
+        ToolInput::NotebookRead { path } => {
+            SerializedToolInput::NotebookRead { path: path.clone() }
+        }
         ToolInput::NotebookEdit {
             path,
             cell_id,
+            new_source,
             edit_mode,
-            ..
-        } => SerializedToolInput::Generic {
-            summary: format!(
-                "NotebookEdit({}): {path}#{cell_id}",
-                edit_mode.as_deref().unwrap_or("replace"),
-            ),
+        } => SerializedToolInput::NotebookEdit {
+            path: path.clone(),
+            cell_id: cell_id.clone(),
+            new_source: new_source.clone(),
+            edit_mode: edit_mode.clone(),
         },
-        ToolInput::ScratchpadRead { key } => SerializedToolInput::Generic {
-            summary: format!("ScratchpadRead: {key}"),
-        },
-        ToolInput::ScratchpadWrite { key, .. } => SerializedToolInput::Generic {
-            summary: format!("ScratchpadWrite: {key}"),
+        ToolInput::ScratchpadRead { key } => {
+            SerializedToolInput::ScratchpadRead { key: key.clone() }
+        }
+        ToolInput::ScratchpadWrite { key, value } => SerializedToolInput::ScratchpadWrite {
+            key: key.clone(),
+            value: value.clone(),
         },
         ToolInput::Generic { summary } => SerializedToolInput::Generic {
             summary: summary.clone(),
         },
+    }
+}
+
+fn serialize_generic_tool_input_json(input: &ToolInput) -> SerializedToolInput {
+    SerializedToolInput::Generic {
+        summary: input.to_value().to_string(),
     }
 }
 
@@ -1439,46 +1319,49 @@ fn deserialize_part(part: SerializedPart) -> MessagePart {
             is_collapsed,
             input,
             output,
-        } => MessagePart::Tool(ToolCall {
-            id: crate::ids::ToolId::from(id),
-            kind: ToolKind::from_name(&kind),
-            status: deserialize_tool_status(&status),
-            // Tolerate missing input/output on legacy session files.
-            // The unknown-input fallback (a no-op Bash entry) lets the
-            // resumed transcript render the tool row with whatever
-            // chrome we have (id, kind, status) without panicking on a
-            // missing field that older writers never produced.
-            input: match input {
-                Some(i) => deserialize_tool_input(i),
-                None => ToolInput::Bash {
-                    command: String::new(),
-                    timeout: None,
-                    workdir: None,
+        } => {
+            let tool_kind = ToolKind::from_name(&kind);
+            MessagePart::Tool(ToolCall {
+                id: crate::ids::ToolId::from(id),
+                kind: tool_kind,
+                status: deserialize_tool_status(&status),
+                // Tolerate missing input/output on legacy session files.
+                // The unknown-input fallback (a no-op Bash entry) lets the
+                // resumed transcript render the tool row with whatever
+                // chrome we have (id, kind, status) without panicking on a
+                // missing field that older writers never produced.
+                input: match input {
+                    Some(i) => deserialize_tool_input_for_kind(&kind, i),
+                    None => ToolInput::Bash {
+                        command: String::new(),
+                        timeout: None,
+                        workdir: None,
+                    },
                 },
-            },
-            output: match output {
-                Some(o) => deserialize_tool_output(o),
-                None => ToolOutput::Empty,
-            },
-            // Reconstruct the tri-state from the legacy on-disk
-            // `is_collapsed` bool. Expanded + pinned were never
-            // persisted (storing UI chrome state in the on-disk
-            // format would round-trip stale state), so loaded sessions
-            // always come back as either Collapsed (huge teaser
-            // preserved) or Default. The user can re-expand or re-pin
-            // with `o` / Ctrl+O / double-click.
-            display: if is_collapsed {
-                crate::types::ToolDisplayState::Collapsed
-            } else {
-                crate::types::ToolDisplayState::DEFAULT
-            },
-            // elapsed_ms could in principle round-trip, but it's
-            // cosmetic — leave None on resume so we don't lock in a
-            // stale duration. started_at is meaningless after a
-            // reload (would always say "elapsed since session-load").
-            elapsed_ms: None,
-            started_at: None,
-        }),
+                output: match output {
+                    Some(o) => deserialize_tool_output(o),
+                    None => ToolOutput::Empty,
+                },
+                // Reconstruct the tri-state from the legacy on-disk
+                // `is_collapsed` bool. Expanded + pinned were never
+                // persisted (storing UI chrome state in the on-disk
+                // format would round-trip stale state), so loaded sessions
+                // always come back as either Collapsed (huge teaser
+                // preserved) or Default. The user can re-expand or re-pin
+                // with `o` / Ctrl+O / double-click.
+                display: if is_collapsed {
+                    crate::types::ToolDisplayState::Collapsed
+                } else {
+                    crate::types::ToolDisplayState::DEFAULT
+                },
+                // elapsed_ms could in principle round-trip, but it's
+                // cosmetic — leave None on resume so we don't lock in a
+                // stale duration. started_at is meaningless after a
+                // reload (would always say "elapsed since session-load").
+                elapsed_ms: None,
+                started_at: None,
+            })
+        }
         SerializedPart::TaskStatus {
             task_id,
             description,
@@ -1529,6 +1412,232 @@ fn deserialize_task_lifecycle(status: &str) -> TaskLifecycle {
         "cancelled" => TaskLifecycle::Cancelled,
         _ => TaskLifecycle::Pending,
     }
+}
+
+fn deserialize_tool_input_for_kind(kind: &str, input: SerializedToolInput) -> ToolInput {
+    match input {
+        SerializedToolInput::Generic { summary } => {
+            deserialize_generic_tool_input(kind, &summary).unwrap_or(ToolInput::Generic { summary })
+        }
+        other => deserialize_tool_input(other),
+    }
+}
+
+fn deserialize_generic_tool_input(kind: &str, summary: &str) -> Option<ToolInput> {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(summary)
+        && value.is_object()
+        && let Ok(input) = ToolInput::from_value(kind, value)
+    {
+        return Some(input);
+    }
+
+    match ToolKind::from_name(kind) {
+        ToolKind::GraphQuery => parse_legacy_graph_query(summary),
+        ToolKind::WebSearch => {
+            summary
+                .strip_prefix("WebSearch: ")
+                .map(|query| ToolInput::WebSearch {
+                    query: query.to_owned(),
+                    max_results: None,
+                })
+        }
+        ToolKind::WebFetch => summary
+            .strip_prefix("WebFetch: ")
+            .map(|url| ToolInput::WebFetch {
+                url: url.to_owned(),
+                prompt: None,
+            }),
+        ToolKind::EnterPlanMode => {
+            summary
+                .strip_prefix("EnterPlanMode: ")
+                .map(|reason| ToolInput::EnterPlanMode {
+                    reason: reason.to_owned(),
+                })
+        }
+        ToolKind::ExitPlanMode => {
+            summary
+                .strip_prefix("ExitPlanMode: ")
+                .map(|plan| ToolInput::ExitPlanMode {
+                    plan: plan.to_owned(),
+                })
+        }
+        ToolKind::MultiEdit => parse_legacy_multi_edit(summary),
+        ToolKind::RunCoverage => parse_legacy_run_coverage(summary),
+        ToolKind::MarketStatus => parse_legacy_market_status(summary),
+        ToolKind::RunBounty => {
+            summary
+                .strip_prefix("RunBounty: ")
+                .map(|bounty_id| ToolInput::RunBounty {
+                    bounty_id: bounty_id.to_owned(),
+                    max_solvers: None,
+                })
+        }
+        ToolKind::TeamCreate => parse_legacy_team_create(summary),
+        ToolKind::TeamDelete if summary == "TeamDelete" => Some(ToolInput::TeamDelete),
+        ToolKind::TeamMemberMode => parse_legacy_team_member_mode(summary),
+        ToolKind::CodeIndex => parse_legacy_code_index(summary),
+        ToolKind::PushNotification => parse_legacy_push_notification(summary),
+        ToolKind::RemoteTrigger => {
+            summary
+                .strip_prefix("RemoteTrigger: ")
+                .map(|trigger_id| ToolInput::RemoteTrigger {
+                    trigger_id: trigger_id.to_owned(),
+                    payload: None,
+                })
+        }
+        ToolKind::AskUserQuestion => parse_legacy_ask_user_question(summary),
+        ToolKind::EnterWorktree => parse_legacy_enter_worktree(summary),
+        ToolKind::NotebookRead => {
+            summary
+                .strip_prefix("NotebookRead: ")
+                .map(|path| ToolInput::NotebookRead {
+                    path: path.to_owned(),
+                })
+        }
+        ToolKind::ScratchpadRead => {
+            summary
+                .strip_prefix("ScratchpadRead: ")
+                .map(|key| ToolInput::ScratchpadRead {
+                    key: key.to_owned(),
+                })
+        }
+        _ => None,
+    }
+}
+
+fn strip_any_prefix<'a>(summary: &'a str, prefixes: &[&str]) -> Option<&'a str> {
+    prefixes
+        .iter()
+        .find_map(|prefix| summary.strip_prefix(prefix))
+}
+
+fn parse_legacy_graph_query(summary: &str) -> Option<ToolInput> {
+    let rest = summary.strip_prefix("GraphQuery(budget=")?;
+    let (budget, query) = rest.split_once("): ")?;
+    Some(ToolInput::GraphQuery {
+        query: query.to_owned(),
+        max_tokens: budget.parse().ok(),
+        include_handles: None,
+    })
+}
+
+fn parse_legacy_multi_edit(summary: &str) -> Option<ToolInput> {
+    let rest = summary.strip_prefix("MultiEdit: ")?;
+    let file_path = rest.split_once(" (").map_or(rest, |(path, _)| path);
+    Some(ToolInput::MultiEdit {
+        file_path: file_path.to_owned(),
+        edits: serde_json::json!([]),
+    })
+}
+
+fn parse_legacy_run_coverage(summary: &str) -> Option<ToolInput> {
+    let inner = summary
+        .strip_prefix("RunCoverage(")?
+        .strip_suffix(')')?
+        .trim();
+    Some(ToolInput::RunCoverage {
+        lcov_path: (inner != "auto").then(|| inner.to_owned()),
+        include_untested_list: true,
+    })
+}
+
+fn parse_legacy_market_status(summary: &str) -> Option<ToolInput> {
+    if summary == "MarketStatus" {
+        return Some(ToolInput::MarketStatus { bounty_id: None });
+    }
+    summary
+        .strip_prefix("MarketStatus: ")
+        .map(|id| ToolInput::MarketStatus {
+            bounty_id: Some(id.to_owned()),
+        })
+}
+
+fn parse_legacy_team_create(summary: &str) -> Option<ToolInput> {
+    let rest = summary.strip_prefix("TeamCreate: ")?;
+    let (team_name, description) = rest
+        .split_once(" — ")
+        .map_or((rest, None), |(name, desc)| (name, Some(desc.to_owned())));
+    Some(ToolInput::TeamCreate {
+        team_name: team_name.to_owned(),
+        description,
+    })
+}
+
+fn parse_legacy_team_member_mode(summary: &str) -> Option<ToolInput> {
+    let rest = summary.strip_prefix("TeamMemberMode ")?;
+    let (member_name, mode) = rest.split_once(": ")?;
+    Some(ToolInput::TeamMemberMode {
+        member_name: member_name.to_owned(),
+        mode: mode.to_owned(),
+    })
+}
+
+fn parse_legacy_code_index(summary: &str) -> Option<ToolInput> {
+    if summary == "CodeIndex" {
+        return Some(ToolInput::CodeIndex {
+            path: None,
+            query: None,
+            kind: None,
+            max_entries: None,
+        });
+    }
+    let inner = summary.strip_prefix("CodeIndex(")?.strip_suffix(')')?;
+    let mut path = None;
+    let mut query = None;
+    let mut kind = None;
+    for part in inner.split(',').map(str::trim) {
+        if kind.is_none() {
+            kind = Some(part.to_owned());
+        } else if query.is_none() {
+            query = Some(part.to_owned());
+        } else if path.is_none() {
+            path = Some(part.to_owned());
+        }
+    }
+    Some(ToolInput::CodeIndex {
+        path,
+        query,
+        kind,
+        max_entries: None,
+    })
+}
+
+fn parse_legacy_push_notification(summary: &str) -> Option<ToolInput> {
+    let rest = summary.strip_prefix("PushNotification: ")?;
+    let (title, message) = rest
+        .split_once(": ")
+        .map_or((None, rest), |(title, message)| {
+            (Some(title.to_owned()), message)
+        });
+    Some(ToolInput::PushNotification {
+        message: message.to_owned(),
+        title,
+    })
+}
+
+fn parse_legacy_enter_worktree(summary: &str) -> Option<ToolInput> {
+    let rest = summary.strip_prefix("EnterWorktree: ")?;
+    let (name, branch) = if let Some((name, branch)) = rest
+        .strip_suffix(')')
+        .and_then(|trimmed| trimmed.split_once(" ("))
+    {
+        (name, Some(branch.to_owned()))
+    } else {
+        (rest, None)
+    };
+    Some(ToolInput::EnterWorktree {
+        name: name.to_owned(),
+        branch,
+    })
+}
+
+fn parse_legacy_ask_user_question(summary: &str) -> Option<ToolInput> {
+    let question = strip_any_prefix(summary, &["AskUserQuestion: ", "ask: "])?;
+    Some(ToolInput::AskUserQuestion {
+        question: question.to_owned(),
+        options: serde_json::json!([]),
+        multi_select: false,
+    })
 }
 
 fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
@@ -1586,6 +1695,10 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             category,
             run_in_background,
             model,
+            name,
+            team_name,
+            mode,
+            isolation,
             parent_task_id,
         } => ToolInput::Task(TaskInput {
             description,
@@ -1594,10 +1707,10 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             category,
             run_in_background,
             model,
-            name: None,
-            team_name: None,
-            mode: None,
-            isolation: None,
+            name,
+            team_name,
+            mode,
+            isolation,
             parent_task_id,
         }),
         SerializedToolInput::TaskCreate {
@@ -1605,16 +1718,21 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             description,
             active_form,
             blocked_by,
+            acceptance_criteria,
+            verification_command,
+            risk,
+            parent_id,
+            kind,
         } => ToolInput::TaskCreate {
             subject,
             description,
             active_form,
             blocked_by,
-            acceptance_criteria: None,
-            verification_command: None,
-            risk: None,
-            parent_id: None,
-            kind: None,
+            acceptance_criteria,
+            verification_command,
+            risk,
+            parent_id,
+            kind,
         },
         SerializedToolInput::TaskUpdate {
             task_id,
@@ -1622,17 +1740,22 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             subject,
             description,
             owner,
+            acceptance_criteria,
+            verification_command,
+            risk,
+            parent_id,
+            kind,
         } => ToolInput::TaskUpdate {
             task_id,
             status,
             subject,
             description,
             owner,
-            acceptance_criteria: None,
-            verification_command: None,
-            risk: None,
-            parent_id: None,
-            kind: None,
+            acceptance_criteria,
+            verification_command,
+            risk,
+            parent_id,
+            kind,
         },
         SerializedToolInput::TaskList {
             status_filter,
@@ -1643,7 +1766,12 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
         },
         SerializedToolInput::TaskDone { task_id } => ToolInput::TaskDone { task_id },
         SerializedToolInput::TaskGet { task_id } => ToolInput::TaskGet { task_id },
+        SerializedToolInput::TaskValidate => ToolInput::TaskValidate,
         SerializedToolInput::Skill { name, args } => ToolInput::Skill { name, args },
+        SerializedToolInput::ToolSearch { query, limit } => ToolInput::ToolSearch { query, limit },
+        SerializedToolInput::ToolSuggest { intent, limit } => {
+            ToolInput::ToolSuggest { intent, limit }
+        }
         SerializedToolInput::MemoryCreate {
             level,
             memory_type,
@@ -1656,6 +1784,124 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             body,
         },
         SerializedToolInput::MemoryDelete { path } => ToolInput::MemoryDelete { path },
+        SerializedToolInput::TeamCreate {
+            team_name,
+            description,
+        } => ToolInput::TeamCreate {
+            team_name,
+            description,
+        },
+        SerializedToolInput::TeamDelete => ToolInput::TeamDelete,
+        SerializedToolInput::SendMessage {
+            to,
+            message,
+            summary,
+        } => ToolInput::SendMessage {
+            to,
+            message,
+            summary,
+        },
+        SerializedToolInput::TeamMemberMode { member_name, mode } => {
+            ToolInput::TeamMemberMode { member_name, mode }
+        }
+        SerializedToolInput::CodeIndex {
+            path,
+            query,
+            kind,
+            max_entries,
+        } => ToolInput::CodeIndex {
+            path,
+            query,
+            kind,
+            max_entries,
+        },
+        SerializedToolInput::GraphQuery {
+            query,
+            max_tokens,
+            include_handles,
+        } => ToolInput::GraphQuery {
+            query,
+            max_tokens,
+            include_handles,
+        },
+        SerializedToolInput::PostBounty {
+            description,
+            budget,
+            acceptance_criteria,
+            max_solvers,
+            auto_dispatch,
+        } => ToolInput::PostBounty {
+            description,
+            budget,
+            acceptance_criteria,
+            max_solvers,
+            auto_dispatch,
+        },
+        SerializedToolInput::MarketStatus { bounty_id } => ToolInput::MarketStatus { bounty_id },
+        SerializedToolInput::RunBounty {
+            bounty_id,
+            max_solvers,
+        } => ToolInput::RunBounty {
+            bounty_id,
+            max_solvers,
+        },
+        SerializedToolInput::RunCoverage {
+            lcov_path,
+            include_untested_list,
+        } => ToolInput::RunCoverage {
+            lcov_path,
+            include_untested_list,
+        },
+        SerializedToolInput::SymbolEdit {
+            handle,
+            new_content,
+            validate,
+            dispatch_cascade,
+        } => ToolInput::SymbolEdit {
+            handle,
+            new_content,
+            validate,
+            dispatch_cascade,
+        },
+        SerializedToolInput::ExitPlanMode { plan } => ToolInput::ExitPlanMode { plan },
+        SerializedToolInput::MultiEdit { file_path, edits } => {
+            ToolInput::MultiEdit { file_path, edits }
+        }
+        SerializedToolInput::AskUserQuestion {
+            question,
+            options,
+            multi_select,
+        } => ToolInput::AskUserQuestion {
+            question,
+            options,
+            multi_select,
+        },
+        SerializedToolInput::WebFetch { url, prompt } => ToolInput::WebFetch { url, prompt },
+        SerializedToolInput::WebSearch { query, max_results } => {
+            ToolInput::WebSearch { query, max_results }
+        }
+        SerializedToolInput::Mcp { name, arguments } => ToolInput::Mcp { name, arguments },
+        SerializedToolInput::CronCreate {
+            schedule,
+            command,
+            description,
+        } => ToolInput::CronCreate {
+            schedule,
+            command,
+            description,
+        },
+        SerializedToolInput::CronList => ToolInput::CronList,
+        SerializedToolInput::CronDelete { id } => ToolInput::CronDelete { id },
+        SerializedToolInput::ScheduleWakeup {
+            delay_seconds,
+            prompt,
+            reason,
+        } => ToolInput::ScheduleWakeup {
+            delay_seconds,
+            prompt,
+            reason,
+        },
+        SerializedToolInput::Monitor { command, until } => ToolInput::Monitor { command, until },
         SerializedToolInput::Lsp {
             kind,
             file,
@@ -1694,6 +1940,10 @@ fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             new_source,
             edit_mode,
         },
+        SerializedToolInput::ScratchpadRead { key } => ToolInput::ScratchpadRead { key },
+        SerializedToolInput::ScratchpadWrite { key, value } => {
+            ToolInput::ScratchpadWrite { key, value }
+        }
         SerializedToolInput::Generic { summary } => ToolInput::Generic { summary },
     }
 }
@@ -2187,7 +2437,9 @@ mod cwd_filter_tests {
 #[cfg(test)]
 mod disk_io_tests {
     use super::*;
-    use crate::types::{ChatMessage, ToolCall, ToolInput, ToolKind, ToolOutput, ToolStatus};
+    use crate::types::{
+        ChatMessage, TaskInput, ToolCall, ToolInput, ToolKind, ToolOutput, ToolStatus,
+    };
     use std::sync::Mutex;
     use tempfile::TempDir;
 
@@ -2605,5 +2857,214 @@ mod disk_io_tests {
     fn serialized_tool_output_null_to_empty_robust() {
         let parsed: SerializedToolOutput = serde_json::from_str("null").expect("ok");
         assert!(matches!(parsed, SerializedToolOutput::Empty));
+    }
+
+    // Robust: legacy Generic summaries like `GraphQuery(...): ...` are
+    // repaired on load so resumed history replays structured tool_use
+    // inputs instead of `{ "input": "GraphQuery(...): ..." }`.
+    #[test]
+    fn generic_tool_input_legacy_graph_query_rehydrates_robust() {
+        let input = deserialize_tool_input_for_kind(
+            "GraphQuery",
+            SerializedToolInput::Generic {
+                summary: r#"GraphQuery(budget=3000): fn("main") | callees"#.into(),
+            },
+        );
+        match input {
+            ToolInput::GraphQuery {
+                query, max_tokens, ..
+            } => {
+                assert_eq!(query, r#"fn("main") | callees"#);
+                assert_eq!(max_tokens, Some(3000));
+            }
+            other => panic!("expected GraphQuery, got {}", other.summary()),
+        }
+    }
+
+    #[test]
+    fn generic_tool_input_json_rehydrates_by_kind_normal() {
+        let input = deserialize_tool_input_for_kind(
+            "WebSearch",
+            SerializedToolInput::Generic {
+                summary: serde_json::json!({
+                    "query": "streaming parser",
+                    "max_results": 3,
+                })
+                .to_string(),
+            },
+        );
+        match input {
+            ToolInput::WebSearch { query, max_results } => {
+                assert_eq!(query, "streaming parser");
+                assert_eq!(max_results, Some(3));
+            }
+            other => panic!("expected WebSearch, got {}", other.summary()),
+        }
+    }
+
+    #[test]
+    fn generic_tool_input_legacy_multi_edit_uses_valid_shape_robust() {
+        let input = deserialize_tool_input_for_kind(
+            "MultiEdit",
+            SerializedToolInput::Generic {
+                summary: "MultiEdit: /tmp/file.rs (2 edits)".into(),
+            },
+        );
+        match input {
+            ToolInput::MultiEdit { file_path, edits } => {
+                assert_eq!(file_path, "/tmp/file.rs");
+                assert_eq!(edits, serde_json::json!([]));
+            }
+            other => panic!("expected MultiEdit, got {}", other.summary()),
+        }
+    }
+
+    #[test]
+    fn serialized_task_input_preserves_teammate_fields_normal() {
+        let input = ToolInput::Task(TaskInput {
+            description: "review auth".into(),
+            prompt: "review auth carefully".into(),
+            subagent_type: Some("reviewer".into()),
+            category: Some("code".into()),
+            run_in_background: true,
+            model: Some("anthropic/claude-sonnet-4-7".into()),
+            name: Some("alice".into()),
+            team_name: Some("core".into()),
+            mode: Some("plan".into()),
+            isolation: Some("worktree".into()),
+            parent_task_id: Some("t20".into()),
+        });
+
+        let encoded = serialize_tool_input(&input);
+        assert!(matches!(
+            encoded,
+            SerializedToolInput::Task {
+                ref name,
+                ref team_name,
+                ref mode,
+                ref isolation,
+                ..
+            } if name.as_deref() == Some("alice")
+                && team_name.as_deref() == Some("core")
+                && mode.as_deref() == Some("plan")
+                && isolation.as_deref() == Some("worktree")
+        ));
+
+        let decoded = deserialize_tool_input(encoded);
+        match decoded {
+            ToolInput::Task(task) => {
+                assert_eq!(task.name.as_deref(), Some("alice"));
+                assert_eq!(task.team_name.as_deref(), Some("core"));
+                assert_eq!(task.mode.as_deref(), Some("plan"));
+                assert_eq!(task.isolation.as_deref(), Some("worktree"));
+                assert_eq!(task.parent_task_id.as_deref(), Some("t20"));
+            }
+            other => panic!("expected Task, got {}", other.summary()),
+        }
+    }
+
+    #[test]
+    fn serialized_task_metadata_preserves_extended_fields_normal() {
+        let create = ToolInput::TaskCreate {
+            subject: "map parser".into(),
+            description: "write the parser".into(),
+            active_form: Some("parsing".into()),
+            blocked_by: vec!["t1".into()],
+            acceptance_criteria: Some("round-trip fixtures".into()),
+            verification_command: Some("cargo test parser".into()),
+            risk: Some("medium".into()),
+            parent_id: Some("t0".into()),
+            kind: Some("implementation".into()),
+        };
+        let decoded = deserialize_tool_input(serialize_tool_input(&create));
+        match decoded {
+            ToolInput::TaskCreate {
+                acceptance_criteria,
+                verification_command,
+                risk,
+                parent_id,
+                kind,
+                ..
+            } => {
+                assert_eq!(acceptance_criteria.as_deref(), Some("round-trip fixtures"));
+                assert_eq!(verification_command.as_deref(), Some("cargo test parser"));
+                assert_eq!(risk.as_deref(), Some("medium"));
+                assert_eq!(parent_id.as_deref(), Some("t0"));
+                assert_eq!(kind.as_deref(), Some("implementation"));
+            }
+            other => panic!("expected TaskCreate, got {}", other.summary()),
+        }
+    }
+
+    #[test]
+    fn previously_generic_tool_inputs_serialize_as_typed_variants_normal() {
+        let samples = vec![
+            ToolInput::WebSearch {
+                query: "stream parser".into(),
+                max_results: Some(3),
+            },
+            ToolInput::WebFetch {
+                url: "https://example.invalid".into(),
+                prompt: Some("summarize".into()),
+            },
+            ToolInput::AskUserQuestion {
+                question: "choose one".into(),
+                options: serde_json::json!(["a", "b"]),
+                multi_select: false,
+            },
+            ToolInput::CodeIndex {
+                path: Some("src".into()),
+                query: Some("parser".into()),
+                kind: Some("function".into()),
+                max_entries: Some(10),
+            },
+            ToolInput::GraphQuery {
+                query: "entrypoints".into(),
+                max_tokens: Some(4000),
+                include_handles: Some(true),
+            },
+            ToolInput::Mcp {
+                name: "mcp__fs__read".into(),
+                arguments: serde_json::json!({"path": "Cargo.toml"}),
+            },
+            ToolInput::ScratchpadWrite {
+                key: "note".into(),
+                value: "body".into(),
+            },
+        ];
+
+        for input in samples {
+            assert!(
+                !matches!(
+                    serialize_tool_input(&input),
+                    SerializedToolInput::Generic { .. }
+                ),
+                "{} should not fall back to Generic session input",
+                input.summary()
+            );
+        }
+    }
+
+    #[test]
+    fn generic_tool_input_legacy_ask_user_question_rehydrates_robust() {
+        let input = deserialize_tool_input_for_kind(
+            "AskUserQuestion",
+            SerializedToolInput::Generic {
+                summary: "AskUserQuestion: Pick a target: prod or staging?".into(),
+            },
+        );
+
+        match input {
+            ToolInput::AskUserQuestion {
+                question,
+                options,
+                multi_select,
+            } => {
+                assert_eq!(question, "Pick a target: prod or staging?");
+                assert_eq!(options, serde_json::json!([]));
+                assert!(!multi_select);
+            }
+            other => panic!("expected AskUserQuestion, got {}", other.summary()),
+        }
     }
 }

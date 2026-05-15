@@ -1,7 +1,7 @@
 #![cfg(all(test, feature = "anthropic-oauth-sensitive"))]
 use super::assistant_parts::{find_tool_at, sanitize_terminal_text, truncate_str};
 use super::bash::{BashCmdKind, classify_bash_cmd};
-use super::core::{build_render_items_ctx, RenderCtx, is_groupable, severity_rank};
+use super::core::{RenderCtx, build_render_items_ctx, is_groupable, severity_rank};
 use super::detection::{looks_like_difftastic_output, looks_like_git_diff_output};
 use super::output_style::path_color;
 use super::outputs::{

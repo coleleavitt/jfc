@@ -22,7 +22,7 @@ pub(super) async fn execute_bash_inner(
     command: &str,
     timeout_ms: Option<u64>,
     cwd: &Path,
-    progress: Option<(String, tokio::sync::mpsc::Sender<crate::app::AppEvent>)>,
+    progress: Option<(String, tokio::sync::mpsc::Sender<crate::runtime::AppEvent>)>,
 ) -> ExecutionResult {
     use std::process::Stdio;
     use tokio::io::{AsyncBufReadExt, BufReader};
@@ -110,19 +110,21 @@ pub(super) async fn execute_bash_inner(
                                 stdout_buf.push_str(&safe);
                                 stdout_buf.push('\n');
                                 // Send chunk to UI (non-blocking)
-                                let _ = tx.try_send(crate::app::AppEvent::ToolOutputChunk {
-                                    tool_id: crate::ids::ToolId::from(tool_id.clone()),
-                                    chunk: safe,
-                                });
+                                let _ = tx.try_send(crate::runtime::AppEvent::Tool(
+                                    crate::runtime::ToolEvent::OutputChunk {
+                                        tool_id: crate::ids::ToolId::from(tool_id.clone()),
+                                        chunk: safe,
+                                    },
+                                ));
                             }
                             Ok(Ok(None)) => break, // EOF
                             Ok(Err(_)) => break,   // read error
                             Err(_) => {
                                 // Timeout — kill the process
                                 let _ = child.kill().await;
-                                return ExecutionResult::failure(format!(
-                                    "Command timed out (streaming)"
-                                ));
+                                return ExecutionResult::failure(
+                                    "Command timed out (streaming)".to_string(),
+                                );
                             }
                         }
                     }

@@ -46,6 +46,7 @@ pub mod pagination;
 pub mod retry;
 pub mod sessions;
 pub mod skills;
+pub mod sse;
 pub mod user_profiles;
 pub mod vaults;
 

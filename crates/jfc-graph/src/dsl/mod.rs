@@ -1384,7 +1384,7 @@ impl Default for QueryConfig {
 }
 
 /// Result of a query execution.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct QueryResult {
     /// Nodes in the result set.
     pub nodes: Vec<NodeId>,
@@ -1403,19 +1403,6 @@ pub struct QueryResult {
     /// these verbatim, parse selectively, or ignore them. Empty for the
     /// majority of queries that don't carry analytical metadata.
     pub metadata: Vec<String>,
-}
-
-impl Default for QueryResult {
-    fn default() -> Self {
-        Self {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-            was_truncated: false,
-            total_before_truncation: 0,
-            cycles_detected: Vec::new(),
-            metadata: Vec::new(),
-        }
-    }
 }
 
 impl QueryResult {

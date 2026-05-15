@@ -4,968 +4,64 @@ use ratatui_textarea::{CursorMove, TextArea};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use crate::app::{App, AppEvent, ApprovalChoice};
-use crate::stream;
-use crate::theme::Theme;
+mod approval;
+mod automation_commands;
+mod editing;
+mod github_commands;
+mod local_commands;
+mod mcp_commands;
+mod mentions;
+mod modal_handlers;
+mod model_picker;
+mod navigation;
+mod palette;
+mod theme_picker;
+mod worktree_commands;
+
+use automation_commands::{handle_dream_command, handle_loop_command, handle_schedule_command};
+use editing::{
+    input_has_text, move_input_cursor_visual_down, move_input_cursor_visual_up, reset_input,
+    step_reasoning_effort,
+};
+use github_commands::{
+    handle_install_github_app, handle_pr_autofix, handle_pr_view, handle_setup_github_actions,
+};
+use local_commands::{
+    handle_bug_command, handle_cost_command, handle_doc_command, handle_dump_context_command,
+    handle_fleet_command, handle_init_command, handle_output_style_command, handle_rewind_command,
+    handle_status_command, handle_teleport_command, handle_theme_command,
+};
+use mcp_commands::handle_mcp_command;
+use mentions::{apply_mention_pick, update_mention_state_after_input};
+pub use model_picker::filtered_models;
+use model_picker::{handle_model_picker_key, open_model_picker};
+use navigation::{
+    collect_recent_paths, jump_to_last_assistant, jump_to_last_error, jump_to_last_tool,
+    jump_to_last_user, recall_next_prompt, recall_previous_prompt, refresh_search_matches,
+    scan_path_refs, scroll_to_message, user_prompts,
+};
+pub use palette::{collect_all_models, palette_items};
+pub(crate) use theme_picker::filtered_theme_choices;
+use worktree_commands::handle_worktree_command;
+
+use crate::app::App;
+use crate::runtime::{AppEvent, CompactionEvent, UiEvent};
 use crate::types::*;
-
-/// No-op: approvable tools are already inserted into the assistant message at
-/// `StreamTool` time (see `main.rs` handler) so the user can see what's queued.
-/// Kept as a stub for the call sites in the approval handlers; the real
-/// status update happens via `ToolResult` when the dispatched tool finishes.
-fn insert_tool_into_message(_app: &mut App, _tool: &ToolCall) {
-    // intentionally empty — the tool is already in `messages` from StreamTool.
-}
-
-fn reset_input(app: &mut App) {
-    app.textarea = TextArea::default();
-    app.textarea.set_cursor_line_style(Style::default());
-    app.textarea.set_placeholder_text("send a message…");
-}
-
-fn input_line_char_len(app: &App, line: usize) -> usize {
-    app.textarea
-        .lines()
-        .get(line)
-        .map(|line| line.chars().count())
-        .unwrap_or_default()
-}
-
-pub(crate) fn filtered_theme_choices(app: &App) -> Vec<&'static crate::theme::ThemeChoice> {
-    let query = app.theme_picker_input.trim().to_ascii_lowercase();
-    Theme::choices()
-        .iter()
-        .filter(|choice| {
-            query.is_empty()
-                || choice.name.contains(&query)
-                || choice.label.to_ascii_lowercase().contains(&query)
-                || choice.description.to_ascii_lowercase().contains(&query)
-                || choice.aliases.iter().any(|alias| alias.contains(&query))
-        })
-        .collect()
-}
-
-fn apply_theme(app: &mut App, name: &str) {
-    if let Some(choice) = Theme::choice_by_name(name) {
-        if let Some(theme) = Theme::by_name(choice.name) {
-            app.theme = theme;
-            app.render_cache.borrow_mut().clear();
-            crate::markdown::clear_highlight_cache();
-            if let Err(err) = crate::config::save_theme(choice.name) {
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Warning,
-                        format!("theme: {} (not persisted: {err})", choice.label),
-                    ),
-                );
-            } else {
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Success,
-                        format!("theme: {}", choice.label),
-                    ),
-                );
-            }
-        }
-    }
-}
-
-fn cursor_index(value: usize) -> u16 {
-    value.min(u16::MAX as usize) as u16
-}
-
-fn move_input_cursor_visual_up(app: &mut App) {
-    let width = app.input_wrap_width.max(1);
-    let cursor = app.textarea.cursor();
-    let (line, col) = (cursor.0, cursor.1);
-
-    if col >= width {
-        app.textarea.move_cursor(CursorMove::Jump(
-            cursor_index(line),
-            cursor_index(col - width),
-        ));
-        return;
-    }
-
-    if line == 0 {
-        app.textarea.move_cursor(CursorMove::Head);
-        return;
-    }
-
-    let prev_len = input_line_char_len(app, line - 1);
-    let prev_visual_start = (prev_len / width) * width;
-    let target_col = prev_len.min(prev_visual_start + col);
-    app.textarea.move_cursor(CursorMove::Jump(
-        cursor_index(line - 1),
-        cursor_index(target_col),
-    ));
-}
-
-fn move_input_cursor_visual_down(app: &mut App) {
-    let width = app.input_wrap_width.max(1);
-    let cursor = app.textarea.cursor();
-    let (line, col) = (cursor.0, cursor.1);
-    let line_len = input_line_char_len(app, line);
-
-    if col + width <= line_len {
-        app.textarea.move_cursor(CursorMove::Jump(
-            cursor_index(line),
-            cursor_index(col + width),
-        ));
-        return;
-    }
-
-    let next_line = line + 1;
-    if next_line >= app.textarea.lines().len() {
-        app.textarea.move_cursor(CursorMove::End);
-        return;
-    }
-
-    let target_col = input_line_char_len(app, next_line).min(col % width);
-    app.textarea.move_cursor(CursorMove::Jump(
-        cursor_index(next_line),
-        cursor_index(target_col),
-    ));
-}
-
-fn input_has_text(app: &App) -> bool {
-    app.textarea.lines().iter().any(|line| !line.is_empty())
-}
-
-fn step_reasoning_effort(app: &mut App, raise: bool) {
-    let current = app.effort_state.current.unwrap_or_default();
-    let next = if raise {
-        current.next()
-    } else {
-        current.previous()
-    };
-    let message = match next {
-        Some(level) => app.effort_state.set(level),
-        None if raise => format!("Reasoning effort is already at max ({current})"),
-        None => format!("Reasoning effort is already at min ({current})"),
-    };
-    crate::toast::push_with_cap(
-        &mut app.toasts,
-        crate::toast::Toast::new(crate::toast::ToastKind::Info, message),
-    );
-}
-
-/// Walk back through `messages` collecting `path:line(:col)?`
-/// references from the most recent tool output (Bash stdout/stderr,
-/// Read content, command-output blocks). Stops at the most recent
-/// turn — once we find references, we don't keep scanning older
-/// turns. Returns most-recent-first, deduplicated.
-///
-/// Pattern: at least one slash OR a recognised file extension,
-/// followed by `:<digits>` and optionally `:<digits>`. Matches:
-///   - `src/lib.rs:42:5`
-///   - `crates/jfc-ui/src/main.rs:1234`
-///   - `Cargo.toml:7`
-/// Doesn't match:
-///   - `12:34` (no path component)
-///   - `https://...` (the colon-port pattern)
-fn collect_recent_paths(messages: &[crate::types::ChatMessage]) -> Vec<String> {
-    use crate::types::{MessagePart, ToolOutput};
-    let mut out: Vec<String> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for msg in messages.iter().rev() {
-        let mut found_in_this_msg = false;
-        for part in msg.parts.iter().rev() {
-            let text: String = match part {
-                MessagePart::Text(s) | MessagePart::Reasoning(s) => s.clone(),
-                MessagePart::Tool(tc) => match &tc.output {
-                    ToolOutput::Text(s) => s.clone(),
-                    ToolOutput::LargeText(lt) => lt.content.clone(),
-                    ToolOutput::Command { stdout, stderr, .. } => {
-                        format!("{stdout}\n{stderr}")
-                    }
-                    ToolOutput::FileContent { content, path, .. } => {
-                        format!("{path}\n{content}")
-                    }
-                    _ => continue,
-                },
-                _ => continue,
-            };
-            for matched in scan_path_refs(&text) {
-                if seen.insert(matched.clone()) {
-                    out.push(matched);
-                    found_in_this_msg = true;
-                }
-            }
-        }
-        if found_in_this_msg {
-            // First-hit message wins — older turns aren't relevant
-            // for "what error did I just see?"
-            break;
-        }
-    }
-    out
-}
-
-/// Pure scanner: finds `path:line(:col)?` substrings. Implementation
-/// is character-walking instead of regex to avoid pulling another
-/// dep — the codebase is regex-free elsewhere.
-fn scan_path_refs(text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let bytes = text.as_bytes();
-    let mut i = 0usize;
-    while i < bytes.len() {
-        let b = bytes[i];
-        // Path char: alnum, /, ., _, -, +
-        if b.is_ascii_alphanumeric()
-            || b == b'/'
-            || b == b'.'
-            || b == b'_'
-            || b == b'-'
-            || b == b'+'
-        {
-            let start = i;
-            while i < bytes.len() {
-                let c = bytes[i];
-                if c.is_ascii_alphanumeric()
-                    || c == b'/'
-                    || c == b'.'
-                    || c == b'_'
-                    || c == b'-'
-                    || c == b'+'
-                {
-                    i += 1;
-                } else {
-                    break;
-                }
-            }
-            let path_end = i;
-            // Need a `:digit` after.
-            if i + 1 < bytes.len() && bytes[i] == b':' && bytes[i + 1].is_ascii_digit() {
-                let after_colon = i + 1;
-                let mut j = after_colon;
-                while j < bytes.len() && bytes[j].is_ascii_digit() {
-                    j += 1;
-                }
-                let line_end = j;
-                // Optional `:digit` for col.
-                let col_end =
-                    if j + 1 < bytes.len() && bytes[j] == b':' && bytes[j + 1].is_ascii_digit() {
-                        let mut k = j + 1;
-                        while k < bytes.len() && bytes[k].is_ascii_digit() {
-                            k += 1;
-                        }
-                        k
-                    } else {
-                        line_end
-                    };
-                let path_slice = &text[start..path_end];
-                // Reject candidates that look like `12:34` (no path)
-                // or `http://...` (URL-port).
-                let is_url = path_slice.starts_with("http://")
-                    || path_slice.starts_with("https://")
-                    || path_slice.starts_with("file://");
-                let is_pure_number = path_slice.bytes().all(|c| c.is_ascii_digit());
-                let has_path_char = path_slice.contains('/') || path_slice.contains('.');
-                if !is_url && !is_pure_number && has_path_char && path_end > start {
-                    let captured = &text[start..col_end];
-                    out.push(captured.to_owned());
-                }
-                i = col_end;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    out
-}
-
-/// Recompute `app.transcript_search.matches` from a fresh query.
-/// Case-insensitive substring match against each message's text /
-/// reasoning content. Updates `cursor` to 0 and scrolls to the first
-/// match if any. Empty query clears matches but leaves the search
-/// overlay open (so the user can keep typing).
-fn refresh_search_matches(app: &mut App, query: &str) {
-    let q = query.to_lowercase();
-    let mut matches: Vec<usize> = Vec::new();
-    if !q.is_empty() {
-        for (idx, msg) in app.messages.iter().enumerate() {
-            let body_hit = msg.parts.iter().any(|p| match p {
-                crate::types::MessagePart::Text(s) => s.to_lowercase().contains(&q),
-                crate::types::MessagePart::Reasoning(s) => s.to_lowercase().contains(&q),
-                crate::types::MessagePart::Tool(tc) => {
-                    tc.input.summary().to_lowercase().contains(&q)
-                        || match &tc.output {
-                            crate::types::ToolOutput::Text(s) => s.to_lowercase().contains(&q),
-                            crate::types::ToolOutput::LargeText(lt) => {
-                                lt.content.to_lowercase().contains(&q)
-                            }
-                            _ => false,
-                        }
-                }
-                _ => false,
-            });
-            if body_hit {
-                matches.push(idx);
-            }
-        }
-    }
-    let first_target = if let Some(s) = app.transcript_search.as_mut() {
-        s.matches = matches;
-        s.cursor = 0;
-        s.matches.first().copied()
-    } else {
-        None
-    };
-    if let Some(target) = first_target {
-        scroll_to_message(app, target);
-    }
-}
-
-// ─── Jump-to navigation helpers ──────────────────────────────────────────
-// Each helper scans `app.messages` from the end backwards for a target,
-// computes the cumulative line offset of the message above the match,
-// and pins `scroll_offset` so that line lands near the top of the
-// viewport. Falls back to scrolling to the bottom if no match is
-// found. The line counts are derived from the same MessageView height
-// math the renderer uses, so the resulting position lines up precisely.
-
-/// Scroll the transcript so the message at `target_idx` lands near the
-/// top of the viewport. Pure scroll-state mutator; does no rendering
-/// itself. Skips if `target_idx` is out of range.
-fn scroll_to_message(app: &mut App, target_idx: usize) {
-    if target_idx >= app.messages.len() {
-        return;
-    }
-    // Coarse height estimate per message — enough to position the
-    // scroll near the target. The renderer's clamp logic will pull
-    // the offset back into bounds on the next frame, and the user's
-    // arrow keys can fine-tune from there. Going through the exact
-    // MessageView width-sensitive math from here would require
-    // knowing the messages-area width, which input.rs doesn't have.
-    let approx_width: usize = 80;
-    let mut offset = 0usize;
-    for (i, msg) in app.messages.iter().enumerate() {
-        if i >= target_idx {
-            break;
-        }
-        // Role label = 1 row.
-        offset += 1;
-        for part in &msg.parts {
-            let chars = part.approx_text_len();
-            if chars == 0 {
-                offset += 1;
-            } else {
-                offset += chars.div_ceil(approx_width);
-            }
-        }
-        // Trailing blank between messages.
-        offset += 1;
-    }
-    app.scroll_offset = offset;
-    app.follow_bottom = false;
-    crate::toast::push_with_cap(
-        &mut app.toasts,
-        crate::toast::Toast::new(
-            crate::toast::ToastKind::Info,
-            format!(
-                "jumped to message {}/{}",
-                target_idx + 1,
-                app.messages.len()
-            ),
-        ),
-    );
-}
-
-fn jump_to_last_error(app: &mut App) {
-    use crate::types::{MessagePart, ToolStatus};
-    let target = app.messages.iter().enumerate().rev().find(|(_, m)| {
-        m.parts.iter().any(|p| {
-            matches!(
-                p,
-                MessagePart::Tool(tc) if tc.status == ToolStatus::Failed
-            )
-        })
-    });
-    match target {
-        Some((idx, _)) => scroll_to_message(app, idx),
-        None => crate::toast::push_with_cap(
-            &mut app.toasts,
-            crate::toast::Toast::new(
-                crate::toast::ToastKind::Warning,
-                "no failed tools in this session".to_string(),
-            ),
-        ),
-    }
-}
-
-fn jump_to_last_tool(app: &mut App) {
-    use crate::types::MessagePart;
-    let target = app
-        .messages
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, m)| m.parts.iter().any(|p| matches!(p, MessagePart::Tool(_))));
-    match target {
-        Some((idx, _)) => scroll_to_message(app, idx),
-        None => crate::toast::push_with_cap(
-            &mut app.toasts,
-            crate::toast::Toast::new(
-                crate::toast::ToastKind::Warning,
-                "no tool calls in this session".to_string(),
-            ),
-        ),
-    }
-}
-
-fn jump_to_last_user(app: &mut App) {
-    let target = app
-        .messages
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, m)| m.role_is_user() && !m.is_compact_boundary());
-    match target {
-        Some((idx, _)) => scroll_to_message(app, idx),
-        None => crate::toast::push_with_cap(
-            &mut app.toasts,
-            crate::toast::Toast::new(
-                crate::toast::ToastKind::Warning,
-                "no user messages yet".to_string(),
-            ),
-        ),
-    }
-}
-
-fn jump_to_last_assistant(app: &mut App) {
-    let target = app
-        .messages
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, m)| !m.role_is_user());
-    match target {
-        Some((idx, _)) => scroll_to_message(app, idx),
-        None => crate::toast::push_with_cap(
-            &mut app.toasts,
-            crate::toast::Toast::new(
-                crate::toast::ToastKind::Warning,
-                "no assistant messages yet".to_string(),
-            ),
-        ),
-    }
-}
-
-/// Collect every user-message prompt text in chronological order.
-/// Used by the up-arrow history recall to walk backwards through what
-/// the user has typed this session. Excludes empty messages and tool
-/// outputs — only the actual prompts the user submitted.
-fn user_prompts(app: &App) -> Vec<String> {
-    app.messages
-        .iter()
-        .filter(|m| m.role == Role::User)
-        .filter_map(|m| {
-            let text: String = m
-                .parts
-                .iter()
-                .filter_map(|p| match p {
-                    MessagePart::Text(s) if !s.is_empty() => Some(s.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            if text.is_empty() { None } else { Some(text) }
-        })
-        .collect()
-}
-
-/// Bump `history_cursor` to the next-older prompt and return its text.
-/// Returns `None` when there's no history left to recall (the cursor
-/// has reached the oldest prompt or there are no user messages).
-pub fn recall_previous_prompt(app: &mut App) -> Option<String> {
-    let prompts = user_prompts(app);
-    if prompts.is_empty() {
-        return None;
-    }
-    let next = match app.history_cursor {
-        None => prompts.len() - 1,
-        Some(0) => return None, // already at the oldest
-        Some(n) => n - 1,
-    };
-    app.history_cursor = Some(next);
-    prompts.get(next).cloned()
-}
-
-/// Bump `history_cursor` toward the most-recent prompt and return its
-/// text. Returns `None` when the cursor would advance past the most
-/// recent — caller is expected to clear the input in that case.
-pub fn recall_next_prompt(app: &mut App) -> Option<String> {
-    let prompts = user_prompts(app);
-    let cur = app.history_cursor?;
-    if cur + 1 >= prompts.len() {
-        app.history_cursor = None;
-        return None;
-    }
-    let next = cur + 1;
-    app.history_cursor = Some(next);
-    prompts.get(next).cloned()
-}
-
-fn dispatch_approved_tool(app: &App, tool: ToolCall, tx: &mpsc::Sender<AppEvent>) {
-    tracing::info!(
-        target: "jfc::ui::approval",
-        tool_kind = tool.kind.label(),
-        tool_id = %tool.id,
-        queue_remaining = app.approval_queue.len(),
-        "approved → dispatch"
-    );
-    stream::dispatch_tools_batched(
-        vec![tool],
-        tx,
-        Arc::clone(&app.dedup_cache),
-        Some(Arc::clone(&app.task_store)),
-        app.team_context.team_name.clone(),
-        app.current_session_id
-            .as_ref()
-            .map(|id| id.as_str().to_owned()),
-        Arc::clone(&app.provider),
-        app.model.clone(),
-        app.teammate_event_tx.clone(),
-        app.cancel_token.clone(),
-    );
-}
-
-/// Promote the next queued tool into `pending_approval` so the modal cycles
-/// through every tool the model emitted in this turn. Auto-applies prior
-/// `always_approved` / `session_approved` decisions so the user doesn't get
-/// re-prompted for tool kinds they already greenlit, and **dispatches
-/// auto-approved tools immediately** via `dispatch_tools_batched`.
-///
-/// The earlier version pushed auto-approved tools onto `pending_tool_calls`
-/// thinking the StreamDone handler would flush them — but `StreamDone(ToolUse)`
-/// has already fired by the time the user is approving, so anything dropped
-/// into `pending_tool_calls` here would sit there forever. The user's
-/// "Yes for session" / "Always" picks were the trigger: choosing those would
-/// auto-pass the remaining 7 tools, none would execute, and the conversation
-/// would stall with no error log.
-fn advance_approval_queue(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
-    let mut auto_approved: Vec<ToolCall> = Vec::new();
-    while let Some(next) = app.approval_queue.pop_front() {
-        if !app.tool_needs_approval(&next) {
-            // Already covered by an earlier "always" / "session" decision.
-            // The tool is already in `messages` from the StreamTool handler;
-            // dispatch it now alongside any other auto-approvable siblings.
-            tracing::info!(
-                target: "jfc::ui::approval",
-                tool_kind = next.kind.label(),
-                tool_id = %next.id,
-                queue_remaining = app.approval_queue.len(),
-                "auto-approved → dispatch"
-            );
-            auto_approved.push(next);
-            continue;
-        }
-        app.pending_approval = Some(crate::app::PendingApproval {
-            tool: next,
-            selected: 0,
-        });
-        break;
-    }
-    if !auto_approved.is_empty() {
-        stream::dispatch_tools_batched(
-            auto_approved,
-            tx,
-            Arc::clone(&app.dedup_cache),
-            Some(Arc::clone(&app.task_store)),
-            app.team_context.team_name.clone(),
-            app.current_session_id
-                .as_ref()
-                .map(|id| id.as_str().to_owned()),
-            Arc::clone(&app.provider),
-            app.model.clone(),
-            app.teammate_event_tx.clone(),
-            app.cancel_token.clone(),
-        );
-    }
-}
-
-/// Mark a previously-displayed (already in `messages`) tool as denied. We
-/// look up the existing entry by `id` and mutate its status/output in place,
-/// rather than appending a duplicate. The agentic loop's
-/// `should_continue_loop` then sees a Failed entry and continues normally.
-fn deny_tool(app: &mut App, tool: ToolCall) {
-    if let Some(idx) = app.streaming_assistant_idx {
-        if let Some(msg) = app.messages.get_mut(idx) {
-            for part in &mut msg.parts {
-                if let MessagePart::Tool(tc) = part {
-                    if tc.id == tool.id {
-                        tc.status = ToolStatus::Failed;
-                        tc.output = ToolOutput::Text("Denied by user".into());
-                        return;
-                    }
-                }
-            }
-        }
-    }
-}
 
 pub async fn handle_key(
     app: &mut App,
     key: event::KeyEvent,
-    tx: &mpsc::Sender<crate::app::AppEvent>,
+    tx: &mpsc::Sender<crate::runtime::AppEvent>,
 ) -> anyhow::Result<bool> {
-    if let Some(ref mut approval) = app.pending_approval {
-        match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                let tool = app.pending_approval.take().unwrap().tool;
-                insert_tool_into_message(app, &tool);
-                dispatch_approved_tool(app, tool, tx);
-                advance_approval_queue(app, tx);
-            }
-            KeyCode::Char('n') | KeyCode::Char('N') => {
-                let tool = app.pending_approval.take().unwrap().tool;
-                deny_tool(app, tool);
-                advance_approval_queue(app, tx);
-            }
-            KeyCode::Char('a') | KeyCode::Char('A') => {
-                let name = approval.tool.kind.label().to_owned();
-                app.always_approved.push(name);
-                let tool = app.pending_approval.take().unwrap().tool;
-                insert_tool_into_message(app, &tool);
-                dispatch_approved_tool(app, tool, tx);
-                advance_approval_queue(app, tx);
-            }
-            KeyCode::Char('s') | KeyCode::Char('S') => {
-                let name = approval.tool.kind.label().to_owned();
-                app.session_approved.push(name);
-                let tool = app.pending_approval.take().unwrap().tool;
-                insert_tool_into_message(app, &tool);
-                dispatch_approved_tool(app, tool, tx);
-                advance_approval_queue(app, tx);
-            }
-            KeyCode::Up if approval.selected > 0 => {
-                approval.selected -= 1;
-            }
-            KeyCode::Down => {
-                approval.selected = (approval.selected + 1).min(ApprovalChoice::ALL.len() - 1);
-            }
-            KeyCode::Enter => {
-                let choice = ApprovalChoice::ALL[approval.selected];
-                let tool = app.pending_approval.take().unwrap().tool;
-                match choice {
-                    ApprovalChoice::Yes | ApprovalChoice::YesSession => {
-                        if choice == ApprovalChoice::YesSession {
-                            let name = tool.kind.label().to_owned();
-                            app.session_approved.push(name);
-                        }
-                        insert_tool_into_message(app, &tool);
-                        dispatch_approved_tool(app, tool, tx);
-                    }
-                    ApprovalChoice::Always => {
-                        let name = tool.kind.label().to_owned();
-                        app.always_approved.push(name);
-                        insert_tool_into_message(app, &tool);
-                        dispatch_approved_tool(app, tool, tx);
-                    }
-                    ApprovalChoice::No => {
-                        deny_tool(app, tool);
-                    }
-                }
-                advance_approval_queue(app, tx);
-            }
-            KeyCode::Esc => {
-                // Esc cancels the entire batch — drop the queue too. Otherwise
-                // a queued tool would surface immediately and the user would
-                // have to dismiss them one-by-one.
-                app.pending_approval = None;
-                app.approval_queue.clear();
-            }
-            // v132 Tern (batch tool approval): Shift+B = approve THIS
-            // tool plus every queued tool with the same `kind.label()`,
-            // in one keystroke. Useful when the model dispatches 8
-            // Reads in a turn — one Shift+B clears them all. Suppressed
-            // when the Tern gate is off so users on the conservative
-            // path keep one-tool-per-prompt.
-            KeyCode::Char('b') | KeyCode::Char('B')
-                if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::Tern) =>
-            {
-                let label = approval.tool.kind.label().to_owned();
-                let tool = app.pending_approval.take().unwrap().tool;
-                insert_tool_into_message(app, &tool);
-                dispatch_approved_tool(app, tool, tx);
-                let mut drained = 1;
-                let mut keep = std::collections::VecDeque::new();
-                while let Some(next) = app.approval_queue.pop_front() {
-                    if next.kind.label() == label {
-                        insert_tool_into_message(app, &next);
-                        dispatch_approved_tool(app, next, tx);
-                        drained += 1;
-                    } else {
-                        keep.push_back(next);
-                    }
-                }
-                app.approval_queue = keep;
-                if drained > 1 {
-                    crate::toast::push_with_cap(
-                        &mut app.toasts,
-                        crate::toast::Toast::new(
-                            crate::toast::ToastKind::Info,
-                            format!("Batch-approved {drained} `{label}` tools"),
-                        ),
-                    );
-                }
-                advance_approval_queue(app, tx);
-            }
-            _ => {}
-        }
+    if approval::handle_approval_key(app, key, tx) {
         return Ok(false);
     }
 
-    if app.show_task_panel {
-        let total = app
-            .task_store
-            .list(crate::tasks::DeletedFilter::Exclude)
-            .len();
-        match key.code {
-            KeyCode::Esc => {
-                app.show_task_panel = false;
-            }
-            KeyCode::Up if app.task_panel_selected > 0 => {
-                app.task_panel_selected -= 1;
-                app.task_panel_state.select(Some(app.task_panel_selected));
-            }
-            KeyCode::Down => {
-                let max = total.saturating_sub(1);
-                if app.task_panel_selected < max {
-                    app.task_panel_selected += 1;
-                    app.task_panel_state.select(Some(app.task_panel_selected));
-                }
-            }
-            _ => {}
-        }
+    if modal_handlers::handle_modal_key(app, key, tx).await {
         return Ok(false);
     }
 
-    if app.show_sidebar
-        && matches!(
-            (key.modifiers, key.code),
-            (KeyModifiers::NONE, KeyCode::Up)
-                | (KeyModifiers::NONE, KeyCode::Down)
-                | (KeyModifiers::NONE, KeyCode::Enter)
-        )
-    {
-        // The sidebar reorders sessions visually (this-project first, others
-        // below) but `session_meta` itself stays in recency order. Build a
-        // resolved order each navigation tick so Up/Down/Enter walk the
-        // user-visible list, not the underlying vec.
-        let ordered = crate::render::ordered_sidebar_sessions(app);
-        let total = ordered.len();
-        match key.code {
-            KeyCode::Up if app.session_selected > 0 => {
-                app.session_selected -= 1;
-                app.session_list_state.select(Some(app.session_selected));
-            }
-            KeyCode::Down => {
-                let max = total.saturating_sub(1);
-                if app.session_selected < max {
-                    app.session_selected += 1;
-                    app.session_list_state.select(Some(app.session_selected));
-                }
-            }
-            KeyCode::Enter => {
-                if let Some(id) = ordered.get(app.session_selected).cloned() {
-                    if let Some(messages) = crate::session::load_session(&id).await {
-                        app.messages = messages;
-                        app.switch_session(Some(id));
-                        app.streaming_text.clear();
-                        app.streaming_reasoning.clear();
-                        app.streaming_response_bytes = 0;
-                        app.streaming_assistant_idx = None;
-                        app.scroll_to_bottom();
-                    }
-                }
-            }
-            _ => {}
-        }
-        return Ok(false);
-    }
-
-    if app.show_palette {
-        match key.code {
-            KeyCode::Esc => {
-                app.show_palette = false;
-                app.palette_input.clear();
-                app.palette_selected = 0;
-            }
-            KeyCode::Enter => {
-                let items = palette_items(app);
-                if let Some(label) = items.get(app.palette_selected) {
-                    let label = label.to_string();
-                    app.show_palette = false;
-                    app.palette_input.clear();
-                    app.palette_selected = 0;
-                    execute_palette_action(app, &label).await;
-                }
-            }
-            KeyCode::Up if app.palette_selected > 0 => {
-                app.palette_selected -= 1;
-            }
-            KeyCode::Down => {
-                let max = palette_items(app).len().saturating_sub(1);
-                if app.palette_selected < max {
-                    app.palette_selected += 1;
-                }
-            }
-            KeyCode::Char(c) => {
-                app.palette_input.push(c);
-                app.palette_selected = 0;
-            }
-            KeyCode::Backspace => {
-                app.palette_input.pop();
-                app.palette_selected = 0;
-            }
-            _ => {}
-        }
-        return Ok(false);
-    }
-
-    if app.show_theme_picker {
-        let total = filtered_theme_choices(app).len();
-        match key.code {
-            KeyCode::Esc => {
-                app.show_theme_picker = false;
-                app.theme_picker_input.clear();
-                app.theme_picker_selected = 0;
-            }
-            KeyCode::Enter => {
-                let filtered = filtered_theme_choices(app);
-                if let Some(choice) = filtered.get(app.theme_picker_selected) {
-                    let name = choice.name;
-                    apply_theme(app, name);
-                    app.show_theme_picker = false;
-                    app.theme_picker_input.clear();
-                    app.theme_picker_selected = 0;
-                }
-            }
-            KeyCode::Up if app.theme_picker_selected > 0 => {
-                app.theme_picker_selected -= 1;
-            }
-            KeyCode::Down => {
-                let max = total.saturating_sub(1);
-                if app.theme_picker_selected < max {
-                    app.theme_picker_selected += 1;
-                }
-            }
-            KeyCode::Home => app.theme_picker_selected = 0,
-            KeyCode::End => app.theme_picker_selected = total.saturating_sub(1),
-            KeyCode::Char('j') if app.theme_picker_input.is_empty() => {
-                let max = total.saturating_sub(1);
-                if app.theme_picker_selected < max {
-                    app.theme_picker_selected += 1;
-                }
-            }
-            KeyCode::Char('k')
-                if app.theme_picker_input.is_empty() && app.theme_picker_selected > 0 =>
-            {
-                app.theme_picker_selected -= 1;
-            }
-            KeyCode::Char(c) => {
-                app.theme_picker_input.push(c);
-                app.theme_picker_selected = 0;
-            }
-            KeyCode::Backspace => {
-                app.theme_picker_input.pop();
-                app.theme_picker_selected = 0;
-            }
-            _ => {}
-        }
-        return Ok(false);
-    }
-
-    if app.show_model_picker {
-        let total = filtered_models(app).len();
-        match key.code {
-            KeyCode::Esc => {
-                app.show_model_picker = false;
-                app.model_picker_filter.clear();
-                app.model_picker_selected = 0;
-                app.model_picker_state.select(Some(0));
-            }
-            KeyCode::Enter => {
-                let filtered = filtered_models(app);
-                if let Some(model) = filtered.get(app.model_picker_selected) {
-                    let chosen_id = model.id.clone();
-                    let chosen_provider_name = model.provider.clone();
-                    let old_model = app.model.clone();
-                    let old_max_ctx = app.max_context_tokens;
-                    tracing::info!(
-                        target: "jfc::input",
-                        old_model = %old_model,
-                        new_model = %chosen_id,
-                        old_provider = %app.provider.name(),
-                        new_provider = %chosen_provider_name,
-                        old_max_context_tokens = old_max_ctx,
-                        "model switch initiated from picker"
-                    );
-                    if let Some(p) = app
-                        .providers
-                        .iter()
-                        .find(|p| chosen_provider_name == p.name())
-                    {
-                        app.provider = Arc::clone(p);
-                    }
-                    app.model = chosen_id.clone();
-                    crate::app::push_recent_model(&mut app.recent_models, chosen_id.as_str());
-                    app.sync_selected_context_window();
-                    app.show_model_picker = false;
-                    app.model_picker_filter.clear();
-                    app.model_picker_selected = 0;
-                    app.model_picker_state.select(Some(0));
-                }
-            }
-            KeyCode::Up if app.model_picker_selected > 0 => {
-                app.model_picker_selected -= 1;
-                app.model_picker_state
-                    .select(Some(app.model_picker_selected));
-            }
-            KeyCode::Down => {
-                let max = total.saturating_sub(1);
-                if app.model_picker_selected < max {
-                    app.model_picker_selected += 1;
-                    app.model_picker_state
-                        .select(Some(app.model_picker_selected));
-                }
-            }
-            KeyCode::Home => {
-                app.model_picker_selected = 0;
-                app.model_picker_state.select(Some(0));
-            }
-            KeyCode::End => {
-                let max = total.saturating_sub(1);
-                app.model_picker_selected = max;
-                app.model_picker_state.select(Some(max));
-            }
-            KeyCode::PageUp => {
-                app.model_picker_selected = app.model_picker_selected.saturating_sub(10);
-                app.model_picker_state
-                    .select(Some(app.model_picker_selected));
-            }
-            KeyCode::PageDown => {
-                let max = total.saturating_sub(1);
-                app.model_picker_selected = (app.model_picker_selected + 10).min(max);
-                app.model_picker_state
-                    .select(Some(app.model_picker_selected));
-            }
-            KeyCode::Char(c) => {
-                app.model_picker_filter.push(c);
-                app.model_picker_selected = 0;
-                app.model_picker_state.select(Some(0));
-            }
-            KeyCode::Backspace => {
-                app.model_picker_filter.pop();
-                app.model_picker_selected = 0;
-                app.model_picker_state.select(Some(0));
-            }
-            _ => {}
-        }
+    if handle_model_picker_key(app, key) {
         return Ok(false);
     }
 
@@ -994,7 +90,7 @@ pub async fn handle_key(
                     // immediately type args).
                     app.textarea.select_all();
                     app.textarea.cut();
-                    app.textarea.insert_str(&format!("{cmd} "));
+                    app.textarea.insert_str(format!("{cmd} "));
                     app.slash_popup_selected = None;
                     return Ok(false);
                 }
@@ -1185,7 +281,11 @@ pub async fn handle_key(
                         let prompt = bt.description.clone();
                         let tx_clone = tx.clone();
                         tokio::spawn(async move {
-                            let _ = tx_clone.send(crate::app::AppEvent::Submit(prompt)).await;
+                            let _ = tx_clone
+                                .send(crate::runtime::AppEvent::Ui(
+                                    crate::runtime::UiEvent::Submit(prompt),
+                                ))
+                                .await;
                         });
                         crate::toast::push_with_cap(
                             &mut app.toasts,
@@ -1317,11 +417,7 @@ pub async fn handle_key(
                 return Ok(false);
             }
             KeyAction::OpenModelPicker => {
-                app.show_model_picker = true;
-                app.model_picker_filter.clear();
-                app.model_picker_selected = 0;
-                app.model_picker_state.select(Some(0));
-                app.model_picker_models = collect_all_models(app);
+                open_model_picker(app);
                 return Ok(false);
             }
             KeyAction::ToggleVerbose => {
@@ -1556,7 +652,11 @@ pub async fn handle_key(
                 });
             match last_prompt {
                 Some(text) => {
-                    let _ = tx.send(crate::app::AppEvent::Submit(text)).await;
+                    let _ = tx
+                        .send(crate::runtime::AppEvent::Ui(
+                            crate::runtime::UiEvent::Submit(text),
+                        ))
+                        .await;
                 }
                 None => {
                     crate::toast::push_with_cap(
@@ -1595,11 +695,7 @@ pub async fn handle_key(
             return Ok(false);
         }
         (KeyModifiers::CONTROL, KeyCode::Char('m')) => {
-            app.show_model_picker = true;
-            app.model_picker_filter.clear();
-            app.model_picker_selected = 0;
-            app.model_picker_state.select(Some(0));
-            app.model_picker_models = collect_all_models(app);
+            open_model_picker(app);
             return Ok(false);
         }
         (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
@@ -1648,7 +744,7 @@ pub async fn handle_key(
                         width: w,
                         height: h,
                     });
-                    app.textarea.insert_str(&format!("[Image #{id}]"));
+                    app.textarea.insert_str(format!("[Image #{id}]"));
                     return Ok(false);
                 }
                 Ok(None) => {
@@ -1697,28 +793,34 @@ pub async fn handle_key(
                             let preview: String = t.chars().take(40).collect();
                             let suffix = if t.chars().count() > 40 { "…" } else { "" };
                             let _ = tx
-                                .send(crate::app::AppEvent::Toast {
-                                    kind: crate::toast::ToastKind::Success,
-                                    text: format!("Copied: {preview}{suffix}"),
-                                })
+                                .send(crate::runtime::AppEvent::Ui(
+                                    crate::runtime::UiEvent::Toast {
+                                        kind: crate::toast::ToastKind::Success,
+                                        text: format!("Copied: {preview}{suffix}"),
+                                    },
+                                ))
                                 .await;
                         }
                         Err(e) => {
                             let _ = tx
-                                .send(crate::app::AppEvent::Toast {
-                                    kind: crate::toast::ToastKind::Error,
-                                    text: format!("Clipboard error: {e}"),
-                                })
+                                .send(crate::runtime::AppEvent::Ui(
+                                    crate::runtime::UiEvent::Toast {
+                                        kind: crate::toast::ToastKind::Error,
+                                        text: format!("Clipboard error: {e}"),
+                                    },
+                                ))
                                 .await;
                         }
                     }
                 }
                 _ => {
                     let _ = tx
-                        .send(crate::app::AppEvent::Toast {
-                            kind: crate::toast::ToastKind::Warning,
-                            text: "No assistant message to yank".into(),
-                        })
+                        .send(crate::runtime::AppEvent::Ui(
+                            crate::runtime::UiEvent::Toast {
+                                kind: crate::toast::ToastKind::Warning,
+                                text: "No assistant message to yank".into(),
+                            },
+                        ))
                         .await;
                 }
             }
@@ -2253,78 +1355,12 @@ pub async fn handle_key(
     Ok(false)
 }
 
-/// Replace the active `@<query>` token in the textarea with the picked
-/// path + trailing space. Reconstructs the textarea from the resulting
-/// string so cursor positioning is correct (the `ratatui_textarea` API
-/// doesn't expose a "replace range" operation).
-fn apply_mention_pick(app: &mut App, pick: &str) {
-    let buffer = app.textarea.lines().join("\n");
-    let anchor = app.mention.anchor_byte;
-    let q_len = app.mention.query.chars().count();
-    // `apply_acceptance` expects byte offsets but treats the query as a
-    // suffix following the `@`. Build the new buffer.
-    let (new_buf, _new_cursor) = crate::mentions::apply_acceptance(&buffer, anchor, q_len, pick);
-    app.textarea = TextArea::from(new_buf.lines().map(str::to_string).collect::<Vec<_>>());
-    app.textarea.set_cursor_line_style(Style::default());
-    app.textarea.set_placeholder_text("send a message…");
-    app.textarea.move_cursor(CursorMove::End);
-}
-
-/// Decide whether the popup should activate (newly-typed `@` after
-/// whitespace) or update its query (already-active, more chars typed
-/// or backspace shrunk the buffer).
-fn update_mention_state_after_input(app: &mut App) {
-    let cursor = app.textarea.cursor();
-    let (line_idx, col) = (cursor.0, cursor.1);
-    let line = match app.textarea.lines().get(line_idx) {
-        Some(s) => s.clone(),
-        None => return,
-    };
-    let prefix: String = line.chars().take(col).collect();
-    if app.mention.active {
-        // Recompute query from anchor → cursor on the same line. If the
-        // user backspaced past the `@` or moved off-line, dismiss.
-        let buffer = app.textarea.lines().join("\n");
-        if app.mention.anchor_byte >= buffer.len()
-            || !buffer[app.mention.anchor_byte..].starts_with('@')
-        {
-            app.mention.dismiss();
-            return;
-        }
-        // Query = chars after `@` up to first whitespace (so typing a
-        // space terminates the popup naturally).
-        let after_at = &buffer[app.mention.anchor_byte + 1..];
-        let q: String = after_at
-            .chars()
-            .take_while(|c| !c.is_whitespace())
-            .collect();
-        let all = app.mention_all_files.clone();
-        app.mention.update_query(q, &all);
-        // Whitespace after `@token` → user typed past the trigger; close.
-        let after_q_len = app.mention.anchor_byte + 1 + app.mention.query.len();
-        if after_q_len < buffer.len() && buffer[after_q_len..].starts_with(char::is_whitespace) {
-            app.mention.dismiss();
-        }
-        return;
-    }
-    if let Some(anchor) = crate::mentions::should_activate(&prefix) {
-        // Lazy-load file list so we don't walk `cwd` on every keystroke.
-        if app.mention_all_files.is_empty() {
-            let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
-            app.mention_all_files = crate::mentions::scan_files(&cwd, 5000);
-        }
-        let all = app.mention_all_files.clone();
-        let initial = crate::mentions::filter_candidates(&all, "");
-        app.mention.activate(anchor, initial);
-    }
-}
-
-/// Public re-entry used by `AppEvent::Submit`. Same body as the private
+/// Public re-entry used by `UiEvent::Submit`. Same body as the private
 /// `handle_submit` used from the typing path.
 pub async fn handle_submit_text(
     app: &mut App,
     text: String,
-    tx: &mpsc::Sender<crate::app::AppEvent>,
+    tx: &mpsc::Sender<crate::runtime::AppEvent>,
 ) -> anyhow::Result<()> {
     handle_submit(app, text, tx).await
 }
@@ -2332,7 +1368,7 @@ pub async fn handle_submit_text(
 async fn handle_submit(
     app: &mut App,
     text: String,
-    tx: &mpsc::Sender<crate::app::AppEvent>,
+    tx: &mpsc::Sender<crate::runtime::AppEvent>,
 ) -> anyhow::Result<()> {
     tracing::info!(
         target: "jfc::input",
@@ -2362,10 +1398,12 @@ async fn handle_submit(
     if let crate::hooks::HookAction::Abort(reason) = &hook_action {
         tracing::warn!(target: "jfc::hooks", %reason, "OnUserPromptSubmit aborted turn");
         let _ = tx
-            .send(crate::app::AppEvent::Toast {
-                kind: crate::toast::ToastKind::Error,
-                text: format!("Turn aborted by hook: {reason}"),
-            })
+            .send(crate::runtime::AppEvent::Ui(
+                crate::runtime::UiEvent::Toast {
+                    kind: crate::toast::ToastKind::Error,
+                    text: format!("Turn aborted by hook: {reason}"),
+                },
+            ))
             .await;
         return Ok(());
     }
@@ -2584,7 +1622,11 @@ async fn handle_submit(
         let tx_pre = tx.clone();
         let user_text = text.clone();
         let is_blocked = matches!(level, crate::compact::CompactLevel::Blocked);
-        let _ = tx_pre.send(crate::app::AppEvent::CompactionStarted).await;
+        let _ = tx_pre
+            .send(crate::runtime::AppEvent::Compaction(
+                crate::runtime::CompactionEvent::Started,
+            ))
+            .await;
         // Progress callback fires on every text_delta from the streaming
         // compact, forwards the cumulative output length as a
         // CompactionProgress event so the spinner shows live token
@@ -2592,9 +1634,11 @@ async fn handle_submit(
         let progress_tx = tx_pre.clone();
         let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
             // CompactionProgress is non-critical; next progress update supersedes.
-            let _ = progress_tx.try_send(crate::app::AppEvent::CompactionProgress {
-                output_chars: chars,
-            });
+            let _ = progress_tx.try_send(crate::runtime::AppEvent::Compaction(
+                crate::runtime::CompactionEvent::Progress {
+                    output_chars: chars,
+                },
+            ));
         });
         tokio::spawn(async move {
             let options = crate::provider::StreamOptions::new(model.clone());
@@ -2626,16 +1670,22 @@ async fn handle_submit(
                         "pre-submit compaction succeeded — re-queuing user message"
                     );
                     let _ = tx_pre
-                        .send(crate::app::AppEvent::CompactionDone {
-                            messages,
-                            tool_ctx,
-                            pre_tokens,
-                            post_tokens,
-                        })
+                        .send(crate::runtime::AppEvent::Compaction(
+                            crate::runtime::CompactionEvent::Done {
+                                messages,
+                                tool_ctx,
+                                pre_tokens,
+                                post_tokens,
+                            },
+                        ))
                         .await;
                     // Re-queue the user's message — it didn't make it into
                     // the conversation before compaction ran.
-                    let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text)).await;
+                    let _ = tx_pre
+                        .send(crate::runtime::AppEvent::Ui(
+                            crate::runtime::UiEvent::Submit(user_text),
+                        ))
+                        .await;
                 }
                 crate::compact::CompactResult::CircuitBreakerTripped => {
                     tracing::warn!(
@@ -2643,11 +1693,13 @@ async fn handle_submit(
                         "pre-submit compaction: circuit breaker tripped"
                     );
                     let _ = tx_pre
-                        .send(crate::app::AppEvent::CompactionFailed(
-                            "Circuit breaker tripped — submit again with `/compact` if needed"
-                                .into(),
-                            None,
-                            false,
+                        .send(crate::runtime::AppEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: "Circuit breaker tripped — submit again with `/compact` if needed"
+                                    .into(),
+                                calibrated_tokens: None,
+                                transient: false,
+                            },
                         ))
                         .await;
                 }
@@ -2658,12 +1710,14 @@ async fn handle_submit(
                         "pre-submit compaction exhausted all attempts"
                     );
                     let _ = tx_pre
-                        .send(crate::app::AppEvent::CompactionFailed(
-                            format!(
+                        .send(crate::runtime::AppEvent::Compaction(
+                            crate::runtime::CompactionEvent::Failed {
+                                reason: format!(
                                 "Exhausted {attempts} compaction attempts — request is too large"
                             ),
-                            Some(tool_ctx.approx_tokens),
-                            false,
+                                calibrated_tokens: Some(tool_ctx.approx_tokens),
+                                transient: false,
+                            },
                         ))
                         .await;
                 }
@@ -2678,13 +1732,15 @@ async fn handle_submit(
                             "pre-submit compaction unsupported and context is Blocked — cannot proceed"
                         );
                         let _ = tx_pre
-                            .send(crate::app::AppEvent::CompactionFailed(
-                                "Context exceeds limit and provider cannot compact — \
+                            .send(crate::runtime::AppEvent::Compaction(
+                                crate::runtime::CompactionEvent::Failed {
+                                    reason: "Context exceeds limit and provider cannot compact — \
                              try switching to a model/provider that supports compaction, \
                              or start a new session."
-                                    .into(),
-                                Some(tool_ctx.approx_tokens),
-                                false,
+                                        .into(),
+                                    calibrated_tokens: Some(tool_ctx.approx_tokens),
+                                    transient: false,
+                                },
                             ))
                             .await;
                     } else {
@@ -2692,7 +1748,11 @@ async fn handle_submit(
                             target: "jfc::compact",
                             "pre-submit compaction skipped (unsupported/too few groups) — submitting anyway"
                         );
-                        let _ = tx_pre.send(crate::app::AppEvent::Submit(user_text)).await;
+                        let _ = tx_pre
+                            .send(crate::runtime::AppEvent::Ui(
+                                crate::runtime::UiEvent::Submit(user_text),
+                            ))
+                            .await;
                     }
                 }
             }
@@ -2852,6 +1912,8 @@ async fn handle_submit(
     app.streaming_text.clear();
     app.streaming_reasoning.clear();
     app.streaming_response_bytes = 0;
+    app.network_recovery_status = None;
+    app.network_recovery_attempts = 0;
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
     let now = std::time::Instant::now();
@@ -2996,7 +2058,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             app.messages.push(ChatMessage::assistant(
                 "Running `cargo check`… (results will land in the diagnostic row)".into(),
             ));
-            // The handler emits `AppEvent::DiagnosticsUpdated` whose
+            // The handler emits `ProviderEvent::DiagnosticsUpdated` whose
             // handler shows a transition toast — no need to render
             // results inline.
             // We don't have direct `tx` here; emit via a no-op
@@ -3359,7 +2421,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                                         "Use the `{}` agent (Task tool) for this step:\n\n{}",
                                         step.agent, step.prompt
                                     );
-                                    let _ = tx.send(crate::app::AppEvent::Submit(prompt)).await;
+                                    let _ = tx
+                                        .send(crate::runtime::AppEvent::Ui(
+                                            crate::runtime::UiEvent::Submit(prompt),
+                                        ))
+                                        .await;
                                 }
                                 app.messages.push(ChatMessage::assistant(format!(
                                     "Workflow `{rest}` queued — steps will fire sequentially."
@@ -3913,7 +2979,13 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     "{} Config: {}{}\n",
                     check(cfg_ok),
                     cfg_display,
-                    if cfg_ok { "" } else if !cfg_path.exists() { " (not found)" } else { " (parse error)" },
+                    if cfg_ok {
+                        ""
+                    } else if !cfg_path.exists() {
+                        " (not found)"
+                    } else {
+                        " (parse error)"
+                    },
                 ));
             }
 
@@ -3946,7 +3018,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     "{} Auth: accounts file {} {}\n",
                     check(accounts_ok),
                     accounts_display,
-                    if accounts_ok { "(found)" } else { "(not found)" },
+                    if accounts_ok {
+                        "(found)"
+                    } else {
+                        "(not found)"
+                    },
                 ));
             }
 
@@ -4024,7 +3100,9 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                         .ok()
                         .and_then(|o| {
                             if o.status.success() {
-                                String::from_utf8(o.stdout).ok().map(|s| s.trim().to_owned())
+                                String::from_utf8(o.stdout)
+                                    .ok()
+                                    .map(|s| s.trim().to_owned())
                             } else {
                                 None
                             }
@@ -4051,7 +3129,10 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
 
             // ── 9. Session cost so far ────────────────────────────────────────
             let total = crate::cost::total_cost(&app.usage_by_model);
-            report.push_str(&format!("  Session cost: {}\n", crate::cost::fmt_cost(total)));
+            report.push_str(&format!(
+                "  Session cost: {}\n",
+                crate::cost::fmt_cost(total)
+            ));
 
             app.messages.push(ChatMessage::assistant(report));
         }
@@ -4240,7 +3321,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                                  once the condition is met.",
                                 crate::goal::MAX_ITERATIONS
                             );
-                            let _ = tx.send(AppEvent::Submit(kickoff)).await;
+                            let _ = tx.send(AppEvent::Ui(UiEvent::Submit(kickoff))).await;
                             tracing::info!(
                                 target: "jfc::goal",
                                 "/goal: dispatched kickoff meta-prompt"
@@ -4320,7 +3401,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             let arg = parts.get(1).copied().unwrap_or("").trim();
             app.messages.push(ChatMessage::user(text.to_owned()));
             if arg.starts_with("recall") {
-                let sub = arg.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("status");
+                let sub = arg
+                    .split_once(' ')
+                    .map(|x| x.1)
+                    .map(str::trim)
+                    .unwrap_or("status");
                 match sub {
                     "on" | "enable" => {
                         crate::memory_recall::set_runtime_override(Some(true));
@@ -4419,7 +3504,10 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                             .map(|o| {
                                 let s = String::from_utf8_lossy(&o.stdout).into_owned();
                                 if s.len() > 8000 {
-                                    format!("{}\n\n[... diff truncated at 8000 chars ...]", &s[..8000])
+                                    format!(
+                                        "{}\n\n[... diff truncated at 8000 chars ...]",
+                                        &s[..8000]
+                                    )
                                 } else {
                                     s
                                 }
@@ -4433,9 +3521,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                              Output ONLY the commit message — no explanation, no markdown fences.\n\n\
                              ```\n{diff_str}\n```"
                         );
-                        app.messages.push(ChatMessage::assistant(
-                            "Analyzing staged changes…".into(),
-                        ));
+                        app.messages
+                            .push(ChatMessage::assistant("Analyzing staged changes…".into()));
                         app.queued_prompts.push_back(crate::app::QueuedPrompt {
                             text: prompt,
                             is_meta: false,
@@ -4485,7 +3572,10 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 ));
             } else {
                 let capped = if diff_output.len() > 12_000 {
-                    format!("{}\n\n[... diff truncated at 12000 chars ...]", &diff_output[..12_000])
+                    format!(
+                        "{}\n\n[... diff truncated at 12000 chars ...]",
+                        &diff_output[..12_000]
+                    )
                 } else {
                     diff_output
                 };
@@ -4496,13 +3586,12 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                      If there are no issues worth calling out, say so briefly.\n\n\
                      ```diff\n{capped}\n```"
                 );
-                app.messages.push(ChatMessage::assistant(
-                    "Reviewing changes…".into(),
-                ));
+                app.messages
+                    .push(ChatMessage::assistant("Reviewing changes…".into()));
                 app.queued_prompts.push_back(crate::app::QueuedPrompt {
                     text: prompt,
                     is_meta: false,
-                            attachments: Vec::new(),
+                    attachments: Vec::new(),
                 });
                 app.scroll_to_bottom();
             }
@@ -5118,6 +4207,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 app.streaming_text.clear();
                 app.streaming_reasoning.clear();
                 app.streaming_response_bytes = 0;
+                app.network_recovery_status = None;
+                app.network_recovery_attempts = 0;
                 app.streaming_assistant_idx = Some(assistant_idx);
                 app.is_streaming = true;
                 let now = std::time::Instant::now();
@@ -5176,1867 +4267,6 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
     app.scroll_to_bottom();
 }
 
-/// Dispatch the `/worktree …` subcommands. Argument string is the slice after
-/// `/worktree ` — empty / `"list"` lists, `"create <name>"` creates,
-/// `"remove <name>"` removes, `"switch <name>"` prints the manual cd hint.
-///
-/// The runtime cwd of `App` is fixed at startup (see `App::new` in app.rs), so
-/// `/dump-context` — print everything jfc would inject into the
-/// system prompt (CLAUDE.md hierarchy, skills, memories, tool list,
-/// model info) into the transcript. The exact bytes the model sees
-/// on its next turn — useful when debugging "why did the model
-/// hallucinate that I had a Python project / why doesn't it know
-/// about this skill".
-async fn handle_dump_context_command(app: &mut App) {
-    let mut report = String::new();
-    let cwd = std::path::PathBuf::from(&app.cwd);
-
-    report.push_str("**Model context dump**\n\n");
-    report.push_str(&format!("- Model: `{}`\n", app.model));
-    report.push_str(&format!("- Cwd: `{}`\n", app.cwd));
-    report.push_str(&format!("- Provider: `{}`\n", app.provider.name()));
-    report.push_str(&format!("- Permission mode: `{:?}`\n", app.permission_mode));
-    if let Some(ref branch) = app.git_branch {
-        report.push_str(&format!("- Git branch: `{branch}`\n"));
-    }
-    report.push('\n');
-
-    // CLAUDE.md hierarchy
-    let hierarchy = crate::context::ClaudeMdHierarchy::load(&cwd);
-    if let Some(rendered) = hierarchy.render() {
-        report.push_str("### CLAUDE.md hierarchy\n\n```\n");
-        report.push_str(&rendered);
-        report.push_str("\n```\n\n");
-    } else {
-        report.push_str(
-            "### CLAUDE.md hierarchy\n\n_(none — no managed/user/project files found)_\n\n",
-        );
-    }
-
-    // Skills
-    let skills = crate::agents::load_skills(&cwd);
-    report.push_str(&format!("### Skills ({})\n\n", skills.len()));
-    for skill in &skills {
-        report.push_str(&format!("- `{}`\n", skill.name));
-    }
-    if skills.is_empty() {
-        report.push_str("_(none)_\n");
-    }
-    report.push('\n');
-
-    // Memories
-    let memories = crate::memory::load_all_memories(&cwd);
-    report.push_str(&format!("### Memories ({})\n\n", memories.len()));
-    for mem in &memories {
-        let name = mem
-            .path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("(unknown)");
-        report.push_str(&format!(
-            "- **{}** ({:?}, {:?}/{:?})\n",
-            name, mem.level, mem.frontmatter.memory_type, mem.frontmatter.scope,
-        ));
-    }
-    if memories.is_empty() {
-        report.push_str("_(none)_\n");
-    }
-    report.push('\n');
-
-    // Tools
-    let tools = crate::tools::all_tool_defs();
-    report.push_str(&format!(
-        "### Tool definitions sent to API ({})\n\n",
-        tools.len()
-    ));
-    for tool in &tools {
-        report.push_str(&format!("- `{}`\n", tool.name));
-    }
-    report.push('\n');
-
-    // Agents
-    let agents = crate::agents::load_agents(&cwd);
-    report.push_str(&format!("### Agents ({})\n\n", agents.len()));
-    for a in &agents {
-        report.push_str(&format!(
-            "- **{}** (model: `{}`, isolation: {:?})\n",
-            a.name,
-            a.model.as_deref().unwrap_or("inherit"),
-            a.isolation
-        ));
-    }
-    if agents.is_empty() {
-        report.push_str("_(none)_\n");
-    }
-    report.push('\n');
-
-    app.messages
-        .push(crate::types::ChatMessage::user("/dump-context".to_string()));
-    app.messages
-        .push(crate::types::ChatMessage::assistant(report));
-}
-
-/// `/theme [name]` — switch the live UI theme. With no argument,
-/// opens an interactive picker. Apply to `app.theme` so all
-/// subsequent renders pick it up, then persist the choice to
-/// `~/.config/jfc/config.toml` so it survives restarts.
-fn handle_theme_command(app: &mut App, args: &str) {
-    let name = args.trim();
-    if name.is_empty() {
-        app.show_theme_picker = true;
-        app.theme_picker_input.clear();
-        app.theme_picker_selected = 0;
-        return;
-    }
-    match crate::theme::Theme::choice_by_name(name) {
-        Some(choice) => apply_theme(app, choice.name),
-        None => {
-            crate::toast::push_with_cap(
-                &mut app.toasts,
-                crate::toast::Toast::new(
-                    crate::toast::ToastKind::Warning,
-                    format!(
-                        "unknown theme '{name}' — try one of: {}",
-                        crate::theme::Theme::available_names().join(", ")
-                    ),
-                ),
-            );
-        }
-    }
-}
-
-/// `/fleet` — print a snapshot of every active teammate. Lists agent
-/// id, status, last tool, and elapsed time since spawn so the user
-/// can see what their swarm is up to without paging through each
-/// session. Mirrors v132's `tengu_fleetview` command surface; the
-/// renderer in `fleet_view.rs` is reused for the in-TUI live view
-/// (planned follow-up); this slash command produces the textual
-/// digest right now so the data wire is exercised.
-fn handle_fleet_command(app: &mut App) {
-    let mut lines: Vec<String> = Vec::new();
-    if app.team_context.teammates.is_empty() {
-        lines.push("No active teammates.".into());
-        lines.push("Spawn one via the Task tool with `name` + `team_name` set.".into());
-    } else {
-        lines.push(format!(
-            "Fleet: {} teammate{} active",
-            app.team_context.teammates.len(),
-            if app.team_context.teammates.len() == 1 {
-                ""
-            } else {
-                "s"
-            }
-        ));
-        lines.push("".into());
-        for tm in app.team_context.teammates.values() {
-            let elapsed = tm.spawned_at.elapsed();
-            lines.push(format!(
-                "  {} · {} · spawned {}m{}s ago{}",
-                tm.name,
-                tm.agent_type.as_deref().unwrap_or("(no agent type)"),
-                elapsed.as_secs() / 60,
-                elapsed.as_secs() % 60,
-                tm.color
-                    .as_deref()
-                    .map(|c| format!(" · color={c}"))
-                    .unwrap_or_default(),
-            ));
-        }
-    }
-    app.messages
-        .push(crate::types::ChatMessage::user("/fleet".into()));
-    app.messages
-        .push(crate::types::ChatMessage::assistant(lines.join("\n")));
-    tracing::info!(
-        target: "jfc::ui::fleet",
-        teammates = app.team_context.teammates.len(),
-        "/fleet rendered"
-    );
-}
-
-/// `/teleport [branch]` — list jfc-managed branches in the current
-/// repo, or check out the named branch and resume that session.
-/// Argument-less form prints the available targets so the user can
-/// pick one. Wraps `swarm::teleport::teleport_to_session` /
-/// `list_teleport_targets`. Mirrors v132's `/teleport` command.
-async fn handle_teleport_command(app: &mut App, target: &str) {
-    use std::path::Path;
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let repo_root: &Path = cwd.as_path();
-
-    if target.is_empty() {
-        let targets = crate::swarm::teleport::list_teleport_targets(repo_root);
-        let body = if targets.is_empty() {
-            "No jfc-managed branches in this repo (looking for `jfc/<session>` branches).\n\
-             Spawn a teammate via Task to create one, or check out a branch with `git checkout`."
-                .to_string()
-        } else {
-            let mut s = format!("Teleport targets ({}):\n\n", targets.len());
-            for t in &targets {
-                s.push_str(&format!(
-                    "  {} → /teleport {}\n",
-                    t.session_id.as_deref().unwrap_or("(no session id)"),
-                    t.branch
-                ));
-            }
-            s.push_str("\nRun `/teleport <branch>` to jump.");
-            s
-        };
-        app.messages
-            .push(crate::types::ChatMessage::user("/teleport".into()));
-        app.messages
-            .push(crate::types::ChatMessage::assistant(body));
-        return;
-    }
-
-    // Caller wants to jump to a specific branch. Use the session id
-    // form if supplied (e.g. `/teleport abc123`) else assume it's a
-    // full branch name (e.g. `/teleport jfc/abc123`).
-    let target_branch = if target.starts_with("jfc/") {
-        target.to_string()
-    } else {
-        format!("jfc/{target}")
-    };
-    let result = crate::swarm::teleport::teleport_to_session(repo_root, &target_branch, None);
-    app.messages.push(crate::types::ChatMessage::user(format!(
-        "/teleport {target}"
-    )));
-    app.messages
-        .push(crate::types::ChatMessage::assistant(result.message.clone()));
-    tracing::info!(
-        target: "jfc::ui::teleport",
-        target = %target_branch,
-        message = %result.message,
-        "/teleport executed"
-    );
-}
-
-/// `/output-style [name]` — switch the verbosity / formatting style
-/// of assistant replies. Without an argument, lists the built-ins.
-/// With an argument, applies the new style and persists it to
-/// `~/.config/jfc/config.toml` so the choice sticks across restarts.
-/// `/brief` is a shorthand alias the dispatcher pre-resolves.
-fn handle_output_style_command(app: &mut App, args: &str) {
-    use crate::output_style::OutputStyle;
-    let arg = args.trim();
-    if arg.is_empty() {
-        let mut lines = vec!["Available output styles:".to_string(), "".to_string()];
-        for s in OutputStyle::all() {
-            let active = if *s == app.output_style {
-                " · ACTIVE"
-            } else {
-                ""
-            };
-            let suffix = s
-                .system_prompt_suffix()
-                .map(|t| t.split('.').next().unwrap_or("").trim().to_string())
-                .unwrap_or_else(|| "no system-prompt change".to_string());
-            lines.push(format!("  {} — {}{active}", s.name(), suffix));
-        }
-        lines.push("".into());
-        lines.push("Use `/output-style <name>` to switch.".into());
-        app.messages
-            .push(crate::types::ChatMessage::user("/output-style".into()));
-        app.messages
-            .push(crate::types::ChatMessage::assistant(lines.join("\n")));
-        return;
-    }
-    let parsed = OutputStyle::from_str_loose(arg);
-    if parsed == OutputStyle::Default && !arg.eq_ignore_ascii_case("default") {
-        crate::toast::push_with_cap(
-            &mut app.toasts,
-            crate::toast::Toast::new(
-                crate::toast::ToastKind::Warning,
-                format!(
-                    "Unknown output style '{arg}' — try one of: {}",
-                    OutputStyle::all()
-                        .iter()
-                        .map(|s| s.name())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-            ),
-        );
-        return;
-    }
-    app.output_style = parsed;
-    crate::output_style::set_active(parsed);
-    // Persist by mutating only the output_style field of the on-disk
-    // config — same pattern theme persistence uses. A failure here is
-    // non-fatal; the in-memory value still applies for this session.
-    let persist_msg = match save_output_style(parsed.name()) {
-        Ok(_) => format!("output style: {}", parsed.name()),
-        Err(e) => {
-            tracing::warn!(target: "jfc::ui::output_style", style = %parsed.name(), error = %e, "applied but not persisted");
-            format!("output style: {} (not persisted: {e})", parsed.name())
-        }
-    };
-    crate::toast::push_with_cap(
-        &mut app.toasts,
-        crate::toast::Toast::new(crate::toast::ToastKind::Success, persist_msg),
-    );
-}
-
-/// Persist the chosen output style to ~/.config/jfc/config.toml.
-/// Reads existing config so other fields aren't clobbered. Refuses
-/// to overwrite an unparseable file (same safety rule as save_theme).
-fn save_output_style(name: &str) -> Result<std::path::PathBuf, String> {
-    let path = crate::config::config_path();
-    if let Some(parent) = path.parent()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        return Err(format!("cannot create {}: {e}", parent.display()));
-    }
-    let mut cfg: crate::config::Config = match std::fs::read_to_string(&path) {
-        Ok(s) if !s.trim().is_empty() => match toml::from_str(&s) {
-            Ok(c) => c,
-            Err(e) => {
-                return Err(format!(
-                    "{} is not valid TOML — fix it first ({e})",
-                    path.display()
-                ));
-            }
-        },
-        _ => crate::config::Config::default(),
-    };
-    cfg.output_style = Some(name.to_string());
-    let serialized = toml::to_string_pretty(&cfg).map_err(|e| format!("serialize failed: {e}"))?;
-    std::fs::write(&path, serialized)
-        .map_err(|e| format!("write {} failed: {e}", path.display()))?;
-    Ok(path)
-}
-
-/// `/init` — bootstrap a CLAUDE.md in the current working directory.
-/// Mirrors v132's onboarding flow. If CLAUDE.md already exists, surfaces
-/// `/plan` / `/roadmap` / `/parity` / `/philosophy` / `/usage` —
-/// start a normal model turn that asks JFC to inspect the project and
-/// then create or update the matching `<KIND>.md` at the repo root via
-/// the existing `Write`/`Edit` tools. The format contract lives in
-/// `document_formats.rs` so the executor (and any future Atlas-style
-/// runner) parses against the same rules the prompt prescribes.
-///
-/// Dispatch shape: if the session is idle (not streaming, no tools
-/// pending) AND we have a `tx` channel, fire `AppEvent::Submit`
-/// immediately so the turn actually starts. If the session is busy —
-/// or we have no channel (the `process_meta_command` re-entry path) —
-/// fall back to enqueueing a `QueuedPrompt` that drains at the next
-/// turn boundary. Without the idle fast-path the user typed `/plan`,
-/// saw "Drafting …", and got no model work until they hit Enter again.
-async fn handle_doc_command(
-    app: &mut App,
-    kind: crate::document_formats::DocKind,
-    tx: Option<&mpsc::Sender<AppEvent>>,
-) {
-    let cwd = std::path::PathBuf::from(&app.cwd);
-    let target = crate::document_formats::doc_target(&cwd, kind);
-    let exists = target.is_file();
-    let echo = format!("/{}", kind.verb());
-    let body = kind.prompt_body(&target, exists);
-    let action = if exists { "Updating" } else { "Drafting" };
-
-    let idle = !app.is_streaming
-        && app.pending_approval.is_none()
-        && app.approval_queue.is_empty()
-        && app.pending_tool_calls.is_empty();
-
-    if let (true, Some(tx)) = (idle, tx) {
-        // Idle: start the turn now. handle_submit_text owns the
-        // user-message push + streaming setup, so we just hand it the
-        // body. We echo the slash command first so the transcript
-        // shows "/plan" → assistant work, not a bare meta-prompt.
-        app.messages.push(ChatMessage::user(echo));
-        app.scroll_to_bottom();
-        let _ = tx.send(AppEvent::Submit(body)).await;
-        tracing::info!(
-            target: "jfc::doc_command",
-            kind = kind.file_name(),
-            "doc command dispatched immediately (idle session)"
-        );
-    } else {
-        // Busy (or no channel): enqueue. The transcript shows the echo
-        // + a "Drafting …" placeholder so the user knows it landed.
-        app.messages.push(ChatMessage::user(echo));
-        app.messages.push(ChatMessage::assistant(format!(
-            "{action} `{}` … (queued — will run when the current turn finishes)",
-            target.display()
-        )));
-        app.queued_prompts.push_back(crate::app::QueuedPrompt {
-            text: body,
-            is_meta: false,
-            attachments: Vec::new(),
-        });
-        app.scroll_to_bottom();
-        tracing::info!(
-            target: "jfc::doc_command",
-            kind = kind.file_name(),
-            "doc command queued (session busy)"
-        );
-    }
-}
-
-/// `/init` — bootstrap a CLAUDE.md in the current working directory.
-/// the path so the user can edit it; otherwise writes a starter template
-/// and prompts the user to fill it in. Reload happens lazily on next
-/// turn via `ClaudeMdHierarchy::load`.
-async fn handle_init_command(app: &mut App) {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let target = cwd.join("CLAUDE.md");
-
-    // Echo the command into the transcript first.
-    app.messages
-        .push(crate::types::ChatMessage::user("/init".into()));
-
-    // Warn if CLAUDE.md already exists (will be overwritten).
-    let overwrite_note = if target.exists() {
-        format!(
-            "> **Note:** `{}` already exists and will be overwritten.\n\n",
-            target.display()
-        )
-    } else {
-        String::new()
-    };
-
-    // ── Project-type detection ──────────────────────────────────────────────
-    struct ProjectKind {
-        description: &'static str,
-        build_cmd: &'static str,
-        test_cmd: &'static str,
-    }
-
-    let has = |name: &str| cwd.join(name).exists();
-
-    let mut kinds: Vec<ProjectKind> = Vec::new();
-
-    if has("Cargo.toml") {
-        kinds.push(ProjectKind {
-            description: "Rust (Cargo)",
-            build_cmd: "cargo build",
-            test_cmd: "cargo test",
-        });
-    }
-    if has("package.json") {
-        kinds.push(ProjectKind {
-            description: "Node.js / JavaScript",
-            build_cmd: "npm run build",
-            test_cmd: "npm test",
-        });
-    }
-    if has("go.mod") {
-        kinds.push(ProjectKind {
-            description: "Go",
-            build_cmd: "go build ./...",
-            test_cmd: "go test ./...",
-        });
-    }
-    if has("pyproject.toml") || has("requirements.txt") {
-        kinds.push(ProjectKind {
-            description: "Python",
-            build_cmd: "pip install -e .",
-            test_cmd: "pytest",
-        });
-    }
-
-    // Fallback when nothing is detected.
-    if kinds.is_empty() {
-        kinds.push(ProjectKind {
-            description: "Unknown",
-            build_cmd: "# add your build command here",
-            test_cmd: "# add your test command here",
-        });
-    }
-
-    let is_polyglot = kinds.len() > 1;
-    let type_description = if is_polyglot {
-        let names: Vec<&str> = kinds.iter().map(|k| k.description).collect();
-        format!("Polyglot project ({})", names.join(", "))
-    } else {
-        kinds[0].description.to_owned()
-    };
-
-    // Use the first detected kind for the primary build/test commands.
-    let build_cmd = kinds[0].build_cmd;
-    let test_cmd = kinds[0].test_cmd;
-
-    // ── Lint command detection ──────────────────────────────────────────────
-    let lint_cmd: Option<&str> = if has("Cargo.toml") {
-        Some("cargo clippy")
-    } else if has("package.json") {
-        Some("npm run lint")
-    } else if has("go.mod") {
-        Some("golangci-lint run")
-    } else if has("pyproject.toml") || has("requirements.txt") {
-        Some("ruff check .")
-    } else {
-        None
-    };
-
-    let lint_line = match lint_cmd {
-        Some(cmd) => format!("- **Lint**: `{cmd}`\n"),
-        None => String::new(),
-    };
-
-    // ── Architecture notes ──────────────────────────────────────────────────
-    let arch_note: String = if has("Cargo.toml") {
-        // Count workspace member crates in subdirectories.
-        let crate_count = std::fs::read_dir(&cwd)
-            .ok()
-            .map(|rd| {
-                rd.filter_map(|e| e.ok())
-                    .filter(|e| {
-                        let p = e.path();
-                        p.is_dir() && p.join("Cargo.toml").exists()
-                    })
-                    .count()
-            })
-            .unwrap_or(0);
-        let is_workspace = std::fs::read_to_string(cwd.join("Cargo.toml"))
-            .map(|s| s.contains("[workspace]"))
-            .unwrap_or(false);
-        if is_workspace && crate_count > 0 {
-            format!(
-                "Cargo workspace with {} member crate(s) found in subdirectories.",
-                crate_count
-            )
-        } else {
-            "Single-crate Cargo project.".to_owned()
-        }
-    } else if has("package.json") {
-        // Enumerate scripts from package.json without pulling in serde_json.
-        let scripts: String = std::fs::read_to_string(cwd.join("package.json"))
-            .ok()
-            .and_then(|s| {
-                let start = s.find("\"scripts\"")?;
-                let block = &s[start..];
-                let open = block.find('{')?;
-                let close = block[open..].find('}')?;
-                Some(block[open + 1..open + close].to_owned())
-            })
-            .map(|block| {
-                block
-                    .lines()
-                    .map(|l| l.trim())
-                    .filter(|l| l.contains(':'))
-                    .map(|l| format!("  {l}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            })
-            .filter(|s| !s.is_empty())
-            .map(|s| format!("package.json scripts:\n{s}"))
-            .unwrap_or_else(|| "Node.js project (no scripts detected).".to_owned());
-        scripts
-    } else if has("go.mod") {
-        "Go module project.".to_owned()
-    } else if has("pyproject.toml") {
-        "Python project with pyproject.toml.".to_owned()
-    } else if has("requirements.txt") {
-        "Python project with requirements.txt.".to_owned()
-    } else {
-        "Project structure not automatically detected.".to_owned()
-    };
-
-    // ── Assemble the CLAUDE.md content ────────────────────────────────────
-    let claude_md = format!(
-        "# Project\n\n\
-         {type_description}\n\n\
-         ## Commands\n\n\
-         - **Build**: `{build_cmd}`\n\
-         - **Test**: `{test_cmd}`\n\
-         {lint_line}\n\
-         ## Architecture\n\n\
-         {arch_note}\n\n\
-         ## Agent Instructions\n\n\
-         - Read files before editing\n\
-         - Run tests after changes\n\
-         - Keep commits atomic\n"
-    );
-
-    // ── Write the file ────────────────────────────────────────────────────
-    let body = match tokio::fs::write(&target, &claude_md).await {
-        Ok(()) => {
-            tracing::info!(
-                target: "jfc::ui::init",
-                path = %target.display(),
-                project_type = %type_description,
-                "wrote CLAUDE.md via /init"
-            );
-            format!(
-                "{overwrite_note}✓ CLAUDE.md written to `{}`\n\n\
-                 Detected project type: **{type_description}**\n\n\
-                 Edit the file to add coding standards, architectural patterns, \
-                 or anything you want every AI turn to remember.",
-                target.display(),
-            )
-        }
-        Err(e) => format!("**Error:** Failed to write `{}`: {e}", target.display()),
-    };
-
-    app.messages
-        .push(crate::types::ChatMessage::assistant(body));
-}
-
-/// `/cost` — running session cost in dollars, broken down by model and
-/// token kind (input/output/cache_read/cache_write). v132 mirrors this
-/// via `tengu_cost_threshold_*` events; jfc surfaces it as an on-demand
-/// transcript message so users can see spend without a side panel.
-fn handle_cost_command(app: &mut App) {
-    let mut total = 0.0f64;
-    let mut lines: Vec<String> = vec!["Session cost so far:".into(), "".into()];
-    if app.usage_by_model.is_empty() {
-        lines.push("  (no model usage yet — try a prompt first)".into());
-    } else {
-        for (model, usage) in &app.usage_by_model {
-            let cost = crate::cost::cost_for(model.as_str(), usage);
-            total += cost;
-            lines.push(format!(
-                "  {} · {} in / {} out / {} cache-read / {} cache-write → {}",
-                model.as_str(),
-                usage.input_tokens,
-                usage.output_tokens,
-                usage.cache_read_tokens,
-                usage.cache_write_tokens,
-                crate::cost::fmt_cost(cost),
-            ));
-        }
-    }
-    lines.push("".into());
-    lines.push(format!("**Total: {}**", crate::cost::fmt_cost(total)));
-    app.messages
-        .push(crate::types::ChatMessage::user("/cost".into()));
-    app.messages
-        .push(crate::types::ChatMessage::assistant(lines.join("\n")));
-}
-
-/// `/status` — rich session status: version, model, provider, token totals,
-/// cost, MCP server count, fast-mode toggle, and current effort level.
-/// Complements `/stats` (which shows per-model token breakdown) with a
-/// concise dashboard view that fits in a single glance.
-fn handle_status_command(app: &mut App) {
-    // Aggregate totals across all models for a single session-wide figure.
-    let (total_in, total_out, total_cr, total_cw) = app.usage_by_model.values().fold(
-        (0u64, 0u64, 0u64, 0u64),
-        |(i, o, cr, cw), u| {
-            (
-                i + u.input_tokens,
-                o + u.output_tokens,
-                cr + u.cache_read_tokens,
-                cw + u.cache_write_tokens,
-            )
-        },
-    );
-    let total_cost: f64 = app
-        .usage_by_model
-        .iter()
-        .map(|(m, u)| crate::cost::cost_for(m.as_str(), u))
-        .sum();
-
-    // Derive provider label from the model string as a simple heuristic.
-    let model_str = app.model.as_str();
-    let provider_label = app.provider.name();
-
-    // Turn count: count user messages as a proxy for turns.
-    let turn_count = app
-        .messages
-        .iter()
-        .filter(|m| m.role == crate::types::Role::User)
-        .count();
-
-    // MCP server count from the cached info vec.
-    let mcp_count = app.mcp_servers.len();
-
-    let effort_label = app.effort_state.status();
-
-    let lines = vec![
-        format!("**Version:** jfc v{}", env!("CARGO_PKG_VERSION")),
-        format!("**Model:** {model_str}"),
-        format!("**Provider:** {provider_label}"),
-        format!("**Turns:** {turn_count}"),
-        format!(
-            "**Tokens:** {} in / {} out / {} cache-read / {} cache-write",
-            total_in, total_out, total_cr, total_cw
-        ),
-        format!("**Cost:** {}", crate::cost::fmt_cost(total_cost)),
-        format!("**MCP servers:** {mcp_count} active"),
-        format!("**Fast mode:** {}", if app.fast_mode { "ON" } else { "OFF" }),
-        format!("**Effort:** {effort_label}"),
-    ];
-    app.messages
-        .push(crate::types::ChatMessage::user("/status".into()));
-    app.messages
-        .push(crate::types::ChatMessage::assistant(lines.join("\n")));
-}
-
-/// `/bug` — tell the user where to file a bug + capture a session-id
-/// hint they can paste in. v132 has `tengu_bug_report_*` events for
-/// in-product reporting; jfc currently just points at GitHub since
-/// we don't have a managed reporting endpoint.
-fn handle_bug_command(app: &mut App, description: String) {
-    let session_id = app
-        .current_session_id
-        .as_ref()
-        .map(|s| s.as_str())
-        .unwrap_or("(none)");
-    let body = format!(
-        "Bug reports go to https://github.com/anthropics/jfc/issues/new\n\n\
-         Include in your report:\n\
-         - **Session ID**: `{session_id}`\n\
-         - **Provider/model**: `{}` / `{}`\n\
-         - **Mode**: {:?}\n\
-         - **Description**: {}\n\n\
-         Tip: run `/dump-context` first to grab the full session for the report.",
-        app.provider.name(),
-        app.model.as_str(),
-        app.permission_mode,
-        if description.trim().is_empty() {
-            "(your description here)"
-        } else {
-            description.trim()
-        }
-    );
-    app.messages.push(crate::types::ChatMessage::user(
-        format!("/bug {description}").trim_end().into(),
-    ));
-    app.messages
-        .push(crate::types::ChatMessage::assistant(body));
-}
-
-/// `/rewind [N]` — drop the last N user/assistant turn pairs from the
-/// transcript so the user can retry a divergent path without starting
-/// fresh. N defaults to 1 (the most recent exchange). v132 reserves
-/// `tengu_rewind*` for this; we implement the in-memory variant —
-/// session.jsonl persistence still reflects pre-rewind state until
-/// the next save.
-fn handle_rewind_command(app: &mut App, n_str: &str) {
-    let n: usize = n_str.parse().unwrap_or(1).max(1);
-    use crate::types::Role;
-    // Walk backwards, dropping user/assistant pairs. A "pair" here is
-    // a user message + every assistant message that follows until the
-    // next user. We rewind whole pairs to keep tool_use / tool_result
-    // groupings intact.
-    let mut dropped_pairs = 0usize;
-    while dropped_pairs < n {
-        let last_user_idx = app.messages.iter().rposition(|m| m.role == Role::User);
-        match last_user_idx {
-            Some(idx) => {
-                let removed = app.messages.split_off(idx).len();
-                tracing::info!(
-                    target: "jfc::ui::rewind",
-                    pair = dropped_pairs + 1,
-                    removed,
-                    remaining = app.messages.len(),
-                    "rewind: dropped a turn pair"
-                );
-                dropped_pairs += 1;
-            }
-            None => break,
-        }
-    }
-    let body = if dropped_pairs == 0 {
-        "Nothing to rewind — transcript is empty or has no user turns.".to_string()
-    } else {
-        format!(
-            "Rewound {} turn pair{} ({} message{} remaining). Re-prompt to continue \
-             from this point — the trimmed history is gone for this session.",
-            dropped_pairs,
-            if dropped_pairs == 1 { "" } else { "s" },
-            app.messages.len(),
-            if app.messages.len() == 1 { "" } else { "s" },
-        )
-    };
-    crate::toast::push_with_cap(
-        &mut app.toasts,
-        crate::toast::Toast::new(crate::toast::ToastKind::Info, body.clone()),
-    );
-    app.messages
-        .push(crate::types::ChatMessage::assistant(body));
-}
-
-/// `switch` cannot teleport the running session into a different checkout —
-/// it tells the user how to do it manually. Once App.cwd becomes mutable we
-/// can revisit.
-async fn handle_worktree_command(app: &mut App, args: &str) {
-    let mut it = args.split_whitespace();
-    let sub = it.next().unwrap_or("");
-    let arg = it.next().unwrap_or("");
-    let repo_root = std::path::PathBuf::from(&app.cwd);
-
-    fn echo(app: &mut App, raw: String, body: String) {
-        app.messages.push(ChatMessage::user(raw));
-        app.messages.push(ChatMessage::assistant(body));
-    }
-
-    async fn list_body(cwd: &str) -> String {
-        match crate::worktrees::list_worktrees_async(&std::path::PathBuf::from(cwd)).await {
-            Ok(rows) if rows.is_empty() => "No worktrees registered.".to_owned(),
-            Ok(rows) => {
-                let mut s = format!("**{} worktree(s):**\n\n", rows.len());
-                for w in &rows {
-                    let branch = if w.branch.is_empty() {
-                        "(none)"
-                    } else {
-                        w.branch.as_str()
-                    };
-                    s.push_str(&format!("- `{}` — branch `{}`\n", w.path, branch));
-                }
-                s
-            }
-            Err(e) => format!("**Error:** {e}"),
-        }
-    }
-
-    match sub {
-        "" | "list" => {
-            let body = list_body(&app.cwd).await;
-            echo(app, "/worktree list".to_owned(), body);
-        }
-        "create" => {
-            if arg.is_empty() {
-                echo(
-                    app,
-                    "/worktree create".to_owned(),
-                    "Usage: `/worktree create <name>` (alphanumeric, dash, underscore)".to_owned(),
-                );
-                return;
-            }
-            if let Err(e) = crate::worktrees::validate_name(arg) {
-                echo(
-                    app,
-                    format!("/worktree create {arg}"),
-                    format!("**Error:** {e}"),
-                );
-                return;
-            }
-            let body = match crate::worktrees::create_worktree_async(&repo_root, arg).await {
-                Ok(w) => format!(
-                    "Created worktree `{}` on branch `{}`.\n\n\
-                     Switch into it with:\n```\ncd {}\n```\nthen re-run `jfc`.",
-                    w.path, w.branch, w.path
-                ),
-                Err(e) => format!("**Error:** {e}"),
-            };
-            echo(app, format!("/worktree create {arg}"), body);
-        }
-        "remove" => {
-            if arg.is_empty() {
-                echo(
-                    app,
-                    "/worktree remove".to_owned(),
-                    "Usage: `/worktree remove <name>` (the `jfc/<name>` branch is preserved)"
-                        .to_owned(),
-                );
-                return;
-            }
-            if let Err(e) = crate::worktrees::validate_name(arg) {
-                echo(
-                    app,
-                    format!("/worktree remove {arg}"),
-                    format!("**Error:** {e}"),
-                );
-                return;
-            }
-            let body = match crate::worktrees::remove_worktree_async(&repo_root, arg).await {
-                Ok(()) => format!(
-                    "Removed worktree `.jfc-worktrees/{arg}`. The branch `jfc/{arg}` is preserved \
-                     — recover with `git switch jfc/{arg}` from any checkout."
-                ),
-                Err(e) => format!("**Error:** {e}"),
-            };
-            echo(app, format!("/worktree remove {arg}"), body);
-        }
-        "switch" => {
-            if arg.is_empty() {
-                echo(
-                    app,
-                    "/worktree switch".to_owned(),
-                    "Usage: `/worktree switch <name>`".to_owned(),
-                );
-                return;
-            }
-            if let Err(e) = crate::worktrees::validate_name(arg) {
-                echo(
-                    app,
-                    format!("/worktree switch {arg}"),
-                    format!("**Error:** {e}"),
-                );
-                return;
-            }
-            let target = std::path::PathBuf::from(&app.cwd)
-                .join(".jfc-worktrees")
-                .join(arg);
-            // jfc's cwd is captured at startup, so we can't transparently
-            // teleport mid-session — print the manual recipe.
-            let body = format!(
-                "To switch into `{name}`, run:\n```\ncd {path}\n```\nthen re-launch `jfc`. \
-                 (jfc captures its cwd at startup; live cwd-switch is not yet wired.)",
-                name = arg,
-                path = target.display()
-            );
-            echo(app, format!("/worktree switch {arg}"), body);
-        }
-        other => {
-            echo(
-                app,
-                format!("/worktree {args}"),
-                format!(
-                    "Unknown subcommand `{other}`. Try `/worktree list|create <name>|remove <name>|switch <name>`."
-                ),
-            );
-        }
-    }
-}
-
-/// Dispatch `/mcp …` subcommands.
-///
-/// - `/mcp` or `/mcp list` — show every configured MCP server, its
-///   connection status, and the count of tools it exposes.
-/// - `/mcp restart <name>` — kill the running server (if any) and
-///   re-spawn it from the cached config. Useful when an MCP server
-///   wedges or its tool list goes stale.
-/// - `/mcp logs <name>` — print the last 50 stderr lines from a
-///   server. The transport keeps a 200-line ring buffer per server so
-///   even if the user didn't `RUST_LOG=jfc::mcp=debug`, recent
-///   diagnostics are recoverable.
-async fn handle_mcp_command(app: &mut App, args: &str) {
-    let mut it = args.split_whitespace();
-    let sub = it.next().unwrap_or("list");
-    let arg = it.next().unwrap_or("");
-
-    let raw = if args.is_empty() {
-        "/mcp".to_owned()
-    } else {
-        format!("/mcp {args}")
-    };
-
-    let Some(registry) = crate::tools::snapshot_mcp_registry() else {
-        app.messages.push(ChatMessage::user(raw));
-        app.messages.push(ChatMessage::assistant(
-            "MCP registry not initialized. Add `[mcp.<name>]` blocks to \
-             `~/.config/jfc/config.toml` and restart jfc."
-                .to_owned(),
-        ));
-        return;
-    };
-
-    match sub {
-        "" | "list" => {
-            let servers = registry.list().await;
-            let body = if servers.is_empty() {
-                "No MCP servers configured. Add `[mcp.<name>]` blocks to \
-                 `~/.config/jfc/config.toml`."
-                    .to_owned()
-            } else {
-                let mut s = format!("**{} MCP server(s):**\n\n", servers.len());
-                for srv in &servers {
-                    s.push_str(&format!(
-                        "- `{}` — *{}* — {} tool{}\n",
-                        srv.name,
-                        srv.status.label(),
-                        srv.tools.len(),
-                        if srv.tools.len() == 1 { "" } else { "s" }
-                    ));
-                }
-                s
-            };
-            app.messages.push(ChatMessage::user(raw));
-            app.messages.push(ChatMessage::assistant(body));
-        }
-        "restart" => {
-            if arg.is_empty() {
-                app.messages.push(ChatMessage::user(raw));
-                app.messages.push(ChatMessage::assistant(
-                    "Usage: `/mcp restart <name>`.".to_owned(),
-                ));
-                return;
-            }
-            app.messages.push(ChatMessage::user(raw));
-            let body = match crate::mcp::restart_server(&registry, arg).await {
-                Some(true) => format!("MCP server `{arg}` restarted and reconnected."),
-                Some(false) => format!(
-                    "MCP server `{arg}` was restarted but failed to reconnect. \
-                     See `/mcp logs {arg}` for stderr."
-                ),
-                None => format!("MCP server `{arg}` is not configured."),
-            };
-            app.messages.push(ChatMessage::assistant(body));
-        }
-        "logs" => {
-            if arg.is_empty() {
-                app.messages.push(ChatMessage::user(raw));
-                app.messages.push(ChatMessage::assistant(
-                    "Usage: `/mcp logs <name>`.".to_owned(),
-                ));
-                return;
-            }
-            let body = match registry.get(arg).await {
-                None => format!("MCP server `{arg}` is not configured."),
-                Some(server) => match server.transport.as_ref() {
-                    None => format!(
-                        "MCP server `{arg}` has no live transport (status: {}).",
-                        server.status.label()
-                    ),
-                    Some(transport) => {
-                        let lines = transport.recent_stderr().await;
-                        if lines.is_empty() {
-                            format!("MCP server `{arg}` — no stderr captured yet.")
-                        } else {
-                            let recent: Vec<&String> = lines.iter().rev().take(50).collect();
-                            let mut body = format!(
-                                "**`{arg}` stderr (last {} line{}):**\n\n```\n",
-                                recent.len(),
-                                if recent.len() == 1 { "" } else { "s" }
-                            );
-                            for l in recent.iter().rev() {
-                                body.push_str(l);
-                                body.push('\n');
-                            }
-                            body.push_str("```\n");
-                            body
-                        }
-                    }
-                },
-            };
-            app.messages.push(ChatMessage::user(raw));
-            app.messages.push(ChatMessage::assistant(body));
-        }
-        other => {
-            app.messages.push(ChatMessage::user(raw));
-            app.messages.push(ChatMessage::assistant(format!(
-                "Unknown subcommand `{other}`. Try `/mcp list`, `/mcp restart <name>`, or `/mcp logs <name>`."
-            )));
-        }
-    }
-}
-
-async fn execute_palette_action(app: &mut App, label: &str) {
-    // Each palette entry is paired with the keybinding it replaces — the
-    // status row used to advertise these explicitly, but they're now lifted
-    // into the palette to free vertical space for the context gauge. The
-    // bindings still work (handled at their original sites in `handle_key`);
-    // the palette is just a discoverable index.
-    match label {
-        "Clear Messages (/clear)" => {
-            app.messages.clear();
-            app.streaming_text.clear();
-            app.streaming_reasoning.clear();
-            app.streaming_response_bytes = 0;
-            app.streaming_assistant_idx = None;
-            app.switch_session(None);
-        }
-        "Compact Conversation (/compact)" => {
-            tracing::info!(
-                target: "jfc::compact",
-                model = %app.model,
-                message_count = app.messages.len(),
-                "palette: Compact Conversation triggered"
-            );
-            app.force_compact_pending = true;
-            app.messages.push(ChatMessage::user("/compact".into()));
-            app.messages.push(ChatMessage::assistant(
-                "Compaction queued — runs on the next turn.".into(),
-            ));
-        }
-        "Toggle Sessions Sidebar (Ctrl+B)" => {
-            app.show_sidebar = !app.show_sidebar;
-            if app.show_sidebar {
-                app.session_meta = crate::session::list_sessions_with_metadata().await;
-            }
-        }
-        "Toggle Info Sidebar (Ctrl+S)" => {
-            app.show_info_sidebar = !app.show_info_sidebar;
-        }
-        "Open Model Picker (Ctrl+M)" => {
-            app.show_model_picker = true;
-            app.model_picker_filter.clear();
-            app.model_picker_selected = 0;
-            app.model_picker_models = collect_all_models(app);
-        }
-        "Open Theme Picker (/theme)" => {
-            app.show_theme_picker = true;
-            app.theme_picker_input.clear();
-            app.theme_picker_selected = 0;
-        }
-        "Use Catppuccin Theme (/theme catppuccin)" => apply_theme(app, "catppuccin"),
-        "Use Tokyo Night Theme (/theme tokyo-night)" => apply_theme(app, "tokyo-night"),
-        "Use Gruvbox Theme (/theme gruvbox)" => apply_theme(app, "gruvbox"),
-        "Toggle Thinking (Ctrl+O)" => {
-            // Thinking toggle is a per-message expand/collapse — flip the
-            // most recent reasoning row if there is one, otherwise no-op.
-            if let Some(idx) = app.messages.len().checked_sub(1) {
-                let entry = app.reasoning_expanded.entry(idx).or_insert(false);
-                *entry = !*entry;
-            }
-        }
-        "Raise Reasoning Effort (Alt+.)" => {
-            step_reasoning_effort(app, true);
-        }
-        "Lower Reasoning Effort (Alt+,)" => {
-            step_reasoning_effort(app, false);
-        }
-        "Continue Most Recent Session (/continue)" => {
-            run_slash_command(app, "/continue").await;
-        }
-        "Show Tasks (/tasks)" => {
-            run_slash_command(app, "/tasks").await;
-        }
-        "Show Help (/help)" => {
-            run_slash_command(app, "/help").await;
-        }
-        other if other.starts_with("Run /") => {
-            if let Some(command) = other.strip_prefix("Run ") {
-                run_slash_command(app, command).await;
-            }
-        }
-        _ => {}
-    }
-}
-
-pub fn palette_items(app: &App) -> Vec<&'static str> {
-    // Discoverability index for keybindings + slash commands. Order matches
-    // expected frequency: clear/compact at the top because they're used on
-    // every long session; less-frequent toggles further down.
-    let all: &[&str] = &[
-        "Clear Messages (/clear)",
-        "Compact Conversation (/compact)",
-        "Continue Most Recent Session (/continue)",
-        "Toggle Sessions Sidebar (Ctrl+B)",
-        "Toggle Info Sidebar (Ctrl+S)",
-        "Open Model Picker (Ctrl+M)",
-        "Open Theme Picker (/theme)",
-        "Use Catppuccin Theme (/theme catppuccin)",
-        "Use Tokyo Night Theme (/theme tokyo-night)",
-        "Use Gruvbox Theme (/theme gruvbox)",
-        "Toggle Thinking (Ctrl+O)",
-        "Raise Reasoning Effort (Alt+.)",
-        "Lower Reasoning Effort (Alt+,)",
-        "Show Tasks (/tasks)",
-        "Show Help (/help)",
-        "Run /sessions",
-        "Run /config",
-        "Run /doctor",
-        "Run /diff",
-        "Run /memory",
-        "Run /skills",
-        "Run /commit",
-        "Run /review",
-        "Run /status",
-        "Run /agents",
-        "Run /claude-md",
-        "Run /market",
-        "Run /cascade",
-        "Run /graph-history",
-        "Run /timeline",
-        "Run /export",
-    ];
-    if app.palette_input.is_empty() {
-        all.to_vec()
-    } else {
-        let needle = app.palette_input.to_lowercase();
-        all.iter()
-            .filter(|s| s.to_lowercase().contains(&needle))
-            .copied()
-            .collect()
-    }
-}
-
-/// Union of every configured provider's models, in provider-registration order.
-/// For each provider, prefer the cached `fetch_models()` result (live data — for
-/// OpenWebUI this is the configured instance's actual model list); fall back to
-/// the static `available_models()` only when the cache is missing. After the
-/// union, apply the OAuth seat-tier filter (v126's `XwH()` equivalent) so the
-/// picker hides Opus variants the account can't use.
-pub fn collect_all_models(app: &App) -> Vec<crate::provider::ModelInfo> {
-    let fingerprint_input: Vec<_> = app
-        .providers
-        .iter()
-        .map(|p| {
-            let models = app
-                .provider_models
-                .get(p.name())
-                .filter(|models| !models.is_empty())
-                .cloned()
-                .unwrap_or_else(|| p.available_models());
-            (
-                p.name().to_string(),
-                models
-                    .iter()
-                    .map(|m| {
-                        (
-                            m.provider.to_string(),
-                            m.id.to_string(),
-                            m.display_name.clone(),
-                            m.context_window_tokens,
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .collect::<Vec<_>>();
-    let key = crate::query::QueryKey::ModelPickerModels(crate::query::Fingerprint::new((
-        &fingerprint_input,
-        app.seat_tier.as_deref(),
-    )));
-
-    let all = app.model_picker_query_cache.get_or_insert_with(key, || {
-        let merged = fingerprint_input
-            .iter()
-            .flat_map(|(provider_name, _)| {
-                app.provider_models
-                    .get(provider_name.as_str())
-                    .filter(|models| !models.is_empty())
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        app.providers
-                            .iter()
-                            .find(|p| p.name() == provider_name)
-                            .map(|p| p.available_models())
-                            .unwrap_or_default()
-                    })
-            })
-            .collect();
-        crate::providers::anthropic_models::apply_seat_tier_filter(merged, app.seat_tier.as_deref())
-    });
-
-    // Move recently used models to the top of the list (preserving recency order).
-    if !app.recent_models.is_empty() {
-        let recent = &app.recent_models;
-        let mut sorted: Vec<crate::provider::ModelInfo> = Vec::with_capacity(all.len());
-        // Add recent models in recency order
-        for r in recent {
-            if let Some(m) = all.iter().find(|m| m.id.as_str() == r.as_str()) {
-                sorted.push(m.clone());
-            }
-        }
-        // Add remaining models
-        for m in &all {
-            if !recent.contains(&m.id.to_string()) {
-                sorted.push(m.clone());
-            }
-        }
-        sorted
-    } else {
-        all
-    }
-}
-
-// ----------------------------------------------------------------------
-// GitHub deep-integration slash handlers
-// ----------------------------------------------------------------------
-
-/// Helper: emit a uniform "gh is missing / unauthed" toast + chat message.
-/// Centralized so all four github commands fail the same way and the user
-/// always sees `gh auth login` as the next step.
-fn push_gh_unavailable(app: &mut App, cmd: &str) {
-    let msg = "GitHub CLI not found on PATH. Install via <https://cli.github.com> \
-               or set `JFC_GH_BIN_OVERRIDE` to a `gh` binary path."
-        .to_owned();
-    crate::toast::push_with_cap(
-        &mut app.toasts,
-        crate::toast::Toast::new(crate::toast::ToastKind::Error, "gh not installed"),
-    );
-    app.messages.push(ChatMessage::user(cmd.to_owned()));
-    app.messages.push(ChatMessage::assistant(msg));
-}
-
-/// `/install-github-app` — open the install URL and (if authed) check
-/// whether the Claude GitHub App is already installed on the current repo.
-async fn handle_install_github_app(app: &mut App) {
-    if !crate::github::is_gh_installed() {
-        push_gh_unavailable(app, "/install-github-app");
-        return;
-    }
-    let Some(ctx) = crate::github::current_repo().await else {
-        app.messages
-            .push(ChatMessage::user("/install-github-app".into()));
-        app.messages.push(ChatMessage::assistant(
-            "Could not determine GitHub repo from `git remote get-url origin`. \
-             Run this command from inside a checkout whose `origin` points at GitHub."
-                .into(),
-        ));
-        return;
-    };
-    let url = crate::github::install::install_url(&ctx);
-
-    // Best-effort: check if already installed first; if so, skip the browser.
-    let client = crate::github::GhClient::new();
-    let already = crate::github::install::check_installed(&client, &ctx).await;
-    let body = match already {
-        Ok(Some(v)) => {
-            let id = v.get("id").and_then(|n| n.as_u64());
-            crate::github::install::already_installed_message(&ctx, id)
-        }
-        Ok(None) | Err(crate::github::client::GhError::NotAuthenticated) => {
-            // Not installed (or we can't tell because we're unauthed) — show
-            // the wizard and try to open the browser.
-            if let Err(e) = crate::github::install::open_browser(&url).await {
-                tracing::warn!(target: "jfc::github", err = %e, "failed to open browser");
-            }
-            crate::github::install::install_message(&ctx, &url)
-        }
-        Err(e) => format!("**Error checking install state:** {e}"),
-    };
-    app.messages
-        .push(ChatMessage::user("/install-github-app".into()));
-    app.messages.push(ChatMessage::assistant(body));
-}
-
-/// Parse the `<num>` arg used by `/pr` and `/pr-autofix`. Returns the
-/// parsed number or an Err string suitable for echoing.
-fn parse_pr_num(arg: &str, cmd: &str) -> Result<u64, String> {
-    let trimmed = arg.trim().trim_start_matches('#');
-    if trimmed.is_empty() {
-        return Err(format!("Usage: `{cmd} <pr-number>` (e.g. `{cmd} 42`)"));
-    }
-    trimmed
-        .parse::<u64>()
-        .map_err(|_| format!("`{trimmed}` is not a valid PR number."))
-}
-
-/// `/pr <num>` — fetch PR + comments and render a markdown summary.
-async fn handle_pr_view(app: &mut App, arg: &str) {
-    if !crate::github::is_gh_installed() {
-        push_gh_unavailable(app, &format!("/pr {arg}"));
-        return;
-    }
-    let cmd = format!("/pr {arg}");
-    let num = match parse_pr_num(arg, "/pr") {
-        Ok(n) => n,
-        Err(e) => {
-            app.messages.push(ChatMessage::user(cmd));
-            app.messages.push(ChatMessage::assistant(e));
-            return;
-        }
-    };
-    let client = crate::github::GhClient::new();
-    let body = match client.gh_pr_view(num).await {
-        Ok(pr) => {
-            let mut s = format!(
-                "**PR #{n}** ({state}) — {title}\n\
-                 Author: @{author}  ·  {head} → {base}\n\
-                 URL: <{url}>\n",
-                n = pr.number,
-                state = pr.state,
-                title = pr.title,
-                author = pr.author.login,
-                head = pr.head_ref_name,
-                base = pr.base_ref_name,
-                url = pr.url,
-            );
-            if !pr.body.trim().is_empty() {
-                s.push_str("\n## Description\n\n");
-                s.push_str(pr.body.trim());
-                s.push('\n');
-            }
-            if !pr.comments.is_empty() {
-                s.push_str(&format!("\n## Issue comments ({})\n\n", pr.comments.len()));
-                for c in &pr.comments {
-                    s.push_str(&format!(
-                        "- **@{}**: {}\n",
-                        c.author.login,
-                        c.body.lines().next().unwrap_or(""),
-                    ));
-                }
-            }
-            let review_total: usize = pr.reviews.iter().map(|r| r.comments.len()).sum();
-            if !pr.reviews.is_empty() {
-                s.push_str(&format!(
-                    "\n## Reviews ({}, {} inline comment{})\n\n",
-                    pr.reviews.len(),
-                    review_total,
-                    if review_total == 1 { "" } else { "s" }
-                ));
-                for r in &pr.reviews {
-                    s.push_str(&format!(
-                        "- @{} ({}): {}\n",
-                        r.author.login,
-                        if r.state.is_empty() {
-                            "COMMENTED"
-                        } else {
-                            &r.state
-                        },
-                        r.body.lines().next().unwrap_or("")
-                    ));
-                }
-            }
-            s.push_str(
-                "\n_Tip: run `/pr-autofix <num>` to ask the model to address review comments._",
-            );
-            s
-        }
-        Err(crate::github::client::GhError::NotAuthenticated) => {
-            "`gh` is not authenticated — run `gh auth login` and try again.".into()
-        }
-        Err(crate::github::client::GhError::RateLimited { reminder }) => {
-            format!("**GitHub API rate limit hit.**\n\n{reminder}")
-        }
-        Err(e) => format!("**Error:** {e}"),
-    };
-    app.messages.push(ChatMessage::user(cmd));
-    app.messages.push(ChatMessage::assistant(body));
-}
-
-/// `/pr-autofix <num>` — fetch the PR, build the autofix prompt, and either
-/// inject it as a fresh user turn (driving a model response) or echo it
-/// inline if no `tx` channel is available (e.g. queued-prompt drain).
-async fn handle_pr_autofix(app: &mut App, arg: &str, tx: Option<&mpsc::Sender<AppEvent>>) {
-    if !crate::github::is_gh_installed() {
-        push_gh_unavailable(app, &format!("/pr-autofix {arg}"));
-        return;
-    }
-    let cmd = format!("/pr-autofix {arg}");
-    let num = match parse_pr_num(arg, "/pr-autofix") {
-        Ok(n) => n,
-        Err(e) => {
-            app.messages.push(ChatMessage::user(cmd));
-            app.messages.push(ChatMessage::assistant(e));
-            return;
-        }
-    };
-    let client = crate::github::GhClient::new();
-    let prompt = match crate::github::autofix::run(&client, num).await {
-        Ok(p) => p,
-        Err(crate::github::client::GhError::NotAuthenticated) => {
-            app.messages.push(ChatMessage::user(cmd));
-            app.messages.push(ChatMessage::assistant(
-                "`gh` is not authenticated — run `gh auth login` and try again.".into(),
-            ));
-            return;
-        }
-        Err(crate::github::client::GhError::RateLimited { reminder }) => {
-            app.messages.push(ChatMessage::user(cmd));
-            app.messages.push(ChatMessage::assistant(format!(
-                "Rate limited.\n\n{reminder}"
-            )));
-            return;
-        }
-        Err(e) => {
-            app.messages.push(ChatMessage::user(cmd));
-            app.messages
-                .push(ChatMessage::assistant(format!("**Error:** {e}")));
-            return;
-        }
-    };
-
-    // Echo what the user typed.
-    app.messages.push(ChatMessage::user(cmd));
-
-    // Without a stream channel (queued-prompt drain), we can only show the
-    // prompt — same fallback the skill-fallthrough arm uses.
-    let Some(tx) = tx else {
-        app.messages.push(ChatMessage::assistant(format!(
-            "Autofix prompt prepared (no stream channel — submit `/pr-autofix {num}` from the input bar to drive the model):\n\n{prompt}"
-        )));
-        return;
-    };
-
-    // Drive a model turn: push the synthetic user message (the prompt body)
-    // and an empty assistant placeholder, then spawn the provider stream.
-    // Mirrors the skill-fallthrough setup at the bottom of handle_slash_command.
-    let assistant_idx = app.messages.len() + 1;
-    app.messages.push(ChatMessage::user(prompt));
-    app.tool_ctx.total_user_turns += 1;
-    app.messages.push(ChatMessage::assistant(String::new()));
-    app.streaming_text.clear();
-    app.streaming_reasoning.clear();
-    app.streaming_response_bytes = 0;
-    app.streaming_assistant_idx = Some(assistant_idx);
-    app.is_streaming = true;
-    let now = std::time::Instant::now();
-    app.streaming_started_at = Some(now);
-    app.last_stream_event_at = Some(now);
-    app.streaming_last_token_at = Some(now);
-    app.turn_started_at = Some(now);
-    app.thinking_started_at = None;
-    app.thinking_ended_at = None;
-    app.last_usage_output = 0;
-    app.usage_apply_baseline = (0, 0, 0, 0);
-    app.scroll_to_bottom();
-
-    let session_id = app
-        .current_session_id
-        .clone()
-        .unwrap_or_else(crate::session::generate_session_id);
-    {
-        let sid = session_id.clone();
-        let msgs = app.messages.clone();
-        let model = app.model.clone();
-        tokio::spawn(async move {
-            crate::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
-        });
-    }
-    app.current_session_id = Some(session_id);
-
-    let provider = app.provider.clone();
-    let messages = crate::stream::build_provider_messages(&app.messages[..assistant_idx]);
-    let model = app.model.clone();
-    let tx_stream = tx.clone();
-    let interrupt = app.interrupt_flag.clone();
-    interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
-    app.cancel_token = tokio_util::sync::CancellationToken::new();
-    let cancel = app.cancel_token.clone();
-    // wg-async: retry / continuation path — fresh cancel token per spawn.
-    tokio::spawn(async move {
-        crate::stream::stream_response(provider, messages, model, tx_stream, interrupt, cancel)
-            .await;
-    });
-}
-
-/// `/setup-github-actions [force]` — write `.github/workflows/jfc-review.yml`.
-async fn handle_setup_github_actions(app: &mut App, arg: &str) {
-    let force = matches!(arg, "force" | "--force" | "-f" | "overwrite");
-    let echo = if force {
-        "/setup-github-actions force".to_owned()
-    } else {
-        "/setup-github-actions".to_owned()
-    };
-    let repo_root = std::path::PathBuf::from(&app.cwd);
-    let body = match crate::github::actions::write_workflow(&repo_root, force) {
-        Ok(outcome) => crate::github::actions::success_message(&outcome),
-        Err(e) => format!("**Error writing workflow:** {e}"),
-    };
-    app.messages.push(ChatMessage::user(echo));
-    app.messages.push(ChatMessage::assistant(body));
-}
-
-// ---------------------------------------------------------------------------
-// /dream — memory consolidation
-// ---------------------------------------------------------------------------
-
-/// `/dream [nightly]` — inject a user message asking the model to review the
-/// session and consolidate key learnings into typed memory files.
-///
-/// With `nightly` as the argument, also instructs the model to schedule itself
-/// via `CronCreate` so consolidation runs automatically every night at 02:00.
-async fn handle_dream_command(app: &mut App, arg: &str, tx: Option<&mpsc::Sender<AppEvent>>) {
-    let nightly = arg.trim().eq_ignore_ascii_case("nightly");
-    let echo = if nightly {
-        "/dream nightly".to_owned()
-    } else {
-        "/dream".to_owned()
-    };
-    app.messages.push(ChatMessage::user(echo));
-
-    let cron_instruction = if nightly {
-        "\n\nAlso use the CronCreate tool to schedule this same /dream command to run \
-nightly at 2 AM:\n- schedule: \"0 2 * * *\"\n- command: \"dream consolidate\"\n\
-- description: \"Nightly memory consolidation\""
-    } else {
-        ""
-    };
-
-    let prompt = format!(
-        "# Memory Consolidation (/dream)\n\n\
-Review this session's conversation and your memory files in ~/.config/jfc/memory/.\n\
-1. Identify key learnings, patterns, and facts worth preserving\n\
-2. Create or update typed memory files: context/, preference/, project/, feedback/\n\
-3. Prune outdated or redundant entries\n\
-4. Summarize what you consolidated\n\n\
-Use the MemoryCreate tool for new memories and MemoryDelete for stale ones.{cron_instruction}"
-    );
-
-    let Some(tx) = tx else {
-        app.messages.push(ChatMessage::assistant(
-            "Running memory consolidation…\n\n\
-*(no stream channel — submit `/dream` from the input bar to drive the model)*"
-                .into(),
-        ));
-        app.scroll_to_bottom();
-        return;
-    };
-
-    let assistant_idx = app.messages.len() + 1;
-    app.messages.push(ChatMessage::user(prompt));
-    app.tool_ctx.total_user_turns += 1;
-    app.messages.push(ChatMessage::assistant(String::new()));
-    app.streaming_text.clear();
-    app.streaming_reasoning.clear();
-    app.streaming_response_bytes = 0;
-    app.streaming_assistant_idx = Some(assistant_idx);
-    app.is_streaming = true;
-    let now = std::time::Instant::now();
-    app.streaming_started_at = Some(now);
-    app.last_stream_event_at = Some(now);
-    app.streaming_last_token_at = Some(now);
-    app.turn_started_at = Some(now);
-    app.thinking_started_at = None;
-    app.thinking_ended_at = None;
-    app.last_usage_output = 0;
-    app.usage_apply_baseline = (0, 0, 0, 0);
-    app.scroll_to_bottom();
-
-    let session_id = app
-        .current_session_id
-        .clone()
-        .unwrap_or_else(crate::session::generate_session_id);
-    {
-        let sid = session_id.clone();
-        let msgs = app.messages.clone();
-        let model = app.model.clone();
-        tokio::spawn(async move {
-            crate::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
-        });
-    }
-    app.current_session_id = Some(session_id);
-
-    let provider = app.provider.clone();
-    let messages = crate::stream::build_provider_messages(&app.messages[..assistant_idx]);
-    let model = app.model.clone();
-    let tx_stream = tx.clone();
-    let interrupt = app.interrupt_flag.clone();
-    interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
-    app.cancel_token = tokio_util::sync::CancellationToken::new();
-    let cancel = app.cancel_token.clone();
-    tokio::spawn(async move {
-        crate::stream::stream_response(provider, messages, model, tx_stream, interrupt, cancel)
-            .await;
-    });
-}
-
-// ---------------------------------------------------------------------------
-// /loop — recurring cron prompt
-// ---------------------------------------------------------------------------
-
-/// Parse an optional leading interval token (`5m`, `2h`, `1d`, `30s`) from the
-/// argument string.  Returns `(interval_str, rest_of_prompt)`.
-fn parse_loop_interval(args: &str) -> (&str, &str) {
-    // Regex-free: scan the first "word" for digits followed by s/m/h/d.
-    let args = args.trim();
-    let end = args
-        .find(|c: char| c.is_whitespace())
-        .unwrap_or(args.len());
-    let candidate = &args[..end];
-    let valid = candidate.len() >= 2
-        && candidate[..candidate.len() - 1]
-            .chars()
-            .all(|c| c.is_ascii_digit())
-        && matches!(
-            candidate.chars().last(),
-            Some('s') | Some('m') | Some('h') | Some('d')
-        );
-    if valid {
-        let rest = args[end..].trim();
-        (candidate, rest)
-    } else {
-        ("10m", args)
-    }
-}
-
-/// Convert a simple interval string (`5m`, `2h`, `1d`, `90s`) to a cron
-/// expression.  Seconds are rounded up to the nearest minute (minimum 1 min).
-fn interval_to_cron(interval: &str) -> String {
-    let n: u64 = interval[..interval.len() - 1].parse().unwrap_or(10);
-    match interval.chars().last() {
-        Some('s') => {
-            let mins = ((n + 59) / 60).max(1);
-            format!("*/{mins} * * * *")
-        }
-        Some('m') => format!("*/{n} * * * *"),
-        Some('h') => format!("0 */{n} * * *"),
-        Some('d') => format!("0 0 */{n} * *"),
-        _ => format!("*/{n} * * * *"),
-    }
-}
-
-/// `/loop [interval] <prompt>` — set up a recurring cron job that fires
-/// `<prompt>` and immediately execute the prompt once now.
-async fn handle_loop_command(app: &mut App, args: &str, tx: Option<&mpsc::Sender<AppEvent>>) {
-    if args.trim().is_empty() {
-        app.messages.push(ChatMessage::user("/loop".to_owned()));
-        app.messages.push(ChatMessage::assistant(
-            "Usage: `/loop [interval] <prompt>`\n\n\
-Examples:\n\
-- `/loop 5m check the deploy`\n\
-- `/loop 1h /review`\n\
-- `/loop check the deploy`  (defaults to 10 m)\n\n\
-Supported intervals: `Xs` (seconds), `Xm` (minutes), `Xh` (hours), `Xd` (days)."
-                .into(),
-        ));
-        app.scroll_to_bottom();
-        return;
-    }
-
-    let (interval, user_prompt) = parse_loop_interval(args);
-    if user_prompt.is_empty() {
-        app.messages.push(ChatMessage::user(format!("/loop {args}")));
-        app.messages.push(ChatMessage::assistant(
-            "No prompt found after the interval. Usage: `/loop [interval] <prompt>`".into(),
-        ));
-        app.scroll_to_bottom();
-        return;
-    }
-    let cron_expr = interval_to_cron(interval);
-    let description_prefix: String = user_prompt.chars().take(40).collect();
-
-    let echo = format!("/loop {args}");
-    app.messages.push(ChatMessage::user(echo));
-
-    let prompt = format!(
-        "# /loop — Schedule recurring prompt\n\n\
-Set up a recurring cron for the following:\n\
-- Interval: {interval} → cron: {cron_expr}\n\
-- Prompt: \"{user_prompt}\"\n\n\
-Use the CronCreate tool with:\n\
-- schedule: \"{cron_expr}\"\n\
-- command: the prompt text above\n\
-- description: \"Loop: {description_prefix}\"\n\n\
-Then immediately execute the prompt now (do not wait for the first cron fire)."
-    );
-
-    let Some(tx) = tx else {
-        app.messages.push(ChatMessage::assistant(format!(
-            "Setting up loop every {interval}: {user_prompt}\n\n\
-*(no stream channel — submit from the input bar to drive the model)*"
-        )));
-        app.scroll_to_bottom();
-        return;
-    };
-
-    let assistant_idx = app.messages.len() + 1;
-    app.messages.push(ChatMessage::user(prompt));
-    app.tool_ctx.total_user_turns += 1;
-    app.messages.push(ChatMessage::assistant(String::new()));
-    app.streaming_text.clear();
-    app.streaming_reasoning.clear();
-    app.streaming_response_bytes = 0;
-    app.streaming_assistant_idx = Some(assistant_idx);
-    app.is_streaming = true;
-    let now = std::time::Instant::now();
-    app.streaming_started_at = Some(now);
-    app.last_stream_event_at = Some(now);
-    app.streaming_last_token_at = Some(now);
-    app.turn_started_at = Some(now);
-    app.thinking_started_at = None;
-    app.thinking_ended_at = None;
-    app.last_usage_output = 0;
-    app.usage_apply_baseline = (0, 0, 0, 0);
-    app.scroll_to_bottom();
-
-    let session_id = app
-        .current_session_id
-        .clone()
-        .unwrap_or_else(crate::session::generate_session_id);
-    {
-        let sid = session_id.clone();
-        let msgs = app.messages.clone();
-        let model = app.model.clone();
-        tokio::spawn(async move {
-            crate::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
-        });
-    }
-    app.current_session_id = Some(session_id);
-
-    let provider = app.provider.clone();
-    let messages = crate::stream::build_provider_messages(&app.messages[..assistant_idx]);
-    let model = app.model.clone();
-    let tx_stream = tx.clone();
-    let interrupt = app.interrupt_flag.clone();
-    interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
-    app.cancel_token = tokio_util::sync::CancellationToken::new();
-    let cancel = app.cancel_token.clone();
-    tokio::spawn(async move {
-        crate::stream::stream_response(provider, messages, model, tx_stream, interrupt, cancel)
-            .await;
-    });
-}
-
-// ---------------------------------------------------------------------------
-// /schedule — view and manage cron schedules
-// ---------------------------------------------------------------------------
-
-/// `/schedule [list|cancel <id>]` — list or cancel scheduled cron jobs.
-///
-/// - No arg / `list` → inject a message asking the model to call `CronList`
-/// - `cancel <id>` → inject a message asking the model to call `CronDelete`
-async fn handle_schedule_command(app: &mut App, arg: &str, tx: Option<&mpsc::Sender<AppEvent>>) {
-    let arg = arg.trim();
-    let (echo, prompt, status_msg) = if arg.is_empty() || arg == "list" {
-        (
-            "/schedule".to_owned(),
-            "# /schedule list\n\nUse the CronList tool to list all registered cron jobs \
-and display the results in a readable table with columns: id, schedule, command, description."
-                .to_owned(),
-            "Listing scheduled cron jobs…".to_owned(),
-        )
-    } else if let Some(id) = arg.strip_prefix("cancel").map(str::trim).filter(|s| !s.is_empty()) {
-        let id = id.to_owned();
-        (
-            format!("/schedule cancel {id}"),
-            format!(
-                "# /schedule cancel\n\nUse the CronDelete tool to cancel the cron job with id \
-`{id}`. Confirm the deletion to the user after the tool call succeeds."
-            ),
-            format!("Cancelling cron job {id}…"),
-        )
-    } else {
-        // Unknown subcommand — show help inline, no model turn needed.
-        app.messages
-            .push(ChatMessage::user(format!("/schedule {arg}")));
-        app.messages.push(ChatMessage::assistant(
-            "Usage:\n\
-  `/schedule` or `/schedule list` — list all scheduled cron jobs\n\
-  `/schedule cancel <id>` — cancel a cron job by id"
-                .into(),
-        ));
-        app.scroll_to_bottom();
-        return;
-    };
-
-    app.messages.push(ChatMessage::user(echo));
-
-    let Some(tx) = tx else {
-        app.messages.push(ChatMessage::assistant(format!(
-            "{status_msg}\n\n*(no stream channel — submit from the input bar to drive the model)*"
-        )));
-        app.scroll_to_bottom();
-        return;
-    };
-
-    let assistant_idx = app.messages.len() + 1;
-    app.messages.push(ChatMessage::user(prompt));
-    app.tool_ctx.total_user_turns += 1;
-    app.messages.push(ChatMessage::assistant(String::new()));
-    app.streaming_text.clear();
-    app.streaming_reasoning.clear();
-    app.streaming_response_bytes = 0;
-    app.streaming_assistant_idx = Some(assistant_idx);
-    app.is_streaming = true;
-    let now = std::time::Instant::now();
-    app.streaming_started_at = Some(now);
-    app.last_stream_event_at = Some(now);
-    app.streaming_last_token_at = Some(now);
-    app.turn_started_at = Some(now);
-    app.thinking_started_at = None;
-    app.thinking_ended_at = None;
-    app.last_usage_output = 0;
-    app.usage_apply_baseline = (0, 0, 0, 0);
-    app.scroll_to_bottom();
-
-    let session_id = app
-        .current_session_id
-        .clone()
-        .unwrap_or_else(crate::session::generate_session_id);
-    {
-        let sid = session_id.clone();
-        let msgs = app.messages.clone();
-        let model = app.model.clone();
-        tokio::spawn(async move {
-            crate::session::save_session(&sid, &msgs, None, Some(model.as_str())).await;
-        });
-    }
-    app.current_session_id = Some(session_id);
-
-    let provider = app.provider.clone();
-    let messages = crate::stream::build_provider_messages(&app.messages[..assistant_idx]);
-    let model = app.model.clone();
-    let tx_stream = tx.clone();
-    let interrupt = app.interrupt_flag.clone();
-    interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
-    app.cancel_token = tokio_util::sync::CancellationToken::new();
-    let cancel = app.cancel_token.clone();
-    tokio::spawn(async move {
-        crate::stream::stream_response(provider, messages, model, tx_stream, interrupt, cancel)
-            .await;
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -7044,8 +4274,9 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
-    use crate::app::{App, AppEvent};
+    use crate::app::App;
     use crate::provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+    use crate::runtime::{AppEvent, UiEvent};
     #[allow(unused_imports)]
     use crate::types::*;
 
@@ -7887,7 +5118,7 @@ mod tests {
         app.queued_prompts.push_back(crate::app::QueuedPrompt {
             text: "queued".into(),
             is_meta: false,
-                            attachments: Vec::new(),
+            attachments: Vec::new(),
         });
         // Push the placeholder user message that recall expects to remove.
         app.messages.push(ChatMessage::user("⏳ queued".into()));
@@ -8095,7 +5326,7 @@ mod tests {
         .await
         .unwrap();
         match rx.try_recv().unwrap() {
-            AppEvent::Submit(t) => assert_eq!(t, "ask"),
+            AppEvent::Ui(UiEvent::Submit(t)) => assert_eq!(t, "ask"),
             _ => panic!("expected Submit"),
         }
     }
@@ -8514,7 +5745,10 @@ mod tests {
             app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst),
             "2nd ESC must set interrupt_flag"
         );
-        assert!(app.cancel_token.is_cancelled(), "2nd ESC must cancel the token");
+        assert!(
+            app.cancel_token.is_cancelled(),
+            "2nd ESC must cancel the token"
+        );
         assert!(app.last_esc_at.is_none(), "timer cleared after kill");
     }
 
@@ -9383,20 +6617,5 @@ mod tests {
         let app = test_app();
         let v = palette_items(&app);
         assert!(!v.is_empty());
-    }
-}
-
-pub fn filtered_models(app: &App) -> Vec<crate::provider::ModelInfo> {
-    if app.model_picker_filter.is_empty() {
-        app.model_picker_models.clone()
-    } else {
-        let q = app.model_picker_filter.to_lowercase();
-        app.model_picker_models
-            .iter()
-            .filter(|m| {
-                m.display_name.to_lowercase().contains(&q) || m.id.to_lowercase().contains(&q)
-            })
-            .cloned()
-            .collect()
     }
 }

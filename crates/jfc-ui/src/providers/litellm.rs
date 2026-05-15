@@ -22,7 +22,11 @@ pub struct Credentials {
 
 pub fn credentials_path() -> PathBuf {
     dirs::config_dir()
-        .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config")))
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".config"))
+        })
         .unwrap_or_else(|| PathBuf::from("/tmp"))
         .join("jfc")
         .join("litellm.toml")

@@ -4,450 +4,27 @@ use crossterm::{
     cursor::SetCursorStyle,
     event::{self, Event, KeyEventKind},
     execute,
-    terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate, SetTitle},
 };
 use futures::StreamExt;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::mpsc;
 
-use crate::app::{self, ANIM_TICK_MS, App, AppEvent, IDLE_TICK_MS, PendingApproval};
+use crate::app::{self, ANIM_TICK_MS, App, IDLE_TICK_MS, NetworkRecoveryProvider, PendingApproval};
 use crate::provider::{ModelId, Provider, ProviderId};
+use crate::runtime::{
+    APP_EVENT_BUFFER, AppEvent, CompactionEvent, EventReceiver, EventSender, GoalEvent,
+    ProviderEvent, StreamEvent, TaskEvent, TeamEvent, ToolEvent, UiEvent,
+    dispatch_goal_evaluator_if_active, drain_queued_prompts, draw_synchronized,
+    factory_mode_enabled, handle_goal_verdict, maybe_continue_task_factory,
+    read_git_branch_from_root, record_network_recovery, restart_stream_in_place,
+    restore_persistent_background_agents, set_terminal_title,
+    sync_detached_background_tasks_from_daemon, update_task_activities, yank_last_assistant,
+};
 use crate::types::*;
 use crate::{
     attachments, config, diagnostics_producer, input, lsp_client, message_view, render, session,
     slate, stream, tasks, toast, types,
 };
-
-fn restart_stream_in_place(
-    app: &mut App,
-    tx: &mpsc::Sender<AppEvent>,
-    assistant_idx: usize,
-    turn_started_at: Option<std::time::Instant>,
-) {
-    let Some(msg) = app.messages.get_mut(assistant_idx) else {
-        return;
-    };
-    if msg.role != Role::Assistant {
-        return;
-    }
-
-    msg.parts = vec![MessagePart::Text(String::new())];
-    msg.model_name = None;
-    msg.cost_tier = None;
-    msg.elapsed = None;
-    msg.usage = None;
-
-    app.streaming_text = String::new();
-    app.streaming_reasoning = String::new();
-    app.streaming_response_bytes = 0;
-    app.streaming_assistant_idx = Some(assistant_idx);
-    app.is_streaming = true;
-    let now = std::time::Instant::now();
-    app.streaming_started_at = Some(now);
-    app.last_stream_event_at = Some(now);
-    app.streaming_last_token_at = Some(now);
-    app.turn_started_at = turn_started_at.or(Some(now));
-    app.thinking_started_at = None;
-    app.thinking_ended_at = None;
-    app.last_usage_output = 0;
-    app.usage_apply_baseline = (0, 0, 0, 0);
-    app.scroll_to_bottom();
-
-    let provider = app.provider.clone();
-    let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
-    let model = app.model.clone();
-    let tx_spawn = tx.clone();
-    let interrupt = app.interrupt_flag.clone();
-    interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
-    app.cancel_token = tokio_util::sync::CancellationToken::new();
-    let cancel = app.cancel_token.clone();
-    let tx_guard = tx.clone();
-    tokio::spawn(async move {
-        let result = tokio::spawn(async move {
-            stream::stream_response(provider, messages, model, tx_spawn, interrupt, cancel).await;
-        })
-        .await;
-        if let Err(join_err) = result {
-            let msg = if join_err.is_panic() {
-                format!("stream task panicked: {join_err}")
-            } else {
-                format!("stream task cancelled: {join_err}")
-            };
-            let _ = tx_guard.send(AppEvent::StreamError(msg));
-        }
-    });
-}
-
-fn yank_last_assistant(app: &App) {
-    let Some(text) = app
-        .messages
-        .iter()
-        .rev()
-        .find(|m| m.role == Role::Assistant)
-        .map(|m| {
-            m.parts
-                .iter()
-                .filter_map(|p| match p {
-                    MessagePart::Text(t) => Some(t.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .filter(|s| !s.is_empty())
-    else {
-        return;
-    };
-    match arboard::Clipboard::new() {
-        Ok(mut cb) => {
-            if let Err(e) = cb.set_text(text.clone()) {
-                tracing::warn!(target: "jfc::ui::yank", error = %e, "set_text failed");
-            } else {
-                tracing::info!(
-                    target: "jfc::ui::yank",
-                    len = text.len(),
-                    "yanked via mouse click"
-                );
-            }
-        }
-        Err(e) => {
-            tracing::warn!(
-                target: "jfc::ui::yank",
-                error = %e,
-                "clipboard backend unavailable"
-            );
-        }
-    }
-}
-
-async fn drain_queued_prompts(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
-    // Pop the entire queue at once. v137-style batched drain: a single
-    // turn-boundary collapses N queued prompts into ONE API call, instead
-    // of firing N separate sequential turns. The badge drops to 0 the
-    // instant this runs, and the user sees one streaming response covering
-    // every queued message — matching v137's `GC4`/`PC4` flow where
-    // `queuedCommands` is processed as one batch (cli.2.1.137.deob.js
-    // line 580193: `let R = L ?? []` then `for (let F = 0; F < R.length; F++)`).
-    let drained: Vec<crate::app::QueuedPrompt> = app.queued_prompts.drain(..).collect();
-    if drained.is_empty() {
-        return;
-    }
-    let total = drained.len();
-    let meta_count = drained.iter().filter(|qp| qp.is_meta).count();
-    tracing::info!(
-        target: "jfc::ui::queue",
-        total,
-        meta_count,
-        non_meta_count = total - meta_count,
-        "drain_queued_prompts: batched drain"
-    );
-
-    // Phase 1: replace each prompt's `⏳`/`⚙` placeholder with the clean
-    // text, and run any slash commands locally in submission order. The
-    // placeholders were pushed at queue-time (input.rs:2089-2095) so they
-    // already render in the transcript — replacing them in-place gives
-    // the user the visual "they all sent" cue without us pushing
-    // duplicate user messages.
-    let mut non_meta_texts: Vec<String> = Vec::with_capacity(total - meta_count);
-    let mut first_non_meta_text: Option<String> = None;
-    for qp in drained {
-        let crate::app::QueuedPrompt {
-            text,
-            is_meta,
-            attachments,
-        } = qp;
-        let glyph = if is_meta { "⚙" } else { "⏳" };
-        let placeholder = format!("{glyph} {text}");
-        for msg in app.messages.iter_mut() {
-            if msg.role == Role::User {
-                let mut replaced = false;
-                for part in msg.parts.iter_mut() {
-                    if let MessagePart::Text(t) = part {
-                        if *t == placeholder {
-                            *t = text.clone();
-                            replaced = true;
-                            break;
-                        }
-                    }
-                }
-                // Promotion: clear the `queued` flag and attach images
-                // so `build_provider_messages*` includes this message
-                // (with its attachments) in the next turn.
-                if replaced {
-                    if msg.queued {
-                        msg.queued = false;
-                    }
-                    if !attachments.is_empty() {
-                        tracing::info!(
-                            target: "jfc::ui::queue",
-                            count = attachments.len(),
-                            "drain_queued_prompts: attaching images to promoted message"
-                        );
-                        msg.attachments = attachments;
-                    }
-                    break;
-                }
-            }
-        }
-        if is_meta {
-            // Slash commands run locally — they may mutate state (e.g.
-            // /clear empties messages), so order matters.
-            input::run_slash_command(app, &text).await;
-        } else {
-            if first_non_meta_text.is_none() {
-                first_non_meta_text = Some(text.clone());
-            }
-            non_meta_texts.push(text);
-        }
-    }
-
-    // Phase 2: if a slash command re-queued anything (e.g. a hook that
-    // submits a follow-up), drain that batch too. Without this, the
-    // re-queued items would sit until the next turn boundary.
-    if !app.queued_prompts.is_empty() {
-        Box::pin(drain_queued_prompts(app, tx)).await;
-        // The recursive call may have already started a stream for the
-        // re-queued non-meta prompts; if so, fall through anyway so this
-        // batch's non-meta prompts also get a turn. They'll queue
-        // naturally because is_streaming is now true again.
-    }
-
-    if non_meta_texts.is_empty() {
-        return;
-    }
-
-    // Phase 3: build a single turn for ALL non-meta prompts. Their
-    // placeholders are now real user-message text; build_provider_messages
-    // (stream.rs:2400-2414) merges consecutive same-role messages, so N
-    // adjacent user messages collapse into one user turn before going to
-    // the API.
-    let assistant_idx = app.messages.len();
-    // Debug-only invariant check BEFORE pushing the assistant slot.
-    // The queue-drain path is exactly where the plan-continuation
-    // phantom-assistant bug landed; surfacing a violation here points
-    // straight at the regression instead of waiting for the broken
-    // shape to ship downstream.
-    #[cfg(debug_assertions)]
-    if let Err(err) = crate::types::validate_turn_invariants_inner(
-        &app.messages,
-        /* allow_streaming_tail = */ true,
-    ) {
-        tracing::warn!(
-            target: "jfc::ui::queue::invariants",
-            error = %err,
-            assistant_idx,
-            "drain_queued_prompts: turn-invariant violation BEFORE staging new assistant slot"
-        );
-    }
-    app.tool_ctx.total_user_turns += 1;
-
-    // Auto graph-context injection mirrors the path in
-    // `input::handle_submit`. Classify against the FIRST non-meta prompt
-    // — intent::classify takes a single string, and the first prompt is
-    // the most likely framing of the batch's intent.
-    #[cfg(feature = "intent-gate")]
-    if let Some(intent_text) = first_non_meta_text.as_deref() {
-        let intent_for_inject = crate::intent::classify(intent_text).intent;
-        if crate::intent::is_graph_intent(intent_for_inject) {
-            let cwd = std::path::PathBuf::from(&app.cwd);
-            let injected = crate::intent::auto_inject_graph_context(
-                &mut app.messages,
-                intent_for_inject,
-                intent_text,
-                &cwd,
-            );
-            if injected {
-                tracing::info!(
-                    target: "jfc::intent::auto_ctx",
-                    intent = ?intent_for_inject,
-                    "auto graph-context injected (batched queued-prompt drain)"
-                );
-            }
-        }
-    }
-    #[cfg(not(feature = "intent-gate"))]
-    let _ = first_non_meta_text;
-
-    app.messages.push(ChatMessage::assistant(String::new()));
-    app.streaming_text = String::new();
-    app.streaming_reasoning = String::new();
-    app.streaming_response_bytes = 0;
-    app.streaming_assistant_idx = Some(assistant_idx);
-    app.is_streaming = true;
-    let now = std::time::Instant::now();
-    app.streaming_started_at = Some(now);
-    app.last_stream_event_at = Some(now);
-    app.streaming_last_token_at = Some(now);
-    // Set the user-level turn clock too — survives across agentic-loop
-    // iterations so a 5-step turn doesn't keep snapping back to `0s`.
-    app.turn_started_at = Some(now);
-    // Wire-truth output_tokens are cumulative *per request* — Anthropic
-    // restarts the counter at zero for each `messages` call. Reset our
-    // mirror so the spinner doesn't carry the prior turn's leftover until
-    // the next `message_delta` arrives. Same reasoning for the per-model
-    // delta baseline — see `usage_apply_baseline` doc on `App`.
-    app.last_usage_output = 0;
-    app.usage_apply_baseline = (0, 0, 0, 0);
-    app.scroll_to_bottom();
-
-    let provider = app.provider.clone();
-    let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);
-    // Slate per-turn routing — route on the first prompt's text, since
-    // Slate classifies a single string. Mirrors handle_submit's path.
-    let route_text = non_meta_texts.first().cloned().unwrap_or_default();
-    let model = if let Some(ref router) = app.slate {
-        router.route(&route_text, app.model.clone())
-    } else {
-        app.model.clone()
-    };
-    let tx_spawn = tx.clone();
-    let interrupt = app.interrupt_flag.clone();
-    // wg-async: queued-prompt drain is a fresh user turn — mint a new
-    // cancel token so a prior turn's cancel doesn't poison this one.
-    app.cancel_token = tokio_util::sync::CancellationToken::new();
-    let cancel = app.cancel_token.clone();
-    let tx_guard = tx.clone();
-    tokio::spawn(async move {
-        let result = tokio::spawn(async move {
-            stream::stream_response(provider, messages, model, tx_spawn, interrupt, cancel).await;
-        })
-        .await;
-        if let Err(join_err) = result {
-            // Task panicked or was cancelled — ensure is_streaming gets reset.
-            let msg = if join_err.is_panic() {
-                format!("stream task panicked: {join_err}")
-            } else {
-                format!("stream task cancelled: {join_err}")
-            };
-            let _ = tx_guard.send(AppEvent::StreamError(msg));
-        }
-    });
-}
-
-fn factory_mode_enabled() -> bool {
-    !matches!(
-        std::env::var("JFC_FACTORY_MODE").as_deref(),
-        Ok("0" | "false" | "off" | "no")
-    )
-}
-
-async fn maybe_continue_task_factory(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
-    if !factory_mode_enabled()
-        || app.is_streaming
-        || app.pending_approval.is_some()
-        || !app.approval_queue.is_empty()
-        || !app.pending_tool_calls.is_empty()
-        || !app.queued_prompts.is_empty()
-        || app
-            .background_tasks
-            .values()
-            .any(|task| task.status.is_alive())
-    {
-        return;
-    }
-
-    // Plan verification: if this is the first claim after a fresh batch of
-    // tasks was created (no tasks are InProgress yet, and multiple are Pending),
-    // first ask the model to verify the plan is sound before executing.
-    let counts = app.task_store.counts();
-    if counts.pending >= 3 && counts.in_progress == 0 && !app.plan_verified_this_batch {
-        app.plan_verified_this_batch = true;
-        let tasks = app.task_store.list_all();
-        let pending: Vec<_> = tasks
-            .iter()
-            .filter(|t| t.status == crate::tasks::TaskStatus::Pending)
-            .collect();
-        let task_list = pending
-            .iter()
-            .map(|t| {
-                let mut line = format!(
-                    "- {} (blocked_by: {:?}): {}",
-                    t.id, t.blocked_by, t.subject
-                );
-                if let Some(ref risk) = t.risk {
-                    line.push_str(&format!(" [risk: {risk:?}]"));
-                }
-                if let Some(ref ac) = t.acceptance_criteria {
-                    line.push_str(&format!(" | criteria: {ac}"));
-                }
-                if let Some(ref kind) = t.kind {
-                    line.push_str(&format!(" | kind: {kind:?}"));
-                }
-                line
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        let prompt = format!(
-            "Before executing the task queue, verify this plan is sound:\n\n{task_list}\n\n\
-             Check for: missing dependencies, circular deps, tasks that should be parallel but are serial, \
-             tasks that are too broad to complete in one agent turn, high-risk tasks that need user review, \
-             tasks missing acceptance criteria. \
-             If the plan is good, say 'Plan verified' and I'll start execution. \
-             If changes are needed, use TaskUpdate/TaskCreate/TaskDone to revise, then say 'Plan revised'."
-        );
-        let _ = tx.send(AppEvent::Submit(prompt)).await;
-        return;
-    }
-
-    let Some(task) = app.task_store.claim_next_available("jfc-factory") else {
-        return;
-    };
-
-    // Risk gating: high-risk tasks require explicit user approval.
-    if matches!(task.risk, Some(crate::tasks::TaskRisk::High)) {
-        // Unclaim the task and surface it for approval
-        let _ = app.task_store.update(
-            task.id.as_str(),
-            crate::tasks::TaskPatch {
-                status: Some(crate::tasks::TaskStatus::Pending),
-                owner: None,
-                ..Default::default()
-            },
-        );
-        tracing::info!(
-            target: "jfc::tasks::factory",
-            task_id = %task.id,
-            "high-risk task requires user approval — skipping auto-execution"
-        );
-        let prompt = format!(
-            "Task `{}` ('{}') is marked high-risk. Please review and approve before I execute it.\n\
-             Description: {}\n\
-             Acceptance criteria: {}",
-            task.id,
-            task.subject,
-            task.description,
-            task.acceptance_criteria.as_deref().unwrap_or("(none)")
-        );
-        let _ = tx.send(AppEvent::Submit(prompt)).await;
-        return;
-    }
-
-    let mut prompt = format!(
-        "Continue the task queue. Work on task `{}`: {}\n\n{}",
-        task.id, task.subject, task.description
-    );
-    if let Some(ref ac) = task.acceptance_criteria {
-        prompt.push_str(&format!("\n\nAcceptance criteria: {ac}"));
-    }
-    if let Some(ref vc) = task.verification_command {
-        prompt.push_str(&format!("\nVerification command: `{vc}`"));
-    }
-    prompt.push_str(&format!(
-        "\n\nWhen this task is done, update its task status before stopping. \
-         If you delegate this work via the Task tool, pass `parent_task_id: \"{}\"` \
-         so the runtime auto-marks the task in_progress/completed/failed as the \
-         subagent runs — no separate TaskUpdate/TaskDone needed. \
-         If more unblocked tasks remain, continue with the next one.",
-        task.id
-    ));
-    tracing::info!(
-        target: "jfc::tasks::factory",
-        task_id = %task.id,
-        subject = %task.subject,
-        "auto-continuing next available task"
-    );
-    let _ = tx.send(AppEvent::Submit(prompt)).await;
-}
 
 pub(crate) async fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -459,11 +36,7 @@ pub(crate) async fn run(
     initial_prompt: Option<String>,
     initial_permission_mode: Option<crate::app::PermissionMode>,
 ) -> anyhow::Result<()> {
-    // Bounded channel capacity for the main AppEvent loop. 1024 accommodates
-    // typical streaming bursts (50-200 chunks) with headroom for concurrent tool
-    // result floods, while bounding memory at ~1024 × sizeof(AppEvent).
-    const APP_EVENT_BUFFER: usize = 1024;
-    let (tx, mut rx) = mpsc::channel::<AppEvent>(APP_EVENT_BUFFER);
+    let (tx, mut rx): (EventSender, EventReceiver) = mpsc::channel(APP_EVENT_BUFFER);
     // Make the channel reachable from non-Task code paths (bounty
     // solver/validator agents, future cron-triggered work) so they
     // emit the same TaskStarted/AgentChunk/TaskCompleted events the
@@ -472,6 +45,7 @@ pub(crate) async fn run(
     tracing::info!(target: "jfc::ui::events", "registered AppEvent sender for non-Task agent paths");
     let mut app = App::new(provider, model);
     app.providers = providers.clone();
+    crate::claude_status::spawn_status_poll(tx.clone());
     // v141 parity: when the caller passed `--permission-mode`, apply
     // it before any user prompt so the first turn already runs under
     // the requested mode. Without this the user would have to
@@ -723,10 +297,10 @@ pub(crate) async fn run(
         tokio::spawn(async move {
             let models = p.fetch_models().await.unwrap_or_default();
             let _ = tx
-                .send(AppEvent::ModelsLoaded {
+                .send(AppEvent::Provider(ProviderEvent::ModelsLoaded {
                     provider: name,
                     models,
-                })
+                }))
                 .await;
         });
     }
@@ -740,11 +314,11 @@ pub(crate) async fn run(
         tokio::spawn(async move {
             if let Ok(profile) = oauth.fetch_profile().await {
                 let _ = tx
-                    .send(AppEvent::ProfileLoaded {
+                    .send(AppEvent::Provider(ProviderEvent::ProfileLoaded {
                         seat_tier: profile.seat_tier,
                         subscription_type: profile.subscription_type,
                         email: profile.email,
-                    })
+                    }))
                     .await;
             }
         });
@@ -755,7 +329,7 @@ pub(crate) async fn run(
         tokio::spawn(async move {
             let mut reader = event::EventStream::new();
             while let Some(Ok(ev)) = reader.next().await {
-                let _ = tx.send(AppEvent::Term(ev)).await;
+                let _ = tx.send(AppEvent::Ui(UiEvent::Term(ev))).await;
             }
         });
     }
@@ -771,7 +345,7 @@ pub(crate) async fn run(
                     IDLE_TICK_MS
                 };
                 tokio::time::sleep(Duration::from_millis(ms)).await;
-                let _ = tx.try_send(AppEvent::Tick);
+                let _ = tx.try_send(AppEvent::Ui(UiEvent::Tick));
             }
         });
     }
@@ -782,7 +356,7 @@ pub(crate) async fn run(
         let mut teammate_rx = app.teammate_event_rx.take().unwrap();
         tokio::spawn(async move {
             while let Some(ev) = teammate_rx.recv().await {
-                let _ = tx.send(AppEvent::TeammateEvent(ev)).await;
+                let _ = tx.send(AppEvent::Team(TeamEvent::Runner(ev))).await;
             }
         });
     }
@@ -804,7 +378,7 @@ pub(crate) async fn run(
 
     // Real LSP client: spawns rust-analyzer (Cargo.toml present) or zls
     // (build.zig present) and routes `textDocument/publishDiagnostics`
-    // into `AppEvent::DiagnosticsUpdated`. Gated by `JFC_DISABLE_LSP=1`.
+    // into `ProviderEvent::DiagnosticsUpdated`. Gated by `JFC_DISABLE_LSP=1`.
     // `maybe_spawn_lsp_clients` is fire-and-forget — startup never
     // blocks on the handshake. If the binary isn't on PATH, the spawn
     // task silently returns and we fall back to the cargo-check
@@ -923,7 +497,7 @@ pub(crate) async fn run(
             // Tick alone doesn't dirty the screen; everything else does. The
             // streaming-animation guard below re-enables Tick-driven redraws
             // when there's actually motion to show.
-            if !matches!(ev, AppEvent::Tick) {
+            if !ev.is_tick() {
                 needs_draw = true;
             }
 
@@ -932,7 +506,7 @@ pub(crate) async fn run(
                 // The kitty keyboard protocol (enabled via REPORT_EVENT_TYPES at startup)
                 // delivers separate Repeat events while a key is held — without this filter
                 // they would be discarded. Release events still fall through.
-                AppEvent::Term(Event::Key(k))
+                AppEvent::Ui(UiEvent::Term(Event::Key(k)))
                     if matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat) =>
                 {
                     if input::handle_key(&mut app, k, &tx).await? {
@@ -940,7 +514,7 @@ pub(crate) async fn run(
                         break;
                     }
                 }
-                AppEvent::Term(Event::Paste(text)) => {
+                AppEvent::Ui(UiEvent::Term(Event::Paste(text))) => {
                     // Try image clipboard first — when the user pastes a
                     // screenshot the OS sends a bracketed-paste *event*
                     // with empty/garbage text, but the actual image is
@@ -953,7 +527,12 @@ pub(crate) async fn run(
                                 &mut app.toasts,
                                 toast::Toast::new(
                                     toast::ToastKind::Info,
-                                    format!("📎 image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
+                                    format!(
+                                        "📎 image attached ({}x{}, {} bytes)",
+                                        w,
+                                        h,
+                                        att.bytes.len()
+                                    ),
                                 ),
                             );
                             app.image_counter += 1;
@@ -964,7 +543,7 @@ pub(crate) async fn run(
                                 width: w,
                                 height: h,
                             });
-                            app.textarea.insert_str(&format!("[Image #{id}]"));
+                            app.textarea.insert_str(format!("[Image #{id}]"));
                             true
                         }
                         Ok(None) => false,
@@ -979,7 +558,7 @@ pub(crate) async fn run(
                         app.textarea.insert_str(&text);
                     }
                 }
-                AppEvent::Term(Event::Mouse(mouse)) => {
+                AppEvent::Ui(UiEvent::Term(Event::Mouse(mouse))) => {
                     use crossterm::event::{MouseButton, MouseEventKind};
                     match mouse.kind {
                         MouseEventKind::ScrollUp => {
@@ -1058,10 +637,7 @@ pub(crate) async fn run(
                                         && mouse.row >= r.y
                                         && mouse.row < r.y + r.height
                                 })
-                                .map(|r| {
-                                    let local = mouse.row.saturating_sub(r.y) as usize;
-                                    local
-                                });
+                                .map(|r| mouse.row.saturating_sub(r.y) as usize);
                             if let Some(local_row) = toast_hit {
                                 if local_row < app.toasts.len() {
                                     let drop_idx = app.toasts.len() - 1 - local_row;
@@ -1119,7 +695,7 @@ pub(crate) async fn run(
                                     if let Some(idx) = session_idx {
                                         let ordered: Vec<crate::ids::SessionId> = this_project
                                             .into_iter()
-                                            .chain(other.into_iter())
+                                            .chain(other)
                                             .map(|s| s.id)
                                             .collect();
                                         if let Some(id) = ordered.get(idx).cloned() {
@@ -1202,8 +778,8 @@ pub(crate) async fn run(
                         _ => {}
                     }
                 }
-                AppEvent::Term(_) => {}
-                AppEvent::TeammateEvent(teammate_ev) => {
+                AppEvent::Ui(UiEvent::Term(_)) => {}
+                AppEvent::Team(TeamEvent::Runner(teammate_ev)) => {
                     use crate::swarm::runner::TeammateEvent;
                     match teammate_ev {
                         TeammateEvent::Idle {
@@ -1335,10 +911,10 @@ pub(crate) async fn run(
                             // BackgroundTask.messages append) handles it
                             // — same path as one-shot subagents.
                             let _ = tx
-                                .send(AppEvent::AgentChunk {
+                                .send(AppEvent::Task(TaskEvent::AgentChunk {
                                     task_id: crate::ids::TaskId::from(task_id),
                                     text: delta,
-                                })
+                                }))
                                 .await;
                         }
                         TeammateEvent::Completed { task_id, agent_id } => {
@@ -1457,7 +1033,7 @@ pub(crate) async fn run(
                         }
                     }
                 }
-                AppEvent::Tick => {
+                AppEvent::Ui(UiEvent::Tick) => {
                     app.spinner_frame = (app.spinner_frame + 1) % crate::app::SPINNER.len();
                     app.check_stream_watchdog();
 
@@ -1516,7 +1092,9 @@ pub(crate) async fn run(
                             if let Ok(mgr) = oauth.account_manager().await {
                                 let snapshot = mgr.snapshot_for_ui().await;
                                 let _ = tx
-                                    .send(AppEvent::AnthropicSnapshotUpdated { snapshot })
+                                    .send(AppEvent::Provider(
+                                        ProviderEvent::AnthropicSnapshotUpdated { snapshot },
+                                    ))
                                     .await;
                             }
                         });
@@ -1622,10 +1200,7 @@ pub(crate) async fn run(
                         crate::keybindings::load();
                         toast::push_with_cap(
                             &mut app.toasts,
-                            toast::Toast::new(
-                                toast::ToastKind::Info,
-                                "keybindings.toml reloaded",
-                            ),
+                            toast::Toast::new(toast::ToastKind::Info, "keybindings.toml reloaded"),
                         );
                     }
 
@@ -1766,10 +1341,10 @@ pub(crate) async fn run(
                                                 req.worker_name, req.tool_name, req.id, req.id,
                                             );
                                             let _ = tx_swarm
-                                                .send(AppEvent::Toast {
+                                                .send(AppEvent::Ui(UiEvent::Toast {
                                                     kind: crate::toast::ToastKind::Warning,
                                                     text: toast_text,
-                                                })
+                                                }))
                                                 .await;
                                         }
                                     }
@@ -1794,19 +1369,21 @@ pub(crate) async fn run(
                                     // a toast in one place. Mirrors v126's
                                     // `<teammate-message>` injection.
                                     let _ = tx_inbox
-                                        .send(AppEvent::TeammateInbox {
+                                        .send(AppEvent::Team(TeamEvent::Inbox {
                                             from: msg.from,
                                             text: msg.text,
                                             summary: msg.summary,
-                                        })
+                                        }))
                                         .await;
                                 }
                             });
                         }
                     }
                 }
-                AppEvent::StreamChunk { text, reasoning } => {
+                AppEvent::Stream(StreamEvent::Chunk { text, reasoning }) => {
                     app.record_stream_activity();
+                    app.network_recovery_status = None;
+                    app.network_recovery_attempts = 0;
                     // Reset the stall clock on every chunk so the spinner's
                     // sub-status (`warming up` / `thinking` / `almost done`)
                     // reflects time-since-last-byte, not time-since-stream-start.
@@ -1929,7 +1506,9 @@ pub(crate) async fn run(
                         app.scroll_to_bottom();
                     }
                 }
-                AppEvent::ToolInputDelta(byte_len) => {
+                AppEvent::Stream(StreamEvent::ToolInputDelta(byte_len)) => {
+                    app.network_recovery_status = None;
+                    app.network_recovery_attempts = 0;
                     // Tool input JSON streaming — accumulate bytes for the spinner's
                     // token estimate and reset the stall timer. Matches v126's
                     // accumulation of input_json_delta into responseLengthRef.
@@ -1941,7 +1520,7 @@ pub(crate) async fn run(
                     app.streaming_last_token_at = Some(std::time::Instant::now());
                     app.record_stream_activity();
                 }
-                AppEvent::StreamTool(tool) => {
+                AppEvent::Stream(StreamEvent::Tool(tool)) => {
                     app.record_stream_activity();
                     // Trace every StreamTool entry so next-run diagnostics show
                     // exactly which routing path each tool took. Without this,
@@ -1995,18 +1574,17 @@ pub(crate) async fn run(
                         );
                         let mut tool = tool;
                         let _ = tool.mark_failed();
-                        tool.output = ToolOutput::Text(format!(
-                            "Denied by permission mode: {reason}"
-                        ));
+                        tool.output =
+                            ToolOutput::Text(format!("Denied by permission mode: {reason}"));
                         if let Some(idx) = app.streaming_assistant_idx {
                             if let Some(msg) = app.messages.get_mut(idx) {
                                 msg.parts.push(MessagePart::Tool(tool));
                             }
                         }
                     } else if app.auto_mode.enabled {
-                    // v126 auto-mode: when enabled, every tool call is sent to a
-                    // classifier LLM that returns block/allow with a reason. The
-                    // user is never prompted. Disabled (default) → original flow.
+                        // v126 auto-mode: when enabled, every tool call is sent to a
+                        // classifier LLM that returns block/allow with a reason. The
+                        // user is never prompted. Disabled (default) → original flow.
                         tracing::info!(
                             target: "jfc::ui::tool",
                             tool_id = %tool.id,
@@ -2036,11 +1614,11 @@ pub(crate) async fn run(
                                 ) => d,
                             };
                             let _ = tx_cls
-                                .send(AppEvent::ClassifierDecision {
+                                .send(AppEvent::Tool(ToolEvent::ClassifierDecision {
                                     tool: tool_for_task,
                                     blocked: decision.should_block(),
                                     reason: decision.reason,
-                                })
+                                }))
                                 .await;
                         });
                     } else if app.tool_needs_approval(&tool) {
@@ -2096,11 +1674,11 @@ pub(crate) async fn run(
                         app.pending_tool_calls.push(tool);
                     }
                 }
-                AppEvent::ClassifierDecision {
+                AppEvent::Tool(ToolEvent::ClassifierDecision {
                     mut tool,
                     blocked,
                     reason,
-                } => {
+                }) => {
                     if blocked {
                         tool.status = ToolStatus::Failed;
                         tool.output = ToolOutput::Text(format!(
@@ -2120,15 +1698,17 @@ pub(crate) async fn run(
                         app.pending_tool_calls.push(tool);
                     }
                 }
-                AppEvent::StreamDone(stop_reason) => {
+                AppEvent::Stream(StreamEvent::Done(stop_reason)) => {
                     app.record_stream_activity();
+                    app.network_recovery_status = None;
+                    app.network_recovery_attempts = 0;
                     tracing::info!(
                         target: "jfc::stream",
                         ?stop_reason,
                         pending_tool_count = app.pending_tool_calls.len(),
                         pending_approval = app.pending_approval.is_some(),
                         approval_queue = app.approval_queue.len(),
-                        "AppEvent::StreamDone received"
+                        "StreamEvent::Done received"
                     );
                     app.is_streaming = false;
                     app.last_stream_event_at = None;
@@ -2370,8 +1950,7 @@ pub(crate) async fn run(
                     // genuinely concluded — EndTurn stop reason AND no
                     // tools pending. ToolUse means an agentic continuation
                     // is about to fire and the turn timer must keep running.
-                    let turn_genuinely_done = stop_reason
-                        == crate::provider::StopReason::EndTurn
+                    let turn_genuinely_done = stop_reason == crate::provider::StopReason::EndTurn
                         && app.pending_approval.is_none()
                         && app.approval_queue.is_empty()
                         && app.pending_tool_calls.is_empty();
@@ -2424,9 +2003,7 @@ pub(crate) async fn run(
                                     &mut app.toasts,
                                     crate::toast::Toast::new(
                                         crate::toast::ToastKind::Info,
-                                        format!(
-                                            "Claim ambiguity ({phrase:?}): {reason}"
-                                        ),
+                                        format!("Claim ambiguity ({phrase:?}): {reason}"),
                                     ),
                                 );
                             }
@@ -2593,12 +2170,12 @@ pub(crate) async fn run(
                         app.scroll_to_bottom();
                     }
                 }
-                AppEvent::StreamError(e) => {
+                AppEvent::Stream(StreamEvent::Error(e)) => {
                     app.record_stream_activity();
                     tracing::error!(
                         target: "jfc::stream",
                         error = %e,
-                        "AppEvent::StreamError — resetting stream state"
+                        "StreamEvent::Error — resetting stream state"
                     );
 
                     // ─── Synthetic tool_result injection on interrupt ────────
@@ -2618,7 +2195,8 @@ pub(crate) async fn run(
                                         if let types::MessagePart::Tool(tc) = p {
                                             if matches!(
                                                 tc.status,
-                                                types::ToolStatus::Pending | types::ToolStatus::Running
+                                                types::ToolStatus::Pending
+                                                    | types::ToolStatus::Running
                                             ) {
                                                 return Some(tc.id.clone());
                                             }
@@ -2652,8 +2230,34 @@ pub(crate) async fn run(
                     // ─── End synthetic tool_result injection ─────────────────
                     let auto_retry_openwebui_signal =
                         e.starts_with(crate::providers::openwebui::AUTO_RETRY_SENTINEL);
+                    let auto_retry_anthropic_signal =
+                        e.starts_with(crate::providers::anthropic::AUTO_RETRY_SENTINEL);
                     let auto_retry_anthropic_oauth_signal =
                         e.starts_with(crate::providers::anthropic_oauth::AUTO_RETRY_SENTINEL);
+                    if auto_retry_openwebui_signal {
+                        record_network_recovery(
+                            &mut app,
+                            NetworkRecoveryProvider::OpenWebUI,
+                            e.trim_start_matches(crate::providers::openwebui::AUTO_RETRY_SENTINEL),
+                        );
+                    } else if auto_retry_anthropic_signal {
+                        record_network_recovery(
+                            &mut app,
+                            NetworkRecoveryProvider::Anthropic,
+                            e.trim_start_matches(crate::providers::anthropic::AUTO_RETRY_SENTINEL),
+                        );
+                    } else if auto_retry_anthropic_oauth_signal {
+                        record_network_recovery(
+                            &mut app,
+                            NetworkRecoveryProvider::AnthropicOAuth,
+                            e.trim_start_matches(
+                                crate::providers::anthropic_oauth::AUTO_RETRY_SENTINEL,
+                            ),
+                        );
+                    } else {
+                        app.network_recovery_status = None;
+                        app.network_recovery_attempts = 0;
+                    }
                     // v132 mid-stream auto-compact: stream.rs prefixes
                     // its `auto-compact:` sentinel when the API rejected
                     // the prompt for size reasons. We force a compact
@@ -2689,7 +2293,7 @@ pub(crate) async fn run(
                             let tx_compact = tx.clone();
                             tokio::spawn(async move {
                                 tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                                let _ = tx_compact.send(AppEvent::Submit(text)).await;
+                                let _ = tx_compact.send(AppEvent::Ui(UiEvent::Submit(text))).await;
                             });
                         }
                     }
@@ -2712,7 +2316,10 @@ pub(crate) async fn run(
                     // `turn_started_at.is_some()` and `!pending_tool_calls.is_empty()`)
                     // and the spinner/counter keeps animating after an
                     // interrupt or network error.
-                    if !auto_retry_openwebui_signal && !auto_retry_anthropic_oauth_signal {
+                    if !auto_retry_openwebui_signal
+                        && !auto_retry_anthropic_signal
+                        && !auto_retry_anthropic_oauth_signal
+                    {
                         app.turn_started_at = None;
                     }
                     app.pending_tool_calls.clear();
@@ -2724,7 +2331,10 @@ pub(crate) async fn run(
                     app.interrupt_flag
                         .store(false, std::sync::atomic::Ordering::SeqCst);
                     app.cancel_token = tokio_util::sync::CancellationToken::new();
-                    if auto_retry_openwebui_signal || auto_retry_anthropic_oauth_signal {
+                    if auto_retry_openwebui_signal
+                        || auto_retry_anthropic_signal
+                        || auto_retry_anthropic_oauth_signal
+                    {
                         if let Some(idx) = retry_assistant_idx {
                             restart_stream_in_place(&mut app, &tx, idx, retry_turn_started_at);
                         }
@@ -2759,6 +2369,7 @@ pub(crate) async fn run(
                     // that path already re-queues the last user prompt.
                     if !auto_compact_signal
                         && !auto_retry_openwebui_signal
+                        && !auto_retry_anthropic_signal
                         && !auto_retry_anthropic_oauth_signal
                         && !app.queued_prompts.is_empty()
                     {
@@ -2770,12 +2381,12 @@ pub(crate) async fn run(
                         drain_queued_prompts(&mut app, &tx).await;
                     }
                 }
-                AppEvent::StreamUsage {
+                AppEvent::Stream(StreamEvent::Usage {
                     input_tokens,
                     output_tokens,
                     cache_read_tokens,
                     cache_write_tokens,
-                } => {
+                }) => {
                     app.record_stream_activity();
                     // Anthropic sends *cumulative* token counts in every
                     // `message_delta` event (sse.rs:212-218 — see also
@@ -2828,13 +2439,13 @@ pub(crate) async fn run(
                         .or_default()
                         .apply_cumulative(cum, app.usage_apply_baseline);
                 }
-                AppEvent::McpUpdated { servers } => {
+                AppEvent::Provider(ProviderEvent::McpUpdated { servers }) => {
                     app.mcp_servers = servers;
                 }
-                AppEvent::LspUpdated { servers } => {
+                AppEvent::Provider(ProviderEvent::LspUpdated { servers }) => {
                     app.lsp_servers = servers;
                 }
-                AppEvent::DiagnosticsUpdated { entries } => {
+                AppEvent::Provider(ProviderEvent::DiagnosticsUpdated { entries }) => {
                     // Mirror the snapshot into the global so `stream_response`
                     // can inject diagnostics into the system prompt without
                     // having to touch every call site to thread through an
@@ -2853,7 +2464,7 @@ pub(crate) async fn run(
                     // let is_empty = entries.is_empty();
                     // ...
                 }
-                AppEvent::ToolOutputChunk { tool_id, chunk } => {
+                AppEvent::Tool(ToolEvent::OutputChunk { tool_id, chunk }) => {
                     // Append streaming output to the tool's live preview.
                     // This fires line-by-line for bash commands, giving
                     // real-time visibility into long-running processes.
@@ -2892,7 +2503,7 @@ pub(crate) async fn run(
                         crate::feature_gates::marsh_push(chunk);
                     }
                 }
-                AppEvent::ToolResult { tool_id, result } => {
+                AppEvent::Tool(ToolEvent::Result { tool_id, result }) => {
                     tracing::info!(
                         target: "jfc::stream",
                         tool_id = %tool_id,
@@ -3021,14 +2632,14 @@ pub(crate) async fn run(
                     // once per batch, not once per tool result. This eliminates
                     // the 650+ disk writes per agentic run observed in profiling.
                 }
-                AppEvent::AllToolsComplete => {
+                AppEvent::Tool(ToolEvent::AllComplete) => {
                     tracing::info!(
                         target: "jfc::stream",
                         message_count = app.messages.len(),
                         model = %app.model,
                         pending_approvals = app.approval_queue.len() + usize::from(app.pending_approval.is_some()),
                         pending_tool_calls = app.pending_tool_calls.len(),
-                        "AppEvent::AllToolsComplete"
+                        "ToolEvent::AllComplete"
                     );
                     // AllToolsComplete is *batch-local*: it fires when
                     // the current `dispatch_tools_batched` call finishes
@@ -3081,7 +2692,12 @@ pub(crate) async fn run(
                     {
                         let marker = crate::tools::SLOP_GUARD_MARKER;
                         let mut aggregate_findings: Vec<String> = Vec::new();
-                        if let Some(last_assistant) = app.messages.iter().rev().find(|m| m.role == Role::Assistant) {
+                        if let Some(last_assistant) = app
+                            .messages
+                            .iter()
+                            .rev()
+                            .find(|m| m.role == Role::Assistant)
+                        {
                             for part in &last_assistant.parts {
                                 if let MessagePart::Tool(tc) = part {
                                     let output_text = tc.output.to_api_text();
@@ -3179,7 +2795,9 @@ pub(crate) async fn run(
                         app.compacting_output_chars = 0;
                         app.compacting_attempt_baseline = 0;
                         app.compacting_last_progress = 0;
-                        let _ = tx.send(AppEvent::CompactionStarted).await;
+                        let _ = tx
+                            .send(AppEvent::Compaction(CompactionEvent::Started))
+                            .await;
                         let messages = app.messages.clone();
                         let provider = Arc::clone(&app.provider);
                         let model = app.model.clone();
@@ -3190,9 +2808,11 @@ pub(crate) async fn run(
                         let on_progress: crate::compact::CompactProgressCb =
                             Box::new(move |chars| {
                                 // CompactionProgress is non-critical; next progress update supersedes.
-                                let _ = progress_tx.try_send(AppEvent::CompactionProgress {
-                                    output_chars: chars,
-                                });
+                                let _ = progress_tx.try_send(AppEvent::Compaction(
+                                    CompactionEvent::Progress {
+                                        output_chars: chars,
+                                    },
+                                ));
                             });
                         // wg-async: compact holds critical state (the full
                         // message slice + an outbound tx). Race the long
@@ -3206,9 +2826,10 @@ pub(crate) async fn run(
                             let compact_model_id = crate::config::load()
                                 .default
                                 .compaction_model
-                                .map(|m| crate::provider::ModelId::new(m))
+                                .map(crate::provider::ModelId::new)
                                 .unwrap_or_else(|| model.clone());
-                            let options = crate::provider::StreamOptions::new(compact_model_id.clone());
+                            let options =
+                                crate::provider::StreamOptions::new(compact_model_id.clone());
                             tracing::debug!(
                                 target: "jfc::compact",
                                 model = %compact_model_id,
@@ -3223,11 +2844,11 @@ pub(crate) async fn run(
                                         "compaction cancelled via token"
                                     );
                                     let _ = tx_compact
-                                        .send(AppEvent::CompactionFailed(
-                                            "Compaction cancelled by user".into(),
-                                            None,
-                                            true,
-                                        ))
+                                        .send(AppEvent::Compaction(CompactionEvent::Failed {
+                                            reason: "Compaction cancelled by user".into(),
+                                            calibrated_tokens: None,
+                                            transient: true,
+                                        }))
                                         .await;
                                     return;
                                 }
@@ -3253,12 +2874,12 @@ pub(crate) async fn run(
                                         "post-response compaction succeeded — sending CompactionDone"
                                     );
                                     let _ = tx_compact
-                                        .send(AppEvent::CompactionDone {
+                                        .send(AppEvent::Compaction(CompactionEvent::Done {
                                             messages,
                                             tool_ctx,
                                             pre_tokens,
                                             post_tokens,
-                                        })
+                                        }))
                                         .await;
                                 }
                                 crate::compact::CompactResult::Unsupported => {
@@ -3267,13 +2888,13 @@ pub(crate) async fn run(
                                         "post-response compaction skipped (provider unsupported)"
                                     );
                                     let _ = tx_compact
-                                        .send(AppEvent::CompactionFailed(
-                                            "Provider does not support compaction — \
+                                        .send(AppEvent::Compaction(CompactionEvent::Failed {
+                                            reason: "Provider does not support compaction — \
                                      try /clear or switch to a provider with non-streaming support."
                                                 .into(),
-                                            None,
-                                            false, // permanent: provider mismatch won't fix itself
-                                        ))
+                                            calibrated_tokens: None,
+                                            transient: false, // permanent: provider mismatch won't fix itself
+                                        }))
                                         .await;
                                 }
                                 crate::compact::CompactResult::TooFewGroups => {
@@ -3287,13 +2908,13 @@ pub(crate) async fn run(
                                     // otherwise a single huge agentic batch leaves
                                     // auto-compact dormant for the rest of the
                                     // session until the user remembers /compact.
-                                    let _ = tx_compact.send(AppEvent::CompactionFailed(
-                                    "Nothing to compact yet — only one conversation turn so far. \
+                                    let _ = tx_compact.send(AppEvent::Compaction(CompactionEvent::Failed {
+                                    reason: "Nothing to compact yet — only one conversation turn so far. \
                                      Auto-compact will retry after your next message."
                                         .into(),
-                                    None,
-                                    true, // transient: more user turns will unblock it
-                                )).await;
+                                    calibrated_tokens: None,
+                                    transient: true, // transient: more user turns will unblock it
+                                })).await;
                                 }
                                 crate::compact::CompactResult::CircuitBreakerTripped => {
                                     tracing::warn!(
@@ -3301,12 +2922,12 @@ pub(crate) async fn run(
                                         "post-response compaction: circuit breaker tripped"
                                     );
                                     let _ = tx_compact
-                                        .send(AppEvent::CompactionFailed(
-                                            "Circuit breaker tripped — compaction keeps refilling"
+                                        .send(AppEvent::Compaction(CompactionEvent::Failed {
+                                            reason: "Circuit breaker tripped — compaction keeps refilling"
                                                 .into(),
-                                            None,
-                                            false,
-                                        ))
+                                            calibrated_tokens: None,
+                                            transient: false,
+                                        }))
                                         .await;
                                 }
                                 crate::compact::CompactResult::Exhausted { attempts } => {
@@ -3316,11 +2937,13 @@ pub(crate) async fn run(
                                         "post-response compaction exhausted all attempts"
                                     );
                                     let _ = tx_compact
-                                        .send(AppEvent::CompactionFailed(
-                                            format!("Exhausted {attempts} compaction attempts"),
-                                            None,
-                                            false,
-                                        ))
+                                        .send(AppEvent::Compaction(CompactionEvent::Failed {
+                                            reason: format!(
+                                                "Exhausted {attempts} compaction attempts"
+                                            ),
+                                            calibrated_tokens: None,
+                                            transient: false,
+                                        }))
                                         .await;
                                 }
                             }
@@ -3358,7 +2981,12 @@ pub(crate) async fn run(
                         // Fan-out consolidation: if multiple parallel agent
                         // tasks completed in this batch, inject a summary
                         // so the model sees a coherent digest before responding.
-                        if let Some(last_assistant) = app.messages.iter().rev().find(|m| m.role == Role::Assistant) {
+                        if let Some(last_assistant) = app
+                            .messages
+                            .iter()
+                            .rev()
+                            .find(|m| m.role == Role::Assistant)
+                        {
                             let task_summaries: Vec<String> = last_assistant
                                 .parts
                                 .iter()
@@ -3378,13 +3006,19 @@ pub(crate) async fn run(
                                     task_summaries
                                         .iter()
                                         .enumerate()
-                                        .map(|(i, s)| format!("{}. {}", i + 1, s.chars().take(200).collect::<String>()))
+                                        .map(|(i, s)| format!(
+                                            "{}. {}",
+                                            i + 1,
+                                            s.chars().take(200).collect::<String>()
+                                        ))
                                         .collect::<Vec<_>>()
                                         .join("\n")
                                 );
                                 crate::system_reminder::append_to_last_user(
                                     &mut app.messages,
-                                    &format!("Consolidation of {task_count} parallel agent results:\n\n{consolidated}\n\nSynthesize these results into a coherent response. Deduplicate overlapping findings. Note any contradictions between agents."),
+                                    &format!(
+                                        "Consolidation of {task_count} parallel agent results:\n\n{consolidated}\n\nSynthesize these results into a coherent response. Deduplicate overlapping findings. Note any contradictions between agents."
+                                    ),
                                 );
                             }
                         }
@@ -3412,7 +3046,7 @@ pub(crate) async fn run(
                         // doesn't truly get to stop here. Fire the
                         // evaluator in the background; the agentic loop
                         // re-enters when the verdict lands (see
-                        // AppEvent::GoalVerdict). Bail before draining
+                        // GoalEvent::Verdict). Bail before draining
                         // queued prompts so a queued prompt can't race
                         // ahead of the verdict and unset the goal mid-eval.
                         if dispatch_goal_evaluator_if_active(&mut app, &tx) {
@@ -3426,10 +3060,10 @@ pub(crate) async fn run(
                         }
                     }
                 }
-                AppEvent::GoalVerdict { ok, reason } => {
+                AppEvent::Goal(GoalEvent::Verdict { ok, reason }) => {
                     handle_goal_verdict(&mut app, &tx, ok, reason).await;
                 }
-                AppEvent::CompactionStarted => {
+                AppEvent::Compaction(CompactionEvent::Started) => {
                     // The compacting_started_at guard is now set synchronously
                     // at the decision site to prevent the agentic-loop race.
                     // This event still fires for logging/observability but the
@@ -3444,7 +3078,7 @@ pub(crate) async fn run(
                         app.compacting_last_progress = 0;
                     }
                 }
-                AppEvent::CompactionProgress { output_chars } => {
+                AppEvent::Compaction(CompactionEvent::Progress { output_chars }) => {
                     // Live token feedback during compact streaming. Mirrors
                     // v126's PB7 addResponseLength → spinner refresh
                     // (cli.js:396989).
@@ -3463,12 +3097,12 @@ pub(crate) async fn run(
                     app.compacting_last_progress = output_chars;
                     app.compacting_output_chars = app.compacting_attempt_baseline + output_chars;
                 }
-                AppEvent::CompactionDone {
+                AppEvent::Compaction(CompactionEvent::Done {
                     messages,
                     tool_ctx,
                     pre_tokens,
                     post_tokens,
-                } => {
+                }) => {
                     let saved = pre_tokens.saturating_sub(post_tokens);
                     tracing::info!(
                         target: "jfc::compact",
@@ -3521,7 +3155,8 @@ pub(crate) async fn run(
                         // while the next request actually sends system+messages which can
                         // be 50-100k+ of overhead.
                         let overhead = app.last_system_prompt_len.unwrap_or(30_000);
-                        app.tool_ctx.approx_tokens = app.tool_ctx.approx_tokens.saturating_add(overhead);
+                        app.tool_ctx.approx_tokens =
+                            app.tool_ctx.approx_tokens.saturating_add(overhead);
                         app.last_usage_input = 0;
                         // Reset the per-turn baseline so the next
                         // `StreamUsage` cumulative delta builds from 0,
@@ -3582,7 +3217,11 @@ pub(crate) async fn run(
                         maybe_continue_task_factory(&mut app, &tx).await;
                     }
                 }
-                AppEvent::CompactionFailed(reason, calibrated_tokens, transient) => {
+                AppEvent::Compaction(CompactionEvent::Failed {
+                    reason,
+                    calibrated_tokens,
+                    transient,
+                }) => {
                     tracing::warn!(
                         target: "jfc::compact",
                         %reason,
@@ -3620,7 +3259,7 @@ pub(crate) async fn run(
                     };
                     toast::push_with_cap(&mut app.toasts, toast::Toast::new(toast_kind, toast_msg));
                 }
-                AppEvent::EnterPlanModeRequested { reason } => {
+                AppEvent::Ui(UiEvent::EnterPlanModeRequested { reason }) => {
                     // Model-callable plan mode entry — the EnterPlanMode tool
                     // emits this. Flip the leader's permission mode and toast
                     // the reason so the user knows what triggered it.
@@ -3645,31 +3284,31 @@ pub(crate) async fn run(
                          with a finalized plan to proceed with edits.",
                     );
                 }
-                AppEvent::Submit(text) => {
+                AppEvent::Ui(UiEvent::Submit(text)) => {
                     // Re-fire after pre-submit compaction. Reuses the same
                     // dispatch path as a typed prompt so message persistence,
                     // streaming setup, and session save all run identically.
                     tracing::debug!(
                         target: "jfc::input",
                         text_len = text.len(),
-                        "AppEvent::Submit (re-queued after compaction)"
+                        "UiEvent::Submit (re-queued after compaction)"
                     );
                     input::handle_submit_text(&mut app, text, &tx).await?;
                 }
-                AppEvent::SystemPromptLen(len) => {
+                AppEvent::Stream(StreamEvent::SystemPromptLen(len)) => {
                     app.last_system_prompt_len = Some(len);
                 }
-                AppEvent::Toast { kind, text } => {
+                AppEvent::Ui(UiEvent::Toast { kind, text }) => {
                     // Push onto the auto-expiring strip with the kind's
                     // default TTL. Capped at `MAX_TOASTS` to bound memory
                     // when a long-running compaction or classifier spams.
                     toast::push_with_cap(&mut app.toasts, toast::Toast::new(kind, text));
                 }
-                AppEvent::TeammateInbox {
+                AppEvent::Team(TeamEvent::Inbox {
                     from,
                     text,
                     summary,
-                } => {
+                }) => {
                     // Append the teammate's message to the transcript as a
                     // user-role turn tagged with the teammate's name so it
                     // survives session save/load and the model sees it on
@@ -3721,7 +3360,7 @@ pub(crate) async fn run(
                         });
                     }
                 }
-                AppEvent::AgentChunk { task_id, text } => {
+                AppEvent::Task(TaskEvent::AgentChunk { task_id, text }) => {
                     // Subagent emitted a streaming text chunk — append to its
                     // task's message log so the task view shows live output
                     // rather than the "No messages yet" empty state. v126
@@ -3752,7 +3391,8 @@ pub(crate) async fn run(
                                 .unwrap_or(false);
                             if chat_coalesce {
                                 if let Some(msg) = bt.chat_messages.last_mut() {
-                                    if let Some(types::MessagePart::Text(t)) = msg.parts.last_mut() {
+                                    if let Some(types::MessagePart::Text(t)) = msg.parts.last_mut()
+                                    {
                                         t.push_str(&text);
                                     } else {
                                         msg.parts.push(types::MessagePart::Text(text));
@@ -3768,7 +3408,7 @@ pub(crate) async fn run(
                         }
                     }
                 }
-                AppEvent::ModelsLoaded { provider, models } => {
+                AppEvent::Provider(ProviderEvent::ModelsLoaded { provider, models }) => {
                     app.model_picker_query_cache.clear();
                     app.provider_models.insert(provider, models);
                     app.sync_selected_context_window();
@@ -3776,11 +3416,11 @@ pub(crate) async fn run(
                         app.model_picker_models = input::collect_all_models(&app);
                     }
                 }
-                AppEvent::ProfileLoaded {
+                AppEvent::Provider(ProviderEvent::ProfileLoaded {
                     seat_tier,
                     subscription_type,
                     email,
-                } => {
+                }) => {
                     app.seat_tier = seat_tier;
                     app.subscription_type = subscription_type;
                     app.account_email = email;
@@ -3788,17 +3428,25 @@ pub(crate) async fn run(
                         app.model_picker_models = input::collect_all_models(&app);
                     }
                 }
-                AppEvent::AnthropicSnapshotUpdated { snapshot } => {
+                AppEvent::Provider(ProviderEvent::AnthropicSnapshotUpdated { snapshot }) => {
                     app.anthropic_account_snapshot = snapshot;
                 }
-                AppEvent::TaskStarted {
+                AppEvent::Provider(ProviderEvent::ClaudeStatusUpdated(update)) => {
+                    if let Some(snapshot) = update.snapshot {
+                        app.claude_status = Some(snapshot);
+                        app.claude_status_error = None;
+                    } else if let Some(error) = update.error {
+                        app.claude_status_error = Some(error);
+                    }
+                }
+                AppEvent::Task(TaskEvent::Started {
                     task_id,
                     description,
                     model_used,
                     max_input_tokens,
                     is_detached,
                     parent_task_id,
-                } => {
+                }) => {
                     tracing::info!(
                         target: "jfc::task",
                         %task_id, %description, ?model_used, is_detached,
@@ -3810,10 +3458,17 @@ pub(crate) async fn run(
                     // that todo to InProgress now so the task panel reflects
                     // that an agent has picked it up.
                     if let Some(ref ptid) = parent_task_id {
+                        let linked_model = model_used
+                            .clone()
+                            .or_else(|| Some(app.model.as_str().to_owned()));
                         if let Err(e) = app.task_store.update(
                             ptid,
                             crate::tasks::TaskPatch {
                                 status: Some(crate::tasks::TaskStatus::InProgress),
+                                metadata: Some(serde_json::json!({
+                                    "agent_task_id": task_id.as_str(),
+                                    "model": linked_model,
+                                })),
                                 ..Default::default()
                             },
                         ) {
@@ -3888,7 +3543,7 @@ pub(crate) async fn run(
                         msg.parts.push(part);
                     }
                 }
-                AppEvent::TaskProgress {
+                AppEvent::Task(TaskEvent::Progress {
                     task_id,
                     last_tool,
                     elapsed_ms,
@@ -3897,7 +3552,7 @@ pub(crate) async fn run(
                     cache_read_tokens,
                     cache_write_tokens,
                     output_tokens,
-                } => {
+                }) => {
                     let mut usage_update: Option<(String, u32, u32, u32, u32)> = None;
                     if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
                         if let Some(ref tool) = last_tool {
@@ -3971,11 +3626,11 @@ pub(crate) async fn run(
                         }
                     }
                 }
-                AppEvent::TaskCompleted {
+                AppEvent::Task(TaskEvent::Completed {
                     task_id,
                     summary,
                     elapsed_ms,
-                } => {
+                }) => {
                     tracing::info!(
                         target: "jfc::task",
                         %task_id, elapsed_ms,
@@ -4032,7 +3687,7 @@ pub(crate) async fn run(
                         }
                     }
                 }
-                AppEvent::TaskFailed { task_id, error } => {
+                AppEvent::Task(TaskEvent::Failed { task_id, error }) => {
                     tracing::warn!(
                         target: "jfc::task",
                         %task_id,
@@ -4141,14 +3796,11 @@ pub(crate) async fn run(
                                 "auto-created replan task for failed task"
                             );
                         }
-                        crate::system_reminder::append_to_last_user(
-                            &mut app.messages,
-                            &reminder,
-                        );
+                        crate::system_reminder::append_to_last_user(&mut app.messages, &reminder);
                         maybe_continue_task_factory(&mut app, &tx).await;
                     }
                 }
-                AppEvent::TeammateSpawned {
+                AppEvent::Team(TeamEvent::Spawned {
                     name,
                     team_name,
                     agent_id,
@@ -4156,7 +3808,7 @@ pub(crate) async fn run(
                     agent_type,
                     cwd,
                     abort_tx,
-                } => {
+                }) => {
                     // Activate the team if this is the first teammate to
                     // join — switches the leader from "no team" to "running
                     // a team" so the teammate tree, send-message routing,
@@ -4200,7 +3852,7 @@ pub(crate) async fn run(
                         },
                     );
                 }
-                AppEvent::ExitPlanModeRequested { plan } => {
+                AppEvent::Ui(UiEvent::ExitPlanModeRequested { plan }) => {
                     // Surface the plan as part of the existing assistant message
                     // (NOT a new message — that would fool should_continue_loop
                     // into thinking the last assistant has no tools, blocking
@@ -4305,519 +3957,4 @@ pub(crate) async fn run(
     }
 
     Ok(())
-}
-
-/// Refresh `app.background_tasks` from the daemon roster for **detached**
-/// background workers (`launch_path.is_some()`).
-///
-/// Background workers run in separate processes, so their TaskProgress events
-/// never reach the UI's `AppEvent` channel — they only flow to `daemon-state
-/// .json` via `record_background_agent_progress`. Without this sync the fan
-/// row for a detached agent shows zero tools/tokens for its entire run.
-///
-/// In-process tasks (`launch_path.is_none()`) are intentionally skipped: they
-/// receive live `TaskProgress` events through the channel and would be
-/// clobbered by stale disk values.
-fn sync_detached_background_tasks_from_daemon(app: &mut App) -> bool {
-    sync_detached_background_tasks_from_daemon_with_paths(
-        app,
-        &crate::daemon::DaemonPaths::default_user(),
-    )
-}
-
-fn sync_detached_background_tasks_from_daemon_with_paths(
-    app: &mut App,
-    paths: &crate::daemon::DaemonPaths,
-) -> bool {
-    // mtime-gate the read. When background workers haven't reported any
-    // progress since our last poll, the daemon-state.json mtime is
-    // unchanged and we can skip the (potentially MB-sized) read + JSON
-    // parse + walk on the render thread. This is the primary CPU-burn
-    // fix for sessions that have accumulated hundreds of completed
-    // background agents in daemon-state.json.
-    let Some((state, mtime)) =
-        crate::daemon::load_state_if_changed(paths, app.last_detached_state_mtime)
-    else {
-        return false;
-    };
-    app.last_detached_state_mtime = Some(mtime);
-    let session_id = app.current_session_id.as_ref().map(|id| id.to_string());
-    let mut changed = false;
-    for (id, agent) in &state.background_agents {
-        if agent.launch_path.is_none() {
-            continue;
-        }
-        // Only update agents owned by the current session, mirroring the
-        // restore filter so cross-instance leakage stays fixed.
-        if let Some(ref sid) = session_id {
-            if agent.parent_session_id.as_deref() != Some(sid.as_str()) {
-                continue;
-            }
-        } else {
-            continue;
-        }
-
-        let new_status = match agent.status {
-            crate::daemon::BackgroundAgentStatus::Running => crate::types::TaskLifecycle::Running,
-            crate::daemon::BackgroundAgentStatus::Completed => {
-                crate::types::TaskLifecycle::Completed
-            }
-            crate::daemon::BackgroundAgentStatus::Failed => crate::types::TaskLifecycle::Failed,
-            crate::daemon::BackgroundAgentStatus::Cancelled => {
-                crate::types::TaskLifecycle::Cancelled
-            }
-        };
-        let messages = crate::daemon::read_last_lines(&agent.log_path, 200);
-        let entry =
-            app.background_tasks
-                .entry(id.clone())
-                .or_insert_with(|| crate::app::BackgroundTask {
-                    task_id: crate::ids::TaskId::from(id.clone()),
-                    description: agent.description.clone(),
-                    status: new_status,
-                    started_at: instant_from_system_time(agent.started_at),
-                    summary: agent.summary.clone(),
-                    error: agent.error.clone(),
-                    last_tool: agent.last_tool.clone(),
-                    messages: Vec::new(),
-                    chat_messages: Vec::new(),
-                    tool_use_count: agent.tool_use_count,
-                    latest_input_tokens: agent.latest_input_tokens,
-                    latest_cache_read_tokens: agent.latest_cache_read_tokens,
-                    latest_cache_write_tokens: agent.latest_cache_write_tokens,
-                    cumulative_output_tokens: agent.cumulative_output_tokens,
-                    model_used: agent.model.clone(),
-                    max_input_tokens: None,
-                    budget_killed: false,
-                    // Detached workers update their linked task in their
-                    // own process (they hold the session/team TaskStore
-                    // directly); the UI picks those writes up via
-                    // `TaskStore::reload_if_changed`. The daemon roster
-                    // doesn't carry the parent_task_id back, so the UI-side
-                    // BackgroundTask row leaves it None — the todo still
-                    // transitions correctly, just not through this struct.
-                    parent_task_id: None,
-                });
-
-        if entry.description != agent.description {
-            entry.description = agent.description.clone();
-            changed = true;
-        }
-        if entry.status != new_status {
-            // Detect transitions TO a terminal state (Completed/Failed/
-            // Cancelled). Increment the counter so `handle_submit` can
-            // inject a system_reminder telling the parent model that
-            // agent results are available in the transcript.
-            let was_terminal = entry.status.is_terminal();
-            entry.status = new_status;
-            if !was_terminal && new_status.is_terminal() {
-                app.background_tasks_completed_since_last_turn += 1;
-            }
-            changed = true;
-        }
-        if entry.tool_use_count != agent.tool_use_count {
-            entry.tool_use_count = agent.tool_use_count;
-            changed = true;
-        }
-        if entry.latest_input_tokens != agent.latest_input_tokens {
-            entry.latest_input_tokens = agent.latest_input_tokens;
-            changed = true;
-        }
-        if entry.latest_cache_read_tokens != agent.latest_cache_read_tokens {
-            entry.latest_cache_read_tokens = agent.latest_cache_read_tokens;
-            changed = true;
-        }
-        if entry.latest_cache_write_tokens != agent.latest_cache_write_tokens {
-            entry.latest_cache_write_tokens = agent.latest_cache_write_tokens;
-            changed = true;
-        }
-        if entry.cumulative_output_tokens != agent.cumulative_output_tokens {
-            entry.cumulative_output_tokens = agent.cumulative_output_tokens;
-            changed = true;
-        }
-        if entry.last_tool != agent.last_tool {
-            entry.last_tool = agent.last_tool.clone();
-            changed = true;
-        }
-        if entry.summary != agent.summary {
-            entry.summary = agent.summary.clone();
-            changed = true;
-        }
-        if entry.error != agent.error {
-            entry.error = agent.error.clone();
-            changed = true;
-        }
-        if entry.model_used != agent.model {
-            entry.model_used = agent.model.clone();
-            changed = true;
-        }
-        if entry.messages != messages {
-            entry.messages = messages;
-            changed = true;
-        }
-
-        if update_task_status_parts_for_background_agent(app, id, new_status, agent) {
-            changed = true;
-        }
-    }
-    changed
-}
-
-fn update_task_status_parts_for_background_agent(
-    app: &mut App,
-    id: &str,
-    status: crate::types::TaskLifecycle,
-    agent: &crate::daemon::BackgroundAgentInfo,
-) -> bool {
-    let task_id = crate::ids::TaskId::from(id.to_owned());
-    let mut changed = false;
-    for msg in &mut app.messages {
-        for part in &mut msg.parts {
-            if let MessagePart::TaskStatus(ts) = part {
-                if ts.task_id == task_id {
-                    if ts.status != status {
-                        ts.status = status;
-                        changed = true;
-                    }
-                    if ts.summary != agent.summary {
-                        ts.summary = agent.summary.clone();
-                        changed = true;
-                    }
-                    if ts.error != agent.error {
-                        ts.error = agent.error.clone();
-                        changed = true;
-                    }
-                }
-            }
-        }
-    }
-    changed
-}
-
-fn instant_from_system_time(t: std::time::SystemTime) -> std::time::Instant {
-    let elapsed = std::time::SystemTime::now()
-        .duration_since(t)
-        .unwrap_or_default();
-    std::time::Instant::now()
-        .checked_sub(elapsed)
-        .unwrap_or_else(std::time::Instant::now)
-}
-
-fn restore_persistent_background_agents(app: &mut App) {
-    let paths = crate::daemon::DaemonPaths::default_user();
-    let session_id = app.current_session_id.as_ref().map(|id| id.as_str());
-    for agent in crate::daemon::background_agents_for_restore(&paths, session_id, 20) {
-        let status = match agent.status {
-            crate::daemon::BackgroundAgentStatus::Running => crate::types::TaskLifecycle::Running,
-            crate::daemon::BackgroundAgentStatus::Completed => {
-                crate::types::TaskLifecycle::Completed
-            }
-            crate::daemon::BackgroundAgentStatus::Failed => crate::types::TaskLifecycle::Failed,
-            crate::daemon::BackgroundAgentStatus::Cancelled => {
-                crate::types::TaskLifecycle::Cancelled
-            }
-        };
-        let messages = crate::daemon::read_last_lines(&agent.log_path, 200);
-        app.background_tasks.insert(
-            agent.id.clone(),
-            crate::app::BackgroundTask {
-                task_id: crate::ids::TaskId::from(agent.id),
-                description: agent.description,
-                status,
-                started_at: std::time::Instant::now(),
-                summary: agent.summary,
-                error: agent.error,
-                last_tool: None,
-                messages,
-                chat_messages: Vec::new(),
-                tool_use_count: agent.tool_use_count,
-                latest_input_tokens: agent.latest_input_tokens,
-                latest_cache_read_tokens: 0,
-                latest_cache_write_tokens: 0,
-                cumulative_output_tokens: agent.cumulative_output_tokens,
-                model_used: agent.model,
-                max_input_tokens: None,
-                budget_killed: false,
-                // Restored from the daemon roster, which doesn't persist
-                // the parent_task_id link. The linked todo's status was
-                // already written to the TaskStore JSON by the worker.
-                parent_task_id: None,
-            },
-        );
-    }
-}
-
-fn draw_synchronized(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
-) -> io::Result<()> {
-    let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
-    let res = terminal.draw(|f| render::frame(f, app));
-    let _ = execute!(io::stdout(), EndSynchronizedUpdate);
-    res.map(|_| ())
-}
-
-async fn read_git_branch_from_root(git_root: &std::path::Path) -> Option<String> {
-    let head = git_root.join(".git/HEAD");
-    if let Ok(content) = tokio::fs::read_to_string(&head).await {
-        let trimmed = content.trim();
-        if let Some(rest) = trimmed.strip_prefix("ref: refs/heads/") {
-            return Some(rest.to_owned());
-        }
-        return Some("(detached)".to_owned());
-    }
-    None
-}
-
-fn set_terminal_title(app: &App) {
-    use std::sync::Mutex;
-    use std::sync::OnceLock;
-    static LAST: OnceLock<Mutex<String>> = OnceLock::new();
-    let last = LAST.get_or_init(|| Mutex::new(String::new()));
-    let cwd_label = std::path::Path::new(app.cwd.as_str())
-        .file_name()
-        .and_then(|n| n.to_str())
-        .map(str::to_owned)
-        .unwrap_or_else(|| app.cwd.clone());
-    // "(N new)" prefix is shown when the user has scrolled up from
-    // the bottom of the transcript while content is arriving — the
-    // count is the number of message lines pushed below the
-    // viewport since the last time we were at the bottom. Streaming
-    // alone (without scroll-away) doesn't trigger the badge, since
-    // the user is already watching.
-    let lines_below = app
-        .total_lines
-        .saturating_sub(app.scroll_offset + app.viewport_height);
-    let prefix = if !app.follow_bottom && lines_below > 0 {
-        format!("({} new) ", lines_below)
-    } else if app.is_streaming {
-        "● ".to_owned()
-    } else {
-        String::new()
-    };
-    let title = format!("{}jfc · {} · {}", prefix, app.model, cwd_label);
-    let mut guard = match last.lock() {
-        Ok(g) => g,
-        Err(p) => p.into_inner(),
-    };
-    if *guard == title {
-        return;
-    }
-    *guard = title.clone();
-    let _ = execute!(io::stdout(), SetTitle(title));
-}
-
-/// Fire the `/goal` evaluator when the user has an active stop
-/// condition and the agent has just settled on EndTurn. Returns `true`
-/// when the dispatch happened (and the caller must NOT drain queued
-/// prompts yet), `false` when there's no active goal so the loop can
-/// proceed normally.
-fn dispatch_goal_evaluator_if_active(
-    app: &mut app::App,
-    tx: &mpsc::Sender<crate::app::AppEvent>,
-) -> bool {
-    let Some(goal) = app.goal.as_ref() else {
-        return false;
-    };
-    if app.goal_evaluator_in_flight {
-        // A prior evaluator is still running — the verdict it returns
-        // will re-drive the loop. Don't double-fire.
-        tracing::debug!(target: "jfc::goal", "evaluator already in flight, skipping");
-        return true;
-    }
-    if goal.is_exhausted() {
-        // Burned the iteration budget. Stamp the failure banner and
-        // clear the goal so the loop can drain queued prompts normally.
-        let banner = crate::goal::format_exhaustion_banner(goal);
-        app.messages.push(types::ChatMessage::assistant(banner));
-        app.goal = None;
-        crate::toast::push_with_cap(
-            &mut app.toasts,
-            crate::toast::Toast::new(
-                crate::toast::ToastKind::Error,
-                "Goal abandoned — iteration cap reached".to_owned(),
-            ),
-        );
-        return false;
-    }
-    app.goal_evaluator_in_flight = true;
-    let condition = goal.condition.clone();
-    let history = app.messages.clone();
-    let provider = std::sync::Arc::clone(&app.provider);
-    let model = app.model.clone();
-    let cancel = app.cancel_token.clone();
-    let tx_eval = tx.clone();
-    tokio::spawn(async move {
-        // Race against cancellation so an ESC×2 mid-evaluation doesn't
-        // strand a pending verdict for the next turn.
-        let verdict = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => {
-                tracing::info!(target: "jfc::goal", "evaluator cancelled before reply");
-                return;
-            }
-            v = crate::goal::evaluate(provider.as_ref(), model, &condition, &history) => v,
-        };
-        let event = match verdict {
-            Ok(v) => crate::app::AppEvent::GoalVerdict {
-                ok: v.ok,
-                reason: v.reason,
-            },
-            Err(e) => {
-                tracing::warn!(
-                    target: "jfc::goal",
-                    error = %e,
-                    "evaluator call failed — surfacing as unmet"
-                );
-                crate::app::AppEvent::GoalVerdict {
-                    ok: false,
-                    reason: format!("evaluator error: {e}"),
-                }
-            }
-        };
-        let _ = tx_eval.send(event).await;
-    });
-    true
-}
-
-/// Handle a goal verdict. On success: append the banner to the
-/// current assistant message (NOT a new one — would violate the
-/// consecutive-assistant invariant) and clear the goal. On unmet:
-/// push a fresh user/meta turn carrying the "what's missing" reminder
-/// (NOT patched into the prior user msg — chronology would be wrong
-/// and the provider's "Continue from where you left off." fallback
-/// would beat the evaluator's actual diagnostic), then restart the
-/// agentic loop.
-async fn handle_goal_verdict(
-    app: &mut app::App,
-    tx: &mpsc::Sender<crate::app::AppEvent>,
-    ok: bool,
-    reason: String,
-) {
-    app.goal_evaluator_in_flight = false;
-    let Some(mut goal) = app.goal.take() else {
-        // User cleared the goal mid-evaluation. Resume the normal
-        // EndTurn flow.
-        persist_goal_for_session(app);
-        drain_queued_prompts(app, tx).await;
-        maybe_continue_task_factory(app, tx).await;
-        return;
-    };
-    if ok {
-        let banner = crate::goal::format_success_banner(&goal, &reason);
-        append_to_last_assistant_or_push(&mut app.messages, &banner);
-        crate::toast::push_with_cap(
-            &mut app.toasts,
-            crate::toast::Toast::new(
-                crate::toast::ToastKind::Success,
-                "Goal achieved".to_owned(),
-            ),
-        );
-        // Goal completed → take() already cleared it, persist removes
-        // the sidecar so a future /continue doesn't revive it.
-        persist_goal_for_session(app);
-        drain_queued_prompts(app, tx).await;
-        maybe_continue_task_factory(app, tx).await;
-        return;
-    }
-    // Unmet: bump counter, store reason, inject reminder, continue loop.
-    goal.iterations += 1;
-    goal.last_unmet_reason = Some(reason.clone());
-    if goal.is_exhausted() {
-        let banner = crate::goal::format_exhaustion_banner(&goal);
-        append_to_last_assistant_or_push(&mut app.messages, &banner);
-        crate::toast::push_with_cap(
-            &mut app.toasts,
-            crate::toast::Toast::new(
-                crate::toast::ToastKind::Error,
-                "Goal abandoned — iteration cap reached".to_owned(),
-            ),
-        );
-        // Goal abandoned — `goal` is dropped here (never put back on
-        // `app`), so persist removes the sidecar.
-        persist_goal_for_session(app);
-        drain_queued_prompts(app, tx).await;
-        maybe_continue_task_factory(app, tx).await;
-        return;
-    }
-    let iteration = goal.iterations;
-    let condition = goal.condition.clone();
-    app.goal = Some(goal);
-    // Persist the bumped iteration count so a /continue mid-loop
-    // resumes from the right iteration rather than restarting at 0.
-    persist_goal_for_session(app);
-    let reminder = crate::goal::format_unmet_reminder(&condition, &reason, iteration);
-    // Push a fresh user-role turn that carries the reminder. The
-    // transcript shape becomes `[..., assistant, user(reminder),
-    // assistant(new)]` — clean alternation, the reminder is the
-    // newest content the next stream sees, and the provider doesn't
-    // fall back to its generic "Continue from where you left off."
-    // because the trailing user message has real content. We wrap the
-    // body in a <system-reminder> so the model treats it as
-    // background context, not a user instruction.
-    let body = crate::system_reminder::format(&reminder);
-    app.messages.push(crate::types::ChatMessage::user(body));
-    tracing::info!(
-        target: "jfc::goal",
-        iteration,
-        "goal unmet — pushed fresh user turn + continuing agentic loop"
-    );
-    stream::continue_agentic_loop(app, tx).await;
-}
-
-/// Append `body` as a new `MessagePart::Text` on the last assistant
-/// message (preferring the streaming one if set, else the final
-/// assistant in `messages`). Falls back to pushing a fresh assistant
-/// message ONLY when no assistant exists — because the transcript
-/// invariants forbid two consecutive assistants. The fallback path is
-/// for the edge case where the goal evaluator returns before any
-/// assistant turn has run.
-fn append_to_last_assistant_or_push(messages: &mut Vec<types::ChatMessage>, body: &str) {
-    use crate::types::{MessagePart, Role};
-    let target_idx = messages
-        .iter()
-        .rposition(|m| m.role == Role::Assistant);
-    let appended = format!("\n\n{body}");
-    if let Some(idx) = target_idx {
-        messages[idx]
-            .parts
-            .push(MessagePart::Text(appended));
-        return;
-    }
-    // No assistant in the transcript yet — push one. Safe because
-    // there can't be a "consecutive assistant" violation when no
-    // assistant exists.
-    messages.push(crate::types::ChatMessage::assistant(body.to_owned()));
-}
-
-/// Mirror `app.goal` to the sidecar file beside the session journal.
-/// Called at every goal mutation point (set / clear / unmet bump /
-/// success / exhaustion) so `/continue` rebuilds the same state.
-/// No-op when there's no current session yet.
-fn persist_goal_for_session(app: &app::App) {
-    let Some(sid) = app.current_session_id.as_ref() else {
-        return;
-    };
-    crate::goal::save_sidecar(sid.as_str(), app.goal.as_ref());
-}
-
-fn update_task_activities(app: &mut app::App, calls: &[types::ToolCall]) {
-    let in_progress: Vec<tasks::TaskId> = app
-        .task_store
-        .list(tasks::DeletedFilter::Exclude)
-        .iter()
-        .filter(|t| matches!(t.status, tasks::TaskStatus::InProgress))
-        .map(|t| t.id.clone())
-        .collect();
-    if in_progress.is_empty() {
-        return;
-    }
-    let description = calls
-        .iter()
-        .map(|c| format!("{}: {}", c.kind.label(), c.input.summary()))
-        .collect::<Vec<_>>()
-        .join(", ");
-    for tid in in_progress {
-        app.task_activities.insert(tid, description.clone());
-    }
 }

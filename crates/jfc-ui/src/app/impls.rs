@@ -371,7 +371,7 @@ impl App {
         self.task_completion_times.retain(|id, _| {
             store
                 .get(id)
-                .map_or(false, |t| t.status == TaskStatus::Completed)
+                .is_some_and(|t| t.status == TaskStatus::Completed)
         });
     }
 }

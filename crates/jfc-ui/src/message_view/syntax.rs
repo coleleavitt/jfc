@@ -68,7 +68,7 @@ pub(super) fn produce_highlighted_with_line_numbers_lines(
             } else {
                 vec![Span::styled("│ ", separator_style)]
             };
-            spans.extend(hl_line.spans.drain(..));
+            spans.append(&mut hl_line.spans);
             Line::from(spans)
         })
         .collect();

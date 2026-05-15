@@ -33,7 +33,7 @@ pub(super) async fn execute_lsp(
 
     // Spawn a discard channel for app events — this client is one-shot
     // and we don't need its publishDiagnostics notifications.
-    let (tx, _rx) = tokio::sync::mpsc::channel::<crate::app::AppEvent>(16);
+    let (tx, _rx) = tokio::sync::mpsc::channel::<crate::runtime::AppEvent>(16);
     let root_uri = format!("file://{}", cwd.display());
     let owned_args: Vec<&str> = args.to_vec();
     let Some(client) = crate::lsp_client::LspClient::spawn(cmd, &owned_args, &root_uri, tx).await

@@ -371,10 +371,7 @@ impl HookHandler {
                     Ok(out) => {
                         let msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
                         HookAction::Abort(if msg.is_empty() {
-                            format!(
-                                "Hook blocked: exit {}",
-                                out.status.code().unwrap_or(1)
-                            )
+                            format!("Hook blocked: exit {}", out.status.code().unwrap_or(1))
                         } else {
                             msg
                         })

@@ -484,8 +484,8 @@ pub fn find_path_multi_source(
                 return Some(vec![src.clone()]);
             }
             // First seeding wins — duplicates are skipped via the contains check.
-            if !parents.contains_key(&idx) {
-                parents.insert(idx, idx); // self-parent sentinel
+            if let std::collections::hash_map::Entry::Vacant(e) = parents.entry(idx) {
+                e.insert(idx); // self-parent sentinel
                 queue.push_back((idx, 0));
             }
         }
@@ -607,7 +607,7 @@ pub fn all_simple_paths(
         // Path length in *edges* (hops) is `path.len() - 1`. A new neighbor
         // would push to depth `path.len()`, i.e. `path.len()` hops. Skip
         // expansion entirely once that would exceed `max_depth`.
-        if path.len() - 1 >= max_depth {
+        if path.len() > max_depth {
             // Backtrack: this frame can't extend further without overshooting.
             on_path.remove(&path.pop().expect("path matches stack depth"));
             stack.pop();

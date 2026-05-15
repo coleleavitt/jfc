@@ -114,7 +114,7 @@ pub(crate) struct EconomyAgentInvoker {
     /// each text delta, and TaskCompleted/Failed at the end. This is
     /// what makes bounty subagents show up in the same fan UI / ctrl+X
     /// panel as regular Task-tool subagents. None is fine for tests.
-    event_tx: Option<tokio::sync::mpsc::Sender<crate::app::AppEvent>>,
+    event_tx: Option<tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>,
 }
 
 impl EconomyAgentInvoker {
@@ -164,10 +164,12 @@ impl EconomyAgentInvoker {
                 Ok(StreamEvent::TextDelta { delta, .. }) => {
                     if let (Some(tx), Some(id)) = (&self.event_tx, task_id) {
                         let _ = tx
-                            .send(crate::app::AppEvent::AgentChunk {
-                                task_id: crate::ids::TaskId::from(id),
-                                text: delta.clone(),
-                            })
+                            .send(crate::runtime::AppEvent::Task(
+                                crate::runtime::TaskEvent::AgentChunk {
+                                    task_id: crate::ids::TaskId::from(id),
+                                    text: delta.clone(),
+                                },
+                            ))
                             .await;
                     }
                     text.push_str(&delta);
@@ -186,16 +188,18 @@ impl EconomyAgentInvoker {
                     output_tokens = o as u64;
                     if let (Some(tx), Some(id)) = (&self.event_tx, task_id) {
                         // TaskProgress is non-critical; next progress update supersedes.
-                        let _ = tx.try_send(crate::app::AppEvent::TaskProgress {
-                            task_id: crate::ids::TaskId::from(id),
-                            last_tool: None,
-                            elapsed_ms: 0,
-                            tool_use_count: None,
-                            input_tokens: Some(i as u64),
-                            cache_read_tokens: None,
-                            cache_write_tokens: None,
-                            output_tokens: Some(o as u64),
-                        });
+                        let _ = tx.try_send(crate::runtime::AppEvent::Task(
+                            crate::runtime::TaskEvent::Progress {
+                                task_id: crate::ids::TaskId::from(id),
+                                last_tool: None,
+                                elapsed_ms: 0,
+                                tool_use_count: None,
+                                input_tokens: Some(i as u64),
+                                cache_read_tokens: None,
+                                cache_write_tokens: None,
+                                output_tokens: Some(o as u64),
+                            },
+                        ));
                     }
                 }
                 Ok(StreamEvent::Error { message }) => {
@@ -223,18 +227,20 @@ impl EconomyAgentInvoker {
             // try_send: lifecycle events are critical but rare (one per task
             // start), so a full buffer indicates the UI is genuinely overwhelmed
             // — log and continue rather than block this sync path.
-            if let Err(e) = tx.try_send(crate::app::AppEvent::TaskStarted {
-                task_id: crate::ids::TaskId::from(task_id),
-                description: description.to_owned(),
-                model_used: None,
-                max_input_tokens: None,
-                // Economy solver/validator agents run in-process via the
-                // same Task tool path as ordinary subagents.
-                is_detached: false,
-                // Economy agents aren't linked to a user-facing todo —
-                // they're spawned by the bounty market, not the task queue.
-                parent_task_id: None,
-            }) {
+            if let Err(e) = tx.try_send(crate::runtime::AppEvent::Task(
+                crate::runtime::TaskEvent::Started {
+                    task_id: crate::ids::TaskId::from(task_id),
+                    description: description.to_owned(),
+                    model_used: None,
+                    max_input_tokens: None,
+                    // Economy solver/validator agents run in-process via the
+                    // same Task tool path as ordinary subagents.
+                    is_detached: false,
+                    // Economy agents aren't linked to a user-facing todo —
+                    // they're spawned by the bounty market, not the task queue.
+                    parent_task_id: None,
+                },
+            )) {
                 tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskStarted dropped: channel full");
             }
         }
@@ -242,11 +248,13 @@ impl EconomyAgentInvoker {
 
     fn emit_completed(&self, task_id: &str, summary: &str, elapsed_ms: u64) {
         if let Some(tx) = &self.event_tx {
-            if let Err(e) = tx.try_send(crate::app::AppEvent::TaskCompleted {
-                task_id: crate::ids::TaskId::from(task_id),
-                summary: summary.to_owned(),
-                elapsed_ms,
-            }) {
+            if let Err(e) = tx.try_send(crate::runtime::AppEvent::Task(
+                crate::runtime::TaskEvent::Completed {
+                    task_id: crate::ids::TaskId::from(task_id),
+                    summary: summary.to_owned(),
+                    elapsed_ms,
+                },
+            )) {
                 tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskCompleted dropped: channel full");
             }
         }
@@ -254,10 +262,12 @@ impl EconomyAgentInvoker {
 
     fn emit_failed(&self, task_id: &str, error: &str) {
         if let Some(tx) = &self.event_tx {
-            if let Err(e) = tx.try_send(crate::app::AppEvent::TaskFailed {
-                task_id: crate::ids::TaskId::from(task_id),
-                error: error.to_owned(),
-            }) {
+            if let Err(e) = tx.try_send(crate::runtime::AppEvent::Task(
+                crate::runtime::TaskEvent::Failed {
+                    task_id: crate::ids::TaskId::from(task_id),
+                    error: error.to_owned(),
+                },
+            )) {
                 tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskFailed dropped: channel full");
             }
         }
@@ -900,10 +910,8 @@ pub(crate) fn parse_validator_output(text: &str) -> (Option<String>, f32, Option
                     *conf = n.clamp(0.0, 1.0);
                 }
             }
-            Some("TEST") => {
-                if !v.is_empty() && !v.eq_ignore_ascii_case("none") {
-                    *test = Some(v);
-                }
+            Some("TEST") if !v.is_empty() && !v.eq_ignore_ascii_case("none") => {
+                *test = Some(v);
             }
             _ => {}
         }

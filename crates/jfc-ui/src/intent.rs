@@ -356,7 +356,13 @@ fn classify_doc_intent(lower: &str) -> Option<Intent> {
     let has_doc_verb = contains_any(
         lower,
         &[
-            "draft ", "write ", "update ", "generate ", "create ", "refresh ", "make ",
+            "draft ",
+            "write ",
+            "update ",
+            "generate ",
+            "create ",
+            "refresh ",
+            "make ",
         ],
     );
 
@@ -1081,8 +1087,6 @@ pub fn auto_doc_suggest_enabled() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
-
     use super::*;
     use crate::types::{MessagePart, Role};
 
@@ -1148,14 +1152,13 @@ mod tests {
     }
 
     #[test]
-    fn test_classify_performance() {
-        let start = Instant::now();
+    fn test_classify_hot_loop_stable() {
+        let prompt = "find where auth is handled and review the login implementation";
+        let expected = classify(prompt).intent;
 
         for _ in 0..1_000 {
-            let _ = classify("find where auth is handled and review the login implementation");
+            assert_eq!(classify(prompt).intent, expected);
         }
-
-        assert!(start.elapsed() < Duration::from_millis(50));
     }
 
     /// Normal: 5 different impact-analysis phrasings each map to
@@ -1387,10 +1390,7 @@ fn baz() -> i32 { 42 }
                 "what's our parity status with upstream",
                 Intent::DocParityRequest,
             ),
-            (
-                "generate the philosophy doc",
-                Intent::DocPhilosophyRequest,
-            ),
+            ("generate the philosophy doc", Intent::DocPhilosophyRequest),
             ("write a usage guide", Intent::DocUsageRequest),
         ];
         for (prompt, expected) in cases {

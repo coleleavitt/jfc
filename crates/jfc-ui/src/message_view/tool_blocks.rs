@@ -617,9 +617,10 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         | ToolKind::TeamMemberMode => Color::Rgb(255, 150, 130), // coral
         ToolKind::Skill => Color::Rgb(180, 220, 255), // ice
         ToolKind::ToolSearch | ToolKind::ToolSuggest => Color::Rgb(170, 210, 180),
-        ToolKind::GraphQuery | ToolKind::SymbolEdit | ToolKind::RunCoverage => {
-            Color::Rgb(130, 200, 180)
-        } // sage
+        ToolKind::CodeIndex
+        | ToolKind::GraphQuery
+        | ToolKind::SymbolEdit
+        | ToolKind::RunCoverage => Color::Rgb(130, 200, 180), // sage
         ToolKind::PostBounty | ToolKind::RunBounty | ToolKind::MarketStatus => {
             Color::Rgb(255, 215, 100)
         } // gold

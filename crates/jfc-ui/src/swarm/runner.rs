@@ -194,7 +194,7 @@ pub enum TeammateEvent {
         summary: Option<String>,
     },
     /// One streaming-text delta from the teammate's current turn.
-    /// The main loop translates this into `AppEvent::AgentChunk` so
+    /// The main loop translates this into `TaskEvent::AgentChunk` so
     /// the task panel fills live as the teammate streams. Without
     /// it, drilling into a running teammate showed "No messages yet"
     /// until the entire turn finished.
@@ -574,6 +574,18 @@ enum TurnResult {
     Error(String),
 }
 
+async fn sleep_retry_or_abort(
+    delay: std::time::Duration,
+    abort_rx: &mut tokio::sync::watch::Receiver<bool>,
+) -> bool {
+    tokio::select! {
+        _ = tokio::time::sleep(delay) => true,
+        changed = abort_rx.changed() => {
+            !(changed.is_err() || *abort_rx.borrow())
+        }
+    }
+}
+
 /// Run a single turn: build messages, call the API, parse response, execute tools.
 /// Returns when the model finishes (EndTurn) or an error/abort occurs.
 async fn run_single_turn(
@@ -609,9 +621,6 @@ async fn run_single_turn(
     });
 
     let mut estimated_tokens_without_usage: u64 = 0;
-    let mut latest_input_tokens: u64 = 0;
-    let mut latest_cache_read_tokens: u64 = 0;
-    let mut latest_cache_write_tokens: u64 = 0;
     let mut cumulative_output_tokens: u64 = 0;
     let mut total_tools: u64 = 0;
     let mut last_tool_name: Option<String> = None;
@@ -664,141 +673,233 @@ async fn run_single_turn(
             );
         }
 
-        let stream = match provider.stream(history.clone(), &opts).await {
-            Ok(s) => s,
-            Err(e) => return TurnResult::Error(format!("provider stream error: {e}")),
-        };
-
-        let mut response_text = String::new();
-        // (id, name, kind, input, raw_input, validation_error)
-        // — `validation_error` is `Some` when the model's JSON failed
-        // shape validation; we then skip execution and ship the error
-        // back as a tool_result so the model sees what went wrong.
-        let mut tool_calls: Vec<(
-            String,
-            String,
-            ToolKind,
-            ToolInput,
-            serde_json::Value,
-            Option<String>,
-        )> = Vec::new();
-        let mut stop_reason = StopReason::EndTurn;
-        let mut saw_usage_this_turn = false;
-        let mut estimated_turn_tokens: u64 = 0;
-        let mut usage_baseline = (0u32, 0u32, 0u32, 0u32);
-
-        futures::pin_mut!(stream);
-        loop {
-            if *abort_rx.borrow() {
-                return TurnResult::Aborted;
-            }
-
-            let event_result = tokio::select! {
-                biased;
-                changed = abort_rx.changed() => {
-                    if changed.is_err() || *abort_rx.borrow() {
-                        return TurnResult::Aborted;
+        let mut stream_retry_attempt = 0u32;
+        let (
+            response_text,
+            tool_calls,
+            stop_reason,
+            saw_usage_this_turn,
+            estimated_turn_tokens,
+            turn_input_tokens,
+            turn_cache_read_tokens,
+            turn_cache_write_tokens,
+            turn_output_tokens,
+        ) = loop {
+            let stream = match crate::stream::open_stream_with_bedrock_retries(
+                provider.as_ref(),
+                std::sync::Arc::new(history.clone()),
+                &opts,
+            )
+            .await
+            {
+                Ok(s) => s,
+                Err(e) => {
+                    let message = e.to_string();
+                    if let Some(retry) = crate::providers::retry::retryable_stream_error(&message) {
+                        let delay =
+                            crate::providers::retry::stream_retry_delay(stream_retry_attempt);
+                        warn!(
+                            target: "jfc::swarm::runner",
+                            task_id,
+                            turn,
+                            retry_attempt = stream_retry_attempt + 1,
+                            provider = retry.provider,
+                            delay_ms = delay.as_millis() as u64,
+                            error = %retry.message,
+                            "teammate stream open hit retryable provider error"
+                        );
+                        stream_retry_attempt = stream_retry_attempt.saturating_add(1);
+                        if !sleep_retry_or_abort(delay, abort_rx).await {
+                            return TurnResult::Aborted;
+                        }
+                        continue;
                     }
-                    continue;
+                    return TurnResult::Error(format!("provider stream error: {e}"));
                 }
-                event_result = stream.next() => event_result,
             };
 
-            let Some(event_result) = event_result else {
-                break;
-            };
+            let mut response_text = String::new();
+            // (id, name, kind, input, raw_input, validation_error)
+            // — `validation_error` is `Some` when the model's JSON failed
+            // shape validation; we then skip execution and ship the error
+            // back as a tool_result so the model sees what went wrong.
+            let mut tool_calls: Vec<(
+                String,
+                String,
+                ToolKind,
+                ToolInput,
+                serde_json::Value,
+                Option<String>,
+            )> = Vec::new();
+            let mut stop_reason = StopReason::EndTurn;
+            let mut saw_usage_this_turn = false;
+            let mut estimated_turn_tokens: u64 = 0;
+            let mut usage_baseline = (0u32, 0u32, 0u32, 0u32);
+            let mut turn_input_tokens = 0u64;
+            let mut turn_cache_read_tokens = 0u64;
+            let mut turn_cache_write_tokens = 0u64;
+            let mut turn_output_tokens = 0u64;
+            let mut retryable_stream_error: Option<String> = None;
 
-            let event = match event_result {
-                Ok(e) => e,
-                Err(e) => return TurnResult::Error(format!("stream error: {e}")),
-            };
-            match event {
-                StreamEvent::TextDelta { delta, .. } => {
-                    if !saw_usage_this_turn {
-                        estimated_turn_tokens += (delta.len() / 4) as u64;
+            futures::pin_mut!(stream);
+            loop {
+                if *abort_rx.borrow() {
+                    return TurnResult::Aborted;
+                }
+
+                let event_result = tokio::select! {
+                    biased;
+                    changed = abort_rx.changed() => {
+                        if changed.is_err() || *abort_rx.borrow() {
+                            return TurnResult::Aborted;
+                        }
+                        continue;
                     }
-                    // Forward to the leader so the task panel for this
-                    // teammate shows live output. The handler translates
-                    // to `AppEvent::AgentChunk` keyed by `task_id`.
-                    let _ = event_tx.send(TeammateEvent::TextDelta {
-                        task_id: task_id.to_owned(),
-                        agent_id: identity.agent_id.clone(),
-                        delta: delta.clone(),
-                    });
-                    response_text.push_str(&delta);
-                }
-                StreamEvent::ToolDone {
-                    tool_name,
-                    tool_use_id,
-                    input_json,
-                    ..
-                } => {
-                    let input_value: serde_json::Value =
-                        serde_json::from_str(&input_json).unwrap_or_default();
-                    let kind = ToolKind::from_name(&tool_name);
-                    let (parsed_input, validation_err) =
-                        match ToolInput::from_value(&tool_name, input_value.clone()) {
-                            Ok(parsed) => (parsed, None),
-                            Err(err) => {
-                                let msg = err.to_string();
-                                warn!(
-                                    target: "jfc::swarm::runner",
-                                    tool_name = %tool_name,
-                                    error = %msg,
-                                    "tool input shape validation failed — failing tool"
-                                );
-                                // Stub the parsed input with a Generic so
-                                // the assistant turn we replay to the
-                                // provider still echoes a coherent shape;
-                                // the validation_err flag short-circuits
-                                // execution below.
-                                (
-                                    crate::types::ToolInput::Generic {
-                                        summary: input_value.to_string(),
-                                    },
-                                    Some(msg),
-                                )
-                            }
-                        };
-                    tool_calls.push((
+                    event_result = stream.next() => event_result,
+                };
+
+                let Some(event_result) = event_result else {
+                    break;
+                };
+
+                let event = match event_result {
+                    Ok(e) => e,
+                    Err(e) => {
+                        let message = e.to_string();
+                        if crate::providers::retry::retryable_stream_error(&message).is_some() {
+                            retryable_stream_error = Some(message);
+                            break;
+                        }
+                        return TurnResult::Error(format!("stream error: {e}"));
+                    }
+                };
+                match event {
+                    StreamEvent::TextDelta { delta, .. } => {
+                        if !saw_usage_this_turn {
+                            estimated_turn_tokens += (delta.len() / 4) as u64;
+                        }
+                        // Forward to the leader so the task panel for this
+                        // teammate shows live output. The handler translates
+                        // to `TaskEvent::AgentChunk` keyed by `task_id`.
+                        let _ = event_tx.send(TeammateEvent::TextDelta {
+                            task_id: task_id.to_owned(),
+                            agent_id: identity.agent_id.clone(),
+                            delta: delta.clone(),
+                        });
+                        response_text.push_str(&delta);
+                    }
+                    StreamEvent::ToolDone {
+                        tool_name,
                         tool_use_id,
-                        tool_name.clone(),
-                        kind,
-                        parsed_input,
-                        input_value,
-                        validation_err,
-                    ));
-                    last_tool_name = Some(tool_name);
-                }
-                StreamEvent::Usage {
-                    input_tokens,
-                    output_tokens,
-                    cache_read_tokens,
-                    cache_write_tokens,
-                } => {
-                    let output_delta = output_tokens.saturating_sub(usage_baseline.1) as u64;
-                    usage_baseline = (
+                        input_json,
+                        ..
+                    } => {
+                        let input_value: serde_json::Value =
+                            serde_json::from_str(&input_json).unwrap_or_default();
+                        let kind = ToolKind::from_name(&tool_name);
+                        let (parsed_input, validation_err) =
+                            match ToolInput::from_value(&tool_name, input_value.clone()) {
+                                Ok(parsed) => (parsed, None),
+                                Err(err) => {
+                                    let msg = err.to_string();
+                                    warn!(
+                                        target: "jfc::swarm::runner",
+                                        tool_name = %tool_name,
+                                        error = %msg,
+                                        "tool input shape validation failed — failing tool"
+                                    );
+                                    // Stub the parsed input with a Generic so
+                                    // the assistant turn we replay to the
+                                    // provider still echoes a coherent shape;
+                                    // the validation_err flag short-circuits
+                                    // execution below.
+                                    (
+                                        crate::types::ToolInput::Generic {
+                                            summary: input_value.to_string(),
+                                        },
+                                        Some(msg),
+                                    )
+                                }
+                            };
+                        tool_calls.push((
+                            tool_use_id,
+                            tool_name.clone(),
+                            kind,
+                            parsed_input,
+                            input_value,
+                            validation_err,
+                        ));
+                        last_tool_name = Some(tool_name);
+                    }
+                    StreamEvent::Usage {
                         input_tokens,
                         output_tokens,
                         cache_read_tokens,
                         cache_write_tokens,
-                    );
-                    saw_usage_this_turn = true;
-                    latest_input_tokens = input_tokens as u64;
-                    latest_cache_read_tokens = cache_read_tokens as u64;
-                    latest_cache_write_tokens = cache_write_tokens as u64;
-                    cumulative_output_tokens =
-                        cumulative_output_tokens.saturating_add(output_delta);
+                    } => {
+                        let output_delta = output_tokens.saturating_sub(usage_baseline.1) as u64;
+                        usage_baseline = (
+                            input_tokens,
+                            output_tokens,
+                            cache_read_tokens,
+                            cache_write_tokens,
+                        );
+                        saw_usage_this_turn = true;
+                        turn_input_tokens = input_tokens as u64;
+                        turn_cache_read_tokens = cache_read_tokens as u64;
+                        turn_cache_write_tokens = cache_write_tokens as u64;
+                        turn_output_tokens = turn_output_tokens.saturating_add(output_delta);
+                    }
+                    StreamEvent::Done { stop_reason: r } => {
+                        stop_reason = r;
+                    }
+                    StreamEvent::Error { message } => {
+                        if crate::providers::retry::retryable_stream_error(&message).is_some() {
+                            retryable_stream_error = Some(message);
+                            break;
+                        }
+                        return TurnResult::Error(format!("stream error: {message}"));
+                    }
+                    _ => {}
                 }
-                StreamEvent::Done { stop_reason: r } => {
-                    stop_reason = r;
-                }
-                StreamEvent::Error { message } => {
-                    return TurnResult::Error(format!("stream error: {message}"));
-                }
-                _ => {}
             }
-        }
+
+            if let Some(message) = retryable_stream_error {
+                let Some(retry) = crate::providers::retry::retryable_stream_error(&message) else {
+                    unreachable!("message was classified above");
+                };
+                let delay = crate::providers::retry::stream_retry_delay(stream_retry_attempt);
+                warn!(
+                    target: "jfc::swarm::runner",
+                    task_id,
+                    turn,
+                    retry_attempt = stream_retry_attempt + 1,
+                    provider = retry.provider,
+                    delay_ms = delay.as_millis() as u64,
+                    error = %retry.message,
+                    "teammate stream event hit retryable provider error"
+                );
+                stream_retry_attempt = stream_retry_attempt.saturating_add(1);
+                if !sleep_retry_or_abort(delay, abort_rx).await {
+                    return TurnResult::Aborted;
+                }
+                continue;
+            }
+
+            break (
+                response_text,
+                tool_calls,
+                stop_reason,
+                saw_usage_this_turn,
+                estimated_turn_tokens,
+                turn_input_tokens,
+                turn_cache_read_tokens,
+                turn_cache_write_tokens,
+                turn_output_tokens,
+            );
+        };
+
+        cumulative_output_tokens = cumulative_output_tokens.saturating_add(turn_output_tokens);
 
         if !saw_usage_this_turn {
             estimated_tokens_without_usage =
@@ -826,7 +927,15 @@ async fn run_single_turn(
 
         // If no tool calls, we're done with this turn
         if tool_calls.is_empty() {
-            break;
+            return TurnResult::Completed {
+                token_count: estimated_tokens_without_usage
+                    .saturating_add(turn_input_tokens)
+                    .saturating_add(turn_cache_read_tokens)
+                    .saturating_add(turn_cache_write_tokens)
+                    .saturating_add(cumulative_output_tokens),
+                tool_count: total_tools,
+                last_tool: last_tool_name,
+            };
         }
 
         // Execute tools
@@ -853,9 +962,9 @@ async fn run_single_turn(
                 task_id: task_id.to_owned(),
                 agent_id: identity.agent_id.clone(),
                 token_count: estimated_tokens_without_usage
-                    .saturating_add(latest_input_tokens)
-                    .saturating_add(latest_cache_read_tokens)
-                    .saturating_add(latest_cache_write_tokens)
+                    .saturating_add(turn_input_tokens)
+                    .saturating_add(turn_cache_read_tokens)
+                    .saturating_add(turn_cache_write_tokens)
                     .saturating_add(cumulative_output_tokens),
                 tool_use_count: total_tools,
                 last_tool: Some(name.clone()),
@@ -964,16 +1073,6 @@ async fn run_single_turn(
         // model never sees what the tools returned. The empty-tool_calls
         // check above (line ~700) is the correct termination signal.
         let _ = stop_reason;
-    }
-
-    TurnResult::Completed {
-        token_count: estimated_tokens_without_usage
-            .saturating_add(latest_input_tokens)
-            .saturating_add(latest_cache_read_tokens)
-            .saturating_add(latest_cache_write_tokens)
-            .saturating_add(cumulative_output_tokens),
-        tool_count: total_tools,
-        last_tool: last_tool_name,
     }
 }
 
@@ -1414,7 +1513,9 @@ mod tests {
                         }
                     }
                     TeammateEvent::Idle { .. } => got_idle = true,
-                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } | TeammateEvent::Cancelled { .. } => {
+                    TeammateEvent::Completed { .. }
+                    | TeammateEvent::Failed { .. }
+                    | TeammateEvent::Cancelled { .. } => {
                         got_terminal = true;
                         break;
                     }
@@ -1547,7 +1648,9 @@ mod tests {
                     } if t == "Read" => {
                         got_progress_with_tool = true;
                     }
-                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } | TeammateEvent::Cancelled { .. } => {
+                    TeammateEvent::Completed { .. }
+                    | TeammateEvent::Failed { .. }
+                    | TeammateEvent::Cancelled { .. } => {
                         got_terminal = true;
                         break;
                     }
@@ -1561,6 +1664,74 @@ mod tests {
             "expected Progress event with last_tool=Read"
         );
         assert!(got_terminal);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn run_single_turn_retries_retryable_stream_error_normal() {
+        let _g = HomeOverride::new();
+
+        use crate::provider::{StopReason, StreamEvent};
+        let scripts = vec![
+            vec![StreamEvent::Error {
+                message: format!(
+                    "{}Anthropic transient API error 529: overloaded",
+                    crate::providers::anthropic::AUTO_RETRY_SENTINEL
+                ),
+            }],
+            vec![
+                StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "ok".into(),
+                },
+                StreamEvent::Done {
+                    stop_reason: StopReason::EndTurn,
+                },
+            ],
+        ];
+
+        let provider: std::sync::Arc<dyn crate::provider::Provider> =
+            std::sync::Arc::new(ScriptedProvider::new(scripts));
+        let config = TeammateRunnerConfig {
+            identity: make_identity(),
+            prompt: "go".into(),
+            description: "test".into(),
+            model: None,
+            agent_type: None,
+            provider,
+            model_id: crate::provider::ModelId::new("stub-model"),
+            system_prompt: None,
+            task_store: None,
+        };
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_abort_tx, mut abort_rx) = tokio::sync::watch::channel(false);
+        let mut history = Vec::new();
+
+        let result = run_single_turn(
+            &config,
+            "go",
+            &mut history,
+            &event_tx,
+            "task",
+            &mut abort_rx,
+        )
+        .await;
+
+        assert!(
+            matches!(result, TurnResult::Completed { .. }),
+            "turn should recover, got {result:?}"
+        );
+        let mut saw_ok = false;
+        while let Ok(event) = event_rx.try_recv() {
+            if let TeammateEvent::TextDelta { delta, .. } = event {
+                saw_ok |= delta == "ok";
+            }
+        }
+        assert!(saw_ok, "expected recovered text delta");
+        assert_eq!(
+            history.len(),
+            2,
+            "retry should not append a failed assistant turn"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -1651,7 +1822,9 @@ mod tests {
                             second_text = true;
                         }
                     }
-                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } | TeammateEvent::Cancelled { .. } => {
+                    TeammateEvent::Completed { .. }
+                    | TeammateEvent::Failed { .. }
+                    | TeammateEvent::Cancelled { .. } => {
                         terminal = true;
                         break;
                     }
@@ -1700,7 +1873,9 @@ mod tests {
             while let Some(ev) = event_rx.recv().await {
                 if matches!(
                     ev,
-                    TeammateEvent::Completed { .. } | TeammateEvent::Failed { .. } | TeammateEvent::Cancelled { .. }
+                    TeammateEvent::Completed { .. }
+                        | TeammateEvent::Failed { .. }
+                        | TeammateEvent::Cancelled { .. }
                 ) {
                     saw_terminal = true;
                     break;
@@ -1731,8 +1906,8 @@ mod tests {
 
         // Provider script: a single text delta then EndTurn — plenty of
         // work for the runner to actually do if it weren't aborted.
-        let provider: std::sync::Arc<dyn crate::provider::Provider> = std::sync::Arc::new(
-            StubProvider::new(vec![
+        let provider: std::sync::Arc<dyn crate::provider::Provider> =
+            std::sync::Arc::new(StubProvider::new(vec![
                 crate::provider::StreamEvent::TextDelta {
                     index: 0,
                     delta: "hello".into(),
@@ -1740,8 +1915,7 @@ mod tests {
                 crate::provider::StreamEvent::Done {
                     stop_reason: crate::provider::StopReason::EndTurn,
                 },
-            ]),
-        );
+            ]));
         let identity = make_identity();
         let config = TeammateRunnerConfig {
             identity,

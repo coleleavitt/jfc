@@ -6,8 +6,6 @@
 use std::path::Path;
 use std::process::Command;
 
-use serde::{Deserialize, Serialize};
-
 /// Result of a teleport operation.
 #[derive(Debug, Clone)]
 pub struct TeleportResult {

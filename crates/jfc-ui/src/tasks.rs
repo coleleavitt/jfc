@@ -25,86 +25,19 @@
 //! What's intentionally not here:
 //! - Live activity descriptions (no teammate runtime yet).
 //! - Animation / fade-out for recently-completed tasks (UI polish).
-//! - Live activity descriptions (no teammate runtime yet).
-//! - Animation / fade-out for recently-completed tasks (UI polish).
 
 #![allow(dead_code)]
 
-use std::borrow::Borrow;
 use std::collections::{BTreeSet, HashMap};
-use std::fmt;
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-/// Stable task identity. Kept as a transparent string on disk/wire, but typed
-/// in-process so task ids cannot be accidentally mixed with subjects, owners,
-/// or tool ids.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct TaskId(String);
-
-impl TaskId {
-    pub fn new(raw: impl Into<String>) -> Self {
-        Self(raw.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Borrow<str> for TaskId {
-    fn borrow(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl AsRef<str> for TaskId {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl Deref for TaskId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_str()
-    }
-}
-
-impl fmt::Display for TaskId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl PartialEq<&str> for TaskId {
-    fn eq(&self, other: &&str) -> bool {
-        self.as_str() == *other
-    }
-}
-
-impl PartialEq<TaskId> for &str {
-    fn eq(&self, other: &TaskId) -> bool {
-        *self == other.as_str()
-    }
-}
-
-impl From<String> for TaskId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl From<&str> for TaskId {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
+pub use jfc_core::{
+    Task, TaskCounts, TaskError, TaskKind, TaskPatch, TaskRisk, TaskStatus, TaskValidation,
+    TodoTaskId as TaskId,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeletedFilter {
@@ -115,133 +48,6 @@ pub enum DeletedFilter {
 impl DeletedFilter {
     fn includes_deleted(self) -> bool {
         matches!(self, Self::Include)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TaskError {
-    UnknownTask { id: TaskId },
-    UnknownDependency { id: TaskId },
-    SelfCycle { id: TaskId },
-    DependencyCycle { path: Vec<TaskId> },
-}
-
-impl fmt::Display for TaskError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownTask { id } => write!(f, "unknown task id `{id}`"),
-            Self::UnknownDependency { id } => {
-                write!(f, "blockedBy references unknown task id `{id}`")
-            }
-            Self::SelfCycle { .. } => f.write_str("a task cannot block itself"),
-            Self::DependencyCycle { path } => {
-                let chain = path
-                    .iter()
-                    .map(TaskId::as_str)
-                    .collect::<Vec<_>>()
-                    .join(" -> ");
-                write!(f, "blockedBy would create dependency cycle: {chain}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for TaskError {}
-
-/// Risk level for a task. High-risk tasks require explicit user approval
-/// before the task factory auto-executes them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskRisk {
-    Low,
-    Medium,
-    High,
-}
-
-/// Task kind — enables hierarchical task trees with control-flow semantics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskKind {
-    /// A high-level grouping of sub-tasks.
-    Milestone,
-    /// A concrete unit of work (default).
-    Task,
-    /// A verification/acceptance check.
-    Check,
-    /// A decision point requiring user input.
-    Decision,
-}
-
-/// A task's lifecycle status. `Deleted` is a tombstone — `TaskList` filters it
-/// out by default but it remains in the store for audit purposes.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskStatus {
-    #[default]
-    Pending,
-    InProgress,
-    Completed,
-    Failed,
-    Deleted,
-}
-
-/// One task. Field names match v126's wire shape.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Task {
-    pub id: TaskId,
-    #[serde(default)]
-    pub subject: String,
-    #[serde(default)]
-    pub description: String,
-    #[serde(
-        default,
-        rename = "activeForm",
-        alias = "active_form",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub active_form: Option<String>,
-    #[serde(default)]
-    pub status: TaskStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner: Option<String>,
-    /// Tasks that depend on this task (the inverse of `blocked_by`).
-    /// `BTreeSet` rather than `Vec` so re-creates of an already-blocked
-    /// downstream cannot accumulate duplicate reverse-links across runs;
-    /// the sorted-set serde shape is `[..]` same as `Vec`, so wire format is
-    /// stable.
-    #[serde(default)]
-    pub blocks: BTreeSet<TaskId>,
-    /// Tasks that block this task. `BTreeSet` for the same reason as
-    /// `blocks` — dedupe and stable sort across re-creates.
-    #[serde(default, rename = "blockedBy")]
-    pub blocked_by: BTreeSet<TaskId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-    /// Monotonic creation counter, used for stable sort by recency.
-    #[serde(default)]
-    pub created_at_ms: u64,
-    /// Mechanistic pass/fail criteria for verifying task completion.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub acceptance_criteria: Option<String>,
-    /// Shell command to run for confirming done-ness (e.g. `cargo test -p foo`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub verification_command: Option<String>,
-    /// Risk level — high-risk tasks block auto-execution by the task factory.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub risk: Option<TaskRisk>,
-    /// Parent task id for hierarchical task trees.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_id: Option<TaskId>,
-    /// Task kind — milestone, task, check, or decision.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kind: Option<TaskKind>,
-}
-
-impl Task {
-    /// Spinner text to show while the task is in_progress. Falls back to the
-    /// subject when activeForm wasn't supplied.
-    pub fn spinner_text(&self) -> &str {
-        self.active_form.as_deref().unwrap_or(&self.subject)
     }
 }
 
@@ -840,9 +646,10 @@ impl TaskStore {
         // Detect tasks blocked forever (all blockers are failed/deleted)
         for t in &tasks {
             if t.status == TaskStatus::Pending && !t.blocked_by.is_empty() {
-                let all_blockers_dead = t.blocked_by.iter().all(|dep| {
-                    failed_ids.contains(dep) || !inner.tasks.contains_key(dep.as_str())
-                });
+                let all_blockers_dead = t
+                    .blocked_by
+                    .iter()
+                    .all(|dep| failed_ids.contains(dep) || !inner.tasks.contains_key(dep.as_str()));
                 if all_blockers_dead {
                     blocked_forever.push(t.id.clone());
                 }
@@ -876,7 +683,10 @@ impl TaskStore {
                 duplicate_subjects.push(format!(
                     "'{}' used by: {}",
                     subject,
-                    ids.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ")
+                    ids.iter()
+                        .map(|id| id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ));
             }
         }
@@ -910,43 +720,18 @@ impl TaskStore {
             duplicate_subjects,
             parallelization_opportunities,
             total_tasks: tasks.len(),
-            pending_count: tasks.iter().filter(|t| t.status == TaskStatus::Pending).count(),
-            in_progress_count: tasks.iter().filter(|t| t.status == TaskStatus::InProgress).count(),
+            pending_count: tasks
+                .iter()
+                .filter(|t| t.status == TaskStatus::Pending)
+                .count(),
+            in_progress_count: tasks
+                .iter()
+                .filter(|t| t.status == TaskStatus::InProgress)
+                .count(),
             completed_count: completed_ids.len(),
             failed_count: failed_ids.len(),
         }
     }
-}
-
-/// Result of `TaskStore::validate()` — structured health report.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskValidation {
-    pub orphaned_tasks: Vec<TaskId>,
-    pub blocked_forever: Vec<TaskId>,
-    pub no_verification_path: Vec<TaskId>,
-    pub duplicate_subjects: Vec<String>,
-    pub parallelization_opportunities: Vec<String>,
-    pub total_tasks: usize,
-    pub pending_count: usize,
-    pub in_progress_count: usize,
-    pub completed_count: usize,
-    pub failed_count: usize,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct TaskPatch {
-    pub subject: Option<String>,
-    pub description: Option<String>,
-    pub active_form: Option<String>,
-    pub status: Option<TaskStatus>,
-    pub owner: Option<String>,
-    pub blocked_by: Option<Vec<String>>,
-    pub metadata: Option<serde_json::Value>,
-    pub acceptance_criteria: Option<String>,
-    pub verification_command: Option<String>,
-    pub risk: Option<TaskRisk>,
-    pub parent_id: Option<TaskId>,
-    pub kind: Option<TaskKind>,
 }
 
 fn dependency_path_to(inner: &TaskStoreInner, start: &TaskId, target: &str) -> Option<Vec<TaskId>> {
@@ -963,13 +748,6 @@ fn dependency_path_to(inner: &TaskStoreInner, start: &TaskId, target: &str) -> O
     }
 
     None
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-pub struct TaskCounts {
-    pub pending: usize,
-    pub in_progress: usize,
-    pub completed: usize,
 }
 
 #[cfg(test)]
@@ -1223,13 +1001,8 @@ mod tests {
             .unwrap();
 
         let dst = TaskStore::in_memory();
-        dst.create(
-            "from dst".into(),
-            "kept".into(),
-            None,
-            Vec::<TaskId>::new(),
-        )
-        .unwrap();
+        dst.create("from dst".into(), "kept".into(), None, Vec::<TaskId>::new())
+            .unwrap();
 
         let copied = dst.migrate_from(&src);
         assert_eq!(copied, 0, "id collision must be a no-op");
@@ -1258,7 +1031,12 @@ mod tests {
             disk_mtime: Mutex::new(None),
         };
         writer
-            .create("written externally".into(), "".into(), None, Vec::<TaskId>::new())
+            .create(
+                "written externally".into(),
+                "".into(),
+                None,
+                Vec::<TaskId>::new(),
+            )
             .unwrap();
 
         // Reader handle: opened before any further writes, sees nothing yet.
@@ -1277,7 +1055,12 @@ mod tests {
         // Force a distinct mtime — some filesystems have coarse timestamps.
         std::thread::sleep(std::time::Duration::from_millis(10));
         writer
-            .create("second external".into(), "".into(), None, Vec::<TaskId>::new())
+            .create(
+                "second external".into(),
+                "".into(),
+                None,
+                Vec::<TaskId>::new(),
+            )
             .unwrap();
         assert!(reader.reload_if_changed());
         assert_eq!(reader.list(DeletedFilter::Exclude).len(), 2);

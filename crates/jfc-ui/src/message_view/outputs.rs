@@ -265,25 +265,25 @@ pub(super) fn grep_target_file(cmd: &str) -> Option<String> {
     while let Some(tok) = it.next() {
         if tok.starts_with("--") {
             let key = tok.split('=').next().unwrap_or(&tok);
-            if PATTERN_FLAGS.iter().any(|f| *f == key) {
+            if PATTERN_FLAGS.contains(&key) {
                 if !tok.contains('=') {
                     let _ = it.next();
                 }
                 seen_pattern = true;
                 continue;
             }
-            if !tok.contains('=') && VALUE_FLAGS.iter().any(|f| *f == tok.as_str()) {
+            if !tok.contains('=') && VALUE_FLAGS.contains(&tok.as_str()) {
                 let _ = it.next();
             }
             continue;
         }
         if tok.starts_with('-') && tok.len() > 1 && !tok.chars().all(|c| c == '-') {
-            if PATTERN_FLAGS.iter().any(|f| *f == tok.as_str()) {
+            if PATTERN_FLAGS.contains(&tok.as_str()) {
                 let _ = it.next();
                 seen_pattern = true;
                 continue;
             }
-            if VALUE_FLAGS.iter().any(|f| *f == tok.as_str()) {
+            if VALUE_FLAGS.contains(&tok.as_str()) {
                 let _ = it.next();
             }
             continue;

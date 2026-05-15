@@ -634,8 +634,6 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::adapter::rust::RustAdapter;
-    use crate::builder::GraphBuilder;
     use crate::edges::EdgeKind;
     use crate::nodes::{Span, Visibility};
 

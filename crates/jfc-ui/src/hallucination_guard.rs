@@ -95,11 +95,19 @@ pub enum ClaimCategory {
 fn category_backed(cat: ClaimCategory, kind: &ToolKind) -> bool {
     use ToolKind::*;
     match cat {
-        ClaimCategory::WroteFile => matches!(kind, Write | Edit | MultiEdit | NotebookEdit | ApplyPatch),
-        ClaimCategory::RanCommand => matches!(kind, Bash | Task | RunCoverage | RunBounty | PostBounty),
+        ClaimCategory::WroteFile => {
+            matches!(kind, Write | Edit | MultiEdit | NotebookEdit | ApplyPatch)
+        }
+        ClaimCategory::RanCommand => {
+            matches!(kind, Bash | Task | RunCoverage | RunBounty | PostBounty)
+        }
         ClaimCategory::Deployed => matches!(kind, Bash | RemoteTrigger | CronCreate),
-        ClaimCategory::SentMessage => matches!(kind, SendMessage | PushNotification | RemoteTrigger),
-        ClaimCategory::EditedCode => matches!(kind, Edit | MultiEdit | Write | SymbolEdit | ApplyPatch),
+        ClaimCategory::SentMessage => {
+            matches!(kind, SendMessage | PushNotification | RemoteTrigger)
+        }
+        ClaimCategory::EditedCode => {
+            matches!(kind, Edit | MultiEdit | Write | SymbolEdit | ApplyPatch)
+        }
         ClaimCategory::Committed => matches!(kind, Bash),
         ClaimCategory::Pushed => matches!(kind, Bash),
         ClaimCategory::Generic => matches!(
@@ -279,7 +287,11 @@ fn resolved_tool_kinds(msg: &ChatMessage) -> Vec<ToolKind> {
     let mut out = Vec::new();
     for p in &msg.parts {
         if let MessagePart::Tool(tc) = p {
-            if is_resolved(tc.status) && !out.iter().any(|k| std::mem::discriminant(k) == std::mem::discriminant(&tc.kind)) {
+            if is_resolved(tc.status)
+                && !out
+                    .iter()
+                    .any(|k| std::mem::discriminant(k) == std::mem::discriminant(&tc.kind))
+            {
                 out.push(tc.kind.clone());
             }
         }
@@ -349,7 +361,9 @@ pub fn evaluate(msg: &ChatMessage) -> FaithfulnessVerdict {
             reason: "negative-qualifier (\"wrote down\", \"noted\", \"previously\", etc.) nearby",
         };
     }
-    let any_side_effect = kinds.iter().any(|k| category_backed(ClaimCategory::Generic, k));
+    let any_side_effect = kinds
+        .iter()
+        .any(|k| category_backed(ClaimCategory::Generic, k));
     if any_side_effect {
         return FaithfulnessVerdict::Ambiguous {
             phrase,
@@ -385,7 +399,9 @@ pub fn log_only_mode() -> bool {
 mod tests {
     use super::*;
     use crate::ids::ToolId;
-    use crate::types::{ChatMessage, MessagePart, ToolCall, ToolDisplayState, ToolInput, ToolOutput};
+    use crate::types::{
+        ChatMessage, MessagePart, ToolCall, ToolDisplayState, ToolInput, ToolOutput,
+    };
 
     fn assistant(text: &str) -> ChatMessage {
         let mut m = ChatMessage::assistant(text.to_owned());
@@ -426,11 +442,7 @@ mod tests {
     // Normal: "I wrote the file" with a successful Write → Backed.
     #[test]
     fn backed_write_normal() {
-        let m = assistant_with_tool(
-            "I wrote the file.",
-            ToolKind::Write,
-            ToolStatus::Completed,
-        );
+        let m = assistant_with_tool("I wrote the file.", ToolKind::Write, ToolStatus::Completed);
         assert_eq!(evaluate(&m), FaithfulnessVerdict::Backed);
     }
 

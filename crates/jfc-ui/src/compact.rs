@@ -289,7 +289,7 @@ pub enum CompactResult {
 /// renderer divides by 4 for a token estimate. Boxed because the
 /// compact path is async + `Send`. Using a callback rather than
 /// hard-coding `Sender<AppEvent>` keeps `compact.rs` free of
-/// `app::AppEvent` so the test build doesn't need the full app.
+/// `runtime::AppEvent` so the test build doesn't need the full app.
 pub type CompactProgressCb = Box<dyn Fn(u64) + Send + Sync>;
 
 /// Whether an error string indicates the provider doesn't support the
@@ -489,7 +489,11 @@ pub async fn compact(
             );
             // Drop the oldest group from the to-summarize slice each time
             // until it fits, or until we've exhausted groups.
-            let step = token_gap_step(Some(summarize_tokens.saturating_sub(window)), &group_tokens, split_point);
+            let step = token_gap_step(
+                Some(summarize_tokens.saturating_sub(window)),
+                &group_tokens,
+                split_point,
+            );
             preserve_count = (preserve_count + step.max(1)).min(total_groups - 1);
             continue;
         }

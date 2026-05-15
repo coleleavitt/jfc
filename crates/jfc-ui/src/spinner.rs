@@ -174,7 +174,7 @@ pub const VERBS: &[&str] = &[
 ];
 
 /// Picks a frame index from a tick counter. Caller is expected to bump the
-/// tick on every redraw — typically every 80ms (one `AppEvent::Tick`).
+/// tick on every redraw — typically every 80ms (one `UiEvent::Tick`).
 pub fn frame_for(tick: usize) -> &'static str {
     FRAMES[tick % FRAMES.len()]
 }

@@ -159,8 +159,10 @@ pub enum MemoryScope {
 /// user for dangerous ops).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum PermissionMode {
     /// Prompt for dangerous ops (Edit, Bash, Write, ApplyPatch).
+    #[default]
     Default,
     /// Auto-accept file edits (Edit/Write/ApplyPatch); still prompt for Bash.
     AcceptEdits,
@@ -172,12 +174,6 @@ pub enum PermissionMode {
     DontAsk,
     /// LLM classifier decides per call.
     Auto,
-}
-
-impl Default for PermissionMode {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 /// Load every skill discoverable from project + user roots. Project skills

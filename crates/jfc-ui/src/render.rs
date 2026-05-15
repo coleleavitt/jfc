@@ -3,19 +3,37 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, Borders, Cell, Clear, LineGauge, List, ListItem, Padding, Paragraph, Row, Table,
-    },
+    widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph},
 };
+
+mod approval;
+mod model_picker;
+mod palette;
+mod session_sidebar;
+mod status;
+mod task_panel;
+mod theme_picker;
 
 #[allow(unused_imports)]
 use ratatui::style::Stylize as _;
 
-use crate::app::{App, ApprovalChoice};
-use crate::input::{filtered_models, filtered_theme_choices, palette_items};
+use crate::app::App;
 use crate::markdown;
 use crate::theme::Theme;
 use crate::types::*;
+
+use approval::approval;
+use model_picker::model_picker;
+#[cfg(test)]
+use model_picker::{provider_color, provider_label};
+use palette::palette;
+pub use session_sidebar::ordered_sidebar_sessions;
+use session_sidebar::sidebar;
+#[cfg(test)]
+use status::context_gauge_label;
+use status::{claude_status_footer, effort_status_badge, status};
+use task_panel::{task_model_badge, task_panel};
+use theme_picker::theme_picker;
 
 /// Easing function for sidebar slide animation.
 fn ease_out_cubic(t: f32) -> f32 {
@@ -560,7 +578,7 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         // dot with the teammate's assigned palette color (mirrors the
         // teammate-tree below) so the team panel and the spinner-row
         // tree read the same way.
-        for (_, info) in &app.team_context.teammates {
+        for info in app.team_context.teammates.values() {
             if info.name == crate::swarm::TEAM_LEAD_NAME {
                 continue;
             }
@@ -608,6 +626,7 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
         // Show in-progress tasks with activity
         for task in &in_progress {
+            let model_badge = task_model_badge(task);
             let activity = app
                 .task_activities
                 .get(&task.id)
@@ -625,6 +644,12 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
             if !activity.is_empty() {
                 lines.push(Line::from(vec![Span::styled(
                     format!("  {}", activity),
+                    Style::default().fg(t.text_muted),
+                )]));
+            }
+            if let Some(model) = model_badge {
+                lines.push(Line::from(vec![Span::styled(
+                    format!("  model {model}"),
                     Style::default().fg(t.text_muted),
                 )]));
             }
@@ -655,7 +680,7 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
             .filter(|task| {
                 app.task_completion_times
                     .get(&task.id)
-                    .map_or(false, |t| now.duration_since(*t).as_secs() < 30)
+                    .is_some_and(|t| now.duration_since(*t).as_secs() < 30)
             })
             .take(2)
             .collect();
@@ -757,7 +782,8 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     let provider_name = app.provider.name();
     let effort_badge = effort_status_badge(app);
     let fast_badge = if app.fast_mode { " · ⚡ FAST" } else { "" };
-    let provider_suffix = format!(" local · {effort_badge}{fast_badge}");
+    let claude_status = claude_status_footer(app);
+    let provider_suffix = format!(" local · {effort_badge}{fast_badge}{claude_status}");
     let provider_width = inner
         .width
         .saturating_sub(2 + provider_suffix.chars().count() as u16)
@@ -1004,9 +1030,9 @@ fn paint_border_comets(f: &mut Frame, area: Rect, cfg: &CometConfig) {
         let offset = (c as usize * total) / cfg.count.max(1) as usize;
         // Position of this comet's head this frame.
         let head_idx = if direction_positive {
-            ((head_pos_signed as i64 + offset as i64).rem_euclid(total as i64)) as usize
+            ((head_pos_signed + offset as i64).rem_euclid(total as i64)) as usize
         } else {
-            ((-head_pos_signed as i64 + offset as i64).rem_euclid(total as i64)) as usize
+            ((-head_pos_signed + offset as i64).rem_euclid(total as i64)) as usize
         };
         for trail in 0..cfg.trail_len {
             // Trail cells trail "behind" the head along its
@@ -1440,163 +1466,6 @@ fn wrap_text_to_width(s: &str, width: usize) -> Vec<String> {
     out
 }
 
-/// Sessions sidebar — toggled with Ctrl+B. Renders the saved-session metadata
-/// from `~/.config/jfc/sessions/` (cached on `App::session_meta` so render()
-/// does no disk I/O). Sessions whose `cwd` matches `app.cwd` are shown first
-/// under a `── This project ──` separator; everything else (including
-/// legacy `cwd: None` entries) lands below `── Other projects ──`.
-/// Each row is two lines: title (from `display_title()`) on top, a muted
-/// `cwd · time · msgs` badge on bottom. Selecting a row with Enter loads
-/// its messages into `App::messages`.
-fn sidebar(f: &mut Frame, app: &mut App, area: Rect) {
-    // Record bounds for the click handler. Borders eat one row top and
-    // bottom; the click handler subtracts those before computing the
-    // row index.
-    *app.sidebar_rect.borrow_mut() = Some(area);
-    let t = app.theme;
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(t.style_border)
-        .title(Span::styled(" sessions ", t.style_accent_bold))
-        .title_bottom(Line::from(Span::styled(" ↑↓ · Enter ", t.style_text_muted)).right_aligned())
-        .style(Style::default().bg(t.surface));
-
-    let items: Vec<ListItem> = if app.session_meta.is_empty() {
-        vec![ListItem::new(Line::from(Span::styled(
-            "  (no saved sessions)",
-            Style::default()
-                .fg(t.text_muted)
-                .add_modifier(Modifier::ITALIC),
-        )))]
-    } else {
-        let now = chrono::Utc::now();
-        let cwd = app.cwd.clone();
-        let (this_project, other) =
-            crate::session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
-
-        let mut items: Vec<ListItem> = Vec::new();
-        if !this_project.is_empty() {
-            items.push(separator_row("── This project ──", t));
-            for s in &this_project {
-                items.push(session_row(s, app, &now, t));
-            }
-        }
-        if !other.is_empty() {
-            items.push(separator_row("── Other projects ──", t));
-            for s in &other {
-                items.push(session_row(s, app, &now, t));
-            }
-        }
-        // Headers aren't selectable; `visible_selected_row` walks the same
-        // grouping to translate `app.session_selected` (session-only index)
-        // into a row index that includes the header rows.
-        items
-    };
-
-    // The sidebar's selection state targets sessions, not header rows.
-    // Build a parallel "session-only" mapping by computing the visible index
-    // for the currently-selected session. We do this by re-grouping (cheap)
-    // and counting headers above the target row.
-    let highlight_row = visible_selected_row(app);
-
-    let mut state = ratatui::widgets::ListState::default();
-    state.select(highlight_row);
-
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(
-            Style::default()
-                .fg(t.bg)
-                .bg(t.accent)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("▶ ");
-    f.render_stateful_widget(list, area, &mut state);
-    // Keep `app.session_list_state` aligned for any code that introspects it
-    // (mostly historical; the renderer owns the live state above).
-    app.session_list_state.select(highlight_row);
-}
-
-/// Return the user-visible session id list, in the order rendered by the
-/// sidebar (this-project first, then others). Used by Up/Down/Enter so
-/// keyboard navigation matches what the user sees.
-pub fn ordered_sidebar_sessions(app: &App) -> Vec<crate::ids::SessionId> {
-    let cwd = app.cwd.clone();
-    let (this_project, other) =
-        crate::session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
-    this_project
-        .into_iter()
-        .chain(other.into_iter())
-        .map(|s| s.id)
-        .collect()
-}
-
-/// Map the `session_selected` index (which counts sessions, not headers)
-/// to the `List`'s row index (which includes separator rows). Returns
-/// `None` when there are no sessions yet.
-fn visible_selected_row(app: &App) -> Option<usize> {
-    if app.session_meta.is_empty() {
-        return None;
-    }
-    let cwd = app.cwd.clone();
-    let (this_project, other) =
-        crate::session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
-    let sel = app.session_selected;
-    // Rows: [hdr1, this_project..., hdr2, other...]
-    if !this_project.is_empty() && sel < this_project.len() {
-        // 1 header above the this-project block.
-        return Some(1 + sel);
-    }
-    let sel_in_other = sel - this_project.len();
-    let mut row = 0usize;
-    if !this_project.is_empty() {
-        row += 1 + this_project.len();
-    }
-    if !other.is_empty() {
-        row += 1; // header row
-    }
-    Some(row + sel_in_other)
-}
-
-fn separator_row(label: &str, t: Theme) -> ListItem<'static> {
-    ListItem::new(Line::from(Span::styled(
-        format!("  {label}"),
-        t.style_text_muted.add_modifier(Modifier::DIM),
-    )))
-}
-
-fn session_row(
-    s: &crate::session::SessionMetadata,
-    app: &App,
-    now: &chrono::DateTime<chrono::Utc>,
-    t: Theme,
-) -> ListItem<'static> {
-    let is_active = app.current_session_id.as_ref() == Some(&s.id);
-    let bullet = if is_active { "▣ " } else { "  " };
-    let title = s.display_title();
-    let cwd_label = crate::session::shorten_cwd(s.cwd.as_deref());
-    let when = crate::session::relative_time(s.last_activity(), *now);
-    let msgs = format!(
-        "{} msg{}",
-        s.message_count,
-        if s.message_count == 1 { "" } else { "s" }
-    );
-    let secondary = format!("    {cwd_label} · {when} · {msgs}");
-
-    let title_style = if is_active {
-        t.style_accent_bold
-    } else {
-        t.style_text_primary
-    };
-
-    let line1 = Line::from(vec![
-        Span::styled(bullet.to_owned(), title_style),
-        Span::styled(title, title_style),
-    ]);
-    let line2 = Line::from(Span::styled(secondary, t.style_text_muted));
-    ListItem::new(vec![line1, line2])
-}
-
 /// Render the messages column. Computes `total_lines` at the same
 /// width MessageView will actually render at, sets `scroll_offset`
 /// (pinning to the bottom when `follow_bottom` is true), and hands
@@ -1973,7 +1842,8 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
                 let empty = EMPTY.get_or_init(std::collections::HashSet::new);
                 let expanded = app.viewing_task_expanded.get(task_id).unwrap_or(empty);
                 let task_done = matches!(bt.status, crate::types::TaskLifecycle::Completed);
-                let lines = task_view_body_lines(&bt.messages, expanded, &t, inner_width, task_done);
+                let lines =
+                    task_view_body_lines(&bt.messages, expanded, &t, inner_width, task_done);
                 (title, lines, false)
             }
         }
@@ -2024,7 +1894,10 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
                 .unwrap_or(&[]);
             let ctx = RenderCtx::from_task(msgs, app);
             let est_items = build_render_items_ctx(&ctx, inner_width);
-            est_items.iter().map(|i| i.height(inner_width)).sum::<usize>()
+            est_items
+                .iter()
+                .map(|i| i.height(inner_width))
+                .sum::<usize>()
         };
         let new_scroll = if app.follow_bottom {
             total_lines_est.saturating_sub(visible)
@@ -2069,7 +1942,9 @@ fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
                     Span::styled("⏸  ", Style::default().fg(t.text_muted)),
                     Span::styled(
                         "idle — waiting for next message",
-                        Style::default().fg(t.text_muted).add_modifier(Modifier::ITALIC),
+                        Style::default()
+                            .fg(t.text_muted)
+                            .add_modifier(Modifier::ITALIC),
                     ),
                 ])
             };
@@ -2441,6 +2316,35 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             pre,
             app.compacting_output_chars,
         ));
+    } else if let Some(recovery) = app.network_recovery_status.as_ref() {
+        let elapsed = app
+            .turn_started_at
+            .or(app.streaming_started_at)
+            .map(|t| now.duration_since(t))
+            .unwrap_or_default();
+        row1_elapsed = elapsed;
+        head_glyph = "!";
+        let label = match recovery.status_code {
+            Some(code) => format!("{code} {}", recovery.reason.label()),
+            None => recovery.reason.label().to_owned(),
+        };
+        verb_spans.push(Span::styled(
+            label,
+            Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
+        ));
+        let last_seen = now.duration_since(recovery.updated_at).as_secs();
+        tail_body = format!(
+            " · retrying {} · attempt {} · last {}s",
+            recovery.provider.label(),
+            recovery.attempts,
+            last_seen
+        );
+        if let Some(status) = app.claude_status.as_ref()
+            && let Some(outage) = status.outage_context()
+        {
+            tail_body.push_str(" · status ");
+            tail_body.push_str(&truncate_str(&outage, 72));
+        }
     } else {
         // Prefer the user-turn clock so a multi-step agentic loop reads
         // cumulative time, not just the current sub-stream's age. Fall back
@@ -2456,7 +2360,7 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             .map(|t| now.duration_since(t))
             .unwrap_or_default();
         // Anthropic SSE pushes cumulative `output_tokens` in every
-        // `message_delta` event (sse.rs:212-218 → AppEvent::StreamUsage →
+        // `message_delta` event (sse.rs:212-218 → StreamEvent::Usage →
         // app.last_usage_output) — wire-truth, no estimation needed. OWUI /
         // OpenAI providers only emit usage at `message_stop`; for those the
         // wire value stays 0 mid-stream, so we fall back to chars/4 of the
@@ -3208,219 +3112,6 @@ fn input_soft_wrapped_lines(app: &App, content_width: usize) -> (Vec<String>, us
     (out, visual_cursor_row, visual_cursor_col)
 }
 
-fn status(f: &mut Frame, app: &App, area: Rect) {
-    let t = app.theme;
-
-    // Two-row status: row 0 = info line (model, profile, cwd, hints),
-    // row 1 = context-window LineGauge with color-coded usage.
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(1)])
-        .split(area);
-
-    let cwd_display = {
-        let home = std::env::var("HOME").unwrap_or_default();
-        app.cwd
-            .strip_prefix(&home)
-            .map(|rest| format!("~{rest}"))
-            .unwrap_or_else(|| app.cwd.clone())
-    };
-
-    let msg_count = app.messages.iter().filter(|m| m.role == Role::User).count();
-
-    // Build status badges in priority order. Each badge is a short
-    // string fragment; we join them with a `·` separator and truncate
-    // from the right so low-priority badges drop first at narrow
-    // widths while the model name and git branch always show.
-    let mut badges: Vec<String> = Vec::new();
-
-    // Model is always shown (highest priority)
-    badges.push(app.model.to_string());
-
-    badges.push(effort_status_badge(app));
-
-    // Fast mode indicator
-    if app.fast_mode {
-        badges.push("⚡ FAST".to_string());
-    }
-
-    // OAuth profile
-    match (&app.subscription_type, &app.seat_tier) {
-        (Some(sub), Some(tier)) => badges.push(format!("{}·{}", sub, tier)),
-        (Some(sub), None) => badges.push(sub.clone()),
-        (None, Some(tier)) => badges.push(tier.clone()),
-        (None, None) => {}
-    }
-
-    // Permission mode (only non-default)
-    match app.permission_mode {
-        crate::app::PermissionMode::Default => {}
-        mode => badges.push(format!("{} {}", mode.symbol(), mode.label())),
-    }
-
-    // Git branch
-    if let Some(branch) = app.git_branch.as_deref() {
-        if !branch.is_empty() {
-            let trimmed: String = if branch.chars().count() > 24 {
-                let mut s: String = branch.chars().take(23).collect();
-                s.push('…');
-                s
-            } else {
-                branch.to_owned()
-            };
-            badges.push(format!("⎇ {}", trimmed));
-        }
-    }
-
-    // Cost
-    let cost_total = crate::cost::total_cost(&app.usage_by_model);
-    if cost_total > 0.001 {
-        let cost_str = if cost_total < 0.01 {
-            format!("${:.4}", cost_total)
-        } else if cost_total < 10.0 {
-            format!("${:.3}", cost_total)
-        } else {
-            format!("${:.2}", cost_total)
-        };
-        badges.push(cost_str);
-    }
-
-    // Leader key / task view state
-    if app.leader_key_active {
-        badges.push("[^X …]".to_string());
-    } else if app.viewing_task_id.is_some() {
-        badges.push("[task view]".to_string());
-    }
-
-    // Active subagents — aggregate tools + tokens across the fan so a
-    // single status line summarizes "Running 3 agents · 22 tools · 89.7k
-    // tok" the way Claude Code's CLI does. Counters fold to zero when
-    // the agents haven't reported yet (suppressed cleanly).
-    let alive: Vec<&crate::app::BackgroundTask> = app
-        .background_tasks
-        .values()
-        .filter(|bt| bt.status.is_alive())
-        .collect();
-    if !alive.is_empty() {
-        let total_tools: u32 = alive.iter().map(|b| b.tool_use_count).sum();
-        let total_tokens: u64 = alive
-            .iter()
-            .map(|b| {
-                b.latest_input_tokens
-                    .saturating_add(b.latest_cache_read_tokens)
-                    .saturating_add(b.latest_cache_write_tokens)
-                    .saturating_add(b.cumulative_output_tokens)
-            })
-            .sum();
-        let mut s = format!("⏵ {}", alive.len());
-        if total_tools > 0 {
-            s.push_str(&format!(
-                " · {} tool{}",
-                total_tools,
-                if total_tools == 1 { "" } else { "s" }
-            ));
-        }
-        if total_tokens > 0 {
-            s.push_str(&format!(" · {} tok", format_token_count(total_tokens)));
-        }
-        badges.push(s);
-    }
-
-    // Worktrees
-    if app.worktree_count > 0 {
-        badges.push(format!("⌥ {} wt", app.worktree_count));
-    }
-
-    // Queued prompts
-    if !app.queued_prompts.is_empty() {
-        badges.push(format!("⏳ {} queued", app.queued_prompts.len()));
-    }
-
-    // Pending approvals
-    let approval_count =
-        app.approval_queue.len() + if app.pending_approval.is_some() { 1 } else { 0 };
-    if approval_count > 0 {
-        badges.push(format!("⏸ {approval_count}"));
-    }
-
-    // Auto-save flash
-    if let Some(save_t) = app.last_session_save_at {
-        if save_t.elapsed().as_millis() < 2000 {
-            badges.push("✓ saved".to_string());
-        }
-    }
-
-    // Cwd + message count (lowest priority — dropped first at narrow widths)
-    badges.push(format!("{} · {} msgs", cwd_display, msg_count));
-
-    // Single right-hand hint: the palette key. All other shortcuts are
-    // discoverable inside the palette itself (Ctrl+P) — keeping just one
-    // pointer here de-clutters the status row and matches v126's layout.
-    let right = " ? help · ^P palette ";
-
-    let total_width = area.width as usize;
-    let right_start = total_width.saturating_sub(right.len());
-
-    // Join badges with ` · ` separator, then truncate to fit.
-    let left_full = format!(" {} ", badges.join(" · "));
-    let left_chars: usize = left_full.chars().count();
-    let left_truncated = if left_chars > right_start.saturating_sub(1) {
-        let truncated: String = left_full
-            .chars()
-            .take(right_start.saturating_sub(2))
-            .collect();
-        format!("{truncated}…")
-    } else {
-        left_full
-    };
-
-    let padding = " ".repeat(right_start.saturating_sub(left_truncated.chars().count()));
-
-    let line = Line::from(vec![
-        Span::styled(left_truncated, Style::default().fg(t.text_secondary)),
-        Span::styled(padding, Style::default().fg(t.text_muted)),
-        Span::styled(right, Style::default().fg(t.text_muted)),
-    ]);
-
-    f.render_widget(
-        Paragraph::new(line).style(Style::default().bg(t.surface)),
-        rows[0],
-    );
-
-    // Context-window gauge: live ratio of `tool_ctx.approx_tokens` to
-    // `max_context_tokens`. Color thresholds match the user's mental model of
-    // "safe / watch / about to compact": green <60%, yellow 60–85%, red >85%.
-    let used = app.tool_ctx.approx_tokens;
-    let max = app.max_context_tokens.max(1);
-    let ratio = (used as f64 / max as f64).clamp(0.0, 1.0);
-    let pct = (ratio * 100.0).round() as u32;
-    let bar_color = if pct < 60 {
-        t.success
-    } else if pct < 85 {
-        t.warning
-    } else {
-        t.error
-    };
-    let label = context_gauge_label(used, max, pct);
-    let gauge = LineGauge::default()
-        .filled_style(Style::default().fg(bar_color))
-        .unfilled_style(t.style_border)
-        .label(Span::styled(label, t.style_text_secondary))
-        .ratio(ratio);
-    f.render_widget(gauge, rows[1]);
-}
-
-fn context_gauge_label(used: usize, max: usize, pct: u32) -> String {
-    format!(" ctx {}k / {}k · {}% ", used / 1000, max / 1000, pct)
-}
-
-fn effort_status_badge(app: &App) -> String {
-    match app.effort_state.current {
-        Some(effort) => format!("effort {effort}"),
-        None => "effort default".to_string(),
-    }
-}
-
 /// Top-right toast strip. Renders one row per active toast, color-coded
 /// by `ToastKind`. Mirrors v126's terminal `notification()` pattern —
 /// non-blocking, auto-expires (handled in the `Tick` arm). Width is
@@ -3645,7 +3336,10 @@ const SLASH_COMMANDS: &[(&str, &str)] = &[
         "scaffold .github/workflows/jfc-review.yml",
     ),
     ("/plan", "draft or update PLAN.md (Atlas-compatible)"),
-    ("/roadmap", "draft or update ROADMAP.md (stable decimal IDs)"),
+    (
+        "/roadmap",
+        "draft or update ROADMAP.md (stable decimal IDs)",
+    ),
     ("/parity", "draft or update PARITY.md (evidence required)"),
     ("/philosophy", "draft or update PHILOSOPHY.md"),
     ("/usage", "draft or update USAGE.md (operator commands)"),
@@ -3671,7 +3365,7 @@ pub(crate) fn current_slash_prefix(app: &App) -> Option<String> {
     Some(token.to_string())
 }
 
-pub(crate) fn slash_matches<'a>(prefix: &'a str) -> Vec<&'static (&'static str, &'static str)> {
+pub(crate) fn slash_matches(prefix: &str) -> Vec<&'static (&'static str, &'static str)> {
     SLASH_COMMANDS
         .iter()
         .filter(|(cmd, _)| cmd.starts_with(prefix))
@@ -4155,789 +3849,6 @@ fn mention_popup(f: &mut Frame, app: &App, input_area: Rect) {
         })
         .collect();
     f.render_widget(List::new(items), inner);
-}
-
-fn palette(f: &mut Frame, app: &App) {
-    let t = app.theme;
-    let area = f.area();
-    let width = 50u16.min(area.width.saturating_sub(4));
-    let height = 10u16.min(area.height.saturating_sub(4));
-    let x = area.width.saturating_sub(width) / 2;
-    let y = area.height.saturating_sub(height) / 2;
-    let palette_area = Rect::new(x, y, width, height);
-
-    f.render_widget(Clear, palette_area);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(t.style_accent)
-        .title(Span::styled(" Command Palette ", t.style_accent))
-        .style(Style::default().bg(t.surface));
-
-    let inner = block.inner(palette_area);
-    f.render_widget(block, palette_area);
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(1)])
-        .split(inner);
-
-    f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("> ", Style::default().fg(t.accent)),
-            Span::styled(
-                app.palette_input.clone(),
-                Style::default().fg(t.text_primary),
-            ),
-        ])),
-        chunks[0],
-    );
-
-    let items: Vec<ListItem> = palette_items(app)
-        .iter()
-        .enumerate()
-        .map(|(i, label)| {
-            let style = if i == app.palette_selected {
-                t.style_accent_bold.bg(t.surface_raised)
-            } else {
-                t.style_text_primary
-            };
-            ListItem::new(Line::from(Span::styled(*label, style)))
-        })
-        .collect();
-
-    f.render_widget(
-        List::new(items).style(Style::default().bg(t.surface)),
-        chunks[1],
-    );
-}
-
-/// Color-code each provider so the user can scan the picker by source at a glance.
-/// Hardcoded for the providers jfc currently supports — extend when adding a new one.
-fn provider_color(provider: &str) -> Color {
-    match provider {
-        "anthropic" | "anthropic-oauth" => Color::Rgb(204, 120, 50), // Anthropic orange
-        "openwebui" => Color::Rgb(100, 180, 200),                    // teal
-        _ => Color::Gray,
-    }
-}
-
-/// Friendly name for the provider badge column. Kept short so it doesn't crowd ids.
-fn provider_label(provider: &str) -> &'static str {
-    match provider {
-        "anthropic" => "API",
-        "anthropic-oauth" => "OAuth",
-        "openwebui" => "OpenWebUI",
-        _ => "?",
-    }
-}
-
-fn theme_picker(f: &mut Frame, app: &mut App) {
-    let t = app.theme;
-    let screen = f.area();
-    let width = 68u16.min(screen.width.saturating_sub(4));
-    let height = 18u16.min(screen.height.saturating_sub(4));
-    let area = Rect::new(
-        screen.width.saturating_sub(width) / 2,
-        screen.height.saturating_sub(height) / 2,
-        width,
-        height,
-    );
-    let block = Block::default()
-        .title(" Theme Picker ")
-        .borders(Borders::ALL)
-        .border_style(t.style_accent)
-        .padding(Padding::new(1, 1, 1, 1));
-    f.render_widget(Clear, area);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(2),
-            Constraint::Min(6),
-            Constraint::Length(4),
-        ])
-        .split(inner);
-
-    let query = if app.theme_picker_input.is_empty() {
-        "type to filter themes".to_string()
-    } else {
-        app.theme_picker_input.clone()
-    };
-    f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("filter: ", Style::default().fg(t.text_muted)),
-            Span::styled(
-                query,
-                Style::default()
-                    .fg(t.text_primary)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ])),
-        chunks[0],
-    );
-
-    let filtered = filtered_theme_choices(app);
-    let visible_rows = chunks[1].height.max(1) as usize;
-    let offset = app
-        .theme_picker_selected
-        .saturating_sub(visible_rows.saturating_sub(1));
-    let rows: Vec<Line<'static>> = filtered
-        .iter()
-        .enumerate()
-        .skip(offset)
-        .take(visible_rows)
-        .map(|(idx, choice)| {
-            let selected = idx == app.theme_picker_selected;
-            let marker = if selected { "›" } else { " " };
-            let sample_theme = crate::theme::Theme::by_name(choice.name).unwrap_or(t);
-            Line::from(vec![
-                Span::styled(marker, Style::default().fg(t.accent)),
-                Span::raw(" "),
-                Span::styled("██", Style::default().fg(sample_theme.text_primary)),
-                Span::styled("██", Style::default().fg(sample_theme.text_secondary)),
-                Span::styled("██", Style::default().fg(sample_theme.accent)),
-                Span::raw("  "),
-                Span::styled(
-                    choice.label,
-                    Style::default()
-                        .fg(if selected { t.accent } else { t.text_primary })
-                        .add_modifier(if selected {
-                            Modifier::BOLD
-                        } else {
-                            Modifier::empty()
-                        }),
-                ),
-                Span::styled(
-                    format!("  /theme {}", choice.name),
-                    Style::default().fg(t.text_muted),
-                ),
-            ])
-        })
-        .collect();
-
-    f.render_widget(Paragraph::new(rows), chunks[1]);
-
-    let description = filtered
-        .get(app.theme_picker_selected)
-        .map(|choice| choice.description)
-        .unwrap_or("No themes match the current filter.");
-    f.render_widget(
-        Paragraph::new(vec![
-            Line::from(description),
-            Line::from(vec![
-                Span::styled(
-                    "Enter",
-                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" apply  "),
-                Span::styled(
-                    "Esc",
-                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" close  "),
-                Span::styled(
-                    "↑/↓",
-                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw("/"),
-                Span::styled(
-                    "j/k",
-                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" move"),
-            ]),
-        ])
-        .wrap(ratatui::widgets::Wrap { trim: true })
-        .style(t.style_text_muted),
-        chunks[2],
-    );
-}
-
-fn model_picker(f: &mut Frame, app: &mut App) {
-    let t = app.theme;
-    let area = f.area();
-    // Fluid sizing: take up to 90% of the screen, capped at 130 cols / 28 rows.
-    // The previous fixed 60×16 truncated long OpenWebUI names like "Anthropic -
-    // Claude Haiku 4.5 ($$)" mid-cell.
-    let width = (area.width * 9 / 10).min(130).max(60);
-    let height = (area.height * 8 / 10).min(28).max(12);
-    let x = area.width.saturating_sub(width) / 2;
-    let y = area.height.saturating_sub(height) / 2;
-    let picker_area = Rect::new(x, y, width, height);
-
-    f.render_widget(Clear, picker_area);
-
-    let total = app.model_picker_models.len();
-    let visible = filtered_models(app);
-    let title = if app.model_picker_filter.is_empty() {
-        format!(" Select Model · {} models ", total)
-    } else {
-        format!(
-            " Select Model · {}/{} matching '{}' ",
-            visible.len(),
-            total,
-            app.model_picker_filter
-        )
-    };
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(t.style_accent)
-        .title(Span::styled(title, t.style_accent_bold))
-        .title_bottom(
-            Line::from(vec![
-                Span::styled(" ↑↓", Style::default().fg(t.text_muted)),
-                Span::styled(" navigate ", Style::default().fg(t.text_secondary)),
-                Span::styled("· ", Style::default().fg(t.text_muted)),
-                Span::styled("Enter", Style::default().fg(t.text_muted)),
-                Span::styled(" select ", Style::default().fg(t.text_secondary)),
-                Span::styled("· ", Style::default().fg(t.text_muted)),
-                Span::styled("Esc", Style::default().fg(t.text_muted)),
-                Span::styled(" cancel ", Style::default().fg(t.text_secondary)),
-                Span::styled("· ", Style::default().fg(t.text_muted)),
-                Span::styled("type", Style::default().fg(t.text_muted)),
-                Span::styled(" filter ", Style::default().fg(t.text_secondary)),
-            ])
-            .right_aligned(),
-        )
-        .style(Style::default().bg(t.surface));
-
-    let inner = block.inner(picker_area);
-    f.render_widget(block, picker_area);
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(1)])
-        .split(inner);
-
-    // Filter input row.
-    let filter_line = if app.model_picker_filter.is_empty() {
-        Line::from(vec![
-            Span::styled("  ⌕ ", Style::default().fg(t.accent)),
-            Span::styled(
-                "type to filter…",
-                Style::default()
-                    .fg(t.text_muted)
-                    .add_modifier(Modifier::ITALIC),
-            ),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled("  ⌕ ", Style::default().fg(t.accent)),
-            Span::styled(
-                app.model_picker_filter.clone(),
-                Style::default()
-                    .fg(t.text_primary)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("▏", Style::default().fg(t.accent)),
-        ])
-    };
-    f.render_widget(Paragraph::new(filter_line), chunks[0]);
-
-    // Build the table.
-    let header_style = t.style_text_muted.add_modifier(Modifier::BOLD);
-    let header = Row::new(vec![
-        Cell::from("  "),
-        Cell::from("Model").style(header_style),
-        Cell::from("Ctx").style(header_style),
-        Cell::from("In $/M").style(header_style),
-        Cell::from("Out $/M").style(header_style),
-        Cell::from("Source").style(header_style),
-    ])
-    .height(1)
-    .bottom_margin(0);
-
-    let rows: Vec<Row> = visible
-        .iter()
-        .map(|m| {
-            let is_current = m.id == app.model;
-            let marker = if is_current { " ● " } else { "   " };
-            let name_style = if is_current {
-                t.style_accent_bold
-            } else {
-                t.style_text_primary
-            };
-            let badge_style = Style::default()
-                .fg(provider_color(&m.provider))
-                .add_modifier(Modifier::BOLD);
-            let ctx_str = m
-                .context_window_tokens
-                .map(|n| {
-                    if n >= 1_000_000 {
-                        format!("{}M", n / 1_000_000)
-                    } else {
-                        format!("{}k", n / 1000)
-                    }
-                })
-                .unwrap_or_else(|| "—".into());
-            let in_cost = m
-                .input_cost
-                .map(|c| format!("${:.2}", c))
-                .unwrap_or_else(|| "—".into());
-            let out_cost = m
-                .output_cost
-                .map(|c| format!("${:.2}", c))
-                .unwrap_or_else(|| "—".into());
-            Row::new(vec![
-                Cell::from(Span::styled(marker, Style::default().fg(t.accent))),
-                Cell::from(Span::styled(m.display_name.clone(), name_style)),
-                Cell::from(Span::styled(ctx_str, Style::default().fg(t.text_secondary))),
-                Cell::from(Span::styled(in_cost, Style::default().fg(t.text_secondary))),
-                Cell::from(Span::styled(
-                    out_cost,
-                    Style::default().fg(t.text_secondary),
-                )),
-                Cell::from(Span::styled(
-                    provider_label(&m.provider).to_string(),
-                    badge_style,
-                )),
-            ])
-        })
-        .collect();
-
-    // Column constraints: marker fixed, name takes most space, metadata cols fixed
-    let widths = [
-        Constraint::Length(3),
-        Constraint::Min(20),
-        Constraint::Length(6),
-        Constraint::Length(7),
-        Constraint::Length(8),
-        Constraint::Length(10),
-    ];
-
-    let table = Table::new(rows, widths)
-        .header(header)
-        .column_spacing(1)
-        // Inverted-color highlight so the selected row reads at a
-        // glance even on dark themes. `surface_raised` was too subtle
-        // — looked nearly identical to the unselected row on terminal
-        // backgrounds with low contrast deltas.
-        .row_highlight_style(
-            Style::default()
-                .fg(t.bg)
-                .bg(t.accent)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("▶ ")
-        .style(Style::default().bg(t.surface));
-
-    f.render_stateful_widget(table, chunks[1], &mut app.model_picker_state);
-}
-
-fn task_panel(f: &mut Frame, app: &mut App) {
-    let t = app.theme;
-    let area = f.area();
-
-    let w = (area.width as f32 * 0.80).round() as u16;
-    let h = (area.height as f32 * 0.70).round() as u16;
-    let x = area.x + (area.width.saturating_sub(w)) / 2;
-    let y = area.y + (area.height.saturating_sub(h)) / 2;
-    let popup = Rect::new(x, y, w, h);
-
-    f.render_widget(Clear, popup);
-
-    let all_tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
-    let counts = app.task_store.counts();
-
-    let completed_ids: std::collections::HashSet<&str> = all_tasks
-        .iter()
-        .filter(|tk| tk.status == crate::tasks::TaskStatus::Completed)
-        .map(|tk| tk.id.as_str())
-        .collect();
-
-    let title = format!(
-        " Tasks · {} total ({} done, {} in progress, {} pending) ",
-        counts.pending + counts.in_progress + counts.completed,
-        counts.completed,
-        counts.in_progress,
-        counts.pending,
-    );
-
-    let header = Row::new(vec![
-        Cell::from("ID").style(
-            Style::default()
-                .fg(t.text_muted)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Status").style(
-            Style::default()
-                .fg(t.text_muted)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Subject").style(
-            Style::default()
-                .fg(t.text_muted)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Owner").style(
-            Style::default()
-                .fg(t.text_muted)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Blocked By").style(
-            Style::default()
-                .fg(t.text_muted)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]);
-
-    let rows: Vec<Row> = all_tasks
-        .iter()
-        .map(|tk| {
-            let (icon, status_style) = match tk.status {
-                crate::tasks::TaskStatus::Pending => ("□ pending", t.style_text_muted),
-                crate::tasks::TaskStatus::InProgress => ("▣ in_progress", t.style_accent_bold),
-                crate::tasks::TaskStatus::Completed => (
-                    "✓ completed",
-                    t.style_success.add_modifier(Modifier::CROSSED_OUT),
-                ),
-                _ => ("✗ deleted", t.style_error),
-            };
-
-            let subj_style = if tk.status == crate::tasks::TaskStatus::Completed {
-                t.style_text_muted.add_modifier(Modifier::CROSSED_OUT)
-            } else {
-                t.style_text_primary
-            };
-
-            let open_blockers: Vec<&str> = tk
-                .blocked_by
-                .iter()
-                .filter(|id| !completed_ids.contains(id.as_str()))
-                .map(|id| id.as_str())
-                .collect();
-
-            Row::new(vec![
-                Cell::from(tk.id.to_string()).style(Style::default().fg(t.text_muted)),
-                Cell::from(icon).style(status_style),
-                Cell::from(tk.subject.clone()).style(subj_style),
-                Cell::from(tk.owner.clone().unwrap_or_default())
-                    .style(Style::default().fg(t.text_secondary)),
-                Cell::from(open_blockers.join(", ")).style(Style::default().fg(t.text_muted)),
-            ])
-        })
-        .collect();
-
-    // Clamp selection to valid range.
-    if !all_tasks.is_empty() {
-        let max = all_tasks.len().saturating_sub(1);
-        if app.task_panel_selected > max {
-            app.task_panel_selected = max;
-        }
-        app.task_panel_state.select(Some(app.task_panel_selected));
-    }
-
-    // Empty state: show a useful hint instead of a header-only table
-    // when no tasks exist. The model creates tasks via TaskCreate;
-    // this tells the user that and gives them a slash command path.
-    if all_tasks.is_empty() {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(t.style_border)
-            .title(Span::styled(title.clone(), t.style_accent_bold))
-            .title_bottom(Span::styled(" Esc close ", t.style_text_muted))
-            .style(Style::default().bg(t.surface));
-        let inner = block.inner(popup);
-        f.render_widget(block, popup);
-        let placeholder = Paragraph::new(vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                "  No tasks yet",
-                Style::default()
-                    .fg(t.text_muted)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "  The model creates tasks via TaskCreate when planning",
-                Style::default().fg(t.text_muted),
-            )),
-            Line::from(Span::styled(
-                "  multi-step work. Ask it to break down a request and",
-                Style::default().fg(t.text_muted),
-            )),
-            Line::from(Span::styled(
-                "  the list will populate here.",
-                Style::default().fg(t.text_muted),
-            )),
-        ])
-        .style(Style::default().bg(t.surface));
-        f.render_widget(placeholder, inner);
-        return;
-    }
-
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Length(10),
-            Constraint::Length(15),
-            Constraint::Min(20),
-            Constraint::Length(14),
-            Constraint::Length(18),
-        ],
-    )
-    .header(header)
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(t.style_border)
-            .title(Span::styled(title, t.style_accent_bold))
-            .title_bottom(Span::styled(
-                " ↑↓ navigate · Esc close ",
-                t.style_text_muted.add_modifier(Modifier::ITALIC),
-            ))
-            .style(Style::default().bg(t.surface)),
-    )
-    .row_highlight_style(
-        Style::default()
-            .bg(t.surface_raised)
-            .add_modifier(Modifier::BOLD),
-    )
-    .highlight_symbol("▶ ")
-    .style(Style::default().bg(t.surface));
-
-    f.render_stateful_widget(table, popup, &mut app.task_panel_state);
-}
-
-fn approval(f: &mut Frame, app: &App) {
-    let Some(ref pending) = app.pending_approval else {
-        return;
-    };
-    let t = app.theme;
-    let area = f.area();
-
-    // Mutating-tool kinds get the wider modal with a diff preview pane below
-    // the choices. Read-only tools (Bash, Glob/Grep with side effects deferred
-    // to the bash kind) keep the compact original layout.
-    let preview = build_diff_preview(&pending.tool, &t);
-    let has_preview = preview.is_some();
-
-    let (width, height) = if has_preview {
-        (
-            (area.width * 8 / 10).min(110).max(70),
-            (area.height * 7 / 10).min(28).max(14),
-        )
-    } else {
-        (
-            60u16.min(area.width.saturating_sub(4)),
-            10u16.min(area.height.saturating_sub(4)),
-        )
-    };
-    let x = area.width.saturating_sub(width) / 2;
-    let y = area.height.saturating_sub(height) / 2;
-    let dialog_area = Rect::new(x, y, width, height);
-
-    f.render_widget(Clear, dialog_area);
-
-    let kind_color = crate::message_view::tool_kind_color(&pending.tool.kind, &t);
-    let tool_label = pending.tool.kind.label();
-    let tool_input_summary = pending.tool.input.summary();
-
-    // Count the queue depth so the user knows there's more behind the current
-    // approval. Without this, multi-tool turns silently waited on each modal.
-    let queue_len = app.approval_queue.len();
-    let title = if queue_len > 0 {
-        format!(" Allow tool use? · 1 of {} ", queue_len + 1)
-    } else {
-        " Allow tool use? ".to_string()
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(t.warning))
-        .title(Span::styled(
-            title,
-            Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
-        ))
-        .style(Style::default().bg(t.surface));
-
-    let inner = block.inner(dialog_area);
-    f.render_widget(block, dialog_area);
-
-    if has_preview {
-        // Three rows: summary header (2), choice list (5–6), diff preview (rest).
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(2),
-                Constraint::Length(ApprovalChoice::ALL.len() as u16),
-                Constraint::Min(3),
-            ])
-            .split(inner);
-
-        // Tool name styled with its kind color; arguments truncated
-        // to fit the dialog width. Splitting into two spans makes the
-        // identity colored without bleeding into the args.
-        let arg_cap = (rows[0].width as usize).saturating_sub(tool_label.chars().count() + 3);
-        let arg_truncated: String = tool_input_summary.chars().take(arg_cap).collect();
-        f.render_widget(
-            Paragraph::new(vec![
-                Line::from(vec![
-                    Span::styled(
-                        tool_label.to_string(),
-                        Style::default().fg(kind_color).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw(" "),
-                    Span::styled(arg_truncated, Style::default().fg(t.text_primary)),
-                ]),
-                Line::from(""),
-            ]),
-            rows[0],
-        );
-
-        render_choice_list(f, app, pending, rows[1], &t);
-
-        let preview_lines = preview.unwrap();
-        let preview_block = Block::default()
-            .borders(Borders::TOP)
-            .border_style(t.style_border)
-            .title(Span::styled(" preview ", t.style_text_muted));
-        let inner_preview = preview_block.inner(rows[2]);
-        f.render_widget(preview_block, rows[2]);
-        f.render_widget(
-            Paragraph::new(preview_lines).style(Style::default().bg(t.surface)),
-            inner_preview,
-        );
-    } else {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(2), Constraint::Min(1)])
-            .split(inner);
-        let arg_cap = (width as usize).saturating_sub(tool_label.chars().count() + 5);
-        let arg_truncated: String = tool_input_summary.chars().take(arg_cap).collect();
-        f.render_widget(
-            Paragraph::new(vec![
-                Line::from(vec![
-                    Span::styled(
-                        tool_label.to_string(),
-                        Style::default().fg(kind_color).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw(" "),
-                    Span::styled(arg_truncated, Style::default().fg(t.text_primary)),
-                ]),
-                Line::from(""),
-            ]),
-            chunks[0],
-        );
-        render_choice_list(f, app, pending, chunks[1], &t);
-    }
-}
-
-/// Produce a diff/content preview for the pending tool, when applicable. Returns
-/// `None` for tools whose effects can't be summarized as a diff (Bash, Read).
-fn build_diff_preview(tool: &ToolCall, t: &Theme) -> Option<Vec<Line<'static>>> {
-    match &tool.input {
-        ToolInput::Edit {
-            file_path,
-            old_string,
-            new_string,
-            ..
-        } => {
-            let mut lines: Vec<Line<'static>> = Vec::new();
-            lines.push(Line::from(Span::styled(
-                format!(" {file_path}"),
-                t.style_text_secondary.add_modifier(Modifier::BOLD),
-            )));
-            lines.push(Line::from(""));
-            for (kind, txt) in [("- ", old_string), ("+ ", new_string)] {
-                let color = if kind == "- " { t.error } else { t.success };
-                for ln in txt.lines().take(20) {
-                    lines.push(Line::from(vec![
-                        Span::styled(kind.to_owned(), Style::default().fg(color)),
-                        Span::styled(ln.to_owned(), Style::default().fg(color)),
-                    ]));
-                }
-            }
-            Some(lines)
-        }
-        ToolInput::Write { file_path, content } => {
-            let mut lines: Vec<Line<'static>> = Vec::new();
-            lines.push(Line::from(Span::styled(
-                format!(" {file_path}  ({} bytes)", content.len()),
-                t.style_text_secondary.add_modifier(Modifier::BOLD),
-            )));
-            lines.push(Line::from(""));
-            for ln in content.lines().take(30) {
-                lines.push(Line::from(Span::styled(
-                    ln.to_owned(),
-                    t.style_text_primary,
-                )));
-            }
-            let total = content.lines().count();
-            if total > 30 {
-                lines.push(Line::from(Span::styled(
-                    format!("… {} more lines", total - 30),
-                    t.style_text_muted.add_modifier(Modifier::ITALIC),
-                )));
-            }
-            Some(lines)
-        }
-        ToolInput::ApplyPatch { patch } => {
-            let mut lines: Vec<Line<'static>> = Vec::new();
-            for ln in patch.lines().take(40) {
-                let color = match ln.chars().next() {
-                    Some('+') if !ln.starts_with("+++") => t.success,
-                    Some('-') if !ln.starts_with("---") => t.error,
-                    Some('@') => t.accent,
-                    _ => t.text_secondary,
-                };
-                lines.push(Line::from(Span::styled(
-                    ln.to_owned(),
-                    Style::default().fg(color),
-                )));
-            }
-            let total = patch.lines().count();
-            if total > 40 {
-                lines.push(Line::from(Span::styled(
-                    format!("… {} more diff lines", total - 40),
-                    t.style_text_muted.add_modifier(Modifier::ITALIC),
-                )));
-            }
-            Some(lines)
-        }
-        ToolInput::Bash { command, .. } => {
-            // Bash gets a single-line "preview" so the user sees the exact
-            // command that would run. Useful when the summary truncates.
-            Some(vec![
-                Line::from(Span::styled(
-                    String::from("$ "),
-                    Style::default().fg(t.accent),
-                )),
-                Line::from(Span::styled(
-                    command.clone(),
-                    Style::default().fg(t.text_primary),
-                )),
-            ])
-        }
-        _ => None,
-    }
-}
-
-fn render_choice_list(
-    f: &mut Frame,
-    _app: &App,
-    pending: &crate::app::PendingApproval,
-    area: Rect,
-    t: &Theme,
-) {
-    let items: Vec<ListItem> = ApprovalChoice::ALL
-        .iter()
-        .enumerate()
-        .map(|(i, choice)| {
-            let style = if i == pending.selected {
-                Style::default()
-                    .fg(t.bg)
-                    .add_modifier(Modifier::BOLD)
-                    .bg(t.warning)
-            } else {
-                t.style_text_primary
-            };
-            ListItem::new(Line::from(Span::styled(choice.label(), style)))
-        })
-        .collect();
-    f.render_widget(List::new(items).style(Style::default().bg(t.surface)), area);
 }
 
 #[cfg(test)]

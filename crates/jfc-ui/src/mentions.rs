@@ -171,7 +171,7 @@ pub fn filter_candidates(all: &[String], query: &str) -> Vec<String> {
     substring.sort();
     prefix
         .into_iter()
-        .chain(substring.into_iter())
+        .chain(substring)
         .take(20)
         .cloned()
         .collect()

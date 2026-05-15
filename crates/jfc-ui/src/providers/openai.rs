@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use eventsource_stream::Eventsource;
-use futures::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -27,7 +26,7 @@ impl OpenAIProvider {
             .ok()
             .filter(|k| !k.trim().is_empty())
             // Fall back to ~/.config/jfc/credentials.toml
-            .or_else(|| Self::key_from_credentials_file())
+            .or_else(Self::key_from_credentials_file)
             .map(|k| k.trim().to_owned())?;
 
         if api_key.is_empty() {
@@ -445,15 +444,12 @@ fn responses_tool(tool: &ToolDef) -> Value {
 }
 
 pub(crate) fn responses_event_stream(resp: reqwest::Response) -> EventStream {
-    let event_stream = resp
-        .bytes_stream()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-        .eventsource()
+    let event_stream = jfc_anthropic_sdk::sse::response_event_stream(resp)
         .scan((), |_, result| {
-            let emitted = result
-                .ok()
-                .map(|event| responses_events_from_sse(&event.data))
-                .unwrap_or_default();
+            let emitted = match result {
+                Ok(event) => responses_events_from_sse(&event.data),
+                Err(e) => vec![Err(anyhow::anyhow!("OpenAI SSE stream parse error: {e}"))],
+            };
             futures::future::ready(Some(emitted))
         })
         .flat_map(futures::stream::iter);
@@ -466,8 +462,9 @@ fn responses_events_from_sse(data: &str) -> Vec<anyhow::Result<StreamEvent>> {
         return Vec::new();
     }
 
-    let Ok(value) = serde_json::from_str::<Value>(data) else {
-        return Vec::new();
+    let value = match serde_json::from_str::<Value>(data) {
+        Ok(value) => value,
+        Err(e) => return vec![Err(anyhow::anyhow!("OpenAI SSE JSON parse error: {e}"))],
     };
 
     match value
@@ -864,5 +861,18 @@ mod tests {
                 stop_reason: StopReason::EndTurn
             }
         ));
+    }
+
+    #[test]
+    fn responses_stream_malformed_json_surfaces_error_robust() {
+        let events = responses_events_from_sse("{not json");
+        assert_eq!(events.len(), 1);
+        assert!(
+            events[0]
+                .as_ref()
+                .unwrap_err()
+                .to_string()
+                .contains("JSON parse error")
+        );
     }
 }

@@ -109,7 +109,8 @@ impl DocKind {
     /// flat when every doc rule is appended together.
     pub fn rules_summary(self) -> &'static str {
         match self {
-            Self::Plan => "\
+            Self::Plan => {
+                "\
 PLAN.md: required sections in order — `# <title>`, `## TL;DR`, \
 `## Context`, `## Work Objectives`, `## Verification Strategy`, \
 `## Execution Strategy`, `## TODOs`, `## Final Verification Wave`, \
@@ -117,33 +118,42 @@ PLAN.md: required sections in order — `# <title>`, `## TL;DR`, \
 (decimal numbering, never renumber existing IDs). Under \
 `## Final Verification Wave` use top-level `- [ ] F1.`, `- [ ] F2.`, \
 `- [ ] F3.`, `- [ ] F4.`. Nested checkboxes inside acceptance criteria \
-are ignored by the executor — keep top-level numbering clean.",
-            Self::Roadmap => "\
+are ignored by the executor — keep top-level numbering clean."
+            }
+            Self::Roadmap => {
+                "\
 ROADMAP.md: each entry is `### N.M[.K]. <title>` with stable decimal \
 IDs that NEVER renumber. Body has four fixed labels: `Problem:`, \
 `Proposed:`, `Acceptance:`, `Status:`. Status is one of `unstarted`, \
 `in-progress`, `implemented`, `wont-fix`, `superseded-by-N.M`. When an \
 item is replaced, mark old status and add the new entry with a fresh \
-ID; do not edit existing IDs.",
-            Self::Parity => "\
+ID; do not edit existing IDs."
+            }
+            Self::Parity => {
+                "\
 PARITY.md: `## Summary` of `- key: value` bullets; lane progress \
 tables with columns `| Lane | Status | Feature Commit | Merge Commit | \
 Evidence |`. Every `- [x]` checked item MUST cite concrete evidence \
 (commit hash, file:LOC, captured command output, or doc path). No \
-evidence → leave it `- [ ]`.",
-            Self::Philosophy => "\
+evidence → leave it `- [ ]`."
+            }
+            Self::Philosophy => {
+                "\
 PHILOSOPHY.md: declarative, narrative — not marketing. Suggested \
 sections: `## Stop Staring at <X>` (what to study instead), `## The \
 <Primary> Interface Is <Y>`, `## The <N>-Part System` (one `###` per \
 component), `## The Real Bottleneck Changed`, `## What <Project> \
 Demonstrates`, `## What Still Matters`, `## Short Version`. No \
-roadmap-style IDs, no checkboxes — this is the rationale layer.",
-            Self::Usage => "\
+roadmap-style IDs, no checkboxes — this is the rationale layer."
+            }
+            Self::Usage => {
+                "\
 USAGE.md: operator-focused. Required sections: `## Quick Start`, \
 `## Prerequisites`, `## Install / Build`, `## Health Check`, \
 `## Common Commands`, `## Slash Commands`, `## Model / Provider \
 Controls`, `## State And Files`, `## Troubleshooting`. Prefer exact \
-commands + expected output over prose. No checkbox contracts.",
+commands + expected output over prose. No checkbox contracts."
+            }
         }
     }
 
@@ -482,7 +492,10 @@ mod tests {
     fn philosophy_template_is_narrative_normal() {
         let s = DocKind::Philosophy.starter_template("Demo");
         assert!(s.contains("## Short Version"));
-        assert!(!s.contains("- [ ]"), "PHILOSOPHY must not include checkboxes");
+        assert!(
+            !s.contains("- [ ]"),
+            "PHILOSOPHY must not include checkboxes"
+        );
         assert!(!s.contains("Status:"), "PHILOSOPHY is not a roadmap");
     }
 

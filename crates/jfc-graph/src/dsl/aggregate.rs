@@ -409,7 +409,7 @@ pub fn execute_aggregate(
             // Phase 10-1: route through the streaming top_k_by — never
             // holds more than k+1 entries in memory.
             let r = QueryEngine::new(graph).execute_expr(inner, config)?;
-            let top = crate::dsl::stream::stream_top_k_by(r.nodes.into_iter(), graph, field, *k);
+            let top = crate::dsl::stream::stream_top_k_by(r.nodes, graph, field, *k);
             Ok(AggregateResult::Nodes(top))
         }
         AggExpr::GroupBy { field, inner } => {

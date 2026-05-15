@@ -18,6 +18,9 @@ mod tests;
 mod worktree;
 
 // Re-exports from submodules
+pub use crate::runtime::{
+    DiagnosticLevel, ExecutionResult, ToolDiagnostic, ToolOutcome, ToolProvenance, ToolSource,
+};
 pub(crate) use defs::all_tool_defs;
 pub(crate) use economy::{
     EconomyAgentInvoker, EconomySwarmProvider, apply_winning_solution, market_report_string,
@@ -38,7 +41,7 @@ use memory::{execute_memory_create, execute_memory_delete};
 use notebook::{execute_notebook_edit, execute_notebook_read};
 use notifications::{execute_push_notification, execute_remote_trigger};
 use search::{execute_glob, execute_grep};
-pub(crate) use swarm::{CURRENT_AGENT_NAME, current_agent_name};
+pub(crate) use swarm::CURRENT_AGENT_NAME;
 use swarm::{
     execute_send_message, execute_team_create, execute_team_delete, execute_team_member_mode,
 };
@@ -48,7 +51,9 @@ use tasks::{
 };
 use worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
 
-use std::path::{Path, PathBuf};
+use jfc_graph::nodes::{NodeData, NodeKind, Visibility};
+use std::collections::BTreeMap;
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -74,20 +79,65 @@ fn graph_session_cache() -> &'static std::sync::Mutex<
     CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
-/// Get a mutable reference to the cached graph for `cwd`.
-///
-/// SAFETY: The graph session cache is behind a `std::sync::Mutex` and tool
-/// execution is sequential — no concurrent readers during mutation. The
-/// `Arc::as_ptr` cast is safe because we hold the only live reference
-/// (the cache lock is dropped, but no other code path clones the Arc
-/// during a synchronous tool dispatch). The annotation writes are
-/// idempotent and don't affect structural invariants.
-#[allow(clippy::mut_from_ref)]
-fn get_graph_session_mut(cwd: &std::path::Path) -> Option<&mut jfc_graph::session::GraphSession> {
-    let session = get_or_build_graph_session(cwd);
-    // SAFETY: see doc comment above.
-    let ptr = Arc::as_ptr(&session) as *mut jfc_graph::session::GraphSession;
-    Some(unsafe { &mut *ptr })
+fn graph_session_cache_key(cwd: &std::path::Path) -> std::path::PathBuf {
+    cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf())
+}
+
+fn build_graph_session_for_key(key: std::path::PathBuf) -> Arc<jfc_graph::session::GraphSession> {
+    std::thread::Builder::new()
+        .name("graph-build".into())
+        .stack_size(64 * 1024 * 1024) // 64MB — handles 10K+ node graphs
+        .spawn(move || Arc::new(jfc_graph::session::GraphSession::from_directory(&key)))
+        .expect("failed to spawn graph-build thread")
+        .join()
+        .expect("graph-build thread panicked")
+}
+
+/// Mutate the cached graph session by taking sole ownership of the cached
+/// `Arc`, running `f`, then reinserting it. If another reader is still holding
+/// the session, mutation fails cleanly instead of manufacturing an aliased
+/// `&mut GraphSession`.
+fn with_graph_session_mut<R>(
+    cwd: &std::path::Path,
+    f: impl FnOnce(&mut jfc_graph::session::GraphSession) -> R,
+) -> Result<R, String> {
+    let key = graph_session_cache_key(cwd);
+
+    let session = loop {
+        let mut cache = graph_session_cache()
+            .lock()
+            .map_err(|_| "graph cache mutex poisoned".to_string())?;
+        if let Some(session) = cache.remove(&key) {
+            break session;
+        }
+        drop(cache);
+
+        let built = build_graph_session_for_key(key.clone());
+        let mut cache = graph_session_cache()
+            .lock()
+            .map_err(|_| "graph cache mutex poisoned".to_string())?;
+        if let Some(session) = cache.remove(&key) {
+            break session;
+        }
+        break built;
+    };
+
+    let mut session = match Arc::try_unwrap(session) {
+        Ok(session) => session,
+        Err(shared) => {
+            if let Ok(mut cache) = graph_session_cache().lock() {
+                cache.insert(key, shared);
+            }
+            return Err("graph session is currently in use; retry coverage after the active graph query finishes".to_string());
+        }
+    };
+
+    let output = f(&mut session);
+    graph_session_cache()
+        .lock()
+        .map_err(|_| "graph cache mutex poisoned".to_string())?
+        .insert(key, Arc::new(session));
+    Ok(output)
 }
 
 /// Get-or-build a cached `GraphSession` for `cwd`. Cheap on cache hit
@@ -98,7 +148,7 @@ fn get_graph_session_mut(cwd: &std::path::Path) -> Option<&mut jfc_graph::sessio
 /// deeply on large codebases. We spawn the build on a dedicated thread
 /// with a 64MB stack to avoid overflowing tokio's 8MB worker threads.
 fn get_or_build_graph_session(cwd: &std::path::Path) -> Arc<jfc_graph::session::GraphSession> {
-    let key = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let key = graph_session_cache_key(cwd);
     let cache = graph_session_cache()
         .lock()
         .expect("graph cache mutex poisoned");
@@ -109,14 +159,7 @@ fn get_or_build_graph_session(cwd: &std::path::Path) -> Arc<jfc_graph::session::
     // seconds on large workspaces and we don't want to hold the mutex.
     drop(cache);
 
-    let key_clone = key.clone();
-    let session = std::thread::Builder::new()
-        .name("graph-build".into())
-        .stack_size(64 * 1024 * 1024) // 64MB — handles 10K+ node graphs
-        .spawn(move || Arc::new(jfc_graph::session::GraphSession::from_directory(&key_clone)))
-        .expect("failed to spawn graph-build thread")
-        .join()
-        .expect("graph-build thread panicked");
+    let session = build_graph_session_for_key(key.clone());
 
     let mut cache = graph_session_cache()
         .lock()
@@ -127,6 +170,252 @@ fn get_or_build_graph_session(cwd: &std::path::Path) -> Arc<jfc_graph::session::
     }
     cache.insert(key, Arc::clone(&session));
     session
+}
+
+const CODE_INDEX_DEFAULT_LIMIT: usize = 80;
+const CODE_INDEX_MAX_LIMIT: usize = 200;
+
+fn execute_code_index(
+    cwd: &Path,
+    path: Option<&str>,
+    query: Option<&str>,
+    kind: Option<&str>,
+    max_entries: Option<usize>,
+) -> ExecutionResult {
+    let kind_filter = match kind.and_then(trim_nonempty) {
+        Some(raw) => match parse_code_index_kind(raw) {
+            Some(kind) => Some(kind),
+            None => {
+                return ExecutionResult::failure(format!(
+                    "code_index kind must be one of: function, struct, enum, module, trait (got {raw:?})"
+                ));
+            }
+        },
+        None => None,
+    };
+
+    let path_filter = path.and_then(trim_nonempty).map(normalize_filter);
+    let query_filter = query.and_then(trim_nonempty).map(normalize_filter);
+    let limit = max_entries
+        .unwrap_or(CODE_INDEX_DEFAULT_LIMIT)
+        .clamp(1, CODE_INDEX_MAX_LIMIT);
+
+    let session = get_or_build_graph_session(cwd);
+    let mut nodes = session
+        .graph
+        .all_node_ids()
+        .into_iter()
+        .filter_map(|id| session.graph.get_node(id))
+        .filter(|node| {
+            kind_filter.is_none_or(|kind| node.kind == kind)
+                && path_filter
+                    .as_deref()
+                    .is_none_or(|filter| code_index_path_matches(cwd, node, filter))
+                && query_filter
+                    .as_deref()
+                    .is_none_or(|filter| code_index_query_matches(cwd, node, filter))
+        })
+        .collect::<Vec<_>>();
+
+    nodes.sort_by(|a, b| {
+        code_index_display_path(cwd, &a.file_path)
+            .cmp(&code_index_display_path(cwd, &b.file_path))
+            .then(a.span.start_line.cmp(&b.span.start_line))
+            .then(a.kind.cmp(&b.kind))
+            .then(a.qualified_name.cmp(&b.qualified_name))
+    });
+
+    let total_matching = nodes.len();
+    let shown = total_matching.min(limit);
+    let mut by_file: BTreeMap<String, Vec<&NodeData>> = BTreeMap::new();
+    for node in nodes.into_iter().take(limit) {
+        by_file
+            .entry(code_index_display_path(cwd, &node.file_path))
+            .or_default()
+            .push(node);
+    }
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "Code index: {shown}/{total_matching} matching symbols shown · graph {} nodes / {} edges",
+        session.graph.node_count(),
+        session.graph.edge_count()
+    ));
+
+    let filters = code_index_filter_summary(path, query, kind);
+    if !filters.is_empty() {
+        out.push_str(&format!("\nfilters: {}", filters.join(", ")));
+    }
+    out.push_str("\nUse handles with graph_query or symbol_edit.");
+
+    if by_file.is_empty() {
+        out.push_str("\n\nNo symbols matched.");
+        return ExecutionResult::success(out);
+    }
+
+    for (file, file_nodes) in by_file {
+        out.push_str("\n\n");
+        out.push_str(&file);
+        for node in file_nodes {
+            let incoming = session.graph.get_edges_to(&node.id).len();
+            let outgoing = session.graph.get_edges_from(&node.id).len();
+            let metadata = code_index_metadata_summary(node);
+            out.push_str(&format!(
+                "\n  {} {} lines {}-{} · {} · in {} / out {} · {}",
+                code_index_kind_label(node.kind),
+                node.qualified_name,
+                node.span.start_line,
+                node.span.end_line,
+                code_index_visibility_label(&node.visibility),
+                incoming,
+                outgoing,
+                code_index_handle(node)
+            ));
+            if !metadata.is_empty() {
+                out.push_str(" · ");
+                out.push_str(&metadata.join(", "));
+            }
+        }
+    }
+
+    if total_matching > shown {
+        out.push_str(&format!(
+            "\n\n... and {} more (use path/query/kind or raise max_entries up to {CODE_INDEX_MAX_LIMIT})",
+            total_matching - shown
+        ));
+    }
+
+    ExecutionResult::success(out)
+}
+
+fn trim_nonempty(value: &str) -> Option<&str> {
+    let value = value.trim();
+    (!value.is_empty()).then_some(value)
+}
+
+fn normalize_filter(value: &str) -> String {
+    value.replace('\\', "/").to_ascii_lowercase()
+}
+
+fn parse_code_index_kind(kind: &str) -> Option<NodeKind> {
+    match kind
+        .trim()
+        .to_ascii_lowercase()
+        .replace(['_', '-'], "")
+        .as_str()
+    {
+        "fn" | "func" | "function" => Some(NodeKind::Function),
+        "struct" => Some(NodeKind::Struct),
+        "enum" => Some(NodeKind::Enum),
+        "mod" | "module" => Some(NodeKind::Module),
+        "trait" => Some(NodeKind::Trait),
+        _ => None,
+    }
+}
+
+fn code_index_path_matches(cwd: &Path, node: &NodeData, filter: &str) -> bool {
+    normalize_filter(&code_index_display_path(cwd, &node.file_path)).contains(filter)
+        || normalize_filter(&node.file_path.display().to_string()).contains(filter)
+}
+
+fn code_index_query_matches(cwd: &Path, node: &NodeData, filter: &str) -> bool {
+    normalize_filter(&node.name).contains(filter)
+        || normalize_filter(&node.qualified_name).contains(filter)
+        || code_index_path_matches(cwd, node, filter)
+}
+
+fn code_index_display_path(cwd: &Path, path: &Path) -> String {
+    let display_path = path.strip_prefix(cwd).unwrap_or(path);
+    display_path.display().to_string().replace('\\', "/")
+}
+
+fn code_index_filter_summary(
+    path: Option<&str>,
+    query: Option<&str>,
+    kind: Option<&str>,
+) -> Vec<String> {
+    let mut filters = Vec::new();
+    if let Some(kind) = kind.and_then(trim_nonempty) {
+        filters.push(format!("kind={kind}"));
+    }
+    if let Some(query) = query.and_then(trim_nonempty) {
+        filters.push(format!("query={query}"));
+    }
+    if let Some(path) = path.and_then(trim_nonempty) {
+        filters.push(format!("path={path}"));
+    }
+    filters
+}
+
+fn code_index_kind_label(kind: NodeKind) -> &'static str {
+    match kind {
+        NodeKind::Function => "fn",
+        NodeKind::Struct => "struct",
+        NodeKind::Enum => "enum",
+        NodeKind::Module => "mod",
+        NodeKind::Trait => "trait",
+    }
+}
+
+fn code_index_visibility_label(visibility: &Visibility) -> &'static str {
+    match visibility {
+        Visibility::Public => "pub",
+        Visibility::Crate => "crate",
+        Visibility::Super => "super",
+        Visibility::Private => "private",
+    }
+}
+
+fn code_index_handle(node: &NodeData) -> String {
+    format!(
+        "{}:{}",
+        match node.kind {
+            NodeKind::Function => "fn",
+            NodeKind::Struct => "struct",
+            NodeKind::Enum => "enum",
+            NodeKind::Module => "mod",
+            NodeKind::Trait => "trait",
+        },
+        node.qualified_name
+    )
+}
+
+fn code_index_metadata_summary(node: &NodeData) -> Vec<String> {
+    let mut parts = Vec::new();
+    match node.kind {
+        NodeKind::Function => {
+            if node
+                .metadata
+                .get("async")
+                .is_some_and(|value| matches!(value.as_str(), "true" | "1"))
+            {
+                parts.push("async".to_owned());
+            }
+            if let Some(params) = node.metadata.get("param_count") {
+                parts.push(format!("params={params}"));
+            }
+            if let Some(tested) = node.metadata.get("coverage_tested") {
+                parts.push(format!("tested={tested}"));
+            }
+        }
+        NodeKind::Struct => {
+            if let Some(fields) = node.metadata.get("field_count") {
+                parts.push(format!("fields={fields}"));
+            }
+        }
+        NodeKind::Enum => {
+            if let Some(variants) = node.metadata.get("variant_count") {
+                parts.push(format!("variants={variants}"));
+            }
+        }
+        NodeKind::Trait => {
+            if let Some(methods) = node.metadata.get("method_count") {
+                parts.push(format!("methods={methods}"));
+            }
+        }
+        NodeKind::Module => {}
+    }
+    parts
 }
 
 /// Process-global market orchestrator — task 14/15 from the
@@ -217,19 +506,21 @@ pub(crate) fn snapshot_active_provider() -> Option<(
 /// the regular Task tool's swarm does — without that, the fan UI
 /// and ctrl+X subagent panel show nothing while a cycle is running.
 fn active_event_sender_handle()
--> &'static std::sync::RwLock<Option<tokio::sync::mpsc::Sender<crate::app::AppEvent>>> {
-    static H: OnceLock<std::sync::RwLock<Option<tokio::sync::mpsc::Sender<crate::app::AppEvent>>>> =
-        OnceLock::new();
+-> &'static std::sync::RwLock<Option<tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>> {
+    static H: OnceLock<
+        std::sync::RwLock<Option<tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>>,
+    > = OnceLock::new();
     H.get_or_init(|| std::sync::RwLock::new(None))
 }
 
-pub fn register_event_sender(tx: tokio::sync::mpsc::Sender<crate::app::AppEvent>) {
+pub fn register_event_sender(tx: tokio::sync::mpsc::Sender<crate::runtime::AppEvent>) {
     if let Ok(mut g) = active_event_sender_handle().write() {
         *g = Some(tx);
     }
 }
 
-pub(crate) fn snapshot_event_sender() -> Option<tokio::sync::mpsc::Sender<crate::app::AppEvent>> {
+pub(crate) fn snapshot_event_sender() -> Option<tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>
+{
     active_event_sender_handle()
         .read()
         .ok()
@@ -376,7 +667,10 @@ fn execute_scratchpad_write(key: &str, value: &str) -> ExecutionResult {
     match scratchpad().lock() {
         Ok(mut map) => {
             map.insert(key.to_string(), value.to_string());
-            ExecutionResult::success(format!("Written to scratchpad key '{key}' ({} bytes)", value.len()))
+            ExecutionResult::success(format!(
+                "Written to scratchpad key '{key}' ({} bytes)",
+                value.len()
+            ))
         }
         Err(_) => ExecutionResult::failure("Scratchpad lock poisoned"),
     }
@@ -514,7 +808,7 @@ pub fn render_pending_auto_context(cwd: &std::path::Path) -> Option<String> {
                 ));
                 if out.len() >= MAX_CHARS {
                     out.truncate(MAX_CHARS);
-                    out.push_str("…");
+                    out.push('…');
                     break 'outer;
                 }
             }
@@ -653,76 +947,6 @@ fn compact_schema(schema: &serde_json::Value) -> String {
     format!("required [{required}], properties [{props}]")
 }
 
-#[derive(Debug, Clone)]
-pub struct ExecutionResult {
-    pub output: String,
-    pub outcome: ToolOutcome,
-    pub diagnostics: Vec<ToolDiagnostic>,
-    pub provenance: Option<ToolProvenance>,
-    /// When set, the renderer prefers this structured diff over
-    /// `output`/`Text`. Used by Edit (and Write-as-overwrite) to surface
-    /// a colorized diff in the transcript instead of a flat
-    /// "file updated successfully" string.
-    pub diff: Option<crate::types::DiffView>,
-    /// Binary attachments produced by this tool (e.g. the PDF the
-    /// Read tool just loaded). The event-loop `ToolResult` handler
-    /// promotes these onto the owning assistant message's
-    /// `.attachments` field so the per-message ownership model carries
-    /// them to the provider. Replaces the previous
-    /// `push_pending_tool_attachment` global queue — per-message
-    /// ownership means cross-session/cross-stream leaks are impossible
-    /// by construction.
-    pub attachments: Vec<crate::attachments::Attachment>,
-}
-
-impl ExecutionResult {
-    pub fn success(output: impl Into<String>) -> Self {
-        Self {
-            output: output.into(),
-            outcome: ToolOutcome::Success,
-            diagnostics: Vec::new(),
-            provenance: None,
-            diff: None,
-            attachments: Vec::new(),
-        }
-    }
-
-    pub fn failure(output: impl Into<String>) -> Self {
-        let output = output.into();
-        Self {
-            diagnostics: vec![ToolDiagnostic::error(output.clone())],
-            output,
-            outcome: ToolOutcome::Failed,
-            provenance: None,
-            diff: None,
-            attachments: Vec::new(),
-        }
-    }
-
-    pub fn with_provenance(mut self, provenance: ToolProvenance) -> Self {
-        self.provenance = Some(provenance);
-        self
-    }
-
-    pub fn with_diff(mut self, diff: crate::types::DiffView) -> Self {
-        self.diff = Some(diff);
-        self
-    }
-
-    /// Attach one or more binary attachments to this tool result.
-    /// The event-loop handler will move them onto the owning assistant
-    /// message at ToolResult time so they're serialized as
-    /// `ProviderContent::Attachment` blocks on the next request.
-    pub fn with_attachments(mut self, atts: Vec<crate::attachments::Attachment>) -> Self {
-        self.attachments = atts;
-        self
-    }
-
-    pub fn is_error(&self) -> bool {
-        matches!(self.outcome, ToolOutcome::Failed)
-    }
-}
-
 fn configure_tool_command(command: &mut Command) {
     command
         .stdin(Stdio::null())
@@ -842,50 +1066,6 @@ fn non_interactive_shell_command(command: &str) -> String {
     } else {
         format!("{}sudo -n {}", &command[..leading_len], rest)
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToolOutcome {
-    Success,
-    Failed,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ToolDiagnostic {
-    pub level: DiagnosticLevel,
-    pub message: String,
-    pub help: Option<String>,
-}
-
-impl ToolDiagnostic {
-    fn error(message: impl Into<String>) -> Self {
-        Self {
-            level: DiagnosticLevel::Error,
-            message: message.into(),
-            help: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum DiagnosticLevel {
-    Error,
-    Warning,
-    Help,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ToolProvenance {
-    pub cwd: PathBuf,
-    pub source: ToolSource,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum ToolSource {
-    ModelRequested,
-    LocalExecutor,
 }
 
 #[cfg(feature = "permission-automation")]
@@ -1028,8 +1208,11 @@ pub async fn execute_tool(
                 invalidate_graph_session_cache(Some(&cwd));
                 record_edited_file(Path::new(&file_path));
                 // Slop guard: read the post-edit content and check for quality issues.
-                let post_content = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
-                return maybe_run_slop_guard(result, Path::new(&file_path), &post_content, &cwd).await;
+                let post_content = tokio::fs::read_to_string(&file_path)
+                    .await
+                    .unwrap_or_default();
+                return maybe_run_slop_guard(result, Path::new(&file_path), &post_content, &cwd)
+                    .await;
             }
             result
         }
@@ -1067,7 +1250,18 @@ pub async fn execute_tool(
                 parent_id,
                 kind,
             },
-        ) => execute_task_create(task_store, subject, description, active_form, blocked_by, acceptance_criteria, verification_command, risk, parent_id, kind),
+        ) => execute_task_create(
+            task_store,
+            subject,
+            description,
+            active_form,
+            blocked_by,
+            acceptance_criteria,
+            verification_command,
+            risk,
+            parent_id,
+            kind,
+        ),
         (
             ToolKind::TaskUpdate,
             ToolInput::TaskUpdate {
@@ -1082,7 +1276,19 @@ pub async fn execute_tool(
                 parent_id,
                 kind,
             },
-        ) => execute_task_update(task_store, &task_id, status, subject, description, owner, acceptance_criteria, verification_command, risk, parent_id, kind),
+        ) => execute_task_update(
+            task_store,
+            &task_id,
+            status,
+            subject,
+            description,
+            owner,
+            acceptance_criteria,
+            verification_command,
+            risk,
+            parent_id,
+            kind,
+        ),
         (
             ToolKind::TaskList,
             ToolInput::TaskList {
@@ -1100,9 +1306,7 @@ pub async fn execute_tool(
         (ToolKind::TaskGet, ToolInput::TaskGet { task_id }) => {
             execute_task_get(task_store, &task_id)
         }
-        (ToolKind::TaskValidate, ToolInput::TaskValidate) => {
-            execute_task_validate(task_store)
-        }
+        (ToolKind::TaskValidate, ToolInput::TaskValidate) => execute_task_validate(task_store),
         (ToolKind::Task, ToolInput::Task(_)) => {
             ExecutionResult::failure("Task tool must be dispatched via the streaming executor")
         }
@@ -1146,6 +1350,21 @@ pub async fn execute_tool(
         (ToolKind::TeamMemberMode, ToolInput::TeamMemberMode { member_name, mode }) => {
             execute_team_member_mode(&member_name, &mode, active_team_name).await
         }
+        (
+            ToolKind::CodeIndex,
+            ToolInput::CodeIndex {
+                path,
+                query,
+                kind,
+                max_entries,
+            },
+        ) => execute_code_index(
+            &cwd,
+            path.as_deref(),
+            query.as_deref(),
+            kind.as_deref(),
+            max_entries,
+        ),
         (
             ToolKind::GraphQuery,
             ToolInput::GraphQuery {
@@ -1255,11 +1474,6 @@ pub async fn execute_tool(
             use jfc_graph::coverage::{annotate_graph_from_lcov, parse_lcov};
             use jfc_graph::possible_types::propagate_possible_types;
 
-            let Some(session) = get_graph_session_mut(&cwd) else {
-                return ExecutionResult::failure("Failed to acquire graph session".to_string());
-            };
-
-            // Step 1: Get or generate LCOV data.
             let lcov_result = if let Some(ref path) = lcov_path {
                 let file = match std::fs::File::open(path) {
                     Ok(f) => f,
@@ -1294,72 +1508,77 @@ pub async fn execute_tool(
                 }
             };
 
-            let mut summary = String::new();
+            match with_graph_session_mut(&cwd, |session| {
+                let mut summary = String::new();
 
-            match lcov_result {
-                Ok((lcov_data, warnings)) => {
-                    let (annotated, untested) =
-                        annotate_graph_from_lcov(&mut session.graph, &lcov_data, &cwd);
-                    let tested = annotated - untested;
+                match lcov_result {
+                    Ok((lcov_data, warnings)) => {
+                        let (annotated, untested) =
+                            annotate_graph_from_lcov(&mut session.graph, &lcov_data, &cwd);
+                        let tested = annotated - untested;
 
-                    summary.push_str(&format!(
-                        "Coverage annotated: {annotated} functions ({tested} tested, {untested} untested)"
-                    ));
-                    if warnings > 0 {
-                        summary.push_str(&format!(", {warnings} lcov parse warnings"));
-                    }
+                        summary.push_str(&format!(
+                            "Coverage annotated: {annotated} functions ({tested} tested, {untested} untested)"
+                        ));
+                        if warnings > 0 {
+                            summary.push_str(&format!(", {warnings} lcov parse warnings"));
+                        }
 
-                    // List untested functions if requested.
-                    if include_untested_list && untested > 0 {
-                        summary.push_str("\n\nUntested functions:");
-                        let mut count = 0;
-                        for node in session
-                            .graph
-                            .nodes_by_kind(jfc_graph::nodes::NodeKind::Function)
-                        {
-                            if node.metadata.get("coverage_tested").map(|v| v.as_str())
-                                == Some("false")
+                        // List untested functions if requested.
+                        if include_untested_list && untested > 0 {
+                            summary.push_str("\n\nUntested functions:");
+                            let mut count = 0;
+                            for node in session
+                                .graph
+                                .nodes_by_kind(jfc_graph::nodes::NodeKind::Function)
                             {
-                                summary.push_str(&format!(
-                                    "\n  - {} ({}:{})",
-                                    node.qualified_name,
-                                    node.file_path.display(),
-                                    node.span.start_line,
-                                ));
-                                count += 1;
-                                if count >= 100 {
+                                if node.metadata.get("coverage_tested").map(|v| v.as_str())
+                                    == Some("false")
+                                {
                                     summary.push_str(&format!(
-                                        "\n  ... and {} more (use `graph_query` with `untested` to see all)",
-                                        untested - count
+                                        "\n  - {} ({}:{})",
+                                        node.qualified_name,
+                                        node.file_path.display(),
+                                        node.span.start_line,
                                     ));
-                                    break;
+                                    count += 1;
+                                    if count >= 100 {
+                                        summary.push_str(&format!(
+                                            "\n  ... and {} more (use `graph_query` with `untested` to see all)",
+                                            untested - count
+                                        ));
+                                        break;
+                                    }
                                 }
                             }
                         }
                     }
+                    Err(e) => {
+                        summary.push_str(&format!("Coverage collection failed: {e}\n\n"));
+                        summary.push_str(
+                            "Skipping coverage annotation, running possible-types analysis only.",
+                        );
+                    }
                 }
-                Err(e) => {
-                    summary.push_str(&format!("Coverage collection failed: {e}\n\n"));
-                    summary.push_str(
-                        "Skipping coverage annotation, running possible-types analysis only.",
-                    );
-                }
-            }
 
-            // Step 2: Always run possible-types propagation.
-            let (pt_annotated, pt_inputs, pt_returns) =
-                propagate_possible_types(&mut session.graph);
-            summary.push_str(&format!(
-                "\n\nPossible-types propagated: {pt_annotated} functions, \
+                // Step 2: Always run possible-types propagation.
+                let (pt_annotated, pt_inputs, pt_returns) =
+                    propagate_possible_types(&mut session.graph);
+                summary.push_str(&format!(
+                    "\n\nPossible-types propagated: {pt_annotated} functions, \
                  {pt_inputs} input type entries, {pt_returns} return type entries"
-            ));
-            summary.push_str("\n\nUse `graph_query` with:");
-            summary.push_str("\n  - `untested` operator to filter to uncovered functions");
-            summary.push_str("\n  - `possible_types` operator to see type flow per function");
-            summary.push_str("\n  Example: `entrypoints kind=PublicApi | untested`");
-            summary.push_str("\n  Example: `fn(\"handler\") | possible_types`");
+                ));
+                summary.push_str("\n\nUse `graph_query` with:");
+                summary.push_str("\n  - `untested` operator to filter to uncovered functions");
+                summary.push_str("\n  - `possible_types` operator to see type flow per function");
+                summary.push_str("\n  Example: `entrypoints kind=PublicApi | untested`");
+                summary.push_str("\n  Example: `fn(\"handler\") | possible_types`");
 
-            ExecutionResult::success(summary)
+                ExecutionResult::success(summary)
+            }) {
+                Ok(result) => result,
+                Err(message) => ExecutionResult::failure(message),
+            }
         }
         (
             ToolKind::SymbolEdit,
@@ -1881,7 +2100,8 @@ pub async fn execute_tool(
             );
             invalidate_graph_session_cache(Some(&cwd));
             record_edited_file(Path::new(&file_path));
-            let result = ExecutionResult::success(format!("Applied {applied} edits to {file_path}."));
+            let result =
+                ExecutionResult::success(format!("Applied {applied} edits to {file_path}."));
             // Slop guard: check the final content for quality issues.
             maybe_run_slop_guard(result, Path::new(&file_path), &content, &cwd).await
         }
@@ -1923,10 +2143,8 @@ pub async fn execute_tool(
                 opts_repr.join("\n"),
                 if multi_select { "(s)" } else { "" }
             );
-            // The transcript itself surfaces the question; we don't
-            // fire a toast since AppEvent::Toast's exact shape varies
-            // across builds and the transcript line is enough for the
-            // user to act on.
+            // The transcript itself surfaces the question; no separate
+            // toast is needed for the user to act on it.
             tracing::info!(
                 target: "jfc::tools::ask",
                 question = %question.chars().take(80).collect::<String>(),
@@ -2030,10 +2248,12 @@ pub async fn execute_tool(
             // Hand the plan off to the UI thread so all permission-mode
             // mutations stay on a single task. The model's tool result
             // is the success acknowledgment — the actual mode flip
-            // happens when the main loop drains AppEvent::ExitPlanModeRequested.
+            // happens when the main loop drains `UiEvent::ExitPlanModeRequested`.
             if let Some(tx) = snapshot_event_sender() {
                 let _ = tx
-                    .send(crate::app::AppEvent::ExitPlanModeRequested { plan: plan.clone() })
+                    .send(crate::runtime::AppEvent::Ui(
+                        crate::runtime::UiEvent::ExitPlanModeRequested { plan: plan.clone() },
+                    ))
                     .await;
                 tracing::info!(
                     target: "jfc::tools::plan_mode",

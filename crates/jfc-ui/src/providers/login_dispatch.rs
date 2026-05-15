@@ -144,9 +144,7 @@ pub fn dispatch(arg: Option<&str>) -> LoginDispatch {
             "codex" | "chatgpt" | "openai-oauth" => {
                 LoginDispatch::CodexOAuth(CODEX_OAUTH_BODY.to_owned())
             }
-            "litellm" | "lite-llm" | "lite_llm" => {
-                LoginDispatch::LiteLlm(LITELLM_BODY.to_owned())
-            }
+            "litellm" | "lite-llm" | "lite_llm" => LoginDispatch::LiteLlm(LITELLM_BODY.to_owned()),
             "bedrock" | "aws" => LoginDispatch::StartBedrockWizard,
             "vertex" | "gcp" | "gcloud" => LoginDispatch::StartVertexWizard,
             "console" => LoginDispatch::ConsoleApiKey(CONSOLE_API_KEY_BODY.to_owned()),

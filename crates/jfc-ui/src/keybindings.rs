@@ -352,8 +352,8 @@ mod tests {
             let formatted = format_key(&ev).to_lowercase();
             // The formatted form may differ in case (Ctrl vs ctrl) but
             // should parse back to the same event.
-            let roundtripped = parse_key(&formatted)
-                .unwrap_or_else(|| panic!("re-parse of {formatted:?} failed"));
+            let roundtripped =
+                parse_key(&formatted).unwrap_or_else(|| panic!("re-parse of {formatted:?} failed"));
             assert_eq!(ev.code, roundtripped.code, "code mismatch for {s:?}");
             assert_eq!(
                 ev.modifiers, roundtripped.modifiers,

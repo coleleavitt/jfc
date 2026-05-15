@@ -77,6 +77,91 @@ pub fn is_retriable_error(err: &reqwest::Error) -> bool {
     err.is_connect() || err.is_timeout() || err.is_request()
 }
 
+/// A provider-level stream error that should restart the same request rather
+/// than fail the surrounding turn/task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetryableStreamError<'a> {
+    pub provider: &'static str,
+    pub message: &'a str,
+}
+
+/// Classify retry sentinels and common transient provider strings emitted
+/// after the HTTP request has already opened. The parent stream loop, one-shot
+/// subagents, and teammate runners all use this so 429/529/5xx recovery stays
+/// consistent instead of each path deciding independently.
+pub fn retryable_stream_error(message: &str) -> Option<RetryableStreamError<'_>> {
+    if let Some(stripped) = message.strip_prefix(super::anthropic::AUTO_RETRY_SENTINEL) {
+        return Some(RetryableStreamError {
+            provider: "anthropic",
+            message: stripped,
+        });
+    }
+    if let Some(stripped) = message.strip_prefix(super::anthropic_oauth::AUTO_RETRY_SENTINEL) {
+        return Some(RetryableStreamError {
+            provider: "anthropic-oauth",
+            message: stripped,
+        });
+    }
+    if let Some(stripped) = message.strip_prefix(super::openwebui::AUTO_RETRY_SENTINEL) {
+        return Some(RetryableStreamError {
+            provider: "openwebui",
+            message: stripped,
+        });
+    }
+
+    if is_transient_stream_message(message) {
+        Some(RetryableStreamError {
+            provider: "provider",
+            message,
+        })
+    } else {
+        None
+    }
+}
+
+pub fn stream_retry_delay(attempt: u32) -> Duration {
+    #[cfg(test)]
+    {
+        let _ = attempt;
+        return Duration::from_millis(1);
+    }
+
+    #[cfg(not(test))]
+    {
+        RetryConfig::aggressive().delay_for_attempt(attempt.min(8))
+    }
+}
+
+fn is_transient_stream_message(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    let has_status_context =
+        lower.contains("http") || lower.contains("api error") || lower.contains("status");
+    lower.contains("overloaded_error")
+        || lower.contains("rate_limit_error")
+        || lower.contains("rate limited")
+        || lower.contains("rate-limited")
+        || lower.contains("too many requests")
+        || lower.contains("temporarily overloaded")
+        || lower.contains("server overloaded")
+        || has_status_context
+            && retryable_status_code_in_text(&lower)
+                .is_some_and(|code| should_retry_status(code, None))
+}
+
+fn retryable_status_code_in_text(message: &str) -> Option<u16> {
+    message
+        .split(|ch: char| !ch.is_ascii_digit())
+        .find_map(|part| {
+            if part.len() == 3 {
+                part.parse::<u16>()
+                    .ok()
+                    .filter(|code| (100..=599).contains(code))
+            } else {
+                None
+            }
+        })
+}
+
 /// User-friendly error message for common HTTP errors.
 ///
 /// Coverage matches v2.1.132's `cli.js` error-handling matrix
@@ -298,5 +383,36 @@ mod tests {
                 "status {code} should be retried"
             );
         }
+    }
+
+    #[test]
+    fn retryable_stream_error_strips_provider_sentinels_normal() {
+        let message = format!(
+            "{}Anthropic transient API error 529: overloaded",
+            super::super::anthropic::AUTO_RETRY_SENTINEL
+        );
+        let signal = retryable_stream_error(&message).expect("sentinel should classify");
+        assert_eq!(signal.provider, "anthropic");
+        assert_eq!(
+            signal.message,
+            "Anthropic transient API error 529: overloaded"
+        );
+
+        let message = format!(
+            "{}OpenWebUI API error 503: unavailable",
+            super::super::openwebui::AUTO_RETRY_SENTINEL
+        );
+        let signal = retryable_stream_error(&message).expect("openwebui sentinel should classify");
+        assert_eq!(signal.provider, "openwebui");
+    }
+
+    #[test]
+    fn retryable_stream_error_recognizes_raw_transients_robust() {
+        assert!(retryable_stream_error("HTTP 529 from upstream").is_some());
+        assert!(retryable_stream_error("rate_limit_error: slow down").is_some());
+        assert!(retryable_stream_error("too many requests").is_some());
+        assert!(retryable_stream_error("HTTP 401 unauthorized").is_none());
+        assert!(retryable_stream_error("invalid_request_error: bad tool").is_none());
+        assert!(retryable_stream_error("prompt is too long: 500 tokens").is_none());
     }
 }

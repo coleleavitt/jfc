@@ -9,8 +9,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
-use eventsource_stream::Eventsource;
-use futures::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -23,15 +22,13 @@ pub(crate) const AUTO_RETRY_SENTINEL: &str = "auto-retry-openwebui:";
 
 // Re-export the new modular auth types so external callers (CLI, etc.) can
 // reach them through `providers::openwebui::*`.
-pub use self::jwt::{is_token_expired, parse_jwt_claims, token_expires_at_ms};
-pub use self::oidc::{oidc_login, DuoMethod, OidcLoginOptions, OidcLoginResult};
+pub use self::jwt::{is_token_expired, parse_jwt_claims};
+pub use self::oidc::{DuoMethod, OidcLoginOptions, oidc_login};
 pub use self::store::{
-    default_store_path, get_current, list as list_accounts, load_store, remove as remove_account,
-    save_store, set_current, upsert as upsert_account, Account, AccountStore,
+    Account, default_store_path, get_current, list as list_accounts, load_store,
+    remove as remove_account, set_current, upsert as upsert_account,
 };
-pub use self::verify::{
-    fetch_instance_config, normalize_base_url, verify_token, InstanceConfig, VerifiedUser,
-};
+pub use self::verify::{fetch_instance_config, normalize_base_url, verify_token};
 
 /// Backwards-compat shim so the existing test-suite that calls `load_account(path)`
 /// continues to compile against the new modular store.
@@ -154,10 +151,10 @@ impl OpenWebUIProvider {
     /// OWUI_PASSWORD / OWUI_DUO_PASSCODE env vars. Persists the new token.
     /// Returns the refreshed account.
     pub async fn refresh_active_account(&self) -> anyhow::Result<Account> {
-        let username = std::env::var("OWUI_USERNAME")
-            .map_err(|_| anyhow::anyhow!("OWUI_USERNAME not set"))?;
-        let password = std::env::var("OWUI_PASSWORD")
-            .map_err(|_| anyhow::anyhow!("OWUI_PASSWORD not set"))?;
+        let username =
+            std::env::var("OWUI_USERNAME").map_err(|_| anyhow::anyhow!("OWUI_USERNAME not set"))?;
+        let password =
+            std::env::var("OWUI_PASSWORD").map_err(|_| anyhow::anyhow!("OWUI_PASSWORD not set"))?;
         let passcode = std::env::var("OWUI_DUO_PASSCODE").ok();
         let method = if passcode.is_some() {
             DuoMethod::Passcode
@@ -252,7 +249,9 @@ pub fn infer_context_window_from_model_name(id: &str, name: Option<&str>) -> usi
             || has(&format!("{major}-{minor}"))
     };
 
-    if has("claude") && (has("mythos") || (has("opus") && (has_version("4", "7") || has_version("4", "6")))) {
+    if has("claude")
+        && (has("mythos") || (has("opus") && (has_version("4", "7") || has_version("4", "6"))))
+    {
         1_000_000
     } else if has("claude") && has("sonnet") && has_version("4", "6") {
         1_000_000
@@ -2153,67 +2152,73 @@ impl Provider for OpenWebUIProvider {
 /// fragments, so this keeps a stateful accumulator keyed by tool index and
 /// synthesizes final `ToolDone` events on `finish_reason: "tool_calls"`.
 pub(crate) fn openai_compatible_event_stream(resp: reqwest::Response) -> EventStream {
-    let byte_stream = resp
-        .bytes_stream()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
-
-    let event_stream = byte_stream
-        .eventsource()
+    let event_stream = jfc_anthropic_sdk::sse::response_event_stream(resp)
         .scan(HashMap::<usize, AccumTool>::new(), |state, result| {
             let mut emitted: Vec<anyhow::Result<StreamEvent>> = Vec::new();
-            if let Ok(ev) = result {
-                tracing::trace!(
-                    target: "jfc::provider::openai_compatible",
-                    data = %&ev.data[..ev.data.len().min(400)],
-                    "sse data"
-                );
-                if ev.data == "[DONE]" || ev.data.is_empty() {
-                    tracing::debug!(target: "jfc::provider::openai_compatible", "sse [DONE]");
-                    emitted.push(Ok(StreamEvent::Done {
-                        stop_reason: StopReason::EndTurn,
-                    }));
-                } else {
-                    match serde_json::from_str::<ChatChunk>(&ev.data) {
-                        Ok(chunk) => {
-                            if let Some(c) = chunk.choices.first() {
-                                if let Some(reason) = c.finish_reason.as_deref() {
+            match result {
+                Ok(ev) => {
+                    tracing::trace!(
+                        target: "jfc::provider::openai_compatible",
+                        event = %ev.event,
+                        data = %&ev.data[..ev.data.len().min(400)],
+                        "sse data"
+                    );
+                    if ev.data == "[DONE]" || ev.data.is_empty() {
+                        tracing::debug!(target: "jfc::provider::openai_compatible", "sse [DONE]");
+                        emitted.push(Ok(StreamEvent::Done {
+                            stop_reason: StopReason::EndTurn,
+                        }));
+                    } else {
+                        match serde_json::from_str::<ChatChunk>(&ev.data) {
+                            Ok(chunk) => {
+                                if let Some(c) = chunk.choices.first() {
+                                    if let Some(reason) = c.finish_reason.as_deref() {
+                                        tracing::info!(
+                                            target: "jfc::provider::openai_compatible",
+                                            finish_reason = reason,
+                                            tool_calls = c.delta.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
+                                            accum = state.len(),
+                                            "chunk_finish"
+                                        );
+                                    }
+                                }
+                                if let Some(ref u) = chunk.usage {
                                     tracing::info!(
                                         target: "jfc::provider::openai_compatible",
-                                        finish_reason = reason,
-                                        tool_calls = c.delta.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
-                                        accum = state.len(),
-                                        "chunk_finish"
+                                        prompt_tokens = u.prompt_tokens,
+                                        completion_tokens = u.completion_tokens,
+                                        total_tokens = u.total_tokens,
+                                        cache_read_tokens = u.cache_read_tokens(),
+                                        cache_write_tokens = u.cache_write_tokens(),
+                                        "usage"
                                     );
+                                    emitted.push(Ok(StreamEvent::Usage {
+                                        input_tokens: u.raw_input_tokens(),
+                                        output_tokens: u.completion_tokens,
+                                        cache_read_tokens: u.cache_read_tokens(),
+                                        cache_write_tokens: u.cache_write_tokens(),
+                                    }));
                                 }
+                                push_chunk_events_stateful(chunk, state, &mut emitted);
                             }
-                            if let Some(ref u) = chunk.usage {
-                                tracing::info!(
+                            Err(e) => {
+                                tracing::warn!(
                                     target: "jfc::provider::openai_compatible",
-                                    prompt_tokens = u.prompt_tokens,
-                                    completion_tokens = u.completion_tokens,
-                                    total_tokens = u.total_tokens,
-                                    cache_read_tokens = u.cache_read_tokens(),
-                                    cache_write_tokens = u.cache_write_tokens(),
-                                    "usage"
+                                    error = %e,
+                                    data = %&ev.data[..ev.data.len().min(200)],
+                                    "sse parse error"
                                 );
-                                emitted.push(Ok(StreamEvent::Usage {
-                                    input_tokens: u.raw_input_tokens(),
-                                    output_tokens: u.completion_tokens,
-                                    cache_read_tokens: u.cache_read_tokens(),
-                                    cache_write_tokens: u.cache_write_tokens(),
-                                }));
+                                emitted.push(Err(anyhow::anyhow!(
+                                    "OpenAI-compatible SSE JSON parse error: {e}"
+                                )));
                             }
-                            push_chunk_events_stateful(chunk, state, &mut emitted);
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                target: "jfc::provider::openai_compatible",
-                                error = %e,
-                                data = %&ev.data[..ev.data.len().min(200)],
-                                "sse parse error"
-                            );
                         }
                     }
+                }
+                Err(e) => {
+                    emitted.push(Err(anyhow::anyhow!(
+                        "OpenAI-compatible SSE stream parse error: {e}"
+                    )));
                 }
             }
             futures::future::ready(Some(emitted))

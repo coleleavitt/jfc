@@ -12,6 +12,10 @@ const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const HTTP_READ_TIMEOUT: Duration = Duration::from_secs(600);
 const HTTP_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 const HTTP_TCP_KEEPALIVE: Duration = Duration::from_secs(30);
+const HTTP_TCP_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
+const HTTP_TCP_KEEPALIVE_RETRIES: u32 = 3;
+const HTTP2_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+const HTTP2_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn streaming_client() -> reqwest::Client {
     reqwest::Client::builder()
@@ -21,11 +25,20 @@ pub fn streaming_client() -> reqwest::Client {
         .read_timeout(HTTP_READ_TIMEOUT)
         .pool_idle_timeout(HTTP_POOL_IDLE_TIMEOUT)
         // TCP-level keepalive helps the kernel notice half-open
-        // sockets through NAT/LB rewrites. We can't enable HTTP/2
-        // pings without the `http2` reqwest feature (workspace builds
-        // it without to keep the binary lean), but TCP keepalive
-        // covers most of the same ground for long streams.
+        // sockets through NAT/LB rewrites. Keep the interval/retry
+        // values explicit so upgrades don't silently change long-stream
+        // behavior.
         .tcp_keepalive(HTTP_TCP_KEEPALIVE)
+        .tcp_keepalive_interval(HTTP_TCP_KEEPALIVE_INTERVAL)
+        .tcp_keepalive_retries(HTTP_TCP_KEEPALIVE_RETRIES)
+        // reqwest's default feature set enables HTTP/2, but this
+        // workspace disables default features. Re-enable it explicitly
+        // and use h2's adaptive flow-control + pings for long SSE
+        // streams through proxies that support ALPN.
+        .http2_adaptive_window(true)
+        .http2_keep_alive_interval(HTTP2_KEEPALIVE_INTERVAL)
+        .http2_keep_alive_timeout(HTTP2_KEEPALIVE_TIMEOUT)
+        .http2_keep_alive_while_idle(true)
         .build()
         .expect("provider HTTP client configuration is valid")
 }

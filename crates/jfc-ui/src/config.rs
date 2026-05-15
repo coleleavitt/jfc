@@ -374,18 +374,10 @@ pub mod feature_config {
 
     #[derive(Debug, Clone, Deserialize)]
     #[serde(default)]
+    #[derive(Default)]
     pub struct HooksConfig {
         pub enabled: bool,
         pub comment_check: CommentCheckConfig,
-    }
-
-    impl Default for HooksConfig {
-        fn default() -> Self {
-            Self {
-                enabled: false,
-                comment_check: CommentCheckConfig::default(),
-            }
-        }
     }
 
     #[derive(Debug, Clone, Deserialize)]

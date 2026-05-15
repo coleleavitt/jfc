@@ -22,7 +22,7 @@
 
 use std::collections::HashMap;
 
-use crate::dsl::{DslOp, Expr, QueryConfig, QueryEngine, QueryError, QueryResult, parse_expr};
+use crate::dsl::{Expr, QueryConfig, QueryEngine, QueryError, parse_expr};
 use crate::graph::CodeGraph;
 use crate::nodes::NodeId;
 

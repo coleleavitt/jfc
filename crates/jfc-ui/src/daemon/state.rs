@@ -479,12 +479,8 @@ mod tests {
                 ),
             );
         }
-        let dropped = compact_background_agents(
-            &mut state,
-            now,
-            std::time::Duration::from_secs(86400),
-            3,
-        );
+        let dropped =
+            compact_background_agents(&mut state, now, std::time::Duration::from_secs(86400), 3);
         assert_eq!(dropped, 7);
         assert_eq!(state.background_agents.len(), 3);
         // The three newest (highest i) must survive.

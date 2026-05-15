@@ -26,67 +26,7 @@
 //! format the API accepts.
 
 use base64::Engine as _;
-
-/// Attachment media type. Covers the image formats Anthropic's
-/// Messages API supports (`image/png`, `image/jpeg`, `image/gif`,
-/// `image/webp`) plus `application/pdf` documents — Claude Code v132
-/// (`extracted_2.1.132/src/entrypoints/cli.js`) handles all of these
-/// across Read tool ingestion, the attachment picker, and the message
-/// content-block builder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AttachmentKind {
-    ImagePng,
-    ImageJpeg,
-    ImageGif,
-    ImageWebp,
-    /// PDF document. Anthropic supports this via the `document`
-    /// content-block type — Claude can read the PDF text + images.
-    /// 32 MB payload limit, 100 pages max per Anthropic's API docs.
-    ApplicationPdf,
-}
-
-impl AttachmentKind {
-    /// MIME string used for the Anthropic `source.media_type` field and
-    /// any HTTP-style debugging/logging.
-    pub fn mime_type(self) -> &'static str {
-        match self {
-            Self::ImagePng => "image/png",
-            Self::ImageJpeg => "image/jpeg",
-            Self::ImageGif => "image/gif",
-            Self::ImageWebp => "image/webp",
-            Self::ApplicationPdf => "application/pdf",
-        }
-    }
-
-    /// Whether this kind renders via Anthropic's `image` content
-    /// block (PNG/JPEG/GIF/WebP) or the `document` block (PDF).
-    /// Determines which JSON shape `to_anthropic_content_block`
-    /// emits — they are *not* interchangeable on the wire.
-    pub fn is_pdf(self) -> bool {
-        matches!(self, Self::ApplicationPdf)
-    }
-}
-
-/// A staged image attachment. Owns its raw encoded bytes (PNG/JPEG/etc.)
-/// so the data layer is GC-safe across a frame and can be cheaply cloned
-/// when the request builder finally consumes it.
-#[derive(Debug, Clone)]
-pub struct Attachment {
-    pub id: u32,
-    pub kind: AttachmentKind,
-    pub bytes: Vec<u8>,
-}
-
-/// An image pasted by the user, tracked per-prompt via `[Image #N]` markers.
-/// Lives in `app.pasted_images` until submit time, when referenced entries
-/// are moved onto the submitted `ChatMessage.attachments`.
-#[derive(Debug, Clone)]
-pub struct PastedContent {
-    pub id: u32,
-    pub attachment: Attachment,
-    pub width: u32,
-    pub height: u32,
-}
+pub use jfc_core::{Attachment, AttachmentKind, PastedContent};
 
 /// Sniff the image format from the leading magic bytes.
 ///
@@ -183,8 +123,7 @@ pub fn image_dimensions(bytes: &[u8]) -> Result<(u32, u32), String> {
 /// Process raw image bytes: clamp to MAX_IMAGE_DIMENSION, encode as PNG,
 /// fall back to JPEG at decreasing quality if PNG exceeds MAX_IMAGE_BYTES.
 pub fn process_image(raw_bytes: Vec<u8>, _kind: AttachmentKind) -> Result<Attachment, String> {
-    let img = image::load_from_memory(&raw_bytes)
-        .map_err(|e| format!("image decode: {e}"))?;
+    let img = image::load_from_memory(&raw_bytes).map_err(|e| format!("image decode: {e}"))?;
 
     // Clamp dimensions
     let (mut w, mut h) = (img.width(), img.height());
@@ -211,7 +150,12 @@ pub fn process_image(raw_bytes: Vec<u8>, _kind: AttachmentKind) -> Result<Attach
         use image::ImageEncoder as _;
         let encoder = image::codecs::png::PngEncoder::new(&mut png_buf);
         encoder
-            .write_image(img.to_rgba8().as_raw(), w, h, image::ExtendedColorType::Rgba8)
+            .write_image(
+                img.to_rgba8().as_raw(),
+                w,
+                h,
+                image::ExtendedColorType::Rgba8,
+            )
             .map_err(|e| format!("PNG encode: {e}"))?;
     }
 
@@ -229,7 +173,8 @@ pub fn process_image(raw_bytes: Vec<u8>, _kind: AttachmentKind) -> Result<Attach
         let mut jpeg_buf = Vec::new();
         {
             use image::ImageEncoder as _;
-            let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_buf, quality);
+            let encoder =
+                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_buf, quality);
             encoder
                 .write_image(rgb_img.as_raw(), w, h, image::ExtendedColorType::Rgb8)
                 .map_err(|e| format!("JPEG encode (q={quality}): {e}"))?;
@@ -283,7 +228,10 @@ fn read_clipboard_image_shell() -> Result<Option<Vec<u8>>, String> {
         .args(["--clipboard", "--output"])
         .output()
     {
-        if out.status.success() && !out.stdout.is_empty() && out.stdout.starts_with(&[0x89, b'P', b'N', b'G']) {
+        if out.status.success()
+            && !out.stdout.is_empty()
+            && out.stdout.starts_with(&[0x89, b'P', b'N', b'G'])
+        {
             return Ok(Some(out.stdout));
         }
     }
@@ -556,7 +504,8 @@ mod tests {
     #[test]
     fn to_anthropic_content_block_shape_normal() {
         let original_bytes = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0xDE, 0xAD];
-        let att = Attachment { id: 0,
+        let att = Attachment {
+            id: 0,
             kind: AttachmentKind::ImagePng,
             bytes: original_bytes.clone(),
         };
@@ -578,7 +527,8 @@ mod tests {
 
         // Sanity: try the same with a JPEG to confirm media_type tracks
         // the kind, not a hard-coded constant.
-        let att_jpeg = Attachment { id: 0,
+        let att_jpeg = Attachment {
+            id: 0,
             kind: AttachmentKind::ImageJpeg,
             bytes: vec![0xFF, 0xD8, 0xFF, 0xE0],
         };
@@ -590,14 +540,16 @@ mod tests {
     // arms in mime_type / to_anthropic_content_block.
     #[test]
     fn to_anthropic_content_block_gif_and_webp_normal() {
-        let gif_att = Attachment { id: 0,
+        let gif_att = Attachment {
+            id: 0,
             kind: AttachmentKind::ImageGif,
             bytes: b"GIF89a-data".to_vec(),
         };
         let gif_block = to_anthropic_content_block(&gif_att);
         assert_eq!(gif_block["source"]["media_type"], "image/gif");
 
-        let webp_att = Attachment { id: 0,
+        let webp_att = Attachment {
+            id: 0,
             kind: AttachmentKind::ImageWebp,
             bytes: vec![0xAB; 16],
         };
@@ -609,7 +561,8 @@ mod tests {
     // (empty base64 "" is valid).
     #[test]
     fn to_anthropic_content_block_empty_bytes_robust() {
-        let att = Attachment { id: 0,
+        let att = Attachment {
+            id: 0,
             kind: AttachmentKind::ImagePng,
             bytes: Vec::new(),
         };
@@ -668,7 +621,8 @@ mod tests {
     // the 400 "wrong content block" error from the Anthropic API.
     #[test]
     fn pdf_to_content_block_uses_document_type_normal() {
-        let pdf = Attachment { id: 0,
+        let pdf = Attachment {
+            id: 0,
             kind: AttachmentKind::ApplicationPdf,
             bytes: b"%PDF-1.7\nfake".to_vec(),
         };

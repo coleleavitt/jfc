@@ -94,7 +94,7 @@ fn streaming_task_footer_lines(app: &App, t: &Theme) -> Vec<Line<'static>> {
                 && app
                     .task_completion_times
                     .get(&tk.id)
-                    .map_or(false, |&t| now.duration_since(t) < fade_dur)
+                    .is_some_and(|&t| now.duration_since(t) < fade_dur)
         })
         .collect();
 

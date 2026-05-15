@@ -17,7 +17,7 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -61,7 +61,11 @@ pub struct OidcLoginOptions {
 }
 
 impl OidcLoginOptions {
-    pub fn new(base_url: impl Into<String>, username: impl Into<String>, password: impl Into<String>) -> Self {
+    pub fn new(
+        base_url: impl Into<String>,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
         Self {
             base_url: base_url.into(),
             username: username.into(),
@@ -94,8 +98,12 @@ impl CookieJar {
 
     /// Capture all `Set-Cookie` headers from a response into the jar.
     pub fn capture(&mut self, url: &str, headers: &reqwest::header::HeaderMap) {
-        let Ok(parsed) = url::Url::parse(url) else { return };
-        let Some(domain) = parsed.host_str().map(|s| s.to_owned()) else { return };
+        let Ok(parsed) = url::Url::parse(url) else {
+            return;
+        };
+        let Some(domain) = parsed.host_str().map(|s| s.to_owned()) else {
+            return;
+        };
         let jar = self.cookies.entry(domain).or_default();
 
         for raw in headers.get_all(reqwest::header::SET_COOKIE).iter() {
@@ -115,8 +123,12 @@ impl CookieJar {
 
     /// Build the `Cookie:` header for a given URL. Includes parent domains.
     pub fn header_for(&self, url: &str) -> String {
-        let Ok(parsed) = url::Url::parse(url) else { return String::new() };
-        let Some(domain) = parsed.host_str() else { return String::new() };
+        let Ok(parsed) = url::Url::parse(url) else {
+            return String::new();
+        };
+        let Some(domain) = parsed.host_str() else {
+            return String::new();
+        };
         let mut parts = Vec::new();
         for (d, jar) in &self.cookies {
             if domain == d || domain.ends_with(&format!(".{d}")) {
@@ -130,7 +142,9 @@ impl CookieJar {
 
     /// Get a specific cookie value.
     pub fn get(&self, domain: &str, name: &str) -> Option<&str> {
-        self.cookies.get(domain).and_then(|m| m.get(name).map(|s| s.as_str()))
+        self.cookies
+            .get(domain)
+            .and_then(|m| m.get(name).map(|s| s.as_str()))
     }
 }
 
@@ -158,8 +172,14 @@ pub fn save_cookie_jar(jar: &CookieJar) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    let payload = PersistedJar { v: 1, ts, cookies: jar.cookies.clone() };
-    let Ok(json) = serde_json::to_string(&payload) else { return };
+    let payload = PersistedJar {
+        v: 1,
+        ts,
+        cookies: jar.cookies.clone(),
+    };
+    let Ok(json) = serde_json::to_string(&payload) else {
+        return;
+    };
     let pid = std::process::id();
     let tmp = path.with_extension(format!("json.tmp-{pid}"));
     if std::fs::write(&tmp, json).is_ok() {
@@ -186,7 +206,9 @@ pub fn load_cookie_jar() -> Option<CookieJar> {
     if now_ms.saturating_sub(parsed.ts) > 24 * 60 * 60 * 1000 {
         return None;
     }
-    Some(CookieJar { cookies: parsed.cookies })
+    Some(CookieJar {
+        cookies: parsed.cookies,
+    })
 }
 
 /// Build a Reqwest client configured for the OIDC flow: 30 s timeout, no auto
@@ -213,7 +235,11 @@ async fn request(
     if !cookie.is_empty() {
         req = req.header("Cookie", cookie);
     }
-    if body.is_some() && !extra.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-type")) {
+    if body.is_some()
+        && !extra
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+    {
         req = req.header("Content-Type", "application/x-www-form-urlencoded");
     }
     for (k, v) in extra {
@@ -249,7 +275,15 @@ async fn follow_redirects(
     let mut current_method = method.clone();
     let mut current_body = body.map(|s| s.to_string());
 
-    let mut res = request(client, jar, current_method.clone(), &current_url, current_body.as_deref(), extra).await?;
+    let mut res = request(
+        client,
+        jar,
+        current_method.clone(),
+        &current_url,
+        current_body.as_deref(),
+        extra,
+    )
+    .await?;
 
     for _ in 0..max_hops {
         let status = res.status().as_u16();
@@ -282,12 +316,24 @@ async fn follow_redirects(
         current_url = abs;
         current_method = new_method;
         current_body = new_body;
-        res = request(client, jar, current_method.clone(), &current_url, current_body.as_deref(), extra).await?;
+        res = request(
+            client,
+            jar,
+            current_method.clone(),
+            &current_url,
+            current_body.as_deref(),
+            extra,
+        )
+        .await?;
     }
 
     let final_status = res.status().as_u16();
     let body = res.text().await.unwrap_or_default();
-    Ok(FollowResult { body, url: current_url, status: final_status })
+    Ok(FollowResult {
+        body,
+        url: current_url,
+        status: final_status,
+    })
 }
 
 /* ------------------------- HTML helpers ----------------------- */
@@ -333,7 +379,8 @@ fn extract_hidden_fields(html: &str) -> HashMap<String, String> {
 }
 
 fn url_encode(pairs: &HashMap<String, String>) -> String {
-    let mut parts: Vec<(String, String)> = pairs.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut parts: Vec<(String, String)> =
+        pairs.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     parts.sort_by(|a, b| a.0.cmp(&b.0));
     serde_urlencoded::to_string(&parts).unwrap_or_default()
 }
@@ -386,8 +433,14 @@ async fn step1_initiate_oidc(
                 url = %r.url,
                 "Step 1: IdP recognized existing session — already authenticated"
             );
-            let oauth_id_token = jar.get(&base_host, "oauth_id_token").unwrap_or("").to_owned();
-            let oauth_session_id = jar.get(&base_host, "oauth_session_id").unwrap_or("").to_owned();
+            let oauth_id_token = jar
+                .get(&base_host, "oauth_id_token")
+                .unwrap_or("")
+                .to_owned();
+            let oauth_session_id = jar
+                .get(&base_host, "oauth_session_id")
+                .unwrap_or("")
+                .to_owned();
             let default_expiry_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as i64 + 28 * 24 * 60 * 60 * 1000)
@@ -441,7 +494,8 @@ async fn step2_submit_credentials(
     // probe form (e1s1), or directly on the login form (e1s3 for genai.arizona.edu),
     // depending on cookies and session state.
     tracing::info!(target: "jfc::oidc", "Step 2a: GET Shibboleth initial page");
-    let mut r = follow_redirects(client, jar, shib_url, reqwest::Method::GET, None, &[], 10).await?;
+    let mut r =
+        follow_redirects(client, jar, shib_url, reqwest::Method::GET, None, &[], 10).await?;
     let _ = std::fs::write(debug_dir.join("step2-initial.html"), &r.body);
     let _ = std::fs::write(debug_dir.join("step2-initial.url"), &r.url);
 
@@ -474,17 +528,20 @@ async fn step2_submit_credentials(
             || r.url.contains("chat.ai2s.org")
             || (!r.url.contains("shibboleth") && !r.url.contains("duosecurity") && {
                 let rhost = url::Url::parse(&r.url)
-                    .ok().and_then(|u| u.host_str().map(|s| s.to_owned()))
+                    .ok()
+                    .and_then(|u| u.host_str().map(|s| s.to_owned()))
                     .unwrap_or_default();
                 let shost = url::Url::parse(shib_url)
-                    .ok().and_then(|u| u.host_str().map(|s| s.to_owned()))
+                    .ok()
+                    .and_then(|u| u.host_str().map(|s| s.to_owned()))
                     .unwrap_or_default();
                 !shost.is_empty() && rhost != shost
             })
         {
             // Check for token cookie — if present we're actually logged in.
             let owui_host = url::Url::parse(&r.url)
-                .ok().and_then(|u| u.host_str().map(|s| s.to_owned()))
+                .ok()
+                .and_then(|u| u.host_str().map(|s| s.to_owned()))
                 .unwrap_or_default();
             if jar.get(&owui_host, "token").is_some() {
                 tracing::info!(target: "jfc::oidc", "Step 2: Already authenticated via token cookie");
@@ -519,16 +576,35 @@ async fn step2_submit_credentials(
         let mut fields = extract_hidden_fields(&r.body);
         // Shibboleth localStorage probe fields — harmless on non-probe pages.
         fields.insert("shib_idp_ls_supported".into(), "true".into());
-        fields.insert("shib_idp_ls_success.shib_idp_session_ss".into(), "true".into());
-        fields.insert("shib_idp_ls_success.shib_idp_persistent_ss".into(), "true".into());
-        fields.entry("_eventId_proceed".into()).or_insert_with(String::new);
+        fields.insert(
+            "shib_idp_ls_success.shib_idp_session_ss".into(),
+            "true".into(),
+        );
+        fields.insert(
+            "shib_idp_ls_success.shib_idp_persistent_ss".into(),
+            "true".into(),
+        );
+        fields.entry("_eventId_proceed".into()).or_default();
         let body = url_encode(&fields);
         tracing::info!(target: "jfc::oidc", action = %action, "Step 2: Auto-proceed POST");
-        r = follow_redirects(client, jar, &action, reqwest::Method::POST, Some(&body), &[], 10).await?;
+        r = follow_redirects(
+            client,
+            jar,
+            &action,
+            reqwest::Method::POST,
+            Some(&body),
+            &[],
+            10,
+        )
+        .await?;
     }
 
     if skipped {
-        return Ok(Step2Out { url: r.url, body: r.body, skipped_credentials: true });
+        return Ok(Step2Out {
+            url: r.url,
+            body: r.body,
+            skipped_credentials: true,
+        });
     }
 
     // Sanity: we should be sitting on a real login form now.
@@ -551,13 +627,21 @@ async fn step2_submit_credentials(
     login_fields.insert("_eventId_proceed".into(), String::new());
     let login_body = url_encode(&login_fields);
     let after = follow_redirects(
-        client, jar, &login_action, reqwest::Method::POST, Some(&login_body), &[], 10,
+        client,
+        jar,
+        &login_action,
+        reqwest::Method::POST,
+        Some(&login_body),
+        &[],
+        10,
     )
     .await?;
     tracing::info!(target: "jfc::oidc", url = %after.url, "Step 2c: After credential submit");
 
     let bounced_back = after.body.contains("j_password");
-    let has_error = after.body.contains("credentials you provided cannot be determined to be authentic")
+    let has_error = after
+        .body
+        .contains("credentials you provided cannot be determined to be authentic")
         || after.body.contains("login-error");
     if bounced_back || has_error {
         anyhow::bail!("Step 2c: Login failed — invalid NetID or password");
@@ -566,7 +650,11 @@ async fn step2_submit_credentials(
     let _ = std::fs::write(debug_dir.join("step2-after-creds.html"), &after.body);
     let _ = std::fs::write(debug_dir.join("step2-after-creds.url"), &after.url);
 
-    Ok(Step2Out { url: after.url, body: after.body, skipped_credentials: false })
+    Ok(Step2Out {
+        url: after.url,
+        body: after.body,
+        skipped_credentials: false,
+    })
 }
 
 async fn step3_navigate_to_duo(
@@ -580,9 +668,12 @@ async fn step3_navigate_to_duo(
     let mut body = current_body.to_string();
 
     let duo_auth_re = regex::Regex::new(r#"/idp/profile/Authn/Duo/2FA/authorize[^"'\s]*"#).unwrap();
-    let duo_embedded_re = regex::Regex::new(r#"https://api-[a-f0-9]+\.duosecurity\.com/[^"'\s]+"#).unwrap();
-    let auto_redirect_re = regex::Regex::new(r#"window\.location\s*(?:\.href\s*)?=\s*['"]([^'"]+)"#).unwrap();
-    let meta_refresh_re = regex::Regex::new(r#"http-equiv="refresh"\s+content="\d+;\s*url=([^"]+)""#).unwrap();
+    let duo_embedded_re =
+        regex::Regex::new(r#"https://api-[a-f0-9]+\.duosecurity\.com/[^"'\s]+"#).unwrap();
+    let auto_redirect_re =
+        regex::Regex::new(r#"window\.location\s*(?:\.href\s*)?=\s*['"]([^'"]+)"#).unwrap();
+    let meta_refresh_re =
+        regex::Regex::new(r#"http-equiv="refresh"\s+content="\d+;\s*url=([^"]+)""#).unwrap();
     let exec_re = regex::Regex::new(r"execution=e(\d+)s(\d+)").unwrap();
 
     // For debugging: dump each page body to /tmp so we can see what Shibboleth
@@ -609,7 +700,8 @@ async fn step3_navigate_to_duo(
             let path = m.as_str().replace("&amp;", "&");
             let abs = url::Url::parse(&url)?.join(&path)?.to_string();
             tracing::info!(target: "jfc::oidc", url = %abs, "Step 3: Found Duo authorize link");
-            let r = follow_redirects(client, jar, &abs, reqwest::Method::GET, None, &[], 10).await?;
+            let r =
+                follow_redirects(client, jar, &abs, reqwest::Method::GET, None, &[], 10).await?;
             url = r.url;
             body = r.body;
             continue;
@@ -621,11 +713,15 @@ async fn step3_navigate_to_duo(
         }
 
         // 3. JS window.location / meta-refresh redirect
-        if let Some(m) = auto_redirect_re.captures(&body).or_else(|| meta_refresh_re.captures(&body)) {
+        if let Some(m) = auto_redirect_re
+            .captures(&body)
+            .or_else(|| meta_refresh_re.captures(&body))
+        {
             let next = m.get(1).unwrap().as_str().replace("&amp;", "&");
             let abs = url::Url::parse(&url)?.join(&next)?.to_string();
             tracing::info!(target: "jfc::oidc", url = %abs, "Step 3: Following auto-redirect");
-            let r = follow_redirects(client, jar, &abs, reqwest::Method::GET, None, &[], 10).await?;
+            let r =
+                follow_redirects(client, jar, &abs, reqwest::Method::GET, None, &[], 10).await?;
             url = r.url;
             body = r.body;
             continue;
@@ -633,13 +729,23 @@ async fn step3_navigate_to_duo(
 
         // 4. Shibboleth Spring Web Flow form with _eventId_proceed
         let action = extract_form_action(&body, &url);
-        let has_event_proceed = body.contains("_eventId_proceed") || body.contains("_eventId=proceed");
+        let has_event_proceed =
+            body.contains("_eventId_proceed") || body.contains("_eventId=proceed");
         if let (Some(a), true) = (action, has_event_proceed) {
             let mut hidden = extract_hidden_fields(&body);
-            hidden.entry("_eventId_proceed".into()).or_insert_with(String::new);
+            hidden.entry("_eventId_proceed".into()).or_default();
             let post_body = url_encode(&hidden);
             tracing::info!(target: "jfc::oidc", url = %a, "Step 3: Submitting auto-proceed form");
-            let r = follow_redirects(client, jar, &a, reqwest::Method::POST, Some(&post_body), &[], 10).await?;
+            let r = follow_redirects(
+                client,
+                jar,
+                &a,
+                reqwest::Method::POST,
+                Some(&post_body),
+                &[],
+                10,
+            )
+            .await?;
             url = r.url;
             body = r.body;
             continue;
@@ -652,9 +758,12 @@ async fn step3_navigate_to_duo(
         if let Some(m) = exec_re.captures(&url) {
             let flow = m.get(1).unwrap().as_str().to_string();
             let step: u32 = m.get(2).unwrap().as_str().parse::<u32>().unwrap_or(0) + 1;
-            let next_url = exec_re.replace(&url, format!("execution=e{flow}s{step}").as_str()).into_owned();
+            let next_url = exec_re
+                .replace(&url, format!("execution=e{flow}s{step}").as_str())
+                .into_owned();
             tracing::info!(target: "jfc::oidc", "Step 3: Advancing to execution=e{flow}s{step}");
-            let r = follow_redirects(client, jar, &next_url, reqwest::Method::GET, None, &[], 10).await?;
+            let r = follow_redirects(client, jar, &next_url, reqwest::Method::GET, None, &[], 10)
+                .await?;
             url = r.url;
             body = r.body;
             continue;
@@ -665,7 +774,11 @@ async fn step3_navigate_to_duo(
         break;
     }
 
-    let mut duo_url = if url.contains("duosecurity.com") { Some(url.clone()) } else { None };
+    let mut duo_url = if url.contains("duosecurity.com") {
+        Some(url.clone())
+    } else {
+        None
+    };
     if duo_url.is_none() {
         if let Some(m) = duo_embedded_re.find(&body) {
             duo_url = Some(m.as_str().replace("&amp;", "&"));
@@ -676,7 +789,8 @@ async fn step3_navigate_to_duo(
             let path = m.as_str().replace("&amp;", "&");
             let abs = url::Url::parse(&url)?.join(&path)?.to_string();
             tracing::info!(target: "jfc::oidc", url = %abs, "Step 3: Following late-discovered Duo authorize");
-            let r = follow_redirects(client, jar, &abs, reqwest::Method::GET, None, &[], 10).await?;
+            let r =
+                follow_redirects(client, jar, &abs, reqwest::Method::GET, None, &[], 10).await?;
             if r.url.contains("duosecurity.com") {
                 duo_url = Some(r.url.clone());
             }
@@ -718,7 +832,9 @@ async fn post_expect_redirect(
     }
     let loc = loc.ok_or_else(|| anyhow::anyhow!("{label}: missing Location header"))?;
     if !loc.contains(location_must_include) {
-        anyhow::bail!("{label}: expected Location containing \"{location_must_include}\", got \"{loc}\"");
+        anyhow::bail!(
+            "{label}: expected Location containing \"{location_must_include}\", got \"{loc}\""
+        );
     }
     let abs = url::Url::parse(url)?.join(&loc)?.to_string();
     Ok(abs)
@@ -731,7 +847,10 @@ const DUO_PLUGIN_FIELD_OVERRIDES: &[(&str, &str)] = &[
     ("has_touch_capability", "false"),
     ("is_cef_browser", "false"),
     ("is_ipad_os", "false"),
-    ("is_user_verifying_platform_authenticator_available", "false"),
+    (
+        "is_user_verifying_platform_authenticator_available",
+        "false",
+    ),
     ("react_support", "true"),
     ("java_version", ""),
     ("flash_version", ""),
@@ -842,7 +961,10 @@ async fn step4_complete_duo(
         ("Content-Type", "application/x-www-form-urlencoded"),
         ("Origin", &duo_host),
         ("Referer", frameless_url),
-        ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+        (
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        ),
         ("Sec-Fetch-Site", "same-origin"),
         ("Sec-Fetch-Mode", "navigate"),
         ("Sec-Fetch-Dest", "document"),
@@ -852,16 +974,28 @@ async fn step4_complete_duo(
     // 4a: 1st plugin_form POST → 303 → /preauth/healthcheck
     tracing::info!(target: "jfc::oidc", "Step 4a: POST #1 plugin_form");
     let healthcheck_url = post_expect_redirect(
-        client, jar, frameless_url, &plugin_body1, &post_headers,
-        "/preauth/healthcheck", "Step 4a",
+        client,
+        jar,
+        frameless_url,
+        &plugin_body1,
+        &post_headers,
+        "/preauth/healthcheck",
+        "Step 4a",
     )
     .await?;
 
     // 4b: GET healthcheck shell
     let hc_page = follow_redirects(
-        client, jar, &healthcheck_url, reqwest::Method::GET, None,
+        client,
+        jar,
+        &healthcheck_url,
+        reqwest::Method::GET,
+        None,
         &[
-            ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+            (
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ),
             ("Referer", frameless_url),
         ],
         5,
@@ -880,11 +1014,18 @@ async fn step4_complete_duo(
         urlencoding::encode(&sid)
     );
     let hc_data = request(
-        client, jar, reqwest::Method::GET, &hc_data_url, None,
+        client,
+        jar,
+        reqwest::Method::GET,
+        &hc_data_url,
+        None,
         &[
             ("Accept", "*/*"),
             ("X-Xsrftoken", xsrf.as_str()),
-            ("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8"),
+            (
+                "Content-Type",
+                "application/x-www-form-urlencoded;charset=UTF-8",
+            ),
             ("Origin", &duo_host),
             ("Referer", &healthcheck_url),
             ("Sec-Fetch-Site", "same-origin"),
@@ -894,16 +1035,29 @@ async fn step4_complete_duo(
     )
     .await?;
     if !hc_data.status().is_success() {
-        anyhow::bail!("Step 4c: /preauth/healthcheck/data returned {}", hc_data.status());
+        anyhow::bail!(
+            "Step 4c: /preauth/healthcheck/data returned {}",
+            hc_data.status()
+        );
     }
     let _ = hc_data.text().await;
 
     // 4d: GET /frame/v4/return → 303 → frameless (2nd visit)
-    let return_url = format!("{duo_host}/frame/v4/return?sid={}", urlencoding::encode(&sid));
+    let return_url = format!(
+        "{duo_host}/frame/v4/return?sid={}",
+        urlencoding::encode(&sid)
+    );
     let return_res = request(
-        client, jar, reqwest::Method::GET, &return_url, None,
+        client,
+        jar,
+        reqwest::Method::GET,
+        &return_url,
+        None,
         &[
-            ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+            (
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ),
             ("Referer", &healthcheck_url),
             ("Sec-Fetch-Site", "same-origin"),
             ("Sec-Fetch-Mode", "navigate"),
@@ -913,20 +1067,30 @@ async fn step4_complete_duo(
     )
     .await?;
     let return_status = return_res.status().as_u16();
-    let return_loc = return_res.headers()
+    let return_loc = return_res
+        .headers()
         .get(reqwest::header::LOCATION)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_owned());
     let _ = return_res.text().await;
     let return_loc = return_loc.unwrap_or_default();
     if !(300..400).contains(&return_status) || !return_loc.contains("/frame/frameless/v4/auth") {
-        anyhow::bail!("Step 4d: /return expected 303 → frameless, got {return_status} {return_loc}");
+        anyhow::bail!(
+            "Step 4d: /return expected 303 → frameless, got {return_status} {return_loc}"
+        );
     }
     let frameless_url2 = url::Url::parse(&duo_host)?.join(&return_loc)?.to_string();
     let frameless2 = follow_redirects(
-        client, jar, &frameless_url2, reqwest::Method::GET, None,
+        client,
+        jar,
+        &frameless_url2,
+        reqwest::Method::GET,
+        None,
         &[
-            ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+            (
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ),
             ("Referer", &healthcheck_url),
         ],
         5,
@@ -939,7 +1103,10 @@ async fn step4_complete_duo(
         ("Content-Type", "application/x-www-form-urlencoded"),
         ("Origin", &duo_host),
         ("Referer", &frameless_url2),
-        ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+        (
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        ),
         ("Sec-Fetch-Site", "same-origin"),
         ("Sec-Fetch-Mode", "navigate"),
         ("Sec-Fetch-Dest", "document"),
@@ -947,16 +1114,28 @@ async fn step4_complete_duo(
     ];
     tracing::info!(target: "jfc::oidc", "Step 4e: POST #2 plugin_form");
     let prompt_url = post_expect_redirect(
-        client, jar, &frameless_url2, &plugin_body2, &post_headers2,
-        "/auth/prompt", "Step 4e",
+        client,
+        jar,
+        &frameless_url2,
+        &plugin_body2,
+        &post_headers2,
+        "/auth/prompt",
+        "Step 4e",
     )
     .await?;
 
     // 4f: GET /auth/prompt shell
     let prompt_page = follow_redirects(
-        client, jar, &prompt_url, reqwest::Method::GET, None,
+        client,
+        jar,
+        &prompt_url,
+        reqwest::Method::GET,
+        None,
         &[
-            ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+            (
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ),
             ("Referer", &frameless_url2),
         ],
         5,
@@ -975,11 +1154,18 @@ async fn step4_complete_duo(
         urlencoding::encode(&sid)
     );
     let prompt_data_res = request(
-        client, jar, reqwest::Method::GET, &prompt_data_url, None,
+        client,
+        jar,
+        reqwest::Method::GET,
+        &prompt_data_url,
+        None,
         &[
             ("Accept", "*/*"),
             ("X-Xsrftoken", xsrf_prompt.as_str()),
-            ("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8"),
+            (
+                "Content-Type",
+                "application/x-www-form-urlencoded;charset=UTF-8",
+            ),
             ("Origin", &duo_host),
             ("Referer", &prompt_url),
             ("Sec-Fetch-Site", "same-origin"),
@@ -989,10 +1175,18 @@ async fn step4_complete_duo(
     )
     .await?;
     let prompt_data_text = prompt_data_res.text().await?;
-    let prompt_data: DuoPromptDataResponse = serde_json::from_str(&prompt_data_text)
-        .map_err(|e| anyhow::anyhow!("Step 4g: parse /prompt/data: {e}\n{}", &prompt_data_text[..prompt_data_text.len().min(400)]))?;
+    let prompt_data: DuoPromptDataResponse =
+        serde_json::from_str(&prompt_data_text).map_err(|e| {
+            anyhow::anyhow!(
+                "Step 4g: parse /prompt/data: {e}\n{}",
+                &prompt_data_text[..prompt_data_text.len().min(400)]
+            )
+        })?;
     if prompt_data.stat != "OK" {
-        anyhow::bail!("Step 4g: /prompt/data FAIL (message_enum={:?})", prompt_data.message_enum);
+        anyhow::bail!(
+            "Step 4g: /prompt/data FAIL (message_enum={:?})",
+            prompt_data.message_enum
+        );
     }
     let phones = &prompt_data.response.phones;
     tracing::info!(
@@ -1006,12 +1200,16 @@ async fn step4_complete_duo(
     let use_passcode = matches!(opts.duo_method, DuoMethod::Passcode)
         || (opts.duo_passcode.is_some() && !matches!(opts.duo_method, DuoMethod::Push));
     let device_key = phones.first().map(|p| p.key.clone()).unwrap_or_default();
-    let (factor, device, passcode): (String, String, Option<String>) = if use_passcode && opts.duo_passcode.is_some() {
-        ("Passcode".into(), "null".into(), opts.duo_passcode.clone())
-    } else {
-        let device = phones.first().map(|p| p.index.clone()).unwrap_or_else(|| "phone1".into());
-        ("Duo Push".into(), device, None)
-    };
+    let (factor, device, passcode): (String, String, Option<String>) =
+        if use_passcode && opts.duo_passcode.is_some() {
+            ("Passcode".into(), "null".into(), opts.duo_passcode.clone())
+        } else {
+            let device = phones
+                .first()
+                .map(|p| p.index.clone())
+                .unwrap_or_else(|| "phone1".into());
+            ("Duo Push".into(), device, None)
+        };
 
     let mut prompt_params: Vec<(&str, String)> = Vec::new();
     if let Some(p) = passcode.as_ref() {
@@ -1025,13 +1223,18 @@ async fn step4_complete_duo(
     let prompt_body = serde_urlencoded::to_string(&prompt_params).unwrap_or_default();
 
     let factor_res = request(
-        client, jar, reqwest::Method::POST,
+        client,
+        jar,
+        reqwest::Method::POST,
         &format!("{duo_host}/frame/v4/prompt"),
         Some(&prompt_body),
         &[
             ("Accept", "*/*"),
             ("X-Xsrftoken", xsrf_prompt.as_str()),
-            ("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8"),
+            (
+                "Content-Type",
+                "application/x-www-form-urlencoded;charset=UTF-8",
+            ),
             ("Origin", &duo_host),
             ("Referer", &prompt_url),
             ("Sec-Fetch-Site", "same-origin"),
@@ -1042,10 +1245,16 @@ async fn step4_complete_duo(
     .await?;
     let factor_text = factor_res.text().await?;
     let factor_data: DuoFactorResponse = serde_json::from_str(&factor_text).map_err(|e| {
-        anyhow::anyhow!("Step 4h: parse /prompt: {e}\n{}", &factor_text[..factor_text.len().min(400)])
+        anyhow::anyhow!(
+            "Step 4h: parse /prompt: {e}\n{}",
+            &factor_text[..factor_text.len().min(400)]
+        )
     })?;
     if factor_data.stat != "OK" {
-        anyhow::bail!("Step 4h: /prompt FAIL (message_enum={:?})", factor_data.message_enum);
+        anyhow::bail!(
+            "Step 4h: /prompt FAIL (message_enum={:?})",
+            factor_data.message_enum
+        );
     }
     let txid = factor_data
         .response
@@ -1056,17 +1265,26 @@ async fn step4_complete_duo(
     let deadline = std::time::Instant::now() + opts.poll_timeout;
     loop {
         if std::time::Instant::now() >= deadline {
-            anyhow::bail!("Step 4i: Duo approval timed out after {:?}", opts.poll_timeout);
+            anyhow::bail!(
+                "Step 4i: Duo approval timed out after {:?}",
+                opts.poll_timeout
+            );
         }
-        let status_body = serde_urlencoded::to_string([("txid", &txid), ("sid", &sid)]).unwrap_or_default();
+        let status_body =
+            serde_urlencoded::to_string([("txid", &txid), ("sid", &sid)]).unwrap_or_default();
         let res = request(
-            client, jar, reqwest::Method::POST,
+            client,
+            jar,
+            reqwest::Method::POST,
             &format!("{duo_host}/frame/v4/status"),
             Some(&status_body),
             &[
                 ("Accept", "*/*"),
                 ("X-Xsrftoken", xsrf_prompt.as_str()),
-                ("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8"),
+                (
+                    "Content-Type",
+                    "application/x-www-form-urlencoded;charset=UTF-8",
+                ),
                 ("Origin", &duo_host),
                 ("Referer", &prompt_url),
                 ("Sec-Fetch-Site", "same-origin"),
@@ -1077,7 +1295,10 @@ async fn step4_complete_duo(
         .await?;
         let body_text = res.text().await?;
         let parsed: DuoStatusResponse = serde_json::from_str(&body_text).map_err(|e| {
-            anyhow::anyhow!("Step 4i: parse /status: {e}\n{}", &body_text[..body_text.len().min(300)])
+            anyhow::anyhow!(
+                "Step 4i: parse /status: {e}\n{}",
+                &body_text[..body_text.len().min(300)]
+            )
         })?;
         if parsed.response.result.as_deref() == Some("SUCCESS")
             || parsed.response.status_code.as_deref() == Some("allow")
@@ -1090,7 +1311,10 @@ async fn step4_complete_duo(
             break;
         }
         if parsed.response.status_code.as_deref() == Some("deny") {
-            anyhow::bail!("Step 4i: Duo denied — {}", parsed.response.reason.unwrap_or_default());
+            anyhow::bail!(
+                "Step 4i: Duo denied — {}",
+                parsed.response.reason.unwrap_or_default()
+            );
         }
         tokio::time::sleep(opts.poll_interval).await;
     }
@@ -1106,11 +1330,16 @@ async fn step4_complete_duo(
     ];
     let exit_body = serde_urlencoded::to_string(exit_pairs).unwrap_or_default();
     let exit_res = request(
-        client, jar, reqwest::Method::POST,
+        client,
+        jar,
+        reqwest::Method::POST,
         &format!("{duo_host}/frame/v4/oidc/exit"),
         Some(&exit_body),
         &[
-            ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+            (
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ),
             ("Content-Type", "application/x-www-form-urlencoded"),
             ("Origin", &duo_host),
             ("Referer", &prompt_url),
@@ -1143,8 +1372,20 @@ async fn step5_and_6_extract_token(
     base_url: &str,
 ) -> anyhow::Result<OidcLoginResult> {
     tracing::info!(target: "jfc::oidc", "Step 5: Following Shibboleth post-Duo redirects");
-    let host = url::Url::parse(base_url)?.host_str().unwrap_or("").to_owned();
-    let mut r = follow_redirects(client, jar, duo_callback_url, reqwest::Method::GET, None, &[], 10).await?;
+    let host = url::Url::parse(base_url)?
+        .host_str()
+        .unwrap_or("")
+        .to_owned();
+    let mut r = follow_redirects(
+        client,
+        jar,
+        duo_callback_url,
+        reqwest::Method::GET,
+        None,
+        &[],
+        10,
+    )
+    .await?;
     tracing::info!(target: "jfc::oidc", url = %r.url, "Step 5: After duo-callback");
 
     for _ in 0..8 {
@@ -1154,16 +1395,22 @@ async fn step5_and_6_extract_token(
         if r.body.contains("shib_idp_ls_success") || r.body.contains("_eventId_proceed") {
             let action = extract_form_action(&r.body, &r.url).unwrap_or_else(|| r.url.clone());
             let mut hidden = extract_hidden_fields(&r.body);
-            hidden.entry("_eventId_proceed".into()).or_insert_with(String::new);
+            hidden.entry("_eventId_proceed".into()).or_default();
             hidden
                 .entry("shib_idp_ls_success.shib_idp_session_ss".into())
                 .or_insert_with(|| "true".into());
             hidden
                 .entry("shib_idp_ls_exception.shib_idp_session_ss".into())
-                .or_insert_with(String::new);
+                .or_default();
             let body_str = url_encode(&hidden);
             r = follow_redirects(
-                client, jar, &action, reqwest::Method::POST, Some(&body_str), &[], 10,
+                client,
+                jar,
+                &action,
+                reqwest::Method::POST,
+                Some(&body_str),
+                &[],
+                10,
             )
             .await?;
             continue;
@@ -1186,7 +1433,8 @@ async fn step5_and_6_extract_token(
         if r.url.contains("execution=") && !r.url.contains("_eventId_proceed") {
             let sep = if r.url.contains('?') { "&" } else { "?" };
             let proceed = format!("{}{sep}_eventId_proceed=1", r.url);
-            r = follow_redirects(client, jar, &proceed, reqwest::Method::GET, None, &[], 10).await?;
+            r = follow_redirects(client, jar, &proceed, reqwest::Method::GET, None, &[], 10)
+                .await?;
             continue;
         }
         break;
@@ -1237,16 +1485,20 @@ pub async fn oidc_login(opts: OidcLoginOptions) -> anyhow::Result<OidcLoginResul
             return Ok(result);
         }
     };
-    let step2 = step2_submit_credentials(&client, &mut jar, &shib_url, &opts.username, &opts.password).await?;
+    let step2 =
+        step2_submit_credentials(&client, &mut jar, &shib_url, &opts.username, &opts.password)
+            .await?;
 
-    if step2.url.contains("oauth/oidc/callback") || step2.url.contains(&format!("{base_url}/auth")) {
+    if step2.url.contains("oauth/oidc/callback") || step2.url.contains(&format!("{base_url}/auth"))
+    {
         tracing::info!(target: "jfc::oidc", "Session fully alive — skipped to OIDC callback");
         let result = step5_and_6_extract_token(&client, &mut jar, &step2.url, &base_url).await?;
         save_cookie_jar(&jar);
         return Ok(result);
     }
 
-    let (duo_url, duo_body) = step3_navigate_to_duo(&client, &mut jar, &step2.url, &step2.body).await?;
+    let (duo_url, duo_body) =
+        step3_navigate_to_duo(&client, &mut jar, &step2.url, &step2.body).await?;
     let duo_callback = step4_complete_duo(&client, &mut jar, &duo_url, &duo_body, &opts).await?;
     let result = step5_and_6_extract_token(&client, &mut jar, &duo_callback, &base_url).await?;
     save_cookie_jar(&jar);

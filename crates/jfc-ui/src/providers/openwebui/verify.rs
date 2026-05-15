@@ -37,7 +37,10 @@ pub fn normalize_base_url(base_url: &str) -> anyhow::Result<String> {
 }
 
 /// `GET /api/config` — instance metadata. No auth required.
-pub async fn fetch_instance_config(client: &reqwest::Client, base_url: &str) -> anyhow::Result<InstanceConfig> {
+pub async fn fetch_instance_config(
+    client: &reqwest::Client,
+    base_url: &str,
+) -> anyhow::Result<InstanceConfig> {
     let res = client
         .get(format!("{base_url}/api/config"))
         .header("Accept", "application/json")
@@ -51,7 +54,11 @@ pub async fn fetch_instance_config(client: &reqwest::Client, base_url: &str) -> 
 }
 
 /// `GET /api/v1/auths/` — verify the JWT and return user identity.
-pub async fn verify_token(client: &reqwest::Client, base_url: &str, token: &str) -> anyhow::Result<VerifiedUser> {
+pub async fn verify_token(
+    client: &reqwest::Client,
+    base_url: &str,
+    token: &str,
+) -> anyhow::Result<VerifiedUser> {
     let res = client
         .get(format!("{base_url}/api/v1/auths/"))
         .header("Accept", "application/json")

@@ -50,13 +50,9 @@ pub mod registry;
 pub mod tool_dispatch;
 pub mod transport;
 
-pub use protocol::{
-    McpTool, ToolCallOutcome, advertise_tool_name, build_initialize, parse_tools_call_result,
-    parse_tools_list_result, split_advertised,
-};
+pub use protocol::{ToolCallOutcome, split_advertised};
 pub use registry::{
-    DispatchError, McpRegistry, McpServer, McpServerStatus, build_server,
-    register_servers_from_config, restart_server,
+    DispatchError, McpRegistry, McpServer, register_servers_from_config, restart_server,
 };
 #[allow(unused_imports)]
 pub use tool_dispatch::{

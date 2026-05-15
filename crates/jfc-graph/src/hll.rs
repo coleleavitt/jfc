@@ -124,7 +124,7 @@ pub fn approximate_reachability(graph: &CodeGraph) -> ReachabilityEstimates {
     // Backward sketches (ancestors): propagate along incoming edges.
     let mut bwd: Vec<HllSketch> = Vec::with_capacity(n);
 
-    for (i, id) in all_ids.iter().enumerate() {
+    for (_i, id) in all_ids.iter().enumerate() {
         let mut s = HllSketch::default();
         let hash = node_hash(id);
         s.add_hash(hash);

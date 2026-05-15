@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
-use eventsource_stream::Eventsource;
-use futures::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -128,6 +127,8 @@ pub struct ContextManagement {
 
 #[derive(Debug, Deserialize)]
 pub struct ErrorBody {
+    #[serde(default, rename = "type")]
+    pub kind: Option<String>,
     pub message: String,
 }
 
@@ -311,9 +312,15 @@ pub fn translate(
         SseEvent::MessageStop => Some(StreamEvent::Done {
             stop_reason: stop_reason.take().unwrap_or(StopReason::EndTurn),
         }),
-        SseEvent::Error { error } => Some(StreamEvent::Error {
-            message: error.message,
-        }),
+        SseEvent::Error { error } => {
+            let message = match error.kind.as_deref() {
+                Some("overloaded_error" | "rate_limit_error" | "api_error") => {
+                    format!("{}{}", super::anthropic::AUTO_RETRY_SENTINEL, error.message)
+                }
+                _ => error.message,
+            };
+            Some(StreamEvent::Error { message })
+        }
         SseEvent::MessageStart { message } => message.usage.map(|usage| StreamEvent::Usage {
             input_tokens: usage.input_tokens(),
             output_tokens: usage.output_total(),
@@ -437,75 +444,71 @@ pub fn build_tools(tools: &[ToolDef]) -> Value {
 }
 
 pub fn into_event_stream(resp: reqwest::Response) -> EventStream {
-    let byte_stream = resp
-        .bytes_stream()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
-
     // Tracing parity with the OpenWebUI provider: dump raw SSE bytes at TRACE,
     // log every parsed event type at DEBUG, log finish_reason / errors at INFO.
     // Flip `RUST_LOG=jfc::provider::anthropic_sse=trace` to see raw chunks
     // when debugging upstream SSE weirdness.
-    let event_stream = byte_stream
-        .eventsource()
+    let event_stream = jfc_anthropic_sdk::sse::response_event_stream(resp)
         .scan(
             (Vec::<Option<BlockState>>::new(), None::<StopReason>),
             |state, result| {
                 let (blocks, stop_reason) = state;
-                let out = result.ok().and_then(|ev| {
-                    tracing::trace!(
-                        target: "jfc::provider::anthropic_sse",
-                        event = %ev.event,
-                        data = %&ev.data[..ev.data.len().min(400)],
-                        "sse raw"
-                    );
-                    if ev.event == "ping" || ev.data.is_empty() {
-                        return None;
-                    }
-                    if ev.data == "[DONE]" {
-                        tracing::debug!(target: "jfc::provider::anthropic_sse", "sse [DONE]");
-                        return None;
-                    }
-                    // `context_hint` is a special SSE event type (not a JSON
-                    // `type` field) that Anthropic sends when the model is
-                    // approaching its context limit. Mirrors v132 cli.js line
-                    // 471490: treat it the same as a prompt_too_long rejection
-                    // so the main loop fires auto-compaction.
-                    if ev.event == "context_hint"
-                        || ev.data.contains("\"context_hint\"")
-                    {
-                        tracing::info!(
+                let out = match result {
+                    Ok(ev) => {
+                        tracing::trace!(
                             target: "jfc::provider::anthropic_sse",
                             event = %ev.event,
-                            data = %&ev.data[..ev.data.len().min(200)],
-                            "context_hint received — signalling auto-compact"
+                            data = %&ev.data[..ev.data.len().min(400)],
+                            "sse raw"
                         );
-                        return Some(Ok(StreamEvent::Error {
-                            message: format!(
-                                "auto-compact: context_hint from server ({})",
-                                &ev.data[..ev.data.len().min(120)]
-                            ),
-                        }));
-                    }
-                    match serde_json::from_str::<SseEvent>(&ev.data) {
-                        Ok(parsed) => {
-                            log_parsed_event(&parsed);
-                            translate(parsed, blocks, stop_reason).map(Ok)
+                        if ev.event == "ping" || ev.data.is_empty() {
+                            return futures::future::ready(Some(None));
                         }
-                        Err(e) => {
-                            tracing::warn!(
+                        if ev.data == "[DONE]" {
+                            tracing::debug!(target: "jfc::provider::anthropic_sse", "sse [DONE]");
+                            return futures::future::ready(Some(None));
+                        }
+                        // `context_hint` is a special SSE event type (not a JSON
+                        // `type` field) that Anthropic sends when the model is
+                        // approaching its context limit. Mirrors v132 cli.js line
+                        // 471490: treat it the same as a prompt_too_long rejection
+                        // so the main loop fires auto-compaction.
+                        if ev.event == "context_hint" || ev.data.contains("\"context_hint\"") {
+                            tracing::info!(
                                 target: "jfc::provider::anthropic_sse",
-                                error = %e,
+                                event = %ev.event,
                                 data = %&ev.data[..ev.data.len().min(200)],
-                                "sse parse error"
+                                "context_hint received — signalling auto-compact"
                             );
-                            Some(Err(anyhow::anyhow!("SSE parse error: {e}")))
+                            return futures::future::ready(Some(Some(Ok(StreamEvent::Error {
+                                message: format!(
+                                    "auto-compact: context_hint from server ({})",
+                                    &ev.data[..ev.data.len().min(120)]
+                                ),
+                            }))));
+                        }
+                        match serde_json::from_str::<SseEvent>(&ev.data) {
+                            Ok(parsed) => {
+                                log_parsed_event(&parsed);
+                                translate(parsed, blocks, stop_reason).map(Ok)
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    target: "jfc::provider::anthropic_sse",
+                                    error = %e,
+                                    data = %&ev.data[..ev.data.len().min(200)],
+                                    "sse parse error"
+                                );
+                                Some(Err(anyhow::anyhow!("SSE parse error: {e}")))
+                            }
                         }
                     }
-                });
+                    Err(e) => Some(Err(anyhow::anyhow!("SSE stream parse error: {e}"))),
+                };
                 futures::future::ready(Some(out))
             },
         )
-        .filter_map(|x| futures::future::ready(x));
+        .filter_map(futures::future::ready);
 
     Box::pin(event_stream)
 }
@@ -603,6 +606,7 @@ fn log_parsed_event(event: &SseEvent) {
         SseEvent::Error { error } => {
             tracing::warn!(
                 target: "jfc::provider::anthropic_sse",
+                kind = ?error.kind,
                 error = %error.message,
                 "sse error event"
             );
@@ -804,6 +808,7 @@ mod tests {
         let out = translate(
             SseEvent::Error {
                 error: ErrorBody {
+                    kind: None,
                     message: "overloaded".into(),
                 },
             },
@@ -811,6 +816,27 @@ mod tests {
             &mut sr,
         );
         assert!(matches!(out, Some(StreamEvent::Error { message }) if message == "overloaded"));
+    }
+
+    #[test]
+    fn translate_transient_error_event_requests_auto_retry() {
+        let (mut blocks, mut sr) = empty_state();
+        for kind in ["overloaded_error", "rate_limit_error", "api_error"] {
+            let out = translate(
+                SseEvent::Error {
+                    error: ErrorBody {
+                        kind: Some(kind.into()),
+                        message: "transient".into(),
+                    },
+                },
+                &mut blocks,
+                &mut sr,
+            );
+            assert!(
+                matches!(out, Some(StreamEvent::Error { message }) if message.starts_with(crate::providers::anthropic::AUTO_RETRY_SENTINEL)),
+                "{kind}"
+            );
+        }
     }
 
     #[test]

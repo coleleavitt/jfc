@@ -56,8 +56,7 @@ mod tests {
     use base64::{Engine as _, engine::general_purpose};
 
     fn make_token(exp: i64) -> String {
-        let header = general_purpose::URL_SAFE_NO_PAD
-            .encode(br#"{"alg":"HS256","typ":"JWT"}"#);
+        let header = general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
         let payload_json = format!(r#"{{"id":"abc","exp":{exp}}}"#);
         let payload = general_purpose::URL_SAFE_NO_PAD.encode(payload_json.as_bytes());
         format!("{header}.{payload}.signature")

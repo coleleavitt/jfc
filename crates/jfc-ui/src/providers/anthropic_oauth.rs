@@ -749,6 +749,11 @@ fn is_stream_rate_limit_message(message: &str) -> bool {
         || m.contains("429")
 }
 
+fn is_stream_overloaded_message(message: &str) -> bool {
+    let m = message.to_ascii_lowercase();
+    m.contains("overloaded") || m.contains("529")
+}
+
 /// Wrap an `EventStream` so every `Usage` event also persists tokens to the
 /// account JSON. Anthropic sends *cumulative* token counts on every
 /// `message_delta`, so we apply a baseline-delta to avoid double-counting
@@ -770,20 +775,32 @@ fn wrap_with_usage_recording(
         (inner, state, mgr, guard, account_name, model),
         |(mut inner, state, mgr, guard, account_name, model)| async move {
             let mut next = inner.next().await?;
-            if let Ok(StreamEvent::Error { message }) = &next
-                && is_stream_rate_limit_message(message)
-            {
-                let info = super::unified::RateLimitInfo::default();
-                mgr.mark_rate_limited_with_info(&account_name, &info).await;
-                tracing::warn!(
-                    target: "jfc::provider::anthropic_oauth::rotation",
-                    account = %account_name,
-                    error = %message,
-                    "mid-stream rate-limit error — marked account and requesting silent retry"
-                );
-                next = Ok(StreamEvent::Error {
-                    message: format!("{AUTO_RETRY_SENTINEL}{message}"),
-                });
+            if let Ok(StreamEvent::Error { message }) = &next {
+                let anthropic_retry_message =
+                    message.strip_prefix(super::anthropic::AUTO_RETRY_SENTINEL);
+                let retryable_message = anthropic_retry_message.unwrap_or(message);
+                let rate_limited = is_stream_rate_limit_message(retryable_message);
+                let overloaded = is_stream_overloaded_message(retryable_message);
+                if rate_limited {
+                    let info = super::unified::RateLimitInfo::default();
+                    mgr.mark_rate_limited_with_info(&account_name, &info).await;
+                }
+                if overloaded {
+                    let _ = mgr.mark_overloaded_529(&account_name).await;
+                }
+                if anthropic_retry_message.is_some() || rate_limited || overloaded {
+                    tracing::warn!(
+                        target: "jfc::provider::anthropic_oauth::rotation",
+                        account = %account_name,
+                        error = %retryable_message,
+                        rate_limited,
+                        overloaded,
+                        "mid-stream transient error — marked account and requesting silent retry"
+                    );
+                    next = Ok(StreamEvent::Error {
+                        message: format!("{AUTO_RETRY_SENTINEL}{retryable_message}"),
+                    });
+                }
             }
             if let Ok(StreamEvent::Usage {
                 input_tokens,
@@ -2261,12 +2278,22 @@ mod tests {
         assert!(is_stream_rate_limit_message("HTTP 429 from upstream"));
     }
 
+    // Normal: mid-stream overloaded errors need the same silent retry path as
+    // HTTP 529 responses.
+    #[test]
+    fn stream_overloaded_message_recognized_normal() {
+        assert!(is_stream_overloaded_message("overloaded"));
+        assert!(is_stream_overloaded_message("HTTP 529 from upstream"));
+    }
+
     // Robust: unrelated stream errors should still surface to the user instead
     // of being hidden behind a retry loop.
     #[test]
     fn stream_non_rate_limit_message_not_recognized_robust() {
         assert!(!is_stream_rate_limit_message("invalid_request_error"));
         assert!(!is_stream_rate_limit_message("model not found"));
+        assert!(!is_stream_overloaded_message("invalid_request_error"));
+        assert!(!is_stream_overloaded_message("model not found"));
     }
 
     // ── Real-API integration tests (gated #[ignore]) ──────────────────────

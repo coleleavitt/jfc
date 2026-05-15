@@ -205,6 +205,7 @@ fn all_tool_defs_includes_every_canonical_tool_normal() {
         "TeamDelete",
         "SendMessage",
         "TeamMemberMode",
+        "code_index",
         "graph_query",
         "symbol_edit",
         "post_bounty",
@@ -228,16 +229,23 @@ fn all_tool_defs_includes_every_canonical_tool_normal() {
 
 // ─── graph_session_cache ─────────────────────────────────────────────
 
+fn graph_session_cache_test_workspace() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("graph session cache tempdir");
+    std::fs::write(
+        dir.path().join("sample.rs"),
+        "pub fn foo() { bar(); }\nfn bar() -> usize { 1 }\n",
+    )
+    .expect("write graph cache fixture");
+    dir
+}
+
 // Normal: repeated `get_or_build_graph_session` calls for the same cwd
 // return Arc clones (same pointer), so the graph is built once.
 #[serial_test::serial]
 #[test]
 fn graph_session_cache_reuses_same_session_normal() {
-    // The fixtures dir under jfc-graph is a stable target.
-    let fixtures = std::path::Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../jfc-graph/tests/fixtures"
-    ));
+    let workspace = graph_session_cache_test_workspace();
+    let fixtures = workspace.path();
     invalidate_graph_session_cache(Some(fixtures));
     let a = get_or_build_graph_session(fixtures);
     let b = get_or_build_graph_session(fixtures);
@@ -249,10 +257,8 @@ fn graph_session_cache_reuses_same_session_normal() {
 #[test]
 #[serial_test::serial]
 fn graph_session_cache_invalidate_drops_session_robust() {
-    let fixtures = std::path::Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../jfc-graph/tests/fixtures"
-    ));
+    let workspace = graph_session_cache_test_workspace();
+    let fixtures = workspace.path();
     invalidate_graph_session_cache(Some(fixtures));
     let a = get_or_build_graph_session(fixtures);
     invalidate_graph_session_cache(Some(fixtures));
@@ -260,14 +266,47 @@ fn graph_session_cache_invalidate_drops_session_robust() {
     assert!(!Arc::ptr_eq(&a, &b), "post-invalidate must build fresh");
 }
 
+#[test]
+#[serial_test::serial]
+fn graph_session_cache_mutation_reinserts_session_normal() {
+    let workspace = graph_session_cache_test_workspace();
+    let fixtures = workspace.path();
+    invalidate_graph_session_cache(Some(fixtures));
+
+    let node_count = with_graph_session_mut(fixtures, |session| session.graph.node_count())
+        .expect("exclusive cached session should be mutable");
+    let after = get_or_build_graph_session(fixtures);
+
+    assert_eq!(after.graph.node_count(), node_count);
+}
+
+#[test]
+#[serial_test::serial]
+fn graph_session_cache_mutation_fails_while_reader_holds_arc_robust() {
+    let workspace = graph_session_cache_test_workspace();
+    let fixtures = workspace.path();
+    invalidate_graph_session_cache(Some(fixtures));
+
+    let held = get_or_build_graph_session(fixtures);
+    let result = with_graph_session_mut(fixtures, |_| ());
+    let after = get_or_build_graph_session(fixtures);
+
+    assert!(
+        result.is_err(),
+        "shared session must not be mutably aliased"
+    );
+    assert!(
+        Arc::ptr_eq(&held, &after),
+        "failed mutation should reinsert the original session"
+    );
+}
+
 // Robust: `invalidate_graph_session_cache(None)` clears every entry,
 // not just one workspace.
 #[test]
 fn graph_session_cache_invalidate_all_clears_robust() {
-    let fixtures = std::path::Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../jfc-graph/tests/fixtures"
-    ));
+    let workspace = graph_session_cache_test_workspace();
+    let fixtures = workspace.path();
     let _ = get_or_build_graph_session(fixtures);
     invalidate_graph_session_cache(None);
     let after = graph_session_cache().lock().expect("cache lock").len();
@@ -1829,7 +1868,18 @@ async fn execute_grep_files_with_matches_mode_normal() {
 
 #[test]
 fn execute_task_create_without_store_fails_robust() {
-    let r = execute_task_create(None, "subj".into(), "desc".into(), None, vec![], None, None, None, None, None);
+    let r = execute_task_create(
+        None,
+        "subj".into(),
+        "desc".into(),
+        None,
+        vec![],
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
     assert!(r.is_error());
     assert!(r.output.contains("Task store not available"));
 }
@@ -1843,7 +1893,11 @@ fn execute_task_create_with_store_returns_task_json_normal() {
         "release v1".into(),
         None,
         vec![],
-        None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
     );
     assert!(!r.is_error(), "{:?}", r);
     // The output is the JSON of the created task — should mention the
@@ -1861,14 +1915,20 @@ fn execute_task_create_with_unknown_dependency_fails_robust() {
         "y".into(),
         None,
         vec!["t999".into()],
-        None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
     );
     assert!(r.is_error(), "{:?}", r);
 }
 
 #[test]
 fn execute_task_update_without_store_fails_robust() {
-    let r = execute_task_update(None, "t1", None, None, None, None, None, None, None, None, None);
+    let r = execute_task_update(
+        None, "t1", None, None, None, None, None, None, None, None, None,
+    );
     assert!(r.is_error());
 }
 
@@ -1881,7 +1941,11 @@ fn execute_task_update_changes_status_normal() {
         "do alpha".into(),
         None,
         vec![],
-        None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
     );
     assert!(!create.is_error());
     // First-created task gets id `t1`.
@@ -1892,7 +1956,11 @@ fn execute_task_update_changes_status_normal() {
         None,
         None,
         None,
-        None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
     );
     assert!(!r.is_error(), "{}", r.output);
     assert!(r.output.contains("in_progress"), "{}", r.output);
@@ -1901,7 +1969,18 @@ fn execute_task_update_changes_status_normal() {
 #[test]
 fn execute_task_update_invalid_status_fails_robust() {
     let store = TaskStore::in_memory();
-    execute_task_create(Some(store.clone()), "x".into(), "y".into(), None, vec![], None, None, None, None, None);
+    execute_task_create(
+        Some(store.clone()),
+        "x".into(),
+        "y".into(),
+        None,
+        vec![],
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
     let r = execute_task_update(
         Some(store),
         "t1",
@@ -1909,7 +1988,11 @@ fn execute_task_update_invalid_status_fails_robust() {
         Some("renamed".into()),
         None,
         None,
-        None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
     );
     assert!(r.is_error(), "{}", r.output);
     assert!(r.output.contains("Invalid task status"), "{}", r.output);
@@ -1918,7 +2001,18 @@ fn execute_task_update_invalid_status_fails_robust() {
 #[test]
 fn execute_task_done_marks_completed_normal() {
     let store = TaskStore::in_memory();
-    execute_task_create(Some(store.clone()), "do".into(), "it".into(), None, vec![], None, None, None, None, None);
+    execute_task_create(
+        Some(store.clone()),
+        "do".into(),
+        "it".into(),
+        None,
+        vec![],
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
     let r = execute_task_done(Some(store), "t1");
     assert!(!r.is_error(), "{}", r.output);
     assert!(r.output.contains("completed"), "{}", r.output);
@@ -1946,7 +2040,11 @@ fn execute_task_list_returns_tasks_normal() {
         "first".into(),
         None,
         vec![],
-        None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
     );
     execute_task_create(
         Some(store.clone()),
@@ -1954,7 +2052,11 @@ fn execute_task_list_returns_tasks_normal() {
         "second".into(),
         None,
         vec![],
-        None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
     );
     let r = execute_task_list(Some(store), None, None);
     assert!(!r.is_error(), "{}", r.output);
@@ -1965,7 +2067,18 @@ fn execute_task_list_returns_tasks_normal() {
 #[test]
 fn execute_task_list_filters_by_owner_robust() {
     let store = TaskStore::in_memory();
-    execute_task_create(Some(store.clone()), "x".into(), "y".into(), None, vec![], None, None, None, None, None);
+    execute_task_create(
+        Some(store.clone()),
+        "x".into(),
+        "y".into(),
+        None,
+        vec![],
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
     execute_task_update(
         Some(store.clone()),
         "t1",
@@ -1973,7 +2086,11 @@ fn execute_task_list_filters_by_owner_robust() {
         None,
         None,
         Some("alice".into()),
-        None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
     );
     let only_alice = execute_task_list(Some(store.clone()), None, Some("alice"));
     assert!(only_alice.output.contains("alice"), "{}", only_alice.output);
@@ -2487,15 +2604,34 @@ async fn execute_remote_trigger_unknown_id_fails_robust() {
 
 // ─── EnterPlanMode tool ────────────────────────────────────────────────
 
+struct EventSenderResetGuard;
+
+impl Drop for EventSenderResetGuard {
+    fn drop(&mut self) {
+        clear_event_sender_for_test();
+    }
+}
+
+fn clear_event_sender_for_test() {
+    if let Ok(mut g) = active_event_sender_handle().write() {
+        *g = None;
+    }
+}
+
+#[serial_test::serial]
 #[tokio::test]
 async fn enter_plan_mode_dispatches_event_normal() {
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::app::AppEvent>(8);
+    let _guard = EventSenderResetGuard;
+    clear_event_sender_for_test();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::runtime::AppEvent>(8);
     register_event_sender(tx);
     let r = execute_enter_plan_mode("safety check").await;
     assert!(!r.is_error(), "{}", r.output);
     let evt = rx.recv().await.expect("event");
     match evt {
-        crate::app::AppEvent::EnterPlanModeRequested { reason } => {
+        crate::runtime::AppEvent::Ui(crate::runtime::UiEvent::EnterPlanModeRequested {
+            reason,
+        }) => {
             assert_eq!(reason, "safety check");
         }
         _ => panic!("expected EnterPlanModeRequested AppEvent variant"),
@@ -2505,13 +2641,13 @@ async fn enter_plan_mode_dispatches_event_normal() {
 /// Robust: when no event sender is registered (e.g. early-boot tool
 /// calls or test setup that didn't wire one), the call fails with a
 /// clear message rather than panicking.
+#[serial_test::serial]
 #[tokio::test]
 async fn enter_plan_mode_without_sender_fails_robust() {
+    let _guard = EventSenderResetGuard;
     // Clear any previously-registered sender. We use a separate
     // process-global, so this requires reaching into the handle.
-    if let Ok(mut g) = active_event_sender_handle().write() {
-        *g = None;
-    }
+    clear_event_sender_for_test();
     let r = execute_enter_plan_mode("noop").await;
     assert!(r.is_error());
     assert!(r.output.contains("no event sender"), "{}", r.output);
@@ -2719,6 +2855,33 @@ fn graph_query_fixtures_dir() -> &'static Path {
         env!("CARGO_MANIFEST_DIR"),
         "/../jfc-graph/tests/fixtures"
     ))
+}
+
+#[tokio::test]
+async fn code_index_lists_filtered_symbols_normal() {
+    let fixtures = graph_query_fixtures_dir();
+    invalidate_graph_session_cache(Some(fixtures));
+
+    let result = execute_tool(
+        ToolKind::CodeIndex,
+        ToolInput::CodeIndex {
+            path: Some("sample.rs".into()),
+            query: Some("foo".into()),
+            kind: Some("function".into()),
+            max_entries: Some(10),
+        },
+        fixtures.to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(!result.is_error(), "{}", result.output);
+    assert!(result.output.contains("Code index"), "{}", result.output);
+    assert!(result.output.contains("sample.rs"), "{}", result.output);
+    assert!(result.output.contains("fn:"), "{}", result.output);
+    assert!(result.output.contains("foo"), "{}", result.output);
 }
 
 /// Normal: `union` set algebra reaches the new `run_query_expr` path

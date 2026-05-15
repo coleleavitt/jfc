@@ -128,8 +128,8 @@ pub(super) fn execute_task_validate(store: Option<Arc<TaskStore>>) -> ExecutionR
         return ExecutionResult::failure("Task store not available");
     };
     let validation = store.validate();
-    let output = serde_json::to_string_pretty(&validation)
-        .unwrap_or_else(|_| format!("{validation:?}"));
+    let output =
+        serde_json::to_string_pretty(&validation).unwrap_or_else(|_| format!("{validation:?}"));
     ExecutionResult::success(output)
 }
 

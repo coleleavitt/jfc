@@ -83,10 +83,7 @@ fn spawn_watcher() -> Result<(), String> {
                     EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_)
                 ) {
                     // Check whether this event is for the keybindings file.
-                    let is_keybindings = event
-                        .paths
-                        .iter()
-                        .any(|p| p == &keybindings_path_clone);
+                    let is_keybindings = event.paths.iter().any(|p| p == &keybindings_path_clone);
 
                     if is_keybindings {
                         KEYBINDINGS_CHANGE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -164,7 +161,10 @@ fn spawn_watcher() -> Result<(), String> {
             kb_path.clone()
         } else {
             // Watch the parent directory so a newly-created file is detected.
-            kb_path.parent().map(PathBuf::from).unwrap_or_else(|| kb_path.clone())
+            kb_path
+                .parent()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| kb_path.clone())
         };
         match watcher.watch(&watch_target, RecursiveMode::NonRecursive) {
             Ok(()) => {
