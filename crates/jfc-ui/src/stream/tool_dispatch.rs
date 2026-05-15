@@ -7,17 +7,17 @@ use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::context::ReadDedupCache;
-use crate::provider::{ModelId, Provider};
 use crate::runtime::{AppEvent, TaskEvent, TeamEvent, ToolEvent};
 use crate::scheduler;
 use crate::types::{ToolCall, ToolInput};
+use jfc_provider::{ModelId, Provider};
 
 #[tracing::instrument(target = "jfc::stream", skip(tx, dedup, task_store, provider, model, teammate_event_tx), fields(n = tool_calls.len()))]
 pub(crate) fn dispatch_tools_batched(
     tool_calls: Vec<ToolCall>,
     tx: &mpsc::Sender<AppEvent>,
     dedup: Arc<Mutex<ReadDedupCache>>,
-    task_store: Option<Arc<crate::tasks::TaskStore>>,
+    task_store: Option<Arc<jfc_session::TaskStore>>,
     active_team_name: Option<String>,
     current_session_id: Option<String>,
     provider: Arc<dyn Provider>,
@@ -117,7 +117,7 @@ pub(crate) fn dispatch_tools_batched(
                 provider: provider.clone(),
                 model_id: teammate_model,
                 system_prompt: None,
-                task_store: Some(crate::tasks::TaskStore::open_team(&team_name)),
+                task_store: Some(jfc_session::TaskStore::open_team(&team_name)),
             };
 
             let teammate_event_tx = teammate_event_tx.clone();

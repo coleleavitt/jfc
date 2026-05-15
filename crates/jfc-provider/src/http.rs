@@ -61,13 +61,13 @@ where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = reqwest::Result<reqwest::Response>>,
 {
-    let config = super::retry::RetryConfig::default();
+    let config = crate::retry::RetryConfig::default();
     let mut last_err: Option<reqwest::Error> = None;
     for attempt in 0..=config.max_retries {
         match build().await {
             Ok(resp) => {
                 let status = resp.status();
-                if super::retry::should_retry_status(status.as_u16(), Some(resp.headers()))
+                if crate::retry::should_retry_status(status.as_u16(), Some(resp.headers()))
                     && attempt < config.max_retries
                 {
                     let delay = config.delay_for_attempt(attempt);
@@ -94,7 +94,7 @@ where
                 return Ok(resp);
             }
             Err(e) => {
-                let retriable = super::retry::is_retriable_error(&e);
+                let retriable = crate::retry::is_retriable_error(&e);
                 if retriable && attempt < config.max_retries {
                     let delay = config.delay_for_attempt(attempt);
                     tracing::warn!(
@@ -187,6 +187,17 @@ pub fn classify_send_error(err: &reqwest::Error) -> &'static str {
 mod tests {
     use super::*;
 
+    fn synthetic_response(status: u16) -> reqwest::Response {
+        use reqwest::ResponseBuilderExt;
+
+        http::Response::builder()
+            .status(status)
+            .url(reqwest::Url::parse("http://example.test/").unwrap())
+            .body("")
+            .unwrap()
+            .into()
+    }
+
     // Normal: streaming_client construction never panics. The
     // `.expect()` inside is intentional — if we ever introduce an
     // invalid combination of timeouts we want the test suite to
@@ -243,27 +254,12 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn send_with_retry_success_first_try_normal() {
         use std::sync::atomic::{AtomicU32, Ordering};
-        // Spawn a tiny TCP listener that completes a 200 response.
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            if let Ok((mut s, _)) = listener.accept().await {
-                use tokio::io::{AsyncReadExt, AsyncWriteExt};
-                let mut buf = [0u8; 1024];
-                let _ = s.read(&mut buf).await;
-                let _ = s
-                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
-                    .await;
-                let _ = s.shutdown().await;
-            }
-        });
-        let client = reqwest::Client::new();
+
         let attempts = std::sync::Arc::new(AtomicU32::new(0));
         let attempts_c = attempts.clone();
-        let url = format!("http://{addr}/");
         let res = send_with_retry("test.success", || {
             attempts_c.fetch_add(1, Ordering::SeqCst);
-            client.get(&url).send()
+            async { Ok(synthetic_response(200)) }
         })
         .await;
         assert!(res.is_ok(), "happy path should succeed");
@@ -276,43 +272,18 @@ mod tests {
     async fn send_with_retry_retries_504_before_success_normal() {
         use std::sync::atomic::{AtomicU32, Ordering};
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
         let attempts = std::sync::Arc::new(AtomicU32::new(0));
-        let attempts_server = attempts.clone();
+        let attempts_c = attempts.clone();
 
-        tokio::spawn(async move {
-            loop {
-                let Ok((mut s, _)) = listener.accept().await else {
-                    break;
-                };
-                let n = attempts_server.fetch_add(1, Ordering::SeqCst);
-                use tokio::io::{AsyncReadExt, AsyncWriteExt};
-                let mut buf = [0u8; 1024];
-                let _ = s.read(&mut buf).await;
-                if n == 0 {
-                    let _ = s
-                        .write_all(
-                            b"HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 7\r\n\r\ntimeout",
-                        )
-                        .await;
-                } else {
-                    let _ = s
-                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
-                        .await;
-                }
-                let _ = s.shutdown().await;
-                if n > 0 {
-                    break;
-                }
+        let res = send_with_retry("test.status_retry", || {
+            let attempts = attempts_c.clone();
+            async move {
+                let n = attempts.fetch_add(1, Ordering::SeqCst);
+                Ok(synthetic_response(if n == 0 { 504 } else { 200 }))
             }
-        });
-
-        let client = reqwest::Client::new();
-        let url = format!("http://{addr}/");
-        let res = send_with_retry("test.status_retry", || client.get(&url).send())
-            .await
-            .expect("request should succeed after retry");
+        })
+        .await
+        .expect("request should succeed after retry");
 
         assert_eq!(res.status(), reqwest::StatusCode::OK);
         assert_eq!(

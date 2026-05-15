@@ -4,14 +4,14 @@
 /// tool dispatch (tools require user approval which is meaningless in
 /// headless mode — callers needing tools should drive the TUI).
 pub(super) async fn run_print_mode(
-    provider: std::sync::Arc<dyn crate::provider::Provider>,
-    model: crate::provider::ModelId,
+    provider: std::sync::Arc<dyn jfc_provider::Provider>,
+    model: jfc_provider::ModelId,
     prompt: String,
 ) -> anyhow::Result<()> {
-    use crate::provider::{
+    use futures::StreamExt;
+    use jfc_provider::{
         ProviderContent, ProviderMessage, ProviderRole, StreamEvent, StreamOptions,
     };
-    use futures::StreamExt;
     use std::io::Write;
 
     let messages = vec![ProviderMessage {

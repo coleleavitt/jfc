@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use crate::provider::ModelInfo;
 use crate::types::{ToolCall, ToolKind};
+use jfc_provider::ModelInfo;
 
 use super::{App, PermissionDecision, STREAM_WATCHDOG_TIMEOUT_SECS};
 
@@ -82,7 +82,7 @@ impl App {
     /// existing one (the session-load path through the sidebar / `/continue`).
     pub fn switch_session(&mut self, id: Option<crate::ids::SessionId>) {
         let old_id = self.current_session_id.clone();
-        let new_id = id.unwrap_or_else(crate::session::generate_session_id);
+        let new_id = id.unwrap_or_else(jfc_session::generate_session_id);
         tracing::info!(
             target: "jfc::app",
             old_session_id = ?old_id,
@@ -90,7 +90,7 @@ impl App {
             "switch_session"
         );
         self.current_session_id = Some(new_id.clone());
-        self.task_store = crate::tasks::TaskStore::open(new_id.as_str());
+        self.task_store = jfc_session::TaskStore::open(new_id.as_str());
         self.task_completion_times.clear();
         self.task_activities.clear();
         self.task_panel_selected = 0;
@@ -357,8 +357,8 @@ impl App {
     /// Scan the task store for newly-completed tasks and record their
     /// completion instant so the footer can fade them out after 30 s.
     pub fn sync_task_completions(&mut self) {
-        use crate::tasks::TaskStatus;
-        for task in self.task_store.list(crate::tasks::DeletedFilter::Exclude) {
+        use jfc_session::TaskStatus;
+        for task in self.task_store.list(jfc_session::DeletedFilter::Exclude) {
             if task.status == TaskStatus::Completed
                 && !self.task_completion_times.contains_key(&task.id)
             {

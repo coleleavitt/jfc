@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-use crate::provider::{ModelId, Provider, ProviderMessage, StreamOptions};
 use crate::runtime::{AppEvent, StreamEvent};
+use jfc_provider::{ModelId, Provider, ProviderMessage, StreamOptions};
 
 use super::{live_events, open_stream_with_bedrock_retries, prepare_stream_request};
 

@@ -2176,7 +2176,7 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
     #[test]
     fn message_view_total_lines_empty_app_normal() {
         // Build a fake App via the test helpers — empty messages → 0 lines.
-        use crate::provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+        use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
         use std::sync::Arc;
 
         struct Stub;
@@ -2196,7 +2196,7 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
                 Ok(Box::pin(futures::stream::empty()))
             }
         }
-        impl crate::provider::seal::Sealed for Stub {}
+        impl jfc_provider::seal::Sealed for Stub {}
 
         let app = App::new(Arc::new(Stub), "test-model");
         // No messages → 0 lines.
@@ -2226,7 +2226,7 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
     }
 
     fn stub_app() -> App {
-        use crate::provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+        use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
         use std::sync::Arc;
         struct Stub;
         #[async_trait::async_trait]
@@ -2245,7 +2245,7 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
                 Ok(Box::pin(futures::stream::empty()))
             }
         }
-        impl crate::provider::seal::Sealed for Stub {}
+        impl jfc_provider::seal::Sealed for Stub {}
         App::new(Arc::new(Stub), "test-model")
     }
 

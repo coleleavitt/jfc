@@ -1,5 +1,5 @@
 use crate::attachments::Attachment;
-use crate::provider::ProviderContent;
+use jfc_provider::ProviderContent;
 
 pub(super) fn push_attachments(content: &mut Vec<ProviderContent>, attachments: &[Attachment]) {
     for att in attachments {
@@ -9,10 +9,10 @@ pub(super) fn push_attachments(content: &mut Vec<ProviderContent>, attachments: 
 
 #[cfg(test)]
 mod tests {
-    use crate::provider::{ProviderContent, ProviderRole};
     use crate::stream::messages::build_provider_messages;
     use crate::stream::messages::provider_messages::build_provider_messages_with_tool_results;
     use crate::types::ChatMessage;
+    use jfc_provider::{ProviderContent, ProviderRole};
 
     /// Normal: PDF on ChatMessage.attachments lands as ProviderContent::Attachment
     /// in build_provider_messages_with_tool_results. Per-message ownership —

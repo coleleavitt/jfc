@@ -15,9 +15,9 @@ use tracing::{debug, info, warn};
 
 use crate::context::ReadDedupCache;
 use crate::runtime::{AppEvent, ExecutionResult, ToolEvent};
-use crate::tasks::TaskStore;
 use crate::tools;
 use crate::types::{ToolCall, ToolKind};
+use jfc_session::TaskStore;
 
 /// Maximum number of concurrency-safe tools that run in a single parallel batch.
 pub const MAX_CONCURRENCY: usize = 10;

@@ -480,8 +480,8 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
         launch.active_team_name.as_deref(),
         launch.parent_session_id.as_deref(),
     ) {
-        (Some(team), _) => Some(crate::tasks::TaskStore::open_team(team)),
-        (None, Some(session_id)) => Some(crate::tasks::TaskStore::open(session_id)),
+        (Some(team), _) => Some(jfc_session::TaskStore::open_team(team)),
+        (None, Some(session_id)) => Some(jfc_session::TaskStore::open(session_id)),
         (None, None) => None,
     };
     let started = Instant::now();

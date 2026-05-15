@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use crate::app::App;
-use crate::tasks::{DeletedFilter, Task, TaskStatus};
+use jfc_session::{DeletedFilter, Task, TaskStatus};
 
 pub(super) fn task_panel(f: &mut Frame, app: &mut App) {
     let t = app.theme;

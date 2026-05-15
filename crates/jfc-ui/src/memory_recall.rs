@@ -51,7 +51,7 @@ use anyhow::Result;
 use serde_json::{Value, json};
 
 use crate::memory::MemoryEntry;
-use crate::provider::{
+use jfc_provider::{
     ModelId, Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions, ToolDef,
 };
 
@@ -528,17 +528,17 @@ async fn call_provider(
             let mut tool_input = String::new();
             while let Some(event) = stream.next().await {
                 match event? {
-                    crate::provider::StreamEvent::TextDelta { delta, .. } => {
+                    jfc_provider::StreamEvent::TextDelta { delta, .. } => {
                         text.push_str(&delta);
                     }
-                    crate::provider::StreamEvent::ToolDelta { delta, .. } => {
+                    jfc_provider::StreamEvent::ToolDelta { delta, .. } => {
                         tool_input.push_str(&delta);
                     }
-                    crate::provider::StreamEvent::ToolDone { input_json, .. } => {
+                    jfc_provider::StreamEvent::ToolDone { input_json, .. } => {
                         tool_input = input_json;
                     }
-                    crate::provider::StreamEvent::Done { .. } => break,
-                    crate::provider::StreamEvent::Error { message } => {
+                    jfc_provider::StreamEvent::Done { .. } => break,
+                    jfc_provider::StreamEvent::Error { message } => {
                         anyhow::bail!("{message}");
                     }
                     _ => {}
@@ -662,10 +662,8 @@ pub async fn run_recall(
 mod tests {
     use super::*;
     use crate::memory::{MemoryFrontmatter, MemoryLevel, MemoryScope, MemoryType};
-    use crate::provider::{
-        CompletionResponse, EventStream, ModelInfo, StreamConvention, TokenUsage,
-    };
     use async_trait::async_trait;
+    use jfc_provider::{CompletionResponse, EventStream, ModelInfo, StreamConvention, TokenUsage};
     use std::path::PathBuf;
     use std::sync::Mutex as StdMutex;
 
@@ -751,7 +749,7 @@ mod tests {
             })
         }
     }
-    impl crate::provider::seal::Sealed for MockProvider {}
+    impl jfc_provider::seal::Sealed for MockProvider {}
 
     fn make_entry(filename: &str, body: &str) -> MemoryEntry {
         MemoryEntry {

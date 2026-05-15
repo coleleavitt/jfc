@@ -347,7 +347,7 @@ async fn run_openwebui_auth_subcommand(sub: OpenWebUIAuthSubcommand) -> anyhow::
 
 async fn run_codex_auth_subcommand(sub: CodexAuthSubcommand) -> anyhow::Result<()> {
     use crate::providers::codex_oauth::CodexOAuthProvider;
-    use crate::providers::oauth_core::TokenStore;
+    use jfc_auth::oauth_core::TokenStore;
 
     let provider = CodexOAuthProvider::new();
     match sub {
@@ -387,7 +387,7 @@ async fn run_codex_auth_subcommand(sub: CodexAuthSubcommand) -> anyhow::Result<(
         CodexAuthSubcommand::Status => {
             let store = TokenStore::new(TokenStore::default_path());
             match store.get("codex")? {
-                Some(crate::providers::oauth_core::AuthMethod::OAuth {
+                Some(jfc_auth::oauth_core::AuthMethod::OAuth {
                     expires_at,
                     account_id,
                     ..

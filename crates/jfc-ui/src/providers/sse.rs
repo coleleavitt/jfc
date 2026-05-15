@@ -4,7 +4,7 @@ use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::provider::{
+use jfc_provider::{
     EventStream, ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, ToolDef,
 };
 
@@ -618,7 +618,7 @@ fn log_parsed_event(event: &SseEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{
+    use jfc_provider::{
         ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, ToolDef,
     };
 

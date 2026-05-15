@@ -24,8 +24,8 @@ pub const FILE_UPLOAD_THRESHOLD_BYTES: usize = 100 * 1024;
 /// one — OAuth-only sessions go through `provider.rs` instead).
 pub fn build_client() -> Option<Client> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let profile = crate::credential_vault::active_profile(&cwd);
-    let api_key = crate::credential_vault::api_key("anthropic", profile.as_deref())?;
+    let profile = jfc_auth::credential_vault::active_profile(&cwd);
+    let api_key = jfc_auth::credential_vault::api_key("anthropic", profile.as_deref())?;
     Some(Client::with_api_key(api_key))
 }
 

@@ -701,7 +701,7 @@ pub async fn handle_key(
         (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
             app.show_sidebar = !app.show_sidebar;
             if app.show_sidebar {
-                app.session_meta = crate::session::list_sessions_with_metadata().await;
+                app.session_meta = jfc_session::list_sessions_with_metadata().await;
                 app.session_selected = 0;
                 app.session_list_state.select(Some(0));
             }
@@ -1641,7 +1641,7 @@ async fn handle_submit(
             ));
         });
         tokio::spawn(async move {
-            let options = crate::provider::StreamOptions::new(model.clone());
+            let options = jfc_provider::StreamOptions::new(model.clone());
             tracing::debug!(
                 target: "jfc::compact",
                 model = %model,
@@ -1934,7 +1934,7 @@ async fn handle_submit(
     let session_id = app
         .current_session_id
         .clone()
-        .unwrap_or_else(crate::session::generate_session_id);
+        .unwrap_or_else(jfc_session::generate_session_id);
     // Fire-and-forget session save — don't block the UI on disk I/O.
     {
         let sid = session_id.clone();
@@ -2208,12 +2208,12 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             // confusion the user reported.
             let want_global = parts.get(1).copied().map(str::trim) == Some("all");
             let session_id = if want_global {
-                crate::session::most_recent_session().await
+                jfc_session::most_recent_session().await
             } else {
                 let cwd_str = std::env::current_dir()
                     .ok()
                     .map(|p| p.display().to_string());
-                crate::session::most_recent_session_for_cwd(cwd_str.as_deref()).await
+                jfc_session::most_recent_session_for_cwd(cwd_str.as_deref()).await
             };
             if let Some(session_id) = session_id {
                 if let Some(messages) = crate::session::load_session(&session_id).await {
@@ -2262,7 +2262,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             }
             if session_id.is_empty() {
                 // List available sessions
-                let sessions = crate::session::list_sessions().await;
+                let sessions = jfc_session::list_sessions().await;
                 if sessions.is_empty() {
                     app.messages.push(ChatMessage::assistant(
                         "No sessions found. Usage: `/resume <session_id>`".into(),
@@ -2293,16 +2293,15 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     // informational so the user notices they may be
                     // pointing at the wrong project.
                     if !force {
-                        let session_cwd = crate::session::load_session_metadata(&typed_session_id)
+                        let session_cwd = jfc_session::load_session_metadata(&typed_session_id)
                             .await
                             .and_then(|m| m.cwd);
                         let current_cwd = std::env::current_dir()
                             .map(|p| p.to_string_lossy().into_owned())
                             .unwrap_or_default();
-                        if let Some(msg) = crate::session::cwd_mismatch_message(
-                            session_cwd.as_deref(),
-                            &current_cwd,
-                        ) {
+                        if let Some(msg) =
+                            jfc_session::cwd_mismatch_message(session_cwd.as_deref(), &current_cwd)
+                        {
                             crate::toast::push_with_cap(
                                 &mut app.toasts,
                                 crate::toast::Toast::new(crate::toast::ToastKind::Warning, msg),
@@ -2328,7 +2327,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
         }
         "/sessions" => {
             // List all sessions with metadata
-            let sessions = crate::session::list_sessions_with_metadata().await;
+            let sessions = jfc_session::list_sessions_with_metadata().await;
             if sessions.is_empty() {
                 app.messages
                     .push(ChatMessage::assistant("No sessions found.".into()));
@@ -3666,8 +3665,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             // metadata.kind="cascade" tag is the signal we emit when
             // queuing them. Group by file (one Task ≈ one file) and
             // show status + caller list per group.
-            let tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
-            let cascade: Vec<&crate::tasks::Task> = tasks
+            let tasks = app.task_store.list(jfc_session::DeletedFilter::Exclude);
+            let cascade: Vec<&jfc_session::Task> = tasks
                 .iter()
                 .filter(|t| {
                     t.metadata
@@ -3690,11 +3689,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 );
                 for t in &cascade {
                     let status_marker = match t.status {
-                        crate::tasks::TaskStatus::Completed => "✓",
-                        crate::tasks::TaskStatus::InProgress => "⏵",
-                        crate::tasks::TaskStatus::Pending => "•",
-                        crate::tasks::TaskStatus::Failed => "✗",
-                        crate::tasks::TaskStatus::Deleted => "✗",
+                        jfc_session::TaskStatus::Completed => "✓",
+                        jfc_session::TaskStatus::InProgress => "⏵",
+                        jfc_session::TaskStatus::Pending => "•",
+                        jfc_session::TaskStatus::Failed => "✗",
+                        jfc_session::TaskStatus::Deleted => "✗",
                     };
                     let file = t
                         .metadata
@@ -3772,18 +3771,18 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             app.messages.push(ChatMessage::assistant(body));
         }
         "/task-list" | "/tasks" => {
-            let tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
+            let tasks = app.task_store.list(jfc_session::DeletedFilter::Exclude);
             let body = if tasks.is_empty() {
                 "No tasks. Use `/task-add <subject>` to create one.".to_owned()
             } else {
                 let mut s = format!("**{} task(s):**\n\n", tasks.len());
                 for t in &tasks {
                     let icon = match t.status {
-                        crate::tasks::TaskStatus::Pending => "□",
-                        crate::tasks::TaskStatus::InProgress => "▣",
-                        crate::tasks::TaskStatus::Completed => "✓",
-                        crate::tasks::TaskStatus::Failed => "✗",
-                        crate::tasks::TaskStatus::Deleted => "✗",
+                        jfc_session::TaskStatus::Pending => "□",
+                        jfc_session::TaskStatus::InProgress => "▣",
+                        jfc_session::TaskStatus::Completed => "✓",
+                        jfc_session::TaskStatus::Failed => "✗",
+                        jfc_session::TaskStatus::Deleted => "✗",
                     };
                     let owner = t
                         .owner
@@ -3828,7 +3827,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                     subject.to_owned(),
                     String::new(),
                     None,
-                    Vec::<crate::tasks::TaskId>::new(),
+                    Vec::<jfc_session::TaskId>::new(),
                 ) {
                     Ok(t) => {
                         app.messages
@@ -3854,8 +3853,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             } else {
                 match app.task_store.update(
                     id,
-                    crate::tasks::TaskPatch {
-                        status: Some(crate::tasks::TaskStatus::Completed),
+                    jfc_session::TaskPatch {
+                        status: Some(jfc_session::TaskStatus::Completed),
                         ..Default::default()
                     },
                 ) {
@@ -4225,7 +4224,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 let session_id = app
                     .current_session_id
                     .clone()
-                    .unwrap_or_else(crate::session::generate_session_id);
+                    .unwrap_or_else(jfc_session::generate_session_id);
                 // Fire-and-forget — don't block UI on disk I/O
                 {
                     let sid = session_id.clone();
@@ -4275,10 +4274,10 @@ mod tests {
 
     use super::*;
     use crate::app::App;
-    use crate::provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
     use crate::runtime::{AppEvent, UiEvent};
     #[allow(unused_imports)]
     use crate::types::*;
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 
     struct TestProvider;
 
@@ -4300,7 +4299,7 @@ mod tests {
             Ok(Box::pin(futures::stream::empty()))
         }
     }
-    impl crate::provider::seal::Sealed for TestProvider {}
+    impl jfc_provider::seal::Sealed for TestProvider {}
 
     struct StaticModelProvider;
 
@@ -4322,14 +4321,14 @@ mod tests {
             Ok(Box::pin(futures::stream::empty()))
         }
     }
-    impl crate::provider::seal::Sealed for StaticModelProvider {}
+    impl jfc_provider::seal::Sealed for StaticModelProvider {}
 
     /// Test fixture: a fresh `App` plus a paired `(tx, rx)` so tests can both
     /// drive `handle_key` and inspect the AppEvents it emits. Pulled out so
     /// the dozens of tests below don't repeat the boilerplate.
     fn test_app() -> App {
         let mut app = App::new(Arc::new(TestProvider), "test-model");
-        app.task_store = crate::tasks::TaskStore::in_memory();
+        app.task_store = jfc_session::TaskStore::in_memory();
         app
     }
 
@@ -4815,7 +4814,7 @@ mod tests {
     fn collect_all_models_empty_cache_falls_back_to_static_robust() {
         let mut app = App::new(Arc::new(StaticModelProvider), "static-model");
         app.provider_models
-            .insert(crate::provider::ProviderId::from("static"), Vec::new());
+            .insert(jfc_provider::ProviderId::from("static"), Vec::new());
 
         let models = collect_all_models(&app);
 
@@ -6115,7 +6114,7 @@ mod tests {
     async fn slash_task_add_creates_task_normal() {
         let mut app = test_app();
         run_slash_command(&mut app, "/task-add make tests pass").await;
-        let tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
+        let tasks = app.task_store.list(jfc_session::DeletedFilter::Exclude);
         assert_eq!(tasks.len(), 1);
     }
 
@@ -6123,7 +6122,7 @@ mod tests {
     async fn slash_task_add_robust_no_args() {
         let mut app = test_app();
         run_slash_command(&mut app, "/task-add").await;
-        let tasks = app.task_store.list(crate::tasks::DeletedFilter::Exclude);
+        let tasks = app.task_store.list(jfc_session::DeletedFilter::Exclude);
         assert!(tasks.is_empty());
     }
 
@@ -6440,7 +6439,7 @@ mod tests {
         // A regular (non-cascade) task — should NOT appear.
         let regular = app
             .task_store
-            .create::<crate::tasks::TaskId>(
+            .create::<jfc_session::TaskId>(
                 "regular work".into(),
                 "should not appear in /cascade".into(),
                 None,
@@ -6450,7 +6449,7 @@ mod tests {
         // A cascade task — SHOULD appear.
         let cascade = app
             .task_store
-            .create::<crate::tasks::TaskId>(
+            .create::<jfc_session::TaskId>(
                 "Update 2 call sites in src/foo.rs".into(),
                 "cascade work".into(),
                 None,
@@ -6459,7 +6458,7 @@ mod tests {
             .expect("create cascade task");
         let _ = app.task_store.update(
             cascade.id.as_str(),
-            crate::tasks::TaskPatch {
+            jfc_session::TaskPatch {
                 metadata: Some(serde_json::json!({
                     "kind": "cascade",
                     "file": "src/foo.rs",

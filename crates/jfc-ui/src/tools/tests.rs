@@ -19,9 +19,9 @@ use super::tasks::{
 use super::worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
 use super::*;
 
-use crate::provider::ToolDef;
-use crate::tasks::TaskStore;
 use crate::types::{ReplacementMode, ToolInput, ToolKind};
+use jfc_provider::ToolDef;
+use jfc_session::TaskStore;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use tokio::process::Command;
@@ -610,25 +610,25 @@ async fn run_bounty_unknown_id_errors_robust() {
     // doesn't fire first and mask the unknown-id check.
     struct NoopProvider;
     #[async_trait::async_trait]
-    impl crate::provider::Provider for NoopProvider {
+    impl jfc_provider::Provider for NoopProvider {
         fn name(&self) -> &str {
             "noop"
         }
-        fn available_models(&self) -> Vec<crate::provider::ModelInfo> {
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
             vec![]
         }
         async fn stream(
             &self,
-            _: Vec<crate::provider::ProviderMessage>,
-            _: &crate::provider::StreamOptions,
-        ) -> anyhow::Result<crate::provider::EventStream> {
+            _: Vec<jfc_provider::ProviderMessage>,
+            _: &jfc_provider::StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
             Err(anyhow::anyhow!("noop"))
         }
     }
-    impl crate::provider::seal::Sealed for NoopProvider {}
+    impl jfc_provider::seal::Sealed for NoopProvider {}
     register_active_provider(
         std::sync::Arc::new(NoopProvider),
-        crate::provider::ModelId::new("noop"),
+        jfc_provider::ModelId::new("noop"),
     );
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let res = execute_tool(
@@ -857,24 +857,24 @@ fn register_active_provider_round_trip_normal() {
     // reuse it.
     struct NoopProvider;
     #[async_trait::async_trait]
-    impl crate::provider::Provider for NoopProvider {
+    impl jfc_provider::Provider for NoopProvider {
         fn name(&self) -> &str {
             "noop"
         }
-        fn available_models(&self) -> Vec<crate::provider::ModelInfo> {
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
             vec![]
         }
         async fn stream(
             &self,
-            _: Vec<crate::provider::ProviderMessage>,
-            _: &crate::provider::StreamOptions,
-        ) -> anyhow::Result<crate::provider::EventStream> {
+            _: Vec<jfc_provider::ProviderMessage>,
+            _: &jfc_provider::StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
             Err(anyhow::anyhow!("noop"))
         }
     }
-    impl crate::provider::seal::Sealed for NoopProvider {}
-    let p: std::sync::Arc<dyn crate::provider::Provider> = std::sync::Arc::new(NoopProvider);
-    let m = crate::provider::ModelId::new("noop-model");
+    impl jfc_provider::seal::Sealed for NoopProvider {}
+    let p: std::sync::Arc<dyn jfc_provider::Provider> = std::sync::Arc::new(NoopProvider);
+    let m = jfc_provider::ModelId::new("noop-model");
     register_active_provider(p, m.clone());
     let snap = snapshot_active_provider().expect("provider should be registered");
     assert_eq!(snap.0.name(), "noop");

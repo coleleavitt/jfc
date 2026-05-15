@@ -220,7 +220,7 @@ pub(super) async fn handle_pr_autofix(
     let session_id = app
         .current_session_id
         .clone()
-        .unwrap_or_else(crate::session::generate_session_id);
+        .unwrap_or_else(jfc_session::generate_session_id);
     {
         let session_id = session_id.clone();
         let messages = app.messages.clone();

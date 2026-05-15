@@ -1,5 +1,5 @@
-use crate::provider::{ProviderContent, ProviderMessage, ProviderRole};
 use crate::types::{ChatMessage, MessagePart, Role};
+use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole};
 
 pub(super) fn provider_role(role: Role) -> ProviderRole {
     match role {

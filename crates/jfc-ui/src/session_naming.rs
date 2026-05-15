@@ -14,7 +14,7 @@
 //! `session::set_session_title`. Failures are swallowed — title is
 //! cosmetic and shouldn't disrupt the chat.
 
-use crate::provider::{
+use jfc_provider::{
     ModelId, Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions,
 };
 use std::sync::Arc;

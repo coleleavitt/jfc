@@ -1,11 +1,12 @@
-use crate::{app, tasks, types};
+use crate::{app, types};
+use jfc_session::{DeletedFilter, TaskId, TaskStatus};
 
 pub(crate) fn update_task_activities(app: &mut app::App, calls: &[types::ToolCall]) {
-    let in_progress: Vec<tasks::TaskId> = app
+    let in_progress: Vec<TaskId> = app
         .task_store
-        .list(tasks::DeletedFilter::Exclude)
+        .list(DeletedFilter::Exclude)
         .iter()
-        .filter(|task| matches!(task.status, tasks::TaskStatus::InProgress))
+        .filter(|task| matches!(task.status, TaskStatus::InProgress))
         .map(|task| task.id.clone())
         .collect();
     if in_progress.is_empty() {

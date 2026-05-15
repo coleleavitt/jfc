@@ -2,15 +2,15 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::provider::{
+use jfc_provider::{
     CompletionResponse, EventStream, ModelId, ModelInfo, Provider, ProviderId, ProviderMessage,
     StreamConvention, StreamOptions,
 };
 
-use super::oauth_core::{
+use super::openai;
+use jfc_auth::oauth_core::{
     AuthMethod, TokenStore, generate_pkce, generate_state, jwt_claim, now_secs,
 };
-use super::openai;
 
 const PROVIDER_ID: &str = "codex";
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -53,14 +53,14 @@ pub struct CodexTokenSet {
 impl CodexOAuthProvider {
     pub fn new() -> Self {
         Self {
-            client: super::http::streaming_client(),
+            client: jfc_provider::http::streaming_client(),
             store: TokenStore::default_path().into(),
         }
     }
 
     pub fn with_store(path: impl Into<std::path::PathBuf>) -> Self {
         Self {
-            client: super::http::streaming_client(),
+            client: jfc_provider::http::streaming_client(),
             store: TokenStore::new(path),
         }
     }
@@ -349,7 +349,7 @@ impl CodexOAuthProvider {
     }
 }
 
-impl crate::provider::seal::Sealed for CodexOAuthProvider {}
+impl jfc_provider::seal::Sealed for CodexOAuthProvider {}
 
 #[async_trait]
 impl Provider for CodexOAuthProvider {

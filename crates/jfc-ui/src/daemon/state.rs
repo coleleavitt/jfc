@@ -155,7 +155,7 @@ pub struct BackgroundAgentLaunch {
     pub task_input: crate::types::TaskInput,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
-    pub model: crate::provider::ModelId,
+    pub model: jfc_provider::ModelId,
     pub provider_name: Option<String>,
     pub agent_def: Option<crate::agents::AgentDef>,
     pub cwd: PathBuf,

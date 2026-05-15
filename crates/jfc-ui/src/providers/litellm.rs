@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::provider::{
+use jfc_provider::{
     EventStream, ModelInfo, Provider, ProviderMessage, StreamConvention, StreamOptions,
 };
 
@@ -79,7 +79,7 @@ impl LiteLLMProvider {
         );
 
         Some(Self {
-            client: super::http::streaming_client(),
+            client: jfc_provider::http::streaming_client(),
             api_key,
             base_url,
         })
@@ -122,7 +122,7 @@ struct ApiModel {
 
 // ── Provider trait implementation ────────────────────────────────────────────
 
-impl crate::provider::seal::Sealed for LiteLLMProvider {}
+impl jfc_provider::seal::Sealed for LiteLLMProvider {}
 
 #[async_trait]
 impl Provider for LiteLLMProvider {
@@ -209,7 +209,7 @@ impl Provider for LiteLLMProvider {
         );
 
         let send_started = std::time::Instant::now();
-        let resp = match super::http::send_with_retry("litellm.chat/completions", || {
+        let resp = match jfc_provider::http::send_with_retry("litellm.chat/completions", || {
             self.client
                 .post(&url)
                 .header("Authorization", format!("Bearer {}", self.api_key))
@@ -225,7 +225,7 @@ impl Provider for LiteLLMProvider {
         {
             Ok(r) => r,
             Err(e) => {
-                let cause = super::http::classify_send_error(&e);
+                let cause = jfc_provider::http::classify_send_error(&e);
                 tracing::warn!(
                     target: "jfc::provider::litellm",
                     url = %url,
@@ -241,7 +241,10 @@ impl Provider for LiteLLMProvider {
             }
         };
 
-        super::http::report_first_byte_latency("litellm.chat/completions", send_started.elapsed());
+        jfc_provider::http::report_first_byte_latency(
+            "litellm.chat/completions",
+            send_started.elapsed(),
+        );
         tracing::info!(
             target: "jfc::provider::litellm",
             status = %resp.status(),
@@ -253,7 +256,7 @@ impl Provider for LiteLLMProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            let friendly = super::retry::friendly_error_message(status.as_u16(), &text);
+            let friendly = jfc_provider::retry::friendly_error_message(status.as_u16(), &text);
             anyhow::bail!("LiteLLM API error {status}: {friendly}\n  raw: {text}");
         }
 
@@ -268,7 +271,7 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{
+    use jfc_provider::{
         ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, StreamOptions,
         ToolDef,
     };
@@ -548,7 +551,7 @@ mod tests {
     // Normal: stream_convention returns OpenAiNative.
     #[test]
     fn stream_convention_is_openai_native_normal() {
-        use crate::provider::StreamConvention;
+        use jfc_provider::StreamConvention;
         assert_eq!(
             StreamConvention::OpenAiNative,
             StreamConvention::OpenAiNative
@@ -558,7 +561,7 @@ mod tests {
     // Normal: available_models returns empty vec (dynamic-only provider).
     #[test]
     fn available_models_returns_empty_normal() {
-        let static_models: Vec<crate::provider::ModelInfo> = Vec::new();
+        let static_models: Vec<jfc_provider::ModelInfo> = Vec::new();
         assert!(static_models.is_empty());
     }
 
@@ -1018,7 +1021,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "hits live LiteLLM instance — run with cargo test -- --ignored"]
     async fn live_provider_name_normal() {
-        use crate::provider::Provider;
+        use jfc_provider::Provider;
         let Some(p) = live_provider() else {
             eprintln!("skipping: JFC_LITELLM_API_KEY / JFC_LITELLM_API not set");
             return;
@@ -1030,7 +1033,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "hits live LiteLLM instance — run with cargo test -- --ignored"]
     async fn live_stream_convention_openai_native_normal() {
-        use crate::provider::{Provider, StreamConvention};
+        use jfc_provider::{Provider, StreamConvention};
         let Some(p) = live_provider() else {
             eprintln!("skipping: JFC_LITELLM_API_KEY / JFC_LITELLM_API not set");
             return;

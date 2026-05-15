@@ -18,18 +18,18 @@
 //!
 //! This module owns the prompt assembly, config loading, default rules, and
 //! decision parsing. The actual API call lives in the provider's `complete()`
-//! impl (see [`crate::provider::Provider::complete`]).
+//! impl (see [`jfc_provider::Provider::complete`]).
 
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::provider::{
+use crate::types::{ChatMessage, MessagePart, Role, ToolCall};
+use jfc_provider::{
     CompletionResponse, Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions,
     ToolDef,
 };
-use crate::types::{ChatMessage, MessagePart, Role, ToolCall};
 
 /// Result returned by the classifier.
 #[derive(Debug, Clone)]
@@ -614,10 +614,10 @@ mod tests {
 
     // ─── Fake provider for classify() tests ───────────────────────────────
 
-    use crate::provider::{
+    use async_trait::async_trait;
+    use jfc_provider::{
         EventStream, ModelInfo, ProviderMessage as PMsg, StreamConvention, StreamOptions as SOpts,
     };
-    use async_trait::async_trait;
 
     struct FakeProvider {
         // What complete() should return.
@@ -686,7 +686,7 @@ mod tests {
                 .expect("FakeProvider::complete called more than once")
         }
     }
-    impl crate::provider::seal::Sealed for FakeProvider {}
+    impl jfc_provider::seal::Sealed for FakeProvider {}
 
     // Normal: when the fake provider returns an "allow" decision, classify
     // surfaces it.

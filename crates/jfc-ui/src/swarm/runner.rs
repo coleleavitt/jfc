@@ -47,13 +47,13 @@ pub struct TeammateRunnerConfig {
     pub model: Option<String>,
     pub agent_type: Option<String>,
     /// Provider for API calls. Shared with the leader.
-    pub provider: std::sync::Arc<dyn crate::provider::Provider>,
+    pub provider: std::sync::Arc<dyn jfc_provider::Provider>,
     /// Model ID to use for this teammate's API calls.
-    pub model_id: crate::provider::ModelId,
+    pub model_id: jfc_provider::ModelId,
     /// System prompt additions (agent-specific + teammate addendum).
     pub system_prompt: Option<String>,
     /// Shared task list used by TaskCreate/TaskUpdate/TaskList/TaskDone.
-    pub task_store: Option<std::sync::Arc<crate::tasks::TaskStore>>,
+    pub task_store: Option<std::sync::Arc<jfc_session::TaskStore>>,
 }
 
 /// Message types the runner can receive from its poll loop.
@@ -239,7 +239,7 @@ async fn run_teammate_loop(
     );
 
     let mut iteration = 0u64;
-    let mut conversation_history: Vec<crate::provider::ProviderMessage> = Vec::new();
+    let mut conversation_history: Vec<jfc_provider::ProviderMessage> = Vec::new();
     let mut active_task_id: Option<String> = None;
 
     let exit_reason: TeammateExit = loop {
@@ -284,8 +284,8 @@ async fn run_teammate_loop(
                 {
                     let _ = store.update(
                         &task_id,
-                        crate::tasks::TaskPatch {
-                            status: Some(crate::tasks::TaskStatus::Completed),
+                        jfc_session::TaskPatch {
+                            status: Some(jfc_session::TaskStatus::Completed),
                             ..Default::default()
                         },
                     );
@@ -446,7 +446,7 @@ async fn run_teammate_loop(
 /// 3. Repeats every POLL_INTERVAL_MS
 async fn poll_for_next_message(
     identity: &TeammateIdentity,
-    task_store: Option<std::sync::Arc<crate::tasks::TaskStore>>,
+    task_store: Option<std::sync::Arc<jfc_session::TaskStore>>,
     abort_rx: &mut watch::Receiver<bool>,
 ) -> PollResult {
     let mut poll_count = 0u32;
@@ -536,9 +536,9 @@ async fn poll_for_next_message(
 /// Returns a formatted prompt if a task was successfully claimed.
 async fn check_task_list_for_work(
     identity: &TeammateIdentity,
-    store: Option<std::sync::Arc<crate::tasks::TaskStore>>,
+    store: Option<std::sync::Arc<jfc_session::TaskStore>>,
 ) -> Option<(String, String)> {
-    let store = store.unwrap_or_else(|| crate::tasks::TaskStore::open_team(&identity.team_name));
+    let store = store.unwrap_or_else(|| jfc_session::TaskStore::open_team(&identity.team_name));
     let task = store.claim_next_available(&identity.agent_name)?;
     debug!(
         "[InProcessRunner] {} auto-claimed task #{}: {}",
@@ -591,17 +591,17 @@ async fn sleep_retry_or_abort(
 async fn run_single_turn(
     config: &TeammateRunnerConfig,
     prompt: &str,
-    history: &mut Vec<crate::provider::ProviderMessage>,
+    history: &mut Vec<jfc_provider::ProviderMessage>,
     event_tx: &tokio::sync::mpsc::UnboundedSender<TeammateEvent>,
     task_id: &str,
     abort_rx: &mut tokio::sync::watch::Receiver<bool>,
 ) -> TurnResult {
-    use crate::provider::{
-        ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, StreamOptions,
-    };
     use crate::tools;
     use crate::types::{ToolInput, ToolKind};
     use futures::StreamExt;
+    use jfc_provider::{
+        ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, StreamOptions,
+    };
 
     let identity = &config.identity;
     let provider = &config.provider;
@@ -695,9 +695,8 @@ async fn run_single_turn(
                 Ok(s) => s,
                 Err(e) => {
                     let message = e.to_string();
-                    if let Some(retry) = crate::providers::retry::retryable_stream_error(&message) {
-                        let delay =
-                            crate::providers::retry::stream_retry_delay(stream_retry_attempt);
+                    if let Some(retry) = jfc_provider::retry::retryable_stream_error(&message) {
+                        let delay = jfc_provider::retry::stream_retry_delay(stream_retry_attempt);
                         warn!(
                             target: "jfc::swarm::runner",
                             task_id,
@@ -766,7 +765,7 @@ async fn run_single_turn(
                     Ok(e) => e,
                     Err(e) => {
                         let message = e.to_string();
-                        if crate::providers::retry::retryable_stream_error(&message).is_some() {
+                        if jfc_provider::retry::retryable_stream_error(&message).is_some() {
                             retryable_stream_error = Some(message);
                             break;
                         }
@@ -854,7 +853,7 @@ async fn run_single_turn(
                         stop_reason = r;
                     }
                     StreamEvent::Error { message } => {
-                        if crate::providers::retry::retryable_stream_error(&message).is_some() {
+                        if jfc_provider::retry::retryable_stream_error(&message).is_some() {
                             retryable_stream_error = Some(message);
                             break;
                         }
@@ -865,10 +864,10 @@ async fn run_single_turn(
             }
 
             if let Some(message) = retryable_stream_error {
-                let Some(retry) = crate::providers::retry::retryable_stream_error(&message) else {
+                let Some(retry) = jfc_provider::retry::retryable_stream_error(&message) else {
                     unreachable!("message was classified above");
                 };
-                let delay = crate::providers::retry::stream_retry_delay(stream_retry_attempt);
+                let delay = jfc_provider::retry::stream_retry_delay(stream_retry_attempt);
                 warn!(
                     target: "jfc::swarm::runner",
                     task_id,
@@ -1265,10 +1264,10 @@ mod tests {
         assert!(prompt.contains("Use the new API"));
 
         // The task should be marked in_progress with this teammate as owner.
-        let updated = crate::tasks::TaskStore::open_team(&identity.team_name)
+        let updated = jfc_session::TaskStore::open_team(&identity.team_name)
             .get("1")
             .unwrap();
-        assert_eq!(updated.status, crate::tasks::TaskStatus::InProgress);
+        assert_eq!(updated.status, jfc_session::TaskStatus::InProgress);
         assert_eq!(updated.owner.as_deref(), Some("alice"));
     }
 
@@ -1417,11 +1416,11 @@ mod tests {
     /// then errors on subsequent calls so the loop doesn't infinitely
     /// re-stream a finished turn.
     struct StubProvider {
-        script: std::sync::Mutex<Option<Vec<crate::provider::StreamEvent>>>,
+        script: std::sync::Mutex<Option<Vec<jfc_provider::StreamEvent>>>,
     }
 
     impl StubProvider {
-        fn new(events: Vec<crate::provider::StreamEvent>) -> Self {
+        fn new(events: Vec<jfc_provider::StreamEvent>) -> Self {
             Self {
                 script: std::sync::Mutex::new(Some(events)),
             }
@@ -1429,12 +1428,12 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl crate::provider::Provider for StubProvider {
+    impl jfc_provider::Provider for StubProvider {
         fn name(&self) -> &str {
             "stub"
         }
-        fn available_models(&self) -> Vec<crate::provider::ModelInfo> {
-            vec![crate::provider::ModelInfo::new(
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
+            vec![jfc_provider::ModelInfo::new(
                 "stub-model",
                 "Stub Model",
                 "stub",
@@ -1442,9 +1441,9 @@ mod tests {
         }
         async fn stream(
             &self,
-            _messages: Vec<crate::provider::ProviderMessage>,
-            _options: &crate::provider::StreamOptions,
-        ) -> anyhow::Result<crate::provider::EventStream> {
+            _messages: Vec<jfc_provider::ProviderMessage>,
+            _options: &jfc_provider::StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
             use futures::stream;
             let events = self
                 .script
@@ -1456,7 +1455,7 @@ mod tests {
             Ok(Box::pin(stream))
         }
     }
-    impl crate::provider::seal::Sealed for StubProvider {}
+    impl jfc_provider::seal::Sealed for StubProvider {}
 
     #[tokio::test(flavor = "current_thread")]
     async fn start_teammate_completes_after_endturn_normal() {
@@ -1465,8 +1464,8 @@ mod tests {
         // loop exits without polling forever.
         let _g = HomeOverride::new();
 
-        use crate::provider::{StopReason, StreamEvent};
-        let provider: std::sync::Arc<dyn crate::provider::Provider> =
+        use jfc_provider::{StopReason, StreamEvent};
+        let provider: std::sync::Arc<dyn jfc_provider::Provider> =
             std::sync::Arc::new(StubProvider::new(vec![
                 StreamEvent::TextDelta {
                     index: 0,
@@ -1485,7 +1484,7 @@ mod tests {
             model: None,
             agent_type: None,
             provider,
-            model_id: crate::provider::ModelId::new("stub-model"),
+            model_id: jfc_provider::ModelId::new("stub-model"),
             system_prompt: Some("be brief".into()),
             task_store: None,
         };
@@ -1534,11 +1533,11 @@ mod tests {
     /// per `stream()` call. After the last script is consumed, subsequent
     /// calls error.
     struct ScriptedProvider {
-        scripts: std::sync::Mutex<std::collections::VecDeque<Vec<crate::provider::StreamEvent>>>,
+        scripts: std::sync::Mutex<std::collections::VecDeque<Vec<jfc_provider::StreamEvent>>>,
     }
 
     impl ScriptedProvider {
-        fn new(scripts: Vec<Vec<crate::provider::StreamEvent>>) -> Self {
+        fn new(scripts: Vec<Vec<jfc_provider::StreamEvent>>) -> Self {
             Self {
                 scripts: std::sync::Mutex::new(scripts.into_iter().collect()),
             }
@@ -1546,18 +1545,18 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl crate::provider::Provider for ScriptedProvider {
+    impl jfc_provider::Provider for ScriptedProvider {
         fn name(&self) -> &str {
             "scripted"
         }
-        fn available_models(&self) -> Vec<crate::provider::ModelInfo> {
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
             vec![]
         }
         async fn stream(
             &self,
-            _messages: Vec<crate::provider::ProviderMessage>,
-            _options: &crate::provider::StreamOptions,
-        ) -> anyhow::Result<crate::provider::EventStream> {
+            _messages: Vec<jfc_provider::ProviderMessage>,
+            _options: &jfc_provider::StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
             use futures::stream;
             let next = self
                 .scripts
@@ -1568,7 +1567,7 @@ mod tests {
             Ok(Box::pin(stream::iter(next.into_iter().map(Ok))))
         }
     }
-    impl crate::provider::seal::Sealed for ScriptedProvider {}
+    impl jfc_provider::seal::Sealed for ScriptedProvider {}
 
     #[tokio::test(flavor = "current_thread")]
     async fn start_teammate_executes_tool_then_endturn_normal() {
@@ -1579,7 +1578,7 @@ mod tests {
         // path including Usage / TextDone / ToolDone events.
         let _g = HomeOverride::new();
 
-        use crate::provider::{StopReason, StreamEvent};
+        use jfc_provider::{StopReason, StreamEvent};
 
         // Pick a tool that exists and is benign. `Read` requires a path; we
         // pass a non-existent one — `tools::execute_tool` returns an error
@@ -1617,7 +1616,7 @@ mod tests {
             ],
         ];
 
-        let provider: std::sync::Arc<dyn crate::provider::Provider> =
+        let provider: std::sync::Arc<dyn jfc_provider::Provider> =
             std::sync::Arc::new(ScriptedProvider::new(scripts));
 
         let config = TeammateRunnerConfig {
@@ -1627,7 +1626,7 @@ mod tests {
             model: None,
             agent_type: None,
             provider,
-            model_id: crate::provider::ModelId::new("stub-model"),
+            model_id: jfc_provider::ModelId::new("stub-model"),
             system_prompt: None,
             task_store: None,
         };
@@ -1670,7 +1669,7 @@ mod tests {
     async fn run_single_turn_retries_retryable_stream_error_normal() {
         let _g = HomeOverride::new();
 
-        use crate::provider::{StopReason, StreamEvent};
+        use jfc_provider::{StopReason, StreamEvent};
         let scripts = vec![
             vec![StreamEvent::Error {
                 message: format!(
@@ -1689,7 +1688,7 @@ mod tests {
             ],
         ];
 
-        let provider: std::sync::Arc<dyn crate::provider::Provider> =
+        let provider: std::sync::Arc<dyn jfc_provider::Provider> =
             std::sync::Arc::new(ScriptedProvider::new(scripts));
         let config = TeammateRunnerConfig {
             identity: make_identity(),
@@ -1698,7 +1697,7 @@ mod tests {
             model: None,
             agent_type: None,
             provider,
-            model_id: crate::provider::ModelId::new("stub-model"),
+            model_id: jfc_provider::ModelId::new("stub-model"),
             system_prompt: None,
             task_store: None,
         };
@@ -1743,7 +1742,7 @@ mod tests {
         // and the second-iteration prompt update.
         let _g = HomeOverride::new();
 
-        use crate::provider::{StopReason, StreamEvent};
+        use jfc_provider::{StopReason, StreamEvent};
 
         // Two scripts: one per turn. Both end with EndTurn (no tools).
         let scripts = vec![
@@ -1768,7 +1767,7 @@ mod tests {
         ];
 
         let identity = make_identity();
-        let provider: std::sync::Arc<dyn crate::provider::Provider> =
+        let provider: std::sync::Arc<dyn jfc_provider::Provider> =
             std::sync::Arc::new(ScriptedProvider::new(scripts));
 
         let config = TeammateRunnerConfig {
@@ -1778,7 +1777,7 @@ mod tests {
             model: None,
             agent_type: None,
             provider,
-            model_id: crate::provider::ModelId::new("stub-model"),
+            model_id: jfc_provider::ModelId::new("stub-model"),
             system_prompt: None,
             task_store: None,
         };
@@ -1846,7 +1845,7 @@ mod tests {
         // Completed (graceful, since errors don't abort the loop).
         let _g = HomeOverride::new();
 
-        let provider: std::sync::Arc<dyn crate::provider::Provider> =
+        let provider: std::sync::Arc<dyn jfc_provider::Provider> =
             std::sync::Arc::new(StubProvider::new(vec![]));
 
         let config = TeammateRunnerConfig {
@@ -1856,7 +1855,7 @@ mod tests {
             model: None,
             agent_type: None,
             provider,
-            model_id: crate::provider::ModelId::new("stub-model"),
+            model_id: jfc_provider::ModelId::new("stub-model"),
             system_prompt: None,
             task_store: None,
         };
@@ -1906,14 +1905,14 @@ mod tests {
 
         // Provider script: a single text delta then EndTurn — plenty of
         // work for the runner to actually do if it weren't aborted.
-        let provider: std::sync::Arc<dyn crate::provider::Provider> =
+        let provider: std::sync::Arc<dyn jfc_provider::Provider> =
             std::sync::Arc::new(StubProvider::new(vec![
-                crate::provider::StreamEvent::TextDelta {
+                jfc_provider::StreamEvent::TextDelta {
                     index: 0,
                     delta: "hello".into(),
                 },
-                crate::provider::StreamEvent::Done {
-                    stop_reason: crate::provider::StopReason::EndTurn,
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
                 },
             ]));
         let identity = make_identity();
@@ -1924,7 +1923,7 @@ mod tests {
             model: None,
             agent_type: None,
             provider,
-            model_id: crate::provider::ModelId::new("stub-model"),
+            model_id: jfc_provider::ModelId::new("stub-model"),
             system_prompt: None,
             task_store: None,
         };

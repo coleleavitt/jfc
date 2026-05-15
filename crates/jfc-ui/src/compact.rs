@@ -17,9 +17,9 @@
 //!    stop trying.
 
 use crate::context::ToolContext;
-use crate::provider::{Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions};
 use crate::types::ChatMessage;
 use futures::StreamExt;
+use jfc_provider::{Provider, ProviderContent, ProviderMessage, ProviderRole, StreamOptions};
 use tracing::{debug, info, instrument, trace, warn};
 
 const CHARS_PER_TOKEN: usize = 4;
@@ -304,7 +304,7 @@ async fn complete_or_stream(
     messages: Vec<ProviderMessage>,
     options: &StreamOptions,
     on_progress: Option<&CompactProgressCb>,
-) -> Result<crate::provider::CompletionResponse, anyhow::Error> {
+) -> Result<jfc_provider::CompletionResponse, anyhow::Error> {
     match provider.complete(messages.clone(), options).await {
         Ok(resp) => {
             if let Some(cb) = on_progress {
@@ -331,14 +331,14 @@ async fn complete_or_stream(
             let mut collected = String::new();
             while let Some(event) = stream.next().await {
                 match event {
-                    Ok(crate::provider::StreamEvent::TextDelta { delta, .. }) => {
+                    Ok(jfc_provider::StreamEvent::TextDelta { delta, .. }) => {
                         collected.push_str(&delta);
                         if let Some(cb) = on_progress {
                             cb(collected.len() as u64);
                         }
                     }
-                    Ok(crate::provider::StreamEvent::Done { .. }) => break,
-                    Ok(crate::provider::StreamEvent::Error { message }) => {
+                    Ok(jfc_provider::StreamEvent::Done { .. }) => break,
+                    Ok(jfc_provider::StreamEvent::Error { message }) => {
                         return Err(anyhow::anyhow!("{}", message));
                     }
                     Ok(_) => {}
@@ -352,7 +352,7 @@ async fn complete_or_stream(
                 collected_len = collected.len(),
                 "streaming fallback collected response"
             );
-            Ok(crate::provider::CompletionResponse {
+            Ok(jfc_provider::CompletionResponse {
                 content: collected,
                 usage: Default::default(),
             })

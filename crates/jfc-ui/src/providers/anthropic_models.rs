@@ -9,7 +9,7 @@
 //! Listing order is most-capable-first within each family (Opus → Sonnet → Haiku) and
 //! newest-first within a family, which is what the picker renders top-to-bottom.
 
-use crate::provider::ModelInfo;
+use jfc_provider::ModelInfo;
 
 fn limits_for_anthropic_model(id: &str) -> (usize, Option<usize>) {
     let id = id.to_ascii_lowercase();

@@ -2,11 +2,11 @@ use std::{sync::Arc, time::Instant};
 
 use super::permissions::is_readonly_bash;
 use super::*;
-use crate::provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 use crate::types::{
     ChatMessage, MessagePart, ModelUsage, ReplacementMode, ToolCall, ToolInput, ToolKind,
     ToolOutput, ToolStatus,
 };
+use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 
 /// Minimal Provider implementation for App-construction tests. The
 /// streaming path is never invoked here — every test stays in the
@@ -31,7 +31,7 @@ impl Provider for TestProvider {
         Ok(Box::pin(futures::stream::empty()))
     }
 }
-impl crate::provider::seal::Sealed for TestProvider {}
+impl jfc_provider::seal::Sealed for TestProvider {}
 
 fn new_app() -> App {
     App::new(Arc::new(TestProvider), "test-model")
@@ -507,7 +507,7 @@ fn switch_session_resets_state_normal() {
     app.viewing_task_expanded
         .insert("t1".into(), std::collections::HashSet::new());
     app.task_completion_times
-        .insert(crate::tasks::TaskId::from("t1"), Instant::now());
+        .insert(jfc_session::TaskId::from("t1"), Instant::now());
 
     app.switch_session(Some(crate::ids::SessionId::new("ses_test_switch")));
 
@@ -544,14 +544,14 @@ fn switch_session_none_mints_fresh_id_normal() {
 #[serial_test::serial]
 #[test]
 fn sync_task_completions_tracks_and_prunes_normal() {
-    use crate::tasks::{TaskPatch, TaskStatus};
+    use jfc_session::{TaskPatch, TaskStatus};
     let mut app = new_app();
     // Create a task in the in-memory store (App::new opens a
     // session-id-keyed store; for these tests it persists on disk
     // under XDG_CONFIG_HOME, but the in-memory data still works).
     let t1 = app
         .task_store
-        .create::<crate::tasks::TaskId>("subj".into(), "desc".into(), None, Vec::new())
+        .create::<jfc_session::TaskId>("subj".into(), "desc".into(), None, Vec::new())
         .expect("created");
     // Mark it completed.
     app.task_store
@@ -750,10 +750,8 @@ fn selected_model_info_finds_in_cache_normal() {
     let mut app = new_app();
     let info =
         ModelInfo::new("test-model", "Test", "test").with_context_window_tokens(Some(50_000));
-    app.provider_models.insert(
-        crate::provider::ProviderId::from("test"),
-        vec![info.clone()],
-    );
+    app.provider_models
+        .insert(jfc_provider::ProviderId::from("test"), vec![info.clone()]);
     let got = app.selected_model_info().expect("found");
     assert_eq!(got.id.as_str(), "test-model");
     assert_eq!(got.context_window_tokens, Some(50_000));

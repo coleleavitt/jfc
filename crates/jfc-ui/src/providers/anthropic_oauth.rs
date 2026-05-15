@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, RwLock};
 
-use crate::provider::{
+use jfc_provider::{
     CompletionResponse, EventStream, ModelInfo, Provider, ProviderContent, ProviderMessage,
     ProviderRole, StreamConvention, StreamEvent, StreamOptions, TokenUsage,
 };
@@ -21,7 +21,8 @@ use futures::StreamExt;
 
 type HmacSha256 = Hmac<Sha256>;
 
-pub(crate) const AUTO_RETRY_SENTINEL: &str = "auto-retry-anthropic-oauth:";
+pub(crate) const AUTO_RETRY_SENTINEL: &str =
+    jfc_provider::retry::ANTHROPIC_OAUTH_AUTO_RETRY_SENTINEL;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -463,7 +464,7 @@ impl AnthropicOAuthProvider {
             "AnthropicOAuthProvider::new"
         );
         Self {
-            client: super::http::streaming_client(),
+            client: jfc_provider::http::streaming_client(),
             store_path,
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
@@ -1108,7 +1109,7 @@ fn build_body(
     body
 }
 
-impl crate::provider::seal::Sealed for AnthropicOAuthProvider {}
+impl jfc_provider::seal::Sealed for AnthropicOAuthProvider {}
 
 #[async_trait]
 impl Provider for AnthropicOAuthProvider {
@@ -1247,40 +1248,41 @@ impl Provider for AnthropicOAuthProvider {
                 };
 
                 let send_started = std::time::Instant::now();
-                let resp = match super::http::send_with_retry("anthropic_oauth.stream", || {
-                    self.client
-                        .post(API_URL)
-                        .header("authorization", format!("Bearer {access_token}"))
-                        .header("anthropic-version", ANTHROPIC_VERSION)
-                        .header("anthropic-beta", beta_header.as_str())
-                        .header("content-type", "application/json")
-                        .header("user-agent", user_agent.clone())
-                        .header("x-app", "cli")
-                        .header("anthropic-client-platform", "cli")
-                        .body(effective_body.clone())
-                        .send()
-                })
-                .await
-                {
-                    Ok(r) => r,
-                    Err(e) => {
-                        let cause = super::http::classify_send_error(&e);
-                        tracing::warn!(
-                            target: "jfc::provider::anthropic_oauth::rotation",
-                            account = %account.name,
-                            error = %e,
-                            cause = cause,
-                            "send failed (after retries) — rotating"
-                        );
-                        mgr.mark_failure(&account.name).await;
-                        last_err = Some(anyhow::anyhow!(
-                            "Anthropic OAuth send failed: {cause} ({e})"
-                        ));
-                        continue;
-                    }
-                };
+                let resp =
+                    match jfc_provider::http::send_with_retry("anthropic_oauth.stream", || {
+                        self.client
+                            .post(API_URL)
+                            .header("authorization", format!("Bearer {access_token}"))
+                            .header("anthropic-version", ANTHROPIC_VERSION)
+                            .header("anthropic-beta", beta_header.as_str())
+                            .header("content-type", "application/json")
+                            .header("user-agent", user_agent.clone())
+                            .header("x-app", "cli")
+                            .header("anthropic-client-platform", "cli")
+                            .body(effective_body.clone())
+                            .send()
+                    })
+                    .await
+                    {
+                        Ok(r) => r,
+                        Err(e) => {
+                            let cause = jfc_provider::http::classify_send_error(&e);
+                            tracing::warn!(
+                                target: "jfc::provider::anthropic_oauth::rotation",
+                                account = %account.name,
+                                error = %e,
+                                cause = cause,
+                                "send failed (after retries) — rotating"
+                            );
+                            mgr.mark_failure(&account.name).await;
+                            last_err = Some(anyhow::anyhow!(
+                                "Anthropic OAuth send failed: {cause} ({e})"
+                            ));
+                            continue;
+                        }
+                    };
 
-                super::http::report_first_byte_latency(
+                jfc_provider::http::report_first_byte_latency(
                     "anthropic_oauth.stream",
                     send_started.elapsed(),
                 );
@@ -1424,7 +1426,8 @@ impl Provider for AnthropicOAuthProvider {
                                  Pin a model you have access to (Ctrl+M)."
                             );
                         }
-                        let friendly = super::retry::friendly_error_message(status.as_u16(), &body);
+                        let friendly =
+                            jfc_provider::retry::friendly_error_message(status.as_u16(), &body);
                         anyhow::bail!("Anthropic API error {status}: {friendly}\n  raw: {body}");
                     }
                 }
@@ -1578,41 +1581,42 @@ impl Provider for AnthropicOAuthProvider {
                 };
 
                 let send_started = std::time::Instant::now();
-                let resp = match super::http::send_with_retry("anthropic_oauth.complete", || {
-                    self.client
-                        .post(API_URL)
-                        .header("authorization", format!("Bearer {access_token}"))
-                        .header("anthropic-version", ANTHROPIC_VERSION)
-                        .header("anthropic-beta", beta_header_complete.as_str())
-                        .header("content-type", "application/json")
-                        .header("user-agent", user_agent.clone())
-                        .header("x-app", "cli")
-                        .header("anthropic-client-platform", "cli")
-                        .header("anthropic-dangerous-direct-browser-access", "true")
-                        .body(attested_body.clone())
-                        .send()
-                })
-                .await
-                {
-                    Ok(r) => r,
-                    Err(e) => {
-                        let cause = super::http::classify_send_error(&e);
-                        tracing::warn!(
-                            target: "jfc::provider::anthropic_oauth::rotation",
-                            account = %account.name,
-                            error = %e,
-                            cause = cause,
-                            "complete send failed (after retries) — rotating"
-                        );
-                        mgr.mark_failure(&account.name).await;
-                        last_err = Some(anyhow::anyhow!(
-                            "Anthropic OAuth complete failed: {cause} ({e})"
-                        ));
-                        continue;
-                    }
-                };
+                let resp =
+                    match jfc_provider::http::send_with_retry("anthropic_oauth.complete", || {
+                        self.client
+                            .post(API_URL)
+                            .header("authorization", format!("Bearer {access_token}"))
+                            .header("anthropic-version", ANTHROPIC_VERSION)
+                            .header("anthropic-beta", beta_header_complete.as_str())
+                            .header("content-type", "application/json")
+                            .header("user-agent", user_agent.clone())
+                            .header("x-app", "cli")
+                            .header("anthropic-client-platform", "cli")
+                            .header("anthropic-dangerous-direct-browser-access", "true")
+                            .body(attested_body.clone())
+                            .send()
+                    })
+                    .await
+                    {
+                        Ok(r) => r,
+                        Err(e) => {
+                            let cause = jfc_provider::http::classify_send_error(&e);
+                            tracing::warn!(
+                                target: "jfc::provider::anthropic_oauth::rotation",
+                                account = %account.name,
+                                error = %e,
+                                cause = cause,
+                                "complete send failed (after retries) — rotating"
+                            );
+                            mgr.mark_failure(&account.name).await;
+                            last_err = Some(anyhow::anyhow!(
+                                "Anthropic OAuth complete failed: {cause} ({e})"
+                            ));
+                            continue;
+                        }
+                    };
 
-                super::http::report_first_byte_latency(
+                jfc_provider::http::report_first_byte_latency(
                     "anthropic_oauth.complete",
                     send_started.elapsed(),
                 );
@@ -1778,7 +1782,7 @@ impl Provider for AnthropicOAuthProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{
+    use jfc_provider::{
         Provider, ProviderContent, ProviderMessage, ProviderRole, StreamConvention, StreamOptions,
         ToolDef,
     };
@@ -2334,7 +2338,7 @@ mod tests {
     #[ignore = "hits live network — run with cargo test -- --ignored"]
     async fn live_fetch_models_returns_real_catalog_normal() {
         let Some(p) = live_provider() else { return };
-        let models = <AnthropicOAuthProvider as crate::provider::Provider>::fetch_models(&p)
+        let models = <AnthropicOAuthProvider as jfc_provider::Provider>::fetch_models(&p)
             .await
             .expect("fetch_models");
         assert!(!models.is_empty());
@@ -2520,7 +2524,7 @@ mod tests {
         let (_tmp, path) =
             temp_store(r#"{"accounts":[{"name":"primary","refreshToken":"rt"}],"activeIndex":0}"#);
         let p = AnthropicOAuthProvider {
-            client: crate::providers::http::streaming_client(),
+            client: jfc_provider::http::streaming_client(),
             store_path: path,
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
@@ -2535,7 +2539,7 @@ mod tests {
     #[test]
     fn has_usable_config_false_when_store_missing_robust() {
         let p = AnthropicOAuthProvider {
-            client: crate::providers::http::streaming_client(),
+            client: jfc_provider::http::streaming_client(),
             store_path: PathBuf::from("/tmp/jfc-nonexistent-anthropic-store.json"),
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),
@@ -2553,7 +2557,7 @@ mod tests {
             r#"{"accounts":[{"name":"x","refreshToken":"rt","enabled":false}],"activeIndex":0}"#,
         );
         let p = AnthropicOAuthProvider {
-            client: crate::providers::http::streaming_client(),
+            client: jfc_provider::http::streaming_client(),
             store_path: path,
             token: Arc::new(RwLock::new(None)),
             profile: Arc::new(RwLock::new(None)),

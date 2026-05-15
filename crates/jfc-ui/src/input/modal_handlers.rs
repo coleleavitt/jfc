@@ -32,7 +32,7 @@ fn handle_task_panel_key(app: &mut App, key: event::KeyEvent) -> bool {
     }
     let total = app
         .task_store
-        .list(crate::tasks::DeletedFilter::Exclude)
+        .list(jfc_session::DeletedFilter::Exclude)
         .len();
     match key.code {
         KeyCode::Esc => {

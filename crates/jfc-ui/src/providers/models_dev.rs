@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::provider::ModelInfo;
+use jfc_provider::ModelInfo;
 
 const MODELS_DEV_URL: &str = "https://models.dev/api.json";
 const MODELS_DEV_TIMEOUT: Duration = Duration::from_secs(8);
@@ -183,7 +183,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "hits live network — run with cargo test -- --ignored"]
     async fn live_anthropic_catalog_has_current_flagship_normal() {
-        let client = crate::providers::http::streaming_client();
+        let client = jfc_provider::http::streaming_client();
         let models = fetch_provider_models(&client, "anthropic", "anthropic")
             .await
             .expect("models.dev fetch");
@@ -207,7 +207,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "hits live network — run with cargo test -- --ignored"]
     async fn live_provider_tag_is_stamped_normal() {
-        let client = crate::providers::http::streaming_client();
+        let client = jfc_provider::http::streaming_client();
         let models = fetch_provider_models(&client, "anthropic", "anthropic-oauth")
             .await
             .expect("models.dev fetch");
@@ -219,7 +219,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "hits live network — run with cargo test -- --ignored"]
     async fn live_unknown_provider_id_errors_robust() {
-        let client = crate::providers::http::streaming_client();
+        let client = jfc_provider::http::streaming_client();
         let result = fetch_provider_models(&client, "this-provider-does-not-exist", "x").await;
         assert!(result.is_err(), "expected Err for unknown provider");
     }

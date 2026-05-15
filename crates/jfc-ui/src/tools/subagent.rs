@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use tracing::warn;
 
 use super::{ExecutionResult, all_tool_defs, execute_tool};
-use crate::provider::ToolDef;
 use crate::types::{ToolInput, ToolKind};
+use jfc_provider::ToolDef;
 
 pub(super) async fn execute_skill_in(
     cwd: &Path,
@@ -127,9 +127,9 @@ fn cached_agent_models() -> &'static std::collections::HashMap<String, crate::co
 pub(crate) fn selected_subagent_model(
     task_input: &crate::types::TaskInput,
     agent_def: Option<&crate::agents::AgentDef>,
-    parent_model: crate::provider::ModelId,
+    parent_model: jfc_provider::ModelId,
     provider_name: &str,
-) -> Result<crate::provider::ModelId, String> {
+) -> Result<jfc_provider::ModelId, String> {
     let config_model = task_input
         .subagent_type
         .as_deref()
@@ -154,7 +154,7 @@ pub(crate) fn selected_subagent_model(
     }
 
     let aliased = subagent_model_alias(&raw, provider_name);
-    let spec = crate::provider::ModelSpec::parse_lenient(&aliased)
+    let spec = jfc_provider::ModelSpec::parse_lenient(&aliased)
         .map_err(|e| format!("invalid subagent model {raw:?}: {e}"))?;
 
     if let Some(prefix) = spec.provider() {
@@ -234,7 +234,7 @@ mod tests {
         let model = selected_subagent_model(
             &task_input(None),
             Some(&agent_model(Some("haiku"))),
-            crate::provider::ModelId::new("claude-opus-4-6"),
+            jfc_provider::ModelId::new("claude-opus-4-6"),
             "openwebui",
         )
         .unwrap();
@@ -250,7 +250,7 @@ mod tests {
         let model = selected_subagent_model(
             &task_input(Some("opus")),
             Some(&agent_model(Some("sonnet"))),
-            crate::provider::ModelId::new("claude-opus-4-6"),
+            jfc_provider::ModelId::new("claude-opus-4-6"),
             "openwebui",
         )
         .unwrap();
@@ -267,7 +267,7 @@ mod tests {
         let model = selected_subagent_model(
             &task_input(None),
             Some(&agent_model(Some("haiku"))),
-            crate::provider::ModelId::new("gpt-5.5"),
+            jfc_provider::ModelId::new("gpt-5.5"),
             "openai",
         )
         .unwrap();
@@ -283,7 +283,7 @@ mod tests {
         let model = selected_subagent_model(
             &task_input(Some("haiku")),
             None,
-            crate::provider::ModelId::new("claude-opus-4-7"),
+            jfc_provider::ModelId::new("claude-opus-4-7"),
             "anthropic-oauth",
         )
         .unwrap();
@@ -302,7 +302,7 @@ mod tests {
         let error = selected_subagent_model(
             &task_input(Some("anthropic/claude-haiku-4-5")),
             None,
-            crate::provider::ModelId::new("bedrock-claude-4-6-opus"),
+            jfc_provider::ModelId::new("bedrock-claude-4-6-opus"),
             "openwebui",
         )
         .unwrap_err();
@@ -311,12 +311,12 @@ mod tests {
     }
 
     struct ScriptedProvider {
-        scripts: Mutex<VecDeque<Vec<crate::provider::StreamEvent>>>,
+        scripts: Mutex<VecDeque<Vec<jfc_provider::StreamEvent>>>,
         calls: AtomicUsize,
     }
 
     impl ScriptedProvider {
-        fn new(scripts: Vec<Vec<crate::provider::StreamEvent>>) -> Self {
+        fn new(scripts: Vec<Vec<jfc_provider::StreamEvent>>) -> Self {
             Self {
                 scripts: Mutex::new(scripts.into()),
                 calls: AtomicUsize::new(0),
@@ -325,20 +325,20 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl crate::provider::Provider for ScriptedProvider {
+    impl jfc_provider::Provider for ScriptedProvider {
         fn name(&self) -> &str {
             "anthropic"
         }
 
-        fn available_models(&self) -> Vec<crate::provider::ModelInfo> {
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
             vec![]
         }
 
         async fn stream(
             &self,
-            _messages: Vec<crate::provider::ProviderMessage>,
-            _options: &crate::provider::StreamOptions,
-        ) -> anyhow::Result<crate::provider::EventStream> {
+            _messages: Vec<jfc_provider::ProviderMessage>,
+            _options: &jfc_provider::StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
             use futures::stream;
             self.calls.fetch_add(1, Ordering::SeqCst);
             let events = self
@@ -351,24 +351,24 @@ mod tests {
         }
     }
 
-    impl crate::provider::seal::Sealed for ScriptedProvider {}
+    impl jfc_provider::seal::Sealed for ScriptedProvider {}
 
     #[tokio::test(flavor = "current_thread")]
     async fn execute_task_retries_retryable_stream_error_normal() {
         let provider = ScriptedProvider::new(vec![
-            vec![crate::provider::StreamEvent::Error {
+            vec![jfc_provider::StreamEvent::Error {
                 message: format!(
                     "{}Anthropic transient API error 529: overloaded",
                     crate::providers::anthropic::AUTO_RETRY_SENTINEL
                 ),
             }],
             vec![
-                crate::provider::StreamEvent::TextDelta {
+                jfc_provider::StreamEvent::TextDelta {
                     index: 0,
                     delta: "recovered".into(),
                 },
-                crate::provider::StreamEvent::Done {
-                    stop_reason: crate::provider::StopReason::EndTurn,
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
                 },
             ],
         ]);
@@ -376,7 +376,7 @@ mod tests {
         let result = execute_task(
             &task_input(None),
             &provider,
-            crate::provider::ModelId::new("claude-opus-4-7"),
+            jfc_provider::ModelId::new("claude-opus-4-7"),
             None,
             None,
             Some(&agent_model(None)),
@@ -408,13 +408,13 @@ mod tests {
 /// `Read` a file or run `Bash`; it could only produce prose.
 pub async fn execute_task(
     task_input: &crate::types::TaskInput,
-    provider: &dyn crate::provider::Provider,
-    model_id: crate::provider::ModelId,
+    provider: &dyn jfc_provider::Provider,
+    model_id: jfc_provider::ModelId,
     tx: Option<&tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>,
     task_id: Option<&str>,
     agent_def: Option<&crate::agents::AgentDef>,
     cwd_override: Option<PathBuf>,
-    task_store: Option<std::sync::Arc<crate::tasks::TaskStore>>,
+    task_store: Option<std::sync::Arc<jfc_session::TaskStore>>,
     active_team_name: Option<&str>,
 ) -> ExecutionResult {
     execute_task_inner(
@@ -435,20 +435,20 @@ pub async fn execute_task(
 #[allow(clippy::too_many_arguments)]
 async fn execute_task_inner(
     task_input: &crate::types::TaskInput,
-    provider: &dyn crate::provider::Provider,
-    model_id: crate::provider::ModelId,
+    provider: &dyn jfc_provider::Provider,
+    model_id: jfc_provider::ModelId,
     tx: Option<&tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>,
     task_id: Option<&str>,
     agent_def: Option<&crate::agents::AgentDef>,
     cwd_override: Option<PathBuf>,
-    task_store: Option<std::sync::Arc<crate::tasks::TaskStore>>,
+    task_store: Option<std::sync::Arc<jfc_session::TaskStore>>,
     active_team_name: Option<String>,
     depth: u8,
 ) -> ExecutionResult {
-    use crate::provider::{
+    use futures::StreamExt;
+    use jfc_provider::{
         ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, StreamOptions,
     };
-    use futures::StreamExt;
 
     let model = match selected_subagent_model(task_input, agent_def, model_id, provider.name()) {
         Ok(model) => model,
@@ -616,9 +616,8 @@ async fn execute_task_inner(
                 Ok(s) => s,
                 Err(e) => {
                     let message = e.to_string();
-                    if let Some(retry) = crate::providers::retry::retryable_stream_error(&message) {
-                        let delay =
-                            crate::providers::retry::stream_retry_delay(stream_retry_attempt);
+                    if let Some(retry) = jfc_provider::retry::retryable_stream_error(&message) {
+                        let delay = jfc_provider::retry::stream_retry_delay(stream_retry_attempt);
                         tracing::warn!(
                             target: "jfc::tools::subagent",
                             task_id = ?task_id,
@@ -733,7 +732,7 @@ async fn execute_task_inner(
                         stop_reason = Some(sr);
                     }
                     Ok(StreamEvent::Error { message }) => {
-                        if crate::providers::retry::retryable_stream_error(&message).is_some() {
+                        if jfc_provider::retry::retryable_stream_error(&message).is_some() {
                             retryable_stream_error = Some(message);
                             break;
                         }
@@ -742,7 +741,7 @@ async fn execute_task_inner(
                     }
                     Err(e) => {
                         let message = e.to_string();
-                        if crate::providers::retry::retryable_stream_error(&message).is_some() {
+                        if jfc_provider::retry::retryable_stream_error(&message).is_some() {
                             retryable_stream_error = Some(message);
                             break;
                         }
@@ -754,10 +753,10 @@ async fn execute_task_inner(
             }
 
             if let Some(message) = retryable_stream_error {
-                let Some(retry) = crate::providers::retry::retryable_stream_error(&message) else {
+                let Some(retry) = jfc_provider::retry::retryable_stream_error(&message) else {
                     unreachable!("message was classified above");
                 };
-                let delay = crate::providers::retry::stream_retry_delay(stream_retry_attempt);
+                let delay = jfc_provider::retry::stream_retry_delay(stream_retry_attempt);
                 tracing::warn!(
                     target: "jfc::tools::subagent",
                     task_id = ?task_id,

@@ -28,7 +28,7 @@ pub(super) async fn execute_palette_action(app: &mut App, label: &str) {
         "Toggle Sessions Sidebar (Ctrl+B)" => {
             app.show_sidebar = !app.show_sidebar;
             if app.show_sidebar {
-                app.session_meta = crate::session::list_sessions_with_metadata().await;
+                app.session_meta = jfc_session::list_sessions_with_metadata().await;
             }
         }
         "Toggle Info Sidebar (Ctrl+S)" => {
@@ -123,7 +123,7 @@ pub fn palette_items(app: &App) -> Vec<&'static str> {
     }
 }
 
-pub fn collect_all_models(app: &App) -> Vec<crate::provider::ModelInfo> {
+pub fn collect_all_models(app: &App) -> Vec<jfc_provider::ModelInfo> {
     let fingerprint_input: Vec<_> = app
         .providers
         .iter()
@@ -177,7 +177,7 @@ pub fn collect_all_models(app: &App) -> Vec<crate::provider::ModelInfo> {
 
     if !app.recent_models.is_empty() {
         let recent = &app.recent_models;
-        let mut sorted: Vec<crate::provider::ModelInfo> = Vec::with_capacity(all.len());
+        let mut sorted: Vec<jfc_provider::ModelInfo> = Vec::with_capacity(all.len());
         for recent_model in recent {
             if let Some(model) = all
                 .iter()

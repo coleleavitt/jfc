@@ -41,7 +41,7 @@ pub(super) fn sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         let now = chrono::Utc::now();
         let cwd = app.cwd.clone();
         let (this_project, other) =
-            crate::session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
+            jfc_session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
 
         let mut items: Vec<ListItem> = Vec::new();
         if !this_project.is_empty() {
@@ -92,7 +92,7 @@ pub(super) fn sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 pub fn ordered_sidebar_sessions(app: &App) -> Vec<crate::ids::SessionId> {
     let cwd = app.cwd.clone();
     let (this_project, other) =
-        crate::session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
+        jfc_session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
     this_project
         .into_iter()
         .chain(other)
@@ -109,7 +109,7 @@ fn visible_selected_row(app: &App) -> Option<usize> {
     }
     let cwd = app.cwd.clone();
     let (this_project, other) =
-        crate::session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
+        jfc_session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
     let sel = app.session_selected;
     // Rows: [hdr1, this_project..., hdr2, other...]
     if !this_project.is_empty() && sel < this_project.len() {
@@ -135,7 +135,7 @@ fn separator_row(label: &str, t: Theme) -> ListItem<'static> {
 }
 
 fn session_row(
-    s: &crate::session::SessionMetadata,
+    s: &jfc_session::SessionMetadata,
     app: &App,
     now: &chrono::DateTime<chrono::Utc>,
     t: Theme,
@@ -143,8 +143,8 @@ fn session_row(
     let is_active = app.current_session_id.as_ref() == Some(&s.id);
     let bullet = if is_active { "▣ " } else { "  " };
     let title = s.display_title();
-    let cwd_label = crate::session::shorten_cwd(s.cwd.as_deref());
-    let when = crate::session::relative_time(s.last_activity(), *now);
+    let cwd_label = jfc_session::shorten_cwd(s.cwd.as_deref());
+    let when = jfc_session::relative_time(s.last_activity(), *now);
     let msgs = format!(
         "{} msg{}",
         s.message_count,

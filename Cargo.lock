@@ -2069,11 +2069,14 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
+ "http",
  "jfc-core",
+ "rand 0.10.1",
  "reqwest",
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2086,6 +2089,7 @@ dependencies = [
  "jfc-core",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
 ]
