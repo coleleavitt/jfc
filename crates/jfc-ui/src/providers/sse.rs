@@ -526,7 +526,7 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
         tool_result_count,
         "build_messages"
     );
-    messages
+    let mut out: Vec<Value> = messages
         .iter()
         .map(|m| {
             let role = match m.role {
@@ -592,8 +592,27 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
                 .collect();
             json!({ "role": role, "content": content })
         })
-        .collect::<Vec<_>>()
-        .into()
+        .collect();
+
+    // Prompt-caching: place cache_control breakpoints on the last content
+    // block of the last 2 user messages. This matches cli.js v142's YB5()
+    // strategy — everything before the second-to-last user turn is served
+    // from cache on subsequent requests.
+    let user_indices: Vec<usize> = out
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) == Some("user"))
+        .map(|(i, _)| i)
+        .collect();
+    for &idx in user_indices.iter().rev().take(2) {
+        if let Some(content) = out[idx].get_mut("content").and_then(|c| c.as_array_mut()) {
+            if let Some(last_block) = content.last_mut() {
+                last_block["cache_control"] = json!({ "type": "ephemeral" });
+            }
+        }
+    }
+
+    out.into()
 }
 
 pub fn build_tools(tools: &[ToolDef]) -> Value {
