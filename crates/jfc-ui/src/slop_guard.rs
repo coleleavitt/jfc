@@ -104,17 +104,28 @@ pub fn check_duplication(new_content: &str, file_path: &Path, cwd: &Path) -> Vec
             let h = hash_window(window);
             if new_hashes.contains(&h) {
                 let preview = window[0..2].join(" / ");
+                // Slice on a char boundary — `preview` is arbitrary
+                // source code (file paths in module separators, em-dashes
+                // in comments, …) and a fixed-byte cap blew up at runtime
+                // when a multi-byte glyph straddled byte 80
+                // (`thread 'tokio-rt-worker' panicked at slop_guard.rs:114:
+                //  end byte index 80 is not a char boundary; it is inside
+                //  '─' (bytes 79..82)`). `floor_char_boundary` rounds DOWN
+                // to the nearest char boundary at or before the requested
+                // index, so we get at most 80 bytes of preview without
+                // ever splitting a UTF-8 sequence.
+                let preview_slice: &str = if preview.len() > 80 {
+                    &preview[..preview.floor_char_boundary(80)]
+                } else {
+                    &preview
+                };
                 findings.push(SlopFinding {
                     rule: "duplication".into(),
                     message: format!(
                         "5+ line block already exists at {}:{} — consider reusing: `{}`",
                         path.strip_prefix(cwd).unwrap_or(path).display(),
                         i + 1,
-                        if preview.len() > 80 {
-                            &preview[..80]
-                        } else {
-                            &preview
-                        }
+                        preview_slice
                     ),
                     file: Some(path.strip_prefix(cwd).unwrap_or(path).display().to_string()),
                     line: Some(i + 1),
