@@ -82,8 +82,36 @@ pub(super) fn turns_ago_by_message(msgs: &[ChatMessage]) -> Vec<usize> {
 ///    `normalizeMessagesForAPI` never produces a conversation ending in
 ///    assistant — tool_result blocks always follow tool_use blocks in a
 ///    trailing user message.
-pub(super) fn ensure_user_last(mut msgs: Vec<ProviderMessage>) -> Vec<ProviderMessage> {
-    // First: strip trailing empty assistants (placeholder leak from continue_agentic_loop)
+pub(super) fn ensure_user_last(msgs: Vec<ProviderMessage>) -> Vec<ProviderMessage> {
+    let msgs = strip_trailing_empty_assistants(msgs);
+    let msgs = append_synthetic_user_if_trailing_assistant(msgs);
+    merge_consecutive_same_role(msgs)
+}
+
+/// Resume-mode message preparation for `pause_turn` continuations.
+///
+/// Anthropic's `pause_turn` resume protocol (cli.js v142:622686, :623776):
+///
+/// > To continue, re-send the user message and assistant response and make
+/// > another API request — the server will resume where it left off.
+/// > **Do NOT add an extra user message like "Continue."** — the API detects
+/// > the trailing `server_tool_use` block and knows to resume automatically.
+///
+/// We still strip empty trailing assistant placeholders (those are
+/// `continue_agentic_loop` staging artifacts, not model output), and we
+/// still merge consecutive same-role messages, but we deliberately skip
+/// the synthetic-user injection that `ensure_user_last` does. The trailing
+/// assistant with its `server_tool_use` block IS the resume signal.
+///
+/// Used only by `build_provider_messages_for_pause_turn_resume`.
+pub(super) fn prepare_for_pause_turn_resume(msgs: Vec<ProviderMessage>) -> Vec<ProviderMessage> {
+    let msgs = strip_trailing_empty_assistants(msgs);
+    // Note: NO synthetic-user step here. The trailing assistant is the
+    // resume cue per Anthropic spec.
+    merge_consecutive_same_role(msgs)
+}
+
+fn strip_trailing_empty_assistants(mut msgs: Vec<ProviderMessage>) -> Vec<ProviderMessage> {
     while msgs
         .last()
         .map(|m| {
@@ -101,8 +129,13 @@ pub(super) fn ensure_user_last(mut msgs: Vec<ProviderMessage>) -> Vec<ProviderMe
         );
         msgs.pop();
     }
+    msgs
+}
 
-    // Second: if the conversation still ends with an assistant (real content),
+fn append_synthetic_user_if_trailing_assistant(
+    mut msgs: Vec<ProviderMessage>,
+) -> Vec<ProviderMessage> {
+    // If the conversation still ends with an assistant (real content),
     // append a minimal user turn. The Anthropic API requires alternating
     // user/assistant roles and user-last ordering.
     if msgs
@@ -121,11 +154,14 @@ pub(super) fn ensure_user_last(mut msgs: Vec<ProviderMessage>) -> Vec<ProviderMe
             )],
         });
     }
+    msgs
+}
 
-    // Third: merge consecutive same-role messages. The Anthropic API requires
+fn merge_consecutive_same_role(msgs: Vec<ProviderMessage>) -> Vec<ProviderMessage> {
+    // Merge consecutive same-role messages. The Anthropic API requires
     // strictly alternating user/assistant turns. Consecutive same-role
-    // messages happen when: (a) a compact_boundary (assistant) is followed by
-    // a text-only assistant, (b) queued prompts produce adjacent user
+    // messages happen when: (a) a compact_boundary (assistant) is followed
+    // by a text-only assistant, (b) queued prompts produce adjacent user
     // messages, (c) filtering removes messages and collapses the alternation.
     //
     // CRITICAL: do NOT merge across a `tool_result` boundary. Anthropic's
@@ -350,6 +386,60 @@ mod tests {
         // Both empties stripped, "hi" remains. User-last already satisfied.
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].role, ProviderRole::User);
+    }
+
+    // Normal: pause_turn resume DOES strip trailing empty assistants
+    // (placeholder leak from `continue_after_pause_turn`'s staging) but
+    // does NOT inject the `"Continue from where you left off."` user.
+    // Per Anthropic spec (cli.js v142:622686), the trailing assistant's
+    // `server_tool_use` block is itself the resume cue.
+    #[test]
+    fn pause_turn_resume_keeps_trailing_assistant_normal() {
+        let input = vec![user_text("hi"), assistant_text("partial reply")];
+        let out = prepare_for_pause_turn_resume(input);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out.last().unwrap().role, ProviderRole::Assistant);
+    }
+
+    // Robust: pause_turn resume still strips empty trailing assistants
+    // (placeholder slots staged by `continue_after_pause_turn`) — only
+    // the synthetic-user injection is skipped.
+    #[test]
+    fn pause_turn_resume_strips_empty_assistant_robust() {
+        let input = vec![
+            user_text("hi"),
+            assistant_text("partial"),
+            assistant_text(""),
+        ];
+        let out = prepare_for_pause_turn_resume(input);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out.last().unwrap().role, ProviderRole::Assistant);
+        if let ProviderContent::Text(t) = &out.last().unwrap().content[0] {
+            assert_eq!(t, "partial");
+        } else {
+            panic!("expected Text");
+        }
+    }
+
+    // Robust: pause_turn resume must NEVER inject the "Continue from
+    // where you left off." filler — the Anthropic API detects that as
+    // a real user turn and breaks the server-side loop resumption.
+    #[test]
+    fn pause_turn_resume_never_injects_continue_filler_robust() {
+        let input = vec![user_text("search"), assistant_text("looking up rust docs")];
+        let out = prepare_for_pause_turn_resume(input);
+        for msg in &out {
+            if msg.role == ProviderRole::User {
+                for c in &msg.content {
+                    if let ProviderContent::Text(t) = c {
+                        assert!(
+                            !t.contains("Continue from where you left off"),
+                            "pause_turn resume injected forbidden filler: {t}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     // Normal: consecutive same-role messages get merged.

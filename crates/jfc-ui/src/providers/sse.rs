@@ -159,6 +159,11 @@ pub fn parse_stop_reason(s: Option<&str>) -> StopReason {
     let result = match s {
         Some("end_turn") => StopReason::EndTurn,
         Some("tool_use") => StopReason::ToolUse,
+        // Server-side sampling loop hit its iteration cap. The runtime
+        // must re-send the conversation without injecting a synthetic
+        // user message; the server resumes the loop where it left off.
+        // See StopReason::PauseTurn docs and cli.js v142:622686.
+        Some("pause_turn") => StopReason::PauseTurn,
         Some("max_tokens") => StopReason::MaxTokens,
         Some("stop_sequence") => StopReason::StopSequence,
         Some(other) => StopReason::Other(other.to_owned()),
@@ -644,6 +649,10 @@ mod tests {
     fn parse_stop_reason_all_variants() {
         assert_eq!(parse_stop_reason(Some("end_turn")), StopReason::EndTurn);
         assert_eq!(parse_stop_reason(Some("tool_use")), StopReason::ToolUse);
+        // pause_turn must NOT bucket into Other(...) — that drops it into
+        // event_loop's "model said its piece" else branch and silently ends
+        // the agentic loop. See StopReason::PauseTurn docs.
+        assert_eq!(parse_stop_reason(Some("pause_turn")), StopReason::PauseTurn);
         assert_eq!(parse_stop_reason(Some("max_tokens")), StopReason::MaxTokens);
         assert_eq!(
             parse_stop_reason(Some("stop_sequence")),
@@ -798,6 +807,34 @@ mod tests {
             out,
             Some(StreamEvent::Done {
                 stop_reason: StopReason::EndTurn
+            })
+        ));
+    }
+
+    // Normal: a message_delta with stop_reason="pause_turn" followed by
+    // message_stop produces a Done{PauseTurn} — NOT Other("pause_turn"),
+    // which would silently fall through event_loop's dispatch ladder into
+    // the "model said its piece" branch and end the agentic loop. See
+    // StopReason::PauseTurn docs.
+    #[test]
+    fn translate_message_stop_with_pause_turn_normal() {
+        let (mut blocks, mut sr) = empty_state();
+        translate(
+            SseEvent::MessageDelta {
+                delta: MessageDeltaData {
+                    stop_reason: Some("pause_turn".into()),
+                },
+                usage: None,
+                context_management: None,
+            },
+            &mut blocks,
+            &mut sr,
+        );
+        let out = translate(SseEvent::MessageStop, &mut blocks, &mut sr);
+        assert!(matches!(
+            out,
+            Some(StreamEvent::Done {
+                stop_reason: StopReason::PauseTurn
             })
         ));
     }

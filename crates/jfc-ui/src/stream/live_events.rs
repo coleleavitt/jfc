@@ -220,14 +220,19 @@ pub(super) async fn drain_stream_events(
                     .await;
             }
             StreamEvent::Done { stop_reason: r } => {
-                // Never downgrade from ToolUse to EndTurn. Some providers
-                // emit Done(ToolUse) and then a final Done(EndTurn).
+                // Never downgrade from ToolUse or PauseTurn to EndTurn.
+                // Some providers emit Done(ToolUse) followed by a final
+                // Done(EndTurn); a server-side-tool resume signals
+                // Done(PauseTurn) and must not be overwritten by a later
+                // EndTurn from a synthetic stream close. Both states are
+                // "loop must continue" — surface them faithfully so the
+                // event_loop dispatches the right branch.
                 tracing::debug!(
                     target: "jfc::stream",
                     incoming = ?r, current = ?stop_reason,
                     "StreamEvent::Done"
                 );
-                if stop_reason != StopReason::ToolUse {
+                if !matches!(stop_reason, StopReason::ToolUse | StopReason::PauseTurn) {
                     stop_reason = r;
                 }
             }

@@ -310,6 +310,14 @@ pub enum StreamEvent {
 pub enum StopReason {
     EndTurn,
     ToolUse,
+    /// Anthropic's server-side sampling loop hit its iteration cap (e.g.
+    /// after 10 server_tool_use rounds for web_search) and is asking the
+    /// caller to re-send the conversation so the loop can resume. Per the
+    /// Anthropic Messages API spec (mirrored verbatim in claude-code v142
+    /// `cli.beautified.js:622686`): "To continue, re-send the user message
+    /// and assistant response — the server will resume where it left off.
+    /// Do NOT add an extra user message like 'Continue.'"
+    PauseTurn,
     MaxTokens,
     StopSequence,
     Other(String),

@@ -1982,10 +1982,9 @@ pub(crate) async fn run(
                         Ok("1") | Ok("true")
                     );
                     if turn_genuinely_done && !guard_disabled {
-                        let verdict = app
-                            .streaming_assistant_idx
-                            .and_then(|idx| app.messages.get(idx))
-                            .map(crate::hallucination_guard::evaluate);
+                        let verdict = app.streaming_assistant_idx.map(|idx| {
+                            crate::hallucination_guard::evaluate_turn(&app.messages, idx)
+                        });
                         match verdict {
                             Some(crate::hallucination_guard::FaithfulnessVerdict::Ambiguous {
                                 phrase,
@@ -2135,6 +2134,24 @@ pub(crate) async fn run(
                         // Tool awaiting user approval — keep streaming_assistant_idx
                         // alive so the approved/denied tool can be inserted into the
                         // correct message. AllToolsComplete fires after approval.
+                    } else if stop_reason == jfc_provider::StopReason::PauseTurn {
+                        // Anthropic's server-side sampling loop (web_search,
+                        // code_execution, etc.) hit its iteration cap. The
+                        // resume protocol per cli.js v142:622686 is "re-send
+                        // the conversation; the server picks up where it
+                        // left off." We must NOT inject a synthetic user
+                        // message — that breaks the resumption signal. The
+                        // trailing assistant with its `server_tool_use`
+                        // block IS the cue. `continue_after_pause_turn`
+                        // stages a fresh assistant slot to stream the
+                        // resumed response into and re-sends without the
+                        // "Continue from where you left off." filler.
+                        tracing::info!(
+                            target: "jfc::stream",
+                            streaming_idx = ?app.streaming_assistant_idx,
+                            "stream_done PauseTurn — resuming server-side sampling loop"
+                        );
+                        stream::continue_after_pause_turn(&mut app, &tx).await;
                     } else if stop_reason == jfc_provider::StopReason::ToolUse {
                         // Upstream returned finish_reason="tool_calls" but sent
                         // zero tool_call delta chunks (transient LiteLLM/Bedrock

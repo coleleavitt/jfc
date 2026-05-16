@@ -282,9 +282,10 @@ fn is_resolved(status: ToolStatus) -> bool {
     matches!(status, ToolStatus::Completed | ToolStatus::Failed)
 }
 
-/// All `ToolKind`s of completed/failed tools in `msg`, deduplicated.
-fn resolved_tool_kinds(msg: &ChatMessage) -> Vec<ToolKind> {
-    let mut out = Vec::new();
+fn push_resolved_tool_kinds(msg: &ChatMessage, out: &mut Vec<ToolKind>) {
+    if msg.role != Role::Assistant {
+        return;
+    }
     for p in &msg.parts {
         if let MessagePart::Tool(tc) = p {
             if is_resolved(tc.status)
@@ -296,6 +297,12 @@ fn resolved_tool_kinds(msg: &ChatMessage) -> Vec<ToolKind> {
             }
         }
     }
+}
+
+/// All `ToolKind`s of completed/failed tools in `msg`, deduplicated.
+fn resolved_tool_kinds(msg: &ChatMessage) -> Vec<ToolKind> {
+    let mut out = Vec::new();
+    push_resolved_tool_kinds(msg, &mut out);
     out
 }
 
@@ -328,23 +335,10 @@ fn has_negative_qualifier(text: &str) -> bool {
     NEGATIVE_QUALIFIERS.iter().any(|q| text.contains(q))
 }
 
-/// Evaluate a single assistant message and return a faithfulness
-/// verdict. The caller (event_loop's StreamDone handler) uses the
-/// verdict to decide: do nothing (`Backed`), toast + log
-/// (`Ambiguous`), or inject a system-reminder and re-run the turn
-/// (`Unbacked`).
-///
-/// Returns `FaithfulnessVerdict::Backed` for non-assistant messages so
-/// callers don't need to check role separately.
-pub fn evaluate(msg: &ChatMessage) -> FaithfulnessVerdict {
-    if !matches!(msg.role, Role::Assistant) {
-        return FaithfulnessVerdict::Backed;
-    }
-    let text = assistant_text_lowercase(msg);
-    let Some((phrase, category)) = detect_claim(&text) else {
+fn evaluate_text_against_kinds(text: &str, kinds: &[ToolKind]) -> FaithfulnessVerdict {
+    let Some((phrase, category)) = detect_claim(text) else {
         return FaithfulnessVerdict::Backed;
     };
-    let kinds = resolved_tool_kinds(msg);
     let strict_backed = kinds.iter().any(|k| category_backed(category, k));
     if strict_backed {
         return FaithfulnessVerdict::Backed;
@@ -354,7 +348,7 @@ pub fn evaluate(msg: &ChatMessage) -> FaithfulnessVerdict {
     //   2. Some OTHER side-effect tool ran (Generic-category backing)
     //      — model may have used a sibling tool that satisfies the
     //      intent even if not the literal category.
-    if has_negative_qualifier(&text) {
+    if has_negative_qualifier(text) {
         return FaithfulnessVerdict::Ambiguous {
             phrase,
             category,
@@ -372,6 +366,50 @@ pub fn evaluate(msg: &ChatMessage) -> FaithfulnessVerdict {
         };
     }
     FaithfulnessVerdict::Unbacked { phrase, category }
+}
+
+/// Evaluate a single assistant message and return a faithfulness
+/// verdict. The caller (event_loop's StreamDone handler) uses the
+/// verdict to decide: do nothing (`Backed`), toast + log
+/// (`Ambiguous`), or inject a system-reminder and re-run the turn
+/// (`Unbacked`).
+///
+/// Returns `FaithfulnessVerdict::Backed` for non-assistant messages so
+/// callers don't need to check role separately.
+pub fn evaluate(msg: &ChatMessage) -> FaithfulnessVerdict {
+    if !matches!(msg.role, Role::Assistant) {
+        return FaithfulnessVerdict::Backed;
+    }
+    let text = assistant_text_lowercase(msg);
+    let kinds = resolved_tool_kinds(msg);
+    evaluate_text_against_kinds(&text, &kinds)
+}
+
+/// Evaluate the assistant message at `assistant_idx` using all resolved
+/// tool calls in the same logical user turn as backing evidence.
+///
+/// Agentic loops are persisted as several consecutive assistant messages:
+/// one per sub-stream. The final sub-stream may say "Done" while the
+/// backing Write/Edit/Bash tool lives in an earlier assistant message from
+/// the same user turn. Checking only the final `ChatMessage` false-positives
+/// and asks the model to redo work it already performed.
+pub fn evaluate_turn(messages: &[ChatMessage], assistant_idx: usize) -> FaithfulnessVerdict {
+    let Some(msg) = messages.get(assistant_idx) else {
+        return FaithfulnessVerdict::Backed;
+    };
+    if !matches!(msg.role, Role::Assistant) {
+        return FaithfulnessVerdict::Backed;
+    }
+    let text = assistant_text_lowercase(msg);
+    let start = messages[..assistant_idx]
+        .iter()
+        .rposition(|m| m.role == Role::User)
+        .map_or(0, |idx| idx + 1);
+    let mut kinds = Vec::new();
+    for m in &messages[start..=assistant_idx] {
+        push_resolved_tool_kinds(m, &mut kinds);
+    }
+    evaluate_text_against_kinds(&text, &kinds)
 }
 
 /// Compatibility shim — older callers expect a `Option<&'static str>`.
@@ -594,6 +632,40 @@ mod tests {
                 FaithfulnessVerdict::Backed,
                 "Done with {kind:?} should be Backed"
             );
+        }
+    }
+
+    // Normal: JFC persists one logical tool loop as several assistant
+    // sub-stream messages. The final message can say "Done" while the
+    // backing tool lives in an earlier assistant message from the same
+    // user turn; this must be Backed, not a spurious redo.
+    #[test]
+    fn evaluate_turn_uses_prior_assistant_tools_in_same_user_turn_normal() {
+        let messages = vec![
+            ChatMessage::user("write the file".into()),
+            assistant_with_tool("", ToolKind::Write, ToolStatus::Completed),
+            assistant("Done. The file has been written."),
+        ];
+        match evaluate(&messages[2]) {
+            FaithfulnessVerdict::Unbacked { .. } => {}
+            v => panic!("expected single-message check to be Unbacked, got {v:?}"),
+        }
+        assert_eq!(evaluate_turn(&messages, 2), FaithfulnessVerdict::Backed);
+    }
+
+    // Robust: prior-turn tools must not back a new user turn's fresh claim.
+    #[test]
+    fn evaluate_turn_does_not_cross_user_boundary_robust() {
+        let messages = vec![
+            ChatMessage::user("write the file".into()),
+            assistant_with_tool("", ToolKind::Write, ToolStatus::Completed),
+            assistant("Done."),
+            ChatMessage::user("do another write".into()),
+            assistant("Done. The file has been written."),
+        ];
+        match evaluate_turn(&messages, 4) {
+            FaithfulnessVerdict::Unbacked { .. } => {}
+            v => panic!("expected Unbacked, got {v:?}"),
         }
     }
 

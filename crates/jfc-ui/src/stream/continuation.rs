@@ -4,7 +4,12 @@ use crate::app::App;
 use crate::runtime::AppEvent;
 use crate::types::*;
 
-use super::{messages::build_provider_messages_with_tool_results, stream_response};
+use super::{
+    messages::{
+        build_provider_messages_for_pause_turn_resume, build_provider_messages_with_tool_results,
+    },
+    stream_response,
+};
 
 pub(crate) fn should_continue_loop(messages: &[ChatMessage]) -> bool {
     let last = match messages.iter().rev().find(|m| m.role == Role::Assistant) {
@@ -32,6 +37,72 @@ pub(crate) fn should_continue_loop(messages: &[ChatMessage]) -> bool {
         "should_continue_loop"
     );
     all_done
+}
+
+/// Resume an Anthropic server-side sampling loop after `stop_reason: "pause_turn"`.
+///
+/// Mirrors [`continue_agentic_loop`]'s setup (new empty assistant slot,
+/// fresh sub-stream clocks, cleared thinking timestamps), but builds the
+/// provider request via [`build_provider_messages_for_pause_turn_resume`]
+/// so we do NOT inject a synthetic `"Continue from where you left off."`
+/// user message. Anthropic's pause_turn protocol (cli.js v142:622686)
+/// requires re-sending the conversation as-is — the trailing assistant's
+/// `server_tool_use` block IS the resume signal. Adding a fake user turn
+/// would tell the server "the human typed something" and break the
+/// server-side loop's resumption logic.
+///
+/// Wire shape difference from `continue_agentic_loop`:
+///   - continue_agentic_loop (post-tool):  ..., user_with_tool_results, [new assistant slot]
+///   - continue_after_pause_turn:          ..., assistant_with_server_tool_use, [new assistant slot]
+///
+/// The synthetic-user-injection step is skipped specifically for the
+/// trailing-assistant case; consecutive same-role merging and
+/// empty-assistant stripping still apply.
+pub(crate) async fn continue_after_pause_turn(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
+    let assistant_idx = app.messages.len();
+    tracing::info!(
+        target: "jfc::stream",
+        assistant_idx,
+        model = %app.model,
+        total_messages = app.messages.len(),
+        "continue_after_pause_turn: resuming server-side sampling loop"
+    );
+    #[cfg(debug_assertions)]
+    if let Err(err) = crate::types::validate_turn_invariants_inner(
+        &app.messages,
+        /* allow_streaming_tail = */ true,
+    ) {
+        tracing::warn!(
+            target: "jfc::stream::invariants",
+            error = %err,
+            assistant_idx,
+            "continue_after_pause_turn: turn-invariant violation BEFORE staging new assistant slot"
+        );
+    }
+    app.messages.push(ChatMessage::assistant(String::new()));
+    app.streaming_text.clear();
+    app.streaming_reasoning.clear();
+    app.streaming_assistant_idx = Some(assistant_idx);
+    app.is_streaming = true;
+    let now = std::time::Instant::now();
+    app.streaming_started_at = Some(now);
+    app.last_stream_event_at = Some(now);
+    app.streaming_last_token_at = Some(now);
+    app.last_usage_output = 0;
+    app.usage_apply_baseline = (0, 0, 0, 0);
+    app.thinking_started_at = None;
+    app.thinking_ended_at = None;
+
+    let provider = app.provider.clone();
+    let messages = build_provider_messages_for_pause_turn_resume(&app.messages[..assistant_idx]);
+    let model = app.model.clone();
+    let tx = tx.clone();
+    let interrupt = app.interrupt_flag.clone();
+    let cancel = app.cancel_token.clone();
+
+    tokio::spawn(async move {
+        stream_response(provider, messages, model, tx, interrupt, cancel).await;
+    });
 }
 
 pub(crate) async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<AppEvent>) {

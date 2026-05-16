@@ -4,8 +4,8 @@ use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole};
 use super::attachments::push_attachments;
 use super::tool_wire::{ToolWireCounters, tool_result_content, tool_use_content};
 use super::turns::{
-    chat_message_text, ensure_user_last, provider_role, turns_ago_by_message,
-    validate_provider_messages,
+    chat_message_text, ensure_user_last, prepare_for_pause_turn_resume, provider_role,
+    turns_ago_by_message, validate_provider_messages,
 };
 
 pub(crate) fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
@@ -43,9 +43,37 @@ pub(crate) fn build_provider_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessa
     out
 }
 
+/// Build provider messages for a `pause_turn` resume request.
+///
+/// Identical to [`build_provider_messages_with_tool_results`] EXCEPT that
+/// it skips the synthetic-user-message injection that `ensure_user_last`
+/// performs when the conversation ends on an assistant turn. Anthropic's
+/// pause_turn resume protocol explicitly forbids appending a `"Continue."`
+/// user message — the trailing assistant's `server_tool_use` block IS the
+/// resume signal, and the server pairs it with its own
+/// `web_search_tool_result` / equivalent server-side completion blocks
+/// once the loop resumes.
+///
+/// See `StopReason::PauseTurn` docs and cli.js v142:622686, :623776.
+pub(crate) fn build_provider_messages_for_pause_turn_resume(
+    msgs: &[ChatMessage],
+) -> Vec<ProviderMessage> {
+    let out = build_assistant_and_tool_result_messages(msgs);
+    let out = prepare_for_pause_turn_resume(out);
+    validate_provider_messages(&out);
+    out
+}
+
 pub(crate) fn build_provider_messages_with_tool_results(
     msgs: &[ChatMessage],
 ) -> Vec<ProviderMessage> {
+    let out = build_assistant_and_tool_result_messages(msgs);
+    let out = ensure_user_last(out);
+    validate_provider_messages(&out);
+    out
+}
+
+fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<ProviderMessage> {
     let turns_ago_map = turns_ago_by_message(msgs);
     let mut out = Vec::new();
     let mut counters = ToolWireCounters::default();
@@ -117,10 +145,8 @@ pub(crate) fn build_provider_messages_with_tool_results(
         tool_use_count = counters.tool_use_count,
         tool_result_count = counters.tool_result_count,
         abandoned_count = counters.abandoned_count,
-        "build_provider_messages_with_tool_results"
+        "build_assistant_and_tool_result_messages"
     );
-    let out = ensure_user_last(out);
-    validate_provider_messages(&out);
     out
 }
 
@@ -430,6 +456,101 @@ mod tests {
         assert_eq!(out[1].content.len(), 2);
         assert!(matches!(out[1].content[0], ProviderContent::Text(_)));
         assert!(matches!(out[1].content[1], ProviderContent::ToolUse { .. }));
+    }
+
+    // Normal: pause_turn resume builder leaves the conversation ending on
+    // the trailing assistant — NO synthetic `"Continue from where you left
+    // off."` user message gets appended. Per Anthropic's pause_turn
+    // protocol (cli.js v142:622686): "Do NOT add an extra user message
+    // like 'Continue.' — the API detects the trailing server_tool_use
+    // block and knows to resume automatically."
+    #[test]
+    fn build_for_pause_turn_resume_omits_synthetic_user_normal() {
+        let msgs = vec![user_msg("search for X"), assistant_msg("searching…")];
+        let out = build_provider_messages_for_pause_turn_resume(&msgs);
+        assert_eq!(
+            out.len(),
+            2,
+            "pause_turn resume must NOT append synthetic user — got {} msgs",
+            out.len()
+        );
+        assert_eq!(out[0].role, ProviderRole::User);
+        assert_eq!(out[1].role, ProviderRole::Assistant);
+    }
+
+    // Normal: the normal builder (non-resume) DOES inject the synthetic
+    // user trailer. Pins that the resume path is an explicit
+    // deviation, not the default.
+    #[test]
+    fn build_with_tool_results_appends_synthetic_user_normal() {
+        let msgs = vec![user_msg("search for X"), assistant_msg("searching…")];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[2].role, ProviderRole::User);
+        match &out[2].content[0] {
+            ProviderContent::Text(t) => {
+                assert!(
+                    t.contains("Continue"),
+                    "expected synthetic Continue user message, got: {t}"
+                );
+            }
+            _ => panic!("expected Text continuation"),
+        }
+    }
+
+    // Robust: pause_turn resume still strips trailing empty assistant
+    // placeholders (those are `continue_*_loop` staging artifacts, not
+    // model output, and Anthropic 400s on assistant prefill).
+    #[test]
+    fn build_for_pause_turn_resume_strips_empty_assistant_robust() {
+        let msgs = vec![
+            user_msg("search for X"),
+            assistant_msg("searching…"),
+            assistant_msg(""),
+        ];
+        let out = build_provider_messages_for_pause_turn_resume(&msgs);
+        // The empty trailing assistant is stripped; the real assistant
+        // remains at the end (no synthetic user appended).
+        assert_eq!(out.len(), 2);
+        assert_eq!(out.last().unwrap().role, ProviderRole::Assistant);
+        match &out.last().unwrap().content[0] {
+            ProviderContent::Text(t) => assert_eq!(t, "searching…"),
+            _ => panic!("expected Text"),
+        }
+    }
+
+    // Normal: pause_turn resume preserves the trailing assistant's
+    // server-side tool_use block — that block IS the resume signal per
+    // the spec. Wire shape: assistant content = [Text, ToolUse].
+    #[test]
+    fn build_for_pause_turn_resume_preserves_server_tool_use_normal() {
+        let tool = make_tool_call(
+            "srvtool_1",
+            ToolKind::ServerWebSearch,
+            ToolStatus::Completed,
+            ToolOutput::Text("🔍 Executed server-side by Anthropic (q: rust)".into()),
+        );
+        let msgs = vec![
+            user_msg("search rust"),
+            assistant_with_parts(vec![
+                MessagePart::Text("Looking it up.".into()),
+                MessagePart::Tool(tool),
+            ]),
+        ];
+        let out = build_provider_messages_for_pause_turn_resume(&msgs);
+        // Two provider messages: user + assistant with text+tool_use.
+        // The tool_result for the server tool stays attached in our
+        // current wire shape (separate user msg after) — this test pins
+        // that pause_turn resume does NOT inject the synthetic
+        // "Continue" user, even when tool_results are present.
+        let trailing_synthetic_continue = out.iter().any(|m| {
+            m.role == ProviderRole::User
+                && m.content.iter().any(|c| matches!(c, ProviderContent::Text(t) if t.contains("Continue from where you left off")))
+        });
+        assert!(
+            !trailing_synthetic_continue,
+            "pause_turn resume must not append the 'Continue from where you left off.' user filler"
+        );
     }
 
     // Robust: multiple tools in one assistant turn produce one tool_result
