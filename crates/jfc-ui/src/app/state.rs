@@ -366,6 +366,25 @@ pub struct App {
     /// regardless of token level. Cleared after the compact runs (success or
     /// not) so a single `/compact` invocation triggers exactly one attempt.
     pub force_compact_pending: bool,
+    /// Set when a stream's `Done` event carries `StopReason::PauseTurn`
+    /// AND the same response also produced local tools that need to
+    /// run (mixed mode). The dispatch ladder in event_loop.rs sees
+    /// `has_pending_tools` first and routes to local-tool execution,
+    /// shadowing the PauseTurn branch. Without this flag, the
+    /// post-tool `ToolEvent::AllComplete` handler defaults to
+    /// `continue_agentic_loop` which routes through
+    /// `build_provider_messages_with_tool_results` → injects the
+    /// "Continue from where you left off." synthetic-user filler that
+    /// Anthropic's `pause_turn` protocol explicitly forbids
+    /// (cli.js v142:622686). When set, AllComplete instead calls
+    /// `continue_after_pause_turn` so the resume goes out with the
+    /// trailing `server_tool_use` as the resumption cue, intact.
+    ///
+    /// Cleared the moment the resume dispatches OR the turn ends
+    /// without resuming (no pending tools, no pending approvals,
+    /// EndTurn) — single-shot per pause_turn occurrence so a later
+    /// non-pause_turn turn doesn't accidentally inherit the routing.
+    pub pending_pause_turn_resume: bool,
     /// Set after compaction permanently fails (CircuitBreakerTripped,
     /// Unsupported, Exhausted). Prevents the post-response handler from
     /// re-spawning compact on every AllToolsComplete — without this, the
@@ -811,6 +830,7 @@ impl App {
             dedup_cache: Arc::new(Mutex::new(ReadDedupCache::new())),
             pending_tool_calls: Vec::new(),
             force_compact_pending: false,
+            pending_pause_turn_resume: false,
             compact_suppressed: false,
             compacting_started_at: None,
             compacting_output_chars: 0,

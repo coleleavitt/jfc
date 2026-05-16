@@ -1916,6 +1916,12 @@ async fn handle_submit(
     app.network_recovery_attempts = 0;
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
+    // Defensive: clear any stale mixed-mode pause_turn latch from a
+    // previously-cancelled turn. The flag is normally single-shot
+    // (cleared at dispatch time in event_loop's AllComplete /
+    // CompactionDone handlers) but a user-initiated cancel + fresh
+    // submit would leave it sticky otherwise.
+    app.pending_pause_turn_resume = false;
     let now = std::time::Instant::now();
     app.streaming_started_at = Some(now);
     app.streaming_last_token_at = Some(now);

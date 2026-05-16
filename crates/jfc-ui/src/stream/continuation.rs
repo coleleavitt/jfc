@@ -752,4 +752,130 @@ mod pause_turn_end_to_end_tests {
             "pause_turn resume must not inject 'Continue from where you left off.'"
         );
     }
+
+    /// Robust: mixed-mode pause_turn — the response carried BOTH a
+    /// local tool (Bash) AND server_tool_use, and stop_reason was
+    /// pause_turn. After local tools complete, the event_loop's
+    /// AllToolsComplete handler routes via the pause-turn-resume
+    /// builder (when `pending_pause_turn_resume` is latched). The
+    /// resulting wire shape:
+    ///
+    ///   1. user: original prompt
+    ///   2. assistant: [text, server_tool_use, local_tool_use]
+    ///   3. user: [tool_result for local_tool_use]
+    ///   4. (no synthetic-Continue trailer — pause_turn-resume mode)
+    ///
+    /// The `server_tool_use` block in (2) is still in the conversation
+    /// and Anthropic's server-side loop matches on its presence
+    /// (cli.js v142:7057 — discriminator is `type === "server_tool_use"`,
+    /// not adjacency). The KEY contract: NO synthetic Continue.
+    #[tokio::test]
+    async fn mixed_mode_pause_turn_resend_omits_synthetic_continue_robust() {
+        let mut app = App::new(Arc::new(NoopProvider), "test-model");
+        let local_tool = ToolCall {
+            id: ToolId::from("toolu_local_1"),
+            kind: ToolKind::Bash,
+            status: ToolStatus::Completed,
+            input: ToolInput::Bash {
+                command: "ls".into(),
+                timeout: None,
+                workdir: None,
+            },
+            output: ToolOutput::Command {
+                stdout: "file.txt\n".into(),
+                stderr: String::new(),
+                exit_code: Some(0),
+            },
+            display: ToolDisplayState::DEFAULT,
+            elapsed_ms: None,
+            started_at: None,
+        };
+        app.messages = vec![
+            ChatMessage::user("research rust and run ls".into()),
+            ChatMessage::assistant_parts(vec![
+                MessagePart::Text("Searching and listing.".into()),
+                MessagePart::Tool(server_tool(
+                    "srvtoolu_mix",
+                    ToolStatus::Running,
+                    ToolOutput::Empty,
+                )),
+                MessagePart::Tool(local_tool),
+            ]),
+        ];
+
+        let assistant_idx = setup_new_substream_slot(&mut app, "pause_turn_mixed_resume");
+        let payload = build_provider_messages_for_pause_turn_resume(&app.messages[..assistant_idx]);
+
+        // The assistant turn carries text + server_tool_use + local tool_use,
+        // and the local tool's tool_result follows as a trailing user
+        // message. NO synthetic-Continue is appended.
+        let has_synthetic_continue = payload.iter().any(|m| {
+            m.role == ProviderRole::User
+                && m.content.iter().any(
+                    |c| matches!(c, ProviderContent::Text(t) if t.contains("Continue from where you left off")),
+                )
+        });
+        assert!(
+            !has_synthetic_continue,
+            "mixed-mode pause_turn resume must not inject 'Continue from where you left off.'"
+        );
+
+        // The server_tool_use is preserved as the resume cue. cli.js
+        // v142:7057 matches on the `type` field, not adjacency.
+        let assistant = payload
+            .iter()
+            .find(|m| m.role == ProviderRole::Assistant)
+            .expect("expected an assistant message");
+        let has_server_tool_use = assistant.content.iter().any(
+            |c| matches!(c, ProviderContent::ServerToolUse { name, .. } if name == "web_search"),
+        );
+        assert!(
+            has_server_tool_use,
+            "assistant must still carry the server_tool_use block as the resume cue"
+        );
+
+        // The local Bash tool_use round-trips as a regular tool_use
+        // (NOT server_tool_use) — only the server-side tool gets the
+        // server_tool_use wire type.
+        let has_local_tool_use = assistant.content.iter().any(|c| {
+            matches!(c, ProviderContent::ToolUse { name, .. } if name.eq_ignore_ascii_case("bash"))
+        });
+        assert!(
+            has_local_tool_use,
+            "local Bash must round-trip as plain ProviderContent::ToolUse"
+        );
+
+        // The local tool's tool_result is on the trailing user message.
+        let trailing = payload
+            .last()
+            .expect("payload must have at least one message");
+        assert_eq!(
+            trailing.role,
+            ProviderRole::User,
+            "mixed-mode trailing message must be the local tool_result user turn"
+        );
+        let has_tool_result = trailing
+            .content
+            .iter()
+            .any(|c| matches!(c, ProviderContent::ToolResult { .. }));
+        assert!(
+            has_tool_result,
+            "trailing user message must carry the local tool_result"
+        );
+    }
+
+    /// Normal: the `pending_pause_turn_resume` flag on `App` defaults
+    /// to false on a fresh App. Pins the default so a later regression
+    /// (e.g. flag flipped to true by accident in the constructor)
+    /// doesn't silently re-route every turn through pause-turn-resume
+    /// — which would break the "continue from where you left off"
+    /// behavior on the normal agentic continuation path.
+    #[test]
+    fn fresh_app_has_pause_turn_resume_unlatched_normal() {
+        let app = App::new(Arc::new(NoopProvider), "test-model");
+        assert!(
+            !app.pending_pause_turn_resume,
+            "pending_pause_turn_resume must default to false on a fresh App"
+        );
+    }
 }
