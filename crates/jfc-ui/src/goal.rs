@@ -196,6 +196,14 @@ fn render_part_into(part: &MessagePart, out: &mut String) {
                 crate::types::ToolOutput::FileList(v) => {
                     format!("[{} entries]", v.len())
                 }
+                crate::types::ToolOutput::ServerToolResult { tool_kind, content } => {
+                    let preview = serde_json::to_string(content).unwrap_or_default();
+                    format!(
+                        "[{wire}] {}",
+                        truncate(&preview, 400),
+                        wire = tool_kind.wire_type()
+                    )
+                }
                 crate::types::ToolOutput::Empty => String::new(),
             };
             out.push_str(&format!(

@@ -289,6 +289,19 @@ pub enum StreamEvent {
         tool_use_id: String,
         input_json: String,
     },
+    /// Anthropic emitted a server-side tool result block (e.g.
+    /// `web_search_tool_result`). These are produced server-side as
+    /// part of the same sampling loop that emitted the matching
+    /// `server_tool_use` block — they are NOT caller `tool_result`s.
+    /// The provider parser captures the raw JSON content so the
+    /// runtime can attach it to the streaming assistant message and
+    /// re-emit it byte-faithfully on a `pause_turn` resend. See
+    /// cli.js v142:394261 (consumer) and :441375 (round-trip).
+    ServerToolResult {
+        tool_use_id: String,
+        tool_kind: ServerToolResultKind,
+        content: serde_json::Value,
+    },
     Done {
         stop_reason: StopReason,
     },
@@ -348,6 +361,34 @@ pub enum ProviderContent {
         name: String,
         input: serde_json::Value,
     },
+    /// Anthropic server-side tool invocation block. Wire type is
+    /// `server_tool_use` (NOT `tool_use`). Per cli.js v142:7057 and
+    /// :441090, the server expects these to round-trip unchanged on
+    /// resend — re-serializing them as plain `tool_use` blocks
+    /// breaks the server-side sampling loop's resumption logic, and
+    /// fabricating a paired `tool_result` user message is forbidden
+    /// (the server pairs `server_tool_use` with its own
+    /// `web_search_tool_result` / equivalent block, not a caller
+    /// tool_result).
+    ServerToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    /// Anthropic server-side tool result block (e.g.
+    /// `web_search_tool_result`). The `tool_kind` discriminates the
+    /// wire `"type"` field (`web_search_tool_result`,
+    /// `code_execution_tool_result`, ...), and `content` is the raw
+    /// JSON value the server returned (array of results, or
+    /// `{ error_code }`). Round-trip lossless: parsed from SSE,
+    /// stored on the assistant message, re-emitted verbatim on resend.
+    /// See cli.js v142:394261 for the consumer shape and :441375 for
+    /// the round-trip path.
+    ServerToolResult {
+        tool_use_id: String,
+        tool_kind: ServerToolResultKind,
+        content: serde_json::Value,
+    },
     /// Image or PDF attachment carried as base64. Anthropic emits two
     /// distinct content-block shapes — `image` for PNG/JPEG/GIF/WebP
     /// and `document` for PDF — but both share the same source struct,
@@ -356,6 +397,45 @@ pub enum ProviderContent {
     /// either reject these or use bespoke shapes; today they're a
     /// no-op for those providers.
     Attachment(jfc_core::Attachment),
+}
+
+/// Discriminates the wire `type` of a `ProviderContent::ServerToolResult`.
+/// Each variant maps to a concrete Anthropic block type. `Other(String)`
+/// catches future server-tool result shapes so a forward-rolled provider
+/// doesn't drop the block on the floor — it round-trips with the same
+/// `type` string it arrived with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServerToolResultKind {
+    /// `web_search_tool_result` — see cli.js v142:394261.
+    WebSearch,
+    /// `code_execution_tool_result` — see cli.js v142:246154.
+    CodeExecution,
+    /// `web_fetch_tool_result` — see cli.js v142:246159.
+    WebFetch,
+    /// Catch-all for unknown future shapes; preserves the wire `type`
+    /// string so resends are still byte-faithful.
+    Other(String),
+}
+
+impl ServerToolResultKind {
+    /// Wire `type` field that Anthropic uses for this kind.
+    pub fn wire_type(&self) -> &str {
+        match self {
+            Self::WebSearch => "web_search_tool_result",
+            Self::CodeExecution => "code_execution_tool_result",
+            Self::WebFetch => "web_fetch_tool_result",
+            Self::Other(s) => s.as_str(),
+        }
+    }
+
+    pub fn from_wire_type(s: &str) -> Self {
+        match s {
+            "web_search_tool_result" => Self::WebSearch,
+            "code_execution_tool_result" => Self::CodeExecution,
+            "web_fetch_tool_result" => Self::WebFetch,
+            other => Self::Other(other.to_owned()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

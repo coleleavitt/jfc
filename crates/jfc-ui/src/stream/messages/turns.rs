@@ -232,6 +232,8 @@ pub(super) fn validate_provider_messages(msgs: &[ProviderMessage]) {
                         ProviderContent::Text(_) => "text",
                         ProviderContent::ToolUse { .. } => "tool_use",
                         ProviderContent::ToolResult { .. } => "tool_result",
+                        ProviderContent::ServerToolUse { .. } => "server_tool_use",
+                        ProviderContent::ServerToolResult { .. } => "server_tool_result",
                         ProviderContent::Attachment(_) => "attachment",
                     }).collect::<Vec<_>>(),
                     "provider message invariant violation: user message contains tool_result mixed with other content"

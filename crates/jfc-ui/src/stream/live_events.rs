@@ -185,31 +185,36 @@ pub(super) async fn drain_stream_events(
                 tool_accum.remove(&index);
 
                 // Server-side tools are executed by Anthropic's infrastructure.
-                // JFC should surface them as completed records, not dispatch them.
+                // JFC should surface them as records with the result attached
+                // when it arrives (via StreamEvent::ServerToolResult below),
+                // not dispatch them locally. The output stays `Empty` here so
+                // the matching ServerToolResult event can fill it in with the
+                // real content — fabricating a "🔍 Executed server-side"
+                // placeholder used to make the resend path lossy because
+                // `tool_result_content` then turned the placeholder into a
+                // synthetic user `tool_result` block that broke Anthropic's
+                // server-side sampling loop resumption. See cli.js v142:7057.
                 let tool = if matches!(
                     tool.kind,
                     ToolKind::ServerWebSearch | ToolKind::ServerCodeExecution
                 ) {
                     let mut t = tool;
-                    let display_text = match t.kind {
-                        ToolKind::ServerWebSearch => format!(
-                            "🔍 Executed server-side by Anthropic ({})",
-                            t.input.summary()
-                        ),
-                        ToolKind::ServerCodeExecution => format!(
-                            "⚡ Executed server-side by Anthropic ({})",
-                            t.input.summary()
-                        ),
-                        _ => unreachable!(),
-                    };
-                    t.output = ToolOutput::Text(display_text);
+                    // Leave output `Empty` — populated by the matching
+                    // StreamEvent::ServerToolResult event below.
+                    t.output = ToolOutput::Empty;
                     let _ = t.mark_running();
-                    let _ = t.mark_completed();
+                    // NOTE: do NOT mark_completed yet. The matching
+                    // ServerToolResult event will flip status to Completed
+                    // when the result arrives. If the stream ends with a
+                    // PauseTurn before the result block, the tool stays
+                    // Running and `pause_turn` resume sees the original
+                    // server_tool_use block on the wire — exactly the cue
+                    // Anthropic uses to resume the loop (cli.js v142:622686).
                     tracing::info!(
                         target: "jfc::stream",
                         tool_kind = t.kind.label(),
                         tool_use_id = %tool_use_id,
-                        "server-side tool marked completed (no local dispatch)"
+                        "server-side tool registered (awaiting result block)"
                     );
                     t
                 } else {
@@ -217,6 +222,31 @@ pub(super) async fn drain_stream_events(
                 };
                 let _ = tx
                     .send(AppEvent::Stream(RuntimeStreamEvent::Tool(tool)))
+                    .await;
+            }
+            StreamEvent::ServerToolResult {
+                tool_use_id,
+                tool_kind,
+                content,
+            } => {
+                // Anthropic emitted the paired result for a previously-
+                // dispatched server_tool_use block. Forward to the
+                // event_loop, which finds the matching ToolCall on the
+                // streaming assistant message and replaces its output
+                // with ToolOutput::ServerToolResult so the result
+                // round-trips byte-faithfully on the next resend.
+                tracing::info!(
+                    target: "jfc::stream",
+                    tool_use_id = %tool_use_id,
+                    wire_type = tool_kind.wire_type(),
+                    "stream server_tool_result received"
+                );
+                let _ = tx
+                    .send(AppEvent::Stream(RuntimeStreamEvent::ServerToolResult {
+                        tool_use_id: crate::ids::ToolId::from(tool_use_id),
+                        tool_kind,
+                        content,
+                    }))
                     .await;
             }
             StreamEvent::Done { stop_reason: r } => {

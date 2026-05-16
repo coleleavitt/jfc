@@ -174,6 +174,17 @@ fn hash_tool_output_height_fields(output: &ToolOutput, h: &mut impl std::hash::H
             exit_code.hash(h);
         }
         ToolOutput::FileList(files) => files.hash(h),
+        ToolOutput::ServerToolResult { tool_kind, content } => {
+            tool_kind.wire_type().hash(h);
+            // Stringify the JSON for hashing — the rendered text is
+            // derived from this content via
+            // `format_server_tool_result_text_public`, so hashing the
+            // raw JSON keeps the cache key tight to what the
+            // renderer actually outputs.
+            if let Ok(s) = serde_json::to_string(content) {
+                s.hash(h);
+            }
+        }
         ToolOutput::Empty => {}
     }
 }

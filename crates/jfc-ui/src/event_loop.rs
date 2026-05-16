@@ -1698,6 +1698,62 @@ pub(crate) async fn run(
                         app.pending_tool_calls.push(tool);
                     }
                 }
+                AppEvent::Stream(StreamEvent::ServerToolResult {
+                    tool_use_id,
+                    tool_kind,
+                    content,
+                }) => {
+                    // Anthropic emitted a server_tool_result block (e.g.
+                    // web_search_tool_result) paired with a previously-
+                    // dispatched server_tool_use. Find the matching
+                    // ToolCall on the streaming assistant message and
+                    // replace its output. Marking the tool Completed
+                    // here closes out the server-side execution; the
+                    // result is preserved on `tool.output` as a
+                    // `ToolOutput::ServerToolResult` for byte-faithful
+                    // round-trip on resend.
+                    app.record_stream_activity();
+                    let mut applied = false;
+                    if let Some(idx) = app.streaming_assistant_idx {
+                        if let Some(msg) = app.messages.get_mut(idx) {
+                            for part in msg.parts.iter_mut() {
+                                if let MessagePart::Tool(tc) = part {
+                                    if tc.id == tool_use_id {
+                                        tc.output = ToolOutput::ServerToolResult {
+                                            tool_kind: tool_kind.clone(),
+                                            content: content.clone(),
+                                        };
+                                        // Tool was set Running on the
+                                        // server_tool_use block; flip to
+                                        // Completed now that the paired
+                                        // result has arrived. mark_completed
+                                        // is idempotent if it ever fires
+                                        // twice from a duplicate event.
+                                        let _ = tc.mark_completed();
+                                        applied = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !applied {
+                        // Result arrived without a matching server_tool_use
+                        // ToolCall on the streaming message. Most likely
+                        // cause: the user pressed ESCx2 between the
+                        // server_tool_use start and the result block, the
+                        // streaming slot was cleared, and the late result
+                        // landed orphaned. Log loudly so the case is
+                        // visible in the trace but don't crash the run.
+                        tracing::warn!(
+                            target: "jfc::stream",
+                            tool_use_id = %tool_use_id,
+                            wire_type = tool_kind.wire_type(),
+                            streaming_idx = ?app.streaming_assistant_idx,
+                            "server_tool_result arrived with no matching server_tool_use ToolCall on streaming message"
+                        );
+                    }
+                }
                 AppEvent::Stream(StreamEvent::Done(stop_reason)) => {
                     app.record_stream_activity();
                     app.network_recovery_status = None;

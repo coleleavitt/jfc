@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 
 use super::ExecutionResult;
 use crate::types::{ChatMessage, ToolCall};
-use jfc_provider::{ModelInfo, ProviderId, StopReason};
+use jfc_provider::{ModelInfo, ProviderId, ServerToolResultKind, StopReason};
 
 /// Bounded channel capacity for the main runtime event loop. 1024 accommodates
 /// typical streaming bursts (50-200 chunks) with headroom for concurrent tool
@@ -66,6 +66,19 @@ pub enum StreamEvent {
     /// tool input streaming (matching v126's responseLengthRef accumulation).
     ToolInputDelta(usize),
     Tool(ToolCall),
+    /// Anthropic-side `server_tool_result` block (e.g.
+    /// `web_search_tool_result`) paired with a previously-dispatched
+    /// `server_tool_use`. The event_loop handler finds the matching
+    /// ToolCall on the streaming assistant message and replaces its
+    /// output with a `ToolOutput::ServerToolResult` so the result
+    /// round-trips byte-faithfully on the next resend. See
+    /// `live_events.rs` for the SSE-to-runtime translation and
+    /// `tool_wire::server_tool_result_content` for the resend path.
+    ServerToolResult {
+        tool_use_id: crate::ids::ToolId,
+        tool_kind: ServerToolResultKind,
+        content: serde_json::Value,
+    },
     Done(StopReason),
     Error(String),
     Usage {

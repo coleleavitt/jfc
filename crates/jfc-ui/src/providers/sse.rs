@@ -5,7 +5,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use jfc_provider::{
-    EventStream, ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent, ToolDef,
+    EventStream, ProviderContent, ProviderMessage, ProviderRole, ServerToolResultKind, StopReason,
+    StreamEvent, ToolDef,
 };
 
 #[derive(Debug, Deserialize)]
@@ -93,6 +94,32 @@ pub enum ContentBlock {
         name: String,
         input: Value,
     },
+    /// Server-side tool result for `web_search`. Wire shape per cli.js
+    /// v142:394261:
+    ///
+    ///   { "type": "web_search_tool_result",
+    ///     "tool_use_id": "srvtoolu_...",
+    ///     "content": [ { "title": "...", "url": "..." }, ... ]   // OR
+    ///                  { "error_code": "..." } }
+    ///
+    /// We keep `content` as `Value` so the error variant and any
+    /// future field additions round-trip without parse loss.
+    WebSearchToolResult {
+        tool_use_id: String,
+        content: Value,
+    },
+    /// Server-side tool result for `code_execution`. Wire type
+    /// `code_execution_tool_result` per cli.js v142:246154.
+    CodeExecutionToolResult {
+        tool_use_id: String,
+        content: Value,
+    },
+    /// Server-side tool result for `web_fetch`. Wire type
+    /// `web_fetch_tool_result` per cli.js v142:246159.
+    WebFetchToolResult {
+        tool_use_id: String,
+        content: Value,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,6 +180,17 @@ pub enum BlockState {
         name: String,
         input: String,
     },
+    /// Server-side tool result block. Anthropic emits the entire
+    /// content blob in the start event (cli.js v142:548307 routes the
+    /// raw block straight into the result accumulator with no
+    /// `input_json_delta` continuation), so we just hold the parsed
+    /// JSON until `content_block_stop` releases it as a
+    /// `StreamEvent::ServerToolResult`.
+    ServerToolResult {
+        tool_use_id: String,
+        tool_kind: ServerToolResultKind,
+        content: Value,
+    },
 }
 
 pub fn parse_stop_reason(s: Option<&str>) -> StopReason {
@@ -166,8 +204,39 @@ pub fn parse_stop_reason(s: Option<&str>) -> StopReason {
         Some("pause_turn") => StopReason::PauseTurn,
         Some("max_tokens") => StopReason::MaxTokens,
         Some("stop_sequence") => StopReason::StopSequence,
-        Some(other) => StopReason::Other(other.to_owned()),
-        None => StopReason::EndTurn,
+        Some(other) => {
+            // Unknown stop_reason string. Surface loudly — every
+            // historical "stream silently ends" bug has eventually
+            // traced back to a new server stop_reason being bucketed
+            // into Other(...) and falling through event_loop's
+            // dispatch ladder. The warn gives us a one-grep way to
+            // catch the next variant (e.g. "refusal", "container_*")
+            // before users notice.
+            tracing::warn!(
+                target: "jfc::provider::sse",
+                stop_reason = other,
+                "parse_stop_reason: unknown stop_reason string — bucketing into Other(...) \
+                 (event_loop will fall into the 'model said its piece' branch); \
+                 check cli.js v142 for a new variant we need to map"
+            );
+            StopReason::Other(other.to_owned())
+        }
+        None => {
+            // Missing stop_reason field. Anthropic sometimes omits it
+            // on truncated streams or context_hint short-circuits. The
+            // EndTurn default is most-conservative for back-compat
+            // (closes the streaming slot cleanly) but the silent fall-
+            // through is exactly the class of bug that hid pause_turn
+            // for months. Warn loudly so future occurrences are
+            // diagnosable from the trace log alone.
+            tracing::warn!(
+                target: "jfc::provider::sse",
+                "parse_stop_reason: missing stop_reason field — defaulting to EndTurn \
+                 (this is back-compat; if you see this paired with a stalled stream, \
+                 the upstream omitted a real stop_reason we should be handling)"
+            );
+            StopReason::EndTurn
+        }
     };
     tracing::trace!(
         target: "jfc::provider::sse",
@@ -218,6 +287,30 @@ pub fn translate(
                         input: input_str,
                     }
                 }
+                ContentBlock::WebSearchToolResult {
+                    tool_use_id,
+                    content,
+                } => BlockState::ServerToolResult {
+                    tool_use_id,
+                    tool_kind: ServerToolResultKind::WebSearch,
+                    content,
+                },
+                ContentBlock::CodeExecutionToolResult {
+                    tool_use_id,
+                    content,
+                } => BlockState::ServerToolResult {
+                    tool_use_id,
+                    tool_kind: ServerToolResultKind::CodeExecution,
+                    content,
+                },
+                ContentBlock::WebFetchToolResult {
+                    tool_use_id,
+                    content,
+                } => BlockState::ServerToolResult {
+                    tool_use_id,
+                    tool_kind: ServerToolResultKind::WebFetch,
+                    content,
+                },
             });
             None
         }
@@ -283,6 +376,33 @@ pub fn translate(
                         input_json: input,
                     })
                 }
+                // Server-side tool result block (e.g. web_search). The
+                // content is captured intact so the runtime can attach
+                // it to the streaming assistant message for byte-faithful
+                // re-emission on pause_turn resume. See cli.js v142:394261.
+                Some(BlockState::ServerToolResult {
+                    tool_use_id,
+                    tool_kind,
+                    content,
+                }) => {
+                    tracing::info!(
+                        target: "jfc::provider::anthropic_sse",
+                        index,
+                        wire_type = tool_kind.wire_type(),
+                        tool_use_id = %tool_use_id,
+                        content_preview = %content
+                            .to_string()
+                            .chars()
+                            .take(200)
+                            .collect::<String>(),
+                        "server_tool_result block complete"
+                    );
+                    Some(StreamEvent::ServerToolResult {
+                        tool_use_id,
+                        tool_kind,
+                        content,
+                    })
+                }
                 None => None,
             }
         }
@@ -314,9 +434,29 @@ pub fn translate(
                 cache_write_tokens: usage.cache_creation_input_tokens.unwrap_or_default(),
             })
         }
-        SseEvent::MessageStop => Some(StreamEvent::Done {
-            stop_reason: stop_reason.take().unwrap_or(StopReason::EndTurn),
-        }),
+        SseEvent::MessageStop => {
+            // Same silent-default trap as parse_stop_reason(None):
+            // message_stop without a preceding message_delta means the
+            // upstream forgot to tell us why the turn ended. Default to
+            // EndTurn for back-compat but log so a stalled stream is
+            // diagnosable. Mirrors the warn in parse_stop_reason.
+            let reason = match stop_reason.take() {
+                Some(r) => r,
+                None => {
+                    tracing::warn!(
+                        target: "jfc::provider::sse",
+                        "message_stop arrived without a preceding message_delta \
+                         (no stop_reason was set) — defaulting to EndTurn; if the \
+                         turn looks truncated, check the raw SSE log for the missing \
+                         delta event"
+                    );
+                    StopReason::EndTurn
+                }
+            };
+            Some(StreamEvent::Done {
+                stop_reason: reason,
+            })
+        }
         SseEvent::Error { error } => {
             let message = match error.kind.as_deref() {
                 Some("overloaded_error" | "rate_limit_error" | "api_error") => {
@@ -413,6 +553,33 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
                         "id": id,
                         "name": name,
                         "input": ensure_input_object(input),
+                    }),
+                    // Server-side tools round-trip with their original
+                    // wire type. Re-emitting them as plain `tool_use`
+                    // breaks Anthropic's server-side sampling loop
+                    // resumption (cli.js v142:7057, :441090). Anthropic
+                    // also accepts `server_tool_use.input` as either a
+                    // string OR an object on resend (cli.js v142:441090
+                    // tolerates both), so we run the same coercion as
+                    // for regular `tool_use` to land on the safe shape.
+                    ProviderContent::ServerToolUse { id, name, input } => json!({
+                        "type": "server_tool_use",
+                        "id": id,
+                        "name": name,
+                        "input": ensure_input_object(input),
+                    }),
+                    // Server-side tool results re-emit verbatim with
+                    // their original `type` string and content. Per
+                    // cli.js v142:441375 these survive the
+                    // normalize-for-resend pass unchanged.
+                    ProviderContent::ServerToolResult {
+                        tool_use_id,
+                        tool_kind,
+                        content,
+                    } => json!({
+                        "type": tool_kind.wire_type(),
+                        "tool_use_id": tool_use_id,
+                        "content": content,
                     }),
                     // Image (PNG/JPEG/GIF/WebP) → `image` block;
                     // PDF → `document` block. Both share the base64
@@ -539,30 +706,48 @@ fn log_parsed_event(event: &SseEvent) {
                 ContentBlock::Thinking { .. } => "thinking",
                 ContentBlock::ToolUse { .. } => "tool_use",
                 ContentBlock::ServerToolUse { .. } => "server_tool_use",
+                ContentBlock::WebSearchToolResult { .. } => "web_search_tool_result",
+                ContentBlock::CodeExecutionToolResult { .. } => "code_execution_tool_result",
+                ContentBlock::WebFetchToolResult { .. } => "web_fetch_tool_result",
             };
-            if let ContentBlock::ToolUse { id, name, .. } = content_block {
-                tracing::info!(
-                    target: "jfc::provider::anthropic_sse",
-                    index,
-                    tool_name = %name,
-                    tool_use_id = %id,
-                    "content_block_start tool_use"
-                );
-            } else if let ContentBlock::ServerToolUse { id, name, .. } = content_block {
-                tracing::info!(
-                    target: "jfc::provider::anthropic_sse",
-                    index,
-                    tool_name = %name,
-                    tool_use_id = %id,
-                    "content_block_start server_tool_use"
-                );
-            } else {
-                tracing::debug!(
-                    target: "jfc::provider::anthropic_sse",
-                    index,
-                    kind,
-                    "content_block_start"
-                );
+            match content_block {
+                ContentBlock::ToolUse { id, name, .. } => {
+                    tracing::info!(
+                        target: "jfc::provider::anthropic_sse",
+                        index,
+                        tool_name = %name,
+                        tool_use_id = %id,
+                        "content_block_start tool_use"
+                    );
+                }
+                ContentBlock::ServerToolUse { id, name, .. } => {
+                    tracing::info!(
+                        target: "jfc::provider::anthropic_sse",
+                        index,
+                        tool_name = %name,
+                        tool_use_id = %id,
+                        "content_block_start server_tool_use"
+                    );
+                }
+                ContentBlock::WebSearchToolResult { tool_use_id, .. }
+                | ContentBlock::CodeExecutionToolResult { tool_use_id, .. }
+                | ContentBlock::WebFetchToolResult { tool_use_id, .. } => {
+                    tracing::info!(
+                        target: "jfc::provider::anthropic_sse",
+                        index,
+                        kind,
+                        tool_use_id = %tool_use_id,
+                        "content_block_start server_tool_result"
+                    );
+                }
+                _ => {
+                    tracing::debug!(
+                        target: "jfc::provider::anthropic_sse",
+                        index,
+                        kind,
+                        "content_block_start"
+                    );
+                }
             }
         }
         SseEvent::ContentBlockDelta { index, delta } => {
@@ -809,6 +994,39 @@ mod tests {
                 stop_reason: StopReason::EndTurn
             })
         ));
+    }
+
+    // Robust: `parse_stop_reason(None)` still falls back to EndTurn for
+    // back-compat with truncated/short-circuited streams, but the
+    // behavior is documented + warn-logged so the silent fallback
+    // doesn't hide a future variant the way it hid pause_turn for
+    // months. This test pins the contract: missing field → EndTurn,
+    // NOT panic, NOT Other(""), NOT Other("null").
+    #[test]
+    fn parse_stop_reason_none_falls_back_to_end_turn_robust() {
+        assert_eq!(parse_stop_reason(None), StopReason::EndTurn);
+    }
+
+    // Robust: an unknown variant string buckets into Other(...) and is
+    // expected to surface a warn in the trace log. We can't easily
+    // capture the tracing event from a unit test without a
+    // subscriber-capture rig, but we DO pin that the variant is
+    // preserved verbatim so the user can grep their logs for the
+    // exact string Anthropic sent.
+    #[test]
+    fn parse_stop_reason_unknown_string_preserves_variant_robust() {
+        assert_eq!(
+            parse_stop_reason(Some("refusal")),
+            StopReason::Other("refusal".into())
+        );
+        assert_eq!(
+            parse_stop_reason(Some("container_oom")),
+            StopReason::Other("container_oom".into())
+        );
+        // Empty string is its own degenerate case — preserved (NOT
+        // collapsed to EndTurn) so it shows up in logs as
+        // `Other("")` which is grep-able.
+        assert_eq!(parse_stop_reason(Some("")), StopReason::Other("".into()));
     }
 
     // Normal: a message_delta with stop_reason="pause_turn" followed by

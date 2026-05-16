@@ -2,7 +2,10 @@ use crate::types::{ChatMessage, MessagePart};
 use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole};
 
 use super::attachments::push_attachments;
-use super::tool_wire::{ToolWireCounters, tool_result_content, tool_use_content};
+use super::tool_wire::{
+    ToolWireCounters, is_server_tool, server_tool_result_content, tool_result_content,
+    tool_use_content,
+};
 use super::turns::{
     chat_message_text, ensure_user_last, prepare_for_pause_turn_resume, provider_role,
     turns_ago_by_message, validate_provider_messages,
@@ -89,33 +92,49 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
 
         let role = provider_role(m.role);
         let text = chat_message_text(m);
-        let tool_uses: Vec<ProviderContent> = m
-            .parts
-            .iter()
-            .filter_map(|p| match p {
-                MessagePart::Tool(tc) => Some(tool_use_content(tc, &mut counters)),
-                _ => None,
-            })
-            .collect();
 
-        let tool_results: Vec<ProviderContent> = m
-            .parts
-            .iter()
-            .filter_map(|p| match p {
-                MessagePart::Tool(tc) => Some(tool_result_content(
+        // Bucket each tool into one of:
+        //   (a) regular tool_use → emitted on assistant; paired
+        //       tool_result emitted on the trailing user message;
+        //   (b) server_tool_use → emitted on assistant; paired
+        //       server_tool_result emitted on the SAME assistant
+        //       message (no trailing user pair). Per cli.js v142:7057
+        //       and :441375 — the server pairs server_tool_use with
+        //       server_tool_result inside the same assistant turn.
+        let mut assistant_tool_blocks: Vec<ProviderContent> = Vec::new();
+        let mut user_tool_results: Vec<ProviderContent> = Vec::new();
+        for part in &m.parts {
+            let MessagePart::Tool(tc) = part else {
+                continue;
+            };
+            if is_server_tool(&tc.kind) {
+                assistant_tool_blocks.push(tool_use_content(tc, &mut counters));
+                // The paired result block (web_search_tool_result, etc.)
+                // is captured on the ToolCall's output by
+                // event_loop's StreamEvent::ServerToolResult handler.
+                // When it's present, re-emit it byte-faithfully here;
+                // when absent (e.g. the stream paused before the
+                // result arrived), the trailing server_tool_use block
+                // alone IS the resume cue per cli.js v142:622686, so
+                // we deliberately do not synthesize a placeholder.
+                if let Some(result) = server_tool_result_content(tc, &mut counters) {
+                    assistant_tool_blocks.push(result);
+                }
+            } else {
+                assistant_tool_blocks.push(tool_use_content(tc, &mut counters));
+                user_tool_results.push(tool_result_content(
                     tc,
                     turns_ago_map[msg_idx],
                     &mut counters,
-                )),
-                _ => None,
-            })
-            .collect();
+                ));
+            }
+        }
 
         let mut assistant_content = Vec::new();
         if !text.is_empty() {
             assistant_content.push(ProviderContent::Text(text.clone()));
         }
-        assistant_content.extend(tool_uses);
+        assistant_content.extend(assistant_tool_blocks);
         push_attachments(&mut assistant_content, &m.attachments);
 
         if !assistant_content.is_empty() {
@@ -130,10 +149,10 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
             });
         }
 
-        if !tool_results.is_empty() {
+        if !user_tool_results.is_empty() {
             out.push(ProviderMessage {
                 role: ProviderRole::User,
-                content: tool_results,
+                content: user_tool_results,
             });
         }
     }
@@ -144,6 +163,8 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
         output_messages = out.len(),
         tool_use_count = counters.tool_use_count,
         tool_result_count = counters.tool_result_count,
+        server_tool_use_count = counters.server_tool_use_count,
+        server_tool_result_count = counters.server_tool_result_count,
         abandoned_count = counters.abandoned_count,
         "build_assistant_and_tool_result_messages"
     );
@@ -579,5 +600,178 @@ mod tests {
         let last = out.last().unwrap();
         assert_eq!(last.role, ProviderRole::User);
         assert_eq!(last.content.len(), 2);
+    }
+
+    // ───── server_tool_use round-trip pins ────────────────────────────────
+    // Per cli.js v142:7057 and :441375 a `server_tool_use` block emitted
+    // on an assistant turn must round-trip as `type: "server_tool_use"`
+    // (not plain `tool_use`) and must NOT spawn a paired user
+    // `tool_result` message. The server pairs it with its own
+    // `web_search_tool_result` block which is also written onto the
+    // assistant turn.
+
+    // Normal: a completed server_tool_use ToolCall round-trips as a
+    // `ProviderContent::ServerToolUse` on the assistant message and
+    // produces NO synthetic user `tool_result` block. (Note: this
+    // tests the NON-pause-turn builder — which still appends the
+    // standard "Continue from where you left off." trailer because
+    // an assistant-tail server_tool_use isn't a pause_turn cue in
+    // this path. The pause_turn builder's tests pin the resume
+    // suppression separately.)
+    #[test]
+    fn server_tool_use_emits_server_tool_use_not_plain_tool_use_normal() {
+        let tool = make_tool_call(
+            "srvtoolu_1",
+            ToolKind::ServerWebSearch,
+            ToolStatus::Completed,
+            ToolOutput::Empty,
+        );
+        let msgs = vec![
+            user_msg("search rust"),
+            assistant_with_parts(vec![MessagePart::Tool(tool)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        // The KEY assertion: NO fabricated `ProviderContent::ToolResult`
+        // user block anywhere in the payload. That fabrication is what
+        // used to break server-side sampling loop resumption.
+        let has_tool_result = out.iter().any(|m| {
+            m.content
+                .iter()
+                .any(|c| matches!(c, ProviderContent::ToolResult { .. }))
+        });
+        assert!(
+            !has_tool_result,
+            "server tools must NOT round-trip as ProviderContent::ToolResult — that breaks the server-side sampling loop"
+        );
+        // And the assistant turn carries a `ProviderContent::ServerToolUse`
+        // with the bare wire name `web_search` (NOT the JFC-internal
+        // `server_tool_use:web_search` prefix). cli.js v142:441090.
+        let assistant_msg = out
+            .iter()
+            .find(|m| m.role == ProviderRole::Assistant)
+            .expect("expected an assistant message");
+        let has_server_tool_use = assistant_msg.content.iter().any(
+            |c| matches!(c, ProviderContent::ServerToolUse { name, .. } if name == "web_search"),
+        );
+        assert!(
+            has_server_tool_use,
+            "assistant message must carry a ProviderContent::ServerToolUse{{name='web_search'}}"
+        );
+    }
+
+    // Normal: when the runtime captured a paired server_tool_result on
+    // the ToolCall's output (via the StreamEvent::ServerToolResult
+    // event in event_loop), the builder re-emits it byte-faithfully
+    // on the SAME assistant message — NOT a separate user message.
+    #[test]
+    fn server_tool_use_carries_paired_result_on_same_assistant_msg_normal() {
+        use jfc_provider::ServerToolResultKind;
+        use serde_json::json;
+        let mut tool = make_tool_call(
+            "srvtoolu_2",
+            ToolKind::ServerWebSearch,
+            ToolStatus::Completed,
+            ToolOutput::ServerToolResult {
+                tool_kind: ServerToolResultKind::WebSearch,
+                content: json!([
+                    { "title": "Rust Programming Language",
+                      "url": "https://www.rust-lang.org/" }
+                ]),
+            },
+        );
+        let _ = tool.mark_running();
+        let _ = tool.mark_completed();
+        let msgs = vec![
+            user_msg("search rust"),
+            assistant_with_parts(vec![MessagePart::Tool(tool)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        let assistant = out
+            .iter()
+            .find(|m| m.role == ProviderRole::Assistant)
+            .expect("expected an assistant message");
+        // Two blocks: ServerToolUse first, then ServerToolResult — both
+        // on the SAME assistant message. cli.js v142:441375 emits them
+        // in this order on resend.
+        let server_tool_use_count = assistant
+            .content
+            .iter()
+            .filter(|c| matches!(c, ProviderContent::ServerToolUse { .. }))
+            .count();
+        let server_tool_result_count = assistant
+            .content
+            .iter()
+            .filter(|c| matches!(c, ProviderContent::ServerToolResult { .. }))
+            .count();
+        assert_eq!(
+            server_tool_use_count, 1,
+            "assistant must carry exactly one server_tool_use block"
+        );
+        assert_eq!(
+            server_tool_result_count, 1,
+            "assistant must carry exactly one server_tool_result block (paired on the same turn)"
+        );
+        // The result block round-trips its raw JSON content
+        // unchanged — Anthropic uses identity comparison on resend.
+        let result = assistant
+            .content
+            .iter()
+            .find_map(|c| match c {
+                ProviderContent::ServerToolResult {
+                    content, tool_kind, ..
+                } => Some((content, tool_kind)),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            result.1.wire_type(),
+            "web_search_tool_result",
+            "kind must round-trip as web_search_tool_result"
+        );
+        let arr = result.0.as_array().expect("content must be an array");
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["title"], "Rust Programming Language");
+    }
+
+    // Robust: when no paired result has arrived yet (e.g. pause_turn
+    // fired mid-loop), the server_tool_use stays on the assistant
+    // message with no fabricated placeholder result. The trailing
+    // server_tool_use IS the resume cue per cli.js v142:622686.
+    #[test]
+    fn server_tool_use_without_result_emits_only_server_tool_use_robust() {
+        let tool = make_tool_call(
+            "srvtoolu_3",
+            ToolKind::ServerWebSearch,
+            ToolStatus::Running, // result not arrived yet
+            ToolOutput::Empty,
+        );
+        let msgs = vec![
+            user_msg("search rust"),
+            assistant_with_parts(vec![MessagePart::Tool(tool)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        let assistant = out
+            .iter()
+            .find(|m| m.role == ProviderRole::Assistant)
+            .expect("expected an assistant message");
+        let server_tool_result_count = assistant
+            .content
+            .iter()
+            .filter(|c| matches!(c, ProviderContent::ServerToolResult { .. }))
+            .count();
+        assert_eq!(
+            server_tool_result_count, 0,
+            "no fabricated server_tool_result when the real one hasn't arrived"
+        );
+        // And still no synthetic `tool_result` user message.
+        let has_tool_result = out.iter().any(|m| {
+            m.content
+                .iter()
+                .any(|c| matches!(c, ProviderContent::ToolResult { .. }))
+        });
+        assert!(
+            !has_tool_result,
+            "abandoned server tools must NOT round-trip as ProviderContent::ToolResult"
+        );
     }
 }

@@ -67,6 +67,25 @@ pub(crate) fn render_message_as_text(msg: &ProviderMessage) -> String {
                     content.len()
                 ));
             }
+            ProviderContent::ServerToolUse { name, input, .. } => {
+                let preview = serde_json::to_string(input)
+                    .unwrap_or_default()
+                    .chars()
+                    .take(200)
+                    .collect::<String>();
+                out.push_str(&format!(
+                    "\n  <server_tool_use name=\"{name}\" input=\"{preview}\"/>"
+                ));
+            }
+            ProviderContent::ServerToolResult {
+                tool_kind, content, ..
+            } => {
+                let preview: String = content.to_string().chars().take(400).collect::<String>();
+                out.push_str(&format!(
+                    "\n  <{wire}>{preview}…</{wire}>",
+                    wire = tool_kind.wire_type()
+                ));
+            }
             ProviderContent::Attachment(att) => {
                 out.push_str(&format!(
                     "\n  <attachment kind=\"{}\" bytes=\"{}\"/>",
@@ -211,6 +230,12 @@ pub(crate) fn estimate_provider_message_bytes(msg: &ProviderMessage) -> usize {
                 name.len() + serde_json::to_string(input).map(|s| s.len()).unwrap_or(0)
             }
             ProviderContent::ToolResult { content, .. } => content.len(),
+            ProviderContent::ServerToolUse { name, input, .. } => {
+                name.len() + serde_json::to_string(input).map(|s| s.len()).unwrap_or(0)
+            }
+            ProviderContent::ServerToolResult { content, .. } => {
+                serde_json::to_string(content).map(|s| s.len()).unwrap_or(0)
+            }
             ProviderContent::Attachment(att) => att.bytes.len() * 4 / 3,
         })
         .sum::<usize>()

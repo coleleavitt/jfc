@@ -470,6 +470,22 @@ pub enum SerializedToolOutput {
     FileList {
         files: Vec<String>,
     },
+    /// Anthropic server-side tool result (e.g. `web_search_tool_result`).
+    /// Persisted as the raw JSON content + wire-type string so that
+    /// reloads round-trip the result back into the runtime as a
+    /// `ToolOutput::ServerToolResult`. Sessions written before this
+    /// variant landed deserialize fine — the variant only appears on
+    /// fresh writes that involved a server-side tool.
+    ServerToolResult {
+        /// Anthropic wire `type` field (e.g. "web_search_tool_result",
+        /// "code_execution_tool_result"). Used to reconstruct the
+        /// `ServerToolResultKind` discriminant on load.
+        wire_type: String,
+        /// Raw JSON content returned by the server. Preserved verbatim
+        /// so the resend path can re-emit it byte-faithfully on a
+        /// future user turn (cli.js v142:441375).
+        content: serde_json::Value,
+    },
     Empty,
 }
 
@@ -525,6 +541,10 @@ impl<'de> serde::Deserialize<'de> for SerializedToolOutput {
                     FileList {
                         files: Vec<String>,
                     },
+                    ServerToolResult {
+                        wire_type: String,
+                        content: serde_json::Value,
+                    },
                     Empty,
                 }
                 let inner: Inner = serde_json::from_value(value).map_err(de::Error::custom)?;
@@ -569,6 +589,9 @@ impl<'de> serde::Deserialize<'de> for SerializedToolOutput {
                         exit_code,
                     },
                     Inner::FileList { files } => SerializedToolOutput::FileList { files },
+                    Inner::ServerToolResult { wire_type, content } => {
+                        SerializedToolOutput::ServerToolResult { wire_type, content }
+                    }
                     Inner::Empty => SerializedToolOutput::Empty,
                 })
             }
@@ -1283,6 +1306,12 @@ fn serialize_tool_output(output: &ToolOutput) -> SerializedToolOutput {
         ToolOutput::FileList(files) => SerializedToolOutput::FileList {
             files: files.clone(),
         },
+        ToolOutput::ServerToolResult { tool_kind, content } => {
+            SerializedToolOutput::ServerToolResult {
+                wire_type: tool_kind.wire_type().to_owned(),
+                content: content.clone(),
+            }
+        }
         ToolOutput::Empty => SerializedToolOutput::Empty,
     }
 }
@@ -2016,6 +2045,12 @@ fn deserialize_tool_output(output: SerializedToolOutput) -> ToolOutput {
             exit_code,
         },
         SerializedToolOutput::FileList { files } => ToolOutput::FileList(files),
+        SerializedToolOutput::ServerToolResult { wire_type, content } => {
+            ToolOutput::ServerToolResult {
+                tool_kind: jfc_provider::ServerToolResultKind::from_wire_type(&wire_type),
+                content,
+            }
+        }
         SerializedToolOutput::Empty => ToolOutput::Empty,
     }
 }

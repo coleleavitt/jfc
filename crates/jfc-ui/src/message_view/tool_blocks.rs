@@ -274,6 +274,20 @@ pub(super) fn tool_body_lines_themed(
             )
         }
         ToolOutput::FileList(files) => produce_file_list_lines(files, t),
+        ToolOutput::ServerToolResult { tool_kind, content } => {
+            // Render the parsed JSON via the same text helper used for
+            // ToolOutput::Text — the resulting string is already
+            // human-readable (titled bulleted list for web_search,
+            // pretty-printed JSON for the others).
+            let rendered = crate::types::format_server_tool_result_text_public(tool_kind, content);
+            produce_text_block_lines(
+                &rendered,
+                content_w,
+                t.text_secondary,
+                t,
+                tool.display.is_expanded(),
+            )
+        }
     }
 }
 
