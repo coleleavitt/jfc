@@ -215,7 +215,7 @@ mod tests {
         registry.register(expensive.clone());
 
         engine.submit_bid(Bid {
-            agent_id: expensive.clone(),
+            agent_id: expensive,
             bounty_id: "b1".into(),
             price: 5000,
             approach: "approach".into(),
@@ -240,8 +240,8 @@ mod tests {
         let bid1 = make_bid("alice", "b1", 500);
         let bid2 = make_bid("bob", "b1", 600);
 
-        engine.submit_bid(bid1.clone());
-        engine.submit_bid(bid2.clone());
+        engine.submit_bid(bid1);
+        engine.submit_bid(bid2);
 
         // Each bid is independently stored
         let bids = engine.bids();

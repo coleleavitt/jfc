@@ -259,7 +259,7 @@ mod tests {
         let f = &flows[0];
         assert_eq!(f.source, source);
         assert_eq!(f.sink, sink);
-        assert_eq!(f.path, vec![source.clone(), sink.clone()]);
+        assert_eq!(f.path, vec![source, sink]);
         assert_eq!(f.passed_through_sanitizer, None);
     }
 
@@ -327,7 +327,7 @@ mod tests {
         oracle.uses.insert(s2.clone(), vec![sink.clone()]);
 
         let sources = [s1.clone(), s2.clone()];
-        let sinks = [sink.clone()];
+        let sinks = [sink];
         let sanitizers: [NodeId; 0] = [];
         let cfg = TaintConfig {
             sources: &sources,
@@ -360,8 +360,8 @@ mod tests {
         oracle
             .uses
             .insert(source.clone(), vec![a.clone(), b.clone()]);
-        oracle.uses.insert(a.clone(), vec![sink.clone()]);
-        oracle.uses.insert(b.clone(), vec![sink.clone()]);
+        oracle.uses.insert(a, vec![sink.clone()]);
+        oracle.uses.insert(b, vec![sink.clone()]);
 
         let sources = [source];
         let sinks = [sink];

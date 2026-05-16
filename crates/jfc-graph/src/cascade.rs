@@ -187,13 +187,13 @@ mod tests {
 
         let caller_rs_task = tasks
             .iter()
-            .find(|t| t.call_sites[0].file_path == PathBuf::from("src/caller.rs"))
+            .find(|t| t.call_sites[0].file_path == *"src/caller.rs")
             .expect("should have task for src/caller.rs");
         assert_eq!(caller_rs_task.call_sites.len(), 2);
 
         let other_rs_task = tasks
             .iter()
-            .find(|t| t.call_sites[0].file_path == PathBuf::from("src/other.rs"))
+            .find(|t| t.call_sites[0].file_path == *"src/other.rs")
             .expect("should have task for src/other.rs");
         assert_eq!(other_rs_task.call_sites.len(), 1);
     }

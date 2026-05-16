@@ -408,7 +408,7 @@ mod tests {
         let session = orchestrator.validators.get_mut(session_idx).unwrap();
         session
             .submit_challenge(ValidationChallenge {
-                validator_id: validator.clone(),
+                validator_id: validator,
                 solution_agent_id: solver_a.clone(),
                 bounty_id: bounty_id.clone(),
                 proposed_flaw: "".into(),
@@ -438,7 +438,7 @@ mod tests {
             &bounty_id,
             1000,
             Some(&solver_a),
-            &[solver_b.clone()],
+            std::slice::from_ref(&solver_b),
             &verdicts,
             &charter,
             &mut orchestrator.ledger,

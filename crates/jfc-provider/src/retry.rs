@@ -127,7 +127,7 @@ pub fn stream_retry_delay(attempt: u32) -> Duration {
     #[cfg(test)]
     {
         let _ = attempt;
-        return Duration::from_millis(1);
+        Duration::from_millis(1)
     }
 
     #[cfg(not(test))]

@@ -1052,7 +1052,7 @@ mod tests {
         };
         let cfg_par = TraversalConfig {
             parallel: true,
-            ..cfg_serial.clone()
+            ..cfg_serial
         };
         let serial = traverse_csr(&snap, &root, &cfg_serial);
         let par = traverse_csr(&snap, &root, &cfg_par);
@@ -1279,7 +1279,7 @@ mod tests {
         // Empty sources: no path.
         assert!(find_path_multi_source(&g, &[], &t, 100).is_none());
         // Single source equal to target — the trivial path is returned.
-        let trivial = find_path_multi_source(&g, &[t.clone()], &t, 5).unwrap();
+        let trivial = find_path_multi_source(&g, std::slice::from_ref(&t), &t, 5).unwrap();
         assert_eq!(trivial, vec![t]);
     }
 
@@ -1412,9 +1412,7 @@ mod tests {
         assert_eq!(path, vec![a.clone(), c.clone(), d.clone()]);
 
         // Blacklisting all outgoing edges from A produces no path.
-        let blocked = find_path_avoiding_edge(&g, &a, &d, 10, |edge| {
-            edge.weight > 0.0 || edge.weight == 0.0
-        });
+        let blocked = find_path_avoiding_edge(&g, &a, &d, 10, |edge| edge.weight >= 0.0);
         assert!(blocked.is_none());
     }
 

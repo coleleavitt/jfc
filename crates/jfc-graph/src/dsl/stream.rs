@@ -166,7 +166,7 @@ mod tests {
             let id = g.add_node(mk(&format!("n{i}"), &i.to_string()));
             ids.push(id);
         }
-        let top3 = stream_top_k_by(ids.into_iter(), &g, "score", 3);
+        let top3 = stream_top_k_by(ids, &g, "score", 3);
         // Top-3 highest scores should be 999, 998, 997.
         let names: Vec<String> = top3
             .iter()
@@ -178,14 +178,14 @@ mod tests {
     #[test]
     fn top_k_zero_returns_empty() {
         let g = CodeGraph::new();
-        let out = stream_top_k_by(Vec::<NodeId>::new().into_iter(), &g, "score", 0);
+        let out = stream_top_k_by(Vec::<NodeId>::new(), &g, "score", 0);
         assert!(out.is_empty());
     }
 
     #[test]
     fn top_k_handles_empty_iterator() {
         let g = CodeGraph::new();
-        let out = stream_top_k_by(Vec::<NodeId>::new().into_iter(), &g, "score", 5);
+        let out = stream_top_k_by(Vec::<NodeId>::new(), &g, "score", 5);
         assert!(out.is_empty());
     }
 
@@ -195,12 +195,7 @@ mod tests {
         let a = g.add_node(mk("a", "5"));
         let b = g.add_node(mk("b", "not a number"));
         let c = g.add_node(mk("c", "10"));
-        let out = stream_top_k_by(
-            vec![a.clone(), b.clone(), c.clone()].into_iter(),
-            &g,
-            "score",
-            2,
-        );
+        let out = stream_top_k_by(vec![a, b, c], &g, "score", 2);
         assert_eq!(out.len(), 2);
         let names: Vec<String> = out
             .iter()
@@ -242,7 +237,7 @@ mod tests {
         let a = g.add_node(mk("a", "1"));
         let b = g.add_node(mk("b", "5"));
         let c = g.add_node(mk("c", "3"));
-        let out = stream_top_k_by(vec![a, b.clone(), c.clone()].into_iter(), &g, "score", 3);
+        let out = stream_top_k_by(vec![a, b, c], &g, "score", 3);
         let names: Vec<String> = out
             .iter()
             .map(|id| g.get_node(id).unwrap().name.clone())
@@ -252,7 +247,7 @@ mod tests {
 
     #[test]
     fn ordered_f64_orders_with_nan_last() {
-        let mut v = vec![
+        let mut v = [
             OrderedF64(1.0),
             OrderedF64(f64::NAN),
             OrderedF64(2.0),
@@ -273,7 +268,7 @@ mod tests {
         let mut g = CodeGraph::new();
         let a = g.add_node(mk("a", "1"));
         let b = g.add_node(mk("b", "2"));
-        let out = stream_top_k_by(vec![a, b].into_iter(), &g, "score", 10);
+        let out = stream_top_k_by(vec![a, b], &g, "score", 10);
         assert_eq!(out.len(), 2);
     }
 }

@@ -160,7 +160,7 @@ mod tests {
         g.add_edge(&b, &c, ed(EdgeKind::Calls)).unwrap();
         g.add_edge(&c, &d, ed(EdgeKind::Calls)).unwrap();
 
-        let res = calls_closure(&g, &[a.clone()], ClosureDirection::Outgoing);
+        let res = calls_closure(&g, std::slice::from_ref(&a), ClosureDirection::Outgoing);
         assert_eq!(res.len(), 3);
         assert!(res.contains(&b));
         assert!(res.contains(&c));
@@ -178,7 +178,7 @@ mod tests {
         g.add_edge(&b, &c, ed(EdgeKind::Calls)).unwrap();
         g.add_edge(&c, &a, ed(EdgeKind::Calls)).unwrap();
 
-        let res = calls_closure(&g, &[a.clone()], ClosureDirection::Outgoing);
+        let res = calls_closure(&g, std::slice::from_ref(&a), ClosureDirection::Outgoing);
         assert_eq!(res.len(), 2);
         assert!(res.contains(&b));
         assert!(res.contains(&c));
@@ -193,7 +193,11 @@ mod tests {
         g.add_edge(&caller, &mid, ed(EdgeKind::Calls)).unwrap();
         g.add_edge(&mid, &target, ed(EdgeKind::Calls)).unwrap();
 
-        let res = calls_closure(&g, &[target.clone()], ClosureDirection::Incoming);
+        let res = calls_closure(
+            &g,
+            std::slice::from_ref(&target),
+            ClosureDirection::Incoming,
+        );
         assert!(res.contains(&caller));
         assert!(res.contains(&mid));
     }
@@ -216,7 +220,7 @@ mod tests {
         g.add_edge(&f, &s, ed(EdgeKind::UsesType)).unwrap();
 
         // Only Calls edges → S is unreachable.
-        let calls_only = calls_closure(&g, &[f.clone()], ClosureDirection::Outgoing);
+        let calls_only = calls_closure(&g, std::slice::from_ref(&f), ClosureDirection::Outgoing);
         assert!(calls_only.contains(&g_fn));
         assert!(!calls_only.contains(&s));
 
