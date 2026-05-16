@@ -93,6 +93,9 @@ pub(crate) fn render_message_as_text(msg: &ProviderMessage) -> String {
                     att.bytes.len()
                 ));
             }
+            ProviderContent::RedactedThinking { .. } => {
+                out.push_str("\n  <redacted_thinking/>");
+            }
         }
     }
     out
@@ -237,6 +240,7 @@ pub(crate) fn estimate_provider_message_bytes(msg: &ProviderMessage) -> usize {
                 serde_json::to_string(content).map(|s| s.len()).unwrap_or(0)
             }
             ProviderContent::Attachment(att) => att.bytes.len() * 4 / 3,
+            ProviderContent::RedactedThinking { data } => data.len(),
         })
         .sum::<usize>()
         + 16

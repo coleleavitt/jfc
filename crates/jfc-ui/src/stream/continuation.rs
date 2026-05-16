@@ -124,7 +124,7 @@ fn spawn_substream(app: &App, messages: Vec<ProviderMessage>, tx: &mpsc::Sender<
     let interrupt = app.interrupt_flag.clone();
     let cancel = app.cancel_token.clone();
     tokio::spawn(async move {
-        stream_response(provider, messages, model, tx, interrupt, cancel).await;
+        stream_response(provider, messages, model, tx, interrupt, cancel, None).await;
     });
 }
 

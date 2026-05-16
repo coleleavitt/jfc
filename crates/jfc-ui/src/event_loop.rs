@@ -457,8 +457,9 @@ pub(crate) async fn run(
         // ESC can drop it cleanly.
         app.cancel_token = tokio_util::sync::CancellationToken::new();
         let cancel = app.cancel_token.clone();
+        let prev_msg_id = app.last_response_id.take();
         tokio::spawn(async move {
-            stream::stream_response(provider, messages, model, tx_clone, interrupt, cancel).await;
+            stream::stream_response(provider, messages, model, tx_clone, interrupt, cancel, prev_msg_id).await;
         });
     }
 
@@ -1519,6 +1520,17 @@ pub(crate) async fn run(
                     app.streaming_response_bytes += byte_len;
                     app.streaming_last_token_at = Some(std::time::Instant::now());
                     app.record_stream_activity();
+                }
+                AppEvent::Stream(StreamEvent::RedactedThinking(data)) => {
+                    app.record_stream_activity();
+                    if let Some(idx) = app.streaming_assistant_idx {
+                        if let Some(msg) = app.messages.get_mut(idx) {
+                            msg.parts.push(MessagePart::RedactedThinking(data));
+                        }
+                    }
+                }
+                AppEvent::Stream(StreamEvent::ResponseId(id)) => {
+                    app.last_response_id = Some(id);
                 }
                 AppEvent::Stream(StreamEvent::Tool(tool)) => {
                     app.record_stream_activity();

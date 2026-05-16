@@ -40,9 +40,13 @@ pub async fn stream_response(
     // races the SSE stream against `.cancelled()` so ESC×2 unwinds in
     // microseconds instead of waiting for the next STREAM_INTERRUPT_POLL.
     cancel: tokio_util::sync::CancellationToken,
+    previous_message_id: Option<String>,
 ) {
     let prepared = prepare_stream_request(provider.clone(), &messages, &model).await;
-    let opts = prepared.opts;
+    let mut opts = prepared.opts;
+    if let Some(id) = previous_message_id {
+        opts.previous_message_id = Some(id);
+    }
 
     // Report system prompt size back to App for post-compaction overhead estimate.
     let _ = tx.try_send(AppEvent::Stream(StreamEvent::SystemPromptLen(

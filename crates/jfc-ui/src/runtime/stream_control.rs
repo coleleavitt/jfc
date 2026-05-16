@@ -48,10 +48,11 @@ pub(crate) fn restart_stream_in_place(
     interrupt.store(false, std::sync::atomic::Ordering::SeqCst);
     app.cancel_token = tokio_util::sync::CancellationToken::new();
     let cancel = app.cancel_token.clone();
+    let prev_msg_id = app.last_response_id.take();
     let tx_guard = tx.clone();
     tokio::spawn(async move {
         let result = tokio::spawn(async move {
-            stream::stream_response(provider, messages, model, tx_spawn, interrupt, cancel).await;
+            stream::stream_response(provider, messages, model, tx_spawn, interrupt, cancel, prev_msg_id).await;
         })
         .await;
         if let Err(join_err) = result {

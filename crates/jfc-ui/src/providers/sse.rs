@@ -80,6 +80,11 @@ pub enum ContentBlock {
     Thinking {
         thinking: String,
     },
+    /// Server-redacted thinking block — opaque base64 blob, no deltas.
+    /// Must be round-tripped verbatim in subsequent requests.
+    RedactedThinking {
+        data: String,
+    },
     ToolUse {
         id: String,
         name: String,
@@ -165,6 +170,11 @@ pub enum BlockState {
     },
     Thinking {
         accumulated: String,
+    },
+    /// Opaque redacted thinking — no deltas, complete at start.
+    /// Must be round-tripped in subsequent requests verbatim.
+    RedactedThinking {
+        data: String,
     },
     ToolUse {
         id: String,
@@ -267,6 +277,9 @@ pub fn translate(
                 ContentBlock::Thinking { .. } => BlockState::Thinking {
                     accumulated: String::new(),
                 },
+                ContentBlock::RedactedThinking { data } => {
+                    BlockState::RedactedThinking { data }
+                }
                 ContentBlock::ToolUse { id, name, .. } => BlockState::ToolUse {
                     id,
                     name,
@@ -353,6 +366,9 @@ pub fn translate(
                     index,
                     text: accumulated,
                 }),
+                Some(BlockState::RedactedThinking { data }) => {
+                    Some(StreamEvent::RedactedThinkingDone { index, data })
+                }
                 Some(BlockState::ToolUse { id, name, input }) => Some(StreamEvent::ToolDone {
                     index,
                     tool_name: name,
@@ -466,11 +482,8 @@ pub fn translate(
             };
             Some(StreamEvent::Error { message })
         }
-        SseEvent::MessageStart { message } => message.usage.map(|usage| StreamEvent::Usage {
-            input_tokens: usage.input_tokens(),
-            output_tokens: usage.output_total(),
-            cache_read_tokens: usage.cache_read_input_tokens.unwrap_or_default(),
-            cache_write_tokens: usage.cache_creation_input_tokens.unwrap_or_default(),
+        SseEvent::MessageStart { message } => Some(StreamEvent::ResponseMetadata {
+            response_id: message.id,
         }),
         SseEvent::Ping => None,
     }
@@ -588,6 +601,10 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
                     ProviderContent::Attachment(att) => {
                         crate::attachments::to_anthropic_content_block(att)
                     }
+                    ProviderContent::RedactedThinking { data } => json!({
+                        "type": "redacted_thinking",
+                        "data": data,
+                    }),
                 })
                 .collect();
             json!({ "role": role, "content": content })
@@ -723,6 +740,7 @@ fn log_parsed_event(event: &SseEvent) {
             let kind = match content_block {
                 ContentBlock::Text { .. } => "text",
                 ContentBlock::Thinking { .. } => "thinking",
+                ContentBlock::RedactedThinking { .. } => "redacted_thinking",
                 ContentBlock::ToolUse { .. } => "tool_use",
                 ContentBlock::ServerToolUse { .. } => "server_tool_use",
                 ContentBlock::WebSearchToolResult { .. } => "web_search_tool_result",

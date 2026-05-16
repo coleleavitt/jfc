@@ -168,6 +168,8 @@ pub struct App {
     pub claude_status: Option<crate::claude_status::ClaudeStatusSnapshot>,
     pub claude_status_error: Option<String>,
     pub streaming_assistant_idx: Option<usize>,
+    /// Last message ID from the API response, for `diagnostics.previous_message_id`.
+    pub last_response_id: Option<String>,
     pub is_streaming: bool,
     /// Updated on every inbound stream event (chunk, tool delta, done, error).
     /// Used by the watchdog to detect stuck `is_streaming` flags — if no
@@ -772,6 +774,7 @@ impl App {
             claude_status: None,
             claude_status_error: None,
             streaming_assistant_idx: None,
+            last_response_id: None,
             streaming_started_at: None,
             streaming_last_token_at: None,
             thinking_started_at: None,

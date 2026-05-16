@@ -130,6 +130,9 @@ pub enum SerializedPart {
     Advisor {
         content: String,
     },
+    RedactedThinking {
+        data: String,
+    },
 }
 
 /// Full tool input serialization - preserves all fields for proper resume
@@ -972,6 +975,9 @@ fn serialize_part(part: &MessagePart) -> SerializedPart {
             pre_tokens: *pre_tokens,
         },
         MessagePart::Advisor(t) => SerializedPart::Advisor { content: t.clone() },
+        MessagePart::RedactedThinking(data) => SerializedPart::RedactedThinking {
+            data: data.clone(),
+        },
     }
 }
 
@@ -1523,6 +1529,7 @@ fn deserialize_part(part: SerializedPart) -> MessagePart {
             MessagePart::CompactBoundary { pre_tokens }
         }
         SerializedPart::Advisor { content } => MessagePart::Advisor(content),
+        SerializedPart::RedactedThinking { data } => MessagePart::RedactedThinking(data),
     }
 }
 

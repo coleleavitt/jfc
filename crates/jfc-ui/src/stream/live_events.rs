@@ -266,11 +266,17 @@ pub(super) async fn drain_stream_events(
                     stop_reason = r;
                 }
             }
-            StreamEvent::ResponseMetadata { response_id: _ } => {
-                // Response ids are intentionally ignored. JFC sends full
-                // history each turn and does not use server-side chaining.
+            StreamEvent::ResponseMetadata { response_id } => {
+                let _ = tx
+                    .send(AppEvent::Stream(RuntimeStreamEvent::ResponseId(response_id)))
+                    .await;
             }
             StreamEvent::TextDone { .. } | StreamEvent::ThinkingDone { .. } => {}
+            StreamEvent::RedactedThinkingDone { data, .. } => {
+                let _ = tx
+                    .send(AppEvent::Stream(RuntimeStreamEvent::RedactedThinking(data)))
+                    .await;
+            }
             StreamEvent::Usage {
                 input_tokens,
                 output_tokens,

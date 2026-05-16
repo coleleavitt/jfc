@@ -758,6 +758,7 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
                 MessagePart::Advisor(text) => {
                     push_advisor_lines(&mut items, text, &t);
                 }
+                MessagePart::RedactedThinking(_) => {}
             }
             p += 1;
         }

@@ -47,7 +47,7 @@ const REFRESH_SCOPES: &str =
     "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
-const ANTHROPIC_BETA: &str = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,prompt-caching-2024-07-31,prompt-caching-scope-2026-01-05,output-128k-2025-02-19,context-management-2025-06-27,web-search-2025-03-05,structured-outputs-2025-12-15";
+const ANTHROPIC_BETA: &str = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,prompt-caching-scope-2026-01-05,extended-cache-ttl-2025-04-11,output-128k-2025-02-19,context-management-2025-06-27,context-1m-2025-08-07,web-search-2025-03-05,structured-outputs-2025-12-15,advanced-tool-use-2025-11-20,tool-search-tool-2025-10-19,mid-conversation-system-2026-04-07,redact-thinking-2026-02-12,afk-mode-2026-01-31,advisor-tool-2026-03-01,files-api-2025-04-14";
 
 const CLAUDE_CODE_IDENTITY: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
 
@@ -1067,14 +1067,20 @@ fn build_body(
     opts: &StreamOptions,
     billing_header_text: &str,
 ) -> Value {
+    let has_thinking = opts.adaptive_thinking || opts.thinking_budget.is_some();
+
     let mut body = json!({
         "model": opts.model,
         "max_tokens": opts.max_tokens,
-        "temperature": 1,
         "stream": true,
         "messages": sse::build_messages(&messages),
         "system": build_system_blocks(billing_header_text, opts.system.as_deref()),
     });
+    // Temperature must NOT be sent when thinking is enabled (API rejects it).
+    // cli.js v143: only sets temperature when thinking is disabled.
+    if !has_thinking {
+        body["temperature"] = json!(1);
+    }
     if !opts.tools.is_empty() {
         body["tools"] = sse::build_tools(&opts.tools);
     }
@@ -1087,6 +1093,13 @@ fn build_body(
     } else if let Some(budget) = opts.thinking_budget {
         body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
     }
+    // context_management: clear old thinking blocks from context to save space.
+    // Only sent when thinking is enabled (cli.js v143 RI4 function).
+    if has_thinking {
+        body["context_management"] = json!({
+            "edits": [{ "type": "clear_thinking_20251015", "keep": "all" }]
+        });
+    }
     {
         let mut oc = serde_json::Map::new();
         if let Some(effort) = opts.reasoning_effort.as_deref() {
@@ -1098,6 +1111,12 @@ fn build_body(
         if !oc.is_empty() {
             body["output_config"] = serde_json::Value::Object(oc);
         }
+    }
+    if opts.fast_mode {
+        body["speed"] = json!("fast");
+    }
+    if let Some(ref msg_id) = opts.previous_message_id {
+        body["diagnostics"] = json!({ "previous_message_id": msg_id });
     }
     body
 }
@@ -2053,12 +2072,16 @@ mod tests {
     fn anthropic_beta_contains_required_values() {
         for val in &[
             "claude-code-20250219",
-            "oauth-2025-04-20",
-            "interleaved-thinking-2025-05-14",
-            "prompt-caching-2024-07-31",
-            "output-128k-2025-02-19",
-            "structured-outputs-2025-12-15",
-        ] {
+             "oauth-2025-04-20",
+             "interleaved-thinking-2025-05-14",
+             "prompt-caching-scope-2026-01-05",
+             "output-128k-2025-02-19",
+             "structured-outputs-2025-12-15",
+             "afk-mode-2026-01-31",
+             "advisor-tool-2026-03-01",
+             "files-api-2025-04-14",
+             "environments-2025-11-01",
+         ] {
             assert!(
                 ANTHROPIC_BETA.contains(val),
                 "ANTHROPIC_BETA missing: {val}"

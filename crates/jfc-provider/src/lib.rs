@@ -279,6 +279,13 @@ pub enum StreamEvent {
         index: usize,
         text: String,
     },
+    /// Server-redacted thinking block — opaque base64 blob that must be
+    /// round-tripped verbatim in subsequent requests. No deltas; the
+    /// block arrives complete at content_block_start.
+    RedactedThinkingDone {
+        index: usize,
+        data: String,
+    },
     ToolDelta {
         index: usize,
         delta: String,
@@ -397,6 +404,11 @@ pub enum ProviderContent {
     /// either reject these or use bespoke shapes; today they're a
     /// no-op for those providers.
     Attachment(jfc_core::Attachment),
+    /// Server-redacted thinking block — opaque base64 blob. Must be
+    /// round-tripped verbatim on subsequent requests (the API uses it
+    /// to reconstruct thinking context server-side). No text content
+    /// is ever shown to the user.
+    RedactedThinking { data: String },
 }
 
 /// Discriminates the wire `type` of a `ProviderContent::ServerToolResult`.
@@ -474,6 +486,9 @@ pub struct StreamOptions {
     /// Minimum 20_000. The model sees a countdown and self-moderates.
     /// Distinct from max_tokens (which is a hard server-enforced ceiling).
     pub task_budget_tokens: Option<u64>,
+    /// Last assistant message ID from the previous turn. Sent in `diagnostics`
+    /// so the server can track conversation flow for debugging/billing.
+    pub previous_message_id: Option<String>,
 }
 
 impl StreamOptions {
@@ -492,6 +507,7 @@ impl StreamOptions {
             provider_options: HashMap::new(),
             fast_mode: false,
             task_budget_tokens: None,
+            previous_message_id: None,
         }
     }
 
@@ -553,6 +569,11 @@ impl StreamOptions {
     /// Minimum 20_000 tokens — values below are clamped up.
     pub fn task_budget(mut self, tokens: u64) -> Self {
         self.task_budget_tokens = Some(tokens.max(20_000));
+        self
+    }
+
+    pub fn previous_message_id(mut self, id: impl Into<String>) -> Self {
+        self.previous_message_id = Some(id.into());
         self
     }
 }

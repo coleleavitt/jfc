@@ -56,7 +56,7 @@ pub enum UiEvent {
     },
 }
 
-pub enum StreamEvent {
+ pub enum StreamEvent {
     Chunk {
         text: Option<String>,
         reasoning: Option<String>,
@@ -66,6 +66,10 @@ pub enum StreamEvent {
     /// tool input streaming (matching v126's responseLengthRef accumulation).
     ToolInputDelta(usize),
     Tool(ToolCall),
+    /// Opaque redacted thinking blob — store on message parts for round-tripping.
+    RedactedThinking(String),
+    /// API response message ID — stored for `diagnostics.previous_message_id`.
+    ResponseId(String),
     /// Anthropic-side `server_tool_result` block (e.g.
     /// `web_search_tool_result`) paired with a previously-dispatched
     /// `server_tool_use`. The event_loop handler finds the matching

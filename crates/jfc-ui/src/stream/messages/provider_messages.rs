@@ -131,6 +131,12 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
         }
 
         let mut assistant_content = Vec::new();
+        // Redacted thinking blocks must be round-tripped before text/tools.
+        for part in &m.parts {
+            if let MessagePart::RedactedThinking(data) = part {
+                assistant_content.push(ProviderContent::RedactedThinking { data: data.clone() });
+            }
+        }
         if !text.is_empty() {
             assistant_content.push(ProviderContent::Text(text.clone()));
         }

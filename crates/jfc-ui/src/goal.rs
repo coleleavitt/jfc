@@ -225,6 +225,8 @@ fn render_part_into(part: &MessagePart, out: &mut String) {
         }
         // Compaction marker — irrelevant for the evaluator's verdict.
         MessagePart::CompactBoundary { .. } => {}
+        // Redacted thinking is opaque; nothing to render.
+        MessagePart::RedactedThinking(_) => {}
     }
 }
 
