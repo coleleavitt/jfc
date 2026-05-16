@@ -60,7 +60,11 @@ pub async fn write_memory_file(
 ) -> anyhow::Result<PathBuf> {
     let dir = ensure_memory_dir(team_name)?;
     let file_path = dir.join(file_name);
-    tokio::fs::write(&file_path, content).await?;
+    // Atomic write — team memory files are read by every team member
+    // and a torn write would propagate corruption to every agent on
+    // the team. temp + fsync + rename keeps the previous good copy
+    // visible until the new bytes are durably on disk.
+    crate::atomic_write::write_atomic(&file_path, content.as_bytes()).await?;
 
     // Notify all team members
     notify_memory_change(team_name, file_name, MemoryEventType::Modified, author).await?;

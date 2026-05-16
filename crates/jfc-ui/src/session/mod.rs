@@ -701,8 +701,23 @@ pub async fn save_session(
     };
 
     if let Ok(json) = serde_json::to_string_pretty(&serialized) {
-        let _ = tokio::fs::write(&path, json).await;
-        info!(target: "jfc::session", session_id = session_id_str, message_count = messages.len(), path = %path.display(), "session saved");
+        // Atomic write: a SIGKILL or power loss between writeFile()
+        // chunks would otherwise leave the session JSON truncated
+        // (e.g. half a `messages` array with no closing brace), and
+        // every subsequent load would fail to deserialize and the
+        // user would lose the whole transcript. temp + fsync + rename
+        // keeps the old contents in place until the new payload is
+        // fully on disk. See crate::atomic_write for the recipe.
+        if let Err(e) = crate::atomic_write::write_atomic(&path, json.as_bytes()).await {
+            warn!(
+                target: "jfc::session",
+                session_id = session_id_str,
+                error = %e,
+                "atomic session write failed — previous on-disk contents preserved"
+            );
+        } else {
+            info!(target: "jfc::session", session_id = session_id_str, message_count = messages.len(), path = %path.display(), "session saved");
+        }
     } else {
         warn!(target: "jfc::session", session_id = session_id_str, "failed to serialize session");
     }
@@ -789,8 +804,19 @@ pub async fn set_session_title(session_id: &SessionId, title: &str) {
     };
     session.title = Some(title.to_owned());
     if let Ok(json) = serde_json::to_string_pretty(&session) {
-        let _ = tokio::fs::write(&path, json).await;
-        info!(target: "jfc::session", session_id = session_id_str, "session title updated");
+        // Atomic write — see save_session() above for the rationale.
+        // Title updates are cosmetic but they overwrite the entire
+        // session file, so a torn write here loses the whole transcript.
+        if let Err(e) = crate::atomic_write::write_atomic(&path, json.as_bytes()).await {
+            warn!(
+                target: "jfc::session",
+                session_id = session_id_str,
+                error = %e,
+                "atomic title write failed — previous session preserved"
+            );
+        } else {
+            info!(target: "jfc::session", session_id = session_id_str, "session title updated");
+        }
     }
 }
 

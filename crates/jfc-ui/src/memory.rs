@@ -322,7 +322,12 @@ pub fn create_memory(
         now.to_rfc3339()
     );
 
-    std::fs::write(&path, &content).map_err(|e| format!("failed to write memory file: {e}"))?;
+    // Atomic write — a power loss while saving the memory file would
+    // otherwise leave a truncated frontmatter + body and `load_memories`
+    // would silently skip the file (because the YAML header wouldn't
+    // parse), losing the user's note.
+    crate::atomic_write::write_atomic_sync(&path, content.as_bytes())
+        .map_err(|e| format!("failed to write memory file: {e}"))?;
 
     tracing::info!(
         target: "jfc::memory",
