@@ -2155,6 +2155,28 @@ pub(crate) async fn run(
                     let has_pending_tools = !app.pending_tool_calls.is_empty();
                     let waiting_on_approval =
                         app.pending_approval.is_some() || !app.approval_queue.is_empty();
+                    // Mixed-mode pause_turn handling. When a response
+                    // carries BOTH local tool_use AND stop_reason=pause_turn,
+                    // the `has_pending_tools` branch below shadows the
+                    // PauseTurn dispatch arm. Without remembering that the
+                    // turn was paused, the AllToolsComplete handler would
+                    // route through the NORMAL builder and inject the
+                    // forbidden "Continue from where you left off." filler
+                    // (cli.js v142:622686). Latch the bit here so AllComplete
+                    // can re-route to `continue_after_pause_turn` instead.
+                    // Also covers waiting_on_approval: the user might
+                    // approve later, and AllComplete fires after approval.
+                    if (has_pending_tools || waiting_on_approval)
+                        && stop_reason == jfc_provider::StopReason::PauseTurn
+                    {
+                        tracing::info!(
+                            target: "jfc::stream",
+                            n = app.pending_tool_calls.len(),
+                            approval_pending = waiting_on_approval,
+                            "mixed-mode pause_turn detected — latching pending_pause_turn_resume for AllComplete"
+                        );
+                        app.pending_pause_turn_resume = true;
+                    }
                     if has_pending_tools {
                         let calls = std::mem::take(&mut app.pending_tool_calls);
                         tracing::info!(
@@ -2162,6 +2184,7 @@ pub(crate) async fn run(
                             n = calls.len(),
                             ?stop_reason,
                             kinds = ?calls.iter().map(|t| t.kind.label()).collect::<Vec<_>>(),
+                            pause_turn_latched = app.pending_pause_turn_resume,
                             "stream_done dispatching auto-routed batch"
                         );
                         update_task_activities(&mut app, &calls);
@@ -3096,11 +3119,35 @@ pub(crate) async fn run(
                             }
                         }
 
-                        tracing::info!(
-                            target: "jfc::stream",
-                            "agentic loop continuing — tools complete, no pending approvals"
-                        );
-                        stream::continue_agentic_loop(&mut app, &tx).await;
+                        // Mixed-mode pause_turn: the original turn's Done
+                        // event carried StopReason::PauseTurn AND emitted
+                        // local tools. The dispatch ladder ran the local
+                        // tools (shadowing the PauseTurn arm); now that
+                        // they're complete, route through the pause-turn-
+                        // resume builder so we don't inject the forbidden
+                        // "Continue from where you left off." filler. See
+                        // app.pending_pause_turn_resume docs and cli.js
+                        // v142:622686 for the protocol.
+                        //
+                        // Single-shot: clear the flag before dispatching
+                        // so a follow-up turn that doesn't pause_turn
+                        // returns to the normal continue_agentic_loop
+                        // path. If the resumed turn ALSO pause_turns,
+                        // its own Done handler re-latches the flag.
+                        if app.pending_pause_turn_resume {
+                            app.pending_pause_turn_resume = false;
+                            tracing::info!(
+                                target: "jfc::stream",
+                                "mixed-mode pause_turn: local tools complete, resuming server-side sampling loop"
+                            );
+                            stream::continue_after_pause_turn(&mut app, &tx).await;
+                        } else {
+                            tracing::info!(
+                                target: "jfc::stream",
+                                "agentic loop continuing — tools complete, no pending approvals"
+                            );
+                            stream::continue_agentic_loop(&mut app, &tx).await;
+                        }
                     } else if !app.is_streaming
                         && app.pending_approval.is_none()
                         && app.approval_queue.is_empty()
@@ -3272,11 +3319,28 @@ pub(crate) async fn run(
                         && !app.cancel_token.is_cancelled()
                         && stream::should_continue_loop(&app.messages)
                     {
-                        tracing::info!(
-                            target: "jfc::stream",
-                            "agentic loop resuming after CompactionDone — tool results pending"
-                        );
-                        stream::continue_agentic_loop(&mut app, &tx).await;
+                        // Same mixed-mode gate as in AllToolsComplete:
+                        // if the original Done event flagged
+                        // pause_turn, route the resumed turn through
+                        // the pause-turn-resume builder so no
+                        // synthetic-Continue filler gets injected.
+                        // Single-shot semantics: clear the flag here so
+                        // a subsequent non-pause turn doesn't inherit
+                        // the routing.
+                        if app.pending_pause_turn_resume {
+                            app.pending_pause_turn_resume = false;
+                            tracing::info!(
+                                target: "jfc::stream",
+                                "agentic loop resuming after CompactionDone — pause_turn mixed mode, routing through continue_after_pause_turn"
+                            );
+                            stream::continue_after_pause_turn(&mut app, &tx).await;
+                        } else {
+                            tracing::info!(
+                                target: "jfc::stream",
+                                "agentic loop resuming after CompactionDone — tool results pending"
+                            );
+                            stream::continue_agentic_loop(&mut app, &tx).await;
+                        }
                     } else if !was_streaming
                         && app.pending_approval.is_none()
                         && app.approval_queue.is_empty()
