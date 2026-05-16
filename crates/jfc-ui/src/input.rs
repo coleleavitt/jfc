@@ -3503,9 +3503,15 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                             .map(|o| {
                                 let s = String::from_utf8_lossy(&o.stdout).into_owned();
                                 if s.len() > 8000 {
+                                    // floor_char_boundary instead of a raw
+                                    // byte slice — git diff can carry
+                                    // non-ASCII filenames or content and
+                                    // a fixed-byte cap would panic if a
+                                    // multi-byte glyph straddled byte 8000.
+                                    let cap = s.floor_char_boundary(8000);
                                     format!(
                                         "{}\n\n[... diff truncated at 8000 chars ...]",
-                                        &s[..8000]
+                                        &s[..cap]
                                     )
                                 } else {
                                     s

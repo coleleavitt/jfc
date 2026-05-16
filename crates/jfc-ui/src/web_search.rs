@@ -149,7 +149,12 @@ async fn search_papers_combined(query: &str, max_results: usize) -> Result<Strin
         }
         if !e.abstract_text.is_empty() {
             let preview = if e.abstract_text.len() > 200 {
-                format!("{}...", &e.abstract_text[..200])
+                // Char-boundary safe slice — web abstracts carry UTF-8
+                // (em-dashes, smart quotes, non-Latin scripts) and a
+                // raw byte slice panics when a multi-byte glyph
+                // straddles the cap (slop_guard.rs hit this in prod).
+                let cap = e.abstract_text.floor_char_boundary(200);
+                format!("{}...", &e.abstract_text[..cap])
             } else {
                 e.abstract_text.clone()
             };
@@ -477,7 +482,12 @@ async fn search_arxiv(query: &str, max_results: usize) -> Result<String, String>
             ));
             // Truncate abstract to ~200 chars for readability.
             let summary = if entry.summary.len() > 200 {
-                format!("{}...", &entry.summary[..200])
+                {
+                    // Char-boundary safe — see comment in the abstract_text
+                    // truncation above for the slop_guard.rs precedent.
+                    let cap = entry.summary.floor_char_boundary(200);
+                    format!("{}...", &entry.summary[..cap])
+                }
             } else {
                 entry.summary.clone()
             };
@@ -798,7 +808,12 @@ async fn search_s2_via_bff(query: &str, limit: usize) -> Result<String, String> 
         }
         if !e.abstract_text.is_empty() {
             let preview = if e.abstract_text.len() > 200 {
-                format!("{}...", &e.abstract_text[..200])
+                // Char-boundary safe slice — web abstracts carry UTF-8
+                // (em-dashes, smart quotes, non-Latin scripts) and a
+                // raw byte slice panics when a multi-byte glyph
+                // straddles the cap (slop_guard.rs hit this in prod).
+                let cap = e.abstract_text.floor_char_boundary(200);
+                format!("{}...", &e.abstract_text[..cap])
             } else {
                 e.abstract_text.clone()
             };

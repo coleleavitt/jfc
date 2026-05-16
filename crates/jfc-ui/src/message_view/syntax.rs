@@ -337,7 +337,13 @@ pub(super) fn infer_lang_from_bash(command: &str) -> Option<String> {
 /// detection is cheap.
 pub(super) fn looks_like_markdown(text: &str) -> bool {
     let prefix: &str = if text.len() > 2048 {
-        &text[..2048]
+        // Char-boundary safe — `text` is user file content that
+        // commonly carries UTF-8 (em-dashes, smart quotes, non-Latin
+        // scripts), and a raw byte slice panics when a multi-byte
+        // glyph straddles byte 2048. Same family of bug as
+        // slop_guard.rs:114.
+        let cap = text.floor_char_boundary(2048);
+        &text[..cap]
     } else {
         text
     };
