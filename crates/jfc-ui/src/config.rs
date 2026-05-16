@@ -705,7 +705,12 @@ pub fn save_theme_to(
     };
     cfg.theme = Some(theme_name.to_string());
     let serialized = toml::to_string_pretty(&cfg).map_err(|e| format!("serialize failed: {e}"))?;
-    std::fs::write(path, serialized)
+    // Atomic write — save_theme reads the existing config, mutates one
+    // field, and rewrites the whole TOML. A torn write would corrupt
+    // the user's entire config, not just the theme. The
+    // refuse-to-overwrite-unparseable check above only catches the
+    // pre-write state; the write itself must also be crash-safe.
+    crate::atomic_write::write_atomic_sync(path, serialized.as_bytes())
         .map_err(|e| format!("write {} failed: {e}", path.display()))?;
     tracing::info!(
         target: "jfc::config",

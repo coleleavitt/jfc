@@ -5,6 +5,7 @@ mod advisor;
 mod agents;
 mod app;
 
+mod atomic_write;
 mod attachments;
 mod auto_mode;
 mod bash_processes;
