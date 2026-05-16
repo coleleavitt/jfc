@@ -479,8 +479,8 @@ mod tests {
         ]);
         let expr = Expr::SetOp {
             op: SetOp::Intersect,
-            left: Box::new(bigger.clone()),
-            right: Box::new(smaller.clone()),
+            left: Box::new(bigger),
+            right: Box::new(smaller),
         };
         let plan = optimise_expr(expr);
         let opt = plan.expr().unwrap();
@@ -507,8 +507,8 @@ mod tests {
         let r = Expr::Pipe(vec![DslOp::SelectFn("x".into())]);
         let expr = Expr::SetOp {
             op: SetOp::Union,
-            left: Box::new(l.clone()),
-            right: Box::new(r.clone()),
+            left: Box::new(l),
+            right: Box::new(r),
         };
         let plan = optimise_expr(expr);
         match plan.expr().unwrap() {

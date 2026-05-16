@@ -676,7 +676,7 @@ mod tests {
     fn test_add_and_get_node() {
         let mut graph = CodeGraph::new();
         let node = make_node("foo", NodeKind::Function);
-        let id = graph.add_node(node.clone());
+        let id = graph.add_node(node);
 
         assert!(graph.contains_node(&id));
         let retrieved = graph.get_node(&id).unwrap();
@@ -895,7 +895,7 @@ mod tests {
         let id = graph.add_node(make_node("compute", NodeKind::Function));
 
         let hits = graph.nodes_by_kind_name(NodeKind::Function, "compute");
-        assert_eq!(hits, &[id.clone()]);
+        assert_eq!(hits, std::slice::from_ref(&id));
 
         // Same name, different kind → empty.
         assert!(
@@ -1088,13 +1088,13 @@ mod tests {
             graph
                 .nodes_by_kind_name(NodeKind::Function, "alpha")
                 .to_vec(),
-            vec![n1.clone()]
+            vec![n1]
         );
         assert_eq!(
             graph
                 .nodes_by_kind_name(NodeKind::Function, "gamma")
                 .to_vec(),
-            vec![n3.clone()]
+            vec![n3]
         );
 
         // Module / metadata indices reflect the deletion.

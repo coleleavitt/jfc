@@ -507,7 +507,7 @@ mod tests {
         let target = g.add_node(mk("g", NodeKind::Function, &[]));
 
         let typed: TypedEdge<marker::Function, marker::Function, marker::CallsKind> =
-            TypedEdge::new(f.clone(), target.clone());
+            TypedEdge::new(f, target);
         let (a, b, k) = typed.into_inner();
         g.add_edge(
             &a,

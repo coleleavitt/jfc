@@ -18,9 +18,7 @@ use jfc_graph::dsl::{QueryConfig, run_query_expr};
 use jfc_graph::edges::{EdgeData, EdgeKind};
 use jfc_graph::graph::CodeGraph;
 use jfc_graph::nodes::{NodeData, NodeId, NodeKind, Span, Visibility};
-use jfc_graph::traversal::{
-    TraversalConfig, TraversalDirection, traverse, traverse_csr, traverse_petgraph,
-};
+use jfc_graph::traversal::{TraversalConfig, TraversalDirection, traverse_csr, traverse_petgraph};
 
 fn span() -> Span {
     Span {

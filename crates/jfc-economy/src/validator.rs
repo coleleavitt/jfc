@@ -397,7 +397,7 @@ mod tests {
 
         pool.start_session(v1.clone(), s.clone(), "bounty-1".to_string())
             .unwrap();
-        pool.start_session(v2.clone(), s.clone(), "bounty-1".to_string())
+        pool.start_session(v2, s.clone(), "bounty-1".to_string())
             .unwrap();
 
         // Only complete session 0
@@ -413,8 +413,7 @@ mod tests {
     fn test_round_ordering() {
         let v = validator_id("alice");
         let s = solver_id("bob");
-        let mut session =
-            ValidationSession::new(v.clone(), s.clone(), "bounty-1".to_string()).unwrap();
+        let mut session = ValidationSession::new(v, s, "bounty-1".to_string()).unwrap();
 
         // Can't submit defense before challenge
         let result = session.submit_defense("premature defense".to_string());
