@@ -1070,20 +1070,13 @@ fn build_body(
     let mut body = json!({
         "model": opts.model,
         "max_tokens": opts.max_tokens,
+        "temperature": 1,
         "stream": true,
         "messages": sse::build_messages(&messages),
         "system": build_system_blocks(billing_header_text, opts.system.as_deref()),
     });
     if !opts.tools.is_empty() {
-        let mut tools = sse::build_tools(&opts.tools);
-        if let Some(arr) = tools.as_array_mut() {
-            if let Some(last) = arr.last_mut() {
-                if let Some(obj) = last.as_object_mut() {
-                    obj.insert("cache_control".to_owned(), json!({ "type": "ephemeral" }));
-                }
-            }
-        }
-        body["tools"] = tools;
+        body["tools"] = sse::build_tools(&opts.tools);
     }
     if opts.adaptive_thinking {
         let mut thinking = json!({ "type": "adaptive" });
@@ -1248,6 +1241,7 @@ impl Provider for AnthropicOAuthProvider {
                 };
 
                 let send_started = std::time::Instant::now();
+                let request_id = uuid::Uuid::new_v4().to_string();
                 let resp =
                     match jfc_provider::http::send_with_retry("anthropic_oauth.stream", || {
                         self.client
@@ -1259,6 +1253,7 @@ impl Provider for AnthropicOAuthProvider {
                             .header("user-agent", user_agent.clone())
                             .header("x-app", "cli")
                             .header("anthropic-client-platform", "cli")
+                            .header("x-client-request-id", request_id.clone())
                             .body(effective_body.clone())
                             .send()
                     })

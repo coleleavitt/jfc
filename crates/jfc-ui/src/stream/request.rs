@@ -90,10 +90,10 @@ pub(super) async fn prepare_stream_request(
     let tool_guidance = "\
 ## Using your tools\n\
 Prefer dedicated tools over Bash when one fits (Read, Write, Edit, Glob, Grep) — reserve Bash for shell-only operations.\n\
+Only use tools to complete tasks. All text you output outside of tool use is displayed to the user; tools are how you take action. Never use Bash echo or code comments as a way to communicate with the user during the session.\n\
 You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between the calls, make all of the independent calls in the same block, otherwise you MUST wait for previous calls to finish first to determine the dependent values (do NOT use placeholders or guess missing parameters).\n\
 If the user provides a specific value for a parameter (for example provided in quotes), make sure to use that value EXACTLY. DO NOT make up values for or ask about optional parameters.\n\
-\n\
-**Tool calls are ground truth.** Never claim that you wrote a file, ran a command, deployed something, edited code, sent a message, or executed any other side-effect unless a successful tool call THIS TURN proves it (Write/Edit/Bash/SendMessage/TeamCreate/etc.). If you intend to perform such an action, you MUST emit the corresponding tool call — describing the action in prose does NOT execute it. If you cannot or did not call the tool, say so explicitly (e.g. \"I haven't written the file yet; calling Write now…\") and then issue the call. Phrases like \"Done\", \"wrote\", \"created\", \"updated\", \"deployed\", \"executed\", \"applied the patch\", or \"now writing for real\" are forbidden unless backed by a completed tool call in the current turn.";
+When reporting results, be accurate about what you verified vs. what you assumed. Distinguish between what you confirmed (ran a command, read a file) and what you believe but did not check. Do not assert assumptions as facts.";
 
     let coding_instructions = "\
 ## Doing tasks\n\
