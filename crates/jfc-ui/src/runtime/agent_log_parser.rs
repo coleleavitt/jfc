@@ -252,17 +252,9 @@ mod tests {
             "actual work",
         ]);
         let out = parse_agent_log_to_chat_messages(&input);
-        // Two messages: a Reasoning block for the two lifecycle lines,
-        // then a Text block for "actual work".
-        assert_eq!(out.len(), 2);
-        match &out[0].parts[0] {
-            MessagePart::Reasoning(s) => {
-                assert!(s.contains("worker-running"));
-                assert!(s.contains("worktree"));
-            }
-            other => panic!("expected Reasoning, got {other:?}"),
-        }
-        assert!(matches!(out[1].parts[0], MessagePart::Text(_)));
+        // Lifecycle markers are dropped (bookkeeping noise); only prose remains.
+        assert_eq!(out.len(), 1);
+        assert!(matches!(&out[0].parts[0], MessagePart::Text(t) if t == "actual work"));
     }
 
     #[test]

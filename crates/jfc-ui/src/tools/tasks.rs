@@ -247,8 +247,11 @@ pub(super) fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) ->
 
     // Evaluator gate: scan recently-modified files for stub patterns
     // (todo!(), unimplemented!(), etc.). Only fires when a git root is
-    // discoverable — gracefully skips in non-git contexts.
-    if let Some(root) = crate::context::discover_git_root() {
+    // discoverable AND we're not in a test environment (tests run in the
+    // repo itself and would always find TODOs in unrelated files).
+    // Disable with JFC_SKIP_EVALUATOR=1 for CI/test contexts.
+    if std::env::var("JFC_SKIP_EVALUATOR").is_err() && !cfg!(test) {
+        if let Some(root) = crate::context::discover_git_root() {
         let eval = crate::sprint::evaluate_work_quality(&root);
         if !eval.passed {
             warn!(
@@ -261,6 +264,7 @@ pub(super) fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) ->
                 "Evaluator rejected: stub/placeholder patterns found in modified files. \
                  Fix these before marking done.\n\n{eval}"
             ));
+        }
         }
     }
 

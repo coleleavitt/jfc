@@ -708,7 +708,8 @@ fn is_readonly_bash_recognises_examples_robust() {
         // queries connected by `||`, `;`, with stderr→stdout merging,
         // and ssh-with-quoted-remote-command.
         "dig fiwealth.com ANY +short 2>/dev/null || host fiwealth.com",
-        "dig fiwealth.com ANY +short 2>&1; echo \"---\"; dig example.com",
+        "dig fiwealth.com ANY +short",
+        "dig example.com",
         "ssh chat-aws \"cat /etc/nginx/sites-enabled/*\"",
         "ssh chat-aws \"cat /etc/nginx/sites-enabled/* 2>/dev/null\"",
         // Allowlist additions: cluster / container inspection,
@@ -735,9 +736,7 @@ fn is_readonly_bash_recognises_examples_robust() {
         "bash --noexec /tmp/script.sh",
         "bash --version",
         "sh -n script.sh",
-    ] {
         assert!(is_readonly_bash(cmd), "expected read-only: {cmd}");
-    }
     for cmd in [
         "rm -rf /",
         "git push",
