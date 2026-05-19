@@ -64,6 +64,15 @@ pub fn team_task_store_path(team_name: &str) -> PathBuf {
     team_tasks_dir(team_name).join("tasks.json")
 }
 
+/// Returns the project-level task store path: `<git_root>/.jfc/tasks.json`.
+/// Falls back to `./.jfc/tasks.json` if no git root is provided.
+pub fn project_task_store_path(git_root: Option<&std::path::Path>) -> PathBuf {
+    let root = git_root
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    root.join(".jfc").join("tasks.json")
+}
+
 fn sanitize_path_component(name: &str) -> String {
     name.chars()
         .map(|c| {
@@ -164,6 +173,27 @@ impl TaskStore {
     pub fn in_memory() -> Arc<Self> {
         tracing::debug!(target: "jfc::tasks", "TaskStore::in_memory");
         Arc::new(Self::default())
+    }
+
+    /// Open or create the **project-level** task store at
+    /// `<git_root>/.jfc/tasks.json`. This is the primary persistence layer
+    /// that survives across ALL sessions for the same project. Unlike
+    /// per-session stores, every `jfc` instance in the same repo shares this
+    /// file. Falls back to `./.jfc/tasks.json` if no git root is provided.
+    pub fn open_project(git_root: Option<&std::path::Path>) -> Arc<Self> {
+        let path = project_task_store_path(git_root);
+        tracing::info!(
+            target: "jfc::tasks",
+            path = %path.display(),
+            "TaskStore::open_project"
+        );
+        let inner = Self::load_inner(&path);
+        let disk_mtime = Self::file_mtime(&path);
+        Arc::new(Self {
+            inner: Mutex::new(inner),
+            path,
+            disk_mtime: Mutex::new(disk_mtime),
+        })
     }
 
     /// Copy every task from `src` into `self`, preserving ids. Used when

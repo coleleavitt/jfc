@@ -58,6 +58,7 @@ mod slash_commands;
 mod slate;
 mod speculation;
 mod spinner;
+mod sprint;
 mod stream;
 mod swarm;
 mod system_reminder;

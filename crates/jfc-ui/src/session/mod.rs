@@ -733,13 +733,43 @@ pub async fn save_session(
     // shape went wrong.
     let session_id_str = session_id.as_str();
     if let Err(err) = validate_turn_invariants(messages) {
-        warn!(
-            target: "jfc::session::invariants",
-            session_id = session_id_str,
-            error = %err,
-            message_count = messages.len(),
-            "save_session: turn-invariant violation (saving anyway for forensics)"
-        );
+        // Promote tool-in-user (the API-400 fingerprint) and orphan
+        // tool_use to error so a `RUST_LOG=warn` grep still surfaces
+        // them — the other variants stay at warn since they don't
+        // immediately break the wire shape (consecutive same-role
+        // turns may be a v126 microcompact / split-message artifact
+        // we tolerate on load).
+        let variant = match &err {
+            crate::types::TurnInvariantError::OrphanToolResult { .. } => "orphan_tool_in_user",
+            crate::types::TurnInvariantError::OrphanToolUse { .. } => "orphan_tool_use_no_result",
+            crate::types::TurnInvariantError::ConsecutiveUser { .. } => "consecutive_user",
+            crate::types::TurnInvariantError::ConsecutiveAssistant { .. } => "consecutive_assistant",
+            crate::types::TurnInvariantError::EmptyMessage { .. } => "empty_message",
+            crate::types::TurnInvariantError::LeadingAssistant { .. } => "leading_assistant",
+        };
+        if matches!(
+            err,
+            crate::types::TurnInvariantError::OrphanToolResult { .. }
+                | crate::types::TurnInvariantError::OrphanToolUse { .. }
+        ) {
+            tracing::error!(
+                target: "jfc::session::invariants",
+                session_id = session_id_str,
+                error = %err,
+                variant,
+                message_count = messages.len(),
+                "save_session: API-400 fingerprint (saving anyway for forensics)"
+            );
+        } else {
+            warn!(
+                target: "jfc::session::invariants",
+                session_id = session_id_str,
+                error = %err,
+                variant,
+                message_count = messages.len(),
+                "save_session: turn-invariant violation (saving anyway for forensics)"
+            );
+        }
     }
     let dir = sessions_dir();
     if tokio::fs::create_dir_all(&dir).await.is_err() {
@@ -865,8 +895,22 @@ pub async fn load_session(session_id: &SessionId) -> Option<Vec<ChatMessage>> {
             session_id = session_id_str,
             error = %err,
             message_count,
-            "load_session: persisted transcript violates turn invariants"
+            "load_session: persisted transcript violates turn invariants — repairing via coalesce"
         );
+        // Repair: coalesce consecutive same-role messages that were
+        // persisted before the coalesce-on-save fix. This prevents
+        // the "TurnsAssistant" bug where old sessions with N consecutive
+        // assistant sub-streams fail on resume because the provider
+        // message builder can't handle the shape.
+        let repaired = coalesce_consecutive_same_role(&messages);
+        debug!(
+            target: "jfc::session",
+            session_id = session_id_str,
+            before = message_count,
+            after = repaired.len(),
+            "session repaired via coalesce"
+        );
+        return Some(repaired);
     }
     debug!(target: "jfc::session", session_id = session_id_str, message_count, "session loaded");
     Some(messages)
@@ -893,8 +937,10 @@ pub async fn load_session_with_model(
             session_id = session_id_str,
             error = %err,
             message_count = messages.len(),
-            "load_session_with_model: persisted transcript violates turn invariants"
+            "load_session_with_model: persisted transcript violates turn invariants — repairing"
         );
+        let repaired = coalesce_consecutive_same_role(&messages);
+        return Some((repaired, model));
     }
     Some((messages, model))
 }
@@ -1524,6 +1570,7 @@ fn deserialize_part(part: SerializedPart) -> MessagePart {
             summary,
             error,
             elapsed_ms,
+            model: None,
         }),
         SerializedPart::CompactBoundary { pre_tokens } => {
             MessagePart::CompactBoundary { pre_tokens }
@@ -2292,6 +2339,7 @@ mod tests {
             summary: Some("Working on it".into()),
             error: None,
             elapsed_ms: Some(1500),
+            model: None,
         });
         let serialized = serialize_part(&part);
         let deserialized = deserialize_part(serialized);

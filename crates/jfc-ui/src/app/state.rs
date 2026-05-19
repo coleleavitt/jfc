@@ -426,6 +426,13 @@ pub struct App {
     pub model_picker_filter: String,
     pub model_picker_selected: usize,
     pub model_picker_models: Vec<ModelInfo>,
+    /// Session-picker popup state — same `Clear`+centered-table treatment as
+    /// the model picker. Toggled with Ctrl+P. Replaces the "Ctrl+B opens the
+    /// session list as a left sidebar" hack for one-shot session selection.
+    /// `session_picker_filter` filters by `display_title()` substring.
+    pub show_session_picker: bool,
+    pub session_picker_filter: String,
+    pub session_picker_state: TableState,
     /// Drives selection + scroll for the picker's `Table`. Kept in sync with
     /// `model_picker_selected` so existing handlers keep working, but ratatui's
     /// stateful render uses the `TableState` for autoscroll when the cursor moves
@@ -604,6 +611,47 @@ pub struct App {
     /// iteration order.
     pub background_tasks: IndexMap<String, BackgroundTask>,
     pub show_info_sidebar: bool,
+    /// Vertical scroll offset (rows from top) of the right-side info sidebar's
+    /// Tasks section. A long todo list (the user hit 27 in one session) now
+    /// renders compactly and scrolls instead of overflowing the panel.
+    /// Adjusted via Alt+Up / Alt+Down while the sidebar is visible.
+    pub info_sidebar_scroll: u16,
+    /// Rolling samples of the EKG trace, rendered under the Context gauge.
+    /// Each value is a 0-8 amplitude that maps to one cell of the
+    /// `▁▂▃▄▅▆▇█` block-element scale. Driven by a synthetic PQRST
+    /// generator (see `network_phase`) whose R-wave amplitude scales with
+    /// recent SSE byte arrivals — the trace beats continuously like a
+    /// real heart monitor; activity makes the QRS spike taller.
+    pub network_samples: std::collections::VecDeque<u8>,
+    /// Last sampled value of `network_bytes_in`. Subtracted on each
+    /// tick to derive a delta level that drives the EKG's R-wave
+    /// amplitude. Distinct from `streaming_response_bytes` (which
+    /// resets every turn): this snapshot is itself monotonic so the
+    /// per-tick delta is always non-negative.
+    pub network_last_sampled_bytes: u64,
+    /// Monotonic byte counter for the EKG — bumped by EVERY incoming
+    /// stream event (text, reasoning, tool input delta, redacted
+    /// thinking, server tool results, usage, response IDs). Doesn't
+    /// reset between turns, so a quiet between-turn gap still shows
+    /// as flat-line baseline rather than a fake "burst" when the
+    /// next turn's bytes arrive against a freshly-cleared counter.
+    pub network_bytes_in: u64,
+    /// Phase index into the PQRST cycle. Bumps once per active-beat
+    /// tick; gets snapped back to 0 when a new burst arrives (so the
+    /// user always sees beats start from PR onset, not mid-T). See
+    /// `runtime/network_ekg.rs`.
+    pub network_phase: usize,
+    /// Phases remaining in the *currently active* beat. 0 = flat-line
+    /// (the trace draws baseline cells until the next byte triggers a
+    /// fresh beat). Re-armed to `PATTERN_LEN` on every non-zero
+    /// per-tick delta.
+    pub network_beat_remaining: usize,
+    /// Smoothed activity factor (0.0 idle → 1.0 fully active) that
+    /// scales the R-wave amplitude. EMA-eased toward the latest
+    /// per-tick byte-delta so a burst takes a few ticks to grow the
+    /// spike and a few ticks to relax back to baseline — gives the
+    /// trace the natural "fade out" of a real monitor.
+    pub network_activity: f32,
     pub mcp_servers: Vec<crate::types::McpServerInfo>,
     pub lsp_servers: Vec<crate::types::LspServerInfo>,
     pub usage_by_model: HashMap<String, crate::types::ModelUsage>,
@@ -844,6 +892,9 @@ impl App {
             input_wrap_width: 1,
             show_model_picker: false,
             model_picker_filter: String::new(),
+            show_session_picker: false,
+            session_picker_filter: String::new(),
+            session_picker_state: TableState::default().with_selected(Some(0)),
             model_picker_selected: 0,
             model_picker_models: Vec::new(),
             model_picker_state: TableState::default().with_selected(Some(0)),
@@ -900,6 +951,13 @@ impl App {
             cost_budget_warned_at: 0,
             background_tasks: IndexMap::new(),
             show_info_sidebar: true,
+            info_sidebar_scroll: 0,
+            network_samples: std::collections::VecDeque::with_capacity(64),
+            network_last_sampled_bytes: 0,
+            network_bytes_in: 0,
+            network_phase: 0,
+            network_beat_remaining: 0,
+            network_activity: 0.0,
             mcp_servers: Vec::new(),
             lsp_servers: Vec::new(),
             usage_by_model: HashMap::new(),
@@ -942,8 +1000,15 @@ impl App {
             git_root: None,
             last_system_prompt_len: None,
         };
-        // Open the task store with the real session id so tasks persist to disk.
-        if let Some(ref sid) = app.current_session_id {
+        // Open the task store — prefer project-level persistence so tasks
+        // survive across ALL sessions in the same repo. Falls back to
+        // per-session store only when no git root is discoverable.
+        let git_root = crate::context::discover_git_root();
+        if let Some(ref root) = git_root {
+            app.task_store =
+                jfc_session::TaskStore::open_project(Some(root.as_path()));
+            app.git_root = Some(Some(root.clone()));
+        } else if let Some(ref sid) = app.current_session_id {
             app.task_store = jfc_session::TaskStore::open(sid.as_str());
         }
         app.sync_selected_context_window();
