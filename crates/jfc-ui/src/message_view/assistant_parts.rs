@@ -367,14 +367,22 @@ pub(super) fn push_task_status_lines<'a>(
     } else {
         summary
     };
-    items.push(RenderItem::TextLine(Line::from(vec![
+    let mut spans = vec![
         Span::styled(format!("{icon} task "), style),
         Span::styled(
             header_label.to_owned(),
             Style::default().fg(t.text_secondary),
         ),
         Span::styled(elapsed, Style::default().fg(t.text_muted)),
-    ])));
+    ];
+    if let Some(model) = ts.model.as_deref() {
+        let badge = pretty_model_badge(model);
+        spans.push(Span::styled(
+            format!(" · {badge}"),
+            Style::default().fg(t.text_muted),
+        ));
+    }
+    items.push(RenderItem::TextLine(Line::from(spans)));
 
     if summary_is_block {
         const MAX_LINES: usize = 120;
@@ -404,6 +412,21 @@ pub(super) fn push_task_status_lines<'a>(
             Span::styled(err.clone(), Style::default().fg(t.text_secondary)),
         ])));
     }
+}
+
+/// Compact a provider-qualified model id into the short tail a human reads at
+/// a glance. `bedrock-claude-4-6-haiku` → `haiku`, `claude-opus-4-7` → `opus`,
+/// `claude-haiku-4-5-20251001` → `haiku`. Leaves unrecognized ids untouched
+/// (truncated only to fit the inline badge), so an "Explore uses haiku while
+/// main runs on opus" distinction lands as `haiku` vs `opus`.
+pub fn pretty_model_badge(raw: &str) -> String {
+    let lower = raw.to_ascii_lowercase();
+    for variant in ["haiku", "sonnet", "opus"] {
+        if lower.contains(variant) {
+            return variant.to_owned();
+        }
+    }
+    truncate_str(raw, 24)
 }
 
 pub(super) fn truncate_str(s: &str, max: usize) -> String {

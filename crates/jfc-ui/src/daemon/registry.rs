@@ -19,7 +19,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
-use super::logs::{append_log_line, background_agent_log_path, read_last_lines};
+use super::logs::{append_chunk_raw, append_log_line, background_agent_log_path, read_last_lines};
 use super::reconcile::reconcile_background_agents;
 use super::state::{
     BackgroundAgentInfo, BackgroundAgentStatus, DaemonPaths, load_state, save_state,
@@ -196,9 +196,11 @@ pub fn record_background_agent_log(id: &str, text: &str) {
         let _ = save_state(&paths, &state);
         log_path
     });
-    for line in text.lines() {
-        append_log_line(&log_path, line);
-    }
+    // SSE text deltas arrive in arbitrary chunks ("Let me", " implement",
+    // " the full SPIR-V lif", "ter with…"). Writing one `writeln!` per
+    // chunk turned the rendered task view into a column of 1-3-word
+    // fragments. Append raw so only the model's own `\n` bytes break lines.
+    append_chunk_raw(&log_path, text);
 }
 
 pub fn record_background_agent_progress(

@@ -2308,6 +2308,7 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
             summary: Some(summary),
             error: None,
             elapsed_ms: Some(1234),
+            model: None,
         }));
         app.messages.push(msg);
         let w = 60usize;

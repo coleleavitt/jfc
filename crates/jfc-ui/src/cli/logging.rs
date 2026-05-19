@@ -72,8 +72,33 @@ pub(super) fn init_tracing(
 
     let (writer, guard) = tracing_appender::non_blocking(file);
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("debug,reqwest=warn,hyper=warn,h2=warn"));
+    // Filter resolution: if RUST_LOG is set externally (e.g. by a Wayland
+    // compositor like niri that bakes its own `niri=debug,…` filter into
+    // the environment), `try_from_default_env` honors it verbatim — and
+    // any target it doesn't mention drops to the implicit "off" default.
+    // That silently swallowed every `jfc::*` event for users with
+    // unrelated RUST_LOG values, leaving `~/.config/jfc/logs/*.log` at
+    // 0 bytes and making bugs invisible.
+    //
+    // Fix: when RUST_LOG is set but doesn't mention a `jfc` directive,
+    // append `jfc=debug` so our targets stay visible. When the user
+    // explicitly set a `jfc=…` directive, leave it alone — their
+    // override wins.
+    let env_rust_log = std::env::var("RUST_LOG").unwrap_or_default();
+    let filter = if env_rust_log.is_empty() {
+        EnvFilter::new("debug,reqwest=warn,hyper=warn,h2=warn")
+    } else if env_rust_log
+        .split(',')
+        .any(|d| d.trim().starts_with("jfc"))
+    {
+        EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new("debug,reqwest=warn,hyper=warn,h2=warn"))
+    } else {
+        // Append our default so jfc events survive an unrelated RUST_LOG.
+        let combined = format!("{env_rust_log},jfc=debug");
+        EnvFilter::try_new(&combined)
+            .unwrap_or_else(|_| EnvFilter::new("debug,reqwest=warn,hyper=warn,h2=warn"))
+    };
 
     if let Err(e) = tracing_subscriber::fmt()
         .with_env_filter(filter)

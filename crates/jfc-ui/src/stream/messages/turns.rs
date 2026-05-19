@@ -197,7 +197,7 @@ pub(super) fn contains_tool_result(msg: &ProviderMessage) -> bool {
         .any(|c| matches!(c, ProviderContent::ToolResult { .. }))
 }
 
-/// Debug-only validator for the post-merge provider message stream.
+/// Pre-send validator for the post-merge provider message stream.
 ///
 /// Anthropic's Messages API enforces several invariants that JFC's
 /// `build_provider_messages*` mutations could violate:
@@ -208,14 +208,45 @@ pub(super) fn contains_tool_result(msg: &ProviderMessage) -> bool {
 ///    assistant message that contains the matching `tool_use` IDs.
 /// 3. Every `tool_use` ID in an assistant message MUST have a matching
 ///    `tool_result` in the next user message.
+/// 4. A `tool_use` block (or `server_tool_use`) MUST NOT appear in a
+///    user message — that produces an immediate API 400
+///    "tool_use blocks can only appear in assistant messages".
 ///
-/// In debug builds we log loud warnings when any of these are violated
-/// so the regression is visible in trace logs before the provider 400s
-/// the request. In release builds this is a no-op. We don't BLOCK the
-/// send — the gateway may be lenient, and a forensic log is more useful
-/// than a hard panic.
-#[cfg(debug_assertions)]
+/// Unconditionally on (not `#[cfg(debug_assertions)]`). The walk is
+/// O(n+m), negligible vs. the network round-trip we're about to make,
+/// and the trace it emits is the only signal we have when release-mode
+/// users hit a wire-shape regression. We do NOT block the send — the
+/// gateway may be lenient, and a forensic log is more useful than a
+/// hard panic.
 pub(super) fn validate_provider_messages(msgs: &[ProviderMessage]) {
+    // Invariant 4: a tool_use block must NEVER appear in a User message.
+    // This is the post-merge view of the same bug as the role-guarded
+    // push paths in event_loop.rs — if the build_provider_messages step
+    // somehow produces one, log loudly so it's not silent on the next
+    // 400.
+    for (i, msg) in msgs.iter().enumerate() {
+        if !matches!(msg.role, ProviderRole::User) {
+            continue;
+        }
+        let bad: Vec<&'static str> = msg
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                ProviderContent::ToolUse { .. } => Some("tool_use"),
+                ProviderContent::ServerToolUse { .. } => Some("server_tool_use"),
+                ProviderContent::ServerToolResult { .. } => Some("server_tool_result"),
+                _ => None,
+            })
+            .collect();
+        if !bad.is_empty() {
+            tracing::error!(
+                target: "jfc::stream::invariants",
+                msg_index = i,
+                offending = ?bad,
+                "provider message invariant violation: user message carries tool_use/server_tool_* blocks — will produce API 400"
+            );
+        }
+    }
     use std::collections::HashSet;
     for (i, msg) in msgs.iter().enumerate() {
         if matches!(msg.role, ProviderRole::User) && contains_tool_result(msg) {
@@ -290,9 +321,6 @@ pub(super) fn validate_provider_messages(msgs: &[ProviderMessage]) {
         }
     }
 }
-
-#[cfg(not(debug_assertions))]
-pub(super) fn validate_provider_messages(_msgs: &[ProviderMessage]) {}
 
 #[cfg(test)]
 mod tests {

@@ -9,6 +9,7 @@ use ratatui::{
 mod approval;
 mod model_picker;
 mod palette;
+pub(crate) mod session_picker;
 mod session_sidebar;
 mod status;
 mod task_panel;
@@ -24,6 +25,7 @@ use crate::types::*;
 
 use approval::approval;
 use model_picker::model_picker;
+use session_picker::session_picker;
 #[cfg(test)]
 use model_picker::{provider_color, provider_label};
 use palette::palette;
@@ -138,15 +140,60 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         0
     };
     let tree_rows = teammate_count.max(active_subagent_count);
-    let spinner_row_height: u16 = if show_spinner {
-        if tree_rows > 0 {
-            (3 + tree_rows as u16).min(10) // cap at 10 to avoid starving chat
+    // Spinner row above input: verb + Next preview only. The agent fan
+    // tree moved below the input — "agent view sits under the input
+    // box" reads better than "agent fan crowds the verb line", and it
+    // keeps the verb glued to the prompt where the user's eye lives
+    // while typing.
+    let spinner_row_height: u16 = if show_spinner { 2 } else { 0 };
+    // Pinned todo list above the input, Claude-Code style. Header row
+    // ("Tasks (k/n done)") + up to TASK_PIN_VISIBLE rows + an optional
+    // "+N more" footer. Height collapses to 0 when no tasks exist so
+    // first-run UI stays clean.
+    let tp_all = app.task_store.list(jfc_session::DeletedFilter::Exclude);
+    let tp_open: usize = tp_all
+        .iter()
+        .filter(|t| {
+            matches!(
+                t.status,
+                jfc_session::TaskStatus::Pending | jfc_session::TaskStatus::InProgress
+            )
+        })
+        .count();
+    let now_tp = std::time::Instant::now();
+    let tp_recent_done: usize = tp_all
+        .iter()
+        .filter(|t| matches!(t.status, jfc_session::TaskStatus::Completed))
+        .filter(|t| {
+            app.task_completion_times
+                .get(&t.id)
+                .is_some_and(|ts| now_tp.duration_since(*ts).as_secs() < 30)
+        })
+        .count();
+    const TASK_PIN_VISIBLE: usize = 6;
+    // Collapse out entirely when there's nothing live OR recently-done to
+    // show — a "Tasks (27/27 done)" header hovering alone after every
+    // task closed read as visual debt. The fade-out tail (recent_done <
+    // 30s) keeps the celebratory ✓ row briefly so the user sees the
+    // last completion land.
+    let task_pin_rows = if tp_open == 0 && tp_recent_done == 0 {
+        0
+    } else {
+        let body = (tp_open + tp_recent_done).min(TASK_PIN_VISIBLE);
+        let overflow = if tp_open + tp_recent_done > TASK_PIN_VISIBLE {
+            1
         } else {
-            2
-        }
-    } else if tree_rows > 0 {
-        // Show the tree even when not streaming (background work in flight)
-        (2 + tree_rows as u16).min(8)
+            0
+        };
+        1 + body + overflow
+    };
+    let tasks_pinned_height: u16 = (task_pin_rows as u16).min(10);
+    // Agent fan beneath the input: leader row ("agents") plus one row
+    // per alive sub-agent. Capped at 8 so a fan of 30 doesn't push the
+    // status bar off-screen — the user can still open the task view to
+    // see all of them.
+    let agent_fan_height: u16 = if tree_rows > 0 {
+        (1 + tree_rows as u16).min(8)
     } else {
         0
     };
@@ -168,7 +215,9 @@ pub fn frame(f: &mut Frame, app: &mut App) {
             Constraint::Length(subagent_footer_height),
             Constraint::Length(diag_row_height),
             Constraint::Length(spinner_row_height),
+            Constraint::Length(tasks_pinned_height),
             Constraint::Length(input_height),
+            Constraint::Length(agent_fan_height),
             Constraint::Length(2),
         ])
         .split(f.area());
@@ -235,11 +284,17 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     if unack_count > 0 {
         diagnostic_row(f, app, chunks[2]);
     }
-    if show_spinner || tree_rows > 0 {
+    if show_spinner {
         spinner_row(f, app, chunks[3]);
     }
-    input(f, app, chunks[4]);
-    status(f, app, chunks[5]);
+    if tasks_pinned_height > 0 {
+        tasks_pinned_row(f, app, chunks[4]);
+    }
+    input(f, app, chunks[5]);
+    if agent_fan_height > 0 {
+        agent_fan_below_input(f, app, chunks[6]);
+    }
+    status(f, app, chunks[7]);
 
     if app.show_palette {
         palette(f, app);
@@ -251,6 +306,10 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 
     if app.show_model_picker {
         model_picker(f, app);
+    }
+
+    if app.show_session_picker {
+        session_picker(f, app);
     }
 
     if app.show_task_panel {
@@ -323,16 +382,34 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     lines.push(section("Session"));
 
-    let title = app
-        .current_session_id
-        .as_ref()
-        .map(|s| s.as_str())
-        .unwrap_or("untitled")
-        .to_owned();
+    // Show the user-readable title first (custom `/rename` → first prompt →
+    // formatted-id-timestamp fallback). Stash the raw session id in a
+    // muted second row so the user can still see / copy it.
+    let (title, id_str) = match app.current_session_id.as_ref() {
+        Some(id) => {
+            let id_str = id.as_str().to_owned();
+            let title = app
+                .session_meta
+                .iter()
+                .find(|m| m.id == *id)
+                .map(|m| m.display_title())
+                .unwrap_or_else(|| id_str.clone());
+            (title, id_str)
+        }
+        None => ("untitled".to_owned(), String::new()),
+    };
     lines.push(Line::from(vec![Span::styled(
         truncate_str(&title, inner.width as usize),
-        Style::default().fg(t.text_secondary),
+        Style::default()
+            .fg(t.text_primary)
+            .add_modifier(Modifier::BOLD),
     )]));
+    if !id_str.is_empty() {
+        lines.push(Line::from(vec![Span::styled(
+            format!("  {}", truncate_str(&id_str, inner.width.saturating_sub(2) as usize)),
+            Style::default().fg(t.text_muted),
+        )]));
+    }
 
     lines.push(Line::from(""));
 
@@ -374,13 +451,76 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         ]));
     }
 
-    let out_tokens = app.last_usage_output;
-    if out_tokens > 0 {
+    // Network EKG — synthetic PQRST trace whose R-wave amplitude
+    // scales with recent SSE byte arrivals. The sparkline scrolls
+    // right-to-left like btop/bottom: newest sample at the right
+    // edge, older samples flow left. Block-element scale `▁▂▃▄▅▆▇█`
+    // gives 8 vertical levels per cell.
+    //
+    // Two-tone treatment: leading edge (rightmost N cells covering
+    // the current beat) in the provider accent color so the user can
+    // see the "now" pulse; older samples in muted so the history reads
+    // as faded.
+    if bar_width > 4 {
+        const BARS: &[char] = &['·', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+        let samples_len = app.network_samples.len();
+        let mut chars: Vec<char> = std::iter::repeat(' ').take(bar_width).collect();
+        let to_take = samples_len.min(bar_width);
+        for (i, level) in app
+            .network_samples
+            .iter()
+            .rev()
+            .take(to_take)
+            .enumerate()
+        {
+            let col = bar_width.saturating_sub(1 + i);
+            let idx = (*level as usize).min(BARS.len() - 1);
+            chars[col] = BARS[idx];
+        }
+        // Leading edge = one full beat width (PATTERN_LEN cells) so
+        // the user always sees the "freshest QRS" highlighted.
+        let lead_width = crate::runtime::network_ekg::PATTERN_LEN.min(bar_width);
+        let split_at = bar_width.saturating_sub(lead_width);
+        let older: String = chars[..split_at].iter().collect();
+        let leading: String = chars[split_at..].iter().collect();
+        // Color the leading edge red-ish to mimic a real heart-monitor
+        // trace (and to contrast with the green context bar above).
+        let beat_color = if app.network_activity > 0.5 {
+            Color::Rgb(255, 90, 90) // bright red — active heartbeat
+        } else {
+            Color::Rgb(200, 140, 140) // muted red — resting trace
+        };
+        lines.push(Line::from(vec![
+            Span::styled(older, Style::default().fg(t.text_muted)),
+            Span::styled(
+                leading,
+                Style::default().fg(beat_color).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        // Status label below the trace. Reads the same beat-armed
+        // state the bullet uses so the three signals (EKG trace,
+        // bullet, label) all agree on "is the network actually
+        // doing anything right now".
+        let beat_alive = app.network_beat_remaining > 0;
+        let intensity_pct = (app.network_activity * 100.0).round() as u32;
+        let label = if beat_alive {
+            format!("  ♥ net · live · {intensity_pct}%")
+        } else {
+            "  ♡ net · idle".to_owned()
+        };
         lines.push(Line::from(vec![Span::styled(
-            format!("{} output", fmt_number(out_tokens as u64)),
+            label,
             Style::default().fg(t.text_muted),
         )]));
     }
+
+    // The per-turn `last_usage_output` row used to render here was
+    // flickering — Anthropic sends cumulative usage frames mid-turn,
+    // then `streaming_response_bytes` gets cleared at message_stop, and
+    // the row blinked in (turn-end Usage) → out (next turn clear) → in
+    // again. The total-tokens + percent above is already the
+    // authoritative view; the per-turn output is surfaced via the
+    // bottom-bar `4 msgs` + `$X.XX` cost row instead. Removed.
 
     // Per-turn token sparkline rendered inline under the Context
     // section so it reads as part of *that* group instead of a
@@ -597,108 +737,10 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
-    // Tasks section - show pending/in-progress todos
-    let tasks = app.task_store.list(jfc_session::DeletedFilter::Exclude);
-    let pending: Vec<_> = tasks
-        .iter()
-        .filter(|t| t.status == jfc_session::TaskStatus::Pending)
-        .collect();
-    let in_progress: Vec<_> = tasks
-        .iter()
-        .filter(|t| t.status == jfc_session::TaskStatus::InProgress)
-        .collect();
-    let completed: Vec<_> = tasks
-        .iter()
-        .filter(|t| t.status == jfc_session::TaskStatus::Completed)
-        .collect();
-
-    let task_total = pending.len() + in_progress.len() + completed.len();
-    if task_total > 0 {
-        // Match the rest of the sidebar: white bold for the section
-        // header, accent reserved for sub-elements like the in-progress
-        // task indicator below.
-        lines.push(Line::from(vec![Span::styled(
-            format!("Tasks ({}/{} done)", completed.len(), task_total),
-            Style::default()
-                .fg(t.text_primary)
-                .add_modifier(Modifier::BOLD),
-        )]));
-
-        // Show in-progress tasks with activity
-        for task in &in_progress {
-            let model_badge = task_model_badge(task);
-            let activity = app
-                .task_activities
-                .get(&task.id)
-                .map(|s| truncate_str(s, inner.width.saturating_sub(6) as usize))
-                .unwrap_or_default();
-            lines.push(Line::from(vec![
-                Span::styled("◆ ", Style::default().fg(t.accent)),
-                Span::styled(
-                    truncate_str(&task.subject, inner.width.saturating_sub(4) as usize),
-                    Style::default()
-                        .fg(t.text_primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]));
-            if !activity.is_empty() {
-                lines.push(Line::from(vec![Span::styled(
-                    format!("  {}", activity),
-                    Style::default().fg(t.text_muted),
-                )]));
-            }
-            if let Some(model) = model_badge {
-                lines.push(Line::from(vec![Span::styled(
-                    format!("  model {model}"),
-                    Style::default().fg(t.text_muted),
-                )]));
-            }
-        }
-
-        // Show all pending tasks (no cap)
-        for task in &pending {
-            let blocked = !task.blocked_by.is_empty();
-            let icon = if blocked { "○" } else { "◇" };
-            let color = if blocked {
-                t.text_muted
-            } else {
-                t.text_secondary
-            };
-            lines.push(Line::from(vec![
-                Span::styled(format!("{} ", icon), Style::default().fg(color)),
-                Span::styled(
-                    truncate_str(&task.subject, inner.width.saturating_sub(4) as usize),
-                    Style::default().fg(color),
-                ),
-            ]));
-        }
-
-        // Recently completed tasks (fade out after 30s)
-        let now = std::time::Instant::now();
-        let recent_completed: Vec<_> = completed
-            .iter()
-            .filter(|task| {
-                app.task_completion_times
-                    .get(&task.id)
-                    .is_some_and(|t| now.duration_since(*t).as_secs() < 30)
-            })
-            .take(2)
-            .collect();
-
-        for task in recent_completed {
-            lines.push(Line::from(vec![
-                Span::styled("✓ ", Style::default().fg(t.success)),
-                Span::styled(
-                    truncate_str(&task.subject, inner.width.saturating_sub(4) as usize),
-                    Style::default()
-                        .fg(t.text_muted)
-                        .add_modifier(Modifier::CROSSED_OUT),
-                ),
-            ]));
-        }
-
-        lines.push(Line::from(""));
-    }
+    // Tasks moved out of this sidebar: they now render as a pinned row
+    // directly above the input box (`tasks_pinned_row` below), Claude-Code
+    // style. Keeps todo state visible while you type a follow-up without
+    // having to glance to the far right column.
 
     // Diffs section - count files with edit/write tool outputs
     let diff_stats = collect_diff_stats(app);
@@ -747,80 +789,27 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(Line::from(""));
     }
 
-    // Footer rows (divider + cwd + provider) build separately and
-    // render in a fixed bottom strip. Earlier we padded the body
-    // with blank rows to push the footer down — that worked when
-    // content was short but wasted vertical space and looked like a
-    // gap. Now we use a Layout split: body gets `Min(0)` so it
-    // takes whatever's left, footer is a `Length(3)` strip pinned
-    // to the bottom. Naturally collapses on a tall panel without
-    // manual padding.
-    let mut footer_lines: Vec<Line> = Vec::new();
-    footer_lines.push(Line::from(vec![Span::styled(
-        "─".repeat(inner.width as usize),
-        Style::default().fg(t.border),
-    )]));
-
-    // Same per-frame `getcwd` cleanup as the ribbon path: lean on the cached
-    // `app.cwd` so the sidebar footer doesn't re-syscall on every redraw.
-    let cwd_str = if app.cwd.is_empty() {
-        "?".to_owned()
-    } else {
-        let home = std::env::var("HOME").unwrap_or_default();
-        if !home.is_empty() && app.cwd.starts_with(&home) {
-            format!("~{}", &app.cwd[home.len()..])
-        } else {
-            app.cwd.clone()
-        }
-    };
-    let cwd_display = tail_truncate(&cwd_str, inner.width.saturating_sub(2) as usize);
-    footer_lines.push(Line::from(vec![
-        Span::styled("⌂ ", Style::default().fg(t.text_muted)),
-        Span::styled(cwd_display, Style::default().fg(t.text_muted)),
-    ]));
-
-    let provider_name = app.provider.name();
-    let effort_badge = effort_status_badge(app);
-    let fast_badge = if app.fast_mode { " · ⚡ FAST" } else { "" };
-    let claude_status = claude_status_footer(app);
-    let provider_suffix = format!(" local · {effort_badge}{fast_badge}{claude_status}");
-    let provider_width = inner
-        .width
-        .saturating_sub(2 + provider_suffix.chars().count() as u16)
-        .max(1) as usize;
-    footer_lines.push(Line::from(vec![
-        Span::styled("● ", Style::default().fg(t.success)),
-        Span::styled(
-            truncate_str(provider_name, provider_width),
-            Style::default()
-                .fg(t.text_primary)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(provider_suffix, Style::default().fg(t.text_muted)),
-    ]));
-
-    let footer_h: u16 = 3;
-    let footer_h = footer_h.min(inner.height);
-    let body_h = inner.height.saturating_sub(footer_h);
-    let body_area = Rect {
-        x: inner.x,
-        y: inner.y,
-        width: inner.width,
-        height: body_h,
-    };
-    let footer_area = Rect {
-        x: inner.x,
-        y: inner.y + body_h,
-        width: inner.width,
-        height: footer_h,
-    };
+    // The cwd + provider + effort + fast + claude-status footer that used
+    // to live here was redundant with the bottom status bar — both showed
+    // `~/path · model · effort · ⚡ · branch · cost · msgs`. Cleaned up so
+    // the sidebar focuses on stuff the bottom bar *doesn't* surface
+    // (Context gauge, Usage-by-model breakdown, Changes/diff stats,
+    // MCP/LSP rosters, recent sessions). The body now uses the full
+    // sidebar height.
+    let body_area = inner;
+    // Body scrolls — long content used to overflow the panel silently.
+    // Clamp scroll so at least one row stays visible.
+    let total_body_rows = lines.len() as u16;
+    let max_scroll = total_body_rows.saturating_sub(body_area.height.max(1));
+    if app.info_sidebar_scroll > max_scroll {
+        app.info_sidebar_scroll = max_scroll;
+    }
+    let scroll_y = app.info_sidebar_scroll;
     f.render_widget(
-        Paragraph::new(lines).style(Style::default().bg(t.bg)),
+        Paragraph::new(lines)
+            .scroll((scroll_y, 0))
+            .style(Style::default().bg(t.bg)),
         body_area,
-    );
-    f.render_widget(
-        Paragraph::new(footer_lines).style(Style::default().bg(t.bg)),
-        footer_area,
     );
 }
 
@@ -2577,29 +2566,202 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         );
     }
 
-    // ─── Spinner Tree ────────────────────────────────────────────────────
-    // Below the verb + Next-row, surface the running parallel work as a
-    // tree. v126 shows this as the "agent fan" — when the user fires
-    // off five Explore agents, they see five rows ticking in parallel
-    // instead of just `5 agents…`.
-    //
-    // Two sources, picked in this order:
-    //   1. Active team (renders a tree-shaped roster of teammates).
-    //   2. Plain background subagents (one-shot Task tool calls).
-    // Falling back to (2) means the user's "fire off Explore agents"
-    // case shows individual rows even outside team mode.
-    if area.height > 2 {
-        let tree_area = Rect {
-            x: area.x,
-            y: area.y + 2,
-            width: area.width,
-            height: area.height.saturating_sub(2),
-        };
-        if app.team_context.is_active() {
-            render_teammate_tree(f, app, tree_area);
-        } else {
-            render_subagent_tree(f, app, tree_area);
+    // The agent fan moved below the input — see `agent_fan_below_input`.
+    // Keeping the spinner row at 2 rows (verb + Next) means the
+    // "thinking" indicator stays glued to the prompt while the parallel
+    // work fan lives on the other side, where peripheral status belongs.
+}
+
+/// Pinned todo list above the input. Mirrors Claude Code's todo widget:
+/// one header row (`Tasks (k/n done)`), then up to `TASK_PIN_VISIBLE`
+/// task rows with status glyphs (✓ done, ◐ in-progress, ☐ pending, ◯
+/// blocked-on-open-task) and an optional `… +N more` footer. In-progress
+/// tasks bubble to the top so the row the user is actively driving stays
+/// on screen even with a long pending queue. Per-subagent model badges
+/// deliberately don't render here — they belong in the agent fan tree
+/// where execution lives, not in the todo list where intent lives.
+fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
+    if area.height == 0 || area.width < 10 {
+        return;
+    }
+    let t = app.theme;
+    let all = app.task_store.list(jfc_session::DeletedFilter::Exclude);
+    if all.is_empty() {
+        return;
+    }
+    // Defensive parity with the layout-side hide-when-all-done logic:
+    // if the only thing we'd render is `Tasks (n/n done)` (no open
+    // tasks, no recently-completed fade-out tail), skip entirely. The
+    // layout already collapses our chunk height to 0 in that case, but
+    // this lets `tasks_pinned_row` be safely called from elsewhere.
+    let any_live = all.iter().any(|t| {
+        matches!(
+            t.status,
+            jfc_session::TaskStatus::Pending | jfc_session::TaskStatus::InProgress
+        )
+    });
+    let now = std::time::Instant::now();
+    let any_recent = all
+        .iter()
+        .filter(|t| matches!(t.status, jfc_session::TaskStatus::Completed))
+        .any(|t| {
+            app.task_completion_times
+                .get(&t.id)
+                .is_some_and(|ts| now.duration_since(*ts).as_secs() < 30)
+        });
+    if !any_live && !any_recent {
+        return;
+    }
+    let in_progress: Vec<_> = all
+        .iter()
+        .filter(|t| t.status == jfc_session::TaskStatus::InProgress)
+        .collect();
+    let pending: Vec<_> = all
+        .iter()
+        .filter(|t| t.status == jfc_session::TaskStatus::Pending)
+        .collect();
+    let completed: Vec<_> = all
+        .iter()
+        .filter(|t| t.status == jfc_session::TaskStatus::Completed)
+        .collect();
+    let completed_ids: std::collections::HashSet<&str> =
+        completed.iter().map(|t| t.id.as_str()).collect();
+
+    let total = in_progress.len() + pending.len() + completed.len();
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    lines.push(Line::from(vec![
+        Span::styled(
+            "Tasks ",
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("({}/{} done)", completed.len(), total),
+            Style::default().fg(t.text_muted),
+        ),
+    ]));
+
+    let render_width = area.width as usize;
+    // Priority order: in-progress first (active work), then pending
+    // (ready/blocked grouped), then a tail of recently completed for
+    // momentum. The full list lives in the task panel (Ctrl+T or /tasks)
+    // — this row is the "what's on deck" glance.
+    let visible_budget = area.height.saturating_sub(1) as usize;
+    let mut rendered: Vec<Line<'static>> = Vec::new();
+
+    for task in &in_progress {
+        if rendered.len() >= visible_budget {
+            break;
         }
+        let avail = render_width.saturating_sub(3);
+        rendered.push(Line::from(vec![
+            Span::styled(
+                "◐ ",
+                Style::default()
+                    .fg(t.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                truncate_str(&task.subject, avail),
+                Style::default()
+                    .fg(t.text_primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+    }
+    for task in &pending {
+        if rendered.len() >= visible_budget {
+            break;
+        }
+        let open_blockers: Vec<&str> = task
+            .blocked_by
+            .iter()
+            .filter(|id| !completed_ids.contains(id.as_str()))
+            .map(|id| id.as_str())
+            .collect();
+        let blocked = !open_blockers.is_empty();
+        let icon = if blocked { "◯" } else { "☐" };
+        let color = if blocked {
+            t.text_muted
+        } else {
+            t.text_secondary
+        };
+        let blockers_suffix = if blocked {
+            format!(" · ⏳ {}", open_blockers.join(", "))
+        } else {
+            String::new()
+        };
+        let avail = render_width.saturating_sub(3 + blockers_suffix.len());
+        rendered.push(Line::from(vec![
+            Span::styled(format!("{icon} "), Style::default().fg(color)),
+            Span::styled(truncate_str(&task.subject, avail), Style::default().fg(color)),
+            Span::styled(
+                blockers_suffix,
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ]));
+    }
+    // Recently-completed tail: only when budget allows and the section
+    // is short enough that completed entries don't crowd active work.
+    let now = std::time::Instant::now();
+    for task in &completed {
+        if rendered.len() >= visible_budget {
+            break;
+        }
+        let recent = app
+            .task_completion_times
+            .get(&task.id)
+            .is_some_and(|t| now.duration_since(*t).as_secs() < 30);
+        if !recent {
+            continue;
+        }
+        let avail = render_width.saturating_sub(3);
+        rendered.push(Line::from(vec![
+            Span::styled("✓ ", Style::default().fg(t.success)),
+            Span::styled(
+                truncate_str(&task.subject, avail),
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::CROSSED_OUT),
+            ),
+        ]));
+    }
+
+    // Overflow footer if we couldn't fit everything.
+    let active_open = in_progress.len() + pending.len();
+    let hidden_open = active_open.saturating_sub(rendered.len());
+    if hidden_open > 0 && rendered.len() < visible_budget {
+        rendered.push(Line::from(Span::styled(
+            format!("  … +{hidden_open} more · open /tasks for the full list"),
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::ITALIC),
+        )));
+    }
+
+    lines.extend(rendered);
+    f.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(t.bg)),
+        area,
+    );
+}
+
+/// Render the running-agents tree in its own chunk beneath the input box.
+/// Honors the same team-vs-subagent dispatch as the legacy in-spinner
+/// path. Skips entirely when there's no live data — caller already gates
+/// on `tree_rows > 0`, but defensive return keeps the function safe to
+/// call unconditionally in future call sites.
+fn agent_fan_below_input(f: &mut Frame, app: &App, area: Rect) {
+    if area.height == 0 {
+        return;
+    }
+    if app.team_context.is_active() {
+        render_teammate_tree(f, app, area);
+    } else {
+        render_subagent_tree(f, app, area);
     }
 }
 
@@ -2628,6 +2790,12 @@ pub(crate) fn format_token_count(n: u64) -> String {
 /// cli.2.1.131.beautified.js.
 pub(crate) fn format_subagent_counters(bt: &crate::app::BackgroundTask) -> String {
     let mut parts: Vec<String> = Vec::new();
+    if let Some(model) = bt.model_used.as_deref() {
+        let badge = crate::message_view::pretty_model_badge(model);
+        if !badge.is_empty() {
+            parts.push(badge);
+        }
+    }
     if bt.tool_use_count > 0 {
         parts.push(format!(
             "{} tool{}",
@@ -2656,87 +2824,252 @@ fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     }
     let t = app.theme;
 
-    // Show only rows that aren't done. A finished one-shot subagent
-    // doesn't deserve a tree row — its result is already in the
-    // transcript. `viewing_task_id` short-circuits this entire branch
-    // because the task-view UI takes over the whole region.
-    //
-    // Both Running and Idle teammates belong on the fan: Idle is "alive
-    // but between turns" — the user still wants to see them and may
-    // SendMessage to wake them. Running is rendered with the kind color,
-    // Idle is dimmed so the user can tell them apart at a glance.
+    // Include both live agents AND recently-completed ones — Claude
+    // Code keeps finished sub-agents in the fan as hollow circles
+    // ("pinned" view) so a fan of 15 doesn't visually deflate every
+    // time one completes. The 5-minute window matches the
+    // task-fade-out window the pinned-tasks row uses.
+    const COMPLETED_PIN_WINDOW: std::time::Duration = std::time::Duration::from_secs(300);
+    let now = std::time::Instant::now();
     let mut active: Vec<&crate::app::BackgroundTask> = app
         .background_tasks
         .values()
-        .filter(|bt| bt.status.is_alive())
+        .filter(|bt| {
+            if bt.status.is_alive() {
+                return true;
+            }
+            // Recently terminal — keep on the fan until the pin window expires.
+            now.duration_since(bt.started_at) < COMPLETED_PIN_WINDOW
+                || bt
+                    .last_tool
+                    .is_some() // had at least one tool — surface its summary briefly
+        })
         .collect();
     if active.is_empty() {
         return;
     }
     active.sort_by_key(|bt| bt.task_id.as_str().to_owned());
 
+    // New layout — mirrors Claude Code's agent panel (bullet dots, no
+    // box-drawing, right-aligned status):
+    //
+    //   ● main                                    ↑/↓ select · Enter view
+    //   ○ §8.1 EVM lifter            edit · opus · 33 tools · 193.2k tok
+    //   ○ BATCH18 lvar merge safety  Bash · opus · 10 tools · 60.1k tok
+    //
+    // Filled bullet = currently-most-active agent (the one whose
+    // last_active_agent_task matches); open bullet = idle/passive.
+    // No leader "agents" row — the bullets carry the structure.
     let mut lines: Vec<Line> = Vec::new();
-    // Leader row (mirrors the team-tree shape so the visual is consistent).
+
+    // Row 0: main / leader agent. Mirrors cli.js's MainLine: the `▶ `
+    // pointer prefix appears when this row is "selected" (no
+    // viewing_task_id — i.e. we're focused on the input). When a
+    // sub-agent is selected (viewing_task_id is Some), main loses the
+    // pointer and dims slightly.
+    let main_selected = app.viewing_task_id.is_none();
+    let pointer = if main_selected { "▶ " } else { "  " };
+    let main_bullet = if main_selected { "● " } else { "○ " };
+    let main_label = "main";
+    let main_hint = if main_selected {
+        " ↑/↓ select · Enter to view"
+    } else {
+        ""
+    };
+    let hint_chars = main_hint.chars().count();
+    let main_padding = " ".repeat(
+        (area.width as usize)
+            .saturating_sub(pointer.len() + main_bullet.len() + main_label.len() + hint_chars),
+    );
+    let main_name_style = if main_selected {
+        Style::default()
+            .fg(t.text_primary)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(t.text_muted)
+    };
     lines.push(Line::from(vec![
-        Span::styled("   ╒═ ", Style::default().fg(t.text_muted)),
+        Span::styled(pointer, Style::default().fg(t.accent)),
         Span::styled(
-            "agents",
-            Style::default()
-                .fg(ratatui::style::Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            main_bullet,
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
         ),
+        Span::styled(main_label, main_name_style),
+        Span::styled(main_padding, Style::default()),
+        Span::styled(main_hint, Style::default().fg(t.text_muted)),
     ]));
 
-    let count = active.len();
-    for (i, bt) in active.iter().enumerate() {
-        let is_last = i == count - 1;
-        let connector = if is_last { "   └─ " } else { "   ├─ " };
-        // Description is the human label the model passed when calling
-        // Task; truncate so it doesn't blow out narrow terminals.
-        let desc = bt.description.as_str();
-        let desc_trimmed = if desc.chars().count() > 48 {
-            let mut s: String = desc.chars().take(47).collect();
-            s.push('…');
-            s
-        } else {
-            desc.to_owned()
-        };
-        let is_idle = matches!(bt.status, crate::types::TaskLifecycle::Idle);
-        let activity = if is_idle {
-            "  · idle".to_string()
-        } else {
-            // Layered: tool name (when known) + counter suffix. Mirrors
-            // v131's "Running N agents · 22 tool uses · 89.7k tokens".
-            let tool_part = match &bt.last_tool {
-                Some(tool) => format!("  · {tool}"),
-                None => String::new(),
-            };
-            format!("{tool_part}{}", format_subagent_counters(bt))
-        };
-        // Emphasize whichever agent emitted the most-recent chunk or
-        // tool-progress event so the user can spot which one is
-        // currently moving in a fan of N parallel agents. Idle agents
-        // never get the bold-active treatment — they're not the
-        // currently-moving one.
+    // Each sub-agent gets a row. Glyph mapping mirrors Claude Code's
+    // agent panel:
+    //   * Filled `●` — the active agent (most-recent stream chunk)
+    //   * Hollow `○` — idle / completed / failed (the "pinned" state)
+    //   * `✓` / `✗` — explicit completed / failed terminal markers
+    //     applied to text color, not the glyph (keeps the column
+    //     visually aligned).
+    for bt in active.iter() {
+        use crate::types::TaskLifecycle;
+        let status = bt.status;
+        let is_terminal = status.is_terminal();
+        let is_idle = matches!(status, TaskLifecycle::Idle);
         let is_active = !is_idle
+            && !is_terminal
             && app
                 .last_active_agent_task
                 .as_deref()
                 .map(|id| id == bt.task_id.as_str())
                 .unwrap_or(false);
-        let name_style = if is_active {
-            t.style_accent
-                .bg(t.surface_raised)
-                .add_modifier(Modifier::BOLD)
-        } else if is_idle {
-            t.style_text_muted
+
+        // Status suffix on the right (right-aligned). Format mirrors
+        // Claude Code's "5s · ↓ 14.3k tokens" pattern — elapsed + a
+        // down-arrow + token count. We have richer info available
+        // (tool name, tool count) so we tuck those into the LEFT
+        // half between description and the spacer, and reserve the
+        // RIGHT half for time+tokens, which is what eyes track most.
+        let elapsed_secs = bt.started_at.elapsed().as_secs();
+        let elapsed_label = if elapsed_secs < 60 {
+            format!("{elapsed_secs}s")
+        } else if elapsed_secs < 3600 {
+            format!("{}m{}s", elapsed_secs / 60, elapsed_secs % 60)
         } else {
-            t.style_accent
+            format!("{}h{}m", elapsed_secs / 3600, (elapsed_secs % 3600) / 60)
         };
+        let total_tokens = bt
+            .latest_input_tokens
+            .saturating_add(bt.latest_cache_read_tokens)
+            .saturating_add(bt.latest_cache_write_tokens)
+            .saturating_add(bt.cumulative_output_tokens);
+        // Right-side label. Live agents show elapsed + token count
+        // (`2m 24s · ↓ 40.3k tok`). Terminal agents swap the elapsed
+        // for the lifecycle label (`completed · ↓ 40.3k tok`) so the
+        // pinned hollow-circle rows read at a glance.
+        let right_label: std::borrow::Cow<'_, str> = if is_terminal {
+            match status {
+                TaskLifecycle::Completed => "completed".into(),
+                TaskLifecycle::Failed => "failed".into(),
+                TaskLifecycle::Cancelled => "cancelled".into(),
+                _ => elapsed_label.clone().into(),
+            }
+        } else {
+            elapsed_label.clone().into()
+        };
+        let right_side = if total_tokens > 0 {
+            format!(" {right_label} · ↓ {} tok", format_token_count(total_tokens))
+        } else {
+            format!(" {right_label}")
+        };
+
+        // Selection pointer + bullet. The `▶ ` pointer appears on the
+        // row whose task_id matches `viewing_task_id` — mirrors cli.js's
+        // figures.pointer prefix that signals "this is what Enter
+        // applies to". Other rows get 2 spaces so columns stay aligned.
+        let is_selected = app
+            .viewing_task_id
+            .as_deref()
+            .map(|id| id == bt.task_id.as_str())
+            .unwrap_or(false);
+        let row_pointer = if is_selected { "▶ " } else { "  " };
+        let row_pointer_style = Style::default().fg(t.accent);
+        // Left side: bullet + description + middle stats.
+        let bullet = if is_active { "● " } else { "○ " };
+        let bullet_style = if is_active {
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
+        } else if matches!(status, TaskLifecycle::Completed) {
+            // Completed agents get the success color on the hollow
+            // dot — the "that hollow green circle" the user pointed
+            // out from Claude Code's screenshot.
+            Style::default().fg(t.success)
+        } else if matches!(status, TaskLifecycle::Failed) {
+            Style::default().fg(t.error)
+        } else if matches!(status, TaskLifecycle::Cancelled) {
+            Style::default()
+                .fg(t.text_muted)
+                .add_modifier(Modifier::DIM)
+        } else if is_idle {
+            Style::default().fg(t.text_muted)
+        } else {
+            Style::default().fg(t.text_secondary)
+        };
+        let name_style = if is_active {
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD)
+        } else if is_terminal {
+            // Terminal agents fade to muted so the eye tracks live
+            // ones, but stay legible.
+            Style::default().fg(t.text_muted)
+        } else if is_idle {
+            Style::default().fg(t.text_muted)
+        } else {
+            Style::default().fg(t.text_primary)
+        };
+        // Middle stats: tool + model + tool count (no token count
+        // here — it lives on the right). Compact so the description
+        // gets the most room.
+        let mut mid_parts: Vec<String> = Vec::new();
+        if let Some(tool) = bt.last_tool.as_deref() {
+            mid_parts.push(tool.to_owned());
+        }
+        if let Some(model) = bt.model_used.as_deref() {
+            let badge = crate::message_view::pretty_model_badge(model);
+            if !badge.is_empty() {
+                mid_parts.push(badge);
+            }
+        }
+        if bt.tool_use_count > 0 {
+            mid_parts.push(format!("{} tools", bt.tool_use_count));
+        }
+        let mid = if mid_parts.is_empty() {
+            String::new()
+        } else {
+            format!("  · {}", mid_parts.join(" · "))
+        };
+
+        // Running/paused glyph: cli.js's PLAY_ICON `▶` for in-flight,
+        // PAUSE_ICON `⏸` for terminal. Placed right after the
+        // description so the eye reads `description ▶ 2m 24s` as one
+        // visual chunk.
+        let activity_glyph = if is_terminal {
+            " ⏸ "
+        } else if is_idle {
+            " ⏸ "
+        } else {
+            " ▶ "
+        };
+
+        // Budget the description so the row fits in `area.width`:
+        // pointer(2) + bullet(2) + desc + mid + activity(3) + padding + right.
+        let fixed = row_pointer.chars().count()
+            + bullet.chars().count()
+            + mid.chars().count()
+            + activity_glyph.chars().count()
+            + right_side.chars().count();
+        let desc_budget = (area.width as usize).saturating_sub(fixed + 2).max(8);
+        let desc = bt.description.as_str();
+        let desc_trimmed = if desc.chars().count() > desc_budget {
+            let mut s: String = desc.chars().take(desc_budget.saturating_sub(1)).collect();
+            s.push('…');
+            s
+        } else {
+            desc.to_owned()
+        };
+        let pad_len = (area.width as usize).saturating_sub(
+            row_pointer.chars().count()
+                + bullet.chars().count()
+                + desc_trimmed.chars().count()
+                + mid.chars().count()
+                + activity_glyph.chars().count()
+                + right_side.chars().count(),
+        );
+        let padding = " ".repeat(pad_len);
+
         lines.push(Line::from(vec![
-            Span::styled(connector, Style::default().fg(t.text_muted)),
+            Span::styled(row_pointer, row_pointer_style),
+            Span::styled(bullet, bullet_style),
             Span::styled(desc_trimmed, name_style),
-            Span::styled(activity, Style::default().fg(t.text_muted)),
+            Span::styled(mid, Style::default().fg(t.text_muted)),
+            Span::styled(activity_glyph, Style::default().fg(t.text_muted)),
+            Span::styled(padding, Style::default()),
+            Span::styled(right_side, Style::default().fg(t.text_muted)),
         ]));
     }
 

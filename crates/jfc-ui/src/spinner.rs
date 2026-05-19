@@ -134,10 +134,9 @@ pub fn glimmer_index(elapsed: Duration, verb_width: usize, tick_ms: u64) -> i32 
 /// 6-frame spinner cycle. Matches v126's `nAH()` default (cli.js:170248).
 pub const FRAMES: &[&str] = &["·", "✢", "*", "✶", "✻", "✽"];
 
-/// Curated subset of v126's verb list (cli.js:233823-234022). The full set
-/// is 177 entries; we keep a representative ~32 so the rotation feels lively
-/// without piling on novelty words. All verbs end without a suffix — the
-/// `…` ellipsis is appended at format time.
+/// Present-tense verb pool — expanded toward cli.js v143's `iD6` array
+/// (~100 entries). Cycled in 5-second buckets so the same word stays on
+/// screen long enough to read but the spinner doesn't feel stuck.
 pub const VERBS: &[&str] = &[
     "Fermenting",
     "Pondering",
@@ -171,6 +170,78 @@ pub const VERBS: &[&str] = &[
     "Auditing",
     "Reasoning",
     "Investigating",
+    "Accomplishing",
+    "Brainstorming",
+    "Cogitating",
+    "Computing",
+    "Conjuring",
+    "Constructing",
+    "Crunching",
+    "Deliberating",
+    "Designing",
+    "Divining",
+    "Drafting",
+    "Dreaming",
+    "Engineering",
+    "Envisioning",
+    "Exploring",
+    "Extrapolating",
+    "Fashioning",
+    "Figuring",
+    "Finessing",
+    "Formulating",
+    "Generating",
+    "Germinating",
+    "Hatching",
+    "Hypothesizing",
+    "Iterating",
+    "Kneading",
+    "Loading",
+    "Manifesting",
+    "Moonwalking",
+    "Noodling",
+    "Optimizing",
+    "Orchestrating",
+    "Percolating",
+    "Piecing",
+    "Planning",
+    "Processing",
+    "Prototyping",
+    "Puzzling",
+    "Quilting",
+    "Refining",
+    "Researching",
+    "Resolving",
+    "Sautéing",
+    "Scheming",
+    "Spinning",
+    "Strategizing",
+    "Structuring",
+    "Studying",
+    "Stitching",
+    "Steeping",
+    "Surveying",
+    "Tessellating",
+    "Tracing",
+    "Translating",
+    "Unraveling",
+    "Working",
+];
+
+/// Past-tense verbs for finished agents. Mirrors cli.js v143's `rD6` array
+/// so completed sub-agent rows in the fan read with a finished tone ("Baked
+/// for 1m 5s") instead of stale present-tense ("Fermenting").
+pub const VERBS_PAST: &[&str] = &[
+    "Baked",
+    "Brewed",
+    "Churned",
+    "Cogitated",
+    "Cooked",
+    "Crunched",
+    "Sautéed",
+    "Simmered",
+    "Worked",
+    "Wrought",
 ];
 
 /// Picks a frame index from a tick counter. Caller is expected to bump the
@@ -186,6 +257,15 @@ pub fn frame_for(tick: usize) -> &'static str {
 pub fn verb_for(elapsed: Duration) -> &'static str {
     let bucket = (elapsed.as_secs() / 5) as usize;
     VERBS[bucket % VERBS.len()]
+}
+
+/// Pick a past-tense verb deterministically from a task-id-ish seed.
+/// Completed agents in the fan row read "Baked for 1m 5s" instead of a
+/// stale present-tense "Fermenting" — matches cli.js v143's `rD6`/`XgH()`
+/// pair where each task captures its own past verb at completion.
+pub fn verb_past_for(seed: &str) -> &'static str {
+    let h: usize = seed.bytes().map(|b| b as usize).sum();
+    VERBS_PAST[h % VERBS_PAST.len()]
 }
 
 /// Format an elapsed Duration as `XmYs` or `Xs`. Mirrors v126 `h4()`

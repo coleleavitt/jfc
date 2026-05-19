@@ -43,6 +43,25 @@ pub enum SlashCommand {
     /// /login [provider] — sign in to a provider (anthropic, claudeai, bedrock,
     /// vertex, console). Subcommand selects which wizard to drive.
     Login(Option<String>),
+    /// /logout [provider] — sign out of a provider, clearing stored credentials.
+    /// Default (no arg) signs out of every provider that has tokens.
+    Logout(Option<String>),
+    /// /release-notes — show the changelog for the most recent jfc release.
+    ReleaseNotes,
+    /// /feedback — open the issue tracker / send feedback to the maintainer.
+    Feedback,
+    /// /upgrade — install the latest jfc release.
+    Upgrade,
+    /// /bug — file a bug report with the current session attached.
+    Bug,
+    /// /copy [all|last|n] — copy transcript text to the system clipboard.
+    /// Default is the last assistant message. `all` copies the entire
+    /// rendered transcript; `n` copies the last N messages.
+    Copy(Option<String>),
+    /// /fork [N] — snapshot the current session at message N (or the
+    /// current end) as a brand-new session and switch into it. Used to
+    /// branch a conversation without losing the original.
+    Fork(Option<String>),
     /// /fast — toggle fast mode (lower-latency inference via beta header)
     Fast,
     /// /init — generate CLAUDE.md from codebase analysis
@@ -106,6 +125,16 @@ impl fmt::Display for SlashCommand {
             Self::Mcp(None) => write!(f, "/mcp"),
             Self::Login(Some(p)) => write!(f, "/login {p}"),
             Self::Login(None) => write!(f, "/login"),
+            Self::Logout(Some(p)) => write!(f, "/logout {p}"),
+            Self::Logout(None) => write!(f, "/logout"),
+            Self::ReleaseNotes => write!(f, "/release-notes"),
+            Self::Feedback => write!(f, "/feedback"),
+            Self::Upgrade => write!(f, "/upgrade"),
+            Self::Bug => write!(f, "/bug"),
+            Self::Copy(Some(a)) => write!(f, "/copy {a}"),
+            Self::Copy(None) => write!(f, "/copy"),
+            Self::Fork(Some(a)) => write!(f, "/fork {a}"),
+            Self::Fork(None) => write!(f, "/fork"),
             Self::Fast => write!(f, "/fast"),
             Self::Init => write!(f, "/init"),
             Self::Commit => write!(f, "/commit"),
@@ -159,6 +188,13 @@ pub fn parse_slash_command(input: &str) -> Option<SlashCommand> {
         "daemon" | "fleet" => SlashCommand::Daemon(arg),
         "mcp" => SlashCommand::Mcp(arg),
         "login" => SlashCommand::Login(arg),
+        "logout" => SlashCommand::Logout(arg),
+        "release-notes" | "releasenotes" | "changelog" => SlashCommand::ReleaseNotes,
+        "feedback" => SlashCommand::Feedback,
+        "upgrade" => SlashCommand::Upgrade,
+        "bug" => SlashCommand::Bug,
+        "copy" => SlashCommand::Copy(arg),
+        "fork" => SlashCommand::Fork(arg),
         "fast" | "f" => SlashCommand::Fast,
         "init" => SlashCommand::Init,
         "commit" => SlashCommand::Commit,
@@ -214,6 +250,13 @@ Available commands:
   /philosophy      Draft or update PHILOSOPHY.md (project rationale)
   /usage           Draft or update USAGE.md (operator-focused commands)
   /login [target]  Sign in: anthropic | claudeai | bedrock | vertex | console
+  /logout [target] Sign out and forget stored credentials (all providers if no arg)
+  /release-notes   Show the changelog for the most recent jfc release
+  /feedback        Open the issue tracker / send feedback to the maintainer
+  /upgrade         Install the latest jfc release
+  /bug             File a bug report with the current session attached
+  /copy [scope]    Copy transcript to clipboard: last (default), all, or <n> tail messages
+  /fork [N]        Snapshot the current session at message N as a new session and switch in
   /help            Show this help
   /exit            Exit the session"
 }

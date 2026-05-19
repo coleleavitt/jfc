@@ -43,7 +43,6 @@ pub enum SseEvent {
 
 #[derive(Debug, Deserialize)]
 pub struct MessageStart {
-    #[allow(dead_code)]
     pub id: String,
     #[serde(default)]
     pub usage: Option<MessageUsage>,
@@ -621,12 +620,62 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
         .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) == Some("user"))
         .map(|(i, _)| i)
         .collect();
+    let mut user_breakpoints_set = 0usize;
     for &idx in user_indices.iter().rev().take(2) {
         if let Some(content) = out[idx].get_mut("content").and_then(|c| c.as_array_mut()) {
             if let Some(last_block) = content.last_mut() {
                 last_block["cache_control"] = json!({ "type": "ephemeral" });
+                user_breakpoints_set += 1;
             }
         }
+    }
+
+    // v143 also places a breakpoint on the last assistant message's last
+    // non-thinking block. This ensures the prefix up through the last
+    // assistant response is cached for the next turn.
+    let mut assistant_breakpoint_set = false;
+    if let Some(asst_idx) = out
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, m)| m.get("role").and_then(|r| r.as_str()) == Some("assistant"))
+        .map(|(i, _)| i)
+    {
+        if let Some(content) = out[asst_idx].get_mut("content").and_then(|c| c.as_array_mut()) {
+            // Find last block that isn't thinking/redacted_thinking
+            if let Some(block) = content.iter_mut().rev().find(|b| {
+                let ty = b.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                ty != "thinking" && ty != "redacted_thinking"
+            }) {
+                block["cache_control"] = json!({ "type": "ephemeral" });
+                assistant_breakpoint_set = true;
+            }
+        }
+    }
+
+    // Diagnostic: if NO breakpoints landed, the request will bypass cache
+    // entirely (`cache_read_input_tokens=0`, `cache_creation_input_tokens=0`).
+    // For a session at 60k+ tokens that means paying full-prompt input
+    // pricing every turn. The signature we observed: post-ESC×2 interrupt,
+    // turns [41]/[43]/[45] of ses_20260516_063649 showed in≈200k / read=0
+    // / write=0, i.e. cache-control attachment failed for the whole turn.
+    // Log loudly enough that a single `rg cache_control` over the log
+    // catches it.
+    if user_breakpoints_set == 0 && !assistant_breakpoint_set {
+        tracing::warn!(
+            target: "jfc::provider::cache",
+            message_count = out.len(),
+            user_message_count = user_indices.len(),
+            "no cache_control breakpoints landed — entire prompt will be uncached on this request"
+        );
+    } else {
+        tracing::debug!(
+            target: "jfc::provider::cache",
+            message_count = out.len(),
+            user_breakpoints_set,
+            assistant_breakpoint_set,
+            "cache_control breakpoints attached"
+        );
     }
 
     out.into()
@@ -1132,10 +1181,10 @@ mod tests {
     }
 
     #[test]
-    fn translate_ping_and_message_start_emit_nothing() {
+    fn translate_ping_emits_nothing_message_start_emits_metadata() {
         let (mut blocks, mut sr) = empty_state();
         assert!(translate(SseEvent::Ping, &mut blocks, &mut sr).is_none());
-        assert!(
+        assert!(matches!(
             translate(
                 SseEvent::MessageStart {
                     message: MessageStart {
@@ -1145,9 +1194,9 @@ mod tests {
                 },
                 &mut blocks,
                 &mut sr,
-            )
-            .is_none()
-        );
+            ),
+            Some(StreamEvent::ResponseMetadata { .. })
+        ));
     }
 
     #[test]
@@ -1269,19 +1318,16 @@ mod tests {
     }
 
     #[test]
-    fn message_start_usage_keeps_cache_tokens_separate() {
+    fn message_start_emits_response_metadata() {
         let json = r#"{"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":10,"cache_creation_input_tokens":3,"cache_read_input_tokens":7}}}"#;
         let event: SseEvent = serde_json::from_str(json).expect("message_start usage must parse");
         let (mut blocks, mut sr) = empty_state();
 
         assert!(matches!(
             translate(event, &mut blocks, &mut sr),
-            Some(StreamEvent::Usage {
-                input_tokens: 10,
-                cache_read_tokens: 7,
-                cache_write_tokens: 3,
-                output_tokens: 0,
-            })
+            Some(StreamEvent::ResponseMetadata {
+                response_id,
+            }) if response_id == "msg_1"
         ));
     }
 

@@ -8,6 +8,10 @@ pub struct TaskStatusPart {
     pub summary: Option<String>,
     pub error: Option<String>,
     pub elapsed_ms: Option<u64>,
+    /// Model used by this sub-agent. Surfaced in the inline task block so a
+    /// glance reveals which model is doing the work (e.g. an Explore agent
+    /// running on haiku while the main loop is on opus).
+    pub model: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

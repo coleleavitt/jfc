@@ -748,6 +748,54 @@ pub fn resolve_prompt(value: &str, base_dir: Option<&std::path::Path>) -> String
     }
 }
 
+/// Persist the permission mode to config.toml so it survives sessions.
+/// Mirrors Claude Code v144's behavior where `/mode` changes the default.
+pub fn save_permission_mode(mode: &crate::app::PermissionMode) {
+    let mode_str = match mode {
+        crate::app::PermissionMode::Default => "default",
+        crate::app::PermissionMode::AutoAccept => "auto-accept",
+        crate::app::PermissionMode::Plan => "plan",
+    };
+    save_permission_mode_to(&config_path(), mode_str);
+}
+
+fn save_permission_mode_to(path: &std::path::Path, mode: &str) {
+    // Use the same read→patch→write pattern as save_theme: load the full
+    // Config, patch the field, re-serialize. This avoids needing toml_edit.
+    let mut cfg: Config = match std::fs::read_to_string(path) {
+        Ok(s) if !s.trim().is_empty() => match toml::from_str(&s) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(
+                    target: "jfc::config",
+                    path = %path.display(),
+                    error = %e,
+                    "save_permission_mode: cannot parse config — skipping persist"
+                );
+                return;
+            }
+        },
+        _ => Config::default(),
+    };
+    // Store in `[default.permission]` table — the `mode` key. The Config
+    // struct has `default.permission: HashMap<String, String>`.
+    cfg.default
+        .permission
+        .insert("mode".to_owned(), mode.to_owned());
+    if let Ok(serialized) = toml::to_string_pretty(&cfg) {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = crate::atomic_write::write_atomic_sync(path, serialized.as_bytes());
+        tracing::info!(
+            target: "jfc::config",
+            mode,
+            path = %path.display(),
+            "permission mode persisted to config.toml"
+        );
+    }
+}
+
 /// Resolve which model id should be used for a given agent, with a four-step
 /// cascade:
 ///

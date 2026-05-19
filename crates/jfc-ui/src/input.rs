@@ -15,6 +15,7 @@ mod modal_handlers;
 mod model_picker;
 mod navigation;
 mod palette;
+mod session_picker;
 mod theme_picker;
 mod worktree_commands;
 
@@ -35,6 +36,7 @@ use mcp_commands::handle_mcp_command;
 use mentions::{apply_mention_pick, update_mention_state_after_input};
 pub use model_picker::filtered_models;
 use model_picker::{handle_model_picker_key, open_model_picker};
+use session_picker::{handle_session_picker_key, open_session_picker};
 use navigation::{
     collect_recent_paths, jump_to_last_assistant, jump_to_last_error, jump_to_last_tool,
     jump_to_last_user, recall_next_prompt, recall_previous_prompt, refresh_search_matches,
@@ -62,6 +64,10 @@ pub async fn handle_key(
     }
 
     if handle_model_picker_key(app, key) {
+        return Ok(false);
+    }
+
+    if handle_session_picker_key(app, key, tx) {
         return Ok(false);
     }
 
@@ -323,7 +329,41 @@ pub async fn handle_key(
                         .iter()
                         .any(|p| matches!(p, MessagePart::Text(t) if t == &placeholder))
                 {
+                    let streaming_before = app.streaming_assistant_idx;
+                    let editing_before = app.editing_message_idx;
                     app.messages.remove(i);
+                    // Removing a message shifts every subsequent index down
+                    // by one. `streaming_assistant_idx` would otherwise point
+                    // one slot past the live assistant if a fresh sub-stream
+                    // already staged a slot after the queued user (agentic
+                    // continuation, pause_turn resume). A stale index lets
+                    // `StreamEvent::Tool` push `MessagePart::Tool` into a
+                    // `Role::User` message → API 400 on the next request:
+                    // "tool_use blocks can only appear in assistant messages".
+                    // Reproduced as session ses_20260516_071052 msg[20]/msg[21].
+                    if let Some(streaming_idx) = app.streaming_assistant_idx
+                        && i < streaming_idx
+                    {
+                        app.streaming_assistant_idx = Some(streaming_idx - 1);
+                    }
+                    if let Some(edit_idx) = app.editing_message_idx {
+                        if i == edit_idx {
+                            app.editing_message_idx = None;
+                        } else if i < edit_idx {
+                            app.editing_message_idx = Some(edit_idx - 1);
+                        }
+                    }
+                    tracing::info!(
+                        target: "jfc::ui::queue::recall",
+                        removed_at = i,
+                        message_count = app.messages.len(),
+                        streaming_before = ?streaming_before,
+                        streaming_after = ?app.streaming_assistant_idx,
+                        editing_before = ?editing_before,
+                        editing_after = ?app.editing_message_idx,
+                        is_streaming = app.is_streaming,
+                        "up_recall: removed queued placeholder, adjusted indices"
+                    );
                     break;
                 }
             }
@@ -471,6 +511,35 @@ pub async fn handle_key(
                     reset_input(app);
                     return Ok(false);
                 }
+            }
+            // ↓ at empty input with alive sub-agents → enter agent
+            // select. Matches Claude Code's "↓ to manage" hint at the
+            // top of the agent card. The user no longer needs the
+            // Ctrl+X leader chord to dive into the fan — same muscle
+            // memory as VS Code's command-palette `↓` to reach the
+            // results list.
+            if !input_has_text(app)
+                && app.viewing_task_id.is_none()
+                && app
+                    .background_tasks
+                    .values()
+                    .any(|bt| bt.status.is_alive())
+            {
+                // Pick the most-recent alive agent (matches the
+                // existing `↓ jump to latest` semantics inside the
+                // task view).
+                let mut alive_ids: Vec<String> = app
+                    .background_tasks
+                    .iter()
+                    .filter(|(_, bt)| bt.status.is_alive())
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                alive_ids.sort();
+                if let Some(latest) = alive_ids.last().cloned() {
+                    app.viewing_task_id = Some(latest);
+                    app.scroll_to_bottom();
+                }
+                return Ok(false);
             }
             move_input_cursor_visual_down(app);
             return Ok(false);
@@ -718,6 +787,34 @@ pub async fn handle_key(
         }
         (KeyModifiers::CONTROL, KeyCode::Char('s')) => {
             app.show_info_sidebar = !app.show_info_sidebar;
+            return Ok(false);
+        }
+        // Alt+S opens the session picker popup — same shape as the
+        // model picker (Alt+M) and theme picker, so the muscle memory
+        // transfers. Ctrl+B keeps the legacy left sidebar; users
+        // who prefer filter-and-go grab Alt+S, browse-and-stay grab
+        // Ctrl+B.
+        (KeyModifiers::ALT, KeyCode::Char('s')) => {
+            open_session_picker(app);
+            return Ok(false);
+        }
+        // Alt+Up / Alt+Down scroll the right-side info sidebar when it's
+        // visible — surfaces overflow rows from the Tasks section without
+        // stealing the main transcript scroll keys.
+        (KeyModifiers::ALT, KeyCode::Up) if app.show_info_sidebar => {
+            app.info_sidebar_scroll = app.info_sidebar_scroll.saturating_sub(2);
+            return Ok(false);
+        }
+        (KeyModifiers::ALT, KeyCode::Down) if app.show_info_sidebar => {
+            app.info_sidebar_scroll = app.info_sidebar_scroll.saturating_add(2);
+            return Ok(false);
+        }
+        (KeyModifiers::ALT, KeyCode::PageUp) if app.show_info_sidebar => {
+            app.info_sidebar_scroll = app.info_sidebar_scroll.saturating_sub(10);
+            return Ok(false);
+        }
+        (KeyModifiers::ALT, KeyCode::PageDown) if app.show_info_sidebar => {
+            app.info_sidebar_scroll = app.info_sidebar_scroll.saturating_add(10);
             return Ok(false);
         }
         (KeyModifiers::CONTROL, KeyCode::Char('v')) => {
@@ -1159,6 +1256,8 @@ pub async fn handle_key(
         (KeyModifiers::SHIFT, KeyCode::BackTab) | (KeyModifiers::NONE, KeyCode::BackTab) => {
             // Shift+Tab cycles permission modes
             app.permission_mode = app.permission_mode.next();
+            // Persist the mode change to config.toml so it survives sessions.
+            crate::config::save_permission_mode(&app.permission_mode);
             crate::toast::push_with_cap(
                 &mut app.toasts,
                 crate::toast::Toast::new(
@@ -2014,6 +2113,24 @@ pub async fn run_slash_command(app: &mut App, text: &str) {
     handle_slash_command(app, text, None).await
 }
 
+/// Minimal application/x-www-form-urlencoded encoder for query strings.
+/// Pulling in `urlencoding` or `url` for the two callers (`/bug` form
+/// link generation) is overkill — the encoder only needs to handle ASCII
+/// + UTF-8 bytes that browsers reliably decode.
+fn url_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
 async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sender<AppEvent>>) {
     let parts: Vec<&str> = text.splitn(2, ' ').collect();
     match parts[0] {
@@ -2497,6 +2614,188 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 } else {
                     ""
                 }
+            )));
+        }
+        "/logout" => {
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let arg = parts.get(1).copied().map(str::trim).filter(|s| !s.is_empty());
+            // Wipe the OAuth token + API-key stores under
+            // ~/.config/jfc/. We deliberately keep this contained to
+            // jfc's own state (opencode shares anthropic-accounts.json,
+            // so blindly nuking that file would also log them out of
+            // a sibling client).
+            let scope = arg.unwrap_or("jfc");
+            let home = std::env::var("HOME").unwrap_or_default();
+            let mut removed = Vec::new();
+            for relpath in [
+                ".config/jfc/credentials.json",
+                ".config/jfc/anthropic-oauth.json",
+                ".config/jfc/codex-tokens.json",
+            ] {
+                let p = std::path::PathBuf::from(&home).join(relpath);
+                if p.exists() && std::fs::remove_file(&p).is_ok() {
+                    removed.push(p.display().to_string());
+                }
+            }
+            let summary = if removed.is_empty() {
+                format!("No credential files found to remove (scope: `{scope}`).")
+            } else {
+                format!(
+                    "Removed {} credential file(s):\n{}\nRun `/login` to authenticate again.",
+                    removed.len(),
+                    removed
+                        .iter()
+                        .map(|p| format!("  - `{p}`"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            };
+            app.messages.push(ChatMessage::assistant(summary));
+        }
+        "/release-notes" | "/releasenotes" | "/changelog" => {
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            // Try to read the workspace CHANGELOG; fall back to a stub
+            // pointer when the binary was installed somewhere without it.
+            let candidates = [
+                "CHANGELOG.md",
+                "../CHANGELOG.md",
+                "../../CHANGELOG.md",
+            ];
+            let notes = candidates
+                .iter()
+                .find_map(|p| std::fs::read_to_string(p).ok())
+                .map(|s| {
+                    let trimmed = s.lines().take(80).collect::<Vec<_>>().join("\n");
+                    if s.lines().count() > 80 {
+                        format!("{trimmed}\n\n*(showing first 80 lines — see CHANGELOG.md for the rest)*")
+                    } else {
+                        trimmed
+                    }
+                })
+                .unwrap_or_else(|| {
+                    "Release notes unavailable in this build. Visit \
+                     https://github.com/RustProjects/jfc/releases for the full changelog."
+                        .to_owned()
+                });
+            app.messages.push(ChatMessage::assistant(notes));
+        }
+        "/feedback" => {
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let url = "https://github.com/RustProjects/jfc/issues/new";
+            #[cfg(target_os = "linux")]
+            let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+            #[cfg(target_os = "macos")]
+            let _ = std::process::Command::new("open").arg(url).spawn();
+            #[cfg(target_os = "windows")]
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "start", url])
+                .spawn();
+            app.messages.push(ChatMessage::assistant(format!(
+                "Opened {url} in your browser. File the issue there — the session id is `{}` if you want to attach it.",
+                app.current_session_id
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or("(none)")
+            )));
+        }
+        "/upgrade" => {
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            app.messages.push(ChatMessage::assistant(
+                "To upgrade jfc, run one of:\n\
+                 * `cargo install --git https://github.com/RustProjects/jfc` (HEAD)\n\
+                 * `cargo install jfc` (latest crates.io release)\n\
+                 \n\
+                 If you installed via a package manager (homebrew, nix, AUR), use its update path instead.".to_owned(),
+            ));
+        }
+        "/copy" => {
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let arg = parts.get(1).copied().map(str::trim).filter(|s| !s.is_empty());
+            let (payload, scope_label) = match arg {
+                None | Some("last") => {
+                    let body = crate::runtime::last_assistant_text(app).unwrap_or_default();
+                    (body, "last assistant message".to_owned())
+                }
+                Some("all") => {
+                    let body = crate::runtime::full_transcript_text(app);
+                    (body, "full transcript".to_owned())
+                }
+                Some(other) => {
+                    // Numeric tail (`/copy 3` → last 3 messages). On parse
+                    // failure, fall back to `last` so a typo still copies
+                    // something useful rather than yielding an error.
+                    match other.parse::<usize>() {
+                        Ok(n) if n > 0 => {
+                            let body = crate::runtime::tail_transcript_text(app, n);
+                            (body, format!("last {n} message(s)"))
+                        }
+                        _ => {
+                            let body =
+                                crate::runtime::last_assistant_text(app).unwrap_or_default();
+                            (body, format!("last assistant message (unrecognized arg `{other}`)"))
+                        }
+                    }
+                }
+            };
+            if payload.is_empty() {
+                app.messages.push(ChatMessage::assistant(
+                    "Nothing to copy — the requested scope contains no text.".to_owned(),
+                ));
+            } else {
+                crate::runtime::copy_to_clipboard(&payload, "/copy");
+                app.messages.push(ChatMessage::assistant(format!(
+                    "Copied {scope_label} ({} chars) to clipboard. OSC 52 escape emitted for SSH/tmux clients.",
+                    payload.chars().count()
+                )));
+            }
+        }
+        "/fork" => {
+            app.messages.push(ChatMessage::user(text.to_owned()));
+            let arg = parts.get(1).copied().map(str::trim).filter(|s| !s.is_empty());
+            let upto = match arg {
+                None => app.messages.len(),
+                Some(s) => match s.parse::<usize>() {
+                    Ok(n) if n <= app.messages.len() => n,
+                    _ => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Usage: `/fork [N]` — snapshot first N messages as a new session. \
+                             Got `{s}`, which doesn't parse or exceeds the current message count ({}).",
+                            app.messages.len()
+                        )));
+                        return;
+                    }
+                },
+            };
+            if upto == 0 {
+                app.messages.push(ChatMessage::assistant(
+                    "Can't fork at message 0 — there's nothing to snapshot. Send a message first."
+                        .to_owned(),
+                ));
+                return;
+            }
+            // Snapshot to a brand-new session id. We keep `app.messages`
+            // truncated to `upto` to mirror what `git checkout -b` does
+            // visually, then mint a fresh id; the parent session JSON on
+            // disk is untouched because `switch_session` only points at
+            // the new id from here on out.
+            app.messages.truncate(upto);
+            app.streaming_text.clear();
+            app.streaming_reasoning.clear();
+            app.streaming_response_bytes = 0;
+            app.streaming_assistant_idx = None;
+            // Mint a fresh session id (same flow as /clear) — the next
+            // turn will save under the new id, and `app.current_session_id`
+            // becomes the fork's anchor.
+            app.switch_session(None);
+            let new_id = app
+                .current_session_id
+                .as_ref()
+                .map(|s| s.as_str().to_owned())
+                .unwrap_or_else(|| "(unset)".to_owned());
+            app.messages.push(ChatMessage::assistant(format!(
+                "**Forked** at message {upto}/{total}. New session: `{new_id}`. \
+                 The original is preserved — `/resume` it any time.",
+                total = upto
             )));
         }
         "/batch" => {

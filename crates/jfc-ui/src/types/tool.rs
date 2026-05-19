@@ -2139,6 +2139,7 @@ mod tests {
             summary: Some("almost done".into()),
             error: None,
             elapsed_ms: None,
+            model: None,
         });
         assert_eq!(p.approx_text_len(), "do it".len() + "almost done".len());
     }

@@ -35,14 +35,57 @@ pub(super) fn append_log_line(path: &Path, line: &str) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+    let needs_leading_newline = last_byte_is_not_newline(path);
     if let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
     {
         use std::io::Write;
+        if needs_leading_newline {
+            let _ = writeln!(file);
+        }
         let _ = writeln!(file, "{line}");
     }
+}
+
+/// Append a raw chunk of streamed text to the log without inserting any
+/// extra newlines. SSE deltas arrive mid-word ("SPIR-V lif" + "ter with"),
+/// so a per-chunk `writeln!` turns prose into a column of fragments. The
+/// model's own `\n` bytes (paragraph breaks, code fences) survive untouched.
+pub(super) fn append_chunk_raw(path: &Path, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        use std::io::Write;
+        let _ = file.write_all(text.as_bytes());
+    }
+}
+
+fn last_byte_is_not_newline(path: &Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    if meta.len() == 0 {
+        return false;
+    }
+    let Ok(mut file) = std::fs::OpenOptions::new().read(true).open(path) else {
+        return false;
+    };
+    if file.seek(SeekFrom::End(-1)).is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 1];
+    matches!(file.read(&mut buf), Ok(1) if buf[0] != b'\n')
 }
 
 pub(super) fn background_agent_log_path(paths: &DaemonPaths, id: &str) -> PathBuf {

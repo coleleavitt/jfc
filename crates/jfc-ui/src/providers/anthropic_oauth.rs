@@ -1219,7 +1219,7 @@ impl Provider for AnthropicOAuthProvider {
         if options.task_budget_tokens.is_some() {
             betas_stream.push_str(",task-budgets-2026-03-13");
         }
-        let beta_header = betas_stream;
+        let mut beta_header = betas_stream;
 
         // Two nested loops:
         //   - Outer: when every account ends up in cooldown mid-rotation, sleep

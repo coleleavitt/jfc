@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{LineGauge, Paragraph},
 };
@@ -35,6 +35,12 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     // widths while the model name and git branch always show.
     let mut badges: Vec<String> = Vec::new();
 
+    // Provider name renders as its own styled Span at the start of the
+    // line so we can pulse it independently — the rest of the badges
+    // share one foreground color, but the provider gets a subtle
+    // alpha-blend pulse so a glance reveals which backend is live (bedrock
+    // / anthropic-oauth / openwebui) without crowding the model name.
+    let provider_badge = pretty_provider_label(app.provider.name());
     badges.push(app.model.to_string());
     badges.push(effort_status_badge(app));
 
@@ -153,22 +159,51 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     let total_width = area.width as usize;
     let right_start = total_width.saturating_sub(right.len());
 
-    let left_full = format!(" {} ", badges.join(" · "));
-    let left_chars: usize = left_full.chars().count();
-    let left_truncated = if left_chars > right_start.saturating_sub(1) {
-        let truncated: String = left_full
-            .chars()
-            .take(right_start.saturating_sub(2))
-            .collect();
+    // Provider prefix: ` ● <provider> · `. The bullet was previously
+    // pulsing on wall-clock time (every 1.6s regardless of network),
+    // which made the status bar feel "alive" even when literally
+    // nothing was happening — even typing in the input box, which
+    // has no network signal. Now the bullet's intensity is driven by
+    // the same `network_activity` factor the EKG sparkline uses, so
+    // the two stay in lockstep: when the EKG is actively beating
+    // (real bytes arriving), the bullet glows; when the wire is idle,
+    // the bullet sits dim. Plumb through the EKG's beat-armed state
+    // so the bullet "decays" alongside the trace over the PATTERN_LEN
+    // tick window after the last byte.
+    let beat_alive = app.network_beat_remaining > 0;
+    let dot_intensity = if beat_alive {
+        // Active beat → blend in proportion to current R-wave height.
+        (0.4 + app.network_activity * 0.6).clamp(0.0, 1.0)
+    } else {
+        // Idle → flat. No pulse, no fake "things are happening" signal.
+        0.0
+    };
+    let dot_color = blend_color(t.border, provider_accent(app.provider.name()), dot_intensity);
+
+    let badge_str = format!(" {} · ", badges.join(" · "));
+    // Budget for the badge string = right_start − provider prefix width.
+    let provider_prefix_width = 4 + provider_badge.chars().count(); // " ● " + name + " · "
+    let badge_budget = right_start.saturating_sub(provider_prefix_width).max(1);
+    let badge_truncated = if badge_str.chars().count() > badge_budget {
+        let truncated: String = badge_str.chars().take(badge_budget.saturating_sub(1)).collect();
         format!("{truncated}…")
     } else {
-        left_full
+        badge_str
     };
-
-    let padding = " ".repeat(right_start.saturating_sub(left_truncated.chars().count()));
+    let consumed = provider_prefix_width + badge_truncated.chars().count();
+    let padding = " ".repeat(right_start.saturating_sub(consumed));
 
     let line = Line::from(vec![
-        Span::styled(left_truncated, Style::default().fg(t.text_secondary)),
+        Span::raw(" "),
+        Span::styled("●", Style::default().fg(dot_color).add_modifier(Modifier::BOLD)),
+        Span::raw(" "),
+        Span::styled(
+            provider_badge,
+            Style::default()
+                .fg(provider_accent(app.provider.name()))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(badge_truncated, Style::default().fg(t.text_secondary)),
         Span::styled(padding, Style::default().fg(t.text_muted)),
         Span::styled(right, Style::default().fg(t.text_muted)),
     ]);
@@ -227,6 +262,56 @@ pub(super) fn claude_status_footer(app: &App) -> String {
         " · status offline".to_owned()
     } else {
         String::new()
+    }
+}
+
+/// Friendly short label for a provider id. Anthropic providers are common
+/// enough that we collapse `anthropic-oauth` to just `OAuth`; bedrock and
+/// openwebui get their own short labels.
+pub(super) fn pretty_provider_label(provider: &str) -> String {
+    match provider {
+        "anthropic" => "API".to_owned(),
+        "anthropic-oauth" => "OAuth".to_owned(),
+        "bedrock" => "Bedrock".to_owned(),
+        "vertex" => "Vertex".to_owned(),
+        "openwebui" => "OpenWebUI".to_owned(),
+        "codex" => "Codex".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
+/// Accent color per provider so the live-stream pulse reads as
+/// "Bedrock-orange" / "OpenWebUI-teal" at a glance.
+pub(super) fn provider_accent(provider: &str) -> Color {
+    match provider {
+        "anthropic" | "anthropic-oauth" | "bedrock" | "vertex" => Color::Rgb(204, 120, 50),
+        "openwebui" => Color::Rgb(100, 180, 200),
+        _ => Color::Gray,
+    }
+}
+
+/// Linear-RGB interpolation between two `Color`s. Used for the provider
+/// dot's pulse and the network EKG's leading-edge highlight. Colors
+/// that aren't `Rgb` fall back to a binary swap at `t > 0.5` because
+/// ratatui's palette colors don't carry component data.
+pub(super) fn blend_color(from: Color, to: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    match (from, to) {
+        (Color::Rgb(r0, g0, b0), Color::Rgb(r1, g1, b1)) => {
+            let lerp = |a: u8, b: u8| -> u8 {
+                let af = a as f32;
+                let bf = b as f32;
+                (af + (bf - af) * t).round().clamp(0.0, 255.0) as u8
+            };
+            Color::Rgb(lerp(r0, r1), lerp(g0, g1), lerp(b0, b1))
+        }
+        _ => {
+            if t < 0.5 {
+                from
+            } else {
+                to
+            }
+        }
     }
 }
 

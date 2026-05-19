@@ -101,33 +101,47 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
         //       message (no trailing user pair). Per cli.js v142:7057
         //       and :441375 — the server pairs server_tool_use with
         //       server_tool_result inside the same assistant turn.
+        //
+        // NOTE: Tool parts should only exist in assistant messages.
+        // If one ends up in a user message (e.g. due to a race between
+        // interruption and tool completion), skip it here — emitting a
+        // tool_use block in a user message causes API 400.
         let mut assistant_tool_blocks: Vec<ProviderContent> = Vec::new();
         let mut user_tool_results: Vec<ProviderContent> = Vec::new();
-        for part in &m.parts {
-            let MessagePart::Tool(tc) = part else {
-                continue;
-            };
-            if is_server_tool(&tc.kind) {
-                assistant_tool_blocks.push(tool_use_content(tc, &mut counters));
-                // The paired result block (web_search_tool_result, etc.)
-                // is captured on the ToolCall's output by
-                // event_loop's StreamEvent::ServerToolResult handler.
-                // When it's present, re-emit it byte-faithfully here;
-                // when absent (e.g. the stream paused before the
-                // result arrived), the trailing server_tool_use block
-                // alone IS the resume cue per cli.js v142:622686, so
-                // we deliberately do not synthesize a placeholder.
-                if let Some(result) = server_tool_result_content(tc, &mut counters) {
-                    assistant_tool_blocks.push(result);
+        if role == ProviderRole::Assistant {
+            for part in &m.parts {
+                let MessagePart::Tool(tc) = part else {
+                    continue;
+                };
+                if is_server_tool(&tc.kind) {
+                    assistant_tool_blocks.push(tool_use_content(tc, &mut counters));
+                    // The paired result block (web_search_tool_result, etc.)
+                    // is captured on the ToolCall's output by
+                    // event_loop's StreamEvent::ServerToolResult handler.
+                    // When it's present, re-emit it byte-faithfully here;
+                    // when absent (e.g. the stream paused before the
+                    // result arrived), the trailing server_tool_use block
+                    // alone IS the resume cue per cli.js v142:622686, so
+                    // we deliberately do not synthesize a placeholder.
+                    if let Some(result) = server_tool_result_content(tc, &mut counters) {
+                        assistant_tool_blocks.push(result);
+                    }
+                } else {
+                    assistant_tool_blocks.push(tool_use_content(tc, &mut counters));
+                    user_tool_results.push(tool_result_content(
+                        tc,
+                        turns_ago_map[msg_idx],
+                        &mut counters,
+                    ));
                 }
-            } else {
-                assistant_tool_blocks.push(tool_use_content(tc, &mut counters));
-                user_tool_results.push(tool_result_content(
-                    tc,
-                    turns_ago_map[msg_idx],
-                    &mut counters,
-                ));
             }
+        } else if m.parts.iter().any(|p| matches!(p, MessagePart::Tool(_))) {
+            tracing::warn!(
+                target: "jfc::stream",
+                role = ?m.role,
+                msg_idx,
+                "orphaned tool part in non-assistant message — skipping to avoid API 400"
+            );
         }
 
         let mut assistant_content = Vec::new();

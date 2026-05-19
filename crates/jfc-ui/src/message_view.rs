@@ -34,3 +34,5 @@ pub use core::{
 pub use outputs::diff_lang;
 #[allow(unused_imports)]
 pub use tool_blocks::{tool_kind_color, tool_status_icon_animated};
+#[allow(unused_imports)]
+pub use assistant_parts::pretty_model_badge;

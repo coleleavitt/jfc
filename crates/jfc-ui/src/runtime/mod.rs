@@ -1,9 +1,11 @@
+mod agent_log_parser;
 mod background;
 mod events;
 mod execution;
 mod factory;
 mod goal_loop;
 mod network;
+pub(crate) mod network_ekg;
 mod queue;
 mod stream_control;
 mod task_activity;
@@ -27,4 +29,7 @@ pub(crate) use queue::drain_queued_prompts;
 pub(crate) use stream_control::restart_stream_in_place;
 pub(crate) use task_activity::update_task_activities;
 pub(crate) use terminal::{draw_synchronized, read_git_branch_from_root, set_terminal_title};
-pub(crate) use yank::yank_last_assistant;
+pub(crate) use yank::{
+    copy_to_clipboard, full_transcript_text, last_assistant_text, tail_transcript_text,
+    yank_last_assistant,
+};

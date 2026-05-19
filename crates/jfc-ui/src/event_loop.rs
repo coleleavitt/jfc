@@ -3966,6 +3966,45 @@ pub(crate) async fn run(
                         crate::system_reminder::append_to_last_user(&mut app.messages, &reminder);
                         maybe_continue_task_factory(&mut app, &tx).await;
                     }
+                    // After a background task reaches terminal state, check
+                    // if ALL background tasks are now done. If so AND the
+                    // main turn is waiting (turn_started_at is set, no tools
+                    // pending, should_continue_loop), trigger the agentic
+                    // continuation. This fixes the "last task stays green"
+                    // bug where all agents complete but the leader never
+                    // resumes because no AllToolsComplete fires after the
+                    // last TaskCompleted event.
+                    let all_bg_done = app
+                        .background_tasks
+                        .values()
+                        .all(|bt| bt.status.is_terminal());
+                    if all_bg_done
+                        && app.turn_started_at.is_some()
+                        && app.pending_tool_calls.is_empty()
+                        && app.pending_approval.is_none()
+                        && app.approval_queue.is_empty()
+                        && !app.is_streaming
+                        && stream::should_continue_loop(&app.messages)
+                    {
+                        tracing::info!(
+                            target: "jfc::task",
+                            "all background tasks terminal — triggering agentic continuation"
+                        );
+                        stream::continue_agentic_loop(&mut app, &tx).await;
+                    } else if all_bg_done
+                        && app.turn_started_at.is_some()
+                        && app.pending_tool_calls.is_empty()
+                        && !app.is_streaming
+                        && !stream::should_continue_loop(&app.messages)
+                    {
+                        // All done and model already emitted EndTurn — just
+                        // clear the turn timer so the spinner stops.
+                        tracing::debug!(
+                            target: "jfc::task",
+                            "all background tasks terminal, turn complete — clearing turn_started_at"
+                        );
+                        app.turn_started_at = None;
+                    }
                 }
                 AppEvent::Team(TeamEvent::Spawned {
                     name,

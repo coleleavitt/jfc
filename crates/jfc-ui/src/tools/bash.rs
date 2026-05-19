@@ -67,6 +67,66 @@ pub(super) async fn execute_bash_inner(
         .env_remove("FORCE_COLOR")
         .env_remove("GREP_COLORS")
         .env_remove("LS_COLORS");
+    // Security-critical env-pin (recommendation #4 from the bash-CVE
+    // research). These variables are the documented vectors for
+    // "child process RCE from a parent that looked benign":
+    //   * LD_PRELOAD / LD_AUDIT / LD_LIBRARY_PATH — inject shared
+    //     libraries into every spawned binary. Even a `date` invocation
+    //     becomes a code-exec primitive.
+    //   * BASH_ENV / ENV — bash sources this file on non-interactive
+    //     startup (Shellshock-era vector).
+    //   * PROMPT_COMMAND / PS0..PS4 — command-substituted on each
+    //     prompt; `@P}` expansion (Flatt #8) hooks here.
+    //   * IFS — re-tokenizes the rest of the command line; setting
+    //     it to a digit defeats parser anchors.
+    //   * GIT_EXTERNAL_DIFF / GIT_SSH_COMMAND / GIT_DIR /
+    //     GIT_ALTERNATE_OBJECT_DIRECTORIES — git RCE via config-hook
+    //     equivalents (github.blog: git-security-vulnerabilities-
+    //     announced-4).
+    //   * MANPAGER / LESS / MANROFFSEQ — man-page viewers that exec
+    //     filters; less in particular runs `!` commands.
+    //   * BASH_FUNC_*() / shellshock — bash <4.3 parses these as
+    //     function definitions in the env. `env_clear` would also
+    //     work but we want to keep PATH and standard locale vars.
+    cmd.env_remove("LD_PRELOAD")
+        .env_remove("LD_AUDIT")
+        .env_remove("LD_LIBRARY_PATH")
+        .env_remove("LD_BIND_NOW")
+        .env_remove("DYLD_INSERT_LIBRARIES") // macOS equivalent of LD_PRELOAD
+        .env_remove("DYLD_LIBRARY_PATH")
+        .env_remove("BASH_ENV")
+        .env_remove("ENV")
+        .env_remove("PROMPT_COMMAND")
+        .env_remove("PS0")
+        .env_remove("PS1")
+        .env_remove("PS2")
+        .env_remove("PS3")
+        .env_remove("PS4")
+        .env_remove("IFS")
+        .env_remove("CDPATH")
+        .env_remove("GLOBIGNORE")
+        .env_remove("HISTFILE")
+        .env_remove("HISTCMD")
+        .env_remove("GIT_EXTERNAL_DIFF")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_SSH_COMMAND")
+        .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES")
+        .env_remove("GIT_OBJECT_DIRECTORY")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_CONFIG")
+        .env_remove("GIT_CONFIG_GLOBAL")
+        .env_remove("GIT_CONFIG_SYSTEM")
+        .env_remove("MANPAGER")
+        .env_remove("LESS")
+        .env_remove("LESSOPEN")
+        .env_remove("LESSCLOSE")
+        .env_remove("MANROFFSEQ")
+        .env_remove("MANROFFOPT")
+        // Pin PAGER, MANPAGER explicitly to cat — any tool that
+        // honors them now goes through a deterministic, non-exec
+        // viewer. (Already had PAGER above; MANPAGER added here.)
+        .env("MANPAGER", "cat")
+        .env("PAGER", "cat");
     configure_tool_command(&mut cmd);
 
     // If streaming, pipe stdout and read line-by-line

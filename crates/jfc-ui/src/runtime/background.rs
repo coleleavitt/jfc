@@ -5,6 +5,8 @@ use crate::{
     types::{MessagePart, TaskLifecycle},
 };
 
+use super::agent_log_parser::parse_agent_log_to_chat_messages;
+
 pub(crate) fn sync_detached_background_tasks_from_daemon(app: &mut App) -> bool {
     sync_detached_background_tasks_from_daemon_with_paths(app, &DaemonPaths::default_user())
 }
@@ -109,7 +111,16 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
             changed = true;
         }
         if entry.messages != messages {
-            entry.messages = messages;
+            entry.messages = messages.clone();
+            changed = true;
+        }
+        // Detached/daemon-launched agents never see live `AppEvent`s, so
+        // `chat_messages` stays empty unless we reconstruct it from the
+        // persisted log. The parser is the sole writer for detached
+        // agents (live events for attached ones are filtered out by the
+        // early `continue` above), so the two writers never race.
+        if entry.chat_messages.is_empty() && !messages.is_empty() {
+            entry.chat_messages = parse_agent_log_to_chat_messages(&messages);
             changed = true;
         }
 
@@ -166,6 +177,7 @@ pub(crate) fn restore_persistent_background_agents(app: &mut App) {
     for agent in crate::daemon::background_agents_for_restore(&paths, session_id, 20) {
         let status = lifecycle_from_daemon_status(agent.status);
         let messages = crate::daemon::read_last_lines(&agent.log_path, 200);
+        let chat_messages = parse_agent_log_to_chat_messages(&messages);
         app.background_tasks.insert(
             agent.id.clone(),
             BackgroundTask {
@@ -177,7 +189,7 @@ pub(crate) fn restore_persistent_background_agents(app: &mut App) {
                 error: agent.error,
                 last_tool: None,
                 messages,
-                chat_messages: Vec::new(),
+                chat_messages,
                 tool_use_count: agent.tool_use_count,
                 latest_input_tokens: agent.latest_input_tokens,
                 latest_cache_read_tokens: 0,

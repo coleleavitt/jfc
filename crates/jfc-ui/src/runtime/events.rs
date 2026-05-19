@@ -54,6 +54,11 @@ pub enum UiEvent {
     EnterPlanModeRequested {
         reason: String,
     },
+    /// Session-picker selected a session — async load via the same
+    /// helper the sidebar's Enter handler uses. Lives on the event bus
+    /// because the picker handler is sync; routing through here keeps
+    /// the picker thin and the disk I/O on the event-loop thread.
+    LoadSession(crate::ids::SessionId),
 }
 
  pub enum StreamEvent {
