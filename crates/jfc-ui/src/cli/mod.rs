@@ -285,7 +285,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
                 .and_then(|s| parse_permission_mode(Some(s.as_str())))
         });
 
-    let result = crate::event_loop::run(
+    let result = crate::runtime::event_loop::run(
         &mut terminal,
         providers,
         provider,

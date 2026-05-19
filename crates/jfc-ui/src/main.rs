@@ -20,7 +20,7 @@ mod diagnostics_producer;
 mod document_formats;
 mod effort;
 mod env_context;
-mod event_loop;
+
 mod feature_gates;
 mod file_watcher;
 mod fleet_view;

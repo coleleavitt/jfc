@@ -1,0 +1,421 @@
+//! `UiEvent::Tick` handler — fires every IDLE_TICK_MS / ANIM_TICK_MS and
+//! drives all per-tick housekeeping: spinner, watchdog, network EKG,
+//! daemon-state sync, toast expiry, OAuth refresh, hot-reloads, kinetic
+//! scroll, heartbeat, MCP-tools change watcher, file-watcher reload,
+//! worktree count, git branch, swarm permission poller, swarm inbox poller.
+//!
+//! Returns `true` when the handler dirtied state that needs a fresh draw.
+
+use std::sync::Arc;
+
+use crate::app::App;
+use crate::providers::AnthropicOAuthProvider;
+use crate::runtime::{
+    AppEvent, EventSender, ProviderEvent, TeamEvent, UiEvent, maybe_continue_task_factory,
+    read_git_branch_from_root, sync_detached_background_tasks_from_daemon,
+};
+use crate::toast;
+
+use super::super::guards::{CONFIG_RELOAD_REMINDER, MCP_REFRESH_REMINDER};
+
+pub(crate) async fn handle_tick(
+    app: &mut App,
+    tx: &EventSender,
+    oauth_for_snapshot: Option<&Arc<AnthropicOAuthProvider>>,
+) -> bool {
+    let mut needs_draw = false;
+
+    app.spinner_frame = (app.spinner_frame + 1) % crate::app::SPINNER.len();
+    app.check_stream_watchdog();
+
+    // Network EKG: per-tick byte delta drives an EMA-
+    // eased activity factor that scales the R-wave
+    // amplitude. Sources `network_bytes_in` rather than
+    // `streaming_response_bytes` so the trace tracks
+    // EVERY stream event (text, reasoning, tool input
+    // deltas, redacted thinking, server tool results,
+    // usage frames, response IDs) and isn't reset by
+    // per-turn clears. See `runtime::network_ekg`.
+    let now_bytes = app.network_bytes_in;
+    let delta = now_bytes.saturating_sub(app.network_last_sampled_bytes);
+    app.network_last_sampled_bytes = now_bytes;
+    crate::runtime::network_ekg::tick(
+        &mut app.network_samples,
+        &mut app.network_phase,
+        &mut app.network_activity,
+        &mut app.network_beat_remaining,
+        delta,
+    );
+
+    // Detached background workers update their progress in
+    // `daemon-state.json` (they're a different process — no
+    // AppEvent channel back to the UI). Re-read once a
+    // second so the fan row shows live tool/token counts
+    // instead of frozen zeros.
+    let detached_sync_due = app
+        .last_detached_sync_at
+        .map(|t| t.elapsed() >= std::time::Duration::from_secs(1))
+        .unwrap_or(true);
+    if detached_sync_due {
+        app.last_detached_sync_at = Some(std::time::Instant::now());
+        // Detached workers (and in non-team mode, the
+        // session task store) write task updates straight
+        // to the JSON file from their own process. The UI's
+        // TaskStore handle is loaded once and never re-reads
+        // on its own — this mtime-gated reload picks up
+        // those external TaskUpdate/TaskDone writes so the
+        // todo panel reflects background-agent progress.
+        if app.task_store.reload_if_changed() {
+            needs_draw = true;
+        }
+        if sync_detached_background_tasks_from_daemon(app) {
+            needs_draw = true;
+            // Re-evaluate the task factory after detached
+            // agents transition. Without this,
+            // maybe_continue_task_factory's
+            // `background_tasks.any(is_alive)` gate blocks
+            // the queue while agents run, but their later
+            // completion (via daemon sync, not AppEvent)
+            // never re-triggers the factory — the queue
+            // stalls until the user sends another prompt.
+            maybe_continue_task_factory(app, tx).await;
+        }
+    }
+    // Auto-clear expired toasts every tick. Cheap (O(N) over
+    // a tiny vec capped at MAX_TOASTS) and the only reliable
+    // place to do it — toasts have no creation-time timer.
+    toast::prune_expired(&mut app.toasts, std::time::Instant::now());
+
+    // Idle-return detection: if 75+ minutes since last user
+    // activity and we haven't shown the prompt yet, show a
+    // toast suggesting /clear to save tokens on the next turn.
+    if !app.idle_return_shown
+        && !app.is_streaming
+        && app.last_user_activity_at.elapsed().as_secs() >= 75 * 60
+        && !app.messages.is_empty()
+    {
+        app.idle_return_shown = true;
+        let tokens_est = app.tool_ctx.approx_tokens;
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Info,
+                format!(
+                    "Welcome back! Context: ~{tokens_est} tokens. \
+                     Consider `/clear` to save on re-caching or `/compact` to trim."
+                ),
+            ),
+        );
+    }
+
+    // Refresh the cached Anthropic OAuth account snapshot every ~10s
+    // so the ribbon shows up-to-date 5h/7d utilization and the
+    // active rate-limit claim. The manager call locks a mutex,
+    // so we throttle and run it on a background task.
+    let needs_refresh = app
+        .anthropic_snapshot_refreshed_at
+        .map(|t| t.elapsed().as_secs() >= 10)
+        .unwrap_or(true);
+    if needs_refresh && oauth_for_snapshot.is_some() {
+        app.anthropic_snapshot_refreshed_at = Some(std::time::Instant::now());
+        let oauth = oauth_for_snapshot.unwrap().clone();
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            if let Ok(mgr) = oauth.account_manager().await {
+                let snapshot = mgr.snapshot_for_ui().await;
+                let _ = tx
+                    .send(AppEvent::Provider(
+                        ProviderEvent::AnthropicSnapshotUpdated { snapshot },
+                    ))
+                    .await;
+            }
+        });
+    }
+
+    // Kinetic scroll: apply velocity, decay, stop.
+    {
+        let now = std::time::Instant::now();
+        let dt = now.duration_since(app.last_scroll_tick).as_secs_f32();
+        app.last_scroll_tick = now;
+        if app.scroll_velocity.abs() > 0.5 {
+            let delta = app.scroll_velocity * dt;
+            let lines = delta.round() as i32;
+            if lines > 0 {
+                app.scroll_down(lines as usize);
+            } else if lines < 0 {
+                app.scroll_up(lines.unsigned_abs() as usize);
+            }
+            app.scroll_velocity *= 0.85;
+            if app.scroll_velocity.abs() < 0.5 {
+                app.scroll_velocity = 0.0;
+            }
+        }
+    }
+
+    app.update_wants_animation_frame();
+
+    // v132 OnHeartbeat — fire every ~30s so registered
+    // handlers (telemetry batchers, MCP keep-alive, daemon
+    // wakeup probes) actually run. Async fire because we
+    // don't care about the result — short-circuit logic
+    // would block the UI thread.
+    let now = std::time::Instant::now();
+    let heartbeat_due = app
+        .last_heartbeat_at
+        .map(|t| now.duration_since(t).as_secs() >= 30)
+        .unwrap_or(true);
+    if heartbeat_due {
+        app.last_heartbeat_at = Some(now);
+        let session_id = app
+            .current_session_id
+            .as_ref()
+            .map(|s| s.as_str().to_owned())
+            .unwrap_or_else(|| "<no-session>".to_owned());
+        crate::hooks::fire_async(
+            crate::hooks::HookPoint::OnHeartbeat,
+            &crate::hooks::HookContext::for_session(&session_id),
+        );
+    }
+
+    // v132 MCP `notifications/tools/list_changed` —
+    // detect inbound notifications by comparing the
+    // process-global refresh counter against our last-
+    // seen value. On change, emit a toast + system-
+    // reminder so the user knows the tool catalog
+    // mutated and the model picks up the change next
+    // turn.
+    let cur_refresh = crate::mcp::registry::refresh_counter();
+    if cur_refresh > app.last_mcp_refresh_seen {
+        app.last_mcp_refresh_seen = cur_refresh;
+        toast::push_with_cap(
+            &mut app.toasts,
+            toast::Toast::new(
+                toast::ToastKind::Info,
+                "MCP server pushed tools/list_changed — catalog refreshed",
+            ),
+        );
+        app.queue_background_reminder(MCP_REFRESH_REMINDER);
+    }
+
+    // v132 file-watcher reload — detect CLAUDE.md /
+    // agents / settings edits by comparing the global
+    // change counter against our last-seen value. On
+    // change, queue a system-reminder so the model
+    // picks up the new content on the next outbound
+    // request. The reminder lives wire-only via the
+    // background-reminder queue, so repeated FS events
+    // between turns collapse to a single entry.
+    let cur_fw = crate::file_watcher::change_counter();
+    if cur_fw > app.last_file_watcher_seen {
+        app.last_file_watcher_seen = cur_fw;
+        let already_queued = app
+            .pending_background_reminders
+            .iter()
+            .any(|body| body == CONFIG_RELOAD_REMINDER);
+        if already_queued {
+            tracing::debug!(
+                target: "jfc::file_watcher",
+                counter = cur_fw,
+                "config reload reminder already queued for next outbound request"
+            );
+        } else {
+            toast::push_with_cap(
+                &mut app.toasts,
+                toast::Toast::new(
+                    toast::ToastKind::Info,
+                    "Config file changed — reloaded for next turn",
+                ),
+            );
+            app.queue_background_reminder(CONFIG_RELOAD_REMINDER);
+        }
+    }
+
+    // Hot-reload keybindings when keybindings.toml changes.
+    let cur_kb = crate::file_watcher::keybindings_change_counter();
+    if cur_kb > app.last_keybindings_watcher_seen {
+        app.last_keybindings_watcher_seen = cur_kb;
+        crate::keybindings::load();
+        toast::push_with_cap(
+            &mut app.toasts,
+            toast::Toast::new(toast::ToastKind::Info, "keybindings.toml reloaded"),
+        );
+    }
+
+    // Refresh the worktree count at most once per 10s,
+    // only if we're inside a git repo.
+    let now = std::time::Instant::now();
+    app.resolve_git_root();
+    let is_git = matches!(app.git_root, Some(Some(_)));
+    let due = is_git
+        && app
+            .worktree_count_last_refresh
+            .map(|t| now.duration_since(t).as_millis() >= 10_000)
+            .unwrap_or(true);
+    if due {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        app.worktree_count =
+            match crate::worktrees::list_worktrees_async(&cwd).await {
+                Ok(list) => list.len().saturating_sub(1),
+                Err(_) => 0,
+            };
+        app.worktree_count_last_refresh = Some(now);
+    }
+
+    // Git branch refresh — every 5s from cached git root.
+    let git_due = is_git
+        && app
+            .git_branch_last_refresh
+            .map(|t| now.duration_since(t).as_millis() >= 5_000)
+            .unwrap_or(true);
+    if git_due {
+        if let Some(Some(ref root)) = app.git_root {
+            app.git_branch = read_git_branch_from_root(root).await;
+        }
+        app.git_branch_last_refresh = Some(now);
+    }
+
+    // Resolve any pending teammate permission requests at
+    // ~1Hz (12 ticks × 80ms). The teammate runner blocks
+    // on `poll_for_response` after writing a request; if
+    // nothing ever resolves, the call times out at 5
+    // minutes and the tool fails. This loop provides the
+    // leader-side response: apply the leader's own
+    // permission_mode to the request and write a resolution
+    // file the teammate's poll picks up.
+    if app.team_context.is_active() && app.spinner_frame % 12 == 0 {
+        if let Some(team_name) = app.team_context.team_name.clone() {
+            let mode = app.permission_mode;
+            let tx_swarm = tx.clone();
+            tokio::spawn(async move {
+                let pending =
+                    crate::swarm::permission_sync::read_pending_permissions(
+                        &team_name,
+                    )
+                    .await;
+                for req in pending {
+                    if !matches!(
+                        req.status,
+                        crate::swarm::types::PermissionRequestStatus::Pending
+                    ) {
+                        continue;
+                    }
+                    let mutation = matches!(
+                        req.tool_name.as_str(),
+                        "Bash" | "Write" | "Edit" | "ApplyPatch"
+                    );
+                    // Three outcomes:
+                    //   Some(true)  → auto-approve
+                    //   Some(false) → auto-deny
+                    //   None        → defer to the user
+                    let auto: Option<bool> = match mode {
+                        crate::app::PermissionMode::BypassPermissions => Some(true),
+                        crate::app::PermissionMode::Plan => Some(false),
+                        crate::app::PermissionMode::AcceptEdits => {
+                            if matches!(req.tool_name.as_str(), "Bash") {
+                                None
+                            } else {
+                                Some(true)
+                            }
+                        }
+                        crate::app::PermissionMode::Default
+                        | crate::app::PermissionMode::Auto => {
+                            if mutation {
+                                // Mutations need a human in
+                                // Default/Auto. Surface to
+                                // the user via toast +
+                                // /swarm-approve|deny.
+                                None
+                            } else {
+                                Some(true)
+                            }
+                        }
+                    };
+                    match auto {
+                        Some(approve) => {
+                            let resolution =
+                                crate::swarm::types::PermissionResolution {
+                                    decision: if approve {
+                                        crate::swarm::types::PermissionDecision::Approved
+                                    } else {
+                                        crate::swarm::types::PermissionDecision::Rejected
+                                    },
+                                    resolved_by: "leader".to_owned(),
+                                    feedback: if approve {
+                                        None
+                                    } else {
+                                        Some(format!(
+                                            "Auto-denied by leader permission_mode={:?}",
+                                            mode
+                                        ))
+                                    },
+                                    updated_input: None,
+                                    permission_updates: Vec::new(),
+                                };
+                            if let Err(e) =
+                                crate::swarm::permission_sync::resolve_permission(
+                                    &req.id,
+                                    &resolution,
+                                    &team_name,
+                                )
+                                .await
+                            {
+                                tracing::warn!(
+                                    target: "jfc::swarm",
+                                    error = %e,
+                                    request_id = %req.id,
+                                    "failed to resolve permission request"
+                                );
+                            }
+                        }
+                        None => {
+                            // User-gate path: surface a
+                            // toast (once per request id).
+                            // The toast tells the user
+                            // exactly which slash command
+                            // resolves it.
+                            let toast_text = format!(
+                                "🔒 {} wants to {} — /swarm-approve {} or /swarm-deny {}",
+                                req.worker_name, req.tool_name, req.id, req.id,
+                            );
+                            let _ = tx_swarm
+                                .send(AppEvent::Ui(UiEvent::Toast {
+                                    kind: crate::toast::ToastKind::Warning,
+                                    text: toast_text,
+                                }))
+                                .await;
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    // Poll leader inbox for teammate messages every ~1s (12 ticks * 80ms).
+    // Only active when a team is running.
+    if app.team_context.is_active() && app.spinner_frame % 12 == 0 {
+        if let Some(ref team_name) = app.team_context.team_name {
+            let team_name = team_name.clone();
+            let tx_inbox = tx.clone();
+            tokio::spawn(async move {
+                let messages =
+                    crate::swarm::runner::poll_leader_inbox(&team_name).await;
+                for msg in messages {
+                    // Hand off to the main thread which has
+                    // mutable access to `app.messages` —
+                    // injects into the transcript AND shows
+                    // a toast in one place. Mirrors v126's
+                    // `<teammate-message>` injection.
+                    let _ = tx_inbox
+                        .send(AppEvent::Team(TeamEvent::Inbox {
+                            from: msg.from,
+                            text: msg.text,
+                            summary: msg.summary,
+                        }))
+                        .await;
+                }
+            });
+        }
+    }
+
+    needs_draw
+}

@@ -1,5 +1,6 @@
 mod agent_log_parser;
 mod background;
+pub(crate) mod event_loop;
 mod events;
 mod execution;
 mod factory;
