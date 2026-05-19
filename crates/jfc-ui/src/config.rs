@@ -753,8 +753,10 @@ pub fn resolve_prompt(value: &str, base_dir: Option<&std::path::Path>) -> String
 pub fn save_permission_mode(mode: &crate::app::PermissionMode) {
     let mode_str = match mode {
         crate::app::PermissionMode::Default => "default",
-        crate::app::PermissionMode::AutoAccept => "auto-accept",
+        crate::app::PermissionMode::AcceptEdits => "accept-edits",
         crate::app::PermissionMode::Plan => "plan",
+        crate::app::PermissionMode::BypassPermissions => "bypass",
+        crate::app::PermissionMode::Auto => "auto",
     };
     save_permission_mode_to(&config_path(), mode_str);
 }

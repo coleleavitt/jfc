@@ -1,0 +1,14 @@
+{
+  "next_id": 1,
+  "tasks": {
+    "t1": {
+      "id": "t1",
+      "subject": "subj",
+      "description": "desc",
+      "status": "in_progress",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172147806
+    }
+  }
+}
