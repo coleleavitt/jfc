@@ -2,28 +2,26 @@ use std::{io, sync::Arc, time::Duration};
 
 use crossterm::{
     cursor::SetCursorStyle,
-    event::{self, Event, KeyEventKind},
+    event,
     execute,
 };
 use futures::StreamExt;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::mpsc;
 
-use crate::app::{self, ANIM_TICK_MS, App, IDLE_TICK_MS, NetworkRecoveryProvider, PendingApproval};
+use crate::app::{self, ANIM_TICK_MS, App, IDLE_TICK_MS, NetworkRecoveryProvider};
 use crate::runtime::{
     APP_EVENT_BUFFER, AppEvent, CompactionEvent, EventReceiver, EventSender, GoalEvent,
-    ProviderEvent, StreamEvent, StreamRequestOverrides, StreamToolChoice, TaskEvent, TeamEvent,
-    ToolEvent, UiEvent, dispatch_goal_evaluator_if_active, drain_queued_prompts, draw_synchronized,
-    factory_mode_enabled, handle_goal_verdict, maybe_continue_task_factory,
-    read_git_branch_from_root, record_network_recovery, restart_stream_in_place,
-    restart_stream_in_place_with_overrides, restore_persistent_background_agents,
+    ProviderEvent, StreamEvent, StreamRequestOverrides, TaskEvent, TeamEvent,
+    ToolEvent, UiEvent, draw_synchronized,
+    handle_goal_verdict,
+    read_git_branch_from_root, restore_persistent_background_agents,
     set_terminal_title, sync_detached_background_tasks_from_daemon, update_task_activities,
-    yank_last_assistant,
 };
 use crate::types::*;
 use crate::{
-    attachments, config, diagnostics_producer, input, lsp_client, message_view, render, session,
-    slate, stream, toast, types,
+    config, diagnostics_producer, lsp_client, render, session,
+    slate, stream,
 };
 use jfc_provider::{ModelId, Provider, ProviderId};
 
@@ -290,6 +288,27 @@ pub(crate) async fn run(
         }
     }
     restore_persistent_background_agents(&mut app);
+
+    // Apply persisted reasoning_effort from config.toml. MUST run AFTER
+    // the --continue/--resume block above (which may switch `app.model` to
+    // the session's saved model) so the effort resolves for the ACTUAL
+    // model in use, not the initial CLI-provided one.
+    {
+        let cfg = crate::config::load();
+        let effort_str = resolve_effort_for_model(&cfg, &app.model);
+        if let Some(level) = effort_str
+            .as_deref()
+            .and_then(crate::effort::ReasoningEffort::from_str_loose)
+        {
+            tracing::info!(
+                target: "jfc::ui::effort",
+                effort = %level,
+                model = %app.model,
+                "applied persisted reasoning_effort (post-session-restore)"
+            );
+            app.effort_state.set(level);
+        }
+    }
 
     // Handle --prompt flag: queue an initial prompt to submit after startup
     let queued_initial_prompt = initial_prompt;
@@ -745,5 +764,93 @@ pub(crate) async fn run(
     }
 
     Ok(())
+}
+
+/// Walk the config to pick the right `reasoning_effort` for `model`.
+///
+/// Precedence (first hit wins):
+///   1. `[agents.<exact-model-id>]` — direct match on the full model id
+///   2. `[agents.<bare-model-id>]` — match the model id without provider prefix
+///   3. `[default]` — fallback effort if no agent block matches
+///
+/// Returns `None` when none of those layers define an effort, so we leave
+/// the runtime at "server default" instead of forcing medium.
+fn resolve_effort_for_model(cfg: &crate::config::Config, model: &str) -> Option<String> {
+    // 1: exact model id (e.g. "anthropic/claude-opus-4-7")
+    if let Some(agent) = cfg.agents.get(model)
+        && let Some(ref e) = agent.reasoning_effort
+    {
+        return Some(e.clone());
+    }
+    // 2: bare id after the provider slash (e.g. "claude-opus-4-7")
+    let bare = model.rsplit('/').next().unwrap_or(model);
+    if bare != model
+        && let Some(agent) = cfg.agents.get(bare)
+        && let Some(ref e) = agent.reasoning_effort
+    {
+        return Some(e.clone());
+    }
+    // 3: [default] block
+    cfg.default.reasoning_effort.clone()
+}
+
+#[cfg(test)]
+mod effort_resolve_tests {
+    use super::*;
+    use crate::config::{AgentConfig, Config};
+
+    fn cfg_with(default_effort: Option<&str>, agents: &[(&str, &str)]) -> Config {
+        let mut cfg = Config::default();
+        cfg.default.reasoning_effort = default_effort.map(String::from);
+        for (name, effort) in agents {
+            cfg.agents.insert(
+                (*name).to_string(),
+                AgentConfig {
+                    reasoning_effort: Some((*effort).to_string()),
+                    ..Default::default()
+                },
+            );
+        }
+        cfg
+    }
+
+    #[test]
+    fn falls_back_to_default_when_no_agent_match_normal() {
+        let cfg = cfg_with(Some("high"), &[]);
+        assert_eq!(
+            resolve_effort_for_model(&cfg, "anthropic/claude-opus-4-7"),
+            Some("high".to_string())
+        );
+    }
+
+    #[test]
+    fn exact_qualified_match_wins_over_default_normal() {
+        let cfg = cfg_with(
+            Some("low"),
+            &[("anthropic/claude-opus-4-7", "max")],
+        );
+        assert_eq!(
+            resolve_effort_for_model(&cfg, "anthropic/claude-opus-4-7"),
+            Some("max".to_string())
+        );
+    }
+
+    #[test]
+    fn bare_model_match_wins_over_default_normal() {
+        let cfg = cfg_with(Some("low"), &[("claude-opus-4-7", "xhigh")]);
+        assert_eq!(
+            resolve_effort_for_model(&cfg, "anthropic/claude-opus-4-7"),
+            Some("xhigh".to_string())
+        );
+    }
+
+    #[test]
+    fn returns_none_when_nothing_configured_robust() {
+        let cfg = cfg_with(None, &[]);
+        assert_eq!(
+            resolve_effort_for_model(&cfg, "anthropic/claude-opus-4-7"),
+            None
+        );
+    }
 }
 

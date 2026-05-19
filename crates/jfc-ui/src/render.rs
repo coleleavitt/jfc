@@ -13,6 +13,7 @@ pub(crate) mod session_picker;
 mod session_sidebar;
 mod status;
 mod task_panel;
+mod teammates_panel;
 mod theme_picker;
 
 #[allow(unused_imports)]
@@ -35,6 +36,7 @@ use session_sidebar::sidebar;
 use status::context_gauge_label;
 use status::{claude_status_footer, effort_status_badge, status};
 use task_panel::{task_model_badge, task_panel};
+use teammates_panel::teammates_panel;
 use theme_picker::theme_picker;
 
 /// Easing function for sidebar slide animation.
@@ -147,7 +149,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     // while typing.
     let spinner_row_height: u16 = if show_spinner { 2 } else { 0 };
     // Pinned todo list above the input, Claude-Code style. Header row
-    // ("Tasks (k/n done)") + up to TASK_PIN_VISIBLE rows + an optional
+    // ("Tasks (k/n done)") + up to task_pin_visible rows + an optional
     // "+N more" footer. Height collapses to 0 when no tasks exist so
     // first-run UI stays clean.
     let tp_all = app.task_store.list(jfc_session::DeletedFilter::Exclude);
@@ -170,7 +172,17 @@ pub fn frame(f: &mut Frame, app: &mut App) {
                 .is_some_and(|ts| now_tp.duration_since(*ts).as_secs() < 30)
         })
         .count();
-    const TASK_PIN_VISIBLE: usize = 6;
+    // Dynamic cap: matches Claude Code's `rows <= 10 ? 0 : min(5, max(3, rows - 14))`
+    // so on small terminals the task pin doesn't eat the screen, while larger
+    // terminals can show more context.
+    let task_pin_visible: usize = {
+        let rows = f.area().height as usize;
+        if rows <= 10 {
+            0
+        } else {
+            rows.saturating_sub(14).max(3).min(5)
+        }
+    };
     // Collapse out entirely when there's nothing live OR recently-done to
     // show — a "Tasks (27/27 done)" header hovering alone after every
     // task closed read as visual debt. The fade-out tail (recent_done <
@@ -179,8 +191,8 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     let task_pin_rows = if tp_open == 0 && tp_recent_done == 0 {
         0
     } else {
-        let body = (tp_open + tp_recent_done).min(TASK_PIN_VISIBLE);
-        let overflow = if tp_open + tp_recent_done > TASK_PIN_VISIBLE {
+        let body = (tp_open + tp_recent_done).min(task_pin_visible);
+        let overflow = if tp_open + tp_recent_done > task_pin_visible {
             1
         } else {
             0
@@ -314,6 +326,10 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 
     if app.show_task_panel {
         task_panel(f, app);
+    }
+
+    if matches!(app.expanded_view, crate::app::ExpandedView::Teammates) {
+        teammates_panel(f, app);
     }
 
     if !app.toasts.is_empty() {
@@ -2376,7 +2392,18 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             thinking,
         );
         head_glyph = segs.glyph;
-        let verb_width = segs.verb.chars().count();
+        // Use the in-progress task's activeForm as the verb if available,
+        // matching Claude Code's behavior where the spinner shows what the
+        // model is actually doing rather than a random decorative verb.
+        let active_verb: std::borrow::Cow<'_, str> = {
+            let tasks = app.task_store.list(jfc_session::DeletedFilter::Exclude);
+            tasks.iter()
+                .find(|t| t.status == jfc_session::TaskStatus::InProgress)
+                .and_then(|t| t.active_form.as_deref())
+                .map(|s| std::borrow::Cow::Owned(s.to_owned()))
+                .unwrap_or(std::borrow::Cow::Borrowed(segs.verb))
+        };
+        let verb_width = active_verb.chars().count();
         let reduced = crate::spinner::reduced_motion();
 
         // Stalled intensity: blends 0 → 1 over 30s..120s of token
@@ -2398,7 +2425,7 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             // sweep, no per-cell coloring. Still respects the stalled
             // fade because that's information, not decoration.
             verb_spans.push(Span::styled(
-                segs.verb.to_string(),
+                active_verb.to_string(),
                 Style::default().fg(base_color),
             ));
         } else {
@@ -2409,7 +2436,7 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             // brightest and edges fade smoothly into the base color.
             let g_idx = crate::spinner::glimmer_index(elapsed, verb_width, 50);
             const HALF: i32 = 2; // ±2 cells = 5-cell wave width
-            for (i, ch) in segs.verb.chars().enumerate() {
+            for (i, ch) in active_verb.chars().enumerate() {
                 let dist = (i as i32 - g_idx).abs();
                 let intensity = if dist > HALF {
                     0.0
@@ -2573,7 +2600,7 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Pinned todo list above the input. Mirrors Claude Code's todo widget:
-/// one header row (`Tasks (k/n done)`), then up to `TASK_PIN_VISIBLE`
+/// one header row (`Tasks (k/n done)`), then up to the dynamic visible cap
 /// task rows with status glyphs (✓ done, ◐ in-progress, ☐ pending, ◯
 /// blocked-on-open-task) and an optional `… +N more` footer. In-progress
 /// tasks bubble to the top so the row the user is actively driving stays
@@ -2616,7 +2643,7 @@ fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .filter(|t| t.status == jfc_session::TaskStatus::InProgress)
         .collect();
-    let pending: Vec<_> = all
+    let mut pending: Vec<_> = all
         .iter()
         .filter(|t| t.status == jfc_session::TaskStatus::Pending)
         .collect();
@@ -2627,29 +2654,69 @@ fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
     let completed_ids: std::collections::HashSet<&str> =
         completed.iter().map(|t| t.id.as_str()).collect();
 
+    // Sort pending: unblocked first, then blocked (sorted by id for stability).
+    pending.sort_by(|a, b| {
+        let a_blocked = a.blocked_by.iter().any(|id| !completed_ids.contains(id.as_str()));
+        let b_blocked = b.blocked_by.iter().any(|id| !completed_ids.contains(id.as_str()));
+        a_blocked.cmp(&b_blocked).then_with(|| a.id.cmp(&b.id))
+    });
+
     let total = in_progress.len() + pending.len() + completed.len();
+    let in_prog_count = in_progress.len();
     let mut lines: Vec<Line<'static>> = Vec::new();
     lines.push(Line::from(vec![
         Span::styled(
-            "Tasks ",
+            format!("{} ", total),
             Style::default()
                 .fg(t.text_primary)
                 .add_modifier(Modifier::BOLD),
         ),
+        Span::styled("tasks", Style::default().fg(t.text_primary).add_modifier(Modifier::BOLD)),
         Span::styled(
-            format!("({}/{} done)", completed.len(), total),
+            format!(
+                " ({} done{}{})",
+                completed.len(),
+                if in_prog_count > 0 { format!(", {} in progress", in_prog_count) } else { String::new() },
+                if pending.len() > 0 { format!(", {} open", pending.len()) } else { String::new() },
+            ),
             Style::default().fg(t.text_muted),
         ),
     ]));
 
     let render_width = area.width as usize;
-    // Priority order: in-progress first (active work), then pending
-    // (ready/blocked grouped), then a tail of recently completed for
-    // momentum. The full list lives in the task panel (Ctrl+T or /tasks)
-    // — this row is the "what's on deck" glance.
+    // Priority order: recently-completed fade tail first (celebration
+    // moment), then in-progress (active work), then pending (unblocked
+    // before blocked). Matches CC 2.1.144's priority ordering.
     let visible_budget = area.height.saturating_sub(1) as usize;
     let mut rendered: Vec<Line<'static>> = Vec::new();
 
+    // Recently-completed first — show the "just finished" celebration
+    // at the top so the user sees momentum.
+    let now_sort = std::time::Instant::now();
+    for task in &completed {
+        if rendered.len() >= visible_budget {
+            break;
+        }
+        let recent = app
+            .task_completion_times
+            .get(&task.id)
+            .is_some_and(|t| now_sort.duration_since(*t).as_secs() < 30);
+        if !recent {
+            continue;
+        }
+        let avail = render_width.saturating_sub(3);
+        rendered.push(Line::from(vec![
+            Span::styled("✓ ", Style::default().fg(t.success)),
+            Span::styled(
+                truncate_str(&task.subject, avail),
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::CROSSED_OUT),
+            ),
+        ]));
+    }
+
+    // In-progress tasks with optional activeForm activity line below.
     for task in &in_progress {
         if rendered.len() >= visible_budget {
             break;
@@ -2669,6 +2736,22 @@ fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
                     .add_modifier(Modifier::BOLD),
             ),
         ]));
+        // Show activeForm as a dim sub-line if it differs from subject
+        if let Some(ref form) = task.active_form {
+            if form != &task.subject && rendered.len() < visible_budget {
+                let sub_avail = render_width.saturating_sub(5);
+                rendered.push(Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(
+                        truncate_str(form, sub_avail),
+                        Style::default()
+                            .fg(t.text_muted)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                    Span::styled("…", Style::default().fg(t.text_muted)),
+                ]));
+            }
+        }
     }
     for task in &pending {
         if rendered.len() >= visible_budget {
@@ -2701,31 +2784,6 @@ fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
                 Style::default()
                     .fg(t.text_muted)
                     .add_modifier(Modifier::ITALIC),
-            ),
-        ]));
-    }
-    // Recently-completed tail: only when budget allows and the section
-    // is short enough that completed entries don't crowd active work.
-    let now = std::time::Instant::now();
-    for task in &completed {
-        if rendered.len() >= visible_budget {
-            break;
-        }
-        let recent = app
-            .task_completion_times
-            .get(&task.id)
-            .is_some_and(|t| now.duration_since(*t).as_secs() < 30);
-        if !recent {
-            continue;
-        }
-        let avail = render_width.saturating_sub(3);
-        rendered.push(Line::from(vec![
-            Span::styled("✓ ", Style::default().fg(t.success)),
-            Span::styled(
-                truncate_str(&task.subject, avail),
-                Style::default()
-                    .fg(t.text_muted)
-                    .add_modifier(Modifier::CROSSED_OUT),
             ),
         ]));
     }

@@ -10,6 +10,7 @@ use super::lsp::execute_lsp;
 use super::memory::{execute_memory_create, execute_memory_delete};
 use super::notebook::{notebook_edit_text, notebook_read_text};
 use super::notifications::{execute_push_notification, execute_remote_trigger, parse_trigger_url};
+use super::scratchpad::{execute_scratchpad_read, execute_scratchpad_write};
 use super::search::{execute_glob, execute_grep};
 use super::subagent::{execute_skill_in, filter_tools_for_agent};
 use super::swarm::execute_team_member_mode;
@@ -2317,6 +2318,55 @@ async fn execute_tool_invalidates_dedup_after_write_normal() {
         r2.output
     );
     assert!(r2.output.contains("v2"), "{}", r2.output);
+}
+
+#[serial_test::serial]
+#[test]
+fn scratchpad_round_trips_through_config_file_normal() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let prev = std::env::var("XDG_CONFIG_HOME").ok();
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", home.path()) };
+
+    let w = execute_scratchpad_write("agent-audit", "findings");
+    let r = execute_scratchpad_read("agent-audit");
+    let path = home.path().join("jfc").join("scratchpad.json");
+
+    unsafe {
+        match prev {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+    }
+
+    assert!(!w.is_error(), "{}", w.output);
+    assert!(!r.is_error(), "{}", r.output);
+    assert_eq!(r.output, "findings");
+    assert!(
+        path.exists(),
+        "scratchpad must persist outside process memory"
+    );
+}
+
+#[serial_test::serial]
+#[test]
+fn scratchpad_missing_key_lists_persisted_keys_robust() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let prev = std::env::var("XDG_CONFIG_HOME").ok();
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", home.path()) };
+
+    let w = execute_scratchpad_write("known-key", "value");
+    let r = execute_scratchpad_read("missing-key");
+
+    unsafe {
+        match prev {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+    }
+
+    assert!(!w.is_error(), "{}", w.output);
+    assert!(r.is_error());
+    assert!(r.output.contains("known-key"), "{}", r.output);
 }
 
 #[tokio::test]

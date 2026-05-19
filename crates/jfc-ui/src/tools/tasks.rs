@@ -252,19 +252,19 @@ pub(super) fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) ->
     // Disable with JFC_SKIP_EVALUATOR=1 for CI/test contexts.
     if std::env::var("JFC_SKIP_EVALUATOR").is_err() && !cfg!(test) {
         if let Some(root) = crate::context::discover_git_root() {
-        let eval = crate::sprint::evaluate_work_quality(&root);
-        if !eval.passed {
-            warn!(
-                target: "jfc::tools",
-                task_id,
-                issue_count = eval.issues.len(),
-                "task_done: evaluator detected stub patterns — rejecting completion"
-            );
-            return ExecutionResult::failure(format!(
-                "Evaluator rejected: stub/placeholder patterns found in modified files. \
+            let eval = crate::sprint::evaluate_work_quality(&root);
+            if !eval.passed {
+                warn!(
+                    target: "jfc::tools",
+                    task_id,
+                    issue_count = eval.issues.len(),
+                    "task_done: evaluator detected stub patterns — rejecting completion"
+                );
+                return ExecutionResult::failure(format!(
+                    "Evaluator rejected: stub/placeholder patterns found in modified files. \
                  Fix these before marking done.\n\n{eval}"
-            ));
-        }
+                ));
+            }
         }
     }
 
@@ -284,6 +284,16 @@ pub(super) fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) ->
             ExecutionResult::failure(e.to_string())
         }
     }
+}
+
+pub(super) fn execute_task_stop(_app: &str, task_id: &str) -> ExecutionResult {
+    debug!(target: "jfc::tools", task_id, "task_stop: requesting stop");
+    // TaskStop is handled specially by the runtime event loop which has
+    // access to App. We return a success message here and the event loop
+    // performs the actual cancellation when it processes the tool result.
+    ExecutionResult::success(format!(
+        "Stop signal sent to task {task_id}. The runtime will cancel it."
+    ))
 }
 
 pub(super) fn execute_task_get(store: Option<Arc<TaskStore>>, task_id: &str) -> ExecutionResult {

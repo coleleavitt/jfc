@@ -22,6 +22,19 @@ use super::{PendingApproval, PermissionMode, load_recent_models};
 
 pub const DEFAULT_CONTEXT_WINDOW_TOKENS: usize = 200_000;
 
+/// The expanded panel state cycled by Ctrl+T — mirrors Claude Code's
+/// `expandedView: "none" | "tasks" | "teammates"` state machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExpandedView {
+    /// No expanded panel — just the normal pinned task row.
+    #[default]
+    None,
+    /// Full task list panel is showing.
+    Tasks,
+    /// Teammates/agents expanded view showing transcript previews.
+    Teammates,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TranscriptSearch {
     pub query: String,
@@ -487,10 +500,14 @@ pub struct App {
     pub task_completion_times: HashMap<TaskId, Instant>,
     /// Whether the full-screen task panel overlay is visible (Ctrl+T).
     pub show_task_panel: bool,
+    /// The expanded view state — cycles none → tasks → teammates → none on Ctrl+T.
+    pub expanded_view: ExpandedView,
     /// Currently-selected row in the task panel.
     pub task_panel_selected: usize,
     /// Drives selection + scroll for the task panel's `Table`.
     pub task_panel_state: TableState,
+    /// Whether the detail pane is shown for the currently-selected task.
+    pub task_panel_detail: bool,
     /// Transient per-session map of task_id → current activity description.
     /// Updated by the tool execution loop to show what an in_progress task is
     /// doing (e.g. "Running bash: cargo test", "Reading src/main.rs").
@@ -947,8 +964,10 @@ impl App {
             task_store: jfc_session::TaskStore::in_memory(),
             task_completion_times: HashMap::new(),
             show_task_panel: false,
+            expanded_view: ExpandedView::None,
             task_panel_selected: 0,
             task_panel_state: TableState::default().with_selected(Some(0)),
+            task_panel_detail: false,
             task_activities: HashMap::new(),
             plan_verified_this_batch: false,
             last_usage_input: 0,

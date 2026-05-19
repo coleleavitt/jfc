@@ -14,6 +14,9 @@ pub(super) async fn handle_modal_key(
     if handle_task_panel_key(app, key) {
         return true;
     }
+    if handle_teammates_panel_key(app, key) {
+        return true;
+    }
     if handle_sidebar_key(app, key).await {
         return true;
     }
@@ -36,18 +39,42 @@ fn handle_task_panel_key(app: &mut App, key: event::KeyEvent) -> bool {
         .len();
     match key.code {
         KeyCode::Esc => {
-            app.show_task_panel = false;
+            if app.task_panel_detail {
+                app.task_panel_detail = false;
+            } else {
+                app.show_task_panel = false;
+                app.expanded_view = crate::app::ExpandedView::None;
+            }
+        }
+        KeyCode::Enter => {
+            app.task_panel_detail = !app.task_panel_detail;
         }
         KeyCode::Up if app.task_panel_selected > 0 => {
             app.task_panel_selected -= 1;
             app.task_panel_state.select(Some(app.task_panel_selected));
+            app.task_panel_detail = false;
         }
         KeyCode::Down => {
             let max = total.saturating_sub(1);
             if app.task_panel_selected < max {
                 app.task_panel_selected += 1;
                 app.task_panel_state.select(Some(app.task_panel_selected));
+                app.task_panel_detail = false;
             }
+        }
+        _ => {}
+    }
+    true
+}
+
+fn handle_teammates_panel_key(app: &mut App, key: event::KeyEvent) -> bool {
+    use crate::app::ExpandedView;
+    if app.expanded_view != ExpandedView::Teammates {
+        return false;
+    }
+    match key.code {
+        KeyCode::Esc => {
+            app.expanded_view = ExpandedView::None;
         }
         _ => {}
     }

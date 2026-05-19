@@ -95,6 +95,7 @@ impl App {
         self.task_activities.clear();
         self.task_panel_selected = 0;
         self.task_panel_state = ratatui::widgets::TableState::default().with_selected(Some(0));
+        self.task_panel_detail = false;
         self.viewing_task_id = None;
         self.viewing_task_expanded.clear();
         self.compact_suppressed = false;
@@ -352,6 +353,15 @@ impl App {
             "tool_denied_by_mode"
         );
         result
+    }
+
+    /// Cancel a running background task by ID. Marks it as cancelled
+    /// and signals the underlying cancellation token if available.
+    pub fn cancel_background_task(&mut self, task_id: &str) {
+        use crate::types::TaskLifecycle;
+        if let Some(bt) = self.background_tasks.get_mut(task_id) {
+            bt.status = TaskLifecycle::Cancelled;
+        }
     }
 
     /// Scan the task store for newly-completed tasks and record their

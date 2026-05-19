@@ -88,6 +88,21 @@ pub async fn handle_key(
         let matches = crate::render::slash_matches(&prefix);
         if !matches.is_empty() {
             match key.code {
+                // Enter on an exact match (already-typed-out command) should
+                // SUBMIT the command, not re-insert it with a trailing space.
+                // Otherwise typing `/compact` + Enter just inserts another
+                // space and the user has to press Enter again — the popup
+                // ate the submit. Tab always tab-completes.
+                KeyCode::Enter
+                    if matches
+                        .iter()
+                        .any(|(cmd, _)| *cmd == prefix.as_str()) =>
+                {
+                    app.slash_popup_selected = None;
+                    // Fall through to the normal Enter handler below by
+                    // not returning here — the popup dismissal is the
+                    // only state change we needed.
+                }
                 KeyCode::Tab | KeyCode::Enter => {
                     let idx = app.slash_popup_selected.unwrap_or(0).min(matches.len() - 1);
                     let (cmd, _) = matches[idx];
@@ -790,6 +805,22 @@ pub async fn handle_key(
         }
         (KeyModifiers::CONTROL, KeyCode::Char('s')) => {
             app.show_info_sidebar = !app.show_info_sidebar;
+            return Ok(false);
+        }
+        // Ctrl+T cycles the expanded view: none → tasks → teammates → none.
+        // Mirrors Claude Code's `app:toggleTodos` keybinding behavior.
+        (KeyModifiers::CONTROL, KeyCode::Char('t')) => {
+            use crate::app::ExpandedView;
+            let has_teammates = app.team_context.is_active()
+                || app.background_tasks.values().any(|bt| bt.status.is_alive());
+            app.expanded_view = match app.expanded_view {
+                ExpandedView::None => ExpandedView::Tasks,
+                ExpandedView::Tasks if has_teammates => ExpandedView::Teammates,
+                ExpandedView::Tasks => ExpandedView::None,
+                ExpandedView::Teammates => ExpandedView::None,
+            };
+            // Sync the legacy show_task_panel bool for backward compat
+            app.show_task_panel = app.expanded_view == ExpandedView::Tasks;
             return Ok(false);
         }
         // Alt+S opens the session picker popup — same shape as the
@@ -5251,6 +5282,30 @@ mod tests {
         let buf = app.textarea.lines().join("");
         assert!(buf.starts_with('/'));
         assert!(buf.ends_with(' '));
+    }
+
+    // Regression: typing the whole `/compact` then pressing Enter should
+    // SUBMIT the command instead of re-inserting `/compact ` and eating
+    // the keystroke. Before the fix the popup ate Enter and the user
+    // had to press it twice.
+    #[tokio::test]
+    async fn slash_popup_enter_on_exact_match_submits_regression() {
+        let mut app = test_app();
+        app.textarea = TextArea::from(vec!["/compact".to_string()]);
+        let (tx, _rx) = channel();
+        handle_key(&mut app, key(KeyCode::Enter), &tx).await.unwrap();
+        // The buffer should NOT be "/compact " (tab-completed) — it
+        // should either be cleared (slash command ran and consumed
+        // the input) or unchanged. The crucial assertion is that the
+        // popup didn't re-insert with a trailing space.
+        let buf = app.textarea.lines().join("");
+        assert!(
+            !buf.ends_with("/compact "),
+            "Enter on exact match must not tab-complete; got buf={buf:?}"
+        );
+        // Popup selection state must be cleared so the next Enter
+        // hits the normal submit path.
+        assert_eq!(app.slash_popup_selected, None);
     }
 
     // ─────────────────────────────────────────────────────────────────────

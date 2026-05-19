@@ -271,6 +271,20 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: "TaskStop".into(),
+            description: "Stop a running background task/agent by its task ID. The task will be cancelled and its resources released.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The background task id to stop (e.g. 'tooluse_abc123')"
+                    }
+                },
+                "required": ["task_id"]
+            }),
+        },
+        ToolDef {
             name: "TaskGet".into(),
             description: "Retrieve a task by ID.".into(),
             input_schema: serde_json::json!({
@@ -926,15 +940,16 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
         ToolDef {
             name: "LSP".into(),
             description: "Query the language server for `hover`, `definition`, \
-                or `references` at a specific source location. Uses the \
-                already-spawned LSP client (rust-analyzer / zls / etc.) — \
-                returns an error if no LSP is running for the workspace.".into(),
+                `references`, `implementation`, `type_definition`, `document_symbols`, \
+                `workspace_symbols`, `incoming_calls`, or `outgoing_calls` at a specific \
+                source location. Uses the already-spawned LSP client (rust-analyzer / zls / \
+                etc.) — returns an error if no LSP is running for the workspace.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "kind": {
                         "type": "string",
-                        "enum": ["hover", "definition", "references"],
+                        "enum": ["hover", "definition", "references", "implementation", "type_definition", "document_symbols", "workspace_symbols", "incoming_calls", "outgoing_calls"],
                         "description": "Which LSP request to issue."
                     },
                     "file": {
@@ -948,6 +963,10 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                     "column": {
                         "type": "number",
                         "description": "1-indexed column number of the symbol position."
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Search query for workspace_symbols. Ignored for other kinds."
                     }
                 },
                 "required": ["kind", "file", "line", "column"]

@@ -70,6 +70,9 @@ pub enum ToolInput {
     TaskDone {
         task_id: String,
     },
+    TaskStop {
+        task_id: String,
+    },
     TaskGet {
         task_id: String,
     },
@@ -309,6 +312,7 @@ impl ToolInput {
                 None => "list tasks".into(),
             },
             Self::TaskDone { task_id } => format!("done: {task_id}"),
+            Self::TaskStop { task_id } => format!("stop: {task_id}"),
             Self::TaskGet { task_id } => format!("get: {task_id}"),
             Self::TaskValidate => "validate task graph".into(),
             Self::Task(task_input) => task_input.summary(),
@@ -610,6 +614,9 @@ impl ToolInput {
                 owner_filter: opt_str_field("owner_filter"),
             },
             ToolKind::TaskDone => Self::TaskDone {
+                task_id: req_str("task_id")?,
+            },
+            ToolKind::TaskStop => Self::TaskStop {
                 task_id: req_str("task_id")?,
             },
             ToolKind::TaskGet => Self::TaskGet {
@@ -1032,6 +1039,7 @@ impl ToolInput {
                 value
             }
             Self::TaskDone { task_id } => json!({ "task_id": task_id }),
+            Self::TaskStop { task_id } => json!({ "task_id": task_id }),
             Self::TaskGet { task_id } => json!({ "task_id": task_id }),
             Self::TaskValidate => json!({}),
             Self::Task(task_input) => {

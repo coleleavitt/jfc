@@ -533,7 +533,32 @@ pub struct AgentConfig {
     /// Complete replacement system prompt (overrides default).
     #[serde(default)]
     pub prompt: Option<String>,
-    /// OpenAI reasoning effort: "low", "medium", "high".
+    /// Reasoning effort: "low" | "medium" | "high" | "xhigh" | "max".
+    ///
+    /// Applied at startup by `resolve_effort_for_model` with this
+    /// precedence: `[agents.<exact-model-id>]` → `[agents.<bare-id>]`
+    /// → `[default]`. Anthropic + OAuth providers send this as the
+    /// `reasoning_effort` API param.
+    ///
+    /// **OpenWebUI**: this field is **stripped** by the OWUI provider
+    /// because the proxy forwards it verbatim to whatever upstream
+    /// backend it's fronting (Bedrock, OpenAI-Azure, etc.) and backends
+    /// that don't accept it 500. To override per-model when you know
+    /// the backend handles it, set
+    /// `[agents."<model>"].provider_options.reasoning_effort = "high"` —
+    /// `provider_options` bypass the strip.
+    ///
+    /// Example pinning effort per model:
+    /// ```toml
+    /// [default]
+    /// reasoning_effort = "high"  # fallback for everything
+    ///
+    /// [agents."anthropic/claude-opus-4-7"]
+    /// reasoning_effort = "max"   # think hard on opus
+    ///
+    /// [agents."claude-haiku-4"]
+    /// reasoning_effort = "low"   # haiku stays fast
+    /// ```
     #[serde(default)]
     pub reasoning_effort: Option<String>,
     /// Sampling parameter (0.0 - 1.0).

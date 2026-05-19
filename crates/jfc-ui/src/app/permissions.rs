@@ -65,19 +65,33 @@ impl PermissionMode {
                 ToolKind::Read
                 | ToolKind::Glob
                 | ToolKind::Grep
+                | ToolKind::Search
+                | ToolKind::Lsp
+                | ToolKind::WebFetch
+                | ToolKind::WebSearch
+                | ToolKind::ServerWebSearch
+                | ToolKind::NotebookRead
                 | ToolKind::TaskCreate
                 | ToolKind::TaskUpdate
                 | ToolKind::TaskList
                 | ToolKind::TaskDone
+                | ToolKind::TaskStop
+                | ToolKind::TaskGet
+                | ToolKind::TaskValidate
                 | ToolKind::ToolSearch
                 | ToolKind::ToolSuggest
                 | ToolKind::CodeIndex
                 | ToolKind::GraphQuery
+                | ToolKind::RunCoverage
+                | ToolKind::MarketStatus
+                | ToolKind::CronList
                 | ToolKind::TeamCreate
                 | ToolKind::TeamDelete
                 | ToolKind::SendMessage
                 | ToolKind::ScratchpadRead
                 | ToolKind::ScratchpadWrite
+                | ToolKind::AskUserQuestion
+                | ToolKind::EnterPlanMode
                 // ExitPlanMode is the *only* way the agent can leave
                 // plan mode programmatically. Auto-approving it lets
                 // the model surface a plan whenever it's ready —
@@ -97,23 +111,43 @@ impl PermissionMode {
             Self::AcceptEdits => match tool.kind {
                 ToolKind::Write
                 | ToolKind::Edit
+                | ToolKind::MultiEdit
+                | ToolKind::SymbolEdit
                 | ToolKind::ApplyPatch
                 | ToolKind::Read
                 | ToolKind::Glob
                 | ToolKind::Grep
+                | ToolKind::Search
+                | ToolKind::Lsp
+                | ToolKind::WebFetch
+                | ToolKind::WebSearch
+                | ToolKind::ServerWebSearch
+                | ToolKind::NotebookRead
+                | ToolKind::NotebookEdit
                 | ToolKind::TaskCreate
                 | ToolKind::TaskUpdate
                 | ToolKind::TaskList
                 | ToolKind::TaskDone
+                | ToolKind::TaskStop
+                | ToolKind::TaskGet
+                | ToolKind::TaskValidate
                 | ToolKind::ToolSearch
                 | ToolKind::ToolSuggest
                 | ToolKind::CodeIndex
                 | ToolKind::GraphQuery
+                | ToolKind::RunCoverage
+                | ToolKind::MarketStatus
+                | ToolKind::CronList
                 | ToolKind::TeamCreate
                 | ToolKind::TeamDelete
                 | ToolKind::SendMessage
                 | ToolKind::ScratchpadRead
-                | ToolKind::ScratchpadWrite => PermissionDecision::Approved,
+                | ToolKind::ScratchpadWrite
+                | ToolKind::AskUserQuestion
+                | ToolKind::EnterPlanMode
+                | ToolKind::ExitPlanMode
+                | ToolKind::EnterWorktree
+                | ToolKind::ExitWorktree => PermissionDecision::Approved,
                 _ => PermissionDecision::NeedsPrompt,
             },
             Self::BypassPermissions => PermissionDecision::Approved,

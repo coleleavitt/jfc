@@ -196,7 +196,7 @@ async fn run_openwebui_auth_subcommand(sub: OpenWebUIAuthSubcommand) -> anyhow::
                 Account {
                     name: name.clone(),
                     base_url: base.clone(),
-                    token: result.token,
+                    token: result.token.clone(),
                     expires_at: Some(result.expires_at),
                     created_at: Some(now),
                     updated_at: Some(now),
@@ -204,6 +204,21 @@ async fn run_openwebui_auth_subcommand(sub: OpenWebUIAuthSubcommand) -> anyhow::
                 },
             )?;
             let _ = set_current(&store_path, &name);
+
+            // Tell OWUI our local timezone so server-side filter
+            // outputs (audit timestamps, exports) format correctly.
+            // Best-effort, non-blocking.
+            {
+                let base = base.clone();
+                let token = result.token.clone();
+                tokio::spawn(async move {
+                    let tz = crate::providers::openwebui::detect_iana_timezone();
+                    crate::providers::openwebui::update_user_timezone(
+                        &base, &token, &tz,
+                    )
+                    .await;
+                });
+            }
 
             println!(
                 "\n✓ logged in as {} <{}> ({})",

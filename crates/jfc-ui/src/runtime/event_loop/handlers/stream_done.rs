@@ -204,6 +204,42 @@ pub(crate) async fn handle_stream_done(
             }
             app.token_history.push_back(turn_total);
         }
+
+        // OpenWebUI outlet-filter notification — fire-and-forget POST to
+        // `/api/chat/completed` so server-side filters (rate-limit
+        // accounting, audit logs, chat-history persistence) see our
+        // completion the same way they see a web-client completion.
+        // Without this we look like a desync'd client to admins; on
+        // chat.ai2s.org `rate_limit_inlet_filter` is globally active
+        // and its outlet half wouldn't fire for us. Spawned as a
+        // detached task so a slow OWUI ack never blocks the UI.
+        if app.provider.name() == "openwebui" {
+            if let Some(sid) = app.current_session_id.as_ref().map(|s| s.as_str().to_string()) {
+                let model = app.model.to_string();
+                let msg_id = uuid::Uuid::new_v4().to_string();
+                // The provider holds its own auth-resolution code path;
+                // we need to extract base_url + token. Use the store
+                // helpers directly since the provider trait doesn't
+                // expose them.
+                tokio::spawn(async move {
+                    let store_path =
+                        crate::providers::openwebui::default_store_path();
+                    let store = crate::providers::openwebui::load_store(&store_path);
+                    if let Some(account) = crate::providers::openwebui::get_current(&store)
+                    {
+                        crate::providers::openwebui::notify_chat_completed(
+                            &account.base_url,
+                            &account.token,
+                            &model,
+                            &sid,
+                            &sid, // session_id = chat_id when no websocket
+                            &msg_id,
+                        )
+                        .await;
+                    }
+                });
+            }
+        }
     }
     app.streaming_started_at = None;
     app.streaming_last_token_at = None;

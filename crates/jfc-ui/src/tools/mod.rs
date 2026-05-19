@@ -9,6 +9,7 @@ mod lsp;
 mod memory;
 mod notebook;
 mod notifications;
+mod scratchpad;
 mod search;
 mod subagent;
 mod swarm;
@@ -40,6 +41,7 @@ use lsp::execute_lsp;
 use memory::{execute_memory_create, execute_memory_delete};
 use notebook::{execute_notebook_edit, execute_notebook_read};
 use notifications::{execute_push_notification, execute_remote_trigger};
+use scratchpad::{execute_scratchpad_read, execute_scratchpad_write};
 use search::{execute_glob, execute_grep};
 pub(crate) use swarm::CURRENT_AGENT_NAME;
 use swarm::{
@@ -47,6 +49,7 @@ use swarm::{
 };
 use tasks::{
     execute_task_create, execute_task_done, execute_task_get, execute_task_list,
+    execute_task_stop,
     execute_task_update, execute_task_validate,
 };
 use worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
@@ -639,43 +642,6 @@ fn auto_context_queue() -> &'static std::sync::Mutex<Vec<std::path::PathBuf>> {
     QUEUE.get_or_init(|| std::sync::Mutex::new(Vec::new()))
 }
 
-/// Process-global inter-agent scratchpad. A shared key-value store that
-/// subagents and teammates can read/write to coordinate findings without
-/// passing data through the parent model's context. Intentionally global
-/// (unlike the deleted attachment queue which was a bug) — scratchpad is
-/// designed for cross-agent communication.
-fn scratchpad() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
-    static PAD: OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> =
-        OnceLock::new();
-    PAD.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
-}
-
-fn execute_scratchpad_read(key: &str) -> ExecutionResult {
-    match scratchpad().lock() {
-        Ok(map) => match map.get(key) {
-            Some(value) => ExecutionResult::success(value.clone()),
-            None => ExecutionResult::failure(format!(
-                "Key '{key}' not found in scratchpad. Available keys: {}",
-                map.keys().cloned().collect::<Vec<_>>().join(", ")
-            )),
-        },
-        Err(_) => ExecutionResult::failure("Scratchpad lock poisoned"),
-    }
-}
-
-fn execute_scratchpad_write(key: &str, value: &str) -> ExecutionResult {
-    match scratchpad().lock() {
-        Ok(mut map) => {
-            map.insert(key.to_string(), value.to_string());
-            ExecutionResult::success(format!(
-                "Written to scratchpad key '{key}' ({} bytes)",
-                value.len()
-            ))
-        }
-        Err(_) => ExecutionResult::failure("Scratchpad lock poisoned"),
-    }
-}
-
 /// Record that `path` was edited. Called from the Edit / Write /
 /// symbol_edit tool handlers after a successful write. Cheap — just
 /// appends to a Vec under a Mutex. The actual graph query runs
@@ -1154,6 +1120,7 @@ pub async fn execute_tool(
             | ToolKind::TaskUpdate
             | ToolKind::TaskList
             | ToolKind::TaskDone
+            | ToolKind::TaskStop
             | ToolKind::TaskGet,
             None,
         ) => Some(TaskStore::open_team(team_name)),
@@ -1302,6 +1269,9 @@ pub async fn execute_tool(
         ),
         (ToolKind::TaskDone, ToolInput::TaskDone { task_id }) => {
             execute_task_done(task_store, &task_id)
+        }
+        (ToolKind::TaskStop, ToolInput::TaskStop { task_id }) => {
+            execute_task_stop("", &task_id)
         }
         (ToolKind::TaskGet, ToolInput::TaskGet { task_id }) => {
             execute_task_get(task_store, &task_id)

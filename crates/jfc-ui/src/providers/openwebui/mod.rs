@@ -30,6 +30,10 @@ pub use self::store::{
 };
 pub use self::verify::{fetch_instance_config, normalize_base_url, verify_token};
 
+// `notify_chat_completed` + `update_user_timezone` are exported at the file
+// scope (below `OpenWebUIProvider::stream`) — runtime stream-done hook
+// calls them by fully-qualified path so no extra re-export is needed here.
+
 /// Backwards-compat shim so the existing test-suite that calls `load_account(path)`
 /// continues to compile against the new modular store.
 #[cfg(test)]
@@ -179,6 +183,15 @@ impl OpenWebUIProvider {
             current.created_at = Some(now_ms);
         }
         upsert_account(&self.store_path, current.clone())?;
+        // One-shot timezone push so OWUI's user record matches the
+        // local clock for any server-side filter that formats timestamps.
+        // Detached: never blocks login.
+        let base_url = current.base_url.clone();
+        let token = current.token.clone();
+        tokio::spawn(async move {
+            let tz = detect_iana_timezone();
+            update_user_timezone(&base_url, &token, &tz).await;
+        });
         Ok(current)
     }
 }
@@ -465,6 +478,86 @@ mod tests {
         let body = build_body(vec![user_msg("hi")], &StreamOptions::new("m"));
         assert!(body.get("tools").is_none(), "tools leaked: {body}");
         assert!(body.get("tool_choice").is_none());
+    }
+
+    // Shared build_body keeps reasoning_effort so LiteLLM (which reuses
+    // this helper) gets the param it needs to map to provider-specific
+    // shapes. The OWUI-direct path strips it in `stream()` — covered by
+    // `stream_strips_reasoning_effort_for_owui_regression` below.
+    #[test]
+    fn build_body_keeps_reasoning_effort_for_litellm_normal() {
+        let mut opts = StreamOptions::new("m");
+        opts.reasoning_effort = Some("high".to_string());
+        let body = build_body(vec![user_msg("hi")], &opts);
+        assert_eq!(body["reasoning_effort"], "high");
+    }
+
+    // Provider_options is the escape hatch — when the user *knows* the
+    // OWUI upstream supports reasoning_effort, they can set it directly
+    // via `[agents."<m>"].provider_options.reasoning_effort` and it
+    // wins over the field-level value.
+    #[test]
+    fn build_body_provider_options_overrides_field_normal() {
+        let mut opts = StreamOptions::new("m");
+        opts.reasoning_effort = Some("high".to_string());
+        opts.provider_options.insert(
+            "reasoning_effort".to_string(),
+            Value::from("low"),
+        );
+        let body = build_body(vec![user_msg("hi")], &opts);
+        assert_eq!(body["reasoning_effort"], "low");
+    }
+
+    // Regression: simulate the OWUI-stream post-build strip step. OWUI
+    // forwards reasoning_effort verbatim to backends that 500 on it
+    // (Bedrock-Claude on chat.ai2s.org). Strip must happen at the
+    // stream-call layer, not in shared build_body.
+    #[test]
+    fn owui_stream_post_build_strip_removes_reasoning_effort_regression() {
+        let mut opts = StreamOptions::new("m");
+        opts.reasoning_effort = Some("high".to_string());
+        let mut body = build_body(vec![user_msg("hi")], &opts);
+
+        // Inline the strip logic from OpenWebUIProvider::stream so the
+        // test catches drift if someone refactors one but not the other.
+        let in_provider_options = opts
+            .provider_options
+            .contains_key("reasoning_effort");
+        if let Some(obj) = body.as_object_mut() {
+            if !in_provider_options {
+                obj.remove("reasoning_effort");
+            }
+        }
+        assert!(
+            body.get("reasoning_effort").is_none(),
+            "post-build strip failed: {body}"
+        );
+    }
+
+    // The strip MUST NOT fire when the user set reasoning_effort via
+    // provider_options — that's the explicit "I know my backend
+    // supports it" opt-in.
+    #[test]
+    fn owui_stream_post_build_strip_respects_provider_options_normal() {
+        let mut opts = StreamOptions::new("m");
+        opts.reasoning_effort = Some("high".to_string());
+        opts.provider_options.insert(
+            "reasoning_effort".to_string(),
+            Value::from("medium"),
+        );
+        let mut body = build_body(vec![user_msg("hi")], &opts);
+
+        let in_provider_options = opts
+            .provider_options
+            .contains_key("reasoning_effort");
+        if let Some(obj) = body.as_object_mut() {
+            if !in_provider_options {
+                obj.remove("reasoning_effort");
+            }
+        }
+        // provider_options wrote "medium" over "high" in build_body; strip
+        // is bypassed because provider_options registered the key.
+        assert_eq!(body["reasoning_effort"], "medium");
     }
 
     // Normal: assistant tool_use blocks from prior turns serialize into the
@@ -1535,6 +1628,66 @@ mod tests {
         // After strip, last role must NOT be assistant.
         assert_ne!(last_role, Some("assistant"));
     }
+
+    // detect_iana_timezone falls back to UTC when nothing's configured.
+    // `TZ=` (empty) and `TZ=:` are both treated as unset, mirroring
+    // glibc's tzset behavior.
+    #[test]
+    fn detect_iana_timezone_falls_back_to_utc_when_empty_robust() {
+        let _g = TzGuard::set(":");
+        // /etc/timezone may exist with a real value on the CI host, so
+        // we can't strictly assert UTC. We can assert it's *some* IANA
+        // string (non-empty, no leading colon).
+        let tz = detect_iana_timezone();
+        assert!(!tz.is_empty(), "timezone must never be empty");
+        assert!(!tz.starts_with(':'), "leading colon must be stripped");
+    }
+
+    #[test]
+    fn detect_iana_timezone_uses_tz_env_when_set_normal() {
+        let _g = TzGuard::set("America/Phoenix");
+        assert_eq!(detect_iana_timezone(), "America/Phoenix");
+    }
+
+    #[test]
+    fn detect_iana_timezone_strips_leading_colon_normal() {
+        // Posix `:Region/City` form — leading colon is a parser hint
+        // to glibc, not part of the zone name.
+        let _g = TzGuard::set(":Europe/Berlin");
+        assert_eq!(detect_iana_timezone(), "Europe/Berlin");
+    }
+
+    /// RAII scope guard for `TZ` env-var manipulation. Restores the
+    /// previous value (or removes it if none) on drop so parallel test
+    /// runs don't poison each other's environment.
+    struct TzGuard {
+        previous: Option<String>,
+    }
+
+    impl TzGuard {
+        fn set(value: &str) -> Self {
+            let previous = std::env::var("TZ").ok();
+            // SAFETY: tests for this module are single-threaded via the
+            // test harness's default scheduling; the env-mutation is
+            // contained within this guard's lifetime.
+            unsafe {
+                std::env::set_var("TZ", value);
+            }
+            Self { previous }
+        }
+    }
+
+    impl Drop for TzGuard {
+        fn drop(&mut self) {
+            // SAFETY: see TzGuard::set above.
+            unsafe {
+                match &self.previous {
+                    Some(v) => std::env::set_var("TZ", v),
+                    None => std::env::remove_var("TZ"),
+                }
+            }
+        }
+    }
 }
 
 // OpenAI-compatible SSE delta shapes. Tool calls arrive as
@@ -1923,6 +2076,13 @@ pub(crate) fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -
     if let Some(top_p) = opts.top_p {
         body["top_p"] = Value::from(top_p);
     }
+    // Pass reasoning_effort through. LiteLLM (which shares this builder)
+    // handles the param correctly by mapping it to provider-specific shapes
+    // (e.g. Anthropic `output_config` + the `effort-2025-11-24` beta header
+    // for Opus 4.5/4.6). The OpenWebUI direct path strips it post-build in
+    // `OpenWebUIProvider::stream` because OWUI forwards verbatim and any
+    // upstream that doesn't accept the param 500s — different concern from
+    // LiteLLM, so we handle it at the caller layer, not here.
     if let Some(ref effort) = opts.reasoning_effort {
         body["reasoning_effort"] = Value::from(effort.as_str());
     }
@@ -2020,7 +2180,31 @@ impl Provider for OpenWebUIProvider {
 
         let base_url = account.base_url.trim_end_matches('/');
         let url = format!("{}/api/chat/completions", base_url);
-        let body = build_body(messages, options);
+        let mut body = build_body(messages, options);
+        // OpenWebUI-specific strip: OWUI forwards `reasoning_effort` to
+        // whatever upstream backend it's fronting (Bedrock-Anthropic,
+        // Bedrock-Cohere, OpenAI-Azure, Ollama, …) and any backend that
+        // doesn't accept the param returns 500. We've seen it empirically
+        // on chat.ai2s.org's bedrock-claude-* routes. Users who *know*
+        // their OWUI upstream supports it can set it via
+        // `[agents."<m>"].provider_options.reasoning_effort` —
+        // `provider_options` are stamped onto the body in build_body
+        // *after* the reasoning_effort field is set, so they win.
+        //
+        // Note: this strip runs on the OWUI direct path only. LiteLLM
+        // (which shares build_body) keeps reasoning_effort because
+        // LiteLLM knows how to map it to provider-specific shapes
+        // (Anthropic output_config + effort-2025-11-24 beta header etc).
+        if let Some(obj) = body.as_object_mut() {
+            // Only strip if provider_options didn't re-add it as the
+            // intentional escape hatch.
+            let in_provider_options = options
+                .provider_options
+                .contains_key("reasoning_effort");
+            if !in_provider_options {
+                obj.remove("reasoning_effort");
+            }
+        }
         tracing::debug!(
             target: "jfc::provider::openwebui",
             url = %url,
@@ -2142,6 +2326,153 @@ impl Provider for OpenWebUIProvider {
 
         Ok(openai_compatible_event_stream(resp))
     }
+}
+
+/// `POST /api/chat/completed` — fire-and-forget outlet-filter notification.
+///
+/// Open WebUI's outlet filter chain (e.g. `rate_limit_inlet_filter` on
+/// chat.ai2s.org, but also any user-installed Python filter functions
+/// flagged "outlet") runs after every successful chat stream. Web clients
+/// hit this endpoint immediately after the EventSource closes. Skipping
+/// it makes a TUI client invisible to:
+///   * Quota / usage tracking outlet filters
+///   * Compliance / audit logging filters
+///   * Server-side chat-history persistence (OWUI stores message history
+///     here when filters return updated messages)
+///
+/// Pragmatically: not calling this risks **looking like a desync'd client**
+/// to admins inspecting filter logs, and on instances with strict outlet
+/// rate-limits the absence is detectable. We POST best-effort; failures
+/// are logged but never propagated since the chat itself succeeded.
+///
+/// Payload shape mirrors the SvelteKit `chatCompleted` call from
+/// `Chat.svelte:1155` (OWUI v0.7.2): `{ model, messages[], chat_id,
+/// session_id, id }`. We send empty `messages` because the TUI's message
+/// state is private to our session — OWUI just needs the metadata for
+/// filter dispatch.
+pub async fn notify_chat_completed(
+    base_url: &str,
+    token: &str,
+    model: &str,
+    chat_id: &str,
+    session_id: &str,
+    message_id: &str,
+) {
+    let url = format!("{}/api/chat/completed", base_url.trim_end_matches('/'));
+    let body = json!({
+        "model": model,
+        "messages": [],
+        "chat_id": chat_id,
+        "session_id": session_id,
+        "id": message_id,
+    });
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+    let Ok(client) = client else {
+        return;
+    };
+    match client
+        .post(&url)
+        .header("authorization", format!("Bearer {token}"))
+        .header("accept", "application/json")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(r) => {
+            tracing::debug!(
+                target: "jfc::provider::openwebui",
+                status = %r.status(),
+                chat_id,
+                "chat/completed notification sent"
+            );
+        }
+        Err(e) => {
+            tracing::debug!(
+                target: "jfc::provider::openwebui",
+                error = %e,
+                "chat/completed notification failed (non-fatal)"
+            );
+        }
+    }
+}
+
+/// `POST /api/v1/auths/update/timezone` — one-shot client metadata.
+///
+/// OWUI's web client sends the user's IANA timezone right after login
+/// (Chat.svelte boot sequence) so server-side outlets that generate
+/// timestamps (chat exports, scheduled tasks) format in the user's
+/// local zone. Skipping this leaves the user record at whatever default
+/// was set at signup. Best-effort; never blocks login.
+pub async fn update_user_timezone(base_url: &str, token: &str, timezone: &str) {
+    let url = format!(
+        "{}/api/v1/auths/update/timezone",
+        base_url.trim_end_matches('/')
+    );
+    let body = json!({ "timezone": timezone });
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+    let Ok(client) = client else {
+        return;
+    };
+    match client
+        .post(&url)
+        .header("authorization", format!("Bearer {token}"))
+        .header("accept", "application/json")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(r) => {
+            tracing::debug!(
+                target: "jfc::provider::openwebui",
+                status = %r.status(),
+                timezone,
+                "user timezone updated"
+            );
+        }
+        Err(e) => {
+            tracing::debug!(
+                target: "jfc::provider::openwebui",
+                error = %e,
+                "timezone update failed (non-fatal)"
+            );
+        }
+    }
+}
+
+/// Detect the system's IANA timezone for `update_user_timezone`.
+///
+/// Order of resolution (mirrors `tzlocal` Python lib):
+///   1. `TZ` env var if set and not just `:`
+///   2. `/etc/timezone` (Debian/Ubuntu)
+///   3. `/etc/localtime` symlink → zoneinfo path (Arch/Fedora/macOS)
+///   4. Fallback: `UTC`
+pub fn detect_iana_timezone() -> String {
+    if let Ok(tz) = std::env::var("TZ") {
+        let t = tz.trim_start_matches(':');
+        if !t.is_empty() && !t.starts_with('/') {
+            return t.to_string();
+        }
+    }
+    if let Ok(content) = std::fs::read_to_string("/etc/timezone") {
+        let trimmed = content.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    if let Ok(target) = std::fs::read_link("/etc/localtime") {
+        let path = target.to_string_lossy();
+        // /usr/share/zoneinfo/America/Phoenix → America/Phoenix
+        if let Some(idx) = path.find("/zoneinfo/") {
+            return path[idx + "/zoneinfo/".len()..].to_string();
+        }
+    }
+    "UTC".to_string()
 }
 
 /// OpenAI-compatible SSE: `data: {...}\n\ndata: [DONE]\n\n`.

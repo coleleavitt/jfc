@@ -112,6 +112,7 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
         }
         if entry.messages != messages {
             entry.messages = messages.clone();
+            entry.chat_messages = parse_agent_log_to_chat_messages(&messages);
             changed = true;
         }
         // Detached/daemon-launched agents never see live `AppEvent`s, so
@@ -210,5 +211,142 @@ fn lifecycle_from_daemon_status(status: BackgroundAgentStatus) -> TaskLifecycle 
         BackgroundAgentStatus::Completed => TaskLifecycle::Completed,
         BackgroundAgentStatus::Failed => TaskLifecycle::Failed,
         BackgroundAgentStatus::Cancelled => TaskLifecycle::Cancelled,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::SystemTime;
+
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+
+    use super::*;
+    use crate::daemon::{DaemonState, save_state};
+    use crate::types::{MessagePart, Role};
+
+    struct StubProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for StubProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for StubProvider {}
+
+    fn app_for_session(session_id: &str) -> App {
+        let mut app = App::new(Arc::new(StubProvider), "test-model");
+        app.current_session_id = Some(crate::ids::SessionId::new(session_id));
+        app
+    }
+
+    fn agent_info(
+        paths: &DaemonPaths,
+        id: &str,
+        session_id: &str,
+        status: BackgroundAgentStatus,
+    ) -> BackgroundAgentInfo {
+        let now = SystemTime::now();
+        BackgroundAgentInfo {
+            id: id.to_owned(),
+            description: "audit worker".to_owned(),
+            parent_session_id: Some(session_id.to_owned()),
+            status,
+            started_at: now,
+            updated_at: now,
+            completed_at: status.is_terminal().then_some(now),
+            pid: Some(std::process::id()),
+            model: Some("test-model".to_owned()),
+            worktree_path: None,
+            log_path: paths.log_dir.join("agents").join(format!("{id}.log")),
+            launch_path: Some(
+                paths
+                    .log_dir
+                    .join("agents")
+                    .join(format!("{id}.launch.json")),
+            ),
+            cancel_requested: false,
+            respawn_count: 0,
+            summary: None,
+            error: None,
+            tool_use_count: 0,
+            latest_input_tokens: 0,
+            latest_cache_read_tokens: 0,
+            latest_cache_write_tokens: 0,
+            cumulative_output_tokens: 0,
+            last_tool: None,
+        }
+    }
+
+    #[test]
+    fn daemon_sync_reparses_chat_messages_when_log_reaches_terminal_normal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let paths = DaemonPaths::new(dir.path());
+        let session_id = "ses_test";
+        let task_id = "task-detached";
+        let mut app = app_for_session(session_id);
+
+        let agent = agent_info(&paths, task_id, session_id, BackgroundAgentStatus::Running);
+        let log_path = agent.log_path.clone();
+        std::fs::create_dir_all(log_path.parent().expect("log parent")).expect("mkdir");
+        std::fs::write(&log_path, "initial output\n").expect("write log");
+        let mut state = DaemonState::default();
+        state.background_agents.insert(task_id.to_owned(), agent);
+        save_state(&paths, &state).expect("save running state");
+
+        assert!(sync_detached_background_tasks_from_daemon_with_paths(
+            &mut app, &paths
+        ));
+        let bt = app.background_tasks.get(task_id).expect("background task");
+        assert_eq!(bt.status, TaskLifecycle::Running);
+        assert!(bt.chat_messages.iter().any(|msg| {
+            msg.role == Role::Assistant
+                && matches!(msg.parts.as_slice(), [MessagePart::Text(text)] if text.contains("initial output"))
+        }));
+
+        let now = SystemTime::now();
+        let mut completed = app
+            .background_tasks
+            .get(task_id)
+            .unwrap()
+            .description
+            .clone();
+        completed.push_str(" done");
+        let agent = state.background_agents.get_mut(task_id).expect("agent");
+        agent.status = BackgroundAgentStatus::Completed;
+        agent.updated_at = now;
+        agent.completed_at = Some(now);
+        agent.summary = Some(completed);
+        std::fs::write(&log_path, "initial output\n[Completed] done\n").expect("write log");
+        save_state(&paths, &state).expect("save completed state");
+
+        app.last_detached_state_mtime = None;
+        assert!(sync_detached_background_tasks_from_daemon_with_paths(
+            &mut app, &paths
+        ));
+        let bt = app.background_tasks.get(task_id).expect("background task");
+        assert_eq!(bt.status, TaskLifecycle::Completed);
+        assert!(bt.chat_messages.iter().any(|msg| {
+            matches!(
+                msg.parts.as_slice(),
+                [MessagePart::TaskStatus(ts)]
+                    if ts.status == TaskLifecycle::Completed
+                        && ts.summary.as_deref() == Some("done")
+            )
+        }));
     }
 }
