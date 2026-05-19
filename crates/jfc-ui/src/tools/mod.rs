@@ -2021,6 +2021,10 @@ pub async fn execute_tool(
             ExecutionResult::success(body)
         }
         (ToolKind::MultiEdit, ToolInput::MultiEdit { file_path, edits }) => {
+            // Serialize on the same per-file lock used by Edit/Write so
+            // MultiEdit and parallel Edit calls don't race on the same file.
+            let _guard_lock = crate::tools::filesystem::acquire_file_lock(file_path).await;
+            let _guard = _guard_lock.lock().await;
             // Apply each edit in order. Each edit sees the previous
             // edit's output, so later edits can reference text that
             // earlier edits introduced. Bails on the first edit that

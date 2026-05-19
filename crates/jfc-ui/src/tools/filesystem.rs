@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use tokio::sync::Mutex;
 use tracing::{debug, info, trace, warn};
@@ -7,6 +8,21 @@ use tracing::{debug, info, trace, warn};
 use super::ExecutionResult;
 use crate::context::ReadDedupCache;
 use crate::types::ReplacementMode;
+
+/// Per-file mutex map. When multiple Edit/Write calls target the same file
+/// in a single tool batch (parallel dispatch), this serializes them so the
+/// second sees the first's output. Without this, parallel edits to the same
+/// file race and one gets "old_string not found".
+static FILE_LOCKS: LazyLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+pub(crate) async fn acquire_file_lock(path: &str) -> Arc<Mutex<()>> {
+    let mut locks = FILE_LOCKS.lock().await;
+    locks
+        .entry(path.to_owned())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
+}
 
 pub(super) async fn execute_read(
     file_path: &str,
@@ -248,6 +264,8 @@ pub(super) async fn execute_edit(
     new_string: &str,
     replacement: ReplacementMode,
 ) -> ExecutionResult {
+    let _guard_lock = acquire_file_lock(file_path).await;
+    let _guard = _guard_lock.lock().await;
     let replace_all = replacement.replace_all();
     info!(target: "jfc::tools", file_path, old_len = old_string.len(), new_len = new_string.len(), replace_all, "edit: starting");
     match tokio::fs::read_to_string(file_path).await {
