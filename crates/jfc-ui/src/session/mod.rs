@@ -693,6 +693,9 @@ fn coalesce_consecutive_same_role(messages: &[ChatMessage]) -> Vec<ChatMessage> 
             // so the renderer can still walk through the conversation
             // chronologically.
             prev.parts.extend(msg.parts.iter().cloned());
+            // Merge consecutive Text parts created by the extend so we don't
+            // produce the 156-fragment-per-message bug seen in long sessions.
+            crate::types::merge_consecutive_text_parts(&mut prev.parts);
             prev.attachments.extend(msg.attachments.iter().cloned());
             // Scalar fields: prefer the LAST non-None — the latest
             // sub-stream's view is the cumulative-correct one.
@@ -911,6 +914,13 @@ pub async fn load_session(session_id: &SessionId) -> Option<Vec<ChatMessage>> {
             "session repaired via coalesce"
         );
         return Some(repaired);
+    }
+    // Always defragment text parts on load — the streaming/coalesce paths
+    // could have left N fragments per message that should be one (the
+    // 156-part assistant bug).
+    let mut messages = messages;
+    for m in &mut messages {
+        crate::types::merge_consecutive_text_parts(&mut m.parts);
     }
     debug!(target: "jfc::session", session_id = session_id_str, message_count, "session loaded");
     Some(messages)

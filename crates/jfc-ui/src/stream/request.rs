@@ -357,6 +357,25 @@ Do not use a colon before tool calls.";
         );
     }
 
+    // Drain queued background reminders (file watcher / MCP refresh / …)
+    // into this request's system prompt. The reminders were posted by
+    // FS-event handlers and live wire-only — they never persist in
+    // `app.messages`, so re-issuing or compacting the conversation
+    // doesn't re-show them. Each reminder is wrapped in the canonical
+    // `<system-reminder>` envelope so the model treats it as background
+    // context, not a user instruction.
+    if !overrides.background_reminders.is_empty() {
+        tracing::debug!(
+            target: "jfc::stream",
+            count = overrides.background_reminders.len(),
+            "appending background reminders to system prompt"
+        );
+        for body in &overrides.background_reminders {
+            system_prompt.push_str("\n\n");
+            system_prompt.push_str(&crate::system_reminder::format(body));
+        }
+    }
+
     // Inject the last session's handoff summary so the model knows where
     // the previous session left off. Only on the first request per session
     // (handoff is static context).
@@ -463,8 +482,28 @@ Do not use a colon before tool calls.";
         base = base.fast_mode(true);
     }
 
+    let mut opts = thinking_mode.apply_to(base);
+    // Anthropic rejects requests where thinking is enabled AND
+    // `tool_choice` forces tool use (`type: "any"` or `type: "tool"`)
+    // with `400 invalid_request_error: "Thinking may not be enabled
+    // when tool_choice forces tool use."`. The narration-retry path
+    // sets `tool_choice: Any` to force the model to pick a tool, so
+    // we must strip thinking for that one request — the model is
+    // being instructed to commit to an action, not deliberate.
+    if matches!(overrides.tool_choice, StreamToolChoice::Any) {
+        if opts.adaptive_thinking || opts.thinking_budget.is_some() || opts.thinking_display.is_some() {
+            tracing::debug!(
+                target: "jfc::stream::guard",
+                "stripping thinking on tool_choice=any (Anthropic API constraint)"
+            );
+        }
+        opts.adaptive_thinking = false;
+        opts.thinking_budget = None;
+        opts.thinking_display = None;
+    }
+
     PreparedStreamRequest {
-        opts: thinking_mode.apply_to(base),
+        opts,
         system_prompt_tokens,
         metadata: StreamRequestMetadata {
             advertised_tool_count,

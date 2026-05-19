@@ -1050,4 +1050,27 @@ impl App {
         );
         app
     }
+
+    /// Push a `<system-reminder>` body onto the background-reminders
+    /// queue. Dedupes by exact body — repeated filesystem events
+    /// produce at most one reminder per outgoing turn.
+    pub fn queue_background_reminder(&mut self, body: impl Into<String>) {
+        let body = body.into();
+        if self
+            .pending_background_reminders
+            .iter()
+            .any(|existing| existing == &body)
+        {
+            return;
+        }
+        self.pending_background_reminders.push(body);
+    }
+
+    /// Drain the background-reminders queue, transferring ownership to
+    /// the caller. Called by the stream-open path to forward the
+    /// reminders into `StreamRequestOverrides`. After this call the
+    /// queue is empty until the next FS event arrives.
+    pub fn take_background_reminders(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.pending_background_reminders)
+    }
 }

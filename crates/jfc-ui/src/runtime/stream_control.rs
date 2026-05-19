@@ -25,15 +25,27 @@ pub(crate) fn restart_stream_in_place_with_overrides(
     tx: &EventSender,
     assistant_idx: usize,
     turn_started_at: Option<std::time::Instant>,
-    overrides: StreamRequestOverrides,
+    mut overrides: StreamRequestOverrides,
 ) {
-    let Some(msg) = app.messages.get_mut(assistant_idx) else {
-        return;
-    };
-    if msg.role != Role::Assistant {
-        return;
+    // Validate the assistant slot first so an aborted restart doesn't
+    // silently drain the background-reminder queue. Without this the
+    // reminders would be lost — they'd be moved into a discarded
+    // `overrides` rather than carried forward to the next attempt.
+    match app.messages.get(assistant_idx) {
+        Some(msg) if msg.role == Role::Assistant => {}
+        _ => return,
     }
+    // Caller may have already populated `overrides.background_reminders`
+    // (e.g. a future caller-supplied override) — extend rather than
+    // replace so caller-supplied entries survive.
+    overrides
+        .background_reminders
+        .extend(app.take_background_reminders());
 
+    let msg = app
+        .messages
+        .get_mut(assistant_idx)
+        .expect("validated above");
     msg.parts = vec![MessagePart::Text(String::new())];
     msg.model_name = None;
     msg.cost_tier = None;

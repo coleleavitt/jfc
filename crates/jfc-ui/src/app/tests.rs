@@ -896,3 +896,61 @@ fn message_part_tool_carries_input_output_normal() {
         _ => panic!("expected Tool"),
     }
 }
+
+// ─────── background-reminder queue ────────────────────────────────
+
+// Normal: queue_background_reminder appends the body so the next
+// stream-open path can drain it.
+#[test]
+fn queue_background_reminder_appends_normal() {
+    let mut app = new_app();
+    app.queue_background_reminder("CLAUDE.md changed");
+    assert_eq!(app.pending_background_reminders.len(), 1);
+    assert_eq!(app.pending_background_reminders[0], "CLAUDE.md changed");
+}
+
+// Robust: pushing the same body twice does NOT duplicate. This is
+// the architectural fix for the original bug where N filesystem
+// events between turns produced N appends to last_user. The queue
+// dedupes on push, so a single outgoing request carries at most one
+// instance of each distinct reminder.
+#[test]
+fn queue_background_reminder_dedupes_on_repeat_robust() {
+    let mut app = new_app();
+    app.queue_background_reminder("CLAUDE.md changed");
+    app.queue_background_reminder("CLAUDE.md changed");
+    app.queue_background_reminder("CLAUDE.md changed");
+    assert_eq!(app.pending_background_reminders.len(), 1);
+}
+
+// Normal: distinct bodies coexist in the queue — only exact matches
+// dedupe.
+#[test]
+fn queue_background_reminder_keeps_distinct_bodies_normal() {
+    let mut app = new_app();
+    app.queue_background_reminder("CLAUDE.md changed");
+    app.queue_background_reminder("MCP refreshed");
+    assert_eq!(app.pending_background_reminders.len(), 2);
+}
+
+// Normal: take_background_reminders transfers ownership and empties
+// the queue. The next FS event starts from a clean slate.
+#[test]
+fn take_background_reminders_drains_normal() {
+    let mut app = new_app();
+    app.queue_background_reminder("a");
+    app.queue_background_reminder("b");
+    let drained = app.take_background_reminders();
+    assert_eq!(drained, vec!["a".to_owned(), "b".to_owned()]);
+    assert!(app.pending_background_reminders.is_empty());
+}
+
+// Robust: draining an empty queue returns an empty vec rather than
+// panicking. Stream-open sites call `take_background_reminders`
+// unconditionally so this case has to be safe.
+#[test]
+fn take_background_reminders_empty_is_empty_robust() {
+    let mut app = new_app();
+    let drained = app.take_background_reminders();
+    assert!(drained.is_empty());
+}

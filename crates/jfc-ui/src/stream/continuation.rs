@@ -117,12 +117,16 @@ fn setup_new_substream_slot(app: &mut App, label: &'static str) -> usize {
 /// — including the cancel-token plumbing. A divergence here was how
 /// the legacy code accidentally let one path skip the token and miss
 /// ESCx2 unwinds.
-fn spawn_substream(app: &App, messages: Vec<ProviderMessage>, tx: &mpsc::Sender<AppEvent>) {
+fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sender<AppEvent>) {
     let provider = app.provider.clone();
     let model = app.model.clone();
     let tx = tx.clone();
     let interrupt = app.interrupt_flag.clone();
     let cancel = app.cancel_token.clone();
+    let overrides = StreamRequestOverrides {
+        background_reminders: app.take_background_reminders(),
+        ..Default::default()
+    };
     tokio::spawn(async move {
         stream_response(
             provider,
@@ -132,7 +136,7 @@ fn spawn_substream(app: &App, messages: Vec<ProviderMessage>, tx: &mpsc::Sender<
             interrupt,
             cancel,
             None,
-            StreamRequestOverrides::default(),
+            overrides,
         )
         .await;
     });

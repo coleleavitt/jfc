@@ -147,6 +147,10 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
     app.cancel_token = tokio_util::sync::CancellationToken::new();
     let cancel = app.cancel_token.clone();
     let tx_guard = tx.clone();
+    let overrides = StreamRequestOverrides {
+        background_reminders: app.take_background_reminders(),
+        ..Default::default()
+    };
     tokio::spawn(async move {
         let result = tokio::spawn(async move {
             stream::stream_response(
@@ -157,7 +161,7 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
                 interrupt,
                 cancel,
                 None,
-                StreamRequestOverrides::default(),
+                overrides,
             )
             .await;
         })

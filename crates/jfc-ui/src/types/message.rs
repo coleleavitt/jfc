@@ -258,6 +258,32 @@ pub enum TurnInvariantError {
 
 /// Walk a message slice and report the first `TurnInvariantError` that
 /// breaks the user/assistant alternation invariant.
+/// Merge consecutive `MessagePart::Text` parts within a single ChatMessage.
+/// Fixes the fragmentation bug where streaming deltas or partial appends
+/// create N separate text parts that should be one. Preserves non-Text parts
+/// (Tool, Reasoning, RedactedThinking, TaskStatus, Attachment) in their order.
+pub fn merge_consecutive_text_parts(parts: &mut Vec<MessagePart>) {
+    let mut i = 0;
+    while i + 1 < parts.len() {
+        let merge = matches!(
+            (&parts[i], &parts[i + 1]),
+            (MessagePart::Text(_), MessagePart::Text(_))
+        );
+        if merge {
+            // Take ownership of the next part's text and append to current.
+            let next = parts.remove(i + 1);
+            if let (MessagePart::Text(cur), MessagePart::Text(nxt)) =
+                (&mut parts[i], next)
+            {
+                cur.push_str(&nxt);
+            }
+            // Don't advance i — there may be another Text after this.
+        } else {
+            i += 1;
+        }
+    }
+}
+
 pub fn validate_turn_invariants(messages: &[ChatMessage]) -> Result<(), TurnInvariantError> {
     validate_turn_invariants_inner(messages, /* allow_streaming_tail = */ false)
 }
