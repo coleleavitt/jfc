@@ -114,6 +114,12 @@ pub struct Config {
     /// Valid range: 100_000–1_000_000. When None, uses the model's reported window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_compact_window: Option<u32>,
+    /// Custom instructions appended to the compaction system prompt.
+    /// Lets users steer what the summary preserves (e.g. "focus on code
+    /// changes", "include test output verbatim", "preserve file paths").
+    /// Mirrors CC 2.1.144's "Additional Instructions:" appendage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compact_instructions: Option<String>,
     /// User-configurable shell hooks. Maps event names to lists of commands.
     ///
     /// Example in `jfc.toml`:
@@ -159,6 +165,7 @@ impl Default for Config {
             session_cost_budget_usd: None,
             auto_compact_enabled: default_auto_compact_enabled(),
             auto_compact_window: None,
+            compact_instructions: None,
             hooks: None,
         }
     }

@@ -54,6 +54,10 @@ const BLOCKED_HEADROOM: usize = 3_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompactLevel {
     Ok,
+    /// Context is approaching the threshold — good time to speculatively
+    /// precompute a summary in the background. Fires at ~80% of compact
+    /// threshold (mirrors CC 2.1.144's `Ae7` precompute buffer).
+    Precompute,
     Warn,
     Compact,
     Blocked,
@@ -156,6 +160,10 @@ pub fn compact_level(tokens: usize, window: usize) -> CompactLevel {
     let compact = compact_threshold(window);
     let warn = compact.saturating_sub(20_000);
     let blocked = blocked_override().unwrap_or_else(|| window.saturating_sub(BLOCKED_HEADROOM));
+    // Precompute threshold: 80% of the compact threshold. When context
+    // hits this level, the system could start a speculative compact in
+    // the background so it's ready if the session continues growing.
+    let precompute = (compact as f64 * 0.8) as usize;
 
     let level = if tokens >= blocked {
         CompactLevel::Blocked
@@ -163,6 +171,8 @@ pub fn compact_level(tokens: usize, window: usize) -> CompactLevel {
         CompactLevel::Compact
     } else if tokens >= warn {
         CompactLevel::Warn
+    } else if !auto_compact_disabled() && tokens >= precompute {
+        CompactLevel::Precompute
     } else {
         CompactLevel::Ok
     };
@@ -521,8 +531,20 @@ pub async fn compact(
             content: vec![ProviderContent::Text(summary_text)],
         }];
 
+        // Build system prompt with optional custom instructions from config.
+        let system_prompt = {
+            let mut prompt = COMPACTION_SYSTEM_PROMPT.to_owned();
+            if let Some(ref instructions) = crate::config::load().compact_instructions {
+                if !instructions.trim().is_empty() {
+                    prompt.push_str("\n\nAdditional Instructions:\n");
+                    prompt.push_str(instructions);
+                }
+            }
+            prompt
+        };
+
         let compact_options = StreamOptions::new(options.model.clone())
-            .system(COMPACTION_SYSTEM_PROMPT.to_owned())
+            .system(system_prompt)
             .max_tokens(20_000);
 
         debug!(
@@ -639,13 +661,34 @@ pub async fn compact(
 
                 tool_ctx.approx_tokens = post_tokens;
                 tool_ctx.last_compact_turn = tool_ctx.total_user_turns;
+
+                // Post-compact file restoration: re-inject the most recently
+                // read files as context so the model doesn't "forget what it
+                // was editing". CC 2.1.144 does this via `iM8` (up to dM8=5
+                // files, capped at N45 total tokens). We snapshot the cache
+                // paths before clearing, then inject shortened file contents.
+                let restored_files = restore_recent_files(&tool_ctx.read_cache);
                 tool_ctx.read_cache.clear();
+
+                if !restored_files.is_empty() {
+                    let restore_text = restored_files.join("\n\n");
+                    let restore_msg = ChatMessage::assistant(format!(
+                        "[Post-compact context restoration — recently accessed files:]\n\n{}",
+                        restore_text
+                    ));
+                    compacted.push(restore_msg);
+                    // Recompute post_tokens with the restored files included
+                    let post_tokens = estimate_tokens(&compacted);
+                    tool_ctx.approx_tokens = post_tokens;
+                }
 
                 info!(
                     target: "jfc::compact",
-                    pre_tokens, post_tokens,
-                    saved = pre_tokens.saturating_sub(post_tokens),
+                    pre_tokens,
+                    post_tokens = tool_ctx.approx_tokens,
+                    saved = pre_tokens.saturating_sub(tool_ctx.approx_tokens),
                     compacted_message_count = compacted.len(),
+                    restored_files = restored_files.len(),
                     attempts = attempt,
                     model = %options.model,
                     "compaction succeeded"
@@ -654,7 +697,7 @@ pub async fn compact(
                 return CompactResult::Success {
                     messages: compacted,
                     pre_tokens,
-                    post_tokens,
+                    post_tokens: tool_ctx.approx_tokens,
                 };
             }
             Err(e) => {
@@ -910,6 +953,12 @@ fn build_summary_text(messages: &[ChatMessage], strip_media: bool) -> String {
     );
     let mut text = String::from("Here is the conversation to summarize:\n\n");
 
+    // Observation masking threshold: tool outputs larger than this get
+    // replaced with a placeholder. Based on "The Complexity Trap"
+    // (NeurIPS DL4C '25) — simple observation masking halves cost with
+    // zero accuracy loss compared to full LLM summarization.
+    const MASK_THRESHOLD_CHARS: usize = 2000;
+
     for msg in messages {
         let role = if msg.role_is_user() {
             "H" // Human
@@ -918,12 +967,44 @@ fn build_summary_text(messages: &[ChatMessage], strip_media: bool) -> String {
         };
         text.push_str(&format!("[{}]\n", role));
         for part in &msg.parts {
-            if strip_media {
-                text.push_str(&part.text_only());
-            } else {
-                text.push_str(&part.to_display_string());
+            match part {
+                crate::types::MessagePart::Tool(tc) => {
+                    let output_text = if strip_media {
+                        tc.output.text_only()
+                    } else {
+                        tc.output.to_display_string()
+                    };
+                    let input_summary = tc.input.summary();
+                    // Mask large tool outputs to reduce token cost.
+                    // Keep the tool name + input summary + a size indicator
+                    // so the summarizer knows what *happened* without the
+                    // full output text.
+                    if output_text.len() > MASK_THRESHOLD_CHARS {
+                        let approx_tokens = output_text.len() / CHARS_PER_TOKEN;
+                        text.push_str(&format!(
+                            "[Tool: {} | Input: {} | Output: ~{} tokens, truncated]\n",
+                            tc.kind.label(),
+                            input_summary,
+                            approx_tokens,
+                        ));
+                    } else {
+                        text.push_str(&format!(
+                            "[Tool: {} | Input: {} | Output: {}]\n",
+                            tc.kind.label(),
+                            input_summary,
+                            output_text,
+                        ));
+                    }
+                }
+                _ => {
+                    if strip_media {
+                        text.push_str(&part.text_only());
+                    } else {
+                        text.push_str(&part.to_display_string());
+                    }
+                    text.push('\n');
+                }
             }
-            text.push('\n');
         }
         text.push('\n');
     }
@@ -1062,6 +1143,78 @@ fn format_compact_summary(raw: &str) -> Option<String> {
     Some(result.trim().to_string())
 }
 
+/// Post-compact file restoration: read the most recently accessed files
+/// from the read cache and return truncated snippets. CC 2.1.144 does
+/// this via `iM8` — re-reads up to 5 files capped at 20K total tokens
+/// so the model has fresh context for files it was actively editing.
+///
+/// We read the first 200 lines or 8K chars of each file, whichever is
+/// less — enough for the model to orient but not enough to bust the
+/// post-compact token budget.
+fn restore_recent_files(cache: &crate::context::ReadDedupCache) -> Vec<String> {
+    const MAX_FILES: usize = 5;
+    const MAX_CHARS_PER_FILE: usize = 8_000;
+    const MAX_TOTAL_CHARS: usize = 20_000 * CHARS_PER_TOKEN; // ~20K tokens
+
+    let paths = cache.paths();
+    if paths.is_empty() {
+        return Vec::new();
+    }
+
+    let mut results = Vec::new();
+    let mut total_chars = 0usize;
+
+    // Sort by modification time (most recent first) so we prioritize
+    // the files the user was most recently working on.
+    let mut sorted_paths = paths;
+    sorted_paths.sort_by(|a, b| {
+        let a_mtime = std::fs::metadata(a).and_then(|m| m.modified()).ok();
+        let b_mtime = std::fs::metadata(b).and_then(|m| m.modified()).ok();
+        b_mtime.cmp(&a_mtime)
+    });
+
+    for path in sorted_paths.iter().take(MAX_FILES) {
+        if total_chars >= MAX_TOTAL_CHARS {
+            break;
+        }
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let truncated: String = content.chars().take(MAX_CHARS_PER_FILE).collect();
+        let was_truncated = content.len() > MAX_CHARS_PER_FILE;
+        let suffix = if was_truncated {
+            format!("\n… [truncated at {} chars]", MAX_CHARS_PER_FILE)
+        } else {
+            String::new()
+        };
+        let entry = format!(
+            "--- {} ---\n{}{}",
+            path.display(),
+            truncated,
+            suffix,
+        );
+        let entry_len = entry.len();
+        total_chars += entry_len;
+        results.push(entry);
+
+        debug!(
+            target: "jfc::compact",
+            path = %path.display(),
+            chars = entry_len,
+            truncated = was_truncated,
+            "restored file post-compact"
+        );
+    }
+
+    info!(
+        target: "jfc::compact",
+        files_restored = results.len(),
+        total_chars,
+        "post-compact file restoration complete"
+    );
+    results
+}
+
 #[cfg(test)]
 mod level_tests {
     use super::*;
@@ -1107,9 +1260,13 @@ mod level_tests {
     fn levels_match_v126_at_each_boundary_normal() {
         let _g = lock();
         clear_env();
-        // ok zone
+        // ok zone (below 80% of compact threshold)
+        // compact threshold = 187K, 80% = 149_600
         assert_eq!(compact_level(0, W), CompactLevel::Ok);
-        assert_eq!(compact_level(166_999, W), CompactLevel::Ok);
+        assert_eq!(compact_level(149_599, W), CompactLevel::Ok);
+        // precompute at 80% of compact threshold ≈ 149_600
+        assert_eq!(compact_level(149_600, W), CompactLevel::Precompute);
+        assert_eq!(compact_level(166_999, W), CompactLevel::Precompute);
         // warn at compact - 20K = 167K
         assert_eq!(compact_level(167_000, W), CompactLevel::Warn);
         assert_eq!(compact_level(186_999, W), CompactLevel::Warn);

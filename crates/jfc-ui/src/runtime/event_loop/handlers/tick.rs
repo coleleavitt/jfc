@@ -108,6 +108,33 @@ pub(crate) async fn handle_tick(
         );
     }
 
+    // Speculative compaction: when the context reaches ~80% of the
+    // compact threshold and we're idle (not streaming, not already
+    // compacting), pre-set `force_compact_pending` so the next submit
+    // fires compaction immediately instead of discovering it needs to
+    // compact on the hot path. This matches CC 2.1.144's "precomputed
+    // compact" concept — the actual LLM call still happens at submit
+    // time, but the user sees it fire instantly instead of after a
+    // "context estimation → discover over-limit → then compact" dance.
+    if !app.is_streaming
+        && app.compacting_started_at.is_none()
+        && !app.speculative_compact_fired
+        && !app.force_compact_pending
+    {
+        let est = app.tool_ctx.approx_tokens;
+        let level = crate::compact::compact_level(est, app.max_context_tokens);
+        if matches!(level, crate::compact::CompactLevel::Precompute) {
+            tracing::info!(
+                target: "jfc::compact",
+                est,
+                max = app.max_context_tokens,
+                "speculative compact: context at ~80% threshold — pre-arming compaction"
+            );
+            app.force_compact_pending = true;
+            app.speculative_compact_fired = true;
+        }
+    }
+
     // Refresh the cached Anthropic OAuth account snapshot every ~10s
     // so the ribbon shows up-to-date 5h/7d utilization and the
     // active rate-limit claim. The manager call locks a mutex,

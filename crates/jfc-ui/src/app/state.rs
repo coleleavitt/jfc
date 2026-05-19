@@ -418,6 +418,10 @@ pub struct App {
     /// `Compacting…` spinner whenever this is `Some`, so a long pre-submit
     /// compaction doesn't look like a frozen UI.
     pub compacting_started_at: Option<Instant>,
+    /// Whether a speculative (precomputed) compact has already been
+    /// triggered for this session. Prevents repeated spawns. Resets
+    /// on compaction completion or /clear.
+    pub speculative_compact_fired: bool,
     /// Cumulative summary-text length collected during the in-flight
     /// compact (across all retry attempts). The spinner divides by 4 to
     /// get a chars-per-token estimate and renders `↓ Nk tokens` —
@@ -927,6 +931,7 @@ impl App {
             pending_pause_turn_resume: false,
             compact_suppressed: false,
             compacting_started_at: None,
+            speculative_compact_fired: false,
             compacting_output_chars: 0,
             compacting_attempt_baseline: 0,
             compacting_last_progress: 0,

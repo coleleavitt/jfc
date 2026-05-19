@@ -75,6 +75,11 @@ impl ReadDedupCache {
         tracing::debug!(target: "jfc::context", entries = self.entries.len(), "clearing read cache");
         self.entries.clear();
     }
+
+    /// Return all cached file paths (unordered).
+    pub fn paths(&self) -> Vec<std::path::PathBuf> {
+        self.entries.keys().cloned().collect()
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
