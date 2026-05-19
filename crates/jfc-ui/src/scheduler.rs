@@ -209,6 +209,18 @@ pub async fn execute_batches(
                                 error = %err,
                                 "parallel tool task panicked or was cancelled",
                             );
+                            // Emit a synthetic failure result so the agentic
+                            // loop doesn't stall. Without this the tool stays
+                            // in Running status forever and
+                            // should_continue_loop returns false.
+                            let _ = tx
+                                .send(AppEvent::Tool(ToolEvent::Result {
+                                    tool_id: id.clone(),
+                                    result: crate::tools::ExecutionResult::failure(format!(
+                                        "Tool panicked: {err}"
+                                    )),
+                                }))
+                                .await;
                         }
                     }
                 }

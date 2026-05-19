@@ -460,11 +460,35 @@ pub(crate) async fn handle_stream_done(
         app.current_stream_request = None;
         app.scroll_to_bottom();
     } else {
-        // Normal EndTurn with no tools — turn is genuinely
-        // complete. Don't clear pending_tool_calls here;
-        // the `has_pending_tools` branch above already
-        // would have taken them. This branch is just the
-        // "model said its piece and stopped" path.
+        // Non-standard stop reasons (MaxTokens, StopSequence, Other)
+        // mean the response was terminated early. Surface a warning so
+        // the user knows their response may be incomplete.
+        let reason_label = format!("{stop_reason:?}");
+        if !matches!(stop_reason, jfc_provider::StopReason::EndTurn) {
+            tracing::warn!(
+                target: "jfc::stream",
+                stop_reason = %reason_label,
+                "stream ended with non-EndTurn stop reason"
+            );
+            let msg = match &stop_reason {
+                jfc_provider::StopReason::MaxTokens => {
+                    "Response truncated — max output tokens reached. \
+                     The model's reply may be incomplete."
+                        .to_string()
+                }
+                jfc_provider::StopReason::Other(s) if s.contains("refusal") => {
+                    "The model refused this request.".to_string()
+                }
+                jfc_provider::StopReason::Other(s) => {
+                    format!("Stream ended unexpectedly: {s}")
+                }
+                _ => format!("Stream ended: {reason_label}"),
+            };
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(crate::toast::ToastKind::Warning, msg),
+            );
+        }
         app.streaming_assistant_idx = None;
         app.current_stream_request = None;
         app.scroll_to_bottom();

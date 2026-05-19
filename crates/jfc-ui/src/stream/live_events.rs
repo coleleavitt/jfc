@@ -68,28 +68,28 @@ pub(super) async fn drain_stream_events(
 
         match event {
             StreamEvent::TextDelta { delta, .. } => {
-                // Send delta directly. The AppEvent channel is bounded;
-                // try_send drops if full, which already provides back-pressure.
-                if tx
-                    .try_send(AppEvent::Stream(RuntimeStreamEvent::Chunk {
+                // MUST use blocking send for text — try_send drops data on
+                // backpressure, causing permanent text loss in the assistant
+                // message. Blocking send applies backpressure to the SSE
+                // reader instead (slows it down until the event loop catches
+                // up). TextDelta is the model's output — we cannot lose it.
+                let _ = tx
+                    .send(AppEvent::Stream(RuntimeStreamEvent::Chunk {
                         text: Some(delta),
                         reasoning: None,
                     }))
-                    .is_err()
-                {
-                    tracing::trace!(target: "jfc::stream", "StreamChunk dropped (buffer full)");
-                }
+                    .await;
             }
             StreamEvent::ThinkingDelta { delta, .. } => {
-                if tx
-                    .try_send(AppEvent::Stream(RuntimeStreamEvent::Chunk {
+                // Same rationale as TextDelta — thinking text is displayed
+                // in the UI and losing chunks creates gaps in the reasoning
+                // trace.
+                let _ = tx
+                    .send(AppEvent::Stream(RuntimeStreamEvent::Chunk {
                         text: None,
                         reasoning: Some(delta),
                     }))
-                    .is_err()
-                {
-                    tracing::trace!(target: "jfc::stream", "StreamChunk(thinking) dropped (buffer full)");
-                }
+                    .await;
             }
             StreamEvent::ToolDelta { index, delta } => {
                 let byte_len = delta.len();
@@ -266,10 +266,22 @@ pub(super) async fn drain_stream_events(
                     stop_reason = r;
                 }
             }
-            StreamEvent::ResponseMetadata { response_id } => {
+            StreamEvent::ResponseMetadata { response_id, input_tokens } => {
                 let _ = tx
                     .send(AppEvent::Stream(RuntimeStreamEvent::ResponseId(response_id)))
                     .await;
+                // Feed early input-token count so context estimates are
+                // available even if the stream aborts before message_delta.
+                if let Some(tokens) = input_tokens {
+                    let _ = tx
+                        .send(AppEvent::Stream(RuntimeStreamEvent::Usage {
+                            input_tokens: tokens as u32,
+                            output_tokens: 0,
+                            cache_read_tokens: 0,
+                            cache_write_tokens: 0,
+                        }))
+                        .await;
+                }
             }
             StreamEvent::TextDone { .. } | StreamEvent::ThinkingDone { .. } => {}
             StreamEvent::RedactedThinkingDone { data, .. } => {

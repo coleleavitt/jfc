@@ -42,11 +42,21 @@ impl App {
             tracing::warn!(
                 target: "jfc::app",
                 elapsed_secs = self.last_stream_event_at.map(|t| t.elapsed().as_secs()).unwrap_or(0),
-                "stream watchdog: resetting stuck is_streaming flag"
+                "stream watchdog: killing stuck stream"
             );
+            // Cancel the stream task so it actually stops sending events.
+            // Without this the stream task continues running in the
+            // background, can still modify messages, and can dispatch
+            // tools into a stale context — the "half-dead state" bug.
+            self.cancel_token.cancel();
             self.is_streaming = false;
             self.streaming_started_at = None;
             self.last_stream_event_at = None;
+            self.streaming_assistant_idx = None;
+            // Clear any pending tool calls that accumulated during the
+            // dead stream — they're stale and would dispatch into wrong
+            // context if processed later.
+            self.pending_tool_calls.clear();
         }
     }
 

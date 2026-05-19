@@ -320,6 +320,10 @@ pub enum StreamEvent {
     },
     ResponseMetadata {
         response_id: String,
+        /// Input token count from `message_start`. Populated early so
+        /// context-window estimates are available even if the stream
+        /// aborts before `message_delta`.
+        input_tokens: Option<u64>,
     },
     Error {
         message: String,

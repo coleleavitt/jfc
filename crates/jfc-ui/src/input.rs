@@ -1397,7 +1397,8 @@ pub async fn handle_key(
             let pipeline_busy = app.pending_approval.is_some()
                 || !app.approval_queue.is_empty()
                 || !app.pending_tool_calls.is_empty();
-            if app.is_streaming || pipeline_busy {
+            let compacting = app.compacting_started_at.is_some();
+            if app.is_streaming || pipeline_busy || compacting {
                 let is_meta = text.starts_with('/');
                 let glyph = if is_meta { "⚙" } else { "⏳" };
                 tracing::info!(
@@ -2085,6 +2086,7 @@ async fn handle_submit(
     app.streaming_started_at = Some(now);
     app.streaming_last_token_at = Some(now);
     app.turn_started_at = Some(now);
+    app.agentic_turn_count = 0;
     // Reset thinking-state for the new turn so the spinner doesn't carry
     // a stale `thought for Ns` from the previous turn.
     app.thinking_started_at = None;
@@ -4598,6 +4600,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 app.last_stream_event_at = Some(now);
                 app.streaming_last_token_at = Some(now);
                 app.turn_started_at = Some(now);
+    app.agentic_turn_count = 0;
                 app.thinking_started_at = None;
                 app.thinking_ended_at = None;
                 app.last_usage_output = 0;

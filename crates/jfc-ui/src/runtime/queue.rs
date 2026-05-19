@@ -130,6 +130,7 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
     app.last_stream_event_at = Some(now);
     app.streaming_last_token_at = Some(now);
     app.turn_started_at = Some(now);
+    app.agentic_turn_count = 0;
     app.last_usage_output = 0;
     app.usage_apply_baseline = (0, 0, 0, 0);
     app.scroll_to_bottom();

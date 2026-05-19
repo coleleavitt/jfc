@@ -188,8 +188,9 @@ pub(super) async fn handle_done(
     }
 }
 
-pub(super) fn handle_failed(
+pub(super) async fn handle_failed(
     app: &mut App,
+    tx: &EventSender,
     reason: String,
     calibrated_tokens: Option<usize>,
     transient: bool,
@@ -230,6 +231,23 @@ pub(super) fn handle_failed(
         format!("Compaction failed: {reason}")
     };
     toast::push_with_cap(&mut app.toasts, toast::Toast::new(toast_kind, toast_msg));
+
+    // Re-check agentic loop continuation after failed compaction —
+    // without this, tool results that triggered the compaction attempt
+    // sit unreplied-to and the loop stalls permanently.
+    if app.pending_approval.is_none()
+        && app.approval_queue.is_empty()
+        && app.pending_tool_calls.is_empty()
+        && !app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+        && !app.cancel_token.is_cancelled()
+        && stream::should_continue_loop(&app.messages)
+    {
+        tracing::info!(
+            target: "jfc::compact",
+            "agentic loop resuming after CompactionFailed — tool results pending"
+        );
+        stream::continue_agentic_loop(app, tx).await;
+    }
 }
 
 // Glue: dispatch a `CompactionEvent` to the matching handler.
@@ -247,6 +265,6 @@ pub(crate) async fn handle_compaction_event(app: &mut App, tx: &EventSender, ev:
             reason,
             calibrated_tokens,
             transient,
-        } => handle_failed(app, reason, calibrated_tokens, transient),
+        } => handle_failed(app, tx, reason, calibrated_tokens, transient).await,
     }
 }

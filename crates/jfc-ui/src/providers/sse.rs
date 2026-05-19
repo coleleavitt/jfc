@@ -483,6 +483,11 @@ pub fn translate(
         }
         SseEvent::MessageStart { message } => Some(StreamEvent::ResponseMetadata {
             response_id: message.id,
+            input_tokens: message
+                .usage
+                .as_ref()
+                .and_then(|u| u.input_tokens)
+                .map(|t| t as u64),
         }),
         SseEvent::Ping => None,
     }
@@ -1326,7 +1331,7 @@ mod tests {
         assert!(matches!(
             translate(event, &mut blocks, &mut sr),
             Some(StreamEvent::ResponseMetadata {
-                response_id,
+                response_id, ..
             }) if response_id == "msg_1"
         ));
     }

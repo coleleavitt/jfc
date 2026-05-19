@@ -167,7 +167,54 @@ pub(crate) async fn continue_after_pause_turn(app: &mut App, tx: &mpsc::Sender<A
     spawn_substream(app, messages, tx);
 }
 
+/// Maximum API round-trips per user turn before hard-stop.
+/// Matches CC 2.1.144's `maxTurns: 200` default. Configurable via
+/// `JFC_MAX_AGENTIC_TURNS` env var for testing.
+const MAX_AGENTIC_TURNS: u32 = {
+    // Can't read env at const time — use 200 as the compile-time default.
+    // Runtime override is checked in the function body.
+    200
+};
+
 pub(crate) async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
+    // Enforce max-turns safety limit. Without this a model stuck in a
+    // retry loop (e.g. repeatedly failing Edit calls) runs indefinitely.
+    app.agentic_turn_count += 1;
+    let max = std::env::var("JFC_MAX_AGENTIC_TURNS")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(MAX_AGENTIC_TURNS);
+    if app.agentic_turn_count >= max {
+        tracing::error!(
+            target: "jfc::stream",
+            turn_count = app.agentic_turn_count,
+            max,
+            "max agentic turns exceeded — hard-stopping loop"
+        );
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Error,
+                format!(
+                    "Agentic loop hard-stopped at {max} turns. Use /clear or submit a new prompt."
+                ),
+            ),
+        );
+        return;
+    }
+    if app.agentic_turn_count == max.saturating_sub(10) {
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Warning,
+                format!(
+                    "Approaching turn limit ({}/{max}). The loop will stop at {max}.",
+                    app.agentic_turn_count
+                ),
+            ),
+        );
+    }
+
     let assistant_idx = setup_new_substream_slot(app, "agentic_loop");
     let messages = build_provider_messages_with_tool_results(&app.messages[..assistant_idx]);
     spawn_substream(app, messages, tx);

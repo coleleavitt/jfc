@@ -84,6 +84,12 @@ fn advance_approval_queue(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
             app.teammate_event_tx.clone(),
             app.cancel_token.clone(),
         );
+    } else if app.pending_approval.is_none() {
+        // All tools have been processed (approved/denied) with no
+        // dispatched batch. Signal AllComplete so the agentic loop
+        // can re-invoke the model with the denial results. Without
+        // this, a denial as the last tool leaves the loop stalled.
+        let _ = tx.try_send(AppEvent::Tool(crate::runtime::ToolEvent::AllComplete));
     }
 }
 

@@ -206,6 +206,12 @@ pub struct App {
     /// tokens)` after a multi-turn turn was: the timer reset every
     /// loop iteration. v126's spinner uses the same turn-level clock.
     pub turn_started_at: Option<Instant>,
+    /// Number of API round-trips in the current user turn (incremented each
+    /// time `continue_agentic_loop` fires). Resets on each user submission.
+    /// Used to enforce a max-turns safety limit (default 200, matching CC
+    /// 2.1.144's `maxTurns`). Without this, a model stuck in a retry loop
+    /// runs indefinitely, burning unlimited API credits.
+    pub agentic_turn_count: u32,
     /// Index into `messages` of the user-prompt the up-arrow recall is
     /// currently displaying, counting backwards from the end. `None`
     /// means the user is editing a fresh prompt (not recalled). Each
@@ -874,6 +880,7 @@ impl App {
             thinking_started_at: None,
             thinking_ended_at: None,
             turn_started_at: None,
+            agentic_turn_count: 0,
             history_cursor: None,
             is_streaming: false,
             last_stream_event_at: None,
