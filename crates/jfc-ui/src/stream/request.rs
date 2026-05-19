@@ -270,12 +270,9 @@ Do not use a colon before tool calls.";
         }
     }
 
-    // Temporal awareness: inject time gap markers between messages so the
-    // model understands the conversational timeline. Only includes gaps > 1min.
-    // Mirrors Magic Context's temporal_awareness feature.
-    // NOTE: Currently a no-op scaffold — ProviderMessages don't carry timestamps.
-    // When ChatMessage timestamps are threaded through to the message builder,
-    // this will inject `<!-- +5m -->` style markers between messages with gaps.
+    // Temporal awareness is now fully implemented in
+    // stream/messages/provider_messages.rs — time gap markers (<!-- +Nm -->)
+    // are prepended to user messages when the gap exceeds 1 minute.
 
     // NOTE: Sprint budget injection was removed from here because the
     // char-based token estimate (system_prompt.len()/4 + messages.len()/4)

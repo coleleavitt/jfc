@@ -350,6 +350,11 @@ const STUB_PATTERNS: &[&str] = &[
     "/* FIXME",
     "panic!(\"not implemented",
     "panic!(\"not yet implemented",
+    "// NOTE: Currently a no-op",
+    "// scaffold",
+    "// placeholder",
+    "// Placeholder",
+    "let _ = ", // unused variable suppression (common in stubs)
 ];
 
 /// Result of evaluating a task's work output.
