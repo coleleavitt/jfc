@@ -1284,6 +1284,7 @@ impl Provider for AnthropicOAuthProvider {
                             .header("x-app", "cli")
                             .header("anthropic-client-platform", "cli")
                             .header("x-client-request-id", request_id.clone())
+                            .header("x-claude-code-session-id", opts.session_id.as_deref().unwrap_or(""))
                             .body(effective_body.clone())
                             .send()
                     })

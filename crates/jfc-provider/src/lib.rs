@@ -493,6 +493,8 @@ pub struct StreamOptions {
     /// tokens we'd like it to help manage. Maps to `context_hint.target_tokens_saved`
     /// in the request body (context-hint-2026-04-09 beta).
     pub context_hint_tokens_saved: Option<u64>,
+    /// Session ID for server-side request correlation (X-Claude-Code-Session-Id header).
+    pub session_id: Option<String>,
 }
 
 impl StreamOptions {
@@ -513,6 +515,7 @@ impl StreamOptions {
             task_budget_tokens: None,
             previous_message_id: None,
             context_hint_tokens_saved: None,
+            session_id: None,
         }
     }
 

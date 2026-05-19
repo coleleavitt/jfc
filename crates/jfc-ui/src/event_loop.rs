@@ -1129,6 +1129,28 @@ pub(crate) async fn run(
                     // place to do it — toasts have no creation-time timer.
                     toast::prune_expired(&mut app.toasts, std::time::Instant::now());
 
+                    // Idle-return detection: if 75+ minutes since last user
+                    // activity and we haven't shown the prompt yet, show a
+                    // toast suggesting /clear to save tokens on the next turn.
+                    if !app.idle_return_shown
+                        && !app.is_streaming
+                        && app.last_user_activity_at.elapsed().as_secs() >= 75 * 60
+                        && !app.messages.is_empty()
+                    {
+                        app.idle_return_shown = true;
+                        let tokens_est = app.tool_ctx.approx_tokens;
+                        crate::toast::push_with_cap(
+                            &mut app.toasts,
+                            crate::toast::Toast::new(
+                                crate::toast::ToastKind::Info,
+                                format!(
+                                    "Welcome back! Context: ~{tokens_est} tokens. \
+                                     Consider `/clear` to save on re-caching or `/compact` to trim."
+                                ),
+                            ),
+                        );
+                    }
+
                     // Refresh the cached Anthropic OAuth account snapshot every ~10s
                     // so the ribbon shows up-to-date 5h/7d utilization and the
                     // active rate-limit claim. The manager call locks a mutex,
@@ -3410,6 +3432,8 @@ pub(crate) async fn run(
                     );
                 }
                 AppEvent::Ui(UiEvent::Submit(text)) => {
+                    app.last_user_activity_at = std::time::Instant::now();
+                    app.idle_return_shown = false;
                     // Re-fire after pre-submit compaction. Reuses the same
                     // dispatch path as a typed prompt so message persistence,
                     // streaming setup, and session save all run identically.

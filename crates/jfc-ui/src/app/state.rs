@@ -778,6 +778,11 @@ pub struct App {
     pub scroll_velocity: f32,
     /// Last tick instant for kinetic scroll dt calculation.
     pub last_scroll_tick: std::time::Instant,
+    /// Last time the user interacted (typed, submitted, scrolled).
+    /// Used for idle-return detection (suggest /clear after 75min away).
+    pub last_user_activity_at: std::time::Instant,
+    /// Whether the idle-return toast has been shown this idle period.
+    pub idle_return_shown: bool,
     /// Throttle for idle_prefetch: last time a prefetch batch was fired.
     pub last_prefetch_at: std::time::Instant,
     /// Number of prefetch reads currently in-flight (capped at 2).
@@ -995,6 +1000,8 @@ impl App {
             wants_animation_frame: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             scroll_velocity: 0.0,
             last_scroll_tick: std::time::Instant::now(),
+            last_user_activity_at: std::time::Instant::now(),
+            idle_return_shown: false,
             last_prefetch_at: std::time::Instant::now() - std::time::Duration::from_secs(10),
             prefetch_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             git_root: None,
