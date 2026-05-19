@@ -273,7 +273,17 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let initial_permission_mode = parse_permission_mode(cli.permission_mode.as_deref());
+    let initial_permission_mode = parse_permission_mode(cli.permission_mode.as_deref())
+        .or_else(|| {
+            // If no --permission-mode flag was passed, read the persisted
+            // mode from config.toml [default.permission].mode so the user's
+            // `/mode` choice survives across sessions.
+            let cfg = crate::config::load();
+            cfg.default
+                .permission
+                .get("mode")
+                .and_then(|s| parse_permission_mode(Some(s.as_str())))
+        });
 
     let result = crate::event_loop::run(
         &mut terminal,

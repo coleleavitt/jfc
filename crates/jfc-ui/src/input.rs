@@ -551,6 +551,9 @@ pub async fn handle_key(
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
             if input_has_text(app) {
                 reset_input(app);
+                // Also clear pasted images so the next paste starts fresh.
+                app.pasted_images.clear();
+                app.image_counter = 0;
                 return Ok(false);
             }
             return Ok(true);
@@ -1446,6 +1449,32 @@ pub async fn handle_key(
                 return Ok(false);
             }
             _ => {}
+        }
+    }
+
+    // Image chip atomic delete: when Backspace is pressed and the cursor is
+    // immediately after `]` of an `[Image #N]` token, delete the entire
+    // chip as one unit (10+ chars) instead of requiring per-char deletion.
+    if key.code == KeyCode::Backspace {
+        let cursor = app.textarea.cursor();
+        let (row, col) = (cursor.0, cursor.1);
+        if let Some(line) = app.textarea.lines().get(row) {
+            let before_cursor = &line[..col.min(line.len())];
+            if let Some(start) = before_cursor.rfind("[Image #") {
+                let chip = &before_cursor[start..];
+                if chip.ends_with(']') {
+                    let chip_len = chip.len();
+                    // Delete the entire chip by moving cursor back and deleting forward
+                    for _ in 0..chip_len {
+                        app.textarea.input(crossterm::event::KeyEvent::new(
+                            KeyCode::Backspace,
+                            KeyModifiers::NONE,
+                        ));
+                    }
+                    update_mention_state_after_input(app);
+                    return Ok(false);
+                }
+            }
         }
     }
 
@@ -4264,6 +4293,8 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             };
             if let Some(mode) = new_mode {
                 app.permission_mode = mode;
+                // Persist so the mode survives session restart / --continue.
+                crate::config::save_permission_mode(&app.permission_mode);
                 // Sync auto_mode.enabled with permission mode for backward compat
                 app.auto_mode.enabled = mode == crate::app::PermissionMode::Auto;
                 app.messages.push(ChatMessage::assistant(format!(
