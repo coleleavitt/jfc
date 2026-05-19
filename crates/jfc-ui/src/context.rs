@@ -462,3 +462,18 @@ mod tests {
         assert!(build_system_prompt(Some("    ")).is_none());
     }
 }
+
+/// Walk up from CWD to find the nearest `.git` directory and return its parent.
+/// Used at startup to anchor the project-level task store before the app's
+/// lazy-resolved `git_root` is available.
+pub fn discover_git_root() -> Option<PathBuf> {
+    let mut dir = std::env::current_dir().ok()?;
+    loop {
+        if dir.join(".git").exists() {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}

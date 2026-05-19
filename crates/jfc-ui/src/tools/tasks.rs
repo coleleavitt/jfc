@@ -184,6 +184,86 @@ pub(super) fn execute_task_done(store: Option<Arc<TaskStore>>, task_id: &str) ->
     let Some(store) = store else {
         return ExecutionResult::failure("Task store not available");
     };
+
+    // Verification gate: if the task has a verification_command, run it
+    // before allowing completion. This prevents stub/incomplete work from
+    // being marked done — the command must exit 0.
+    if let Some(task) = store.get(task_id) {
+        if let Some(ref cmd) = task.verification_command {
+            if !cmd.trim().is_empty() {
+                debug!(
+                    target: "jfc::tools",
+                    task_id,
+                    cmd,
+                    "task_done: running verification command"
+                );
+                let output = std::process::Command::new("bash")
+                    .arg("-c")
+                    .arg(cmd)
+                    .output();
+                match output {
+                    Ok(result) if result.status.success() => {
+                        debug!(
+                            target: "jfc::tools",
+                            task_id,
+                            "task_done: verification passed"
+                        );
+                    }
+                    Ok(result) => {
+                        let stderr = String::from_utf8_lossy(&result.stderr);
+                        let stdout = String::from_utf8_lossy(&result.stdout);
+                        let truncated_output: String = format!(
+                            "stdout: {}\nstderr: {}",
+                            &stdout[..stdout.len().min(500)],
+                            &stderr[..stderr.len().min(500)]
+                        );
+                        warn!(
+                            target: "jfc::tools",
+                            task_id,
+                            exit_code = ?result.status.code(),
+                            "task_done: verification FAILED — task remains in_progress"
+                        );
+                        return ExecutionResult::failure(format!(
+                            "Verification failed (exit {}). Task remains in_progress.\n\
+                             Command: {cmd}\n{truncated_output}",
+                            result.status.code().unwrap_or(-1)
+                        ));
+                    }
+                    Err(e) => {
+                        warn!(
+                            target: "jfc::tools",
+                            task_id,
+                            error = %e,
+                            "task_done: verification command failed to execute"
+                        );
+                        return ExecutionResult::failure(format!(
+                            "Verification command failed to execute: {e}. Task remains in_progress."
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // Evaluator gate: scan recently-modified files for stub patterns
+    // (todo!(), unimplemented!(), etc.). Only fires when a git root is
+    // discoverable — gracefully skips in non-git contexts.
+    if let Some(root) = crate::context::discover_git_root() {
+        let eval = crate::sprint::evaluate_work_quality(&root);
+        if !eval.passed {
+            warn!(
+                target: "jfc::tools",
+                task_id,
+                issue_count = eval.issues.len(),
+                "task_done: evaluator detected stub patterns — rejecting completion"
+            );
+            return ExecutionResult::failure(format!(
+                "Evaluator rejected: stub/placeholder patterns found in modified files. \
+                 Fix these before marking done.\n\n{eval}"
+            ));
+        }
+    }
+
     let patch = TaskPatch {
         status: Some(TaskStatus::Completed),
         ..Default::default()
