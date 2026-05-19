@@ -1118,6 +1118,17 @@ fn build_body(
     if let Some(ref msg_id) = opts.previous_message_id {
         body["diagnostics"] = json!({ "previous_message_id": msg_id });
     }
+    // context_hint: when compaction has saved significant tokens, hint to
+    // the API that we want context management assistance. Mirrors v144's
+    // context-hint-2026-04-09 beta behavior.
+    if let Some(saved) = opts.context_hint_tokens_saved {
+        if saved >= 20_000 {
+            body["context_hint"] = json!({
+                "enabled": true,
+                "target_tokens_saved": saved
+            });
+        }
+    }
     body
 }
 

@@ -489,6 +489,10 @@ pub struct StreamOptions {
     /// Last assistant message ID from the previous turn. Sent in `diagnostics`
     /// so the server can track conversation flow for debugging/billing.
     pub previous_message_id: Option<String>,
+    /// When compaction has saved significant tokens, hint to the API how many
+    /// tokens we'd like it to help manage. Maps to `context_hint.target_tokens_saved`
+    /// in the request body (context-hint-2026-04-09 beta).
+    pub context_hint_tokens_saved: Option<u64>,
 }
 
 impl StreamOptions {
@@ -508,6 +512,7 @@ impl StreamOptions {
             fast_mode: false,
             task_budget_tokens: None,
             previous_message_id: None,
+            context_hint_tokens_saved: None,
         }
     }
 

@@ -270,6 +270,27 @@ Do not use a colon before tool calls.";
         }
     }
 
+    // Per-turn sprint budget: estimate current token usage from system prompt
+    // + message payload and inject a budget warning when approaching limits.
+    // Uses the model's advertised context window from the provider catalog.
+    let context_window = provider
+        .available_models()
+        .iter()
+        .find(|m| m.id.as_str() == model.as_str())
+        .and_then(|m| m.context_window_tokens)
+        .unwrap_or(200_000);
+    let estimated_msg_tokens = messages.iter().map(|m| {
+        m.content.iter().map(|c| match c {
+            jfc_provider::ProviderContent::Text(t) => t.len() / 4,
+            _ => 50, // tool_use/tool_result blocks are ~50 tokens overhead
+        }).sum::<usize>()
+    }).sum::<usize>();
+    let total_estimated = system_prompt.len() / 4 + estimated_msg_tokens;
+    let budget = crate::sprint::SprintBudget::compute(total_estimated, context_window);
+    if let Some(section) = budget.system_prompt_section() {
+        system_prompt.push_str(&section);
+    }
+
     let thinking_mode = thinking_mode_for(model.as_str());
     tracing::debug!(
         target: "jfc::stream::budget",

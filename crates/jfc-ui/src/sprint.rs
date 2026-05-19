@@ -194,6 +194,146 @@ pub fn check_sprint_pressure(current_tokens: usize, context_window: usize) -> Co
     crate::compact::compact_level(current_tokens, context_window)
 }
 
+/// Auto-commit progress when a sprint boundary is hit. This prevents losing
+/// work when a session is about to end due to context limits.
+///
+/// Steps:
+/// 1. `git add -A` all tracked changes
+/// 2. `git commit` with a sprint-boundary message
+/// 3. Write a handoff summary
+///
+/// Returns Ok(commit_hash) on success, Err(reason) on failure.
+/// Does NOT commit if working tree is clean.
+pub fn auto_commit_sprint_progress(
+    git_root: &Path,
+    task_store: &jfc_session::TaskStore,
+) -> Result<String, String> {
+    use jfc_session::DeletedFilter;
+
+    // Check if there are changes to commit
+    let status = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(git_root)
+        .output()
+        .map_err(|e| format!("git status failed: {e}"))?;
+    let status_output = String::from_utf8_lossy(&status.stdout);
+    if status_output.trim().is_empty() {
+        return Err("working tree clean — nothing to commit".to_string());
+    }
+
+    // Stage all changes
+    let add = std::process::Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(git_root)
+        .output()
+        .map_err(|e| format!("git add failed: {e}"))?;
+    if !add.status.success() {
+        return Err(format!(
+            "git add -A failed: {}",
+            String::from_utf8_lossy(&add.stderr)
+        ));
+    }
+
+    // Build commit message from task store state
+    let tasks = task_store.list(DeletedFilter::Exclude);
+    let in_progress: Vec<_> = tasks
+        .iter()
+        .filter(|t| t.status == jfc_session::TaskStatus::InProgress)
+        .map(|t| t.subject.as_str())
+        .collect();
+    let completed: Vec<_> = tasks
+        .iter()
+        .filter(|t| t.status == jfc_session::TaskStatus::Completed)
+        .map(|t| t.subject.as_str())
+        .collect();
+
+    let msg = format!(
+        "wip(sprint): auto-commit at context boundary\n\n\
+         In progress: {}\n\
+         Completed this session: {}",
+        if in_progress.is_empty() {
+            "(none)".to_string()
+        } else {
+            in_progress.join(", ")
+        },
+        if completed.is_empty() {
+            "(none)".to_string()
+        } else {
+            completed.join(", ")
+        },
+    );
+
+    let commit = std::process::Command::new("git")
+        .args(["commit", "-m", &msg])
+        .current_dir(git_root)
+        .output()
+        .map_err(|e| format!("git commit failed: {e}"))?;
+    if !commit.status.success() {
+        return Err(format!(
+            "git commit failed: {}",
+            String::from_utf8_lossy(&commit.stderr)
+        ));
+    }
+
+    // Get the commit hash
+    let hash = std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .current_dir(git_root)
+        .output()
+        .map_err(|e| format!("git rev-parse failed: {e}"))?;
+    let hash_str = String::from_utf8_lossy(&hash.stdout).trim().to_string();
+
+    // Write handoff summary
+    let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let summary = HandoffSummary {
+        timestamp: timestamp.clone(),
+        completed_work: completed.iter().map(|s| s.to_string()).collect(),
+        in_progress: in_progress.iter().map(|s| s.to_string()).collect(),
+        remaining_tasks: tasks
+            .iter()
+            .filter(|t| t.status == jfc_session::TaskStatus::Pending)
+            .map(|t| t.subject.clone())
+            .collect(),
+        decisions: vec![format!(
+            "Sprint boundary hit — auto-committed at {hash_str}"
+        )],
+        blockers: vec![],
+    };
+    if let Err(e) = summary.write_to_disk(git_root) {
+        tracing::warn!(
+            target: "jfc::sprint",
+            error = %e,
+            "auto_commit_sprint_progress: failed to write handoff summary"
+        );
+    }
+
+    // Mark in-progress tasks with a note about the checkpoint
+    for task in &tasks {
+        if task.status == jfc_session::TaskStatus::InProgress {
+            let _ = task_store.update(
+                task.id.as_str(),
+                jfc_session::TaskPatch {
+                    description: Some(format!(
+                        "{}\n\n[Sprint checkpoint at {}]",
+                        task.description, hash_str
+                    )),
+                    ..Default::default()
+                },
+            );
+        }
+    }
+
+    tracing::info!(
+        target: "jfc::sprint",
+        commit = %hash_str,
+        in_progress_count = in_progress.len(),
+        completed_count = completed.len(),
+        "auto_commit_sprint_progress: committed at sprint boundary"
+    );
+
+    Ok(hash_str)
+}
+
 // ─── Evaluator / Reviewer Pass ───────────────────────────────────────────────
 
 /// Patterns that indicate incomplete/stub work. If any of these appear in

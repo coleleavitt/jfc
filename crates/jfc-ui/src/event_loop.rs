@@ -26,6 +26,39 @@ use crate::{
 };
 use jfc_provider::{ModelId, Provider, ProviderId};
 
+/// Borrow the message currently slated as the streaming-assistant target —
+/// only if it is still an assistant. Returns `None` when:
+///
+///   * No stream is in progress (`streaming_assistant_idx` is None).
+///   * The stored index is out of bounds (a destructive op truncated past it).
+///   * The slot a previous destructive op left behind is now a `Role::User`
+///     or other non-assistant message.
+///
+/// The third case is the safety net for bugs like Up-arrow recall removing
+/// a queued user message that sits before the active streaming assistant:
+/// the remove shifts later indices down by one, and without an adjustment
+/// `streaming_assistant_idx` points one slot to the left — at a user
+/// placeholder. Routing every push through this helper means a stale index
+/// drops the part with a `warn!` instead of silently corrupting the wire
+/// shape (the API then rejects the next request with "tool_use blocks can
+/// only appear in assistant messages").
+fn streaming_assistant_mut(app: &mut App) -> Option<&mut ChatMessage> {
+    let idx = app.streaming_assistant_idx?;
+    let len = app.messages.len();
+    let msg = app.messages.get_mut(idx)?;
+    if msg.role != Role::Assistant {
+        tracing::warn!(
+            target: "jfc::stream::guard",
+            idx,
+            len,
+            role = ?msg.role,
+            "streaming_assistant_idx pointed at non-assistant — refusing mutation"
+        );
+        return None;
+    }
+    Some(msg)
+}
+
 pub(crate) async fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     providers: Vec<Arc<dyn Provider>>,
@@ -1038,6 +1071,25 @@ pub(crate) async fn run(
                     app.spinner_frame = (app.spinner_frame + 1) % crate::app::SPINNER.len();
                     app.check_stream_watchdog();
 
+                    // Network EKG: per-tick byte delta drives an EMA-
+                    // eased activity factor that scales the R-wave
+                    // amplitude. Sources `network_bytes_in` rather than
+                    // `streaming_response_bytes` so the trace tracks
+                    // EVERY stream event (text, reasoning, tool input
+                    // deltas, redacted thinking, server tool results,
+                    // usage frames, response IDs) and isn't reset by
+                    // per-turn clears. See `runtime::network_ekg`.
+                    let now_bytes = app.network_bytes_in;
+                    let delta = now_bytes.saturating_sub(app.network_last_sampled_bytes);
+                    app.network_last_sampled_bytes = now_bytes;
+                    crate::runtime::network_ekg::tick(
+                        &mut app.network_samples,
+                        &mut app.network_phase,
+                        &mut app.network_activity,
+                        &mut app.network_beat_remaining,
+                        delta,
+                    );
+
                     // Detached background workers update their progress in
                     // `daemon-state.json` (they're a different process — no
                     // AppEvent channel back to the UI). Re-read once a
@@ -1399,9 +1451,11 @@ pub(crate) async fn run(
                     // spinner's chars/4 token estimate.
                     if let Some(ref t) = text {
                         app.streaming_response_bytes += t.len();
+                        app.network_bytes_in = app.network_bytes_in.saturating_add(t.len() as u64);
                     }
                     if let Some(ref r) = reasoning {
                         app.streaming_response_bytes += r.len();
+                        app.network_bytes_in = app.network_bytes_in.saturating_add(r.len() as u64);
                     }
                     if let Some(chunk) = text {
                         // First text byte after a thinking phase ⇒ thinking
@@ -1452,22 +1506,20 @@ pub(crate) async fn run(
                         }
 
                         app.streaming_text.push_str(&chunk);
-                        if let Some(idx) = app.streaming_assistant_idx {
-                            if let Some(msg) = app.messages.get_mut(idx) {
-                                // Append to the *last* part if it's still a Text
-                                // segment; otherwise start a new Text part. The
-                                // earlier `.find(|p| matches!(p, Text(_)))`
-                                // pattern always merged into the first Text part,
-                                // which silently glued post-tool text segments
-                                // back into the pre-tool paragraph and dropped
-                                // the natural part-boundary between them. See
-                                // session ses_20260509_205615 msg 649: five
-                                // logical turns collapsed to a single Text part
-                                // with `:`-joined run-on prose.
-                                match msg.parts.last_mut() {
-                                    Some(MessagePart::Text(t)) => t.push_str(&chunk),
-                                    _ => msg.parts.push(MessagePart::Text(chunk)),
-                                }
+                        if let Some(msg) = streaming_assistant_mut(&mut app) {
+                            // Append to the *last* part if it's still a Text
+                            // segment; otherwise start a new Text part. The
+                            // earlier `.find(|p| matches!(p, Text(_)))`
+                            // pattern always merged into the first Text part,
+                            // which silently glued post-tool text segments
+                            // back into the pre-tool paragraph and dropped
+                            // the natural part-boundary between them. See
+                            // session ses_20260509_205615 msg 649: five
+                            // logical turns collapsed to a single Text part
+                            // with `:`-joined run-on prose.
+                            match msg.parts.last_mut() {
+                                Some(MessagePart::Text(t)) => t.push_str(&chunk),
+                                _ => msg.parts.push(MessagePart::Text(chunk)),
                             }
                         }
                     }
@@ -1482,17 +1534,15 @@ pub(crate) async fn run(
                             app.thinking_started_at = Some(now);
                         }
                         app.streaming_reasoning.push_str(&chunk);
-                        if let Some(idx) = app.streaming_assistant_idx {
-                            if let Some(msg) = app.messages.get_mut(idx) {
-                                // Same fix as the text path above: append to
-                                // the last part if it's still a Reasoning
-                                // segment, otherwise start a new one so a
-                                // post-tool/post-text reasoning block doesn't
-                                // get merged into an earlier thinking segment.
-                                match msg.parts.last_mut() {
-                                    Some(MessagePart::Reasoning(t)) => t.push_str(&chunk),
-                                    _ => msg.parts.push(MessagePart::Reasoning(chunk)),
-                                }
+                        if let Some(msg) = streaming_assistant_mut(&mut app) {
+                            // Same fix as the text path above: append to
+                            // the last part if it's still a Reasoning
+                            // segment, otherwise start a new one so a
+                            // post-tool/post-text reasoning block doesn't
+                            // get merged into an earlier thinking segment.
+                            match msg.parts.last_mut() {
+                                Some(MessagePart::Reasoning(t)) => t.push_str(&chunk),
+                                _ => msg.parts.push(MessagePart::Reasoning(chunk)),
                             }
                         }
                     }
@@ -1518,18 +1568,25 @@ pub(crate) async fn run(
                     // stream (the JSON for a 4-KB prompt arrives over many seconds
                     // with no other StreamChunk events between).
                     app.streaming_response_bytes += byte_len;
+                    app.network_bytes_in = app.network_bytes_in.saturating_add(byte_len as u64);
                     app.streaming_last_token_at = Some(std::time::Instant::now());
                     app.record_stream_activity();
                 }
                 AppEvent::Stream(StreamEvent::RedactedThinking(data)) => {
                     app.record_stream_activity();
-                    if let Some(idx) = app.streaming_assistant_idx {
-                        if let Some(msg) = app.messages.get_mut(idx) {
-                            msg.parts.push(MessagePart::RedactedThinking(data));
-                        }
+                    app.network_bytes_in =
+                        app.network_bytes_in.saturating_add(data.len() as u64);
+                    if let Some(msg) = streaming_assistant_mut(&mut app) {
+                        msg.parts.push(MessagePart::RedactedThinking(data));
                     }
                 }
                 AppEvent::Stream(StreamEvent::ResponseId(id)) => {
+                    // Even a bare response-id frame is signal that the
+                    // server is still alive — bump the EKG counter a
+                    // small fixed amount so the heartbeat reflects
+                    // server keepalives even when the model is silent.
+                    app.network_bytes_in =
+                        app.network_bytes_in.saturating_add(id.len() as u64);
                     app.last_response_id = Some(id);
                 }
                 AppEvent::Stream(StreamEvent::Tool(tool)) => {
@@ -1564,10 +1621,8 @@ pub(crate) async fn run(
                             status = tool.status.label(),
                             "route=terminal_on_arrival (no dispatch)"
                         );
-                        if let Some(idx) = app.streaming_assistant_idx {
-                            if let Some(msg) = app.messages.get_mut(idx) {
-                                msg.parts.push(MessagePart::Tool(tool));
-                            }
+                        if let Some(msg) = streaming_assistant_mut(&mut app) {
+                            msg.parts.push(MessagePart::Tool(tool));
                         }
                     } else if let Some(reason) = app.tool_denied_by_mode(&tool) {
                         // Guard 2: the active permission mode auto-denies this
@@ -1588,10 +1643,8 @@ pub(crate) async fn run(
                         let _ = tool.mark_failed();
                         tool.output =
                             ToolOutput::Text(format!("Denied by permission mode: {reason}"));
-                        if let Some(idx) = app.streaming_assistant_idx {
-                            if let Some(msg) = app.messages.get_mut(idx) {
-                                msg.parts.push(MessagePart::Tool(tool));
-                            }
+                        if let Some(msg) = streaming_assistant_mut(&mut app) {
+                            msg.parts.push(MessagePart::Tool(tool));
                         }
                     } else if app.auto_mode.enabled {
                         // v126 auto-mode: when enabled, every tool call is sent to a
@@ -1641,10 +1694,8 @@ pub(crate) async fn run(
                         // got dispatched. The dispatch path mutates the same
                         // ToolCall entry by id when ToolResult arrives, flipping
                         // status to Complete/Failed and setting output.
-                        if let Some(idx) = app.streaming_assistant_idx {
-                            if let Some(msg) = app.messages.get_mut(idx) {
-                                msg.parts.push(MessagePart::Tool(tool.clone()));
-                            }
+                        if let Some(msg) = streaming_assistant_mut(&mut app) {
+                            msg.parts.push(MessagePart::Tool(tool.clone()));
                         }
                         // First approvable tool fills `pending_approval`; every
                         // subsequent one queues behind it. The decide-handlers in
@@ -1678,10 +1729,8 @@ pub(crate) async fn run(
                             pending_total = app.pending_tool_calls.len() + 1,
                             "route=auto_dispatch (no approval needed)"
                         );
-                        if let Some(idx) = app.streaming_assistant_idx {
-                            if let Some(msg) = app.messages.get_mut(idx) {
-                                msg.parts.push(MessagePart::Tool(tool.clone()));
-                            }
+                        if let Some(msg) = streaming_assistant_mut(&mut app) {
+                            msg.parts.push(MessagePart::Tool(tool.clone()));
                         }
                         app.pending_tool_calls.push(tool);
                     }
@@ -1696,16 +1745,12 @@ pub(crate) async fn run(
                         tool.output = ToolOutput::Text(format!(
                             "Auto-mode classifier blocked this tool call.\n\nReason: {reason}"
                         ));
-                        if let Some(idx) = app.streaming_assistant_idx {
-                            if let Some(msg) = app.messages.get_mut(idx) {
-                                msg.parts.push(MessagePart::Tool(tool));
-                            }
+                        if let Some(msg) = streaming_assistant_mut(&mut app) {
+                            msg.parts.push(MessagePart::Tool(tool));
                         }
                     } else {
-                        if let Some(idx) = app.streaming_assistant_idx {
-                            if let Some(msg) = app.messages.get_mut(idx) {
-                                msg.parts.push(MessagePart::Tool(tool.clone()));
-                            }
+                        if let Some(msg) = streaming_assistant_mut(&mut app) {
+                            msg.parts.push(MessagePart::Tool(tool.clone()));
                         }
                         app.pending_tool_calls.push(tool);
                     }
@@ -1725,6 +1770,8 @@ pub(crate) async fn run(
                     // `ToolOutput::ServerToolResult` for byte-faithful
                     // round-trip on resend.
                     app.record_stream_activity();
+                    let result_bytes = content.to_string().len() as u64;
+                    app.network_bytes_in = app.network_bytes_in.saturating_add(result_bytes);
                     let mut applied = false;
                     if let Some(idx) = app.streaming_assistant_idx {
                         if let Some(msg) = app.messages.get_mut(idx) {
@@ -2398,6 +2445,13 @@ pub(crate) async fn run(
                     cache_write_tokens,
                 }) => {
                     app.record_stream_activity();
+                    // Bump the EKG counter — usage events arrive a few
+                    // times per turn (message_delta + message_stop) and
+                    // confirm the server is making progress, so we want
+                    // them visible on the trace even when the model is
+                    // mid-reasoning (no text/reasoning bytes between
+                    // usage frames).
+                    app.network_bytes_in = app.network_bytes_in.saturating_add(64);
                     // Anthropic sends *cumulative* token counts in every
                     // `message_delta` event (sse.rs:212-218 — see also
                     // anthropic-messaging spec). Naively calling `add_delta`
@@ -2425,16 +2479,14 @@ pub(crate) async fn run(
                     // recover the gauge total. We do the same: at
                     // resume time the picker reads the last message's
                     // `usage` rather than a default of 0.
-                    if let Some(idx) = app.streaming_assistant_idx {
-                        if let Some(msg) = app.messages.get_mut(idx) {
-                            msg.usage = Some(crate::types::ModelUsage {
-                                input_tokens: input_tokens as u64,
-                                output_tokens: output_tokens as u64,
-                                cache_read_tokens: cache_read_tokens as u64,
-                                cache_write_tokens: cache_write_tokens as u64,
-                                cost_usd: None,
-                            });
-                        }
+                    if let Some(msg) = streaming_assistant_mut(&mut app) {
+                        msg.usage = Some(crate::types::ModelUsage {
+                            input_tokens: input_tokens as u64,
+                            output_tokens: output_tokens as u64,
+                            cache_read_tokens: cache_read_tokens as u64,
+                            cache_write_tokens: cache_write_tokens as u64,
+                            cost_usd: None,
+                        });
                     }
                     let model_key = app.model.as_str().to_owned();
                     let cum = (
@@ -2448,6 +2500,28 @@ pub(crate) async fn run(
                         .entry(model_key)
                         .or_default()
                         .apply_cumulative(cum, app.usage_apply_baseline);
+
+                    // Cache diagnosis: detect significant cache invalidation.
+                    // When cache_read_tokens is zero but input_tokens is high,
+                    // something invalidated the prefix cache. Log so the tracing
+                    // output shows what happened (mirrors v144's
+                    // cache-diagnosis-2026-04-07 telemetry feature).
+                    if cache_read_tokens == 0 && input_tokens > 10_000 {
+                        tracing::info!(
+                            target: "jfc::cache_diagnosis",
+                            input_tokens,
+                            cache_read_tokens,
+                            cache_write_tokens,
+                            "prompt cache miss — entire prefix uncached this request \
+                             (likely cause: system prompt change, tool schema change, or model switch)"
+                        );
+                    } else if cache_write_tokens > 0 && cache_read_tokens == 0 {
+                        tracing::debug!(
+                            target: "jfc::cache_diagnosis",
+                            cache_write_tokens,
+                            "cache warming — writing new prefix to cache (first turn or invalidation)"
+                        );
+                    }
                 }
                 AppEvent::Provider(ProviderEvent::McpUpdated { servers }) => {
                     app.mcp_servers = servers;
@@ -3355,6 +3429,46 @@ pub(crate) async fn run(
                     // when a long-running compaction or classifier spams.
                     toast::push_with_cap(&mut app.toasts, toast::Toast::new(kind, text));
                 }
+                AppEvent::Ui(UiEvent::LoadSession(session_id)) => {
+                    // Session-picker selected. Reuse the same loader the
+                    // sidebar's Enter handler calls so we share the
+                    // cwd-refresh + title-update + scroll-to-bottom
+                    // semantics. Errors land as a toast so the user
+                    // doesn't lose the picker context.
+                    tracing::info!(
+                        target: "jfc::session_picker",
+                        session_id = %session_id,
+                        "LoadSession event received, fetching messages"
+                    );
+                    match crate::session::load_session(&session_id).await {
+                        Some(messages) => {
+                            app.messages = messages;
+                            let id_for_toast = session_id.clone();
+                            app.switch_session(Some(session_id));
+                            app.streaming_text.clear();
+                            app.streaming_reasoning.clear();
+                            app.streaming_response_bytes = 0;
+                            app.streaming_assistant_idx = None;
+                            app.scroll_to_bottom();
+                            toast::push_with_cap(
+                                &mut app.toasts,
+                                toast::Toast::new(
+                                    toast::ToastKind::Success,
+                                    format!("Loaded session {id_for_toast}"),
+                                ),
+                            );
+                        }
+                        None => {
+                            toast::push_with_cap(
+                                &mut app.toasts,
+                                toast::Toast::new(
+                                    toast::ToastKind::Error,
+                                    format!("Failed to load session {session_id}"),
+                                ),
+                            );
+                        }
+                    }
+                }
                 AppEvent::Team(TeamEvent::Inbox {
                     from,
                     text,
@@ -3570,6 +3684,9 @@ pub(crate) async fn run(
                     // daemon would make the reconciler mark them stale
                     // when the UI exits (the user-visible "Done" /
                     // "Failed" labels in the screenshots).
+                    let model_for_part = model_used
+                        .clone()
+                        .or_else(|| Some(app.model.as_str().to_owned()));
                     if is_detached {
                         crate::daemon::record_background_agent_started(
                             task_id.as_str(),
@@ -3585,11 +3702,10 @@ pub(crate) async fn run(
                         summary: None,
                         error: None,
                         elapsed_ms: None,
+                        model: model_for_part,
                     });
-                    if let Some(idx) = app.streaming_assistant_idx {
-                        if let Some(msg) = app.messages.get_mut(idx) {
-                            msg.parts.push(part);
-                        }
+                    if let Some(msg) = streaming_assistant_mut(&mut app) {
+                        msg.parts.push(part);
                     } else if let Some(msg) = app.messages.last_mut() {
                         msg.parts.push(part);
                     }
@@ -3921,7 +4037,18 @@ pub(crate) async fn run(
                     );
                     // Append to the current streaming assistant message if we
                     // have one; otherwise fall back to the last assistant msg.
-                    let target_idx = app.streaming_assistant_idx.or_else(|| {
+                    // Only accept `streaming_assistant_idx` if it still points
+                    // at an Assistant — otherwise fall through to the
+                    // rposition scan. Prevents a stale index (Up-recall
+                    // shifted the slot left onto a user placeholder) from
+                    // gluing the plan body onto a User message.
+                    let streaming_assistant = app.streaming_assistant_idx.filter(|&idx| {
+                        matches!(
+                            app.messages.get(idx).map(|m| m.role),
+                            Some(crate::types::Role::Assistant),
+                        )
+                    });
+                    let target_idx = streaming_assistant.or_else(|| {
                         app.messages
                             .iter()
                             .rposition(|m| m.role == crate::types::Role::Assistant)
