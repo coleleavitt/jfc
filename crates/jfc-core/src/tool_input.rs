@@ -1,5 +1,312 @@
 use crate::{TaskInput, ToolKind};
 
+// ───────────────────────────────────────────────────────────────────────────
+// Declarative consistency macro for the regular ToolInput variants.
+//
+// Rationale (rust-lang wg-macros best-practices, "Please help me figure out
+// these very old macro guidelines" + "What makes a Decl. Macro hard to
+// maintain"):
+//   • kpreid: a macro is the right tool when it "generates an enum, and a
+//     function guaranteed to take action on all of the items in that list …
+//     significantly reduces potential for human error." Here ONE row per tool
+//     drives the enum variant, the `from_value` parse arm, AND the `to_value`
+//     serialize arm — they cannot drift.
+//   • kpreid: "favor narrow-purpose macro_rules! defined in the same module" —
+//     these live right next to `ToolInput`, take only `$crate`-free local
+//     paths, and are not exported.
+//   • Trevor Gross / Jacob Lifshay: parallel repetition with implied equal
+//     counts is the #1 footgun. We use a single, properly *nested*
+//     `$( … $( … )* )*` (variants × their own fields) — never two sibling
+//     repetitions that must stay the same length.
+//   • Mario Carneiro: tt-munchers are quadratic. There is NO recursion here —
+//     one flat expansion; per-field rules are dispatched to tiny helper
+//     macros (`ti_parse!`, `ti_ser!`) that match a fixed rule keyword.
+//   • Rule of Least Power: declarative `macro_rules!`, not a proc-macro.
+//
+// Irregular variants (Bash empty-check, TaskCreate dual-fallback, Skill alias,
+// SendMessage coercion, Task nested struct, Mcp, the Server*/Generic/Unknown
+// terminals) are NOT forced through the grammar — they stay hand-written in
+// `from_value`'s match and are simply not listed here. `summary` is likewise
+// hand-written: it is pure display with a unique template per variant and is
+// already compiler-exhaustive on `&self`.
+// ───────────────────────────────────────────────────────────────────────────
+
+/// `from_value` parse expression for one field rule. `$obj` is the
+/// `Option<&Map>`, `$tool` the tool-name closure, `$k` the JSON key.
+macro_rules! ti_parse {
+    ($obj:ident, $tool:ident, req_str, $k:literal) => {
+        match $obj.and_then(|m| m.get($k)) {
+            None | Some(serde_json::Value::Null) => {
+                return Err(ToolInputError::MissingField { tool: $tool(), field: $k });
+            }
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(other) => {
+                return Err(ToolInputError::WrongType {
+                    tool: $tool(),
+                    field: $k,
+                    expected: "string",
+                    got: json_type_name(other),
+                });
+            }
+        }
+    };
+    ($obj:ident, $tool:ident, opt_str, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_str()).map(str::to_owned)
+    };
+    ($obj:ident, $tool:ident, opt_u64, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64())
+    };
+    ($obj:ident, $tool:ident, opt_u64_as_usize, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64()).map(|n| n as usize)
+    };
+    ($obj:ident, $tool:ident, opt_u64_as_u32, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64()).map(|n| n as u32)
+    };
+    ($obj:ident, $tool:ident, opt_u64_as_u8, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64()).map(|n| n.min(255) as u8)
+    };
+    ($obj:ident, $tool:ident, u64_or_0, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64()).unwrap_or(0)
+    };
+    ($obj:ident, $tool:ident, u32_or_0, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64()).unwrap_or(0) as u32
+    };
+    ($obj:ident, $tool:ident, bool_field, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_bool()).unwrap_or(false)
+    };
+    ($obj:ident, $tool:ident, bool_true, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_bool()).unwrap_or(true)
+    };
+    ($obj:ident, $tool:ident, raw_bool_opt, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_bool())
+    };
+    ($obj:ident, $tool:ident, replacement, $k:literal) => {
+        ReplacementMode::from_replace_all(
+            $obj.and_then(|m| m.get($k)).and_then(|v| v.as_bool()).unwrap_or(false),
+        )
+    };
+    ($obj:ident, $tool:ident, raw_or_empty_array, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).cloned().unwrap_or(serde_json::Value::Array(vec![]))
+    };
+    ($obj:ident, $tool:ident, raw_opt, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).cloned()
+    };
+}
+
+/// `to_value` serialize stanza for one field rule. Appends to `$v` (a
+/// `serde_json::Value` object) under key `$k`, reading binding `$field`.
+/// Optional rules only emit the key when the value is present / non-default,
+/// matching the original hand-written behavior exactly.
+macro_rules! ti_ser {
+    ($v:ident, $field:ident, req_str, $k:literal) => { $v[$k] = serde_json::json!($field); };
+    ($v:ident, $field:ident, u64_or_0, $k:literal) => { $v[$k] = serde_json::json!($field); };
+    ($v:ident, $field:ident, u32_or_0, $k:literal) => { $v[$k] = serde_json::json!($field); };
+    ($v:ident, $field:ident, opt_str, $k:literal) => {
+        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+    };
+    ($v:ident, $field:ident, opt_u64, $k:literal) => {
+        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+    };
+    ($v:ident, $field:ident, opt_u64_as_usize, $k:literal) => {
+        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+    };
+    ($v:ident, $field:ident, opt_u64_as_u32, $k:literal) => {
+        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+    };
+    ($v:ident, $field:ident, opt_u64_as_u8, $k:literal) => {
+        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+    };
+    ($v:ident, $field:ident, raw_opt, $k:literal) => {
+        if let Some(x) = $field { $v[$k] = x.clone(); }
+    };
+    ($v:ident, $field:ident, raw_or_empty_array, $k:literal) => { $v[$k] = $field.clone(); };
+    ($v:ident, $field:ident, bool_field, $k:literal) => {
+        if *$field { $v[$k] = serde_json::json!(true); }
+    };
+    ($v:ident, $field:ident, replacement, $k:literal) => {
+        if $field.replace_all() { $v[$k] = serde_json::json!(true); }
+    };
+    ($v:ident, $field:ident, bool_true, $k:literal) => {
+        if !*$field { $v[$k] = serde_json::json!(false); }
+    };
+    ($v:ident, $field:ident, raw_bool_opt, $k:literal) => {
+        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+    };
+    ($v:ident, $field:ident, str_vec, $k:literal) => {
+        if !$field.is_empty() { $v[$k] = serde_json::json!($field); }
+    };
+}
+
+/// **The table.** Single source of truth for every *regular* (rule-driven)
+/// ToolInput variant. It replays its rows to a callback macro `$cb`, so the
+/// exact same field list drives both the `from_value` parse arm and the
+/// `to_value` serialize arm — they cannot drift out of sync. Adding a regular
+/// tool means adding exactly one row here.
+///
+/// Each row is `Variant => { field: rule @ "json_key", … }`. The leading
+/// `$cb` token is the generator macro to forward to (one flat, non-recursive
+/// replay — no tt-munching).
+macro_rules! for_each_regular_tool_input {
+    ($cb:ident) => {
+        $cb! {
+            Edit => { file_path: req_str @ "file_path", old_string: req_str @ "old_string", new_string: req_str @ "new_string", replacement: replacement @ "replace_all" }
+            Write => { file_path: req_str @ "file_path", content: req_str @ "content" }
+            Read => { file_path: req_str @ "file_path", offset: opt_u64 @ "offset", limit: opt_u64 @ "limit" }
+            Glob => { pattern: req_str @ "pattern", path: opt_str @ "path" }
+            Grep => { pattern: req_str @ "pattern", path: opt_str @ "path", glob: opt_str @ "glob", output_mode: opt_str @ "output_mode" }
+            Search => { query: req_str @ "query", path: opt_str @ "path" }
+            ApplyPatch => { patch: req_str @ "patch" }
+            TaskUpdate => { task_id: req_str @ "task_id", status: opt_str @ "status", subject: opt_str @ "subject", description: opt_str @ "description", owner: opt_str @ "owner", acceptance_criteria: opt_str @ "acceptance_criteria", verification_command: opt_str @ "verification_command", risk: opt_str @ "risk", parent_id: opt_str @ "parent_id", kind: opt_str @ "kind" }
+            TaskList => { status_filter: opt_str @ "status_filter", owner_filter: opt_str @ "owner_filter" }
+            TaskDone => { task_id: req_str @ "task_id" }
+            TaskStop => { task_id: req_str @ "task_id" }
+            TaskGet => { task_id: req_str @ "task_id" }
+            ToolSearch => { query: req_str @ "query", limit: opt_u64 @ "limit" }
+            ToolSuggest => { intent: req_str @ "intent", limit: opt_u64 @ "limit" }
+            MemoryCreate => { level: req_str @ "level", memory_type: req_str @ "memory_type", scope: req_str @ "scope", body: req_str @ "body" }
+            MemoryDelete => { path: req_str @ "path" }
+            TeamCreate => { team_name: req_str @ "team_name", description: opt_str @ "description" }
+            TeamMemberMode => { member_name: req_str @ "member_name", mode: req_str @ "mode" }
+            CodeIndex => { path: opt_str @ "path", query: opt_str @ "query", kind: opt_str @ "kind", max_entries: opt_u64_as_usize @ "max_entries" }
+            GraphQuery => { query: req_str @ "query", max_tokens: opt_u64_as_usize @ "max_tokens", include_handles: raw_bool_opt @ "include_handles" }
+            RunCoverage => { lcov_path: opt_str @ "lcov_path", include_untested_list: bool_true @ "include_untested_list" }
+            SymbolEdit => { handle: req_str @ "handle", new_content: req_str @ "new_content", validate: bool_field @ "validate", dispatch_cascade: bool_field @ "dispatch_cascade" }
+            PostBounty => { description: req_str @ "description", budget: u64_or_0 @ "budget", acceptance_criteria: req_str @ "acceptance_criteria", max_solvers: opt_u64_as_u8 @ "max_solvers", auto_dispatch: bool_field @ "auto_dispatch" }
+            MarketStatus => { bounty_id: opt_str @ "bounty_id" }
+            RunBounty => { bounty_id: req_str @ "bounty_id", max_solvers: opt_u64_as_u8 @ "max_solvers" }
+            ExitPlanMode => { plan: req_str @ "plan" }
+            MultiEdit => { file_path: req_str @ "file_path", edits: raw_or_empty_array @ "edits" }
+            AskUserQuestion => { question: req_str @ "question", options: raw_or_empty_array @ "options", multi_select: bool_field @ "multi_select" }
+            WebFetch => { url: req_str @ "url", prompt: opt_str @ "prompt" }
+            WebSearch => { query: req_str @ "query", max_results: opt_u64_as_u32 @ "max_results" }
+            CronCreate => { schedule: req_str @ "schedule", command: req_str @ "command", description: req_str @ "description" }
+            CronDelete => { id: req_str @ "id" }
+            ScheduleWakeup => { delay_seconds: u32_or_0 @ "delay_seconds", prompt: req_str @ "prompt", reason: req_str @ "reason" }
+            Monitor => { command: req_str @ "command", until: req_str @ "until" }
+            Lsp => { kind: req_str @ "kind", file: req_str @ "file", line: u32_or_0 @ "line", column: u32_or_0 @ "column" }
+            PushNotification => { message: req_str @ "message", title: opt_str @ "title" }
+            RemoteTrigger => { trigger_id: req_str @ "trigger_id", payload: raw_opt @ "payload" }
+            EnterPlanMode => { reason: req_str @ "reason" }
+            EnterWorktree => { name: req_str @ "name", branch: opt_str @ "branch" }
+            NotebookRead => { path: req_str @ "path" }
+            NotebookEdit => { path: req_str @ "path", cell_id: req_str @ "cell_id", new_source: req_str @ "new_source", edit_mode: opt_str @ "edit_mode" }
+            ScratchpadRead => { key: req_str @ "key" }
+            ScratchpadWrite => { key: req_str @ "key", value: req_str @ "value" }
+        }
+    };
+}
+
+/// Supplementary table: variants whose `to_value` serialization follows the
+/// regular field-rule pattern but whose `from_value` parsing is bespoke (dual
+/// fallbacks, empty-checks, coercions). Listing them here keeps their
+/// serialize arm table-driven and drift-proof, while their parse arm stays
+/// hand-written in `from_value`. The rule tokens here only feed `ti_ser!`.
+macro_rules! for_each_to_value_only_tool_input {
+    ($cb:ident) => {
+        $cb! {
+            Bash => { command: req_str @ "command", timeout: opt_u64 @ "timeout", workdir: opt_str @ "workdir" }
+            TaskCreate => { subject: req_str @ "subject", description: req_str @ "description", active_form: opt_str @ "active_form", blocked_by: str_vec @ "blocked_by", acceptance_criteria: opt_str @ "acceptance_criteria", verification_command: opt_str @ "verification_command", risk: opt_str @ "risk", parent_id: opt_str @ "parent_id", kind: opt_str @ "kind" }
+            Skill => { name: req_str @ "name", args: opt_str @ "args" }
+            SendMessage => { to: req_str @ "to", message: req_str @ "message", summary: opt_str @ "summary" }
+        }
+    };
+}
+
+/// Generator callback for `from_value`: expands the table into a single
+/// associated fn `parse_regular` that returns `Some(Ok(..))` for a regular
+/// kind, `Some(Err(..))` on a parse failure, and `None` for any kind not in
+/// the table (the bespoke + terminal kinds, which the caller handles). This
+/// keeps the table-driven arms and the hand-written bespoke arms in one
+/// `match` without the "macro can't emit multiple arms" limitation — the
+/// whole regular `match` lives inside the generated fn.
+macro_rules! gen_regular_from_value {
+    ( $( $variant:ident => { $( $field:ident : $rule:ident @ $key:literal ),* $(,)? } )* ) => {
+        fn parse_regular(
+            kind: &ToolKind,
+            obj: Option<&serde_json::Map<String, serde_json::Value>>,
+            tool: &dyn Fn() -> String,
+        ) -> Option<Result<ToolInput, ToolInputError>> {
+            // Local re-impl of the json type-namer the req_str rule needs,
+            // kept here so the generated fn is self-contained.
+            fn json_type_name(value: &serde_json::Value) -> &'static str {
+                match value {
+                    serde_json::Value::Null => "null",
+                    serde_json::Value::Bool(_) => "bool",
+                    serde_json::Value::Number(_) => "number",
+                    serde_json::Value::String(_) => "string",
+                    serde_json::Value::Array(_) => "array",
+                    serde_json::Value::Object(_) => "object",
+                }
+            }
+            // `?`-on-ToolInputError needs the fn to return Result; wrap in a
+            // closure so `?` short-circuits into `Some(Err(..))`.
+            let attempt = || -> Result<Option<ToolInput>, ToolInputError> {
+                Ok(Some(match kind {
+                    $(
+                        ToolKind::$variant => ToolInput::$variant {
+                            $( $field: ti_parse!(obj, tool, $rule, $key), )*
+                        },
+                    )*
+                    _ => return Ok(None),
+                }))
+            };
+            match attempt() {
+                Ok(Some(parsed)) => Some(Ok(parsed)),
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
+            }
+        }
+    };
+}
+
+/// Generator callback for `to_value`: expands the main table into the fn
+/// `serialize_regular` returning `Some(value)` for a main-table variant and
+/// `None` otherwise (bespoke or supplementary).
+macro_rules! gen_regular_to_value {
+    ( $( $variant:ident => { $( $field:ident : $rule:ident @ $key:literal ),* $(,)? } )* ) => {
+        fn serialize_regular(this: &ToolInput) -> Option<serde_json::Value> {
+            #[allow(unused_mut)]
+            Some(match this {
+                $(
+                    ToolInput::$variant { $( $field, )* } => {
+                        let mut v = serde_json::json!({});
+                        $( ti_ser!(v, $field, $rule, $key); )*
+                        v
+                    }
+                )*
+                _ => return None,
+            })
+        }
+    };
+}
+
+/// Builds `serialize_extra` from the supplementary (serialize-only) table.
+/// Uses `..` in the destructure since bespoke-parse variants may carry fields
+/// the serialize rules don't read (e.g. TaskCreate's exhaustive field set is
+/// listed, but the macro only binds what each rule needs).
+macro_rules! gen_serialize_extra {
+    () => {
+        for_each_to_value_only_tool_input!(gen_serialize_extra_impl);
+    };
+}
+macro_rules! gen_serialize_extra_impl {
+    ( $( $variant:ident => { $( $field:ident : $rule:ident @ $key:literal ),* $(,)? } )* ) => {
+        fn serialize_extra(this: &ToolInput) -> Option<serde_json::Value> {
+            #[allow(unused_mut)]
+            Some(match this {
+                $(
+                    ToolInput::$variant { $( $field, )* } => {
+                        let mut v = serde_json::json!({});
+                        $( ti_ser!(v, $field, $rule, $key); )*
+                        v
+                    }
+                )*
+                _ => return None,
+            })
+        }
+    };
+}
+
 #[derive(Clone, Debug, serde::Serialize)]
 pub enum ToolInput {
     Edit {
@@ -517,21 +824,7 @@ impl ToolInput {
             });
         }
         let parsed = match kind {
-            ToolKind::Edit => Self::Edit {
-                file_path: req_str("file_path")?,
-                old_string: req_str("old_string")?,
-                new_string: req_str("new_string")?,
-                replacement: ReplacementMode::from_replace_all(bool_field("replace_all")),
-            },
-            ToolKind::Write => Self::Write {
-                file_path: req_str("file_path")?,
-                content: req_str("content")?,
-            },
-            ToolKind::Read => Self::Read {
-                file_path: req_str("file_path")?,
-                offset: opt_u64_field("offset"),
-                limit: opt_u64_field("limit"),
-            },
+            // ─── Bespoke arms: irregular parsing kept hand-written ───
             ToolKind::Bash => {
                 let command = req_str("command")?;
                 if command.is_empty() {
@@ -546,23 +839,6 @@ impl ToolInput {
                     workdir: opt_str_field("workdir"),
                 }
             }
-            ToolKind::Glob => Self::Glob {
-                pattern: req_str("pattern")?,
-                path: opt_str_field("path"),
-            },
-            ToolKind::Grep => Self::Grep {
-                pattern: req_str("pattern")?,
-                path: opt_str_field("path"),
-                glob: opt_str_field("glob"),
-                output_mode: opt_str_field("output_mode"),
-            },
-            ToolKind::Search => Self::Search {
-                query: req_str("query")?,
-                path: opt_str_field("path"),
-            },
-            ToolKind::ApplyPatch => Self::ApplyPatch {
-                patch: req_str("patch")?,
-            },
             ToolKind::TaskCreate => {
                 let blocked_by = obj
                     .and_then(|map| map.get("blocked_by"))
@@ -597,31 +873,6 @@ impl ToolInput {
                     kind: opt_str_field("kind"),
                 }
             }
-            ToolKind::TaskUpdate => Self::TaskUpdate {
-                task_id: req_str("task_id")?,
-                status: opt_str_field("status"),
-                subject: opt_str_field("subject"),
-                description: opt_str_field("description"),
-                owner: opt_str_field("owner"),
-                acceptance_criteria: opt_str_field("acceptance_criteria"),
-                verification_command: opt_str_field("verification_command"),
-                risk: opt_str_field("risk"),
-                parent_id: opt_str_field("parent_id"),
-                kind: opt_str_field("kind"),
-            },
-            ToolKind::TaskList => Self::TaskList {
-                status_filter: opt_str_field("status_filter"),
-                owner_filter: opt_str_field("owner_filter"),
-            },
-            ToolKind::TaskDone => Self::TaskDone {
-                task_id: req_str("task_id")?,
-            },
-            ToolKind::TaskStop => Self::TaskStop {
-                task_id: req_str("task_id")?,
-            },
-            ToolKind::TaskGet => Self::TaskGet {
-                task_id: req_str("task_id")?,
-            },
             ToolKind::TaskValidate => Self::TaskValidate,
             ToolKind::Task => Self::Task(TaskInput {
                 description: req_str("description")?,
@@ -645,27 +896,6 @@ impl ToolInput {
                     })?,
                 args: opt_str_field("args"),
             },
-            ToolKind::ToolSearch => Self::ToolSearch {
-                query: req_str("query")?,
-                limit: opt_u64_field("limit"),
-            },
-            ToolKind::ToolSuggest => Self::ToolSuggest {
-                intent: req_str("intent")?,
-                limit: opt_u64_field("limit"),
-            },
-            ToolKind::MemoryCreate => Self::MemoryCreate {
-                level: req_str("level")?,
-                memory_type: req_str("memory_type")?,
-                scope: req_str("scope")?,
-                body: req_str("body")?,
-            },
-            ToolKind::MemoryDelete => Self::MemoryDelete {
-                path: req_str("path")?,
-            },
-            ToolKind::TeamCreate => Self::TeamCreate {
-                team_name: req_str("team_name")?,
-                description: opt_str_field("description"),
-            },
             ToolKind::TeamDelete => Self::TeamDelete,
             ToolKind::SendMessage => {
                 let to = req_str("to")?;
@@ -685,167 +915,17 @@ impl ToolInput {
                     summary: opt_str_field("summary"),
                 }
             }
-            ToolKind::TeamMemberMode => Self::TeamMemberMode {
-                member_name: req_str("member_name")?,
-                mode: req_str("mode")?,
-            },
-            ToolKind::CodeIndex => Self::CodeIndex {
-                path: opt_str_field("path"),
-                query: opt_str_field("query"),
-                kind: opt_str_field("kind"),
-                max_entries: obj
-                    .and_then(|map| map.get("max_entries"))
-                    .and_then(|value| value.as_u64())
-                    .map(|value| value as usize),
-            },
-            ToolKind::GraphQuery => Self::GraphQuery {
-                query: req_str("query")?,
-                max_tokens: obj
-                    .and_then(|map| map.get("max_tokens"))
-                    .and_then(|value| value.as_u64())
-                    .map(|value| value as usize),
-                include_handles: obj
-                    .and_then(|map| map.get("include_handles"))
-                    .and_then(|value| value.as_bool()),
-            },
-            ToolKind::RunCoverage => Self::RunCoverage {
-                lcov_path: opt_str_field("lcov_path"),
-                include_untested_list: obj
-                    .and_then(|map| map.get("include_untested_list"))
-                    .and_then(|value| value.as_bool())
-                    .unwrap_or(true),
-            },
-            ToolKind::SymbolEdit => Self::SymbolEdit {
-                handle: req_str("handle")?,
-                new_content: req_str("new_content")?,
-                validate: bool_field("validate"),
-                dispatch_cascade: bool_field("dispatch_cascade"),
-            },
-            ToolKind::PostBounty => Self::PostBounty {
-                description: req_str("description")?,
-                budget: obj
-                    .and_then(|map| map.get("budget"))
-                    .and_then(|value| value.as_u64())
-                    .unwrap_or(0),
-                acceptance_criteria: req_str("acceptance_criteria")?,
-                max_solvers: obj
-                    .and_then(|map| map.get("max_solvers"))
-                    .and_then(|value| value.as_u64())
-                    .map(|n| n.min(255) as u8),
-                auto_dispatch: bool_field("auto_dispatch"),
-            },
-            ToolKind::MarketStatus => Self::MarketStatus {
-                bounty_id: opt_str_field("bounty_id"),
-            },
-            ToolKind::RunBounty => Self::RunBounty {
-                bounty_id: req_str("bounty_id")?,
-                max_solvers: obj
-                    .and_then(|map| map.get("max_solvers"))
-                    .and_then(|value| value.as_u64())
-                    .map(|n| n.min(255) as u8),
-            },
-            ToolKind::ExitPlanMode => Self::ExitPlanMode {
-                plan: req_str("plan")?,
-            },
-            ToolKind::MultiEdit => Self::MultiEdit {
-                file_path: req_str("file_path")?,
-                edits: obj
-                    .and_then(|map| map.get("edits"))
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Array(vec![])),
-            },
-            ToolKind::AskUserQuestion => Self::AskUserQuestion {
-                question: req_str("question")?,
-                options: obj
-                    .and_then(|map| map.get("options"))
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Array(vec![])),
-                multi_select: bool_field("multi_select"),
-            },
-            ToolKind::WebFetch => Self::WebFetch {
-                url: req_str("url")?,
-                prompt: opt_str_field("prompt"),
-            },
-            ToolKind::WebSearch => Self::WebSearch {
-                query: req_str("query")?,
-                max_results: obj
-                    .and_then(|map| map.get("max_results"))
-                    .and_then(|value| value.as_u64())
-                    .map(|n| n as u32),
-            },
             ToolKind::Mcp(name) => Self::Mcp {
                 name,
                 arguments: value.clone(),
             },
-            ToolKind::CronCreate => Self::CronCreate {
-                schedule: req_str("schedule")?,
-                command: req_str("command")?,
-                description: req_str("description")?,
-            },
             ToolKind::CronList => Self::CronList,
-            ToolKind::CronDelete => Self::CronDelete { id: req_str("id")? },
-            ToolKind::ScheduleWakeup => Self::ScheduleWakeup {
-                delay_seconds: obj
-                    .and_then(|map| map.get("delay_seconds"))
-                    .and_then(|value| value.as_u64())
-                    .map(|n| n.min(u32::MAX as u64) as u32)
-                    .unwrap_or(0),
-                prompt: req_str("prompt")?,
-                reason: req_str("reason")?,
-            },
-            ToolKind::Monitor => Self::Monitor {
-                command: req_str("command")?,
-                until: req_str("until")?,
-            },
-            ToolKind::Lsp => Self::Lsp {
-                kind: req_str("kind")?,
-                file: req_str("file")?,
-                line: obj
-                    .and_then(|map| map.get("line"))
-                    .and_then(|value| value.as_u64())
-                    .unwrap_or(0) as u32,
-                column: obj
-                    .and_then(|map| map.get("column"))
-                    .and_then(|value| value.as_u64())
-                    .unwrap_or(0) as u32,
-            },
-            ToolKind::PushNotification => Self::PushNotification {
-                message: req_str("message")?,
-                title: opt_str_field("title"),
-            },
-            ToolKind::RemoteTrigger => Self::RemoteTrigger {
-                trigger_id: req_str("trigger_id")?,
-                payload: obj.and_then(|map| map.get("payload")).cloned(),
-            },
-            ToolKind::EnterPlanMode => Self::EnterPlanMode {
-                reason: req_str("reason")?,
-            },
-            ToolKind::EnterWorktree => Self::EnterWorktree {
-                name: req_str("name")?,
-                branch: opt_str_field("branch"),
-            },
             ToolKind::ExitWorktree => Self::ExitWorktree,
-            ToolKind::NotebookRead => Self::NotebookRead {
-                path: req_str("path")?,
-            },
-            ToolKind::NotebookEdit => Self::NotebookEdit {
-                path: req_str("path")?,
-                cell_id: req_str("cell_id")?,
-                new_source: req_str("new_source")?,
-                edit_mode: opt_str_field("edit_mode"),
-            },
-            ToolKind::ScratchpadRead => Self::ScratchpadRead {
-                key: req_str("key")?,
-            },
-            ToolKind::ScratchpadWrite => Self::ScratchpadWrite {
-                key: req_str("key")?,
-                value: req_str("value")?,
-            },
             ToolKind::ServerWebSearch => Self::Generic {
                 summary: obj
                     .and_then(|map| map.get("query"))
                     .and_then(|query| query.as_str())
-                    .map(|query| format!("🔍 {query}"))
+                    .map(|query| format!("\u{1f50d} {query}"))
                     .unwrap_or_else(|| value.to_string()),
             },
             ToolKind::ServerCodeExecution => Self::Generic {
@@ -854,13 +934,27 @@ impl ToolInput {
                     .and_then(|code| code.as_str())
                     .map(|code| {
                         let preview: String = code.chars().take(120).collect();
-                        format!("⚡ {preview}")
+                        format!("\u{26a1} {preview}")
                     })
                     .unwrap_or_else(|| value.to_string()),
             },
             ToolKind::Generic(_) | ToolKind::UnknownTool { .. } => Self::Generic {
                 summary: value.to_string(),
             },
+            // ─── Regular kinds: parsed by the table-generated fn ───
+            other => {
+                for_each_regular_tool_input!(gen_regular_from_value);
+                match parse_regular(&other, obj, &tool) {
+                    Some(result) => result?,
+                    None => {
+                        return Err(ToolInputError::InvalidShape {
+                            tool: tool(),
+                            reason: format!("unhandled tool kind: {other:?}"),
+                        });
+                    }
+                }
+            }
+
         };
         Ok(parsed)
     }
@@ -868,179 +962,7 @@ impl ToolInput {
     pub fn to_value(&self) -> serde_json::Value {
         use serde_json::json;
         match self {
-            Self::Edit {
-                file_path,
-                old_string,
-                new_string,
-                replacement,
-            } => {
-                let mut value = json!({
-                    "file_path": file_path,
-                    "old_string": old_string,
-                    "new_string": new_string,
-                });
-                if replacement.replace_all() {
-                    value["replace_all"] = json!(true);
-                }
-                value
-            }
-            Self::Write { file_path, content } => {
-                json!({ "file_path": file_path, "content": content })
-            }
-            Self::Read {
-                file_path,
-                offset,
-                limit,
-            } => {
-                let mut value = json!({ "file_path": file_path });
-                if let Some(offset) = offset {
-                    value["offset"] = json!(offset);
-                }
-                if let Some(limit) = limit {
-                    value["limit"] = json!(limit);
-                }
-                value
-            }
-            Self::Bash {
-                command,
-                timeout,
-                workdir,
-            } => {
-                let mut value = json!({ "command": command });
-                if let Some(timeout) = timeout {
-                    value["timeout"] = json!(timeout);
-                }
-                if let Some(workdir) = workdir {
-                    value["workdir"] = json!(workdir);
-                }
-                value
-            }
-            Self::Glob { pattern, path } => {
-                let mut value = json!({ "pattern": pattern });
-                if let Some(path) = path {
-                    value["path"] = json!(path);
-                }
-                value
-            }
-            Self::Grep {
-                pattern,
-                path,
-                glob,
-                output_mode,
-            } => {
-                let mut value = json!({ "pattern": pattern });
-                if let Some(path) = path {
-                    value["path"] = json!(path);
-                }
-                if let Some(glob) = glob {
-                    value["glob"] = json!(glob);
-                }
-                if let Some(output_mode) = output_mode {
-                    value["output_mode"] = json!(output_mode);
-                }
-                value
-            }
-            Self::Search { query, path } => {
-                let mut value = json!({ "query": query });
-                if let Some(path) = path {
-                    value["path"] = json!(path);
-                }
-                value
-            }
-            Self::ApplyPatch { patch } => json!({ "patch": patch }),
-            Self::TaskCreate {
-                subject,
-                description,
-                active_form,
-                blocked_by,
-                acceptance_criteria,
-                verification_command,
-                risk,
-                parent_id,
-                kind,
-            } => {
-                let mut value = json!({ "subject": subject, "description": description });
-                if let Some(active_form) = active_form {
-                    value["active_form"] = json!(active_form);
-                }
-                if !blocked_by.is_empty() {
-                    value["blocked_by"] = json!(blocked_by);
-                }
-                if let Some(acceptance_criteria) = acceptance_criteria {
-                    value["acceptance_criteria"] = json!(acceptance_criteria);
-                }
-                if let Some(verification_command) = verification_command {
-                    value["verification_command"] = json!(verification_command);
-                }
-                if let Some(risk) = risk {
-                    value["risk"] = json!(risk);
-                }
-                if let Some(parent_id) = parent_id {
-                    value["parent_id"] = json!(parent_id);
-                }
-                if let Some(kind) = kind {
-                    value["kind"] = json!(kind);
-                }
-                value
-            }
-            Self::TaskUpdate {
-                task_id,
-                status,
-                subject,
-                description,
-                owner,
-                acceptance_criteria,
-                verification_command,
-                risk,
-                parent_id,
-                kind,
-            } => {
-                let mut value = json!({ "task_id": task_id });
-                if let Some(status) = status {
-                    value["status"] = json!(status);
-                }
-                if let Some(subject) = subject {
-                    value["subject"] = json!(subject);
-                }
-                if let Some(description) = description {
-                    value["description"] = json!(description);
-                }
-                if let Some(owner) = owner {
-                    value["owner"] = json!(owner);
-                }
-                if let Some(acceptance_criteria) = acceptance_criteria {
-                    value["acceptance_criteria"] = json!(acceptance_criteria);
-                }
-                if let Some(verification_command) = verification_command {
-                    value["verification_command"] = json!(verification_command);
-                }
-                if let Some(risk) = risk {
-                    value["risk"] = json!(risk);
-                }
-                if let Some(parent_id) = parent_id {
-                    value["parent_id"] = json!(parent_id);
-                }
-                if let Some(kind) = kind {
-                    value["kind"] = json!(kind);
-                }
-                value
-            }
-            Self::TaskList {
-                status_filter,
-                owner_filter,
-            } => {
-                let mut value = json!({});
-                if let Some(status_filter) = status_filter {
-                    value["status_filter"] = json!(status_filter);
-                }
-                if let Some(owner_filter) = owner_filter {
-                    value["owner_filter"] = json!(owner_filter);
-                }
-                value
-            }
-            Self::TaskDone { task_id } => json!({ "task_id": task_id }),
-            Self::TaskStop { task_id } => json!({ "task_id": task_id }),
-            Self::TaskGet { task_id } => json!({ "task_id": task_id }),
+            // ─── Bespoke serialize arms (not table-driven) ───
             Self::TaskValidate => json!({}),
             Self::Task(task_input) => {
                 let mut value = json!({
@@ -1062,272 +984,29 @@ impl ToolInput {
                 }
                 value
             }
-            Self::Skill { name, args } => {
-                let mut value = json!({ "name": name });
-                if let Some(args) = args {
-                    value["args"] = json!(args);
-                }
-                value
-            }
-            Self::ToolSearch { query, limit } => {
-                let mut value = json!({ "query": query });
-                if let Some(limit) = limit {
-                    value["limit"] = json!(limit);
-                }
-                value
-            }
-            Self::ToolSuggest { intent, limit } => {
-                let mut value = json!({ "intent": intent });
-                if let Some(limit) = limit {
-                    value["limit"] = json!(limit);
-                }
-                value
-            }
-            Self::MemoryCreate {
-                level,
-                memory_type,
-                scope,
-                body,
-            } => json!({
-                "level": level,
-                "memory_type": memory_type,
-                "scope": scope,
-                "body": body,
-            }),
-            Self::MemoryDelete { path } => json!({ "path": path }),
-            Self::TeamCreate {
-                team_name,
-                description,
-            } => {
-                let mut value = json!({ "team_name": team_name });
-                if let Some(description) = description {
-                    value["description"] = json!(description);
-                }
-                value
-            }
             Self::TeamDelete => json!({}),
-            Self::SendMessage {
-                to,
-                message,
-                summary,
-            } => {
-                let mut value = json!({ "to": to, "message": message });
-                if let Some(summary) = summary {
-                    value["summary"] = json!(summary);
-                }
-                value
-            }
-            Self::TeamMemberMode { member_name, mode } => {
-                json!({ "member_name": member_name, "mode": mode })
-            }
-            Self::CodeIndex {
-                path,
-                query,
-                kind,
-                max_entries,
-            } => {
-                let mut value = json!({});
-                if let Some(path) = path {
-                    value["path"] = json!(path);
-                }
-                if let Some(query) = query {
-                    value["query"] = json!(query);
-                }
-                if let Some(kind) = kind {
-                    value["kind"] = json!(kind);
-                }
-                if let Some(max_entries) = max_entries {
-                    value["max_entries"] = json!(max_entries);
-                }
-                value
-            }
-            Self::GraphQuery {
-                query,
-                max_tokens,
-                include_handles,
-            } => {
-                let mut value = json!({ "query": query });
-                if let Some(max_tokens) = max_tokens {
-                    value["max_tokens"] = json!(max_tokens);
-                }
-                if let Some(include_handles) = include_handles {
-                    value["include_handles"] = json!(include_handles);
-                }
-                value
-            }
-            Self::RunCoverage {
-                lcov_path,
-                include_untested_list,
-            } => {
-                let mut value = json!({});
-                if let Some(lcov_path) = lcov_path {
-                    value["lcov_path"] = json!(lcov_path);
-                }
-                if !include_untested_list {
-                    value["include_untested_list"] = json!(false);
-                }
-                value
-            }
-            Self::SymbolEdit {
-                handle,
-                new_content,
-                validate,
-                dispatch_cascade,
-            } => {
-                let mut value = json!({ "handle": handle, "new_content": new_content });
-                if *validate {
-                    value["validate"] = json!(true);
-                }
-                if *dispatch_cascade {
-                    value["dispatch_cascade"] = json!(true);
-                }
-                value
-            }
-            Self::PostBounty {
-                description,
-                budget,
-                acceptance_criteria,
-                max_solvers,
-                auto_dispatch,
-            } => {
-                let mut value = json!({
-                    "description": description,
-                    "budget": budget,
-                    "acceptance_criteria": acceptance_criteria,
-                });
-                if let Some(max_solvers) = max_solvers {
-                    value["max_solvers"] = json!(max_solvers);
-                }
-                if *auto_dispatch {
-                    value["auto_dispatch"] = json!(true);
-                }
-                value
-            }
-            Self::MarketStatus { bounty_id } => {
-                let mut value = json!({});
-                if let Some(bounty_id) = bounty_id {
-                    value["bounty_id"] = json!(bounty_id);
-                }
-                value
-            }
-            Self::RunBounty {
-                bounty_id,
-                max_solvers,
-            } => {
-                let mut value = json!({ "bounty_id": bounty_id });
-                if let Some(max_solvers) = max_solvers {
-                    value["max_solvers"] = json!(max_solvers);
-                }
-                value
-            }
-            Self::ExitPlanMode { plan } => json!({ "plan": plan }),
-            Self::MultiEdit { file_path, edits } => json!({
-                "file_path": file_path,
-                "edits": edits,
-            }),
-            Self::AskUserQuestion {
-                question,
-                options,
-                multi_select,
-            } => json!({
-                "question": question,
-                "options": options,
-                "multi_select": multi_select,
-            }),
-            Self::WebFetch { url, prompt } => {
-                let mut value = json!({ "url": url });
-                if let Some(prompt) = prompt {
-                    value["prompt"] = json!(prompt);
-                }
-                value
-            }
-            Self::WebSearch { query, max_results } => {
-                let mut value = json!({ "query": query });
-                if let Some(max_results) = max_results {
-                    value["max_results"] = json!(max_results);
-                }
-                value
-            }
             Self::Mcp { arguments, .. } => arguments.clone(),
-            Self::CronCreate {
-                schedule,
-                command,
-                description,
-            } => json!({
-                "schedule": schedule,
-                "command": command,
-                "description": description,
-            }),
             Self::CronList => json!({}),
-            Self::CronDelete { id } => json!({ "id": id }),
-            Self::ScheduleWakeup {
-                delay_seconds,
-                prompt,
-                reason,
-            } => json!({
-                "delay_seconds": delay_seconds,
-                "prompt": prompt,
-                "reason": reason,
-            }),
-            Self::Monitor { command, until } => json!({
-                "command": command,
-                "until": until,
-            }),
-            Self::Lsp {
-                kind,
-                file,
-                line,
-                column,
-            } => json!({ "kind": kind, "file": file, "line": line, "column": column }),
-            Self::PushNotification { message, title } => {
-                let mut value = json!({ "message": message });
-                if let Some(title) = title {
-                    value["title"] = json!(title);
-                }
-                value
-            }
-            Self::RemoteTrigger {
-                trigger_id,
-                payload,
-            } => {
-                let mut value = json!({ "trigger_id": trigger_id });
-                if let Some(payload) = payload {
-                    value["payload"] = payload.clone();
-                }
-                value
-            }
-            Self::EnterPlanMode { reason } => json!({ "reason": reason }),
-            Self::EnterWorktree { name, branch } => {
-                let mut value = json!({ "name": name });
-                if let Some(branch) = branch {
-                    value["branch"] = json!(branch);
-                }
-                value
-            }
             Self::ExitWorktree => json!({}),
-            Self::NotebookRead { path } => json!({ "path": path }),
-            Self::NotebookEdit {
-                path,
-                cell_id,
-                new_source,
-                edit_mode,
-            } => {
-                let mut value = json!({
-                    "path": path,
-                    "cell_id": cell_id,
-                    "new_source": new_source,
-                });
-                if let Some(edit_mode) = edit_mode {
-                    value["edit_mode"] = json!(edit_mode);
-                }
-                value
-            }
-            Self::ScratchpadRead { key } => json!({ "key": key }),
-            Self::ScratchpadWrite { key, value } => json!({ "key": key, "value": value }),
             Self::Generic { summary } => match serde_json::from_str::<serde_json::Value>(summary) {
                 Ok(serde_json::Value::Object(map)) => serde_json::Value::Object(map),
                 Ok(_) | Err(_) => json!({ "input": summary }),
             },
+            // ─── Regular variants: serialized by the two table-generated fns ───
+            // (split into two tables — main table is parse+serialize, the
+            // supplementary table is serialize-only for variants whose
+            // parsing is bespoke but serialization is still rule-driven).
+            other => {
+                for_each_regular_tool_input!(gen_regular_to_value);
+                gen_serialize_extra!();
+                if let Some(v) = serialize_regular(other) {
+                    return v;
+                }
+                if let Some(v) = serialize_extra(other) {
+                    return v;
+                }
+                unreachable!("variant must be in one of the two serialize tables: {other:?}")
+            }
         }
     }
 }
@@ -1340,4 +1019,97 @@ fn split_advertised_mcp(name: &str) -> Option<(&str, &str)> {
     } else {
         Some((server, tool))
     }
+}
+
+#[cfg(test)]
+mod macro_equivalence_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Representative input for every ToolKind that has a from_value mapping.
+    /// Drives from_value → to_value → summary so a refactor that changes any
+    /// field name, key, parse rule, or serialize stanza is caught.
+    fn cases() -> Vec<(&'static str, serde_json::Value)> {
+        vec![
+            ("Edit", json!({"file_path":"a.rs","old_string":"x","new_string":"y","replace_all":true})),
+            ("Write", json!({"file_path":"a.rs","content":"c"})),
+            ("Read", json!({"file_path":"a.rs","offset":3,"limit":9})),
+            ("Bash", json!({"command":"ls","timeout":500,"workdir":"/tmp"})),
+            ("Glob", json!({"pattern":"*.rs","path":"src"})),
+            ("Grep", json!({"pattern":"fn","path":"src","glob":"*.rs","output_mode":"content"})),
+            ("Search", json!({"query":"foo","path":"src"})),
+            ("ApplyPatch", json!({"patch":"diff"})),
+            ("TaskCreate", json!({"subject":"s","description":"d","blocked_by":["t1"],"risk":"low"})),
+            ("TaskUpdate", json!({"task_id":"t1","status":"done","owner":"me"})),
+            ("TaskList", json!({"status_filter":"pending"})),
+            ("TaskDone", json!({"task_id":"t1"})),
+            ("TaskStop", json!({"task_id":"t1"})),
+            ("TaskGet", json!({"task_id":"t1"})),
+            ("TaskValidate", json!({})),
+            ("Task", json!({"description":"d","prompt":"p","run_in_background":true,"subagent_type":"explore"})),
+            ("Skill", json!({"name":"sk","args":"a"})),
+            ("ToolSearch", json!({"query":"q","limit":5})),
+            ("ToolSuggest", json!({"intent":"i","limit":5})),
+            ("MemoryCreate", json!({"level":"user","memory_type":"pref","scope":"private","body":"b"})),
+            ("MemoryDelete", json!({"path":"/m"})),
+            ("TeamCreate", json!({"team_name":"t","description":"d"})),
+            ("TeamDelete", json!({})),
+            ("SendMessage", json!({"to":"a","message":"m","summary":"s"})),
+            ("TeamMemberMode", json!({"member_name":"a","mode":"plan"})),
+            ("code_index", json!({"path":"src","query":"q","kind":"function","max_entries":10})),
+            ("graph_query", json!({"query":"fn(\"x\")","max_tokens":2000,"include_handles":false})),
+            ("run_coverage", json!({"lcov_path":"/c","include_untested_list":false})),
+            ("symbol_edit", json!({"handle":"fn:x","new_content":"...","validate":true,"dispatch_cascade":true})),
+            ("post_bounty", json!({"description":"d","budget":100,"acceptance_criteria":"ac","max_solvers":3,"auto_dispatch":true})),
+            ("market_status", json!({"bounty_id":"b1"})),
+            ("run_bounty", json!({"bounty_id":"b1","max_solvers":2})),
+            ("ExitPlanMode", json!({"plan":"p"})),
+            ("MultiEdit", json!({"file_path":"a.rs","edits":[{"old":"x"}]})),
+            ("AskUserQuestion", json!({"question":"q?","options":[{"label":"a"}],"multi_select":true})),
+            ("WebFetch", json!({"url":"http://x","prompt":"p"})),
+            ("WebSearch", json!({"query":"q","max_results":5})),
+            ("CronCreate", json!({"schedule":"@daily","command":"c","description":"d"})),
+            ("CronList", json!({})),
+            ("CronDelete", json!({"id":"j1"})),
+            ("ScheduleWakeup", json!({"delay_seconds":60,"prompt":"p","reason":"r"})),
+            ("Monitor", json!({"command":"c","until":"done"})),
+            ("LSP", json!({"kind":"hover","file":"a.rs","line":3,"column":5})),
+            ("PushNotification", json!({"message":"m","title":"t"})),
+            ("RemoteTrigger", json!({"trigger_id":"ci","payload":{"x":1}})),
+            ("EnterPlanMode", json!({"reason":"r"})),
+            ("EnterWorktree", json!({"name":"w","branch":"b"})),
+            ("ExitWorktree", json!({})),
+            ("NotebookRead", json!({"path":"n.ipynb"})),
+            ("NotebookEdit", json!({"path":"n.ipynb","cell_id":"c1","new_source":"s","edit_mode":"insert"})),
+            ("ScratchpadRead", json!({"key":"k"})),
+            ("ScratchpadWrite", json!({"key":"k","value":"v"})),
+        ]
+    }
+
+    #[test]
+    fn tool_input_round_trip_snapshot_is_stable() {
+        let mut snapshot = String::new();
+        for (name, input) in cases() {
+            let parsed = ToolInput::from_value(name, input.clone())
+                .unwrap_or_else(|e| panic!("from_value({name}) failed: {e}"));
+            let serialized = parsed.to_value();
+            let summary = parsed.summary();
+            snapshot.push_str(&format!(
+                "{name}\n  to_value={}\n  summary={summary}\n",
+                serde_json::to_string(&serialized).unwrap()
+            ));
+        }
+        // Locked snapshot of current behavior. If the macro refactor changes
+        // any field name / JSON key / parse rule / serialize stanza / summary
+        // template, this digest changes and the test fails.
+        let expected = include_str!("tool_input_snapshot.txt");
+        assert_eq!(
+            snapshot.trim(),
+            expected.trim(),
+            "tool_input behavior changed. If intentional, regenerate \
+             tool_input_snapshot.txt by temporarily swapping this assert for \
+             a std::fs::write of `snapshot.trim()`."
+        );
+    }
+
 }
