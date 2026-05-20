@@ -112,6 +112,8 @@ pub(super) async fn run_teammate_loop(
                     token_count,
                     tool_use_count: tool_count,
                     last_tool,
+                    model_id: Some(config.model_id.as_str().to_owned()),
+                    cost_usd: None,
                 });
             }
             super::executor::TurnResult::Aborted => {

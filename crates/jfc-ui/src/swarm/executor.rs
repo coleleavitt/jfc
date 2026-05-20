@@ -428,6 +428,8 @@ pub(super) async fn run_single_turn(
                     .saturating_add(cumulative_output_tokens),
                 tool_use_count: total_tools,
                 last_tool: Some(name.clone()),
+                model_id: Some(model.as_str().to_owned()),
+                cost_usd: None,
             });
 
             // Permission gate: when the teammate is running with
@@ -498,7 +500,10 @@ pub(super) async fn run_single_turn(
             // scoped: outside this `scope` the task-local resolves to
             // `None`, preserving leader behavior on the leader's own
             // tool path.
-            let result = tools::CURRENT_AGENT_NAME
+            //
+            // Race tool execution against the abort channel so user
+            // cancellation kills running tools immediately.
+            let tool_future = tools::CURRENT_AGENT_NAME
                 .scope(
                     identity.agent_name.clone(),
                     tools::execute_tool(
@@ -509,8 +514,19 @@ pub(super) async fn run_single_turn(
                         config.task_store.clone(),
                         Some(identity.team_name.as_str()),
                     ),
-                )
-                .await;
+                );
+
+            let result = tokio::select! {
+                biased;
+                changed = abort_rx.changed() => {
+                    if changed.is_err() || *abort_rx.borrow() {
+                        return TurnResult::Aborted;
+                    }
+                    // Spurious wake — continue waiting on the tool
+                    tool_future.await
+                }
+                res = tool_future => res,
+            };
 
             tool_results.push(ProviderContent::ToolResult {
                 tool_use_id: id.clone(),

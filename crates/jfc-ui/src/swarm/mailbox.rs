@@ -143,8 +143,19 @@ impl Drop for FileLock {
 // ─── Read operations ─────────────────────────────────────────────────────────
 
 /// Read all messages from an agent's inbox.
+///
+/// Acquires the advisory file lock before reading to prevent partial/corrupt
+/// JSON when a concurrent writer is mid-flush. Falls back to unlocked read
+/// if the lock can't be acquired within 1.5s (better stale than deadlocked).
 pub async fn read_mailbox(agent_name: &str, team_name: &str) -> Vec<MailboxMessage> {
     let path = inbox_path(agent_name, team_name);
+    let lock_file = lock_path(&path);
+
+    let _lock = match FileLock::acquire(lock_file, Duration::from_millis(1500)).await {
+        Ok(l) => Some(l),
+        Err(_) => None,
+    };
+
     match fs::read_to_string(&path).await {
         Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),

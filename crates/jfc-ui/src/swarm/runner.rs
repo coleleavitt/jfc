@@ -177,6 +177,10 @@ pub enum TeammateEvent {
         token_count: u64,
         tool_use_count: u64,
         last_tool: Option<String>,
+        /// Model being used, for cost aggregation in the status bar.
+        model_id: Option<String>,
+        /// Incremental cost in USD since last progress event.
+        cost_usd: Option<f64>,
     },
     /// Teammate completed and exited its loop.
     Completed { task_id: String, agent_id: String },
@@ -303,6 +307,8 @@ async fn run_teammate_loop(
                     token_count,
                     tool_use_count: tool_count,
                     last_tool,
+                    model_id: Some(config.model_id.as_str().to_owned()),
+                    cost_usd: None,
                 });
             }
             TurnResult::Aborted => {
@@ -974,6 +980,8 @@ async fn run_single_turn(
                     .saturating_add(cumulative_output_tokens),
                 tool_use_count: total_tools,
                 last_tool: Some(name.clone()),
+                model_id: Some(model.as_str().to_owned()),
+                cost_usd: None,
             });
 
             // Permission gate: when the teammate is running with
@@ -1987,6 +1995,8 @@ mod tests {
                 token_count: 0,
                 tool_use_count: 0,
                 last_tool: None,
+                model_id: None,
+                cost_usd: None,
             },
             TeammateEvent::Completed {
                 task_id: "t".into(),

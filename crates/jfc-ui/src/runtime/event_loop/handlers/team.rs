@@ -82,7 +82,16 @@ async fn handle_runner(
             token_count,
             tool_use_count,
             last_tool,
+            model_id,
+            cost_usd,
         } => {
+            // Aggregate teammate cost into the parent's usage map so
+            // the status bar reflects actual spend across all agents.
+            if let (Some(model), Some(cost)) = (&model_id, cost_usd) {
+                let entry = app.usage_by_model.entry(model.clone()).or_default();
+                entry.cost_usd = entry.cost_usd.map_or(Some(cost), |c| Some(c + cost));
+            }
+
             // Update background task state for UI display.
             // Revive an Idle task back to Running — the agent
             // is producing tool-progress events again, so it
