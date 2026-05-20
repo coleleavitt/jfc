@@ -1,6 +1,7 @@
 use super::core::RenderItem;
 use super::*;
 
+#[allow(dead_code)]
 pub(super) fn render_assistant_text_lines<'a>(
     text: &'a str,
     t: &'a Theme,
@@ -69,6 +70,7 @@ pub(super) fn render_assistant_text_lines<'a>(
     lines
 }
 
+#[allow(dead_code)]
 fn streaming_task_footer_lines(app: &App, t: &Theme) -> Vec<Line<'static>> {
     use jfc_session::{DeletedFilter, TaskStatus};
 

@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
-    let drained: Vec<QueuedPrompt> = app.queued_prompts.drain(..).collect();
+    let drained: Vec<QueuedPrompt> = app.queued_prompts.drain_all();
     if drained.is_empty() {
         return;
     }
@@ -29,6 +29,7 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
             text,
             is_meta,
             attachments,
+            ..
         } = queued;
         let glyph = if is_meta { "⚙" } else { "⏳" };
         let placeholder = format!("{glyph} {text}");
@@ -136,7 +137,8 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
     // turn would otherwise fire immediately on this freshly-drained
     // submission and emit "Interrupted by user".
     app.cancel_token = tokio_util::sync::CancellationToken::new();
-    app.interrupt_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+    app.interrupt_flag
+        .store(false, std::sync::atomic::Ordering::SeqCst);
     app.last_usage_output = 0;
     app.usage_apply_baseline = (0, 0, 0, 0);
     app.scroll_to_bottom();
@@ -161,14 +163,7 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
     tokio::spawn(async move {
         let result = tokio::spawn(async move {
             stream::stream_response(
-                provider,
-                messages,
-                model,
-                tx_spawn,
-                interrupt,
-                cancel,
-                None,
-                overrides,
+                provider, messages, model, tx_spawn, interrupt, cancel, None, overrides,
             )
             .await;
         })

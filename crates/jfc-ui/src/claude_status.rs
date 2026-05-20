@@ -15,6 +15,7 @@ pub struct ClaudeStatusSnapshot {
     pub description: String,
     pub components: Vec<ClaudeComponentStatus>,
     pub incidents: Vec<ClaudeIncidentStatus>,
+    #[allow(dead_code)]
     pub fetched_at: Instant,
     pub bytes_in: u64,
     pub bytes_out: u64,
@@ -105,6 +106,7 @@ impl ClaudeStatusSnapshot {
         }
     }
 
+    #[allow(dead_code)]
     pub fn age_secs(&self) -> u64 {
         self.fetched_at.elapsed().as_secs()
     }

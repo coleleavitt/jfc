@@ -27,7 +27,6 @@
 //! win — same call we made for [`crate::lsp_rpc`]. We lean on
 //! `serde_json::json!` macros and pull-out helpers below.
 
-#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -41,6 +40,7 @@ pub const PROTOCOL_VERSION: &str = "2025-03-26";
 /// but the spec also allows strings; we keep an integer for now since
 /// our writer only mints integers.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[allow(dead_code)]
 pub struct RpcRequest {
     pub jsonrpc: String,
     pub id: u64,
@@ -51,6 +51,7 @@ pub struct RpcRequest {
 
 /// JSON-RPC 2.0 notification envelope (no `id`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[allow(dead_code)]
 pub struct RpcNotification {
     pub jsonrpc: String,
     pub method: String,
@@ -61,6 +62,7 @@ pub struct RpcNotification {
 /// JSON-RPC 2.0 response envelope. Either `result` or `error` is set,
 /// never both.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[allow(dead_code)]
 pub struct RpcResponse {
     pub jsonrpc: String,
     pub id: u64,
@@ -112,6 +114,7 @@ pub fn build_initialized_notification() -> Value {
 
 /// Build a `tools/list` request. MCP supports cursor-based pagination
 /// via `params.cursor`; pass `None` for the first page.
+#[allow(dead_code)]
 pub fn build_tools_list(id: u64, cursor: Option<&str>) -> Value {
     let mut params = serde_json::Map::new();
     if let Some(c) = cursor {
@@ -127,6 +130,7 @@ pub fn build_tools_list(id: u64, cursor: Option<&str>) -> Value {
 
 /// Build a `tools/call` request. `arguments` is the JSON object the
 /// model produced; servers validate against the tool's `inputSchema`.
+#[allow(dead_code)]
 pub fn build_tools_call(id: u64, tool_name: &str, arguments: &Value) -> Value {
     json!({
         "jsonrpc": "2.0",

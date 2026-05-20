@@ -2,6 +2,7 @@ use std::{sync::Arc, time::Instant};
 
 use super::permissions::is_readonly_bash;
 use super::*;
+use crate::app::recent_models::save_recent_models;
 use crate::types::{
     ChatMessage, MessagePart, ModelUsage, ReplacementMode, ToolCall, ToolInput, ToolKind,
     ToolOutput, ToolStatus,
@@ -25,8 +26,10 @@ impl Provider for TestProvider {
 
     async fn stream(
         &self,
-        _messages: Vec<ProviderMessage>,
-        _options: &StreamOptions,
+        #[allow(dead_code)]
+        messages: Vec<ProviderMessage>,
+        #[allow(dead_code)]
+        options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
         Ok(Box::pin(futures::stream::empty()))
     }
@@ -34,7 +37,9 @@ impl Provider for TestProvider {
 impl jfc_provider::seal::Sealed for TestProvider {}
 
 fn new_app() -> App {
-    App::new(Arc::new(TestProvider), "test-model")
+    let mut app = App::new(Arc::new(TestProvider), "test-model");
+    app.task_store = jfc_session::TaskStore::in_memory();
+    app
 }
 
 fn make_tool(kind: ToolKind, id: &str) -> ToolCall {
@@ -546,9 +551,8 @@ fn switch_session_none_mints_fresh_id_normal() {
 fn sync_task_completions_tracks_and_prunes_normal() {
     use jfc_session::{TaskPatch, TaskStatus};
     let mut app = new_app();
-    // Create a task in the in-memory store (App::new opens a
-    // session-id-keyed store; for these tests it persists on disk
-    // under XDG_CONFIG_HOME, but the in-memory data still works).
+    // Create a task in the in-memory fixture store so tests never mutate
+    // the project-level `.jfc/tasks.json`.
     let t1 = app
         .task_store
         .create::<jfc_session::TaskId>("subj".into(), "desc".into(), None, Vec::new())
@@ -587,9 +591,11 @@ fn sync_task_completions_tracks_and_prunes_normal() {
 /// duration of one test so `push_recent_model` doesn't clobber the
 /// developer's `~/.config/jfc/recent_models.json`.
 struct TempConfigHome {
-    _dir: tempfile::TempDir,
+    #[allow(dead_code)]
+    dir: tempfile::TempDir,
     prior: Option<String>,
-    _guard: std::sync::MutexGuard<'static, ()>,
+    #[allow(dead_code)]
+    guard: std::sync::MutexGuard<'static, ()>,
 }
 
 static RECENT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -604,9 +610,11 @@ impl TempConfigHome {
             std::env::set_var("XDG_CONFIG_HOME", dir.path());
         }
         Self {
-            _dir: dir,
+            #[allow(dead_code)]
+            dir: dir,
             prior,
-            _guard: guard,
+            #[allow(dead_code)]
+            guard: guard,
         }
     }
 }

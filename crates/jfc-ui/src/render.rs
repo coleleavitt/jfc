@@ -34,8 +34,8 @@ pub use session_sidebar::ordered_sidebar_sessions;
 use session_sidebar::sidebar;
 #[cfg(test)]
 use status::context_gauge_label;
-use status::{claude_status_footer, effort_status_badge, status};
-use task_panel::{task_model_badge, task_panel};
+use status::status;
+use task_panel::task_panel;
 use teammates_panel::teammates_panel;
 use theme_picker::theme_picker;
 
@@ -920,6 +920,7 @@ fn highlight_mentions_in(s: &str, t: Theme, phase: f32) -> Vec<Span<'static>> {
 /// order, starting at the top-left corner. Used by the border-comet
 /// painter to walk the perimeter at a steady speed regardless of
 /// rect aspect ratio.
+#[allow(dead_code)]
 fn perimeter_cells(area: Rect) -> Vec<(u16, u16)> {
     // Per-frame cache: the input dock + status bar reuse the same Rect on
     // back-to-back frames. Without this, every frame allocated and filled a
@@ -944,6 +945,7 @@ fn perimeter_cells(area: Rect) -> Vec<(u16, u16)> {
     })
 }
 
+#[allow(dead_code)]
 fn compute_perimeter_cells(area: Rect) -> Vec<(u16, u16)> {
     let mut cells: Vec<(u16, u16)> = Vec::new();
     if area.width < 2 || area.height < 2 {
@@ -973,6 +975,7 @@ fn compute_perimeter_cells(area: Rect) -> Vec<(u16, u16)> {
 /// Configuration for `paint_border_comets`. All knobs that callers
 /// might want to vary at runtime live here so the painter stays
 /// declarative — pass a struct, get a render.
+#[allow(dead_code)]
 struct CometConfig {
     /// Number of comets evenly spaced around the perimeter. 1..=4.
     count: u32,
@@ -999,6 +1002,7 @@ struct CometConfig {
 /// Paint N border comets traveling around the rectangle's perimeter
 /// at a steady speed. Each comet is a `trail_len`-cell trail (head
 /// at brightest blend toward `head` color, tail fading to `base`).
+#[allow(dead_code)]
 fn paint_border_comets(f: &mut Frame, area: Rect, cfg: &CometConfig) {
     // O(1) early exit: skip perimeter computation and buffer writes when
     // there is no animation to show (no comets configured, or zero-length
@@ -1066,6 +1070,7 @@ fn paint_border_comets(f: &mut Frame, area: Rect, cfg: &CometConfig) {
 /// Compute the comet config from the current app state. Centralizes
 /// all the "what color, what speed, which direction" logic in one
 /// place so the input renderer just calls this once.
+#[allow(dead_code)]
 fn comet_config_from_state(app: &App, t: Theme, count: u32) -> CometConfig {
     // Bash-mode detection: the user is composing a shell command
     // (input starts with `!`). Mirrors v126's bash-mode prompt
@@ -1404,6 +1409,7 @@ fn truncate_str(s: &str, max: usize) -> String {
 /// long namespace) survives. Used by the sidebar's cwd display so
 /// the user sees `…/active/jfc` on a narrow column rather than the
 /// useless `~/RustProjec…` head.
+#[allow(dead_code)]
 fn tail_truncate(s: &str, max: usize) -> String {
     if max == 0 {
         return String::new();
@@ -2846,6 +2852,7 @@ pub(crate) fn format_token_count(n: u64) -> String {
 /// to show beyond the description). Mirrors v131's
 /// `(${z.toolUseCount} tools, ${z.tokenCount} tokens)` from
 /// cli.2.1.131.beautified.js.
+#[allow(dead_code)]
 pub(crate) fn format_subagent_counters(bt: &crate::app::BackgroundTask) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(model) = bt.model_used.as_deref() {
@@ -4605,6 +4612,7 @@ mod render_helpers_tests {
 #[cfg(test)]
 mod pure_helper_tests {
     use super::*;
+    use super::status::effort_status_badge;
     use std::sync::Arc;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
@@ -4624,8 +4632,10 @@ mod pure_helper_tests {
         }
         async fn stream(
             &self,
-            _messages: Vec<ProviderMessage>,
-            _options: &StreamOptions,
+            #[allow(dead_code)]
+            messages: Vec<ProviderMessage>,
+            #[allow(dead_code)]
+            options: &StreamOptions,
         ) -> anyhow::Result<EventStream> {
             Ok(Box::pin(futures::stream::empty()))
         }

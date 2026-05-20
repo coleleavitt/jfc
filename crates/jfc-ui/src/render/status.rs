@@ -244,6 +244,7 @@ pub(super) fn effort_status_badge(app: &App) -> String {
     }
 }
 
+#[allow(dead_code)]
 pub(super) fn claude_status_footer(app: &App) -> String {
     if let Some(status) = app.claude_status.as_ref() {
         let age = status.age_secs();
@@ -315,6 +316,7 @@ pub(super) fn blend_color(from: Color, to: Color, t: f32) -> Color {
     }
 }
 
+#[allow(dead_code)]
 fn format_bytes(bytes: u64) -> String {
     if bytes < 1024 {
         format!("{bytes}B")

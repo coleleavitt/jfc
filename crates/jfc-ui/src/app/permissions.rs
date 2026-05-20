@@ -181,6 +181,7 @@ pub enum PermissionDecision {
 ///   4. **Per-segment classifier** — head command must be in the
 ///      positive allowlist; flags must satisfy the per-tool guards
 ///      (`find` write-actions, `sed -i`, `git -c`, etc.).
+#[allow(dead_code)]
 pub(super) fn is_readonly_bash(cmd: &str) -> bool {
     classify_readonly_bash(cmd).is_ok()
 }
@@ -259,6 +260,7 @@ pub(super) const REASON_SUDO_BARE: &str =
     "Plan mode: sudo / doas without a command to elevate";
 pub(super) const REASON_REDIRECT: &str =
     "Plan mode: redirect target is not /dev/null or another FD";
+#[allow(dead_code)]
 pub(super) const REASON_FIND_NO_ACTION: &str =
     "Plan mode: find without any allowlisted action (or with unknown flag)";
 
@@ -453,6 +455,7 @@ fn split_readonly_shell_segments(cmd: &str) -> Vec<String> {
     segments
 }
 
+#[allow(dead_code)]
 fn is_readonly_bash_segment(segment: &str) -> bool {
     classify_readonly_segment(segment).is_ok()
 }
@@ -794,6 +797,7 @@ fn is_readonly_sudo_reasoned(args: &[String]) -> Result<(), &'static str> {
 /// `scp`-like or file-transfer wrappers) is denied — those have
 /// write-side effects (open listening sockets / mutate ssh-agent
 /// state / copy files).
+#[allow(dead_code)]
 fn is_readonly_ssh(args: &[String]) -> bool {
     // Reject if any port-forwarding or write-mode flag is present.
     for a in args {
@@ -839,6 +843,7 @@ fn is_readonly_ssh(args: &[String]) -> bool {
 
 /// Is `sudo <args>` a read-only invocation? Recursively classifies the
 /// command after stripping `-u USER`, `-E`, `-n`, `-S` flags.
+#[allow(dead_code)]
 fn is_readonly_sudo(args: &[String]) -> bool {
     let mut iter = args.iter().peekable();
     while let Some(a) = iter.peek() {

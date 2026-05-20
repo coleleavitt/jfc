@@ -123,6 +123,7 @@ impl GhClient {
     }
 
     /// New client using an explicit binary path. Primarily for tests.
+    #[allow(dead_code)]
     pub fn with_bin(bin: impl Into<String>) -> Self {
         Self { bin: bin.into() }
     }
@@ -160,6 +161,7 @@ impl GhClient {
     }
 
     /// `gh pr comment <num> --body <body>` — posts a top-level PR comment.
+    #[allow(dead_code)]
     pub async fn gh_pr_comment(&self, num: u64, body: &str) -> Result<(), GhError> {
         let num_s = num.to_string();
         let args = ["pr", "comment", &num_s, "--body", body];
@@ -168,6 +170,7 @@ impl GhClient {
     }
 
     /// `gh workflow list --json …` — lists Actions workflows in the repo.
+    #[allow(dead_code)]
     pub async fn gh_workflow_list(&self) -> Result<serde_json::Value, GhError> {
         let args = ["workflow", "list", "--json", "id,name,state,path"];
         let raw = self.run(&args).await?;
@@ -177,6 +180,7 @@ impl GhClient {
 
     /// `gh api rate_limit` shortcut for the assistant — emits a
     /// system-reminder string as the docstring says.
+    #[allow(dead_code)]
     pub async fn rate_limit_reminder(&self) -> Result<String, GhError> {
         let v = self.gh_api("rate_limit", &[]).await?;
         Ok(format_rate_limit_reminder(&v))
@@ -249,6 +253,7 @@ pub fn rate_limit_reminder_from_stderr(stderr: &str) -> String {
 /// The API returns `{ "rate": { "limit", "remaining", "reset", ... }, ... }`.
 /// We summarize the headline rate (used for REST calls) so the model has
 /// the timestamp + remaining quota in one line.
+#[allow(dead_code)]
 pub fn format_rate_limit_reminder(api_json: &serde_json::Value) -> String {
     let rate = api_json.get("rate");
     let remaining = rate

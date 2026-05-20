@@ -2063,6 +2063,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "jfc-mcp"
+version = "0.1.0"
+dependencies = [
+ "jfc-provider",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "jfc-provider"
 version = "0.1.0"
 dependencies = [
@@ -2123,6 +2135,7 @@ dependencies = [
  "jfc-core",
  "jfc-economy",
  "jfc-graph",
+ "jfc-mcp",
  "jfc-provider",
  "jfc-session",
  "libc",

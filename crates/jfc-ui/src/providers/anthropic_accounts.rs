@@ -245,11 +245,16 @@ pub struct PerModelUsage {
 /// Compact projection of one account's state for UI rendering. Cached on
 /// `App` and refreshed every ~10s so the ribbon doesn't have to lock the
 /// manager mutex per frame.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct AccountSnapshot {
+    #[allow(dead_code)]
     pub email: Option<String>,
+    #[allow(dead_code)]
     pub name: String,
+    #[allow(dead_code)]
     pub plan: Option<String>,
+    #[allow(dead_code)]
     pub rate_limit_tier: Option<String>,
     pub utilization_5h: Option<f64>,
     pub utilization_7d: Option<f64>,
@@ -468,6 +473,7 @@ impl AccountManager {
     }
 
     /// Path to the JSON file backing this manager.
+    #[allow(dead_code)]
     pub fn store_path(&self) -> &Path {
         &self.inner.store_path
     }
@@ -772,6 +778,7 @@ impl AccountManager {
     /// Mark the account as having received a 429. Sets a cooldown using
     /// `retry_after` if provided, else exponential-backoff based on current
     /// failure count. `retry_after_secs` of 0 produces a 60-second floor.
+    #[allow(dead_code)]
     pub async fn mark_rate_limited(&self, name: &str, retry_after_secs: Option<u64>) {
         let mut state = self.inner.state.lock().await;
         let rt = state.runtime.entry(name.to_owned()).or_default();
@@ -1210,6 +1217,7 @@ impl AccountManager {
     /// Atomically persist a rate-limit reset time to disk. Used when a 429
     /// response carries an absolute reset timestamp we want all processes to
     /// honor (not just this jfc instance).
+    #[allow(dead_code)]
     pub async fn atomic_set_rate_limit_reset(
         &self,
         name: &str,

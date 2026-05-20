@@ -3,7 +3,7 @@
 use itertools::{Itertools, Position};
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options as ParseOptions, Parser, Tag, TagEnd};
 use ratatui::{
-    style::{Color, Modifier, Style, Stylize},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
 };
 use std::collections::HashMap;

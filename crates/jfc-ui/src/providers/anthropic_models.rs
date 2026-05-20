@@ -181,6 +181,7 @@ pub fn apply_seat_tier_filter(models: Vec<ModelInfo>, seat_tier: Option<&str>) -
 ///
 /// Adaptive thinking is the preferred mode for 4.6+ models; older models must
 /// use `thinking.type = "enabled"` with an explicit `budget_tokens`.
+#[allow(dead_code)]
 pub fn supports_adaptive_thinking(model_id: &str) -> bool {
     let id = model_id.to_lowercase();
     // Opus 4.6+ and Sonnet 4.6+ support adaptive

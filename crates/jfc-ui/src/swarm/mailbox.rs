@@ -156,6 +156,7 @@ pub async fn read_mailbox(agent_name: &str, team_name: &str) -> Vec<MailboxMessa
 }
 
 /// Read only unread messages from an agent's inbox.
+#[allow(dead_code)]
 pub async fn read_unread_messages(agent_name: &str, team_name: &str) -> Vec<MailboxMessage> {
     read_mailbox(agent_name, team_name)
         .await
@@ -238,6 +239,7 @@ pub async fn mark_message_read(
 }
 
 /// Mark all messages as read.
+#[allow(dead_code)]
 pub async fn mark_all_read(agent_name: &str, team_name: &str) -> anyhow::Result<()> {
     let path = inbox_path(agent_name, team_name);
     let lock_file = lock_path(&path);
@@ -256,6 +258,7 @@ pub async fn mark_all_read(agent_name: &str, team_name: &str) -> anyhow::Result<
 }
 
 /// Clear all messages from an agent's inbox.
+#[allow(dead_code)]
 pub async fn clear_mailbox(agent_name: &str, team_name: &str) -> anyhow::Result<()> {
     let path = inbox_path(agent_name, team_name);
     let lock_file = lock_path(&path);

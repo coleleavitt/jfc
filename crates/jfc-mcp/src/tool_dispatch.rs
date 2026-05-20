@@ -13,7 +13,6 @@
 //! and propagate `isError` separately so the streaming layer can decide
 //! whether to surface it as a tool failure.
 
-#![allow(dead_code)]
 
 use serde_json::Value;
 
@@ -27,6 +26,7 @@ pub const DEFAULT_DISPATCH_TIMEOUT: std::time::Duration = std::time::Duration::f
 /// Returns true if `tool_name` is the advertised `mcp__server__tool`
 /// shape. Streaming-layer can call this to decide whether to route via
 /// MCP or native.
+#[allow(dead_code)]
 pub fn is_mcp_tool_name(tool_name: &str) -> bool {
     super::protocol::split_advertised(tool_name).is_some()
 }

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 use std::path::PathBuf;
 
@@ -113,10 +112,13 @@ struct ModelsListResponse {
 struct ApiModel {
     id: String,
     #[serde(default)]
+    #[allow(dead_code)]
     object: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     created: Option<u64>,
     #[serde(default)]
+    #[allow(dead_code)]
     owned_by: Option<String>,
 }
 

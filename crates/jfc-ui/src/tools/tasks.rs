@@ -22,6 +22,16 @@ pub(super) fn execute_task_create(
     let Some(store) = store else {
         return ExecutionResult::failure("Task store not available");
     };
+    if is_placeholder_task_input(&subject, &description) {
+        warn!(
+            target: "jfc::tools",
+            %subject,
+            "task_create: rejected placeholder task"
+        );
+        return ExecutionResult::failure(
+            "TaskCreate rejected placeholder subject/description; provide a real task title and description",
+        );
+    }
     match store.create(subject, description, active_form, blocked_by) {
         Ok(task) => {
             // Apply optional extended fields via a patch
@@ -64,6 +74,10 @@ pub(super) fn execute_task_create(
             ExecutionResult::failure(e.to_string())
         }
     }
+}
+
+fn is_placeholder_task_input(subject: &str, description: &str) -> bool {
+    subject.trim().eq_ignore_ascii_case("subj") && description.trim().eq_ignore_ascii_case("desc")
 }
 
 pub(super) fn execute_task_update(

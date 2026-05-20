@@ -21,7 +21,6 @@
 //! the scope of this provider, and the wizard already detects gcloud as a
 //! prerequisite. Trade-off: we depend on `gcloud` being on `$PATH`.
 
-#![allow(dead_code)]
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -86,6 +85,7 @@ pub fn load_config(path: &PathBuf) -> anyhow::Result<Option<VertexConfig>> {
     Ok(Some(cfg))
 }
 
+#[allow(dead_code)]
 pub fn save_config(path: &PathBuf, cfg: &VertexConfig) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -110,6 +110,7 @@ impl TokenCache {
 
 pub struct VertexProvider {
     client: reqwest::Client,
+    #[allow(dead_code)]
     config_path: PathBuf,
     config: Option<VertexConfig>,
     token_cache: Mutex<Option<TokenCache>>,
@@ -353,6 +354,7 @@ pub fn fetch_gcloud_token() -> anyhow::Result<String> {
 
 /// Read the active gcloud project (`gcloud config get-value project`). Used
 /// by the wizard to pre-fill the prompt with what the user likely wants.
+#[allow(dead_code)]
 pub fn fetch_gcloud_default_project() -> Option<String> {
     let out = std::process::Command::new("gcloud")
         .args(["config", "get-value", "project"])

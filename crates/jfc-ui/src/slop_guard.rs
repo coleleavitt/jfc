@@ -12,7 +12,6 @@
 //! 5. Complexity budget (LOC + nesting depth per function)
 //! 6. Test quality (implementation-coupling heuristics)
 
-#![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -148,6 +147,7 @@ pub fn check_duplication(new_content: &str, file_path: &Path, cwd: &Path) -> Vec
 
 /// Run `cargo check --message-format=json` and extract dead_code warnings.
 /// Returns quickly — uses cached incremental compilation.
+#[allow(dead_code)]
 pub fn check_dead_code(cwd: &Path) -> Vec<SlopFinding> {
     let output = std::process::Command::new("cargo")
         .args(["check", "--message-format=json", "-q"])

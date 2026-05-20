@@ -29,7 +29,9 @@ pub struct CodexOAuthProvider {
 #[derive(Debug, Clone)]
 pub struct CodexAuthorizeRequest {
     pub url: String,
+    #[allow(dead_code)]
     pub verifier: String,
+    #[allow(dead_code)]
     pub state: String,
     pub redirect_uri: String,
 }
@@ -58,6 +60,7 @@ impl CodexOAuthProvider {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_store(path: impl Into<std::path::PathBuf>) -> Self {
         Self {
             client: jfc_provider::http::streaming_client(),
@@ -172,6 +175,7 @@ impl CodexOAuthProvider {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn exchange_code(
         &self,
         code: &str,

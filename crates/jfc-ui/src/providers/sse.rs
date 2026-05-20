@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 use futures::StreamExt;
 use serde::Deserialize;
@@ -74,9 +73,11 @@ impl MessageUsage {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
     Text {
+        #[allow(dead_code)]
         text: String,
     },
     Thinking {
+        #[allow(dead_code)]
         thinking: String,
     },
     /// Server-redacted thinking block — opaque base64 blob, no deltas.

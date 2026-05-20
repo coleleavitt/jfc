@@ -78,6 +78,7 @@ pub async fn read_team_file(team_name: &str) -> Option<TeamFile> {
 }
 
 /// Read a team file synchronously (for use in sync contexts).
+#[allow(dead_code)]
 pub fn read_team_file_sync(team_name: &str) -> Option<TeamFile> {
     let path = team_file_path(team_name);
     let content = std::fs::read_to_string(&path).ok()?;
@@ -210,6 +211,7 @@ pub async fn add_member(team_name: &str, member: TeamMember) -> anyhow::Result<(
 }
 
 /// Remove a member from the team file by agent ID.
+#[allow(dead_code)]
 pub async fn remove_member_by_id(team_name: &str, agent_id: &str) -> anyhow::Result<bool> {
     with_team_lock(team_name, || async move {
         let mut team_file = read_team_file(team_name)
@@ -230,6 +232,7 @@ pub async fn remove_member_by_id(team_name: &str, agent_id: &str) -> anyhow::Res
 }
 
 /// Remove a member from the team file by name.
+#[allow(dead_code)]
 pub async fn remove_member_by_name(team_name: &str, name: &str) -> anyhow::Result<bool> {
     with_team_lock(team_name, || async move {
         let mut team_file = read_team_file(team_name)
@@ -288,6 +291,7 @@ pub async fn set_member_mode(team_name: &str, member_name: &str, mode: &str) -> 
 }
 
 /// Get the leader's name from the team file.
+#[allow(dead_code)]
 pub async fn get_leader_name(team_name: &str) -> Option<String> {
     let team_file = read_team_file(team_name).await?;
     team_file
@@ -299,6 +303,7 @@ pub async fn get_leader_name(team_name: &str) -> Option<String> {
 }
 
 /// Get active (non-lead) members of a team.
+#[allow(dead_code)]
 pub async fn get_active_teammates(team_name: &str) -> Vec<TeamMember> {
     read_team_file(team_name)
         .await
@@ -312,6 +317,7 @@ pub async fn get_active_teammates(team_name: &str) -> Vec<TeamMember> {
 }
 
 /// Check if the current context is the team leader (no agent ID, or agent ID is team-lead).
+#[allow(dead_code)]
 pub fn is_team_leader(team_context: &TeamContext) -> bool {
     team_context.lead_agent_id.is_some()
 }

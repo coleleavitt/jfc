@@ -6,7 +6,7 @@ pub mod anthropic_oauth_login;
 pub mod bedrock;
 pub mod bedrock_wizard;
 pub mod codex_oauth;
-pub mod file_lock;
+
 pub mod litellm;
 pub mod login_dispatch;
 pub mod models_dev;

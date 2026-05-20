@@ -91,6 +91,7 @@ urlencoding = "2"
 serde_urlencoded = "0.7"
 jfc-graph = { path = "../jfc-graph" }
 jfc-economy = { path = "../jfc-economy" }
+jfc-mcp = { path = "../jfc-mcp" }
 
 # Optional profiling deps (enable via --features dhat-heap or --features profiling)
 dhat = { version = "0.3.3", optional = true }

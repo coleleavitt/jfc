@@ -11,7 +11,6 @@
 //! it from both the slash-command console (`/login bedrock`) and a future
 //! TUI panel; both surfaces share these step transitions.
 
-#![allow(dead_code)]
 
 use std::path::PathBuf;
 
@@ -22,6 +21,7 @@ use super::bedrock::{
 
 /// Each step matches a discrete user prompt the wizard surfaces.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum WizardStep {
     /// First check: is the AWS CLI on `$PATH`? When false we exit early
     /// pointing the user at the install docs.
@@ -45,6 +45,7 @@ pub enum WizardStep {
     Failed { reason: String },
 }
 
+#[allow(dead_code)]
 pub struct BedrockWizard {
     config: BedrockConfig,
     config_path: PathBuf,
@@ -53,6 +54,7 @@ pub struct BedrockWizard {
 }
 
 impl BedrockWizard {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             config: BedrockConfig::default(),
@@ -64,15 +66,18 @@ impl BedrockWizard {
 
     /// For tests: override the destination path so we don't clobber a real
     /// `~/.config/jfc/bedrock.toml` during `cargo test`.
+    #[allow(dead_code)]
     pub fn with_config_path(mut self, path: PathBuf) -> Self {
         self.config_path = path;
         self
     }
 
+    #[allow(dead_code)]
     pub fn current_step(&self) -> &WizardStep {
         &self.step
     }
 
+    #[allow(dead_code)]
     pub fn config(&self) -> &BedrockConfig {
         &self.config
     }
@@ -80,12 +85,14 @@ impl BedrockWizard {
     /// Force the wizard into an arbitrary step. Tests use this to bypass the
     /// CLI-detect probe so they don't depend on whether `aws` is installed.
     /// Production code never calls this directly.
+    #[allow(dead_code)]
     pub fn force_step(&mut self, step: WizardStep) {
         self.step = step;
     }
 
     /// Advance one step. `input` is the user's reply for prompts (empty =
     /// accept default). For non-prompt steps the input is ignored.
+    #[allow(dead_code)]
     pub fn advance(&mut self, input: &str) -> WizardStep {
         let next = match &self.step {
             WizardStep::DetectAwsCli => {
@@ -161,6 +168,7 @@ impl Default for BedrockWizard {
 }
 
 /// Terminal-friendly summary for the slash-command response panel.
+#[allow(dead_code)]
 pub fn render_step(step: &WizardStep) -> String {
     match step {
         WizardStep::DetectAwsCli => "Checking for the AWS CLI…".to_owned(),

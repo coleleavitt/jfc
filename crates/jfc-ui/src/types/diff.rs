@@ -29,6 +29,7 @@ pub enum DiffLineKind {
     Removed,
 }
 
+#[allow(dead_code)]
 pub fn parse_unified_diff(file_path: &str, patch: &str) -> DiffView {
     let mut hunks = Vec::new();
     let mut current: Option<DiffHunk> = None;
@@ -112,6 +113,7 @@ pub fn parse_unified_diff(file_path: &str, patch: &str) -> DiffView {
     }
 }
 
+#[allow(dead_code)]
 pub fn parse_hunk_header(header: &str) -> (usize, usize, String) {
     let mut parts = header.split_whitespace();
     let _at = parts.next();
@@ -121,6 +123,7 @@ pub fn parse_hunk_header(header: &str) -> (usize, usize, String) {
     (parse_hunk_start(old), parse_hunk_start(new), tail)
 }
 
+#[allow(dead_code)]
 pub fn parse_hunk_start(token: &str) -> usize {
     token
         .trim_start_matches(['-', '+'])
@@ -130,6 +133,7 @@ pub fn parse_hunk_start(token: &str) -> usize {
         .unwrap_or(1)
 }
 
+#[allow(dead_code)]
 pub fn truncate_lines(text: &str, max_lines: usize) -> String {
     let lines: Vec<_> = text.lines().collect();
     let mut result = lines

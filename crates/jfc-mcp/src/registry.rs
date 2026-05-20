@@ -16,7 +16,6 @@
 //! transparently — modulo a window where `dispatch_tool` returns
 //! `Disconnected` if the call lands during the swap.
 
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -24,7 +23,7 @@ use std::sync::Arc;
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::config::McpServerConfig;
+use crate::McpServerConfig;
 use jfc_provider::ToolDef;
 
 use super::protocol::{self, McpTool, ToolCallOutcome};
@@ -41,6 +40,7 @@ pub enum McpServerStatus {
     Failed,
     /// Server explicitly disabled in config (`enabled = false` — not
     /// yet wired but reserved).
+    #[allow(dead_code)]
     Disabled,
 }
 

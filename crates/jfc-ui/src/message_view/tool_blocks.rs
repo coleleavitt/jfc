@@ -728,6 +728,7 @@ pub fn tool_status_icon_animated(
     }
 }
 
+#[allow(dead_code)]
 pub(super) fn border_color_for_status(tool: &ToolCall, t: &Theme) -> Color {
     // Idle is Task-only territory but still valid on the unified
     // ExecutionStatus enum — render with the same accent as Running

@@ -2,11 +2,9 @@
 //! registration, progress, completion, and failure.
 
 use crate::app::{self, App};
-use crate::runtime::{
-    EventSender, factory_mode_enabled, maybe_continue_task_factory,
-};
-use crate::{stream, types};
+use crate::runtime::{EventSender, factory_mode_enabled, maybe_continue_task_factory};
 use crate::types::*;
+use crate::{stream, types};
 
 use super::super::guards::streaming_assistant_mut;
 
@@ -42,8 +40,7 @@ pub(crate) fn handle_agent_chunk(app: &mut App, task_id: crate::ids::TaskId, tex
                 .unwrap_or(false);
             if chat_coalesce {
                 if let Some(msg) = bt.chat_messages.last_mut() {
-                    if let Some(types::MessagePart::Text(t)) = msg.parts.last_mut()
-                    {
+                    if let Some(types::MessagePart::Text(t)) = msg.parts.last_mut() {
                         t.push_str(&text);
                     } else {
                         msg.parts.push(types::MessagePart::Text(text));
@@ -121,9 +118,9 @@ pub(crate) fn handle_task_started(
             latest_cache_write_tokens: 0,
             cumulative_output_tokens: 0,
             model_used: model_used
-            agent_messages: Vec::new(),
                 .clone()
                 .or_else(|| Some(app.model.as_str().to_owned())),
+            agent_messages: Vec::new(),
             max_input_tokens,
             budget_killed: false,
             parent_task_id: parent_task_id.clone(),
@@ -209,8 +206,7 @@ pub(crate) fn handle_task_progress(
         if let Some(n) = output_tokens {
             // Cumulative — sum across every round-trip,
             // matching v131's `cumulativeOutputTokens` field.
-            bt.cumulative_output_tokens =
-                bt.cumulative_output_tokens.saturating_add(n);
+            bt.cumulative_output_tokens = bt.cumulative_output_tokens.saturating_add(n);
         }
         if let Some(model) = bt.model_used.clone() {
             let input = input_tokens.unwrap_or_default();

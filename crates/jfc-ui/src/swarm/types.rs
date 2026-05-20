@@ -73,6 +73,7 @@ pub struct TeammateIdentity {
     pub team_name: String,
     pub color: Option<String>,
     pub plan_mode_required: bool,
+    #[allow(dead_code)]
     pub parent_session_id: String,
 }
 
@@ -127,6 +128,7 @@ pub struct ShutdownRequest {
 /// Shutdown response message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct ShutdownResponse {
     #[serde(rename = "type")]
     pub msg_type: String, // "shutdown_response"
@@ -197,6 +199,7 @@ pub enum PermissionDecision {
 
 /// Status of an in-process teammate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum TeammateStatus {
     Running,
     Idle,
@@ -207,6 +210,7 @@ pub enum TeammateStatus {
 
 /// Progress tracking for a running teammate.
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct TeammateProgress {
     pub token_count: u64,
     pub tool_use_count: u64,
@@ -215,6 +219,7 @@ pub struct TeammateProgress {
 
 /// A single tool activity entry for the progress display.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TeammateActivity {
     pub tool_name: String,
     pub input_summary: String,
@@ -223,6 +228,7 @@ pub struct TeammateActivity {
 /// Full state for an in-process teammate task. This is the Rust equivalent
 /// of v126's `InProcessTeammateTaskState`.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct InProcessTeammateState {
     pub identity: TeammateIdentity,
     pub task_id: String,
@@ -260,6 +266,7 @@ impl TeamContext {
         self.team_name.is_some()
     }
 
+    #[allow(dead_code)]
     pub fn teammate_names(&self) -> Vec<&str> {
         self.teammates.values().map(|t| t.name.as_str()).collect()
     }
@@ -281,8 +288,10 @@ pub struct TeammateInfo {
     pub name: String,
     pub agent_type: Option<String>,
     pub color: Option<String>,
+    #[allow(dead_code)]
     pub cwd: String,
     pub spawned_at: Instant,
+    #[allow(dead_code)]
     pub backend: BackendType,
     /// Abort handle. Only `Some` when the runtime owns a live in-process
     /// teammate; daemon-backed entries are `None`. Cloning a watch sender
@@ -294,6 +303,7 @@ pub struct TeammateInfo {
 
 /// Parameters for spawning a new teammate.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SpawnTeammateParams {
     pub name: String,
     pub team_name: String,
@@ -307,6 +317,7 @@ pub struct SpawnTeammateParams {
 
 /// Result of a successful teammate spawn.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SpawnResult {
     pub agent_id: String,
     pub task_id: String,
@@ -390,6 +401,7 @@ pub fn teammate_color(color: Option<&str>) -> ratatui::style::Color {
 /// Plan approval request sent by a teammate in plan mode.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct PlanApprovalRequest {
     #[serde(rename = "type")]
     pub msg_type: String, // "plan_approval_request"
@@ -402,6 +414,7 @@ pub struct PlanApprovalRequest {
 /// Plan approval response from the leader.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct PlanApprovalResponse {
     #[serde(rename = "type")]
     pub msg_type: String, // "plan_approval_response"
@@ -416,6 +429,7 @@ pub struct PlanApprovalResponse {
 }
 
 impl PlanApprovalRequest {
+    #[allow(dead_code)]
     pub fn new(from: &str, plan: &str) -> Self {
         Self {
             msg_type: "plan_approval_request".to_owned(),

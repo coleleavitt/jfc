@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Permission synchronization between swarm workers and the team leader.
 //!
 //! When a worker agent encounters a tool that requires user approval, it sends
@@ -215,6 +214,7 @@ pub async fn poll_for_response(
 }
 
 /// Clean up old resolved permission files (> max_age old).
+#[allow(dead_code)]
 pub async fn cleanup_old_resolutions(team_name: &str, max_age: Duration) -> u32 {
     let dir = resolved_dir(team_name);
     let mut entries = match fs::read_dir(&dir).await {

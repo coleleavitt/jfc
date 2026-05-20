@@ -6,6 +6,7 @@ use crate::{attachments::Attachment, types::DiffView};
 pub struct ExecutionResult {
     pub output: String,
     pub outcome: ToolOutcome,
+    #[allow(dead_code)]
     pub diagnostics: Vec<ToolDiagnostic>,
     pub provenance: Option<ToolProvenance>,
     /// When set, the renderer prefers this structured diff over

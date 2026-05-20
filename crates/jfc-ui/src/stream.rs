@@ -10,9 +10,7 @@ mod tool_dispatch;
 mod tool_results;
 
 pub(crate) use compaction::{
-    BYTES_PER_TOKEN, SUBAGENT_AUTO_COMPACT_PROMPT, SUBAGENT_AUTO_COMPACT_TOKEN_THRESHOLD,
     SUBAGENT_HISTORY_BUDGET_BYTES, auto_compact_subagent_history, cap_messages_for_budget,
-    estimate_provider_message_bytes, extract_summary_tag, render_message_as_text,
 };
 pub(crate) use continuation::{
     continue_after_pause_turn, continue_agentic_loop, should_continue_loop,
@@ -23,6 +21,5 @@ use request::prepare_stream_request;
 pub(crate) use retry::open_stream_with_bedrock_retries;
 pub(crate) use tool_dispatch::dispatch_tools_batched;
 pub(crate) use tool_results::{
-    MAX_TOOL_RESULT_CHARS, TOOL_RESULT_DISK_PERSIST_BYTES, TRUNCATION_PREVIEW_CHARS,
-    cap_tool_result, cleanup_tool_result_spills, persist_tool_result, truncate_tool_result,
+    cap_tool_result, cleanup_tool_result_spills,
 };

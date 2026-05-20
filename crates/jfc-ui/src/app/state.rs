@@ -51,8 +51,10 @@ pub enum QueuePriority {
     /// Drain at end of turn (default for normal user submissions).
     Later = 0,
     /// Drain between tool batches (mid-loop steering).
+    #[allow(dead_code)]
     Next = 1,
     /// Immediate — jump the queue, used by interrupt-on-submit.
+    #[allow(dead_code)]
     Now = 2,
 }
 
@@ -61,6 +63,7 @@ pub struct QueuedPrompt {
     pub text: String,
     pub is_meta: bool,
     /// Priority level controlling when this prompt is drained.
+    #[allow(dead_code)]
     pub priority: QueuePriority,
     /// Image/PDF attachments captured at queue time. If the user pasted
     /// an image and then typed a prompt while another turn was already
@@ -91,6 +94,7 @@ impl MessageQueue {
     }
 
     /// Convenience: push with Later priority (default for user submissions).
+    #[allow(dead_code)]
     pub fn push_later(&mut self, text: String, is_meta: bool, attachments: Vec<crate::attachments::Attachment>) {
         self.entries.push_back(QueuedPrompt {
             text,
@@ -102,6 +106,7 @@ impl MessageQueue {
 
     /// Dequeue the highest-priority entry. Among same-priority entries,
     /// FIFO order is preserved (front of the deque wins).
+    #[allow(dead_code)]
     pub fn pop_max_priority(&mut self) -> Option<QueuedPrompt> {
         if self.entries.is_empty() {
             return None;
@@ -117,6 +122,7 @@ impl MessageQueue {
 
     /// Dequeue entries matching a minimum priority level (inclusive).
     /// Returns entries sorted highest-priority-first, FIFO within same level.
+    #[allow(dead_code)]
     pub fn drain_at_least(&mut self, min_priority: QueuePriority) -> Vec<QueuedPrompt> {
         let mut drained = Vec::new();
         let mut remaining = std::collections::VecDeque::new();
@@ -144,6 +150,7 @@ impl MessageQueue {
     }
 
     /// Pop the first entry (FIFO drain for legacy compat).
+    #[allow(dead_code)]
     pub fn pop_front(&mut self) -> Option<QueuedPrompt> {
         self.entries.pop_front()
     }
@@ -156,6 +163,7 @@ impl MessageQueue {
         self.entries.len()
     }
 
+    #[allow(dead_code)]
     /// Index access (for test assertions).
     pub fn get(&self, index: usize) -> Option<&QueuedPrompt> {
         self.entries.get(index)
@@ -268,6 +276,7 @@ pub struct BackgroundTask {
     /// from the swarm runner. Used for transcript foregrounding (when
     /// the user presses Enter on an agent in Ctrl+X, we render these
     /// instead of app.messages).
+    #[allow(dead_code)]
     pub agent_messages: Vec<crate::types::ChatMessage>,
     /// Per-agent token budget. When set and `latest_input + cumulative_output`
     /// exceeds it, the agent is forcibly terminated and an error toast
@@ -340,6 +349,7 @@ pub struct App {
     pub agentic_turn_count: u32,
     /// Text saved by Esc-clear so Up-arrow can recall it. Single slot —
     /// each Esc-clear overwrites. None when no text has been cleared.
+    #[allow(dead_code)]
     pub esc_saved_text: Option<String>,
     /// Index into `messages` of the user-prompt the up-arrow recall is
     /// currently displaying, counting backwards from the end. `None`
@@ -768,11 +778,13 @@ pub struct App {
     /// tool runs. Capped at 100 entries (the oldest gets dropped). New
     /// entries push to the back; /undo pops the back (most recent
     /// first).
+    #[allow(dead_code)]
     pub tool_undo_history: std::collections::VecDeque<crate::types::ToolUndoEntry>,
     /// v132 Marsh (mid-stream bash → model) buffer. Each entry is
     /// `(tool_id, line)` captured from `ToolOutputChunk`. `stream.rs`
     /// drains this on the next outbound request so the model sees what
     /// bash printed since the last turn.
+    #[allow(dead_code)]
     pub pending_marsh_chunks: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
     /// Highest budget threshold the user has been warned about so far this
     /// session. 0 = no warnings yet, 80 = 80% warning shown, 100 = 100%
@@ -959,6 +971,7 @@ pub struct App {
     pub idle_return_shown: bool,
     /// Files pinned into the system prompt (survive compaction).
     /// Auto-populated from files that are re-read after every compaction.
+    #[allow(dead_code)]
     pub pinned_files: Vec<std::path::PathBuf>,
     /// Tracks how many times each file is re-read after compaction.
     /// When a file exceeds 3 re-reads post-compact, it's promoted to pinned_files.

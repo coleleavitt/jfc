@@ -279,9 +279,11 @@ pub enum ProviderEvent {
     /// provider stream errors so the UI can show both the immediate HTTP
     /// retry state and the broader Anthropic service state.
     ClaudeStatusUpdated(crate::claude_status::ClaudeStatusUpdate),
+    #[allow(dead_code)]
     McpUpdated {
         servers: Vec<crate::types::McpServerInfo>,
     },
+    #[allow(dead_code)]
     LspUpdated {
         servers: Vec<crate::types::LspServerInfo>,
     },

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -103,6 +102,7 @@ impl ToolContext {
 
 /// Walk from `start` upward to filesystem root looking for CLAUDE.md.
 /// Returns (path, content) of the first one found, or None.
+#[allow(dead_code)]
 pub fn find_claude_md(start: &Path) -> Option<(PathBuf, String)> {
     tracing::debug!(target: "jfc::context", start = %start.display(), "searching for CLAUDE.md");
     let mut dir = start.to_path_buf();
@@ -221,6 +221,7 @@ fn read_if_exists(path: &Path) -> Option<(PathBuf, String)> {
     Some((path.to_path_buf(), content))
 }
 
+#[allow(dead_code)]
 pub fn build_system_prompt(claude_md: Option<&str>) -> Option<String> {
     let has_claude_md = claude_md.is_some();
     let base = claude_md?.trim();

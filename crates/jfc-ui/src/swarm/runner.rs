@@ -44,7 +44,9 @@ pub struct TeammateRunnerConfig {
     pub identity: TeammateIdentity,
     pub prompt: String,
     pub description: String,
+    #[allow(dead_code)]
     pub model: Option<String>,
+    #[allow(dead_code)]
     pub agent_type: Option<String>,
     /// Provider for API calls. Shared with the leader.
     pub provider: std::sync::Arc<dyn jfc_provider::Provider>,
@@ -69,6 +71,7 @@ pub enum PollResult {
     /// Shutdown request received.
     ShutdownRequest {
         request: Option<ShutdownRequest>,
+        #[allow(dead_code)]
         original_message: String,
     },
     /// A task from the task list is available to claim.
@@ -160,6 +163,7 @@ pub enum TeammateEvent {
     /// Teammate has gone idle (finished processing, waiting for next message).
     Idle {
         task_id: String,
+        #[allow(dead_code)]
         agent_id: String,
         agent_name: String,
         reason: Option<String>,
@@ -168,6 +172,7 @@ pub enum TeammateEvent {
     /// Teammate is actively processing (status update for UI).
     Progress {
         task_id: String,
+        #[allow(dead_code)]
         agent_id: String,
         token_count: u64,
         tool_use_count: u64,
@@ -187,6 +192,7 @@ pub enum TeammateEvent {
         error: String,
     },
     /// Teammate wants to send a message (goes through SendMessage tool).
+    #[allow(dead_code)]
     MessageSent {
         from: String,
         to: String,
@@ -200,6 +206,7 @@ pub enum TeammateEvent {
     /// until the entire turn finished.
     TextDelta {
         task_id: String,
+        #[allow(dead_code)]
         agent_id: String,
         delta: String,
     },
@@ -1125,7 +1132,9 @@ pub struct IncomingTeammateMessage {
     pub from: String,
     pub text: String,
     /// Pre-formatted `<teammate-message>` XML for conversation injection.
+    #[allow(dead_code)]
     pub formatted: String,
+    #[allow(dead_code)]
     pub color: Option<String>,
     pub summary: Option<String>,
 }
@@ -1441,8 +1450,10 @@ mod tests {
         }
         async fn stream(
             &self,
-            _messages: Vec<jfc_provider::ProviderMessage>,
-            _options: &jfc_provider::StreamOptions,
+            #[allow(dead_code)]
+            messages: Vec<jfc_provider::ProviderMessage>,
+            #[allow(dead_code)]
+            options: &jfc_provider::StreamOptions,
         ) -> anyhow::Result<jfc_provider::EventStream> {
             use futures::stream;
             let events = self
@@ -1554,8 +1565,10 @@ mod tests {
         }
         async fn stream(
             &self,
-            _messages: Vec<jfc_provider::ProviderMessage>,
-            _options: &jfc_provider::StreamOptions,
+            #[allow(dead_code)]
+            messages: Vec<jfc_provider::ProviderMessage>,
+            #[allow(dead_code)]
+            options: &jfc_provider::StreamOptions,
         ) -> anyhow::Result<jfc_provider::EventStream> {
             use futures::stream;
             let next = self

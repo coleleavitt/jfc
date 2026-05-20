@@ -14,7 +14,6 @@
 //! Cookies are persisted to `~/.config/opencode/openwebui-cookies.json` so a
 //! warm session can skip credentials and only re-do Duo (matches the plugin).
 
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -34,8 +33,10 @@ pub struct OidcLoginResult {
     /// HS256 JWT issued by Open WebUI.
     pub token: String,
     /// Underlying Shibboleth id_token (RS256). Empty string if absent.
+    #[allow(dead_code)]
     pub oauth_id_token: String,
     /// Session UUID. Empty string if absent.
+    #[allow(dead_code)]
     pub oauth_session_id: String,
     /// Unix milliseconds when the JWT expires.
     pub expires_at: i64,
@@ -92,6 +93,7 @@ pub struct CookieJar {
 }
 
 impl CookieJar {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -258,6 +260,7 @@ async fn request(
 struct FollowResult {
     body: String,
     url: String,
+    #[allow(dead_code)]
     status: u16,
 }
 
@@ -876,6 +879,7 @@ fn build_plugin_form_body(html: &str) -> String {
 struct DuoStatusResponse {
     response: DuoStatusInner,
     #[serde(default)]
+    #[allow(dead_code)]
     stat: Option<String>,
 }
 
@@ -910,13 +914,16 @@ struct DuoPhone {
     key: String,
     index: String,
     #[serde(default)]
+    #[allow(dead_code)]
     name: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct DuoAuthMethod {
+    #[allow(dead_code)]
     factor: String,
     #[serde(default)]
+    #[allow(dead_code)]
     device_key: Option<String>,
 }
 

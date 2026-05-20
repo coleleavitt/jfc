@@ -3,16 +3,14 @@
 
 use std::sync::Arc;
 
-use crate::app::{self, App};
+use crate::app::App;
 use crate::runtime::{
-    AppEvent, CompactionEvent, EventSender, GoalEvent,
-    dispatch_goal_evaluator_if_active, drain_queued_prompts,
-    factory_mode_enabled, maybe_continue_task_factory, update_task_activities,
+    AppEvent, CompactionEvent, EventSender, dispatch_goal_evaluator_if_active,
+    drain_queued_prompts, maybe_continue_task_factory,
 };
-use crate::{config, session, stream, toast, types};
 use crate::types::*;
+use crate::{session, stream, types};
 
-use super::super::guards::streaming_assistant_mut;
 
 /// Handle `ToolEvent::OutputChunk { tool_id, chunk }`.
 pub(crate) fn handle_output_chunk(app: &mut App, tool_id: crate::ids::ToolId, chunk: String) {
@@ -103,10 +101,7 @@ pub(crate) fn handle_tool_result(
                     // file:line ref.
                     app.path_yank_cursor = 0;
                     if result.is_error() {
-                        crate::notifications::notify_tool_failed(
-                            tc.kind.label(),
-                            &result.output,
-                        );
+                        crate::notifications::notify_tool_failed(tc.kind.label(), &result.output);
                     }
                     // Use the typestate-style transition
                     // helpers — they refuse to revive a
@@ -140,10 +135,8 @@ pub(crate) fn handle_tool_result(
                     // sparkle — celebration on red would
                     // be confusing.
                     if matches!(new_status, ToolStatus::Completed) {
-                        app.recent_tool_completion = Some((
-                            tc.id.as_str().to_owned(),
-                            std::time::Instant::now(),
-                        ));
+                        app.recent_tool_completion =
+                            Some((tc.id.as_str().to_owned(), std::time::Instant::now()));
                     }
                     // Reset plan verification when new tasks are
                     // created so the next factory cycle re-verifies.
@@ -167,9 +160,10 @@ pub(crate) fn handle_tool_result(
             if !result.attachments.is_empty() {
                 for msg in &mut app.messages {
                     if matches!(msg.role, types::Role::Assistant)
-                        && msg.parts.iter().any(|p| {
-                            matches!(p, MessagePart::Tool(tc) if tc.id == tool_id)
-                        })
+                        && msg
+                            .parts
+                            .iter()
+                            .any(|p| matches!(p, MessagePart::Tool(tc) if tc.id == tool_id))
                     {
                         tracing::debug!(
                             target: "jfc::stream",
@@ -233,13 +227,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
         let cwd = app.cwd.clone();
         let model = app.model.clone();
         tokio::spawn(async move {
-            session::save_session(
-                &sid,
-                &msgs,
-                Some(cwd.as_str()),
-                Some(model.as_str()),
-            )
-            .await;
+            session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
         });
         app.last_session_save_at = Some(std::time::Instant::now());
     }
@@ -280,10 +268,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                 finding_count = aggregate_findings.len(),
                 "injecting slop_guard system-reminder"
             );
-            crate::system_reminder::append_to_last_user(
-                &mut app.messages,
-                &reminder_body,
-            );
+            crate::system_reminder::append_to_last_user(&mut app.messages, &reminder_body);
         }
     }
 
@@ -322,10 +307,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
             "skipping post-response compact — suppressed after permanent failure"
         );
     } else if manual
-        || crate::compact::should_compact(
-            app.tool_ctx.approx_tokens,
-            app.max_context_tokens,
-        )
+        || crate::compact::should_compact(app.tool_ctx.approx_tokens, app.max_context_tokens)
     {
         if manual {
             // /compact is the user's explicit override — clear
@@ -364,15 +346,12 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
         let window = app.max_context_tokens;
         let tx_compact = tx.clone();
         let progress_tx = tx_compact.clone();
-        let on_progress: crate::compact::CompactProgressCb =
-            Box::new(move |chars| {
-                // CompactionProgress is non-critical; next progress update supersedes.
-                let _ = progress_tx.try_send(AppEvent::Compaction(
-                    CompactionEvent::Progress {
-                        output_chars: chars,
-                    },
-                ));
-            });
+        let on_progress: crate::compact::CompactProgressCb = Box::new(move |chars| {
+            // CompactionProgress is non-critical; next progress update supersedes.
+            let _ = progress_tx.try_send(AppEvent::Compaction(CompactionEvent::Progress {
+                output_chars: chars,
+            }));
+        });
         // wg-async: compact holds critical state (the full
         // message slice + an outbound tx). Race the long
         // provider call against `cancelled()` so ESC×2
@@ -387,8 +366,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                 .compaction_model
                 .map(jfc_provider::ModelId::new)
                 .unwrap_or_else(|| model.clone());
-            let options =
-                jfc_provider::StreamOptions::new(compact_model_id.clone());
+            let options = jfc_provider::StreamOptions::new(compact_model_id.clone());
             tracing::debug!(
                 target: "jfc::compact",
                 model = %compact_model_id,
@@ -467,13 +445,15 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                     // otherwise a single huge agentic batch leaves
                     // auto-compact dormant for the rest of the
                     // session until the user remembers /compact.
-                    let _ = tx_compact.send(AppEvent::Compaction(CompactionEvent::Failed {
-                    reason: "Nothing to compact yet — only one conversation turn so far. \
+                    let _ = tx_compact
+                        .send(AppEvent::Compaction(CompactionEvent::Failed {
+                            reason: "Nothing to compact yet — only one conversation turn so far. \
                      Auto-compact will retry after your next message."
-                        .into(),
-                    calibrated_tokens: None,
-                    transient: true, // transient: more user turns will unblock it
-                })).await;
+                                .into(),
+                            calibrated_tokens: None,
+                            transient: true, // transient: more user turns will unblock it
+                        }))
+                        .await;
                 }
                 crate::compact::CompactResult::CircuitBreakerTripped => {
                     tracing::warn!(
@@ -482,8 +462,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                     );
                     let _ = tx_compact
                         .send(AppEvent::Compaction(CompactionEvent::Failed {
-                            reason: "Circuit breaker tripped — compaction keeps refilling"
-                                .into(),
+                            reason: "Circuit breaker tripped — compaction keeps refilling".into(),
                             calibrated_tokens: None,
                             transient: false,
                         }))
@@ -497,9 +476,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                     );
                     let _ = tx_compact
                         .send(AppEvent::Compaction(CompactionEvent::Failed {
-                            reason: format!(
-                                "Exhausted {attempts} compaction attempts"
-                            ),
+                            reason: format!("Exhausted {attempts} compaction attempts"),
                             calibrated_tokens: None,
                             transient: false,
                         }))
@@ -604,6 +581,13 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                 "mixed-mode pause_turn: local tools complete, resuming server-side sampling loop"
             );
             stream::continue_after_pause_turn(app, tx).await;
+        } else if app.queued_prompts.iter().any(|queued| !queued.is_meta) {
+            tracing::info!(
+                target: "jfc::stream",
+                queued = app.queued_prompts.len(),
+                "agentic loop yielding to queued user prompt before continuation"
+            );
+            drain_queued_prompts(app, tx).await;
         } else {
             tracing::info!(
                 target: "jfc::stream",

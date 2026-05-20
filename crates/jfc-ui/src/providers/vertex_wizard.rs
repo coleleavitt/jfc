@@ -5,7 +5,6 @@
 //! [`VertexWizard::advance`] so the slash-command flow and a future TUI panel
 //! can both reuse it.
 
-#![allow(dead_code)]
 
 use std::path::PathBuf;
 
@@ -15,6 +14,7 @@ use super::vertex::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum WizardStep {
     /// Probe whether `gcloud` is on `$PATH`. When false we exit with a clear
     /// message — there's no SDK fallback.
@@ -38,6 +38,7 @@ pub enum WizardStep {
     },
 }
 
+#[allow(dead_code)]
 pub struct VertexWizard {
     config: VertexConfig,
     config_path: PathBuf,
@@ -45,6 +46,7 @@ pub struct VertexWizard {
 }
 
 impl VertexWizard {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             config: VertexConfig::default(),
@@ -53,24 +55,29 @@ impl VertexWizard {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_config_path(mut self, path: PathBuf) -> Self {
         self.config_path = path;
         self
     }
 
+    #[allow(dead_code)]
     pub fn current_step(&self) -> &WizardStep {
         &self.step
     }
 
+    #[allow(dead_code)]
     pub fn config(&self) -> &VertexConfig {
         &self.config
     }
 
     /// Tests bypass the gcloud probe by stepping directly into a prompt.
+    #[allow(dead_code)]
     pub fn force_step(&mut self, step: WizardStep) {
         self.step = step;
     }
 
+    #[allow(dead_code)]
     pub fn advance(&mut self, input: &str) -> WizardStep {
         let next = match &self.step {
             WizardStep::DetectGcloud => {
@@ -144,6 +151,7 @@ impl Default for VertexWizard {
     }
 }
 
+#[allow(dead_code)]
 pub fn render_step(step: &WizardStep) -> String {
     match step {
         WizardStep::DetectGcloud => "Checking for the Google Cloud CLI…".to_owned(),

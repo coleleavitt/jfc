@@ -3,9 +3,9 @@
 
 use crate::app::{self, App};
 use crate::runtime::{
-    AppEvent, EventSender, UiEvent, drain_queued_prompts,
+    EventSender, drain_queued_prompts,
 };
-use crate::{config, session, stream, toast, types};
+use crate::{config, session, stream, types};
 use crate::types::*;
 
 use super::super::narration_retry::retry_narration_only_end_turn;

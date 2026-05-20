@@ -20,9 +20,10 @@ use super::tasks::{
 use super::worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
 use super::*;
 
+use crate::runtime::{DiagnosticLevel, ToolOutcome};
 use crate::types::{ReplacementMode, ToolInput, ToolKind};
 use jfc_provider::ToolDef;
-use jfc_session::TaskStore;
+use jfc_session::{DeletedFilter, TaskStore};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use tokio::process::Command;
@@ -746,7 +747,8 @@ impl jfc_economy::reporting::AgentInvoker for StubInvoker {
     }
     async fn invoke_validator(
         &self,
-        _prompt: jfc_economy::reporting::ValidatorPrompt,
+        #[allow(dead_code)]
+        prompt: jfc_economy::reporting::ValidatorPrompt,
     ) -> Result<jfc_economy::reporting::ValidatorOutcome, String> {
         *self.validator_calls.lock().unwrap() += 1;
         Ok(jfc_economy::reporting::ValidatorOutcome {
@@ -1905,6 +1907,26 @@ fn execute_task_create_with_store_returns_task_json_normal() {
     // subject and a `t1` id.
     assert!(r.output.contains("ship"), "{}", r.output);
     assert!(r.output.contains("t1"), "{}", r.output);
+}
+
+#[test]
+fn execute_task_create_rejects_placeholder_fixture_robust() {
+    let store = TaskStore::in_memory();
+    let r = execute_task_create(
+        Some(store.clone()),
+        "subj".into(),
+        "desc".into(),
+        None,
+        vec![],
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    assert!(r.is_error(), "{:?}", r);
+    assert!(r.output.contains("placeholder"), "{}", r.output);
+    assert!(store.list(DeletedFilter::Include).is_empty());
 }
 
 #[test]

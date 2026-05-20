@@ -5,7 +5,7 @@
 //! Same as LSP: `Content-Length: N\r\n\r\n{json}`. The MCP spec calls
 //! out an alternative newline-delimited stdio mode but in practice the
 //! servers we care about (anthropic-published, npm-published) all use
-//! Content-Length framing. We mirror [`crate::lsp_rpc`]'s implementation
+//! Content-Length framing. We mirror lsp_rpc's implementation
 //! verbatim.
 //!
 //! ## Lifecycle
@@ -26,7 +26,6 @@
 //! See `lsp_client.rs`'s module docs for the rationale on this layout
 //! (stderr drain prevents deadlock; tasks vs. shared writer mutex).
 
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
@@ -532,7 +531,7 @@ async fn handle_inbound(msg: &Value, pending: &PendingRequests) {
     // refresh the catalog and emit a UI signal so the user knows.
     if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
         if method == "notifications/tools/list_changed" {
-            crate::mcp::registry::request_refresh();
+            crate::registry::request_refresh();
             tracing::info!(
                 target: "jfc::mcp",
                 "received notifications/tools/list_changed — registry refresh requested"

@@ -10,9 +10,11 @@ use serde::Deserialize;
 /// `id` (the user UUID) and `exp` (Unix seconds). `jti` is optional.
 #[derive(Debug, Clone, Deserialize)]
 pub struct JwtClaims {
+    #[allow(dead_code)]
     pub id: String,
     pub exp: i64,
     #[serde(default)]
+    #[allow(dead_code)]
     pub jti: Option<String>,
 }
 

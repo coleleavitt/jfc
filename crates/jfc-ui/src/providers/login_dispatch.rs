@@ -9,7 +9,6 @@
 //! and [`super::vertex_wizard::VertexWizard`]); this module only chooses *which*
 //! one to start. The TUI / slash-command host owns the per-step interaction.
 
-#![allow(dead_code)]
 
 use std::fmt;
 

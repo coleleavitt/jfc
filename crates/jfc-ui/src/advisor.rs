@@ -79,6 +79,7 @@ impl AdvisorSession {
     }
 
     /// Builder-style budget override.
+    #[allow(dead_code)]
     pub fn with_budget(mut self, budget: u64) -> Self {
         self.token_budget = budget;
         self
@@ -379,8 +380,10 @@ mod tests {
         }
         async fn complete(
             &self,
-            _messages: Vec<PMsg>,
-            _options: &SOpts,
+            #[allow(dead_code)]
+            messages: Vec<PMsg>,
+            #[allow(dead_code)]
+            options: &SOpts,
         ) -> Result<CompletionResponse> {
             self.result
                 .lock()

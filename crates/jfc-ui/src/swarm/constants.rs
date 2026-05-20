@@ -3,34 +3,20 @@
 /// Default name for the team leader agent.
 pub const TEAM_LEAD_NAME: &str = "team-lead";
 
-/// Session name prefix for swarm tmux sessions.
-pub const SWARM_SESSION_NAME: &str = "claude-swarm";
-
 /// XML tag used to wrap teammate messages in the conversation.
-/// Messages from teammates are delivered wrapped in this tag so the model
-/// can identify the sender.
 pub const TEAMMATE_MESSAGE_TAG: &str = "teammate-message";
 
 /// How often (in ms) the in-process runner polls for new messages.
 pub const POLL_INTERVAL_MS: u64 = 500;
 
-/// Maximum number of recent activities tracked per teammate.
-pub const MAX_RECENT_ACTIVITIES: usize = 5;
-
-/// Environment variable for teammate color assignment.
-pub const TEAMMATE_COLOR_ENV: &str = "CLAUDE_CODE_AGENT_COLOR";
-
-/// How long to wait for a permission response before timing out (ms).
-pub const PERMISSION_POLL_TIMEOUT_MS: u64 = 300_000; // 5 minutes
-
 /// Default team name when none is explicitly provided.
 pub const DEFAULT_TEAM_NAME: &str = "default";
 
 /// How often (in ms) the leader polls its inbox for teammate messages.
+#[allow(dead_code)]
 pub const LEADER_POLL_INTERVAL_MS: u64 = 1000;
 
 /// System prompt addendum appended to teammate conversations.
-/// Explains visibility constraints and communication requirements.
 pub const TEAMMATE_SYSTEM_PROMPT_ADDENDUM: &str = r#"
 # Agent Teammate Communication
 

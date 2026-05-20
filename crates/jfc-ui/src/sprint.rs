@@ -18,13 +18,16 @@ use std::path::{Path, PathBuf};
 use crate::compact::CompactLevel;
 
 /// Percentage of context window at which we start warning about sprint limits.
+#[allow(dead_code)]
 const SPRINT_WARN_PCT: f64 = 0.70;
 /// Percentage at which we actively suggest wrapping up the current task.
+#[allow(dead_code)]
 const SPRINT_HANDOFF_PCT: f64 = 0.85;
 
 /// Sprint boundary state. Injected into the system prompt so the model
 /// knows its budget and can plan accordingly.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SprintBudget {
     /// Total context window in tokens for the current model.
     pub context_window: usize,
@@ -40,6 +43,7 @@ pub struct SprintBudget {
 
 impl SprintBudget {
     /// Compute the current sprint budget from app state.
+    #[allow(dead_code)]
     pub fn compute(current_tokens: usize, context_window: usize) -> Self {
         let utilization = if context_window > 0 {
             current_tokens as f64 / context_window as f64
@@ -85,6 +89,7 @@ impl SprintBudget {
 
     /// Generate the system prompt section that tells the model about its
     /// sprint budget. Only included when utilization > 50% to avoid noise.
+    #[allow(dead_code)]
     pub fn system_prompt_section(&self) -> Option<String> {
         if self.utilization < 0.50 {
             return None;
@@ -116,6 +121,7 @@ pub struct HandoffSummary {
 
 impl HandoffSummary {
     /// Write the summary to `.jfc/session_summaries/{timestamp}.md`.
+    #[allow(dead_code)]
     pub fn write_to_disk(&self, git_root: &Path) -> std::io::Result<PathBuf> {
         let dir = git_root.join(".jfc").join("session_summaries");
         std::fs::create_dir_all(&dir)?;
@@ -190,6 +196,7 @@ impl HandoffSummary {
 
 /// Check if the current context pressure warrants a sprint boundary warning.
 /// Returns the compact level for UI/logging purposes.
+#[allow(dead_code)]
 pub fn check_sprint_pressure(current_tokens: usize, context_window: usize) -> CompactLevel {
     crate::compact::compact_level(current_tokens, context_window)
 }
@@ -204,6 +211,7 @@ pub fn check_sprint_pressure(current_tokens: usize, context_window: usize) -> Co
 ///
 /// Returns Ok(commit_hash) on success, Err(reason) on failure.
 /// Does NOT commit if working tree is clean.
+#[allow(dead_code)]
 pub fn auto_commit_sprint_progress(
     git_root: &Path,
     task_store: &jfc_session::TaskStore,

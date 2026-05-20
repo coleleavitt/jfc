@@ -36,18 +36,17 @@ use mcp_commands::handle_mcp_command;
 use mentions::{apply_mention_pick, update_mention_state_after_input};
 pub use model_picker::filtered_models;
 use model_picker::{handle_model_picker_key, open_model_picker};
-use session_picker::{handle_session_picker_key, open_session_picker};
 use navigation::{
     collect_recent_paths, jump_to_last_assistant, jump_to_last_error, jump_to_last_tool,
-    jump_to_last_user, recall_next_prompt, recall_previous_prompt, refresh_search_matches,
-    scan_path_refs, scroll_to_message, user_prompts,
+    jump_to_last_user, recall_next_prompt, recall_previous_prompt, refresh_search_matches, scroll_to_message,
 };
 pub use palette::{collect_all_models, palette_items};
+use session_picker::{handle_session_picker_key, open_session_picker};
 pub(crate) use theme_picker::filtered_theme_choices;
 use worktree_commands::handle_worktree_command;
 
 use crate::app::App;
-use crate::runtime::{AppEvent, CompactionEvent, UiEvent};
+use crate::runtime::{AppEvent, UiEvent};
 use crate::types::*;
 
 pub async fn handle_key(
@@ -93,11 +92,7 @@ pub async fn handle_key(
                 // Otherwise typing `/compact` + Enter just inserts another
                 // space and the user has to press Enter again — the popup
                 // ate the submit. Tab always tab-completes.
-                KeyCode::Enter
-                    if matches
-                        .iter()
-                        .any(|(cmd, _)| *cmd == prefix.as_str()) =>
-                {
+                KeyCode::Enter if matches.iter().any(|(cmd, _)| *cmd == prefix.as_str()) => {
                     app.slash_popup_selected = None;
                     // Fall through to the normal Enter handler below by
                     // not returning here — the popup dismissal is the
@@ -535,10 +530,7 @@ pub async fn handle_key(
             // results list.
             if !input_has_text(app)
                 && app.viewing_task_id.is_none()
-                && app
-                    .background_tasks
-                    .values()
-                    .any(|bt| bt.status.is_alive())
+                && app.background_tasks.values().any(|bt| bt.status.is_alive())
             {
                 // Pick the most-recent alive agent (matches the
                 // existing `↓ jump to latest` semantics inside the
@@ -1405,9 +1397,10 @@ pub async fn handle_key(
                 let can_interrupt = app.is_streaming
                     && !compacting
                     && app.pending_approval.is_none()
-                    && app.pending_tool_calls.iter().all(|t| {
-                        crate::scheduler::is_concurrency_safe(&t.kind)
-                    });
+                    && app
+                        .pending_tool_calls
+                        .iter()
+                        .all(|t| crate::scheduler::is_concurrency_safe(&t.kind));
                 if can_interrupt {
                     tracing::info!(
                         target: "jfc::input::interrupt",
@@ -1416,60 +1409,63 @@ pub async fn handle_key(
                     // Cancel the current stream
                     app.cancel_token.cancel();
                     app.cancel_token = tokio_util::sync::CancellationToken::new();
-                    app.interrupt_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                    app.interrupt_flag
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
                     app.is_streaming = false;
                     app.streaming_started_at = None;
                     app.last_stream_event_at = None;
-                    // Don't queue — fall through to handle_submit below
+                    // Don't queue: submit the new turn immediately now that
+                    // the interruptible stream has been cancelled.
+                    handle_submit(app, text, tx).await?;
                 } else {
-                let is_meta = text.starts_with('/');
-                let glyph = if is_meta { "⚙" } else { "⏳" };
-                tracing::info!(
-                    target: "jfc::ui::queue",
-                    depth = app.queued_prompts.len() + 1,
-                    is_meta,
-                    "queued_prompt"
-                );
-                // Capture referenced [Image #N] attachments onto THIS
-                // queued prompt so they re-stage atomically when the
-                // entry drains. Only matched entries are taken;
-                // unreferenced images are left for later prompts.
-                let attachments: Vec<crate::attachments::Attachment> = {
-                    let re_pattern = regex::Regex::new(r"\[Image #(\d+)\]").unwrap();
-                    let mut referenced_ids: Vec<u32> = Vec::new();
-                    for cap in re_pattern.captures_iter(&text) {
-                        if let Ok(id) = cap[1].parse::<u32>() {
-                            referenced_ids.push(id);
+                    let is_meta = text.starts_with('/');
+                    let glyph = if is_meta { "⚙" } else { "⏳" };
+                    tracing::info!(
+                        target: "jfc::ui::queue",
+                        depth = app.queued_prompts.len() + 1,
+                        is_meta,
+                        "queued_prompt"
+                    );
+                    // Capture referenced [Image #N] attachments onto THIS
+                    // queued prompt so they re-stage atomically when the
+                    // entry drains. Only matched entries are taken;
+                    // unreferenced images are left for later prompts.
+                    let attachments: Vec<crate::attachments::Attachment> = {
+                        let re_pattern = regex::Regex::new(r"\[Image #(\d+)\]").unwrap();
+                        let mut referenced_ids: Vec<u32> = Vec::new();
+                        for cap in re_pattern.captures_iter(&text) {
+                            if let Ok(id) = cap[1].parse::<u32>() {
+                                referenced_ids.push(id);
+                            }
                         }
-                    }
-                    let mut matched = Vec::new();
-                    let mut remaining = Vec::new();
-                    for pc in std::mem::take(&mut app.pasted_images) {
-                        if referenced_ids.contains(&pc.id) {
-                            matched.push(pc.attachment);
-                        } else {
-                            remaining.push(pc);
+                        let mut matched = Vec::new();
+                        let mut remaining = Vec::new();
+                        for pc in std::mem::take(&mut app.pasted_images) {
+                            if referenced_ids.contains(&pc.id) {
+                                matched.push(pc.attachment);
+                            } else {
+                                remaining.push(pc);
+                            }
                         }
-                    }
-                    app.pasted_images = remaining;
-                    matched
-                };
-                app.queued_prompts.push(crate::app::QueuedPrompt {
-                    text: text.clone(),
-                    is_meta,
-                    priority: crate::app::QueuePriority::Later,
-                    attachments,
-                });
-                // Insert as a `queued` user message so the user can SEE
-                // "I queued this" in the transcript, but
-                // `build_provider_messages*` will skip it. Without this
-                // flag, `continue_agentic_loop` sent the queued user
-                // text to the provider as if it were part of the current
-                // turn, inflating the prompt and creating the gauge
-                // jump after queuing.
-                app.messages
-                    .push(ChatMessage::user_queued(format!("{glyph} {text}")));
-                app.scroll_to_bottom();
+                        app.pasted_images = remaining;
+                        matched
+                    };
+                    app.queued_prompts.push(crate::app::QueuedPrompt {
+                        text: text.clone(),
+                        is_meta,
+                        priority: crate::app::QueuePriority::Later,
+                        attachments,
+                    });
+                    // Insert as a `queued` user message so the user can SEE
+                    // "I queued this" in the transcript, but
+                    // `build_provider_messages*` will skip it. Without this
+                    // flag, `continue_agentic_loop` sent the queued user
+                    // text to the provider as if it were part of the current
+                    // turn, inflating the prompt and creating the gauge
+                    // jump after queuing.
+                    app.messages
+                        .push(ChatMessage::user_queued(format!("{glyph} {text}")));
+                    app.scroll_to_bottom();
                 } // end else (not can_interrupt)
             } else {
                 handle_submit(app, text, tx).await?;
@@ -2215,6 +2211,7 @@ pub async fn run_slash_command(app: &mut App, text: &str) {
 /// Pulling in `urlencoding` or `url` for the two callers (`/bug` form
 /// link generation) is overkill — the encoder only needs to handle ASCII
 /// + UTF-8 bytes that browsers reliably decode.
+#[allow(dead_code)]
 fn url_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
@@ -2716,7 +2713,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
         }
         "/logout" => {
             app.messages.push(ChatMessage::user(text.to_owned()));
-            let arg = parts.get(1).copied().map(str::trim).filter(|s| !s.is_empty());
+            let arg = parts
+                .get(1)
+                .copied()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
             // Wipe the OAuth token + API-key stores under
             // ~/.config/jfc/. We deliberately keep this contained to
             // jfc's own state (opencode shares anthropic-accounts.json,
@@ -2754,11 +2755,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
             app.messages.push(ChatMessage::user(text.to_owned()));
             // Try to read the workspace CHANGELOG; fall back to a stub
             // pointer when the binary was installed somewhere without it.
-            let candidates = [
-                "CHANGELOG.md",
-                "../CHANGELOG.md",
-                "../../CHANGELOG.md",
-            ];
+            let candidates = ["CHANGELOG.md", "../CHANGELOG.md", "../../CHANGELOG.md"];
             let notes = candidates
                 .iter()
                 .find_map(|p| std::fs::read_to_string(p).ok())
@@ -2808,7 +2805,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
         }
         "/copy" => {
             app.messages.push(ChatMessage::user(text.to_owned()));
-            let arg = parts.get(1).copied().map(str::trim).filter(|s| !s.is_empty());
+            let arg = parts
+                .get(1)
+                .copied()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
             let (payload, scope_label) = match arg {
                 None | Some("last") => {
                     let body = crate::runtime::last_assistant_text(app).unwrap_or_default();
@@ -2828,9 +2829,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                             (body, format!("last {n} message(s)"))
                         }
                         _ => {
-                            let body =
-                                crate::runtime::last_assistant_text(app).unwrap_or_default();
-                            (body, format!("last assistant message (unrecognized arg `{other}`)"))
+                            let body = crate::runtime::last_assistant_text(app).unwrap_or_default();
+                            (
+                                body,
+                                format!("last assistant message (unrecognized arg `{other}`)"),
+                            )
                         }
                     }
                 }
@@ -2849,7 +2852,11 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
         }
         "/fork" => {
             app.messages.push(ChatMessage::user(text.to_owned()));
-            let arg = parts.get(1).copied().map(str::trim).filter(|s| !s.is_empty());
+            let arg = parts
+                .get(1)
+                .copied()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
             let upto = match arg {
                 None => app.messages.len(),
                 Some(s) => match s.parse::<usize>() {
@@ -3934,6 +3941,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                         app.queued_prompts.push(crate::app::QueuedPrompt {
                             text: prompt,
                             is_meta: false,
+                            priority: crate::app::QueuePriority::Later,
                             attachments: Vec::new(),
                         });
                         app.scroll_to_bottom();
@@ -3999,6 +4007,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 app.queued_prompts.push(crate::app::QueuedPrompt {
                     text: prompt,
                     is_meta: false,
+                    priority: crate::app::QueuePriority::Later,
                     attachments: Vec::new(),
                 });
                 app.scroll_to_bottom();
@@ -4626,9 +4635,9 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 app.last_stream_event_at = Some(now);
                 app.streaming_last_token_at = Some(now);
                 app.turn_started_at = Some(now);
-    app.agentic_turn_count = 0;
+                app.agentic_turn_count = 0;
                 app.thinking_started_at = None;
-    app.pre_dispatched_tool_ids.clear();
+                app.pre_dispatched_tool_ids.clear();
                 app.thinking_ended_at = None;
                 app.last_usage_output = 0;
                 app.usage_apply_baseline = (0, 0, 0, 0);
@@ -4693,6 +4702,7 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
+    use super::navigation::{scan_path_refs, user_prompts};
     use crate::app::App;
     use crate::runtime::{AppEvent, UiEvent};
     #[allow(unused_imports)]
@@ -4713,8 +4723,10 @@ mod tests {
 
         async fn stream(
             &self,
-            _messages: Vec<ProviderMessage>,
-            _options: &StreamOptions,
+            #[allow(dead_code)]
+            messages: Vec<ProviderMessage>,
+            #[allow(dead_code)]
+            options: &StreamOptions,
         ) -> anyhow::Result<EventStream> {
             Ok(Box::pin(futures::stream::empty()))
         }
@@ -4735,8 +4747,10 @@ mod tests {
 
         async fn stream(
             &self,
-            _messages: Vec<ProviderMessage>,
-            _options: &StreamOptions,
+            #[allow(dead_code)]
+            messages: Vec<ProviderMessage>,
+            #[allow(dead_code)]
+            options: &StreamOptions,
         ) -> anyhow::Result<EventStream> {
             Ok(Box::pin(futures::stream::empty()))
         }
@@ -5323,7 +5337,9 @@ mod tests {
         let mut app = test_app();
         app.textarea = TextArea::from(vec!["/compact".to_string()]);
         let (tx, _rx) = channel();
-        handle_key(&mut app, key(KeyCode::Enter), &tx).await.unwrap();
+        handle_key(&mut app, key(KeyCode::Enter), &tx)
+            .await
+            .unwrap();
         // The buffer should NOT be "/compact " (tab-completed) — it
         // should either be cleared (slash command ran and consumed
         // the input) or unchanged. The crucial assertion is that the
@@ -5560,7 +5576,7 @@ mod tests {
         let mut app = test_app();
         app.queued_prompts.push(crate::app::QueuedPrompt {
             text: "queued".into(),
-                    priority: crate::app::QueuePriority::Later,
+            priority: crate::app::QueuePriority::Later,
             is_meta: false,
             attachments: Vec::new(),
         });
@@ -6443,6 +6459,7 @@ mod tests {
     async fn enter_queues_when_streaming_normal() {
         let mut app = test_app_with_input("ask", 80);
         app.is_streaming = true;
+        app.compacting_started_at = Some(std::time::Instant::now());
         let (tx, _rx) = channel();
         handle_key(&mut app, key(KeyCode::Enter), &tx)
             .await
@@ -6461,12 +6478,35 @@ mod tests {
         // command but still starts with `/`.
         let mut app = test_app_with_input("/zzzz", 80);
         app.is_streaming = true;
+        app.compacting_started_at = Some(std::time::Instant::now());
         let (tx, _rx) = channel();
         handle_key(&mut app, key(KeyCode::Enter), &tx)
             .await
             .unwrap();
         assert_eq!(app.queued_prompts.len(), 1);
         assert!(app.queued_prompts[0].is_meta);
+    }
+
+    #[tokio::test]
+    async fn enter_interrupts_and_submits_when_streaming_without_blockers() {
+        let mut app = test_app_with_input("ask", 80);
+        app.is_streaming = true;
+        app.streaming_started_at = Some(std::time::Instant::now());
+        let (tx, _rx) = channel();
+
+        handle_key(&mut app, key(KeyCode::Enter), &tx)
+            .await
+            .unwrap();
+
+        assert!(app.queued_prompts.is_empty());
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].role, Role::User);
+        assert!(matches!(
+            app.messages[0].parts.first(),
+            Some(MessagePart::Text(text)) if text == "ask"
+        ));
+        assert_eq!(app.messages[1].role, Role::Assistant);
+        assert!(app.is_streaming);
     }
 
     // ─────────────────────────────────────────────────────────────────────

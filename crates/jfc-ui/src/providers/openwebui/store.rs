@@ -4,7 +4,6 @@
 //! both opencode and jfc share one account file. Atomic writes via
 //! tmp + rename, 0600 perms so a misconfigured umask doesn't leak the JWT.
 
-#![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 

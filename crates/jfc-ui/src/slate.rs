@@ -191,6 +191,7 @@ impl QueryClass {
     }
 
     /// Slug used when serializing rules to TOML (e.g. `query_class = "code-edit"`).
+    #[allow(dead_code)]
     pub fn slug(self) -> &'static str {
         match self {
             Self::Trivial => "trivial",
@@ -250,10 +251,12 @@ impl SlateRouter {
         Self { rules }
     }
 
+    #[allow(dead_code)]
     pub fn rules(&self) -> &[RoutingRule] {
         &self.rules
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()
     }
@@ -309,6 +312,7 @@ impl SlateRouter {
     /// no rule matched (i.e. default fired) or no experiment fallback was
     /// configured. Otherwise it's `Some(format!("{class}-{bucket}"))` so a
     /// downstream metric can attribute the turn.
+    #[allow(dead_code)]
     pub fn route_with_experiment(
         &self,
         query: &str,
@@ -358,6 +362,7 @@ impl SlateRouter {
 ///   3. Determinism across rust versions matters: `DefaultHasher` explicitly
 ///      doesn't promise stability between releases, FNV-1a does (it's a
 ///      published constant-driven algorithm).
+#[allow(dead_code)]
 fn stable_bucket(input: &str, buckets: u32) -> u32 {
     debug_assert!(buckets > 0);
     const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;

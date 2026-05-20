@@ -43,7 +43,7 @@
       "id": "t43",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779224603342
@@ -52,7 +52,7 @@
       "id": "t49",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779236127602
@@ -70,7 +70,7 @@
       "id": "t46",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779233945131
@@ -88,7 +88,7 @@
       "id": "t50",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779237119210
@@ -97,7 +97,7 @@
       "id": "t45",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779230903854
@@ -124,7 +124,7 @@
       "id": "t39",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779218398515
@@ -160,7 +160,7 @@
       "id": "t37",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779217196197
@@ -197,7 +197,7 @@
       "id": "t36",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779216973443
@@ -206,7 +206,7 @@
       "id": "t38",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779217329481
@@ -261,7 +261,7 @@
       "id": "t42",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779224595780
@@ -355,7 +355,7 @@
       "id": "t48",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779235853419
@@ -364,7 +364,7 @@
       "id": "t41",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779222972461
@@ -419,7 +419,7 @@
       "id": "t40",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779221102325
@@ -428,7 +428,7 @@
       "id": "t44",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779224788873
@@ -455,7 +455,7 @@
       "id": "t47",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779235741039

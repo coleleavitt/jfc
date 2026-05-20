@@ -1,12 +1,11 @@
 use super::{
-    ChatMessage, DiffView, ExecutionStatus, MessagePart, ReplacementMode, TaskInput, ToolInput,
-    ToolInputError, ToolKind, ToolStatus, parse_unified_diff,
+    ChatMessage, DiffView, ExecutionStatus, MessagePart, ReplacementMode, ToolInput, ToolKind, ToolStatus, parse_unified_diff,
 };
 #[cfg(test)]
 use super::{
-    McpStatus, ModelUsage, Role, TaskLifecycle, TaskStatusPart, TurnInvariantError,
-    parse_hunk_header, parse_hunk_start, truncate_lines, validate_turn_invariants,
-    validate_turn_invariants_inner,
+    McpStatus, ModelUsage, Role, TaskLifecycle, TaskInput, TaskStatusPart, ToolInputError,
+    TurnInvariantError, parse_hunk_header, parse_hunk_start, truncate_lines,
+    validate_turn_invariants, validate_turn_invariants_inner,
 };
 
 #[cfg(test)]
@@ -150,6 +149,7 @@ impl ToolDisplayState {
     /// `is_expanded()` — the leaf producers keep their own kind-
     /// specific multipliers — but for the generic text/file paths
     /// this is the canonical decision.
+    #[allow(dead_code)]
     pub fn cap_lines(&self) -> usize {
         if self.is_expanded() { 500 } else { 80 }
     }
@@ -315,6 +315,7 @@ impl ToolCall {
     /// {Pending|Running} → Cancelled. Returns Err on a different
     /// terminal state. Used when the user denies a tool or moves on
     /// before it dispatches.
+    #[allow(dead_code)]
     pub fn mark_cancelled(&mut self) -> Result<(), InvalidToolTransition> {
         self.try_transition_to(ExecutionStatus::Cancelled)
     }
@@ -582,6 +583,7 @@ impl ToolOutput {
     }
 }
 
+#[allow(dead_code)]
 pub fn sample_tool_harness_message() -> ChatMessage {
     let diff = parse_unified_diff(
         "crates/jfc-ui/src/tools.rs",

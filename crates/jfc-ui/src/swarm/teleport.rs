@@ -9,9 +9,13 @@ use std::process::Command;
 /// Result of a teleport operation.
 #[derive(Debug, Clone)]
 pub struct TeleportResult {
+    #[allow(dead_code)]
     pub success: bool,
+    #[allow(dead_code)]
     pub previous_branch: String,
+    #[allow(dead_code)]
     pub target_branch: String,
+    #[allow(dead_code)]
     pub session_id: Option<String>,
     pub message: String,
 }
@@ -57,6 +61,7 @@ pub fn teleport_to_session(
 }
 
 /// Teleport back to the previous branch (undo a teleport).
+#[allow(dead_code)]
 pub fn teleport_back(repo_root: &Path, previous_branch: &str) -> TeleportResult {
     match checkout_branch(repo_root, previous_branch) {
         Ok(()) => TeleportResult {
@@ -97,6 +102,7 @@ pub fn list_teleport_targets(repo_root: &Path) -> Vec<TeleportTarget> {
 pub struct TeleportTarget {
     pub branch: String,
     pub session_id: Option<String>,
+    #[allow(dead_code)]
     pub is_current: bool,
 }
 

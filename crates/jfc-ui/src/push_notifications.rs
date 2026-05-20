@@ -27,7 +27,9 @@ use serde::Serialize;
 #[derive(Debug, Clone, Copy)]
 pub enum PushKind {
     TurnComplete,
+    #[allow(dead_code)]
     ToolFailed,
+    #[allow(dead_code)]
     BudgetWarning,
 }
 

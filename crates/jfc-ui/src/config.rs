@@ -295,20 +295,8 @@ pub struct ArgusAutoReviewConfig {
     pub model: Option<String>,
 }
 
-/// MCP server definition.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct McpServerConfig {
-    #[serde(rename = "type", default)]
-    pub server_type: Option<String>,
-    #[serde(default)]
-    pub command: Option<String>,
-    #[serde(default)]
-    pub args: Vec<String>,
-    #[serde(default)]
-    pub env: HashMap<String, String>,
-    #[serde(default)]
-    pub url: Option<String>,
-}
+/// Re-export from jfc-mcp so existing callsites keep working.
+pub use jfc_mcp::McpServerConfig;
 
 /// Experimental feature flags.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -610,6 +598,7 @@ pub enum FallbackModel {
 }
 
 impl FallbackModel {
+    #[allow(dead_code)]
     pub fn model_id(&self) -> &str {
         match self {
             Self::Simple(s) => s,
@@ -756,6 +745,7 @@ pub fn save_theme_to(
 /// Resolve a prompt value that may be a `file://` URI.
 /// If it starts with `file://`, read the file contents.
 /// Otherwise return the string as-is.
+#[allow(dead_code)]
 pub fn resolve_prompt(value: &str, base_dir: Option<&std::path::Path>) -> String {
     if let Some(path_str) = value.strip_prefix("file://") {
         let path = if let Some(base) = base_dir {
@@ -842,6 +832,7 @@ fn save_permission_mode_to(path: &std::path::Path, mode: &str) {
 /// `agent_name = None` skips steps 1 & 2 and goes straight to default. This is
 /// the path the primary chat agent takes since it has no per-agent override
 /// section.
+#[allow(dead_code)]
 pub fn resolve_model(cfg: &Config, agent_name: Option<&str>) -> Option<String> {
     let result = if let Some(name) = agent_name {
         if let Some(agent) = cfg.agents.get(name) {
@@ -870,6 +861,7 @@ pub fn resolve_model(cfg: &Config, agent_name: Option<&str>) -> Option<String> {
 /// Tools the named agent should NOT have access to. Returns `&[]` when the
 /// agent isn't in the config at all (so callers can union this with
 /// compiled-in defaults without an extra `None` branch).
+#[allow(dead_code)]
 pub fn agent_disallowed<'a>(cfg: &'a Config, agent_name: &str) -> &'a [String] {
     cfg.agents
         .get(agent_name)

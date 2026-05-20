@@ -3,11 +3,11 @@
 
 use crate::app::{App, NetworkRecoveryProvider};
 use crate::runtime::{
-    AppEvent, EventSender, UiEvent, drain_queued_prompts,
-    record_network_recovery, restart_stream_in_place,
+    AppEvent, EventSender, UiEvent, drain_queued_prompts, record_network_recovery,
+    restart_stream_in_place,
 };
-use crate::{session, stream, toast, types};
 use crate::types::*;
+use crate::{toast, types};
 
 /// Handle `StreamEvent::Error(e)`.
 pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: String) {
@@ -17,6 +17,16 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
         error = %e,
         "StreamEvent::Error — resetting stream state"
     );
+    if e == "Interrupted by user"
+        && !app.cancel_token.is_cancelled()
+        && !app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+    {
+        tracing::info!(
+            target: "jfc::stream",
+            "dropping stale interrupt from superseded stream"
+        );
+        return;
+    }
 
     // ─── Synthetic tool_result injection on interrupt ────────
     // When a stream is interrupted with pending/running tool_use
@@ -35,8 +45,7 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
                         if let types::MessagePart::Tool(tc) = p {
                             if matches!(
                                 tc.status,
-                                types::ToolStatus::Pending
-                                    | types::ToolStatus::Running
+                                types::ToolStatus::Pending | types::ToolStatus::Running
                             ) {
                                 return Some(tc.id.clone());
                             }
@@ -90,9 +99,7 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
         record_network_recovery(
             app,
             NetworkRecoveryProvider::AnthropicOAuth,
-            e.trim_start_matches(
-                crate::providers::anthropic_oauth::AUTO_RETRY_SENTINEL,
-            ),
+            e.trim_start_matches(crate::providers::anthropic_oauth::AUTO_RETRY_SENTINEL),
         );
     } else {
         app.network_recovery_status = None;
@@ -123,9 +130,7 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
             .rfind(|m| matches!(m.role, types::Role::User))
             .and_then(|m| {
                 m.parts.iter().find_map(|p| match p {
-                    types::MessagePart::Text(t) if !t.trim().is_empty() => {
-                        Some(t.clone())
-                    }
+                    types::MessagePart::Text(t) if !t.trim().is_empty() => Some(t.clone()),
                     _ => None,
                 })
             });
@@ -194,10 +199,7 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
         let preview = &e[..preview_cap];
         toast::push_with_cap(
             &mut app.toasts,
-            toast::Toast::new(
-                toast::ToastKind::Error,
-                format!("Stream error: {preview}"),
-            ),
+            toast::Toast::new(toast::ToastKind::Error, format!("Stream error: {preview}")),
         );
     }
     app.scroll_to_bottom();
@@ -220,5 +222,62 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
             "draining queued prompts after StreamError"
         );
         drain_queued_prompts(app, tx).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+    use tokio::sync::mpsc;
+
+    use super::*;
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            #[allow(dead_code)]
+            messages: Vec<ProviderMessage>,
+            #[allow(dead_code)]
+            options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    fn test_app() -> App {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.task_store = jfc_session::TaskStore::in_memory();
+        app
+    }
+
+    #[tokio::test]
+    async fn stale_interrupt_from_superseded_stream_is_ignored() {
+        let mut app = test_app();
+        app.messages.push(ChatMessage::user("new prompt".into()));
+        app.messages.push(ChatMessage::assistant(String::new()));
+        app.is_streaming = true;
+        app.streaming_assistant_idx = Some(1);
+        let (tx, _rx) = mpsc::channel(8);
+
+        handle_stream_error(&mut app, &tx, "Interrupted by user".to_owned()).await;
+
+        assert!(app.is_streaming);
+        assert_eq!(app.streaming_assistant_idx, Some(1));
+        assert_eq!(app.messages.len(), 2);
     }
 }

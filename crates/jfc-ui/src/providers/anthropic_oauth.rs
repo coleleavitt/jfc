@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -338,6 +337,7 @@ fn write_back_tokens(
 #[derive(Debug, Clone)]
 struct TokenState {
     access_token: String,
+    #[allow(dead_code)]
     refresh_token: String,
     expires_at: u64,
     account_name: String,
@@ -352,9 +352,11 @@ pub struct OAuthProfile {
     pub subscription_type: Option<String>, // "max" | "pro" | "enterprise" | "team"
     pub seat_tier: Option<String>, // "code_max" | "code_pro" | model id | "opus" | "opusplan" | "opus[1m]" | …
     pub rate_limit_tier: Option<String>, // e.g. "tier4"
+    #[allow(dead_code)]
     pub billing_type: Option<String>,
     pub display_name: Option<String>,
     pub email: Option<String>,
+    #[allow(dead_code)]
     pub has_extra_usage_enabled: Option<bool>,
 }
 
@@ -547,6 +549,7 @@ impl AnthropicOAuthProvider {
 
     /// Read the cached profile without doing I/O. Used by the picker after the
     /// background fetch posts a `ProfileLoaded` event.
+    #[allow(dead_code)]
     pub async fn cached_profile(&self) -> Option<OAuthProfile> {
         self.profile.read().await.clone()
     }
@@ -733,6 +736,7 @@ impl AnthropicOAuthProvider {
 /// integer ("seconds") or HTTP-date format. We honor integers; HTTP-date
 /// handling is intentionally conservative — any unparseable header returns
 /// `None`, which drives the manager to its default exponential cooldown.
+#[allow(dead_code)]
 fn parse_retry_after_secs(headers: &reqwest::header::HeaderMap) -> Option<u64> {
     let raw = headers.get("retry-after")?.to_str().ok()?;
     let trimmed = raw.trim();
@@ -914,6 +918,7 @@ enum RotationDecision {
     Success,
     /// 429: rotate to the next account. `retry_after_secs` carries any
     /// value parsed from the response header.
+    #[allow(dead_code)]
     RateLimited { retry_after_secs: Option<u64> },
     /// 401/5xx: rotate (transient/account-specific failure).
     AccountFailure,
@@ -1224,7 +1229,7 @@ impl Provider for AnthropicOAuthProvider {
         if options.task_budget_tokens.is_some() {
             betas_stream.push_str(",task-budgets-2026-03-13");
         }
-        let mut beta_header = betas_stream;
+        let beta_header = betas_stream;
 
         // Two nested loops:
         //   - Outer: when every account ends up in cooldown mid-rotation, sleep

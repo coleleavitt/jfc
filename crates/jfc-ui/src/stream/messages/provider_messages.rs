@@ -1,4 +1,4 @@
-use crate::types::{ChatMessage, MessagePart, Role};
+use crate::types::{ChatMessage, MessagePart};
 use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole};
 
 use super::attachments::push_attachments;

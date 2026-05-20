@@ -9,18 +9,17 @@ use futures::StreamExt;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::mpsc;
 
-use crate::app::{self, ANIM_TICK_MS, App, IDLE_TICK_MS, NetworkRecoveryProvider};
+use crate::app::{ANIM_TICK_MS, App, IDLE_TICK_MS};
 use crate::runtime::{
-    APP_EVENT_BUFFER, AppEvent, CompactionEvent, EventReceiver, EventSender, GoalEvent,
+    APP_EVENT_BUFFER, AppEvent, EventReceiver, EventSender, GoalEvent,
     ProviderEvent, StreamEvent, StreamRequestOverrides, TaskEvent, TeamEvent,
     ToolEvent, UiEvent, draw_synchronized,
-    handle_goal_verdict,
-    read_git_branch_from_root, restore_persistent_background_agents,
-    set_terminal_title, sync_detached_background_tasks_from_daemon, update_task_activities,
+    handle_goal_verdict, restore_persistent_background_agents,
+    set_terminal_title,
 };
 use crate::types::*;
 use crate::{
-    config, diagnostics_producer, lsp_client, render, session,
+    config, diagnostics_producer, lsp_client, session,
     slate, stream,
 };
 use jfc_provider::{ModelId, Provider, ProviderId};
@@ -29,7 +28,6 @@ mod guards;
 mod handlers;
 mod narration_retry;
 
-use guards::{CONFIG_RELOAD_REMINDER, MCP_REFRESH_REMINDER};
 
 pub(crate) async fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,

@@ -231,6 +231,7 @@ pub const VERBS: &[&str] = &[
 /// Past-tense verbs for finished agents. Mirrors cli.js v143's `rD6` array
 /// so completed sub-agent rows in the fan read with a finished tone ("Baked
 /// for 1m 5s") instead of stale present-tense ("Fermenting").
+#[allow(dead_code)]
 pub const VERBS_PAST: &[&str] = &[
     "Baked",
     "Brewed",
@@ -263,6 +264,7 @@ pub fn verb_for(elapsed: Duration) -> &'static str {
 /// Completed agents in the fan row read "Baked for 1m 5s" instead of a
 /// stale present-tense "Fermenting" — matches cli.js v143's `rD6`/`XgH()`
 /// pair where each task captures its own past verb at completion.
+#[allow(dead_code)]
 pub fn verb_past_for(seed: &str) -> &'static str {
     let h: usize = seed.bytes().map(|b| b as usize).sum();
     VERBS_PAST[h % VERBS_PAST.len()]
@@ -483,6 +485,7 @@ pub fn status_segments(
     }
 }
 
+#[allow(dead_code)]
 pub fn format_status(
     tick: usize,
     elapsed: Duration,

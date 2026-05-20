@@ -1,5 +1,4 @@
-#![allow(dead_code, unused_imports, unused_mut, unused_variables)]
-#![allow(clippy::all)]
+
 
 mod advisor;
 mod agents;
@@ -23,7 +22,6 @@ mod env_context;
 
 mod feature_gates;
 mod file_watcher;
-mod fleet_view;
 mod git_context;
 mod github;
 mod goal;
@@ -43,7 +41,6 @@ mod mentions;
 mod message_view;
 mod notifications;
 mod output_style;
-mod plan_cache;
 mod providers;
 mod push_notifications;
 mod query;
@@ -54,15 +51,12 @@ mod scheduler;
 mod sdk_bridge;
 mod session;
 mod session_naming;
-mod slash_commands;
 mod slate;
-mod speculation;
 mod spinner;
 mod sprint;
 mod stream;
 mod swarm;
 mod system_reminder;
-mod telemetry;
 mod theme;
 mod toast;
 mod tools;

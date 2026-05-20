@@ -30,6 +30,7 @@ struct CacheEntry {
     /// spot in the renderer (see `crates/jfc-ui/src/message_view.rs:64-74`
     /// pre-cache). Caching it here turns an O(lines × graphemes) per-frame
     /// computation into a single hash lookup.
+    #[allow(dead_code)]
     wrapped_line_count: usize,
     /// Insertion order counter for LRU eviction.
     generation: u64,
@@ -52,6 +53,7 @@ struct StreamingEntry {
     width: u16,
     text_hash: u64,
     lines: Vec<Line<'static>>,
+    #[allow(dead_code)]
     wrapped_line_count: usize,
 }
 
@@ -65,6 +67,7 @@ impl RenderCache {
     }
 
     /// Look up cached lines for `text` at `width`. Returns `None` on miss.
+    #[allow(dead_code)]
     pub fn get(&mut self, text: &str, width: u16) -> Option<&[Line<'static>]> {
         let key = (hash_text(text), width);
         if let Some(entry) = self.map.get_mut(&key) {
@@ -76,6 +79,7 @@ impl RenderCache {
     }
 
     /// Insert rendered lines into the cache.
+    #[allow(dead_code)]
     pub fn insert(&mut self, text: &str, width: u16, lines: Vec<Line<'static>>) {
         if self.map.len() >= MAX_ENTRIES {
             self.evict_oldest();
@@ -127,12 +131,14 @@ impl RenderCache {
     /// Total visual rows for this entry after word-wrapping at the cached
     /// width. Returns `None` on miss; callers should compute and `insert` to
     /// populate. This is the per-frame hot path for scroll-bottom math.
+    #[allow(dead_code)]
     pub fn wrapped_line_count(&self, text: &str, width: u16) -> Option<usize> {
         let key = (hash_text(text), width);
         self.map.get(&key).map(|e| e.wrapped_line_count)
     }
 
     /// Return the line count without cloning the full vec.
+    #[allow(dead_code)]
     pub fn line_count(&mut self, text: &str, width: u16) -> Option<usize> {
         let key = (hash_text(text), width);
         if let Some(entry) = self.map.get_mut(&key) {
@@ -207,6 +213,7 @@ impl RenderCache {
 
     /// Wrapped line count for the streaming slot (mirrors `wrapped_line_count`
     /// for the main cache). Returns 0 if no streaming entry matches.
+    #[allow(dead_code)]
     pub fn streaming_wrapped_line_count(&self, message_idx: usize, width: u16) -> usize {
         self.streaming_slot
             .as_ref()

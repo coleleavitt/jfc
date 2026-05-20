@@ -7,7 +7,7 @@ use crossterm::event::{Event, KeyEventKind};
 use crate::app::App;
 use crate::runtime::EventSender;
 use crate::types::*;
-use crate::{attachments, input, message_view, session, toast};
+use crate::{attachments, input, message_view, toast};
 
 /// Dispatch a single crossterm `Event` into the appropriate handler.
 /// Returns `Ok(true)` when the app should quit.

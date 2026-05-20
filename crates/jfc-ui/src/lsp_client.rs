@@ -44,7 +44,6 @@
 //! no real win — we only need a handful of message shapes and they're
 //! tiny. We stick with `serde_json::json!` macros throughout.
 
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -414,6 +413,7 @@ impl LspClient {
     /// Send `textDocument/didChange` with a full-document replacement.
     /// LSP also supports incremental changes; full-doc is simpler and
     /// the server reconciles either way.
+    #[allow(dead_code)]
     pub fn did_change(&self, uri: &str, version: i32, text: &str) {
         tracing::trace!(
             target: "jfc::lsp",
@@ -595,6 +595,7 @@ pub fn build_did_open(uri: &str, language_id: &str, version: i32, text: &str) ->
 /// Build a full-document `textDocument/didChange`. Incremental diff mode
 /// would replace `contentChanges[0].text` with a `range`+`text` shape;
 /// we keep it simple — language servers handle full-doc cheaply.
+#[allow(dead_code)]
 pub fn build_did_change(uri: &str, version: i32, text: &str) -> Value {
     json!({
         "jsonrpc": "2.0",

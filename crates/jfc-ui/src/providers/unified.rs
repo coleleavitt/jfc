@@ -97,6 +97,7 @@ pub struct RateLimitInfo {
     /// `anthropic-ratelimit-unified-reset` — unix-ms.
     pub unified_reset_ms: Option<u64>,
     /// `anthropic-ratelimit-unified-fallback == "available"`.
+    #[allow(dead_code)]
     pub fallback_available: bool,
     /// `anthropic-ratelimit-unified-representative-claim`.
     pub claim: Option<ClaimType>,
@@ -120,6 +121,7 @@ pub struct RateLimitInfo {
 impl RateLimitInfo {
     /// Whether the response signals that this account should be cooled-down.
     /// True when status is `Rejected` or `retry-after` is set.
+    #[allow(dead_code)]
     pub fn is_rate_limited(&self) -> bool {
         matches!(self.unified_status, Some(UnifiedStatus::Rejected)) || self.retry_after.is_some()
     }
@@ -127,6 +129,7 @@ impl RateLimitInfo {
     /// Whether the unified payload says a Sonnet fallback is available for
     /// this rejection. Only meaningful when `claim == SevenDayOpus` — at the
     /// call site, gate on both.
+    #[allow(dead_code)]
     pub fn opus_fallback_offered(&self) -> bool {
         self.fallback_available && matches!(self.claim, Some(ClaimType::SevenDayOpus))
     }

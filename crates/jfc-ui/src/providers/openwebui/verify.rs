@@ -5,7 +5,6 @@
 //! - `GET /api/v1/auths/`     — verify the JWT and return user identity
 //! - `GET /api/models`        — list models accessible to the user
 
-#![allow(dead_code)]
 
 use serde::Deserialize;
 

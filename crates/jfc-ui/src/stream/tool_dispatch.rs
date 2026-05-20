@@ -211,7 +211,7 @@ pub(crate) fn dispatch_tools_batched(
             let _ = tx_task.try_send(AppEvent::Task(TaskEvent::Started {
                 task_id: crate::ids::TaskId::from(runner_task_id.clone()),
                 description: format!("spawn teammate: {name}"),
-                model_used: Some(teammate_model_name), agent_messages: Vec::new(), agent_messages: Vec::new(),
+                model_used: Some(teammate_model_name),
                 max_input_tokens: agent_def.and_then(|a| a.max_input_tokens),
                 // Teammates are in-process (the runner runs inside this
                 // event loop) — DON'T let the UI's TaskStarted handler
@@ -297,7 +297,7 @@ pub(crate) fn dispatch_tools_batched(
                     let _ = tx_task.try_send(AppEvent::Task(TaskEvent::Started {
                         task_id: crate::ids::TaskId::from(task_id.clone()),
                         description: description.clone(),
-                        model_used: model_used.clone(), agent_messages: Vec::new(),
+                        model_used: model_used.clone(),
                         max_input_tokens,
                         // True detached background worker: the worker
                         // process already called
@@ -398,7 +398,7 @@ pub(crate) fn dispatch_tools_batched(
                 .send(AppEvent::Task(TaskEvent::Started {
                     task_id: crate::ids::TaskId::from(task_id.clone()),
                     description: description.clone(),
-                    model_used: model_used.clone(), agent_messages: Vec::new(),
+                    model_used: model_used.clone(),
                     max_input_tokens,
                     // In-process subagent (foreground Task tool, no
                     // `run_in_background`). Skip daemon registration; the

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -48,14 +47,17 @@ impl<V: Clone> QueryCache<V> {
 /// rustc-inspired typed-handle substrate without introducing global lifetimes or
 /// a dependency while the call sites are still small.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub struct InternId(usize);
 
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 pub struct Interner<T> {
     values: Vec<T>,
 }
 
 impl<T: Eq> Interner<T> {
+    #[allow(dead_code)]
     pub fn intern(&mut self, value: T) -> InternId {
         if let Some(index) = self.values.iter().position(|existing| existing == &value) {
             return InternId(index);
@@ -65,6 +67,7 @@ impl<T: Eq> Interner<T> {
         id
     }
 
+    #[allow(dead_code)]
     pub fn get(&self, id: InternId) -> Option<&T> {
         self.values.get(id.0)
     }

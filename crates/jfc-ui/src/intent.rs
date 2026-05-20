@@ -94,11 +94,13 @@ impl Intent {
 #[derive(Debug, Clone)]
 pub struct Classification {
     pub intent: Intent,
+    #[allow(dead_code)]
     pub confidence: f32,
 }
 
 /// Tool kind for availability mapping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ToolKind {
     Read,
     Write,
@@ -967,6 +969,7 @@ fn build_entrypoint_body(cwd: &Path) -> String {
 }
 
 /// Get suggested tools for an intent (advisory, not enforcing).
+#[allow(dead_code)]
 pub fn suggested_tools(intent: Intent) -> Vec<ToolKind> {
     match intent {
         Intent::Research => vec![
@@ -1033,6 +1036,7 @@ pub fn suggested_tools(intent: Intent) -> Vec<ToolKind> {
 }
 
 /// Get tools that are discouraged for an intent (advisory).
+#[allow(dead_code)]
 pub fn discouraged_tools(intent: Intent) -> Vec<ToolKind> {
     match intent {
         Intent::Research => vec![ToolKind::Edit, ToolKind::Write],

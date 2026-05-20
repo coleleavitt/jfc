@@ -52,6 +52,7 @@ pub struct RenderCtx<'a> {
     pub render_cache: &'a RefCell<crate::render_cache::RenderCache>,
     pub theme: crate::theme::Theme,
     pub launched_at: std::time::Instant,
+    #[allow(dead_code)]
     pub diagnostics: &'a [crate::diagnostics::DiagnosticEntry],
 }
 
@@ -145,6 +146,7 @@ pub fn warm_tool_height_cache_for_messages(messages: &[crate::types::ChatMessage
 /// markdown rendering is cached in `RenderCache`, the rest is
 /// O(parts). The previous "fast-path predictor" was a premature
 /// optimization that traded ~ms per frame for permanent drift bugs.
+#[allow(dead_code)]
 pub fn message_view_total_lines(app: &App, inner_w: usize) -> usize {
     build_render_items_inner(&RenderCtx::from_app(app), inner_w)
         .iter()
@@ -427,6 +429,7 @@ pub enum RenderItem<'a> {
     /// has no idea where one message ends and the next begins; it
     /// just sees a flat stream of TextLine / ToolBlock / Blank.
     MessageStart {
+        #[allow(dead_code)]
         role: Role,
         is_streaming_placeholder: bool,
     },

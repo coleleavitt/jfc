@@ -66,6 +66,7 @@ pub struct TokenPair {
     pub access_token: String,
     pub refresh_token: String,
     pub expires_at_ms: u64,
+    #[allow(dead_code)]
     pub scopes: Vec<String>,
 }
 
@@ -191,6 +192,7 @@ fn split_callback_paste(raw: &str) -> (String, Option<String>) {
 /// the callback page. The `state` returned by Anthropic must equal
 /// `expected_state` (timing-safe compare) or this returns
 /// [`LoginError::StateMismatch`].
+#[allow(dead_code)]
 pub async fn exchange_code(
     raw_code_state: &str,
     verifier: &str,

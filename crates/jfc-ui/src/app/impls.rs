@@ -88,6 +88,7 @@ impl App {
     }
 
     /// Invalidate the cached git root so it will be re-resolved on next access.
+    #[allow(dead_code)]
     pub fn invalidate_git_root(&mut self) {
         self.git_root = None;
     }
@@ -226,6 +227,7 @@ impl App {
         self.scroll_down(half);
     }
 
+    #[allow(dead_code)]
     pub fn is_at_bottom(&self) -> bool {
         self.scroll_offset >= self.max_scroll()
     }
@@ -376,6 +378,7 @@ impl App {
 
     /// Cancel a running background task by ID. Marks it as cancelled
     /// and signals the underlying cancellation token if available.
+    #[allow(dead_code)]
     pub fn cancel_background_task(&mut self, task_id: &str) {
         use crate::types::TaskLifecycle;
         if let Some(bt) = self.background_tasks.get_mut(task_id) {

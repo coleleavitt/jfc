@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 mod bash;
 mod daemon;
@@ -20,7 +19,7 @@ mod worktree;
 
 // Re-exports from submodules
 pub use crate::runtime::{
-    DiagnosticLevel, ExecutionResult, ToolDiagnostic, ToolOutcome, ToolProvenance, ToolSource,
+    ExecutionResult, ToolProvenance, ToolSource,
 };
 pub(crate) use defs::all_tool_defs;
 pub(crate) use economy::{
@@ -106,23 +105,21 @@ fn with_graph_session_mut<R>(
 ) -> Result<R, String> {
     let key = graph_session_cache_key(cwd);
 
-    let session = loop {
+    let session = {
         let mut cache = graph_session_cache()
             .lock()
             .map_err(|_| "graph cache mutex poisoned".to_string())?;
         if let Some(session) = cache.remove(&key) {
-            break session;
-        }
-        drop(cache);
+            session
+        } else {
+            drop(cache);
 
-        let built = build_graph_session_for_key(key.clone());
-        let mut cache = graph_session_cache()
-            .lock()
-            .map_err(|_| "graph cache mutex poisoned".to_string())?;
-        if let Some(session) = cache.remove(&key) {
-            break session;
+            let built = build_graph_session_for_key(key.clone());
+            let mut cache = graph_session_cache()
+                .lock()
+                .map_err(|_| "graph cache mutex poisoned".to_string())?;
+            cache.remove(&key).unwrap_or(built)
         }
-        break built;
     };
 
     let mut session = match Arc::try_unwrap(session) {

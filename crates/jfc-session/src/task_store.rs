@@ -94,6 +94,11 @@ fn floor_char_boundary(value: &str, index: usize) -> usize {
     boundary
 }
 
+fn is_legacy_placeholder_task(task: &Task) -> bool {
+    task.subject.trim().eq_ignore_ascii_case("subj")
+        && task.description.trim().eq_ignore_ascii_case("desc")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeletedFilter {
     Exclude,
@@ -143,11 +148,13 @@ impl TaskStore {
         );
         let inner = Self::load_inner(&path);
         let disk_mtime = Self::file_mtime(&path);
-        Arc::new(Self {
+        let store = Arc::new(Self {
             inner: Mutex::new(inner),
             path,
             disk_mtime: Mutex::new(disk_mtime),
-        })
+        });
+        store.delete_legacy_placeholders();
+        store
     }
 
     /// Open the task store shared by a swarm team. This intentionally uses
@@ -162,11 +169,13 @@ impl TaskStore {
             "TaskStore::open_team"
         );
         let disk_mtime = Self::file_mtime(&path);
-        Arc::new(Self {
+        let store = Arc::new(Self {
             inner: Mutex::new(Self::load_inner(&path)),
             path,
             disk_mtime: Mutex::new(disk_mtime),
-        })
+        });
+        store.delete_legacy_placeholders();
+        store
     }
 
     /// In-memory store (no persistence) — used in tests.
@@ -189,11 +198,13 @@ impl TaskStore {
         );
         let inner = Self::load_inner(&path);
         let disk_mtime = Self::file_mtime(&path);
-        Arc::new(Self {
+        let store = Arc::new(Self {
             inner: Mutex::new(inner),
             path,
             disk_mtime: Mutex::new(disk_mtime),
-        })
+        });
+        store.delete_legacy_placeholders();
+        store
     }
 
     /// Copy every task from `src` into `self`, preserving ids. Used when
@@ -243,6 +254,53 @@ impl TaskStore {
         copied
     }
 
+    /// Tombstone legacy placeholder tasks produced by earlier tool calls.
+    ///
+    /// The model occasionally created tasks with the fixture-shaped
+    /// subject/description pair `subj`/`desc`. Those rows are not useful work,
+    /// but because task stores persist across resumes they can pollute the
+    /// pinned task queue indefinitely. This only removes the exact placeholder
+    /// pair and leaves all other tasks untouched.
+    pub fn delete_legacy_placeholders(&self) -> usize {
+        let mut inner = self.inner.lock().unwrap();
+        let deleted = Self::delete_legacy_placeholders_from_inner(&mut inner);
+        if deleted == 0 {
+            return 0;
+        }
+
+        self.persist(&inner);
+        tracing::warn!(
+            target: "jfc::tasks",
+            deleted,
+            path = %self.path.display(),
+            "deleted legacy placeholder tasks"
+        );
+        deleted
+    }
+
+    fn delete_legacy_placeholders_from_inner(inner: &mut TaskStoreInner) -> usize {
+        let mut deleted_ids = BTreeSet::new();
+
+        for task in inner.tasks.values_mut() {
+            if task.status != TaskStatus::Deleted && is_legacy_placeholder_task(task) {
+                task.status = TaskStatus::Deleted;
+                task.owner = None;
+                deleted_ids.insert(task.id.clone());
+            }
+        }
+
+        if deleted_ids.is_empty() {
+            return 0;
+        }
+
+        for task in inner.tasks.values_mut() {
+            task.blocks.retain(|id| !deleted_ids.contains(id));
+            task.blocked_by.retain(|id| !deleted_ids.contains(id));
+        }
+
+        deleted_ids.len()
+    }
+
     /// Current on-disk modification time of `path`, or `None` if the file
     /// doesn't exist / can't be stat'd. Used to mtime-gate `reload_if_changed`.
     fn file_mtime(path: &PathBuf) -> Option<std::time::SystemTime> {
@@ -272,11 +330,24 @@ impl TaskStore {
                 return false;
             }
         }
-        let fresh = Self::load_inner(&self.path);
+        let mut fresh = Self::load_inner(&self.path);
+        let deleted = Self::delete_legacy_placeholders_from_inner(&mut fresh);
         let mut inner = self.inner.lock().unwrap();
         *inner = fresh;
         drop(inner);
-        *self.disk_mtime.lock().unwrap() = current;
+        if deleted > 0 {
+            if let Ok(inner) = self.inner.lock() {
+                self.persist(&inner);
+            }
+            tracing::warn!(
+                target: "jfc::tasks",
+                deleted,
+                path = %self.path.display(),
+                "deleted legacy placeholder tasks after external reload"
+            );
+        } else {
+            *self.disk_mtime.lock().unwrap() = current;
+        }
         tracing::debug!(
             target: "jfc::tasks",
             path = %self.path.display(),
@@ -1088,6 +1159,32 @@ mod tests {
         let src = TaskStore::in_memory();
         let dst = TaskStore::in_memory();
         assert_eq!(dst.migrate_from(&src), 0);
+    }
+
+    #[test]
+    fn delete_legacy_placeholders_tombstones_exact_fixture_rows_robust() {
+        let store = TaskStore::in_memory();
+        let placeholder = store
+            .create("subj".into(), "desc".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        let keeper = store
+            .create(
+                "subj".into(),
+                "real task body".into(),
+                None,
+                vec![placeholder.id.clone()],
+            )
+            .unwrap();
+
+        let deleted = store.delete_legacy_placeholders();
+
+        assert_eq!(deleted, 1);
+        let placeholder_after = store.get(placeholder.id.as_str()).unwrap();
+        assert_eq!(placeholder_after.status, TaskStatus::Deleted);
+        let keeper_after = store.get(keeper.id.as_str()).unwrap();
+        assert!(keeper_after.blocked_by.is_empty());
+        assert_eq!(store.list(DeletedFilter::Exclude).len(), 1);
+        assert_eq!(store.list(DeletedFilter::Include).len(), 2);
     }
 
     // Normal: a store re-reads the backing file when an external process

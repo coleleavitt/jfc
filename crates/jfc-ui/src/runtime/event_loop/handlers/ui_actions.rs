@@ -3,7 +3,7 @@
 
 use crate::app::{self, App};
 use crate::runtime::EventSender;
-use crate::{input, toast, types};
+use crate::{input, toast};
 
 /// Handle `UiEvent::EnterPlanModeRequested { reason }`.
 pub(crate) fn handle_enter_plan_mode(app: &mut App, reason: String) {

@@ -8,12 +8,7 @@ use crate::types::{
     ToolOutput, ToolStatus, validate_turn_invariants,
 };
 
-use jfc_session::{
-    SessionMetadata, cwd_mismatch_message, format_session_id_timestamp, generate_session_id,
-    group_by_cwd, list_session_ids_only, list_sessions, list_sessions_filtered,
-    list_sessions_with_metadata, load_session_metadata, most_recent_session,
-    most_recent_session_for_cwd, relative_time, sessions_dir, shorten_cwd,
-};
+use jfc_session::sessions_dir;
 
 fn default_true() -> bool {
     true
@@ -1415,6 +1410,7 @@ fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
     }
 }
 
+#[allow(dead_code)]
 fn serialize_generic_tool_input_json(input: &ToolInput) -> SerializedToolInput {
     SerializedToolInput::Generic {
         summary: input.to_value().to_string(),
@@ -2234,6 +2230,9 @@ fn deserialize_diff_line(line: SerializedDiffLine) -> DiffLine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jfc_session::{
+        SessionMetadata, cwd_mismatch_message, group_by_cwd, relative_time, shorten_cwd,
+    };
 
     #[test]
     fn roundtrip_tool_input_edit() {
@@ -2677,6 +2676,7 @@ mod coalesce_tests {
 #[cfg(test)]
 mod cwd_filter_tests {
     use super::*;
+    use jfc_session::SessionMetadata;
 
     fn meta(
         id: &str,
@@ -2828,6 +2828,10 @@ mod disk_io_tests {
     };
     use std::sync::Mutex;
     use tempfile::TempDir;
+    use jfc_session::{
+        list_sessions, list_sessions_filtered, load_session_metadata, most_recent_session,
+        most_recent_session_for_cwd,
+    };
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -2835,9 +2839,11 @@ mod disk_io_tests {
     /// lifetime of one test. Restores the previous value on drop so a
     /// later test in the same process doesn't see a dangling override.
     struct TempConfigHome {
-        _dir: TempDir,
+        #[allow(dead_code)]
+        dir: TempDir,
         prior: Option<String>,
-        _guard: std::sync::MutexGuard<'static, ()>,
+        #[allow(dead_code)]
+        guard: std::sync::MutexGuard<'static, ()>,
     }
 
     impl TempConfigHome {
@@ -2852,9 +2858,11 @@ mod disk_io_tests {
                 std::env::set_var("XDG_CONFIG_HOME", dir.path());
             }
             Self {
-                _dir: dir,
+                #[allow(dead_code)]
+                dir: dir,
                 prior,
-                _guard: guard,
+                #[allow(dead_code)]
+                guard: guard,
             }
         }
     }
