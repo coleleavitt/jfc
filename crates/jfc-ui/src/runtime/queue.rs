@@ -174,7 +174,9 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
             } else {
                 format!("stream task cancelled: {join_err}")
             };
-            let _ = tx_guard.send(AppEvent::Stream(StreamEvent::Error(msg)));
+            let _ = tx_guard
+                .send(AppEvent::Stream(StreamEvent::Error(msg)))
+                .await;
         }
     });
 }

@@ -476,18 +476,32 @@ pub(crate) async fn run(
             background_reminders: app.take_background_reminders(),
             ..Default::default()
         };
+        let tx_guard = tx.clone();
         tokio::spawn(async move {
-            stream::stream_response(
-                provider,
-                messages,
-                model,
-                tx_clone,
-                interrupt,
-                cancel,
-                prev_msg_id,
-                overrides,
-            )
+            let result = tokio::spawn(async move {
+                stream::stream_response(
+                    provider,
+                    messages,
+                    model,
+                    tx_clone,
+                    interrupt,
+                    cancel,
+                    prev_msg_id,
+                    overrides,
+                )
+                .await;
+            })
             .await;
+            if let Err(join_err) = result {
+                let msg = if join_err.is_panic() {
+                    format!("stream task panicked: {join_err}")
+                } else {
+                    format!("stream task cancelled: {join_err}")
+                };
+                let _ = tx_guard
+                    .send(AppEvent::Stream(StreamEvent::Error(msg)))
+                    .await;
+            }
         });
     }
 

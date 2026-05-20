@@ -1,5 +1,6 @@
-use super::*;
 use super::visual::*;
+use super::*;
+use super::agents::{render_subagent_tree, render_teammate_tree};
 use crate::markdown;
 pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     use crate::message_view::MessageView;
@@ -873,11 +874,19 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             .or(app.streaming_started_at)
             .map(|t| now.duration_since(t))
             .unwrap_or_default();
-        let stall = app
-            .streaming_last_token_at
-            .map(|t| now.duration_since(t))
-            .unwrap_or_default();
-        let stream_idle = app.last_stream_event_at.map(|t| now.duration_since(t));
+        let stream_is_live = app.is_streaming;
+        let stall = if stream_is_live {
+            app.streaming_last_token_at
+                .map(|t| now.duration_since(t))
+                .unwrap_or_default()
+        } else {
+            std::time::Duration::default()
+        };
+        let stream_idle = if stream_is_live {
+            app.last_stream_event_at.map(|t| now.duration_since(t))
+        } else {
+            None
+        };
         // Anthropic SSE pushes cumulative `output_tokens` in every
         // `message_delta` event (sse.rs:212-218 → StreamEvent::Usage →
         // app.last_usage_output) — wire-truth, no estimation needed. OWUI /
@@ -885,17 +894,29 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // wire value stays 0 mid-stream, so we fall back to chars/4 of the
         // streamed text + reasoning. The first non-zero wire value beats the
         // estimate; once the wire stops moving we keep the last known count.
-        let estimate = app.streaming_response_bytes as u64 / 4;
-        let live_tokens = crate::spinner::live_token_count(app.last_usage_output as u64, estimate);
+        let estimate = if stream_is_live {
+            app.streaming_response_bytes as u64 / 4
+        } else {
+            0
+        };
+        let live_tokens = if stream_is_live {
+            crate::spinner::live_token_count(app.last_usage_output as u64, estimate)
+        } else {
+            0
+        };
         // Thinking signal — Some(Live) while reasoning is streaming,
         // Some(Done(d)) once we got the first text byte after thinking,
         // None when the model isn't using extended thinking this turn.
-        let thinking = match (app.thinking_started_at, app.thinking_ended_at) {
-            (Some(_), None) => Some(crate::spinner::ThinkingStatus::Live),
-            (Some(start), Some(end)) => Some(crate::spinner::ThinkingStatus::Done(
-                end.duration_since(start),
-            )),
-            _ => None,
+        let thinking = if stream_is_live {
+            match (app.thinking_started_at, app.thinking_ended_at) {
+                (Some(_), None) => Some(crate::spinner::ThinkingStatus::Live),
+                (Some(start), Some(end)) => Some(crate::spinner::ThinkingStatus::Done(
+                    end.duration_since(start),
+                )),
+                _ => None,
+            }
+        } else {
+            None
         };
         row1_elapsed = elapsed;
         let segs = crate::spinner::status_segments(
@@ -1355,4 +1376,3 @@ pub(super) fn agent_fan_below_input(f: &mut Frame, app: &App, area: Rect) {
         render_subagent_tree(f, app, area);
     }
 }
-

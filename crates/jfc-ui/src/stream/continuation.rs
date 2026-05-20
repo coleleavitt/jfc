@@ -2,7 +2,7 @@ use jfc_provider::ProviderMessage;
 use tokio::sync::mpsc;
 
 use crate::app::App;
-use crate::runtime::{AppEvent, StreamRequestOverrides};
+use crate::runtime::{AppEvent, StreamEvent, StreamRequestOverrides};
 use crate::types::*;
 
 use super::{
@@ -127,11 +127,25 @@ fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sen
         background_reminders: app.take_background_reminders(),
         ..Default::default()
     };
+    let tx_guard = tx.clone();
     tokio::spawn(async move {
-        stream_response(
-            provider, messages, model, tx, interrupt, cancel, None, overrides,
-        )
+        let result = tokio::spawn(async move {
+            stream_response(
+                provider, messages, model, tx, interrupt, cancel, None, overrides,
+            )
+            .await;
+        })
         .await;
+        if let Err(join_err) = result {
+            let msg = if join_err.is_panic() {
+                format!("stream task panicked: {join_err}")
+            } else {
+                format!("stream task cancelled: {join_err}")
+            };
+            let _ = tx_guard
+                .send(AppEvent::Stream(StreamEvent::Error(msg)))
+                .await;
+        }
     });
 }
 

@@ -1,6 +1,5 @@
 use super::*;
 use super::submit::handle_submit;
-use super::slash_commands::handle_slash_command;
 pub async fn handle_key(
     app: &mut App,
     key: event::KeyEvent,

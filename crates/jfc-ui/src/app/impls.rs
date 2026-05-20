@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::types::{ToolCall, ToolKind};
+use crate::types::{MessagePart, Role, ToolCall, ToolKind};
 use jfc_provider::ModelInfo;
 
 use super::{App, PermissionDecision, STREAM_WATCHDOG_TIMEOUT_SECS};
@@ -39,10 +39,11 @@ impl App {
             .map(|t| t.elapsed().as_secs() >= STREAM_WATCHDOG_TIMEOUT_SECS)
             .unwrap_or(false);
         if timed_out {
+            let streaming_assistant_idx = self.streaming_assistant_idx;
             tracing::warn!(
                 target: "jfc::app",
                 elapsed_secs = self.last_stream_event_at.map(|t| t.elapsed().as_secs()).unwrap_or(0),
-                "stream watchdog: killing stuck stream"
+                "stream watchdog: cancelling hard-idle stream"
             );
             // Cancel the stream task so it actually stops sending events.
             // Without this the stream task continues running in the
@@ -60,12 +61,32 @@ impl App {
             self.is_streaming = false;
             self.streaming_started_at = None;
             self.last_stream_event_at = None;
+            self.streaming_last_token_at = None;
+            self.thinking_started_at = None;
+            self.thinking_ended_at = None;
+            self.streaming_text.clear();
+            self.streaming_reasoning.clear();
+            self.streaming_response_bytes = 0;
             self.streaming_assistant_idx = None;
+            self.current_stream_request = None;
+            self.turn_started_at = None;
             // Clear any pending tool calls that accumulated during the
             // dead stream — they're stale and would dispatch into wrong
             // context if processed later.
             self.pending_tool_calls.clear();
             self.pre_dispatched_tool_ids.clear();
+            if let Some(idx) = streaming_assistant_idx
+                && idx < self.messages.len()
+            {
+                let msg = &self.messages[idx];
+                let empty_stream_placeholder = msg.role == Role::Assistant
+                    && msg.parts.iter().all(
+                        |part| matches!(part, MessagePart::Text(text) if text.trim().is_empty()),
+                    );
+                if empty_stream_placeholder {
+                    self.messages.remove(idx);
+                }
+            }
         }
     }
 

@@ -9,6 +9,7 @@ use crate::types::{ToolCall, ToolInput, ToolKind, ToolOutput};
 use jfc_provider::{EventStream, StopReason, StreamEvent};
 
 const STREAM_INTERRUPT_POLL: Duration = Duration::from_millis(50);
+const TERMINAL_DONE_GRACE: Duration = Duration::from_secs(2);
 
 pub(super) async fn drain_stream_events(
     mut stream: EventStream,
@@ -18,6 +19,7 @@ pub(super) async fn drain_stream_events(
 ) -> Option<StopReason> {
     let mut stop_reason = StopReason::EndTurn;
     let mut tool_accum: HashMap<usize, (String, String, String)> = HashMap::new();
+    let mut terminal_done_deadline: Option<tokio::time::Instant> = None;
 
     loop {
         // Cooperative cancel: the user pressed ESC twice. The legacy atomic
@@ -43,9 +45,24 @@ pub(super) async fn drain_stream_events(
                 let _ = tx
                     .send(AppEvent::Stream(RuntimeStreamEvent::Error(
                         "Interrupted by user".to_owned(),
-                    )))
-                    .await;
+                )))
+                .await;
                 return None;
+            }
+            _ = async {
+                if let Some(deadline) = terminal_done_deadline {
+                    tokio::time::sleep_until(deadline).await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                tracing::warn!(
+                    target: "jfc::stream",
+                    ?stop_reason,
+                    grace_ms = TERMINAL_DONE_GRACE.as_millis() as u64,
+                    "stream terminal Done grace elapsed before EOF; finalizing turn"
+                );
+                break;
             }
             _ = tokio::time::sleep(STREAM_INTERRUPT_POLL) => continue,
             event = stream.next() => event,
@@ -265,6 +282,8 @@ pub(super) async fn drain_stream_events(
                 if !matches!(stop_reason, StopReason::ToolUse | StopReason::PauseTurn) {
                     stop_reason = r;
                 }
+                terminal_done_deadline
+                    .get_or_insert_with(|| tokio::time::Instant::now() + TERMINAL_DONE_GRACE);
             }
             StreamEvent::ResponseMetadata {
                 response_id,

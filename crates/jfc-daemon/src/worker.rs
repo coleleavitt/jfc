@@ -17,13 +17,10 @@
 //!   `pub(super)` so `reconcile` can use them on respawn.
 
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime};
+use std::time::SystemTime;
 
 use super::logs::{append_log_line, background_agent_launch_path, background_agent_log_path};
-use super::registry::{
-    record_background_agent_finished, record_background_agent_log,
-    record_background_agent_progress, record_background_agent_started_at,
-};
+use super::registry::record_background_agent_started_at;
 use super::state::{
     BackgroundAgentLaunch, BackgroundAgentStatus, DaemonPaths, load_state, save_state,
     with_state_lock,

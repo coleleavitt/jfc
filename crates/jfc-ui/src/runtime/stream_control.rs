@@ -100,7 +100,9 @@ pub(crate) fn restart_stream_in_place_with_overrides(
             } else {
                 format!("stream task cancelled: {join_err}")
             };
-            let _ = tx_guard.send(AppEvent::Stream(StreamEvent::Error(msg)));
+            let _ = tx_guard
+                .send(AppEvent::Stream(StreamEvent::Error(msg)))
+                .await;
         }
     });
 }

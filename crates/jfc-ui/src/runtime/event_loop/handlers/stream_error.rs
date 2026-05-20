@@ -83,6 +83,19 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
         e.starts_with(crate::providers::anthropic::AUTO_RETRY_SENTINEL);
     let auto_retry_anthropic_oauth_signal =
         e.starts_with(crate::providers::anthropic_oauth::AUTO_RETRY_SENTINEL);
+    let auto_retry_signal = auto_retry_openwebui_signal
+        || auto_retry_anthropic_signal
+        || auto_retry_anthropic_oauth_signal;
+    let visible_error = if auto_retry_openwebui_signal {
+        e.trim_start_matches(crate::providers::openwebui::AUTO_RETRY_SENTINEL)
+    } else if auto_retry_anthropic_signal {
+        e.trim_start_matches(crate::providers::anthropic::AUTO_RETRY_SENTINEL)
+    } else if auto_retry_anthropic_oauth_signal {
+        e.trim_start_matches(crate::providers::anthropic_oauth::AUTO_RETRY_SENTINEL)
+    } else {
+        e.as_str()
+    }
+    .trim();
     if auto_retry_openwebui_signal {
         record_network_recovery(
             app,
@@ -162,10 +175,7 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
     // `turn_started_at.is_some()` and `!pending_tool_calls.is_empty()`)
     // and the spinner/counter keeps animating after an
     // interrupt or network error.
-    if !auto_retry_openwebui_signal
-        && !auto_retry_anthropic_signal
-        && !auto_retry_anthropic_oauth_signal
-    {
+    if !auto_retry_signal {
         app.turn_started_at = None;
     }
     app.pending_tool_calls.clear();
@@ -177,12 +187,32 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
     app.interrupt_flag
         .store(false, std::sync::atomic::Ordering::SeqCst);
     app.cancel_token = tokio_util::sync::CancellationToken::new();
-    if auto_retry_openwebui_signal
-        || auto_retry_anthropic_signal
-        || auto_retry_anthropic_oauth_signal
-    {
+    let mut auto_retry_restarted = false;
+    if auto_retry_signal {
         if let Some(idx) = retry_assistant_idx {
             restart_stream_in_place(app, tx, idx, retry_turn_started_at);
+            auto_retry_restarted = true;
+        } else {
+            tracing::warn!(
+                target: "jfc::stream",
+                error = %visible_error,
+                "auto-retry stream error had no assistant slot; surfacing as hard error"
+            );
+            app.network_recovery_status = None;
+            app.network_recovery_attempts = 0;
+            app.turn_started_at = None;
+            app.messages.push(ChatMessage::assistant(format!(
+                "**Error:** {visible_error}\n\n_Press Ctrl+R to retry the last prompt._"
+            )));
+            let mut preview_cap = visible_error.len().min(120);
+            while preview_cap > 0 && !visible_error.is_char_boundary(preview_cap) {
+                preview_cap -= 1;
+            }
+            let preview = &visible_error[..preview_cap];
+            toast::push_with_cap(
+                &mut app.toasts,
+                toast::Toast::new(toast::ToastKind::Error, format!("Stream error: {preview}")),
+            );
         }
     } else if !auto_compact_signal {
         app.messages.push(ChatMessage::assistant(format!(
@@ -210,12 +240,7 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
     // submitted again. Drain here so queued prompts run on
     // the next opportunity. Skipped on auto-compact since
     // that path already re-queues the last user prompt.
-    if !auto_compact_signal
-        && !auto_retry_openwebui_signal
-        && !auto_retry_anthropic_signal
-        && !auto_retry_anthropic_oauth_signal
-        && !app.queued_prompts.is_empty()
-    {
+    if !auto_compact_signal && !auto_retry_restarted && !app.queued_prompts.is_empty() {
         tracing::info!(
             target: "jfc::ui::queue",
             count = app.queued_prompts.len(),

@@ -1,5 +1,4 @@
 use super::*;
-use super::visual::*;
 pub(crate) fn format_token_count(n: u64) -> String {
     if n < 1_000 {
         format!("{n}")
@@ -46,7 +45,7 @@ pub(crate) fn format_subagent_counters(bt: &crate::app::BackgroundTask) -> Strin
     }
 }
 
-pub(super) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
+pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     if area.height == 0 || area.width < 20 {
         return;
     }
@@ -318,7 +317,7 @@ pub(super) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
 ///    ├─ implementer: Idle for 3s
 ///    └─ tester: Running tests… · 5 tool uses
 /// ```
-pub(super) fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
+pub(crate) fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
     use crate::swarm::{self, types::teammate_color};
 
     if area.height == 0 || area.width < 20 {

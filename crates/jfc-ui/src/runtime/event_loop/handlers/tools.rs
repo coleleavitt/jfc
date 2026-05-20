@@ -507,7 +507,17 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
             .store(false, std::sync::atomic::Ordering::SeqCst);
         app.cancel_token = tokio_util::sync::CancellationToken::new();
         app.is_streaming = false;
+        app.streaming_started_at = None;
         app.last_stream_event_at = None;
+        app.streaming_last_token_at = None;
+        app.thinking_started_at = None;
+        app.thinking_ended_at = None;
+        app.streaming_text.clear();
+        app.streaming_reasoning.clear();
+        app.streaming_response_bytes = 0;
+        app.streaming_assistant_idx = None;
+        app.current_stream_request = None;
+        app.turn_started_at = None;
     } else if app.pending_approval.is_none()
         && app.approval_queue.is_empty()
         && app.compacting_started_at.is_none()

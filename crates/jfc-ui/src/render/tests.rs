@@ -361,7 +361,9 @@ mod render_helpers_tests {
 
 #[cfg(test)]
 mod pure_helper_tests {
-    use super::status::effort_status_badge;
+    use super::input_box::{input_soft_wrapped_lines, input_visual_line_count};
+    use super::model_picker::{provider_color, provider_label};
+    use super::status::{context_gauge_label, effort_status_badge};
     use super::*;
     use std::sync::Arc;
 

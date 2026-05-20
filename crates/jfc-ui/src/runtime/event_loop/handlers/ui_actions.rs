@@ -59,6 +59,7 @@ pub(crate) fn handle_system_prompt_len(app: &mut App, len: usize) {
 
 /// Handle `StreamEvent::RequestMetadata(meta)`.
 pub(crate) fn handle_request_metadata(app: &mut App, meta: crate::runtime::StreamRequestMetadata) {
+    app.record_stream_activity();
     tracing::debug!(
         target: "jfc::stream",
         advertised_tool_count = meta.advertised_tool_count,

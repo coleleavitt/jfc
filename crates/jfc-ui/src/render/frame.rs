@@ -1,7 +1,6 @@
 use super::*;
 use super::sidebar::info_sidebar;
-use super::messages::{messages, messages_task_view};
-use super::agents::{render_subagent_tree, render_teammate_tree};
+use super::messages::messages;
 use super::messages::{agent_fan_below_input, subagent_footer};
 use super::input_box::{input, input_visual_line_count};
 use super::overlays::{toast_overlay, diagnostic_row, slash_popup, search_bar, help_overlay, diagnostic_panel, mention_popup};
@@ -10,7 +9,7 @@ use super::approval::approval;
 use super::model_picker::model_picker;
 use super::palette::palette;
 use super::session_picker::session_picker;
-use super::session_sidebar::{ordered_sidebar_sessions, sidebar};
+use super::session_sidebar::sidebar;
 use super::status::status;
 use super::task_panel::task_panel;
 use super::teammates_panel::teammates_panel;

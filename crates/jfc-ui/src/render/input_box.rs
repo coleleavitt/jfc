@@ -1,5 +1,5 @@
-use super::*;
 use super::visual::*;
+use super::*;
 use crate::markdown;
 pub(super) fn input(f: &mut Frame, app: &mut App, area: Rect) {
     let t = app.theme;
@@ -197,7 +197,10 @@ pub(super) fn input_visual_line_count(app: &App, content_width: usize) -> usize 
     input_soft_wrapped_lines(app, content_width).0.len().max(1)
 }
 
-fn input_soft_wrapped_lines(app: &App, content_width: usize) -> (Vec<String>, usize, usize) {
+pub(super) fn input_soft_wrapped_lines(
+    app: &App,
+    content_width: usize,
+) -> (Vec<String>, usize, usize) {
     use unicode_width::UnicodeWidthChar;
 
     let width = content_width.max(1);
@@ -249,4 +252,3 @@ fn input_soft_wrapped_lines(app: &App, content_width: usize) -> (Vec<String>, us
 
     (out, visual_cursor_row, visual_cursor_col)
 }
-

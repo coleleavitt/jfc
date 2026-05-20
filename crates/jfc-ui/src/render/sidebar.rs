@@ -1,6 +1,4 @@
 use super::*;
-use super::visual::*;
-use crate::markdown;
 pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     use crate::types::LspStatus;
 

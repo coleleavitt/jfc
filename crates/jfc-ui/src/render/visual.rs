@@ -143,25 +143,25 @@ pub fn compute_perimeter_cells(area: Rect) -> Vec<(u16, u16)> {
 #[allow(dead_code)]
 pub struct CometConfig {
     /// Number of comets evenly spaced around the perimeter. 1..=4.
-    count: u32,
+    pub(crate) count: u32,
     /// Lap duration in ms — full perimeter traversal time. Lower
     /// = faster comets. Drives by streaming velocity in the input
     /// renderer; can be hard-overridden via env.
-    lap_ms: u128,
+    pub(crate) lap_ms: u128,
     /// Trail length in cells. 6 is the standard comet shape.
-    trail_len: usize,
+    pub(crate) trail_len: usize,
     /// Resting border color (the comet fades to this at the tail end).
-    base: Color,
+    pub(crate) base: Color,
     /// Comet head color (the lead cell blends fully to this).
-    head: Color,
+    pub(crate) head: Color,
     /// When true, comets at odd indices counter-rotate (go
     /// counter-clockwise) so a count=2 setup produces two comets
     /// going opposite directions, meeting at corners.
-    counter_rotate: bool,
+    pub(crate) counter_rotate: bool,
     /// Reverse the clockwise base direction. Combined with
     /// `counter_rotate`, this lets the tool-use signal flip every
     /// comet's direction at once.
-    reverse_base: bool,
+    pub(crate) reverse_base: bool,
 }
 
 /// Paint N border comets traveling around the rectangle's perimeter
@@ -641,4 +641,3 @@ pub fn wrap_text_to_width(s: &str, width: usize) -> Vec<String> {
     }
     out
 }
-

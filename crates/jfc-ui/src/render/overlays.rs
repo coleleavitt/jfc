@@ -1,6 +1,4 @@
 use super::*;
-use super::visual::*;
-use crate::markdown;
 pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     use crate::toast::ToastKind;
     let t = app.theme;

@@ -1,12 +1,9 @@
 pub(crate) use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Margin, Position, Rect},
-    style::{Color, Modifier, Style, Stylize},
-    text::{Line, Span, Text},
-    widgets::{
-        Block, Borders, Clear, Gauge, List, ListItem, Padding, Paragraph, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Wrap,
-    },
+    layout::{Constraint, Direction, Layout, Position, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph},
 };
 
 #[cfg(test)]
@@ -42,20 +39,18 @@ mod tests;
 pub use frame::frame;
 
 // Re-export utilities needed by other modules
+#[cfg(test)]
 pub(crate) use messages::task_view_body_lines;
 pub(crate) use messages::{TASK_VIEW_COLLAPSE_BYTES, TASK_VIEW_COLLAPSE_LINES};
-pub(crate) use agents::{format_token_count, format_subagent_counters};
+pub(crate) use agents::format_token_count;
+#[cfg(test)]
+pub(crate) use agents::format_subagent_counters;
 pub(crate) use overlays::{current_slash_prefix, slash_matches};
 pub(crate) use visual::{pulse_color_pub, DiffStats, collect_diff_stats, truncate_str};
 pub use session_sidebar::ordered_sidebar_sessions;
 
 // Internal cross-module helpers — visible to all render submodules via `use super::*`
 pub use visual::*;
-use sidebar::info_sidebar;
-use messages::messages;
-use agents::{render_subagent_tree, render_teammate_tree};
-use input_box::input;
-use overlays::*;
 
 fn ease_out_cubic(t: f32) -> f32 {
     let t = t - 1.0;

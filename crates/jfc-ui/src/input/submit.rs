@@ -1,5 +1,5 @@
-use super::*;
 use super::slash_commands::handle_slash_command;
+use super::*;
 pub async fn handle_submit_text(
     app: &mut App,
     text: String,
@@ -567,6 +567,7 @@ pub(super) async fn handle_submit(
     app.pending_pause_turn_resume = false;
     let now = std::time::Instant::now();
     app.streaming_started_at = Some(now);
+    app.last_stream_event_at = Some(now);
     app.streaming_last_token_at = Some(now);
     app.turn_started_at = Some(now);
     app.agentic_turn_count = 0;
@@ -643,20 +644,35 @@ pub(super) async fn handle_submit(
 
     // wg-async: stream_response holds the SSE connection + tx sender —
     // cancel has to thread through so ESC×2 can drop them coherently.
+    let tx_guard = tx.clone();
     tokio::spawn(async move {
-        crate::stream::stream_response(
-            provider,
-            messages,
-            model,
-            tx,
-            interrupt,
-            cancel,
-            None,
-            crate::runtime::StreamRequestOverrides::default(),
-        )
+        let result = tokio::spawn(async move {
+            crate::stream::stream_response(
+                provider,
+                messages,
+                model,
+                tx,
+                interrupt,
+                cancel,
+                None,
+                crate::runtime::StreamRequestOverrides::default(),
+            )
+            .await;
+        })
         .await;
+        if let Err(join_err) = result {
+            let msg = if join_err.is_panic() {
+                format!("stream task panicked: {join_err}")
+            } else {
+                format!("stream task cancelled: {join_err}")
+            };
+            let _ = tx_guard
+                .send(crate::runtime::AppEvent::Stream(
+                    crate::runtime::StreamEvent::Error(msg),
+                ))
+                .await;
+        }
     });
 
     Ok(())
 }
-

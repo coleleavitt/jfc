@@ -236,9 +236,12 @@ pub struct NetworkRecoveryStatus {
 pub const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 pub const IDLE_TICK_MS: u64 = 80;
 pub const ANIM_TICK_MS: u64 = 33;
-/// If no stream event arrives within this duration while `is_streaming` is
-/// true, the watchdog resets the flag to stop the 30fps animation loop.
-pub const STREAM_WATCHDOG_TIMEOUT_SECS: u64 = 30;
+/// Hard idle limit for a provider stream. This must stay longer than the
+/// provider HTTP read timeout (600s) so the HTTP layer, not the UI watchdog,
+/// reports real network failures. Anthropic/Bedrock streams can legitimately
+/// go quiet for minutes while the model is thinking or an upstream proxy is
+/// queueing.
+pub const STREAM_WATCHDOG_TIMEOUT_SECS: u64 = 660;
 /// Cap on how many turns of token usage we retain for the info-sidebar
 /// sparkline. 32 datapoints fit comfortably in a 30-col-wide sidebar
 /// while still showing a meaningful trend.

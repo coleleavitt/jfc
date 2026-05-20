@@ -716,6 +716,42 @@ fn coalesce_consecutive_same_role(messages: &[ChatMessage]) -> Vec<ChatMessage> 
     out
 }
 
+fn is_empty_assistant_placeholder(msg: &ChatMessage) -> bool {
+    msg.role == Role::Assistant
+        && !msg.queued
+        && msg.agent_name.is_none()
+        && msg.model_name.is_none()
+        && msg.cost_tier.is_none()
+        && msg.elapsed.is_none()
+        && msg.usage.is_none()
+        && msg.attachments.is_empty()
+        && msg
+            .parts
+            .iter()
+            .all(|part| matches!(part, MessagePart::Text(text) if text.trim().is_empty()))
+}
+
+fn persistent_session_messages(messages: &[ChatMessage]) -> Vec<ChatMessage> {
+    let filtered: Vec<ChatMessage> = messages
+        .iter()
+        .filter(|m| !m.queued && !is_empty_assistant_placeholder(m))
+        .cloned()
+        .collect();
+    coalesce_consecutive_same_role(&filtered)
+}
+
+fn repair_loaded_messages(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
+    let stripped: Vec<ChatMessage> = messages
+        .into_iter()
+        .filter(|m| !is_empty_assistant_placeholder(m))
+        .collect();
+    let mut repaired = coalesce_consecutive_same_role(&stripped);
+    for m in &mut repaired {
+        crate::types::merge_consecutive_text_parts(&mut m.parts);
+    }
+    repaired
+}
+
 #[tracing::instrument(target = "jfc::session", skip(messages), fields(n = messages.len()))]
 pub async fn save_session(
     session_id: &SessionId,
@@ -730,7 +766,8 @@ pub async fn save_session(
     // enough context (session id, error variant) to reconstruct what
     // shape went wrong.
     let session_id_str = session_id.as_str();
-    if let Err(err) = validate_turn_invariants(messages) {
+    let coalesced = persistent_session_messages(messages);
+    if let Err(err) = validate_turn_invariants(&coalesced) {
         // Promote tool-in-user (the API-400 fingerprint) and orphan
         // tool_use to error so a `RUST_LOG=warn` grep still surfaces
         // them — the other variants stay at warn since they don't
@@ -757,7 +794,7 @@ pub async fn save_session(
                 session_id = session_id_str,
                 error = %err,
                 variant,
-                message_count = messages.len(),
+                message_count = coalesced.len(),
                 "save_session: API-400 fingerprint (saving anyway for forensics)"
             );
         } else {
@@ -766,7 +803,7 @@ pub async fn save_session(
                 session_id = session_id_str,
                 error = %err,
                 variant,
-                message_count = messages.len(),
+                message_count = coalesced.len(),
                 "save_session: turn-invariant violation (saving anyway for forensics)"
             );
         }
@@ -822,15 +859,12 @@ pub async fn save_session(
     // on disk becomes the "alternating user/assistant" shape that
     // `validate_turn_invariants` enforces, and the renderer stops
     // emitting one "assistant:" header per agentic sub-stream.
-    let filtered: Vec<ChatMessage> = messages.iter().filter(|m| !m.queued).cloned().collect();
-    let coalesced = coalesce_consecutive_same_role(&filtered);
     tracing::debug!(
         target: "jfc::session",
         session_id = session_id_str,
         runtime_messages = messages.len(),
-        post_filter_messages = filtered.len(),
         coalesced_messages = coalesced.len(),
-        "session save: coalescing sub-stream message splits"
+        "session save: filtering runtime placeholders and coalescing sub-stream message splits"
     );
     let serialized = SerializedSession {
         id: session_id_str.to_owned(),
@@ -897,27 +931,20 @@ pub async fn load_session(session_id: &SessionId) -> Option<Vec<ChatMessage>> {
             message_count,
             "load_session: persisted transcript violates turn invariants — repairing via coalesce"
         );
-        // Repair: coalesce consecutive same-role messages that were
-        // persisted before the coalesce-on-save fix. This prevents
-        // the "TurnsAssistant" bug where old sessions with N consecutive
-        // assistant sub-streams fail on resume because the provider
-        // message builder can't handle the shape.
-        let repaired = coalesce_consecutive_same_role(&messages);
-        debug!(
-            target: "jfc::session",
-            session_id = session_id_str,
-            before = message_count,
-            after = repaired.len(),
-            "session repaired via coalesce"
-        );
-        return Some(repaired);
+        // Repair: strip stale empty assistant placeholders and coalesce
+        // consecutive same-role messages that were persisted before the
+        // coalesce-on-save fix. This prevents the resume path from reviving
+        // placeholder-only turns after a watchdog cancel or process exit.
     }
-    // Always defragment text parts on load — the streaming/coalesce paths
-    // could have left N fragments per message that should be one (the
-    // 156-part assistant bug).
-    let mut messages = messages;
-    for m in &mut messages {
-        crate::types::merge_consecutive_text_parts(&mut m.parts);
+    let messages = repair_loaded_messages(messages);
+    if let Err(err) = validate_turn_invariants(&messages) {
+        warn!(
+            target: "jfc::session::invariants",
+            session_id = session_id_str,
+            error = %err,
+            message_count = messages.len(),
+            "load_session: transcript still violates turn invariants after repair"
+        );
     }
     debug!(target: "jfc::session", session_id = session_id_str, message_count, "session loaded");
     Some(messages)
@@ -946,8 +973,16 @@ pub async fn load_session_with_model(
             message_count = messages.len(),
             "load_session_with_model: persisted transcript violates turn invariants — repairing"
         );
-        let repaired = coalesce_consecutive_same_role(&messages);
-        return Some((repaired, model));
+    }
+    let messages = repair_loaded_messages(messages);
+    if let Err(err) = validate_turn_invariants(&messages) {
+        warn!(
+            target: "jfc::session::invariants",
+            session_id = session_id_str,
+            error = %err,
+            message_count = messages.len(),
+            "load_session_with_model: transcript still violates turn invariants after repair"
+        );
     }
     Some((messages, model))
 }
