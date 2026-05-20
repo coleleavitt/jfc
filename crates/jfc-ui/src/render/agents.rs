@@ -303,7 +303,7 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
     let available_height = area.height as usize;
     let display: Vec<Line> = lines.into_iter().take(available_height).collect();
     f.render_widget(
-        Paragraph::new(display).style(Style::default().bg(t.bg)),
+        Paragraph::new(display).style(Style::default().bg(t.surface)),
         area,
     );
 }
@@ -401,7 +401,7 @@ pub(crate) fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
     let available_height = area.height as usize;
     let display_lines: Vec<Line> = lines.into_iter().take(available_height).collect();
     f.render_widget(
-        Paragraph::new(display_lines).style(Style::default().bg(t.bg)),
+        Paragraph::new(display_lines).style(Style::default().bg(t.surface)),
         area,
     );
 }

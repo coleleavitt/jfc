@@ -1206,44 +1206,43 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
 
     let total = in_progress.len() + pending.len() + completed.len();
     let in_prog_count = in_progress.len();
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    lines.push(Line::from(vec![
-        Span::styled(
-            format!("{} ", total),
-            Style::default()
-                .fg(t.text_primary)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            "tasks",
-            Style::default()
-                .fg(t.text_primary)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!(
-                " ({} done{}{})",
-                completed.len(),
-                if in_prog_count > 0 {
-                    format!(", {} in progress", in_prog_count)
-                } else {
-                    String::new()
-                },
-                if pending.len() > 0 {
-                    format!(", {} open", pending.len())
-                } else {
-                    String::new()
-                },
-            ),
-            Style::default().fg(t.text_muted),
-        ),
-    ]));
 
-    let render_width = area.width as usize;
+    // Build the block title text: "N tasks (k done, m in progress, p open)"
+    let title_text = format!(
+        " {} tasks ({} done{}{}) ",
+        total,
+        completed.len(),
+        if in_prog_count > 0 {
+            format!(", {} in progress", in_prog_count)
+        } else {
+            String::new()
+        },
+        if pending.len() > 0 {
+            format!(", {} open", pending.len())
+        } else {
+            String::new()
+        },
+    );
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(t.border))
+        .title(Span::styled(
+            title_text,
+            Style::default()
+                .fg(t.text_secondary)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().bg(t.surface));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let render_width = inner.width as usize;
     // Priority order: recently-completed fade tail first (celebration
     // moment), then in-progress (active work), then pending (unblocked
     // before blocked). Matches CC 2.1.144's priority ordering.
-    let visible_budget = area.height.saturating_sub(1) as usize;
+    let visible_budget = inner.height as usize;
     let mut rendered: Vec<Line<'static>> = Vec::new();
 
     // Recently-completed first — show the "just finished" celebration
@@ -1357,8 +1356,10 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         )));
     }
 
-    lines.extend(rendered);
-    f.render_widget(Paragraph::new(lines).style(Style::default().bg(t.bg)), area);
+    f.render_widget(
+        Paragraph::new(rendered).style(Style::default().bg(t.surface)),
+        inner,
+    );
 }
 
 /// Render the running-agents tree in its own chunk beneath the input box.
@@ -1370,9 +1371,25 @@ pub(super) fn agent_fan_below_input(f: &mut Frame, app: &App, area: Rect) {
     if area.height == 0 {
         return;
     }
-    if app.team_context.is_active() {
-        render_teammate_tree(f, app, area);
+    let t = app.theme;
+    let is_team = app.team_context.is_active();
+    let title = if is_team { " team " } else { " agents " };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(t.border))
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(t.text_secondary)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().bg(t.surface));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    if is_team {
+        render_teammate_tree(f, app, inner);
     } else {
-        render_subagent_tree(f, app, area);
+        render_subagent_tree(f, app, inner);
     }
 }

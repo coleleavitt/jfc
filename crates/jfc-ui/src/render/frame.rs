@@ -151,15 +151,19 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         } else {
             0
         };
-        1 + body + overflow
+        body + overflow
     };
-    let tasks_pinned_height: u16 = (task_pin_rows as u16).min(10);
+    let tasks_pinned_height: u16 = if task_pin_rows > 0 {
+        (task_pin_rows as u16).min(10) + 2
+    } else {
+        0
+    };
     // Agent fan beneath the input: leader row ("agents") plus one row
     // per alive sub-agent. Capped at 8 so a fan of 30 doesn't push the
     // status bar off-screen — the user can still open the task view to
     // see all of them.
     let agent_fan_height: u16 = if tree_rows > 0 {
-        (1 + tree_rows as u16).min(8)
+        (1 + tree_rows as u16).min(8) + 2
     } else {
         0
     };
