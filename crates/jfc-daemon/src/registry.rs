@@ -52,7 +52,7 @@ pub fn record_background_agent_started(
     );
 }
 
-pub(super) fn record_background_agent_started_at(
+pub fn record_background_agent_started_at(
     paths: &DaemonPaths,
     id: &str,
     description: &str,

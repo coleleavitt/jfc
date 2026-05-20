@@ -152,12 +152,12 @@ pub struct BackgroundAgentInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackgroundAgentLaunch {
     pub task_id: String,
-    pub task_input: crate::types::TaskInput,
+    pub task_input: jfc_core::TaskInput,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
     pub model: jfc_provider::ModelId,
     pub provider_name: Option<String>,
-    pub agent_def: Option<crate::agents::AgentDef>,
+    pub agent_def: Option<jfc_core::AgentDef>,
     pub cwd: PathBuf,
     /// Absolute executable used to run `jfc daemon worker`.
     ///

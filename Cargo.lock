@@ -2108,6 +2108,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "jfc-daemon"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs 6.0.0",
+ "jfc-core",
+ "jfc-provider",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "jfc-economy"
 version = "0.1.0"
 dependencies = [
@@ -2251,6 +2267,7 @@ dependencies = [
  "jfc-anthropic-sdk",
  "jfc-auth",
  "jfc-core",
+ "jfc-daemon",
  "jfc-economy",
  "jfc-graph",
  "jfc-mcp",

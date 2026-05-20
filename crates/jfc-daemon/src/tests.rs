@@ -30,8 +30,8 @@ fn test_daemon() -> (Daemon, TempDir) {
     (daemon, tmp)
 }
 
-fn test_task_input() -> crate::types::TaskInput {
-    crate::types::TaskInput {
+fn test_task_input() -> jfc_core::TaskInput {
+    jfc_core::TaskInput {
         description: "inspect".to_owned(),
         prompt: "inspect".to_owned(),
         subagent_type: Some("explore".to_owned()),
@@ -53,7 +53,7 @@ fn test_launch(cwd: PathBuf) -> BackgroundAgentLaunch {
         parent_session_id: Some("ses-owner".to_owned()),
         model: jfc_provider::ModelId::new("claude-sonnet-4-5"),
         provider_name: Some("anthropic".to_owned()),
-        agent_def: None,
+        agent_def: None,  // Option<jfc_core::AgentDef>
         cwd,
         worker_exe: Some(std::env::current_exe().unwrap()),
         active_team_name: None,

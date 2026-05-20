@@ -31,7 +31,7 @@ pub fn read_last_lines(path: &Path, n: usize) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn append_log_line(path: &Path, line: &str) {
+pub fn append_log_line(path: &Path, line: &str) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -88,11 +88,11 @@ fn last_byte_is_not_newline(path: &Path) -> bool {
     matches!(file.read(&mut buf), Ok(1) if buf[0] != b'\n')
 }
 
-pub(super) fn background_agent_log_path(paths: &DaemonPaths, id: &str) -> PathBuf {
+pub fn background_agent_log_path(paths: &DaemonPaths, id: &str) -> PathBuf {
     paths.log_dir.join("agents").join(format!("{id}.log"))
 }
 
-pub(super) fn background_agent_launch_path(paths: &DaemonPaths, id: &str) -> PathBuf {
+pub fn background_agent_launch_path(paths: &DaemonPaths, id: &str) -> PathBuf {
     paths
         .log_dir
         .join("agents")
