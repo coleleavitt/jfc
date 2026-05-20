@@ -2088,6 +2088,7 @@ async fn handle_submit(
     app.turn_started_at = Some(now);
     app.agentic_turn_count = 0;
     // Reset thinking-state for the new turn so the spinner doesn't carry
+    app.pre_dispatched_tool_ids.clear();
     // a stale `thought for Ns` from the previous turn.
     app.thinking_started_at = None;
     app.thinking_ended_at = None;
@@ -4602,6 +4603,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 app.turn_started_at = Some(now);
     app.agentic_turn_count = 0;
                 app.thinking_started_at = None;
+    app.pre_dispatched_tool_ids.clear();
                 app.thinking_ended_at = None;
                 app.last_usage_output = 0;
                 app.usage_apply_baseline = (0, 0, 0, 0);

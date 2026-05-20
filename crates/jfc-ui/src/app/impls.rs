@@ -65,6 +65,7 @@ impl App {
             // dead stream — they're stale and would dispatch into wrong
             // context if processed later.
             self.pending_tool_calls.clear();
+            self.pre_dispatched_tool_ids.clear();
         }
     }
 

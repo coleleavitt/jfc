@@ -382,6 +382,10 @@ pub struct App {
     pub session_approved: Vec<String>,
     pub follow_bottom: bool,
     pub pending_tool_calls: Vec<ToolCall>,
+    /// Tool IDs already dispatched mid-stream (safe tools that started
+    /// executing while the model was still generating). stream_done
+    /// skips these to avoid double-dispatch.
+    pub pre_dispatched_tool_ids: std::collections::HashSet<String>,
     /// Metadata for the provider request currently streaming or most recently
     /// finished. Set by `StreamEvent::RequestMetadata` before the first byte
     /// arrives; cleared when the turn truly ends. Used to detect narration-only
@@ -933,6 +937,7 @@ impl App {
             tool_ctx: ToolContext::new(),
             dedup_cache: Arc::new(Mutex::new(ReadDedupCache::new())),
             pending_tool_calls: Vec::new(),
+            pre_dispatched_tool_ids: std::collections::HashSet::new(),
             current_stream_request: None,
             force_compact_pending: false,
             pending_pause_turn_resume: false,
