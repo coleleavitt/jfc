@@ -1,4 +1,5 @@
 use super::*;
+use super::super::coordinator::check_task_list_for_work;
 use super::super::executor::{run_single_turn, TurnResult};
 use crate::swarm::mailbox;
 use crate::swarm::test_support::HomeOverride;
