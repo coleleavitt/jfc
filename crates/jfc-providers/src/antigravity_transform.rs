@@ -55,44 +55,47 @@ pub fn is_claude_model(model: &str) -> bool {
     model.contains("claude")
 }
 
-/// Build the Code Assist `streamGenerateContent` request body for a
-/// Gemini-native model. Returns `Err` for Claude-via-Gemini models — those
-/// route through a different transform that isn't ported yet.
-pub fn build_gemini_request(
+/// Default thinking budget for Claude `-thinking` models when the caller
+/// hasn't supplied one. Mirrors the upstream's 16384 fallback in
+/// `transform/claude.ts`.
+const CLAUDE_DEFAULT_THINKING_BUDGET: u32 = 16_384;
+
+/// Claude requires `max_output_tokens > thinking.budget_tokens`. When the
+/// caller's `max_tokens` is below this safe ceiling the upstream bumps it
+/// to 64k; we do the same so users don't have to know about the constraint.
+const CLAUDE_SAFE_MAX_OUTPUT_TOKENS: u32 = 64_000;
+
+/// Build the Code Assist `streamGenerateContent` request body. Dispatches by
+/// model id between the Gemini-native and Claude-via-Antigravity paths —
+/// both end up in the same `{project, model, request:{…}}` envelope, but the
+/// `generationConfig` + `toolConfig` shape differs.
+///
+/// This is the single entry point the provider calls; callers shouldn't pick
+/// between the two builders themselves.
+pub fn build_request(
     project_id: &str,
     messages: &[ProviderMessage],
     options: &StreamOptions,
 ) -> anyhow::Result<Value> {
     let model = resolve_model_name(options.model.as_str()).to_owned();
     if is_claude_model(&model) {
-        anyhow::bail!(
-            "Antigravity Claude-via-Gemini models ({model}) require the \
-             Anthropic request transform, which isn't ported yet"
-        );
+        build_claude_request(project_id, &model, messages, options)
+    } else {
+        build_gemini_request(project_id, &model, messages, options)
     }
+}
 
-    let contents = messages.iter().filter_map(message_to_content).collect::<Vec<_>>();
-
-    let mut request = json!({ "contents": contents });
-    if let Some(sys) = options.system.as_deref().filter(|s| !s.is_empty()) {
-        request["systemInstruction"] = json!({
-            "parts": [ { "text": sys } ],
-        });
-    }
-    if !options.tools.is_empty() {
-        request["tools"] = json!([
-            { "functionDeclarations": options.tools.iter().map(tool_to_decl).collect::<Vec<_>>() }
-        ]);
-    }
-
-    let mut generation_config = serde_json::Map::new();
-    generation_config.insert("maxOutputTokens".into(), json!(options.max_tokens));
-    if let Some(temp) = options.temperature {
-        generation_config.insert("temperature".into(), json!(temp));
-    }
-    if let Some(top_p) = options.top_p {
-        generation_config.insert("topP".into(), json!(top_p));
-    }
+/// Build the Code Assist `streamGenerateContent` request body for a
+/// Gemini-native model. Exposed for the tests; production callers should go
+/// through [`build_request`] which auto-dispatches by model id.
+pub fn build_gemini_request(
+    project_id: &str,
+    model: &str,
+    messages: &[ProviderMessage],
+    options: &StreamOptions,
+) -> anyhow::Result<Value> {
+    let mut request = build_core_request(messages, options);
+    let mut generation_config = base_generation_config(options);
     if let Some(budget) = options.thinking_budget {
         generation_config.insert(
             "thinkingConfig".into(),
@@ -102,15 +105,104 @@ pub fn build_gemini_request(
     if !generation_config.is_empty() {
         request["generationConfig"] = Value::Object(generation_config);
     }
+    Ok(wrap_envelope(project_id, model, request))
+}
 
-    Ok(json!({
+/// Build the Code Assist `streamGenerateContent` request body for a Claude-
+/// via-Antigravity model. Mirrors `transform/claude.ts`:
+///
+/// * adds `toolConfig.functionCallingConfig.mode = "VALIDATED"` so Claude's
+///   validator rejects malformed tool calls server-side,
+/// * for `*-thinking` models, emits `thinkingConfig` with snake_case
+///   `thinking_budget` + `include_thoughts: true`, and bumps
+///   `maxOutputTokens` to a safe value if the caller's max is at or below
+///   the thinking budget (Claude requires `max_output_tokens > budget`),
+/// * for the non-thinking `gemini-claude-sonnet-4-5` model id, explicitly
+///   omits `thinkingConfig` (the upstream deletes it as a defensive step).
+pub fn build_claude_request(
+    project_id: &str,
+    model: &str,
+    messages: &[ProviderMessage],
+    options: &StreamOptions,
+) -> anyhow::Result<Value> {
+    let mut request = build_core_request(messages, options);
+
+    // Claude requires the VALIDATED tool-calling mode so the upstream rejects
+    // malformed parameters server-side rather than letting them through.
+    request["toolConfig"] = json!({
+        "functionCallingConfig": { "mode": "VALIDATED" },
+    });
+
+    let mut generation_config = base_generation_config(options);
+    let is_thinking_model = model.contains("-thinking");
+    if is_thinking_model {
+        let budget = options.thinking_budget.unwrap_or(CLAUDE_DEFAULT_THINKING_BUDGET);
+        generation_config.insert(
+            "thinkingConfig".into(),
+            json!({
+                "include_thoughts": true,
+                "thinking_budget": budget,
+            }),
+        );
+        // Bump max_output_tokens to a safe value if the caller's limit is
+        // at or below the thinking budget — Claude rejects requests where
+        // max_output_tokens <= thinking.budget_tokens.
+        let caller_max = options.max_tokens;
+        if u32::from(caller_max) <= budget {
+            generation_config.insert(
+                "maxOutputTokens".into(),
+                json!(CLAUDE_SAFE_MAX_OUTPUT_TOKENS),
+            );
+        }
+    }
+    if !generation_config.is_empty() {
+        request["generationConfig"] = Value::Object(generation_config);
+    }
+
+    Ok(wrap_envelope(project_id, model, request))
+}
+
+/// Common `{contents, systemInstruction, tools}` core shared by both
+/// builders. Each variant adds its own `generationConfig` + extras on top.
+fn build_core_request(messages: &[ProviderMessage], options: &StreamOptions) -> Value {
+    let contents = messages.iter().filter_map(message_to_content).collect::<Vec<_>>();
+    let mut request = json!({ "contents": contents });
+    if let Some(sys) = options.system.as_deref().filter(|s| !s.is_empty()) {
+        request["systemInstruction"] = json!({ "parts": [ { "text": sys } ] });
+    }
+    if !options.tools.is_empty() {
+        request["tools"] = json!([
+            { "functionDeclarations": options.tools.iter().map(tool_to_decl).collect::<Vec<_>>() }
+        ]);
+    }
+    request
+}
+
+/// `generationConfig` fields common to both transforms (everything except
+/// the per-model `thinkingConfig` shape).
+fn base_generation_config(options: &StreamOptions) -> serde_json::Map<String, Value> {
+    let mut cfg = serde_json::Map::new();
+    cfg.insert("maxOutputTokens".into(), json!(options.max_tokens));
+    if let Some(temp) = options.temperature {
+        cfg.insert("temperature".into(), json!(temp));
+    }
+    if let Some(top_p) = options.top_p {
+        cfg.insert("topP".into(), json!(top_p));
+    }
+    cfg
+}
+
+/// Wrap a core request body in the Code Assist envelope every Antigravity
+/// streaming call uses (`{project, model, userAgent, requestId, request}`).
+fn wrap_envelope(project_id: &str, model: &str, request: Value) -> Value {
+    json!({
         "project": project_id,
         "model": model,
         "userAgent": "antigravity",
         "requestType": "agent",
         "requestId": Uuid::new_v4().to_string(),
         "request": request,
-    }))
+    })
 }
 
 fn message_to_content(message: &ProviderMessage) -> Option<Value> {
@@ -365,8 +457,7 @@ mod tests {
     fn build_gemini_request_wraps_with_project_and_model_normal() {
         let mut opts = StreamOptions::new("gemini-3-pro");
         opts.system = Some("be helpful".into());
-        let body =
-            build_gemini_request("proj-123", &[user_msg("hi")], &opts).expect("gemini req");
+        let body = build_request("proj-123", &[user_msg("hi")], &opts).expect("gemini req");
         assert_eq!(body["project"], "proj-123");
         assert_eq!(body["model"], "gemini-3-pro");
         assert_eq!(body["userAgent"], "antigravity");
@@ -381,15 +472,65 @@ mod tests {
     #[test]
     fn build_gemini_request_resolves_short_aliases_normal() {
         let opts = StreamOptions::new("gemini-pro");
-        let body = build_gemini_request("p", &[user_msg("x")], &opts).unwrap();
+        let body = build_request("p", &[user_msg("x")], &opts).unwrap();
         assert_eq!(body["model"], "gemini-3-pro");
     }
 
     #[test]
-    fn build_gemini_request_rejects_claude_models_robust() {
+    fn build_request_routes_claude_models_to_claude_builder_normal() {
         let opts = StreamOptions::new("gemini-claude-sonnet-4-5");
-        let err = build_gemini_request("p", &[user_msg("x")], &opts).unwrap_err();
-        assert!(err.to_string().contains("Anthropic request transform"));
+        let body = build_request("p", &[user_msg("x")], &opts).unwrap();
+        assert_eq!(body["model"], "gemini-claude-sonnet-4-5");
+        // Claude builder always sets the VALIDATED tool-calling mode.
+        assert_eq!(
+            body["request"]["toolConfig"]["functionCallingConfig"]["mode"],
+            "VALIDATED"
+        );
+    }
+
+    #[test]
+    fn build_claude_request_adds_thinking_config_for_thinking_models_normal() {
+        let opts = StreamOptions::new("gemini-claude-sonnet-4-5-thinking");
+        let body = build_request("p", &[user_msg("x")], &opts).unwrap();
+        let thinking = &body["request"]["generationConfig"]["thinkingConfig"];
+        assert_eq!(thinking["include_thoughts"], true);
+        assert_eq!(thinking["thinking_budget"], 16384);
+    }
+
+    #[test]
+    fn build_claude_request_omits_thinking_config_for_non_thinking_normal() {
+        let opts = StreamOptions::new("gemini-claude-sonnet-4-5");
+        let body = build_request("p", &[user_msg("x")], &opts).unwrap();
+        assert!(body["request"]["generationConfig"]
+            .get("thinkingConfig")
+            .is_none());
+    }
+
+    #[test]
+    fn build_claude_request_bumps_max_output_when_below_budget_robust() {
+        let mut opts = StreamOptions::new("gemini-claude-opus-4-5-thinking");
+        opts.max_tokens = 4096; // below the default 16k thinking budget
+        let body = build_request("p", &[user_msg("x")], &opts).unwrap();
+        assert_eq!(
+            body["request"]["generationConfig"]["maxOutputTokens"],
+            64000
+        );
+    }
+
+    #[test]
+    fn build_claude_request_keeps_max_output_when_above_budget_normal() {
+        let mut opts = StreamOptions::new("gemini-claude-opus-4-5-thinking");
+        opts.thinking_budget = Some(8000);
+        opts.max_tokens = 32000; // above the budget — leave it alone
+        let body = build_request("p", &[user_msg("x")], &opts).unwrap();
+        assert_eq!(
+            body["request"]["generationConfig"]["maxOutputTokens"],
+            32000
+        );
+        assert_eq!(
+            body["request"]["generationConfig"]["thinkingConfig"]["thinking_budget"],
+            8000
+        );
     }
 
     #[test]
@@ -406,7 +547,7 @@ mod tests {
                 },
             ],
         };
-        let body = build_gemini_request("p", &[msg], &opts).unwrap();
+        let body = build_request("p", &[msg], &opts).unwrap();
         let parts = &body["request"]["contents"][0]["parts"];
         assert_eq!(parts.as_array().unwrap().len(), 1);
         assert_eq!(parts[0]["functionCall"]["name"], "search");

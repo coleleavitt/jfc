@@ -584,11 +584,10 @@ impl Provider for AntigravityOAuthProvider {
         let (access_token, project_id) = self.access_token_and_project()?;
 
         // Build the Code Assist envelope (project / model / requestId /
-        // request{contents, tools, generationConfig, ...}). Claude-via-
-        // Antigravity models go through a different transform that isn't
-        // ported yet, so reject them with a clear error rather than hand
-        // Google a malformed body.
-        let body = super::antigravity_transform::build_gemini_request(
+        // request{contents, tools, generationConfig, …}). `build_request`
+        // auto-dispatches between the Gemini-native and Claude-via-
+        // Antigravity body shapes by inspecting the model id.
+        let body = super::antigravity_transform::build_request(
             &project_id,
             &messages,
             options,
