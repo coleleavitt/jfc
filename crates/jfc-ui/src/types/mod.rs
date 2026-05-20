@@ -11,6 +11,8 @@ mod status;
 mod tool;
 pub mod tool_call;
 pub mod tool_display;
+pub mod tool_input;
+pub mod tool_kind;
 pub mod tool_output;
 
 pub use diff::*;

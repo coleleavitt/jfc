@@ -140,3 +140,213 @@ impl ToolCall {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{McpStatus, TaskLifecycle, ToolInput, ToolKind, ToolOutput};
+
+    // ─── TaskLifecycle ────────────────────────────────────────────────────
+
+    #[test]
+    fn task_lifecycle_label_normal() {
+        assert_eq!(TaskLifecycle::Pending.label(), "pending");
+        assert_eq!(TaskLifecycle::Running.label(), "running");
+        assert_eq!(TaskLifecycle::Idle.label(), "idle");
+        assert_eq!(TaskLifecycle::Completed.label(), "completed");
+        assert_eq!(TaskLifecycle::Failed.label(), "failed");
+        assert_eq!(TaskLifecycle::Cancelled.label(), "cancelled");
+    }
+
+    #[test]
+    fn task_lifecycle_is_alive_normal() {
+        assert!(TaskLifecycle::Pending.is_alive());
+        assert!(TaskLifecycle::Running.is_alive());
+        assert!(TaskLifecycle::Idle.is_alive());
+        assert!(!TaskLifecycle::Completed.is_alive());
+        assert!(!TaskLifecycle::Failed.is_alive());
+        assert!(!TaskLifecycle::Cancelled.is_alive());
+    }
+
+    #[test]
+    fn task_lifecycle_terminal_and_alive_partition_robust() {
+        // Every variant must be exactly one of: alive XOR terminal.
+        // If a refactor adds a Limbo variant that's neither, this test
+        // catches it before we ship a state the agent fan can't display.
+        for state in [
+            TaskLifecycle::Pending,
+            TaskLifecycle::Running,
+            TaskLifecycle::Idle,
+            TaskLifecycle::Completed,
+            TaskLifecycle::Failed,
+            TaskLifecycle::Cancelled,
+        ] {
+            assert_ne!(
+                state.is_alive(),
+                state.is_terminal(),
+                "{state:?} must be exactly one of alive/terminal",
+            );
+        }
+    }
+
+    // ─── McpStatus / LspStatus ────────────────────────────────────────────
+
+    #[test]
+    fn mcp_status_labels_normal() {
+        assert_eq!(McpStatus::Connected.label(), "Connected");
+        assert_eq!(McpStatus::Disabled.label(), "Disabled");
+        assert_eq!(McpStatus::Error.label(), "Error");
+    }
+
+    // ─── ToolStatus ───────────────────────────────────────────────────────
+
+    #[test]
+    fn tool_status_labels_normal() {
+        use crate::types::ToolStatus;
+        assert_eq!(ToolStatus::Pending.label(), "pending");
+        assert_eq!(ToolStatus::Running.label(), "running");
+        assert_eq!(ToolStatus::Completed.label(), "completed");
+        assert_eq!(ToolStatus::Failed.label(), "failed");
+    }
+
+    #[test]
+    fn tool_status_alias_equals_task_lifecycle_normal() {
+        // Both names alias the same underlying ExecutionStatus enum.
+        use crate::types::ToolStatus;
+        let a: ToolStatus = ToolStatus::Completed;
+        let b: TaskLifecycle = TaskLifecycle::Completed;
+        assert_eq!(a, b);
+    }
+
+    // ─── ExecutionStatus transitions ──────────────────────────────────────
+
+    #[test]
+    fn execution_status_is_terminal_complete_normal() {
+        assert!(ExecutionStatus::Completed.is_terminal());
+        assert!(ExecutionStatus::Failed.is_terminal());
+        assert!(ExecutionStatus::Cancelled.is_terminal());
+        assert!(!ExecutionStatus::Pending.is_terminal());
+        assert!(!ExecutionStatus::Running.is_terminal());
+        assert!(!ExecutionStatus::Idle.is_terminal());
+    }
+
+    #[test]
+    fn execution_status_allows_transition_normal() {
+        // Forward edges from non-terminal states: any move is OK,
+        // including the Idle exit (Tasks legitimately go Idle → Running
+        // when a teammate picks up new mail).
+        assert!(ExecutionStatus::Pending.allows_transition_to(ExecutionStatus::Running));
+        assert!(ExecutionStatus::Running.allows_transition_to(ExecutionStatus::Completed));
+        assert!(ExecutionStatus::Idle.allows_transition_to(ExecutionStatus::Running));
+        // Terminal lock-in: nothing leaves Failed/Completed/Cancelled.
+        assert!(!ExecutionStatus::Failed.allows_transition_to(ExecutionStatus::Running));
+        assert!(!ExecutionStatus::Completed.allows_transition_to(ExecutionStatus::Failed));
+        assert!(!ExecutionStatus::Cancelled.allows_transition_to(ExecutionStatus::Pending));
+        // Idempotent same-state transitions are allowed (the stream
+        // layer occasionally re-asserts the same status on retry).
+        assert!(ExecutionStatus::Completed.allows_transition_to(ExecutionStatus::Completed));
+        assert!(ExecutionStatus::Failed.allows_transition_to(ExecutionStatus::Failed));
+    }
+
+    fn fixture_pending_tool() -> ToolCall {
+        ToolCall::new_pending(
+            crate::ids::ToolId::from("test-tool-1".to_owned()),
+            ToolKind::Bash,
+            ToolInput::Bash {
+                command: "ls".into(),
+                timeout: None,
+                workdir: None,
+            },
+        )
+    }
+
+    #[test]
+    fn tool_call_pending_to_running_normal() {
+        let mut tc = fixture_pending_tool();
+        assert_eq!(tc.status, ExecutionStatus::Pending);
+        assert!(tc.mark_running().is_ok());
+        assert_eq!(tc.status, ExecutionStatus::Running);
+    }
+
+    #[test]
+    fn tool_call_pending_to_running_to_completed_normal() {
+        let mut tc = fixture_pending_tool();
+        tc.mark_running().expect("Pending → Running should succeed");
+        tc.mark_completed()
+            .expect("Running → Completed should succeed");
+        assert_eq!(tc.status, ExecutionStatus::Completed);
+    }
+
+    #[test]
+    fn tool_call_pending_directly_to_completed_normal() {
+        // Some provider streams collapse Pending and skip directly to
+        // Completed when a tool was approved + executed faster than
+        // the UI can poll. The transition rules allow this.
+        let mut tc = fixture_pending_tool();
+        tc.mark_completed()
+            .expect("Pending → Completed should succeed");
+        assert_eq!(tc.status, ExecutionStatus::Completed);
+    }
+
+    #[test]
+    fn tool_call_failed_to_running_returns_err_robust() {
+        let mut tc = fixture_pending_tool();
+        tc.mark_failed().unwrap();
+        let err = tc
+            .mark_running()
+            .expect_err("Failed → Running must be refused");
+        assert_eq!(err.from, ExecutionStatus::Failed);
+        assert_eq!(err.to, ExecutionStatus::Running);
+        // Status stays at Failed — refused transitions don't mutate.
+        assert_eq!(tc.status, ExecutionStatus::Failed);
+    }
+
+    #[test]
+    fn tool_call_completed_to_failed_returns_err_robust() {
+        let mut tc = fixture_pending_tool();
+        tc.mark_completed().unwrap();
+        let err = tc
+            .mark_failed()
+            .expect_err("Completed → Failed must be refused");
+        assert_eq!(err.from, ExecutionStatus::Completed);
+        assert_eq!(err.to, ExecutionStatus::Failed);
+        assert_eq!(tc.status, ExecutionStatus::Completed);
+    }
+
+    #[test]
+    fn tool_call_cancel_from_pending_normal() {
+        let mut tc = fixture_pending_tool();
+        tc.mark_cancelled()
+            .expect("Pending → Cancelled should succeed");
+        assert_eq!(tc.status, ExecutionStatus::Cancelled);
+        // Now terminal — further transitions refused.
+        assert!(tc.mark_completed().is_err());
+    }
+
+    #[test]
+    fn tool_call_idempotent_same_state_normal() {
+        // Re-asserting the same status doesn't error — protects the
+        // stream layer from spurious "you already said Running" panics
+        // when the provider replays an event mid-stream.
+        let mut tc = fixture_pending_tool();
+        tc.mark_running().unwrap();
+        tc.mark_running().expect("Running → Running is idempotent");
+        assert_eq!(tc.status, ExecutionStatus::Running);
+    }
+
+    #[test]
+    fn tool_call_new_failed_constructor_normal() {
+        // new_failed lands directly in the terminal Failed state for
+        // the malformed-input path (stream.rs ToolDone handler).
+        let tc = ToolCall::new_failed(
+            crate::ids::ToolId::from("toolu_x".to_owned()),
+            ToolKind::Bash,
+            ToolInput::Generic {
+                summary: "(empty input for Bash)".into(),
+            },
+            ToolOutput::Text("bad JSON".into()),
+        );
+        assert_eq!(tc.status, ExecutionStatus::Failed);
+        assert!(matches!(tc.output, ToolOutput::Text(_)));
+    }
+}

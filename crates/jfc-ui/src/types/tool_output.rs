@@ -239,3 +239,174 @@ impl ToolOutput {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::parse_unified_diff;
+
+    // ─── LargeText ────────────────────────────────────────────────────────
+
+    #[test]
+    fn large_text_collapses_above_threshold() {
+        let short = "line\n".repeat(10);
+        assert!(!LargeText::should_collapse(&short));
+
+        let tall = "line\n".repeat(LargeText::COLLAPSE_LINES + 1);
+        assert!(LargeText::should_collapse(&tall));
+
+        let fat = "x".repeat(LargeText::COLLAPSE_BYTES + 1);
+        assert!(LargeText::should_collapse(&fat));
+    }
+
+    #[test]
+    fn large_text_size_label_formats_correctly() {
+        let lt = LargeText::new("hello\nworld\n".into());
+        assert_eq!(lt.line_count, 2);
+        assert!(lt.size_label().contains("lines"));
+        assert!(lt.size_label().contains("KB"));
+    }
+
+    #[test]
+    fn large_text_new_counts_lines_and_bytes_normal() {
+        let lt = LargeText::new("a\nb\nc\n".into());
+        assert_eq!(lt.line_count, 3);
+        assert_eq!(lt.byte_count, 6);
+    }
+
+    #[test]
+    fn large_text_should_not_collapse_below_thresholds_normal() {
+        let s = "x".repeat(LargeText::COLLAPSE_BYTES);
+        // Exactly at byte limit shouldn't collapse — the check is `>` not `>=`.
+        assert!(!LargeText::should_collapse(&s));
+    }
+
+    #[test]
+    fn large_text_size_label_includes_kilobytes_normal() {
+        let lt = LargeText::new("x".repeat(2048));
+        let label = lt.size_label();
+        assert!(label.contains("KB"), "{label}");
+        assert!(label.contains("lines"), "{label}");
+    }
+
+    // ─── ToolOutput ───────────────────────────────────────────────────────
+
+    #[test]
+    fn tool_output_large_text_api_text_returns_full_content() {
+        let lt = LargeText::new("abc\ndef\n".into());
+        let out = ToolOutput::LargeText(lt);
+        assert_eq!(out.to_api_text(), "abc\ndef\n");
+    }
+
+    #[test]
+    fn tool_output_approx_text_len_caps_at_30k_robust() {
+        // Even a megabyte of text reports cap value — important for token
+        // estimation against the truncated wire result.
+        let huge = "x".repeat(2_000_000);
+        let out = ToolOutput::Text(huge);
+        assert_eq!(out.approx_text_len(), ToolOutput::APPROX_LEN_CAP);
+    }
+
+    #[test]
+    fn tool_output_approx_text_len_command_combines_streams_normal() {
+        let out = ToolOutput::Command {
+            stdout: "abc".into(),
+            stderr: "de".into(),
+            exit_code: Some(0),
+        };
+        assert_eq!(out.approx_text_len(), 5);
+    }
+
+    #[test]
+    fn tool_output_approx_text_len_empty_is_zero_normal() {
+        assert_eq!(ToolOutput::Empty.approx_text_len(), 0);
+    }
+
+    #[test]
+    fn tool_output_approx_text_len_filelist_sums_path_lens_normal() {
+        let out = ToolOutput::FileList(vec!["abc".into(), "de".into()]);
+        assert_eq!(out.approx_text_len(), 5);
+    }
+
+    #[test]
+    fn tool_output_approx_text_len_diff_sums_line_content_normal() {
+        let view = parse_unified_diff("x.rs", "@@ -1,1 +1,1 @@\n-abc\n+abcd\n");
+        let out = ToolOutput::Diff(view);
+        // "abc" (3) + "abcd" (4) = 7
+        assert_eq!(out.approx_text_len(), 7);
+    }
+
+    #[test]
+    fn tool_output_text_only_diff_includes_counts_normal() {
+        let view = parse_unified_diff("x.rs", "@@ -1,1 +1,1 @@\n-old\n+new\n");
+        let s = ToolOutput::Diff(view).text_only();
+        assert!(s.contains("x.rs"), "{s}");
+        assert!(s.contains("+1"), "{s}");
+        assert!(s.contains("-1"), "{s}");
+    }
+
+    #[test]
+    fn tool_output_text_only_command_renders_exit_code_normal() {
+        let s = ToolOutput::Command {
+            stdout: "ok".into(),
+            stderr: String::new(),
+            exit_code: Some(2),
+        }
+        .text_only();
+        assert!(s.contains("exit=2"), "{s}");
+        assert!(s.contains("stdout=2B"), "{s}");
+    }
+
+    #[test]
+    fn tool_output_text_only_command_renders_question_mark_when_no_code_robust() {
+        // exit_code: None (kill via signal, etc.) renders "?".
+        let s = ToolOutput::Command {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+        }
+        .text_only();
+        assert!(s.contains("exit=?"), "{s}");
+    }
+
+    #[test]
+    fn tool_output_text_only_filecontent_includes_path_normal() {
+        let s = ToolOutput::FileContent {
+            path: "src/main.rs".into(),
+            content: "fn main() {}".into(),
+            language: "rust".into(),
+        }
+        .text_only();
+        assert!(s.contains("src/main.rs"), "{s}");
+    }
+
+    #[test]
+    fn tool_output_text_only_filelist_count_normal() {
+        let s = ToolOutput::FileList(vec!["a".into(), "b".into(), "c".into()]).text_only();
+        assert_eq!(s, "3 files");
+    }
+
+    #[test]
+    fn tool_output_to_display_string_command_truncates_at_100_chars_robust() {
+        let huge = "x".repeat(200);
+        let s = ToolOutput::Command {
+            stdout: huge,
+            stderr: String::new(),
+            exit_code: Some(0),
+        }
+        .to_display_string();
+        assert!(s.contains("..."), "expected ellipsis on truncation: {s}");
+    }
+
+    #[test]
+    fn tool_output_to_display_string_empty_renders_marker_normal() {
+        assert_eq!(ToolOutput::Empty.to_display_string(), "[empty]");
+    }
+
+    #[test]
+    fn tool_output_to_api_text_falls_back_to_display_robust() {
+        // Non-LargeText variants delegate to to_display_string.
+        let t = ToolOutput::Text("hello".into());
+        assert_eq!(t.to_api_text(), "hello");
+    }
+}
