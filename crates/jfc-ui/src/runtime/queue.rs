@@ -131,6 +131,12 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
     app.streaming_last_token_at = Some(now);
     app.turn_started_at = Some(now);
     app.agentic_turn_count = 0;
+    // Reset cancel token + interrupt flag for the drained turn. Same
+    // rationale as handle_submit — a stale cancel from the previous
+    // turn would otherwise fire immediately on this freshly-drained
+    // submission and emit "Interrupted by user".
+    app.cancel_token = tokio_util::sync::CancellationToken::new();
+    app.interrupt_flag.store(false, std::sync::atomic::Ordering::SeqCst);
     app.last_usage_output = 0;
     app.usage_apply_baseline = (0, 0, 0, 0);
     app.scroll_to_bottom();

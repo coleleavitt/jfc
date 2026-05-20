@@ -49,6 +49,14 @@ impl App {
             // background, can still modify messages, and can dispatch
             // tools into a stale context — the "half-dead state" bug.
             self.cancel_token.cancel();
+            // CRITICAL: replace the token after cancelling so the NEXT
+            // user submission gets a fresh, uncancelled token. Without
+            // this, every subsequent stream would immediately see
+            // `is_cancelled() == true` and emit "Interrupted by user"
+            // — that was the spurious-interrupt bug. The previous user
+            // submission's cancel flowed forward forever because the
+            // token is a single shared instance, not per-turn.
+            self.cancel_token = tokio_util::sync::CancellationToken::new();
             self.is_streaming = false;
             self.streaming_started_at = None;
             self.last_stream_event_at = None;
