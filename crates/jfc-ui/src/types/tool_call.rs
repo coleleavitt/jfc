@@ -1,6 +1,6 @@
-use super::{ExecutionStatus, ToolInput, ToolKind};
 use super::tool_display::ToolDisplayState;
 use super::tool_output::ToolOutput;
+use super::{ExecutionStatus, ToolInput, ToolKind};
 
 /// One step in the per-session undo stack. Captured by the tool
 /// dispatcher *before* an Edit / Write / MultiEdit / ApplyPatch fires

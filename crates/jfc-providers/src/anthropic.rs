@@ -116,12 +116,11 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
         // (vs. first) so callers can prepend ephemeral tools without
         // re-keying the cache.
         let mut tools = sse::build_tools(&opts.tools);
-        if let Some(arr) = tools.as_array_mut() {
-            if let Some(last) = arr.last_mut() {
-                if let Some(obj) = last.as_object_mut() {
-                    obj.insert("cache_control".to_owned(), json!({ "type": "ephemeral" }));
-                }
-            }
+        if let Some(arr) = tools.as_array_mut()
+            && let Some(last) = arr.last_mut()
+            && let Some(obj) = last.as_object_mut()
+        {
+            obj.insert("cache_control".to_owned(), json!({ "type": "ephemeral" }));
         }
         body["tools"] = tools;
     }

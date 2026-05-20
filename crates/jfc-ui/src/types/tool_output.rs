@@ -98,10 +98,10 @@ fn format_server_tool_result_text(
     use jfc_provider::ServerToolResultKind;
     // Error variant first — Anthropic wraps failures in
     // `{ "error_code": "..." }` rather than an array.
-    if let Some(obj) = content.as_object() {
-        if let Some(code) = obj.get("error_code").and_then(|v| v.as_str()) {
-            return format!("[{wire} error] {code}", wire = tool_kind.wire_type());
-        }
+    if let Some(obj) = content.as_object()
+        && let Some(code) = obj.get("error_code").and_then(|v| v.as_str())
+    {
+        return format!("[{wire} error] {code}", wire = tool_kind.wire_type());
     }
     match tool_kind {
         ServerToolResultKind::WebSearch => {

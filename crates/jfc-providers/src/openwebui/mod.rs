@@ -76,6 +76,12 @@ pub struct OpenWebUIProvider {
     store_path: PathBuf,
 }
 
+impl Default for OpenWebUIProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OpenWebUIProvider {
     pub fn new() -> Self {
         let store_path = default_store_path();
@@ -232,10 +238,10 @@ fn context_window_from_value(value: &Value) -> Option<usize> {
             }
 
             for (key, value) in map {
-                if key.ends_with(".context_length") {
-                    if let Some(tokens) = value_as_usize(value) {
-                        return Some(tokens);
-                    }
+                if key.ends_with(".context_length")
+                    && let Some(tokens) = value_as_usize(value)
+                {
+                    return Some(tokens);
                 }
             }
 
@@ -1877,20 +1883,20 @@ fn bedrock_scrub_tool_fields(body: &mut Value) {
         // If the history references tool calls but the request declares none,
         // Bedrock's validator still rejects it. Inject a dummy tool the model
         // will ignore so the request is well-formed.
-        if let Some(msgs) = obj.get("messages").and_then(|v| v.as_array()) {
-            if messages_reference_tools(msgs) {
-                obj.insert(
-                    "tools".into(),
-                    json!([{
-                        "type": "function",
-                        "function": {
-                            "name": "dummy_tool",
-                            "description": "placeholder — never call",
-                            "parameters": { "type": "object", "properties": {} },
-                        },
-                    }]),
-                );
-            }
+        if let Some(msgs) = obj.get("messages").and_then(|v| v.as_array())
+            && messages_reference_tools(msgs)
+        {
+            obj.insert(
+                "tools".into(),
+                json!([{
+                    "type": "function",
+                    "function": {
+                        "name": "dummy_tool",
+                        "description": "placeholder — never call",
+                        "parameters": { "type": "object", "properties": {} },
+                    },
+                }]),
+            );
         }
     } else {
         let coerce = match obj.get("tool_choice") {
@@ -2282,10 +2288,10 @@ impl Provider for OpenWebUIProvider {
                         .json(&body)
                         .send()
                         .await;
-                    if let Ok(r) = retry_resp {
-                        if r.status().is_success() {
-                            return Ok(openai_compatible_event_stream(r));
-                        }
+                    if let Ok(r) = retry_resp
+                        && r.status().is_success()
+                    {
+                        return Ok(openai_compatible_event_stream(r));
                     }
                 }
             }
@@ -2490,8 +2496,8 @@ pub(crate) fn openai_compatible_event_stream(resp: reqwest::Response) -> EventSt
                     } else {
                         match serde_json::from_str::<ChatChunk>(&ev.data) {
                             Ok(chunk) => {
-                                if let Some(c) = chunk.choices.first() {
-                                    if let Some(reason) = c.finish_reason.as_deref() {
+                                if let Some(c) = chunk.choices.first()
+                                    && let Some(reason) = c.finish_reason.as_deref() {
                                         tracing::info!(
                                             target: "jfc::provider::openai_compatible",
                                             finish_reason = reason,
@@ -2500,7 +2506,6 @@ pub(crate) fn openai_compatible_event_stream(resp: reqwest::Response) -> EventSt
                                             "chunk_finish"
                                         );
                                     }
-                                }
                                 if let Some(ref u) = chunk.usage {
                                     tracing::info!(
                                         target: "jfc::provider::openai_compatible",
@@ -2570,53 +2575,53 @@ fn push_chunk_events_stateful(
         return;
     };
 
-    if let Some(thinking) = choice.delta.reasoning_content.clone() {
-        if !thinking.is_empty() {
-            out.push(Ok(StreamEvent::ThinkingDelta {
-                index: 0,
-                delta: thinking,
-            }));
-        }
+    if let Some(thinking) = choice.delta.reasoning_content.clone()
+        && !thinking.is_empty()
+    {
+        out.push(Ok(StreamEvent::ThinkingDelta {
+            index: 0,
+            delta: thinking,
+        }));
     }
-    if let Some(text) = choice.delta.content.clone() {
-        if !text.is_empty() {
-            out.push(Ok(StreamEvent::TextDelta {
-                index: 0,
-                delta: text,
-            }));
-        }
+    if let Some(text) = choice.delta.content.clone()
+        && !text.is_empty()
+    {
+        out.push(Ok(StreamEvent::TextDelta {
+            index: 0,
+            delta: text,
+        }));
     }
-    if let Some(refusal) = choice.delta.refusal.clone() {
-        if !refusal.is_empty() {
-            out.push(Ok(StreamEvent::TextDelta {
-                index: 0,
-                delta: refusal,
-            }));
-        }
+    if let Some(refusal) = choice.delta.refusal.clone()
+        && !refusal.is_empty()
+    {
+        out.push(Ok(StreamEvent::TextDelta {
+            index: 0,
+            delta: refusal,
+        }));
     }
 
     let tool_calls = choice.delta.tool_calls.clone().unwrap_or_default();
     for tc in &tool_calls {
         let idx = tc.index.unwrap_or(0);
         let entry = state.entry(idx).or_default();
-        if let Some(id) = tc.id.as_deref() {
-            if !id.is_empty() {
-                entry.id = Some(id.to_owned());
-            }
+        if let Some(id) = tc.id.as_deref()
+            && !id.is_empty()
+        {
+            entry.id = Some(id.to_owned());
         }
-        if let Some(name) = tc.function.as_ref().and_then(|f| f.name.as_deref()) {
-            if !name.is_empty() {
-                entry.name = Some(name.to_owned());
-            }
+        if let Some(name) = tc.function.as_ref().and_then(|f| f.name.as_deref())
+            && !name.is_empty()
+        {
+            entry.name = Some(name.to_owned());
         }
-        if let Some(args) = tc.function.as_ref().and_then(|f| f.arguments.as_deref()) {
-            if !args.is_empty() {
-                entry.args.push_str(args);
-                out.push(Ok(StreamEvent::ToolDelta {
-                    index: idx,
-                    delta: args.to_owned(),
-                }));
-            }
+        if let Some(args) = tc.function.as_ref().and_then(|f| f.arguments.as_deref())
+            && !args.is_empty()
+        {
+            entry.args.push_str(args);
+            out.push(Ok(StreamEvent::ToolDelta {
+                index: idx,
+                delta: args.to_owned(),
+            }));
         }
     }
 

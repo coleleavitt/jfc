@@ -102,7 +102,8 @@ pub fn start_teammate(
     let task_id_clone = task_id.clone();
 
     tokio::spawn(async move {
-        let result = super::coordinator::run_teammate_loop(config, abort_rx, event_tx.clone()).await;
+        let result =
+            super::coordinator::run_teammate_loop(config, abort_rx, event_tx.clone()).await;
 
         match result {
             Ok(TeammateExit::Completed) => {
@@ -273,7 +274,6 @@ pub struct IncomingTeammateMessage {
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
-
 
 #[cfg(test)]
 #[path = "runner_tests.rs"]

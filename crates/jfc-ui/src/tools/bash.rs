@@ -2,8 +2,10 @@ use std::path::Path;
 
 use tracing::{debug, info, warn};
 
+use super::safe_tools::{
+    configure_tool_command, non_interactive_shell_command, terminal_safe_text,
+};
 use super::{ExecutionResult, ToolProvenance, ToolSource};
-use super::safe_tools::{configure_tool_command, non_interactive_shell_command, terminal_safe_text};
 
 type ProgressSink = Option<(String, tokio::sync::mpsc::Sender<crate::runtime::AppEvent>)>;
 

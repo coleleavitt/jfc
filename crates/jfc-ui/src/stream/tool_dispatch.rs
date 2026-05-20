@@ -267,15 +267,15 @@ pub(crate) fn dispatch_tools_batched(
         .ok()
         .map(|model| model.as_str().to_string());
         let max_input_tokens = agent_def.as_ref().and_then(|a| a.max_input_tokens);
-        if agent_def.is_none() {
-            if let Some(t) = task_input.subagent_type.as_deref() {
-                tracing::warn!(
-                    target: "jfc::stream",
-                    requested = %t,
-                    available = ?agents.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
-                    "subagent_type did not match any loaded agent — running without definition"
-                );
-            }
+        if agent_def.is_none()
+            && let Some(t) = task_input.subagent_type.as_deref()
+        {
+            tracing::warn!(
+                target: "jfc::stream",
+                requested = %t,
+                available = ?agents.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+                "subagent_type did not match any loaded agent — running without definition"
+            );
         }
 
         if task_input.run_in_background {

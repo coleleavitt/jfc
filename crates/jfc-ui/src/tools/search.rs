@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::{debug, warn};
 
-use super::bash::execute_bash;
 use super::ExecutionResult;
+use super::bash::execute_bash;
 use super::safe_tools::{configure_tool_command, terminal_safe_text};
 
 pub(super) async fn execute_glob(pattern: &str, path: Option<&str>, cwd: &Path) -> ExecutionResult {

@@ -157,12 +157,12 @@ pub(crate) fn selected_subagent_model(
     let spec = jfc_provider::ModelSpec::parse_lenient(&aliased)
         .map_err(|e| format!("invalid subagent model {raw:?}: {e}"))?;
 
-    if let Some(prefix) = spec.provider() {
-        if prefix.as_str() != provider_name {
-            return Err(format!(
-                "subagent model {aliased:?} targets provider {prefix}, but the active provider is {provider_name}; provider switching for subagents is not wired yet"
-            ));
-        }
+    if let Some(prefix) = spec.provider()
+        && prefix.as_str() != provider_name
+    {
+        return Err(format!(
+            "subagent model {aliased:?} targets provider {prefix}, but the active provider is {provider_name}; provider switching for subagents is not wired yet"
+        ));
     }
 
     Ok(spec.into_model())
@@ -543,20 +543,20 @@ async fn execute_task_inner(
             return ExecutionResult::failure("cancelled: background agent cancellation requested");
         }
         turn += 1;
-        if let Some(cap) = max_turns {
-            if turn > cap {
-                warn!(
-                    target: "jfc::tools",
-                    task_id = ?task_id,
-                    turn,
-                    max_turns = cap,
-                    "subagent exceeded max_turns — bailing"
-                );
-                last_error = Some(format!(
-                    "Subagent exceeded max_turns ({cap}). Returning partial output."
-                ));
-                break;
-            }
+        if let Some(cap) = max_turns
+            && turn > cap
+        {
+            warn!(
+                target: "jfc::tools",
+                task_id = ?task_id,
+                turn,
+                max_turns = cap,
+                "subagent exceeded max_turns — bailing"
+            );
+            last_error = Some(format!(
+                "Subagent exceeded max_turns ({cap}). Returning partial output."
+            ));
+            break;
         }
 
         let mut options = StreamOptions::new(model.clone()).tools(tools.clone());

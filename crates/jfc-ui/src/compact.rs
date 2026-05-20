@@ -534,11 +534,11 @@ pub async fn compact(
         // Build system prompt with optional custom instructions from config.
         let system_prompt = {
             let mut prompt = COMPACTION_SYSTEM_PROMPT.to_owned();
-            if let Some(ref instructions) = crate::config::load().compact_instructions {
-                if !instructions.trim().is_empty() {
-                    prompt.push_str("\n\nAdditional Instructions:\n");
-                    prompt.push_str(instructions);
-                }
+            if let Some(ref instructions) = crate::config::load().compact_instructions
+                && !instructions.trim().is_empty()
+            {
+                prompt.push_str("\n\nAdditional Instructions:\n");
+                prompt.push_str(instructions);
             }
             prompt
         };
@@ -915,10 +915,10 @@ fn parse_actual_tokens_from_error(err_msg: &str) -> Option<usize> {
             while i < bytes.len() && bytes[i].is_ascii_digit() {
                 i += 1;
             }
-            if let Ok(n) = msg[start..i].parse::<usize>() {
-                if n > 10_000 {
-                    nums.push(n);
-                }
+            if let Ok(n) = msg[start..i].parse::<usize>()
+                && n > 10_000
+            {
+                nums.push(n);
             }
         } else {
             i += 1;
@@ -1107,32 +1107,32 @@ fn format_compact_summary(raw: &str) -> Option<String> {
     // Strip analysis section — it's a drafting scratchpad. The
     // truncation guard above already rejected unmatched opens, so the
     // inner `if let` only executes for properly paired tags.
-    if let Some(start) = result.find("<analysis>") {
-        if let Some(end) = result.find("</analysis>") {
-            let end_tag_end = end + "</analysis>".len();
-            let analysis_len = end_tag_end - start;
-            debug!(
-                target: "jfc::compact",
-                analysis_len,
-                "stripped <analysis> block from summary"
-            );
-            result = format!("{}{}", &result[..start], &result[end_tag_end..]);
-        }
+    if let Some(start) = result.find("<analysis>")
+        && let Some(end) = result.find("</analysis>")
+    {
+        let end_tag_end = end + "</analysis>".len();
+        let analysis_len = end_tag_end - start;
+        debug!(
+            target: "jfc::compact",
+            analysis_len,
+            "stripped <analysis> block from summary"
+        );
+        result = format!("{}{}", &result[..start], &result[end_tag_end..]);
     }
 
     // Extract summary content. Same guarantee as above — if an opening
     // tag is present, the closing tag is too.
-    if let Some(start) = result.find("<summary>") {
-        if let Some(end) = result.find("</summary>") {
-            let content_start = start + "<summary>".len();
-            let content = result[content_start..end].trim();
-            debug!(
-                target: "jfc::compact",
-                summary_content_len = content.len(),
-                "extracted <summary> block"
-            );
-            result = format!("Summary:\n{content}");
-        }
+    if let Some(start) = result.find("<summary>")
+        && let Some(end) = result.find("</summary>")
+    {
+        let content_start = start + "<summary>".len();
+        let content = result[content_start..end].trim();
+        debug!(
+            target: "jfc::compact",
+            summary_content_len = content.len(),
+            "extracted <summary> block"
+        );
+        result = format!("Summary:\n{content}");
     }
 
     // Clean up extra whitespace

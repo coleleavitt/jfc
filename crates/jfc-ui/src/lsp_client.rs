@@ -467,11 +467,11 @@ async fn handle_inbound(
         // we drop the response — the caller's `send_request` will hit
         // its timeout, the `PendingGuard` won't be able to clean up
         // either, but the whole client is in trouble at that point.
-        if let Ok(mut guard) = pending.lock() {
-            if let Some(tx) = guard.remove(&id) {
-                let result = msg.get("result").cloned().unwrap_or(Value::Null);
-                let _ = tx.send(result);
-            }
+        if let Ok(mut guard) = pending.lock()
+            && let Some(tx) = guard.remove(&id)
+        {
+            let result = msg.get("result").cloned().unwrap_or(Value::Null);
+            let _ = tx.send(result);
         }
         return;
     }

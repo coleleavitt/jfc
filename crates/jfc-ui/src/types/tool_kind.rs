@@ -1,3 +1,4 @@
+#[cfg(test)]
 use super::{ToolInput, ToolKind};
 
 #[cfg(test)]
@@ -181,5 +182,4 @@ mod tests {
         assert_eq!(ToolKind::ApplyPatch.api_name(), "apply_patch");
         assert_eq!(ToolKind::Edit.api_name(), "Edit");
     }
-
 }

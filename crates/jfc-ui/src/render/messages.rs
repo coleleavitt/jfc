@@ -1,6 +1,6 @@
+use super::agents::{render_subagent_tree, render_teammate_tree};
 use super::visual::*;
 use super::*;
-use super::agents::{render_subagent_tree, render_teammate_tree};
 use crate::markdown;
 pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     use crate::message_view::MessageView;
@@ -230,19 +230,18 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
             && !crate::spinner::reduced_motion()
             && area.height >= 2
             && area.width >= 2
+            && let Some(when) = app.last_token_arrival
         {
-            if let Some(when) = app.last_token_arrival {
-                let age_ms = when.elapsed().as_millis() as f32;
-                if age_ms < 800.0 {
-                    let intensity = 1.0 - (age_ms / 800.0);
-                    let cx = area.x + area.width.saturating_sub(1);
-                    let cy = area.y + area.height.saturating_sub(2);
-                    if cx < f.buffer_mut().area().right() && cy < f.buffer_mut().area().bottom() {
-                        let cell = &mut f.buffer_mut()[(cx, cy)];
-                        cell.set_symbol("●");
-                        let blended = pulse_color(t.border, t.accent, intensity);
-                        cell.set_style(Style::default().fg(blended));
-                    }
+            let age_ms = when.elapsed().as_millis() as f32;
+            if age_ms < 800.0 {
+                let intensity = 1.0 - (age_ms / 800.0);
+                let cx = area.x + area.width.saturating_sub(1);
+                let cy = area.y + area.height.saturating_sub(2);
+                if cx < f.buffer_mut().area().right() && cy < f.buffer_mut().area().bottom() {
+                    let cell = &mut f.buffer_mut()[(cx, cy)];
+                    cell.set_symbol("●");
+                    let blended = pulse_color(t.border, t.accent, intensity);
+                    cell.set_style(Style::default().fg(blended));
                 }
             }
         }
@@ -1217,7 +1216,7 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         } else {
             String::new()
         },
-        if pending.len() > 0 {
+        if !pending.is_empty() {
             format!(", {} open", pending.len())
         } else {
             String::new()
@@ -1290,20 +1289,21 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
             ),
         ]));
         // Show activeForm as a dim sub-line if it differs from subject
-        if let Some(ref form) = task.active_form {
-            if form != &task.subject && rendered.len() < visible_budget {
-                let sub_avail = render_width.saturating_sub(5);
-                rendered.push(Line::from(vec![
-                    Span::styled("  ", Style::default()),
-                    Span::styled(
-                        truncate_str(form, sub_avail),
-                        Style::default()
-                            .fg(t.text_muted)
-                            .add_modifier(Modifier::ITALIC),
-                    ),
-                    Span::styled("…", Style::default().fg(t.text_muted)),
-                ]));
-            }
+        if let Some(ref form) = task.active_form
+            && form != &task.subject
+            && rendered.len() < visible_budget
+        {
+            let sub_avail = render_width.saturating_sub(5);
+            rendered.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(
+                    truncate_str(form, sub_avail),
+                    Style::default()
+                        .fg(t.text_muted)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+                Span::styled("…", Style::default().fg(t.text_muted)),
+            ]));
         }
     }
     for task in &pending {

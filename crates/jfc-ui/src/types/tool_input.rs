@@ -1,6 +1,5 @@
-use super::{ReplacementMode, TaskInput, ToolInput, ToolKind};
 #[cfg(test)]
-use super::ToolInputError;
+use super::{ReplacementMode, TaskInput, ToolInput, ToolInputError, ToolKind};
 
 #[cfg(test)]
 mod tests {
@@ -831,5 +830,4 @@ mod tests {
         let v = i.to_value();
         assert_eq!(v["input"], "not even close to json");
     }
-
 }

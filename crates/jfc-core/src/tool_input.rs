@@ -37,7 +37,10 @@ macro_rules! ti_parse {
     ($obj:ident, $tool:ident, req_str, $k:literal) => {
         match $obj.and_then(|m| m.get($k)) {
             None | Some(serde_json::Value::Null) => {
-                return Err(ToolInputError::MissingField { tool: $tool(), field: $k });
+                return Err(ToolInputError::MissingField {
+                    tool: $tool(),
+                    field: $k,
+                });
             }
             Some(serde_json::Value::String(s)) => s.clone(),
             Some(other) => {
@@ -51,42 +54,62 @@ macro_rules! ti_parse {
         }
     };
     ($obj:ident, $tool:ident, opt_str, $k:literal) => {
-        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_str()).map(str::to_owned)
+        $obj.and_then(|m| m.get($k))
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
     };
     ($obj:ident, $tool:ident, opt_u64, $k:literal) => {
         $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64())
     };
     ($obj:ident, $tool:ident, opt_u64_as_usize, $k:literal) => {
-        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64()).map(|n| n as usize)
+        $obj.and_then(|m| m.get($k))
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize)
     };
     ($obj:ident, $tool:ident, opt_u64_as_u32, $k:literal) => {
-        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64()).map(|n| n as u32)
+        $obj.and_then(|m| m.get($k))
+            .and_then(|v| v.as_u64())
+            .map(|n| n as u32)
     };
     ($obj:ident, $tool:ident, opt_u64_as_u8, $k:literal) => {
-        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64()).map(|n| n.min(255) as u8)
+        $obj.and_then(|m| m.get($k))
+            .and_then(|v| v.as_u64())
+            .map(|n| n.min(255) as u8)
     };
     ($obj:ident, $tool:ident, u64_or_0, $k:literal) => {
-        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64()).unwrap_or(0)
+        $obj.and_then(|m| m.get($k))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
     };
     ($obj:ident, $tool:ident, u32_or_0, $k:literal) => {
-        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_u64()).unwrap_or(0) as u32
+        $obj.and_then(|m| m.get($k))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32
     };
     ($obj:ident, $tool:ident, bool_field, $k:literal) => {
-        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_bool()).unwrap_or(false)
+        $obj.and_then(|m| m.get($k))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
     };
     ($obj:ident, $tool:ident, bool_true, $k:literal) => {
-        $obj.and_then(|m| m.get($k)).and_then(|v| v.as_bool()).unwrap_or(true)
+        $obj.and_then(|m| m.get($k))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true)
     };
     ($obj:ident, $tool:ident, raw_bool_opt, $k:literal) => {
         $obj.and_then(|m| m.get($k)).and_then(|v| v.as_bool())
     };
     ($obj:ident, $tool:ident, replacement, $k:literal) => {
         ReplacementMode::from_replace_all(
-            $obj.and_then(|m| m.get($k)).and_then(|v| v.as_bool()).unwrap_or(false),
+            $obj.and_then(|m| m.get($k))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
         )
     };
     ($obj:ident, $tool:ident, raw_or_empty_array, $k:literal) => {
-        $obj.and_then(|m| m.get($k)).cloned().unwrap_or(serde_json::Value::Array(vec![]))
+        $obj.and_then(|m| m.get($k))
+            .cloned()
+            .unwrap_or(serde_json::Value::Array(vec![]))
     };
     ($obj:ident, $tool:ident, raw_opt, $k:literal) => {
         $obj.and_then(|m| m.get($k)).cloned()
@@ -98,42 +121,72 @@ macro_rules! ti_parse {
 /// Optional rules only emit the key when the value is present / non-default,
 /// matching the original hand-written behavior exactly.
 macro_rules! ti_ser {
-    ($v:ident, $field:ident, req_str, $k:literal) => { $v[$k] = serde_json::json!($field); };
-    ($v:ident, $field:ident, u64_or_0, $k:literal) => { $v[$k] = serde_json::json!($field); };
-    ($v:ident, $field:ident, u32_or_0, $k:literal) => { $v[$k] = serde_json::json!($field); };
+    ($v:ident, $field:ident, req_str, $k:literal) => {
+        $v[$k] = serde_json::json!($field);
+    };
+    ($v:ident, $field:ident, u64_or_0, $k:literal) => {
+        $v[$k] = serde_json::json!($field);
+    };
+    ($v:ident, $field:ident, u32_or_0, $k:literal) => {
+        $v[$k] = serde_json::json!($field);
+    };
     ($v:ident, $field:ident, opt_str, $k:literal) => {
-        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+        if let Some(x) = $field {
+            $v[$k] = serde_json::json!(x);
+        }
     };
     ($v:ident, $field:ident, opt_u64, $k:literal) => {
-        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+        if let Some(x) = $field {
+            $v[$k] = serde_json::json!(x);
+        }
     };
     ($v:ident, $field:ident, opt_u64_as_usize, $k:literal) => {
-        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+        if let Some(x) = $field {
+            $v[$k] = serde_json::json!(x);
+        }
     };
     ($v:ident, $field:ident, opt_u64_as_u32, $k:literal) => {
-        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+        if let Some(x) = $field {
+            $v[$k] = serde_json::json!(x);
+        }
     };
     ($v:ident, $field:ident, opt_u64_as_u8, $k:literal) => {
-        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+        if let Some(x) = $field {
+            $v[$k] = serde_json::json!(x);
+        }
     };
     ($v:ident, $field:ident, raw_opt, $k:literal) => {
-        if let Some(x) = $field { $v[$k] = x.clone(); }
+        if let Some(x) = $field {
+            $v[$k] = x.clone();
+        }
     };
-    ($v:ident, $field:ident, raw_or_empty_array, $k:literal) => { $v[$k] = $field.clone(); };
+    ($v:ident, $field:ident, raw_or_empty_array, $k:literal) => {
+        $v[$k] = $field.clone();
+    };
     ($v:ident, $field:ident, bool_field, $k:literal) => {
-        if *$field { $v[$k] = serde_json::json!(true); }
+        if *$field {
+            $v[$k] = serde_json::json!(true);
+        }
     };
     ($v:ident, $field:ident, replacement, $k:literal) => {
-        if $field.replace_all() { $v[$k] = serde_json::json!(true); }
+        if $field.replace_all() {
+            $v[$k] = serde_json::json!(true);
+        }
     };
     ($v:ident, $field:ident, bool_true, $k:literal) => {
-        if !*$field { $v[$k] = serde_json::json!(false); }
+        if !*$field {
+            $v[$k] = serde_json::json!(false);
+        }
     };
     ($v:ident, $field:ident, raw_bool_opt, $k:literal) => {
-        if let Some(x) = $field { $v[$k] = serde_json::json!(x); }
+        if let Some(x) = $field {
+            $v[$k] = serde_json::json!(x);
+        }
     };
     ($v:ident, $field:ident, str_vec, $k:literal) => {
-        if !$field.is_empty() { $v[$k] = serde_json::json!($field); }
+        if !$field.is_empty() {
+            $v[$k] = serde_json::json!($field);
+        }
     };
 }
 
@@ -954,7 +1007,6 @@ impl ToolInput {
                     }
                 }
             }
-
         };
         Ok(parsed)
     }
@@ -1031,56 +1083,113 @@ mod macro_equivalence_tests {
     /// field name, key, parse rule, or serialize stanza is caught.
     fn cases() -> Vec<(&'static str, serde_json::Value)> {
         vec![
-            ("Edit", json!({"file_path":"a.rs","old_string":"x","new_string":"y","replace_all":true})),
+            (
+                "Edit",
+                json!({"file_path":"a.rs","old_string":"x","new_string":"y","replace_all":true}),
+            ),
             ("Write", json!({"file_path":"a.rs","content":"c"})),
             ("Read", json!({"file_path":"a.rs","offset":3,"limit":9})),
-            ("Bash", json!({"command":"ls","timeout":500,"workdir":"/tmp"})),
+            (
+                "Bash",
+                json!({"command":"ls","timeout":500,"workdir":"/tmp"}),
+            ),
             ("Glob", json!({"pattern":"*.rs","path":"src"})),
-            ("Grep", json!({"pattern":"fn","path":"src","glob":"*.rs","output_mode":"content"})),
+            (
+                "Grep",
+                json!({"pattern":"fn","path":"src","glob":"*.rs","output_mode":"content"}),
+            ),
             ("Search", json!({"query":"foo","path":"src"})),
             ("ApplyPatch", json!({"patch":"diff"})),
-            ("TaskCreate", json!({"subject":"s","description":"d","blocked_by":["t1"],"risk":"low"})),
-            ("TaskUpdate", json!({"task_id":"t1","status":"done","owner":"me"})),
+            (
+                "TaskCreate",
+                json!({"subject":"s","description":"d","blocked_by":["t1"],"risk":"low"}),
+            ),
+            (
+                "TaskUpdate",
+                json!({"task_id":"t1","status":"done","owner":"me"}),
+            ),
             ("TaskList", json!({"status_filter":"pending"})),
             ("TaskDone", json!({"task_id":"t1"})),
             ("TaskStop", json!({"task_id":"t1"})),
             ("TaskGet", json!({"task_id":"t1"})),
             ("TaskValidate", json!({})),
-            ("Task", json!({"description":"d","prompt":"p","run_in_background":true,"subagent_type":"explore"})),
+            (
+                "Task",
+                json!({"description":"d","prompt":"p","run_in_background":true,"subagent_type":"explore"}),
+            ),
             ("Skill", json!({"name":"sk","args":"a"})),
             ("ToolSearch", json!({"query":"q","limit":5})),
             ("ToolSuggest", json!({"intent":"i","limit":5})),
-            ("MemoryCreate", json!({"level":"user","memory_type":"pref","scope":"private","body":"b"})),
+            (
+                "MemoryCreate",
+                json!({"level":"user","memory_type":"pref","scope":"private","body":"b"}),
+            ),
             ("MemoryDelete", json!({"path":"/m"})),
             ("TeamCreate", json!({"team_name":"t","description":"d"})),
             ("TeamDelete", json!({})),
             ("SendMessage", json!({"to":"a","message":"m","summary":"s"})),
             ("TeamMemberMode", json!({"member_name":"a","mode":"plan"})),
-            ("code_index", json!({"path":"src","query":"q","kind":"function","max_entries":10})),
-            ("graph_query", json!({"query":"fn(\"x\")","max_tokens":2000,"include_handles":false})),
-            ("run_coverage", json!({"lcov_path":"/c","include_untested_list":false})),
-            ("symbol_edit", json!({"handle":"fn:x","new_content":"...","validate":true,"dispatch_cascade":true})),
-            ("post_bounty", json!({"description":"d","budget":100,"acceptance_criteria":"ac","max_solvers":3,"auto_dispatch":true})),
+            (
+                "code_index",
+                json!({"path":"src","query":"q","kind":"function","max_entries":10}),
+            ),
+            (
+                "graph_query",
+                json!({"query":"fn(\"x\")","max_tokens":2000,"include_handles":false}),
+            ),
+            (
+                "run_coverage",
+                json!({"lcov_path":"/c","include_untested_list":false}),
+            ),
+            (
+                "symbol_edit",
+                json!({"handle":"fn:x","new_content":"...","validate":true,"dispatch_cascade":true}),
+            ),
+            (
+                "post_bounty",
+                json!({"description":"d","budget":100,"acceptance_criteria":"ac","max_solvers":3,"auto_dispatch":true}),
+            ),
             ("market_status", json!({"bounty_id":"b1"})),
             ("run_bounty", json!({"bounty_id":"b1","max_solvers":2})),
             ("ExitPlanMode", json!({"plan":"p"})),
-            ("MultiEdit", json!({"file_path":"a.rs","edits":[{"old":"x"}]})),
-            ("AskUserQuestion", json!({"question":"q?","options":[{"label":"a"}],"multi_select":true})),
+            (
+                "MultiEdit",
+                json!({"file_path":"a.rs","edits":[{"old":"x"}]}),
+            ),
+            (
+                "AskUserQuestion",
+                json!({"question":"q?","options":[{"label":"a"}],"multi_select":true}),
+            ),
             ("WebFetch", json!({"url":"http://x","prompt":"p"})),
             ("WebSearch", json!({"query":"q","max_results":5})),
-            ("CronCreate", json!({"schedule":"@daily","command":"c","description":"d"})),
+            (
+                "CronCreate",
+                json!({"schedule":"@daily","command":"c","description":"d"}),
+            ),
             ("CronList", json!({})),
             ("CronDelete", json!({"id":"j1"})),
-            ("ScheduleWakeup", json!({"delay_seconds":60,"prompt":"p","reason":"r"})),
+            (
+                "ScheduleWakeup",
+                json!({"delay_seconds":60,"prompt":"p","reason":"r"}),
+            ),
             ("Monitor", json!({"command":"c","until":"done"})),
-            ("LSP", json!({"kind":"hover","file":"a.rs","line":3,"column":5})),
+            (
+                "LSP",
+                json!({"kind":"hover","file":"a.rs","line":3,"column":5}),
+            ),
             ("PushNotification", json!({"message":"m","title":"t"})),
-            ("RemoteTrigger", json!({"trigger_id":"ci","payload":{"x":1}})),
+            (
+                "RemoteTrigger",
+                json!({"trigger_id":"ci","payload":{"x":1}}),
+            ),
             ("EnterPlanMode", json!({"reason":"r"})),
             ("EnterWorktree", json!({"name":"w","branch":"b"})),
             ("ExitWorktree", json!({})),
             ("NotebookRead", json!({"path":"n.ipynb"})),
-            ("NotebookEdit", json!({"path":"n.ipynb","cell_id":"c1","new_source":"s","edit_mode":"insert"})),
+            (
+                "NotebookEdit",
+                json!({"path":"n.ipynb","cell_id":"c1","new_source":"s","edit_mode":"insert"}),
+            ),
             ("ScratchpadRead", json!({"key":"k"})),
             ("ScratchpadWrite", json!({"key":"k","value":"v"})),
         ]
@@ -1111,5 +1220,4 @@ mod macro_equivalence_tests {
              a std::fs::write of `snapshot.trim()`."
         );
     }
-
 }

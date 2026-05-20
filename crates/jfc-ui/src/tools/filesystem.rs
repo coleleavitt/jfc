@@ -36,16 +36,17 @@ pub(super) async fn execute_read(
     // mid-stream, the cache may already hold the body. Whole-file reads
     // (offset = None, limit = None) are cacheable; partial reads bypass
     // since the cache is keyed by full content.
-    if offset.is_none() && limit.is_none() {
-        if let Some(cached) = crate::idle_prefetch::get(file_path, None, None) {
-            tracing::debug!(
-                target: "jfc::tools::prefetch",
-                file_path,
-                cached_bytes = cached.len(),
-                "Read cache HIT (idle prefetch)"
-            );
-            return ExecutionResult::success(cached);
-        }
+    if offset.is_none()
+        && limit.is_none()
+        && let Some(cached) = crate::idle_prefetch::get(file_path, None, None)
+    {
+        tracing::debug!(
+            target: "jfc::tools::prefetch",
+            file_path,
+            cached_bytes = cached.len(),
+            "Read cache HIT (idle prefetch)"
+        );
+        return ExecutionResult::success(cached);
     }
 
     let path = PathBuf::from(file_path);
@@ -122,21 +123,19 @@ pub(super) async fn execute_read(
         // saw it" because the cache keyed on path alone, so attempts
         // to read line 2000+ of a file got the unchanged stub.
         let is_full_read = offset.is_none() && limit.is_none();
-        if is_full_read {
-            if let Some(cache) = dedup {
-                let guard = cache.lock().await;
-                if guard.is_unchanged(&path) {
-                    trace!(target: "jfc::tools", file_path, "read: dedup cache hit on full re-read");
-                    return ExecutionResult::success(
-                        "File unchanged since last full read. The content from \
+        if is_full_read && let Some(cache) = dedup {
+            let guard = cache.lock().await;
+            if guard.is_unchanged(&path) {
+                trace!(target: "jfc::tools", file_path, "read: dedup cache hit on full re-read");
+                return ExecutionResult::success(
+                    "File unchanged since last full read. The content from \
                          the earlier Read tool_result in this conversation is \
                          still current — refer to that, or pass `offset`/`limit` \
                          to read a specific range."
-                            .to_string(),
-                    );
-                }
-                drop(guard);
+                        .to_string(),
+                );
             }
+            drop(guard);
         }
 
         match tokio::fs::read_to_string(&path).await {
@@ -157,10 +156,8 @@ pub(super) async fn execute_read(
                 // Only record a "full read" in the cache so partial
                 // reads don't poison subsequent full reads with a
                 // false-positive unchanged stub.
-                if is_full_read {
-                    if let Some(cache) = dedup {
-                        cache.lock().await.record_read(path);
-                    }
+                if is_full_read && let Some(cache) = dedup {
+                    cache.lock().await.record_read(path);
                 }
 
                 debug!(
@@ -200,11 +197,11 @@ pub(super) async fn execute_read(
 pub(super) async fn execute_write(file_path: &str, content: &str) -> ExecutionResult {
     info!(target: "jfc::tools", file_path, content_len = content.len(), "write: starting");
     let path = PathBuf::from(file_path);
-    if let Some(parent) = path.parent() {
-        if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            warn!(target: "jfc::tools", file_path, error = %e, "write: cannot create directories");
-            return ExecutionResult::failure(format!("Cannot create directories: {e}"));
-        }
+    if let Some(parent) = path.parent()
+        && let Err(e) = tokio::fs::create_dir_all(parent).await
+    {
+        warn!(target: "jfc::tools", file_path, error = %e, "write: cannot create directories");
+        return ExecutionResult::failure(format!("Cannot create directories: {e}"));
     }
     // Capture the prior contents so we can emit a real diff when this
     // is an *overwrite* (Edit-shaped change) instead of a new file.

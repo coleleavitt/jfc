@@ -2,7 +2,6 @@ use super::assistant_parts::sanitize_terminal_text;
 use super::truncation::{push_wrapped_diff_data_line, push_wrapped_styled_line};
 use super::*;
 
-
 /// Best-effort language detection for a diff view. Returns a token suitable
 /// for `markdown::highlight_code_raw` (typically the file extension, falling
 /// back to the filename for ext-less files like `Makefile`/`Dockerfile`).
@@ -15,10 +14,10 @@ use super::*;
 /// resolution downstream and degrades gracefully.
 pub fn diff_lang(diff: &DiffView) -> Option<String> {
     let p = std::path::Path::new(&diff.file_path);
-    if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-        if !ext.is_empty() {
-            return Some(ext.to_string());
-        }
+    if let Some(ext) = p.extension().and_then(|e| e.to_str())
+        && !ext.is_empty()
+    {
+        return Some(ext.to_string());
     }
     // No extension — fall back to the filename (lowercased) so things like
     // `Makefile` / `Dockerfile` / `Rakefile` get a chance to resolve via
@@ -197,5 +196,3 @@ pub(super) fn render_diff_skip(
             .render(row, buf);
     }
 }
-
-

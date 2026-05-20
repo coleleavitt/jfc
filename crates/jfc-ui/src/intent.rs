@@ -605,12 +605,12 @@ fn extract_symbol(prompt: &str) -> Option<String> {
 
     // Backtick-quoted code spans are a strong signal too. "what depends
     // on `Foo::bar`" → extract `Foo::bar`.
-    if let Some(start) = prompt.find('`') {
-        if let Some(end_rel) = prompt[start + 1..].find('`') {
-            let span = &prompt[start + 1..start + 1 + end_rel];
-            if let Some(m) = re.find(span) {
-                return Some(m.as_str().to_owned());
-            }
+    if let Some(start) = prompt.find('`')
+        && let Some(end_rel) = prompt[start + 1..].find('`')
+    {
+        let span = &prompt[start + 1..start + 1 + end_rel];
+        if let Some(m) = re.find(span) {
+            return Some(m.as_str().to_owned());
         }
     }
 

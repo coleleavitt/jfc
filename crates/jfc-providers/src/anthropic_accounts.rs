@@ -480,14 +480,14 @@ impl AccountManager {
 
     async fn normalize_active_index(&self) {
         let mut state = self.inner.state.lock().await;
-        if let Some(idx) = state.store.active_index {
-            if idx >= state.store.accounts.len() {
-                state.store.active_index = if state.store.accounts.is_empty() {
-                    None
-                } else {
-                    Some(0)
-                };
-            }
+        if let Some(idx) = state.store.active_index
+            && idx >= state.store.accounts.len()
+        {
+            state.store.active_index = if state.store.accounts.is_empty() {
+                None
+            } else {
+                Some(0)
+            };
         }
     }
 
@@ -1151,15 +1151,15 @@ impl AccountManager {
             };
             account.access_token = Some(access_token.clone());
             account.expires_at = Some(expires_at_ms);
-            if let Some(rt) = new_refresh_token.clone() {
-                if rt != account.refresh_token {
-                    tracing::info!(
-                        target: "jfc::provider::anthropic_oauth::rotation",
-                        account = %name,
-                        "refresh token rotated"
-                    );
-                    account.refresh_token = rt;
-                }
+            if let Some(rt) = new_refresh_token.clone()
+                && rt != account.refresh_token
+            {
+                tracing::info!(
+                    target: "jfc::provider::anthropic_oauth::rotation",
+                    account = %name,
+                    "refresh token rotated"
+                );
+                account.refresh_token = rt;
             }
             // Re-enable the account if it was disabled but now has fresh tokens.
             if account.enabled == Some(false) && expires_at_ms > now_ms() {

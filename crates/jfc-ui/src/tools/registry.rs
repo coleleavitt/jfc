@@ -23,10 +23,7 @@ pub(super) fn graph_session_cache() -> &'static std::sync::Mutex<
 > {
     static CACHE: OnceLock<
         std::sync::Mutex<
-            std::collections::HashMap<
-                std::path::PathBuf,
-                Arc<jfc_graph::session::GraphSession>,
-            >,
+            std::collections::HashMap<std::path::PathBuf, Arc<jfc_graph::session::GraphSession>>,
         >,
     > = OnceLock::new();
     CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
@@ -179,9 +176,7 @@ pub(super) fn collusion_detector()
 -> &'static std::sync::Mutex<jfc_economy::collusion::CollusionDetector> {
     static C: OnceLock<std::sync::Mutex<jfc_economy::collusion::CollusionDetector>> =
         OnceLock::new();
-    C.get_or_init(|| {
-        std::sync::Mutex::new(jfc_economy::collusion::CollusionDetector::default())
-    })
+    C.get_or_init(|| std::sync::Mutex::new(jfc_economy::collusion::CollusionDetector::default()))
 }
 
 // ---------------------------------------------------------------------------
@@ -194,19 +189,10 @@ pub(super) fn collusion_detector()
 /// needs to spin up sub-LLM calls without changing every signature
 /// of `execute_tool`. RwLock so future model swaps can update it
 /// without restarting the process.
-fn active_provider_handle() -> &'static std::sync::RwLock<
-    Option<(
-        Arc<dyn jfc_provider::Provider>,
-        jfc_provider::ModelId,
-    )>,
-> {
+fn active_provider_handle()
+-> &'static std::sync::RwLock<Option<(Arc<dyn jfc_provider::Provider>, jfc_provider::ModelId)>> {
     static H: OnceLock<
-        std::sync::RwLock<
-            Option<(
-                Arc<dyn jfc_provider::Provider>,
-                jfc_provider::ModelId,
-            )>,
-        >,
+        std::sync::RwLock<Option<(Arc<dyn jfc_provider::Provider>, jfc_provider::ModelId)>>,
     > = OnceLock::new();
     H.get_or_init(|| std::sync::RwLock::new(None))
 }
@@ -226,14 +212,12 @@ pub fn register_active_provider(
 
 /// Snapshot the active provider + model. None when main.rs hasn't
 /// registered one yet (early-boot tool calls, tests).
-pub(crate) fn snapshot_active_provider() -> Option<(
-    Arc<dyn jfc_provider::Provider>,
-    jfc_provider::ModelId,
-)> {
-    active_provider_handle().read().ok().and_then(|g| {
-        g.as_ref()
-            .map(|(p, m)| (Arc::clone(p), m.clone()))
-    })
+pub(crate) fn snapshot_active_provider()
+-> Option<(Arc<dyn jfc_provider::Provider>, jfc_provider::ModelId)> {
+    active_provider_handle()
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|(p, m)| (Arc::clone(p), m.clone())))
 }
 
 // ---------------------------------------------------------------------------
@@ -259,8 +243,8 @@ pub fn register_event_sender(tx: tokio::sync::mpsc::Sender<crate::runtime::AppEv
     }
 }
 
-pub(crate) fn snapshot_event_sender()
--> Option<tokio::sync::mpsc::Sender<crate::runtime::AppEvent>> {
+pub(crate) fn snapshot_event_sender() -> Option<tokio::sync::mpsc::Sender<crate::runtime::AppEvent>>
+{
     active_event_sender_handle()
         .read()
         .ok()
@@ -280,8 +264,7 @@ pub(crate) fn snapshot_event_sender()
 /// already a process-global singleton via tokio tasks, and bolting a
 /// registry parameter on would touch dozens of callsites for no
 /// architectural win.
-fn active_mcp_registry_handle()
--> &'static std::sync::RwLock<Option<crate::mcp::McpRegistry>> {
+fn active_mcp_registry_handle() -> &'static std::sync::RwLock<Option<crate::mcp::McpRegistry>> {
     static H: OnceLock<std::sync::RwLock<Option<crate::mcp::McpRegistry>>> = OnceLock::new();
     H.get_or_init(|| std::sync::RwLock::new(None))
 }
@@ -310,9 +293,8 @@ pub(crate) fn snapshot_mcp_registry() -> Option<crate::mcp::McpRegistry> {
 /// App threaded through the tool layer. Capped at 100 entries.
 fn undo_history_handle()
 -> &'static std::sync::RwLock<std::collections::VecDeque<crate::types::ToolUndoEntry>> {
-    static H: OnceLock<
-        std::sync::RwLock<std::collections::VecDeque<crate::types::ToolUndoEntry>>,
-    > = OnceLock::new();
+    static H: OnceLock<std::sync::RwLock<std::collections::VecDeque<crate::types::ToolUndoEntry>>> =
+        OnceLock::new();
     H.get_or_init(|| std::sync::RwLock::new(std::collections::VecDeque::new()))
 }
 
@@ -356,8 +338,7 @@ pub fn restore_undo_entry(entry: crate::types::ToolUndoEntry) {
 /// graph crate provides the underlying ring-buffer; we just keep
 /// one handle per process and route inserts through it.
 pub(super) fn graph_history() -> &'static std::sync::Mutex<jfc_graph::history::GraphHistory> {
-    static HISTORY: OnceLock<std::sync::Mutex<jfc_graph::history::GraphHistory>> =
-        OnceLock::new();
+    static HISTORY: OnceLock<std::sync::Mutex<jfc_graph::history::GraphHistory>> = OnceLock::new();
     HISTORY.get_or_init(|| std::sync::Mutex::new(jfc_graph::history::GraphHistory::new(50)))
 }
 
@@ -401,10 +382,10 @@ pub(super) fn auto_context_queue() -> &'static std::sync::Mutex<Vec<std::path::P
 /// boundary.
 pub(crate) fn record_edited_file(path: &std::path::Path) {
     let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    if let Ok(mut q) = auto_context_queue().lock() {
-        if !q.contains(&canonical) {
-            q.push(canonical);
-        }
+    if let Ok(mut q) = auto_context_queue().lock()
+        && !q.contains(&canonical)
+    {
+        q.push(canonical);
     }
 }
 

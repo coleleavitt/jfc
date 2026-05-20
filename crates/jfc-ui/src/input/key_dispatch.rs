@@ -1,5 +1,27 @@
-use super::*;
+//! Key-event dispatch.
+//!
+//! `handle_key` is a thin router that consults a priority-ordered chain of
+//! focused handlers (slash popup → transcript search → jump nav → leader key →
+//! arrow history → command keys → enter-submit → mention/backspace). Each
+//! handler follows one shared contract:
+//!
+//! ```text
+//! fn handle_X(...) -> Option<anyhow::Result<bool>>
+//!   Some(result) → the handler consumed the key; `handle_key` returns `result`
+//!                  immediately (the inner bool is the existing "should quit"
+//!                  signal — true = exit the app, false = stay).
+//!   None         → the key wasn't for this handler; fall through to the next.
+//! ```
+//!
+//! This `Option` wrapper is what lets each block become a standalone fn while
+//! preserving the original `handle_key`'s *exact* control flow — including the
+//! deliberate fall-throughs (e.g. the slash popup's Enter-on-exact-match
+//! dismisses the popup, returns `None`, and lets the Enter-submit handler fire;
+//! Esc chains the same way). Don't "simplify" a `None` arm into an early
+//! `return` without checking whether a later handler relies on the fall-through.
+
 use super::submit::handle_submit;
+use super::*;
 pub async fn handle_key(
     app: &mut App,
     key: event::KeyEvent,
@@ -21,13 +43,12 @@ pub async fn handle_key(
         return Ok(false);
     }
 
-    if app.leader_key_active {
-        if let Some(t) = app.leader_key_timeout {
-            if t.elapsed() >= std::time::Duration::from_secs(2) {
-                app.leader_key_active = false;
-                app.leader_key_timeout = None;
-            }
-        }
+    if app.leader_key_active
+        && let Some(t) = app.leader_key_timeout
+        && t.elapsed() >= std::time::Duration::from_secs(2)
+    {
+        app.leader_key_active = false;
+        app.leader_key_timeout = None;
     }
 
     // ─── Slash autocomplete popup ─────────────────────────────────────────
@@ -44,13 +65,12 @@ pub async fn handle_key(
     }
 
     // ─── Jump-to navigation (Ctrl+G prefix) ──────────────────────────────
-    if app.jump_armed {
-        if let Some(t) = app.jump_armed_at {
-            if t.elapsed() >= std::time::Duration::from_secs(2) {
-                app.jump_armed = false;
-                app.jump_armed_at = None;
-            }
-        }
+    if app.jump_armed
+        && let Some(t) = app.jump_armed_at
+        && t.elapsed() >= std::time::Duration::from_secs(2)
+    {
+        app.jump_armed = false;
+        app.jump_armed_at = None;
     }
     if app.jump_armed {
         app.jump_armed = false;
@@ -210,7 +230,7 @@ async fn handle_command_keys(
     key: event::KeyEvent,
     tx: &mpsc::Sender<crate::runtime::AppEvent>,
 ) -> Option<anyhow::Result<bool>> {
-        match (key.modifiers, key.code) {
+    match (key.modifiers, key.code) {
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
             if input_has_text(app) {
                 reset_input(app);
@@ -219,7 +239,7 @@ async fn handle_command_keys(
                 app.image_counter = 0;
                 return Some(Ok(false));
             }
-            return Some(Ok(true));
+            Some(Ok(true))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('g')) => {
             // Arm jump-to mode. The next single keystroke (e / t / m /
@@ -235,7 +255,7 @@ async fn handle_command_keys(
                     "jump: e=last error · t=last tool · m=last user · a=last assistant".to_string(),
                 ),
             );
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('f')) if !input_has_text(app) => {
             // Arm transcript search. Empty bar (input has no text)
@@ -244,7 +264,7 @@ async fn handle_command_keys(
             // them through. The search overlay renders at the bottom
             // of the screen via `app.transcript_search.is_some()`.
             app.transcript_search = Some(crate::app::TranscriptSearch::default());
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('e')) if !input_has_text(app) => {
             // Edit the most recent user message. Pre-fills the
@@ -300,7 +320,7 @@ async fn handle_command_keys(
                     ),
                 );
             }
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('l')) => {
             // Yank a `path:line(:col)?` reference out of recent tool
@@ -343,7 +363,7 @@ async fn handle_command_keys(
                 }
             }
             app.path_yank_cursor = app.path_yank_cursor.wrapping_add(1);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('r')) => {
             // Retry: re-submit the most recent user prompt as a fresh
@@ -403,7 +423,7 @@ async fn handle_command_keys(
                     );
                 }
             }
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('z')) => {
             // Undo the last textarea edit. ratatui-textarea tracks
@@ -412,7 +432,7 @@ async fn handle_command_keys(
             // there's nothing to undo, which we silently ignore so
             // the keystroke isn't reflected.
             app.textarea.undo();
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (mods, KeyCode::Char('Z'))
             if mods.contains(KeyModifiers::CONTROL) && mods.contains(KeyModifiers::SHIFT) =>
@@ -421,17 +441,17 @@ async fn handle_command_keys(
             // exposed depending on the kitty-protocol negotiation, so
             // match the modifier-set explicitly.
             app.textarea.redo();
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
             app.show_palette = true;
             app.palette_input.clear();
             app.palette_selected = 0;
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('m')) => {
             open_model_picker(app);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
             app.show_sidebar = !app.show_sidebar;
@@ -440,20 +460,20 @@ async fn handle_command_keys(
                 app.session_selected = 0;
                 app.session_list_state.select(Some(0));
             }
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('x')) => {
             app.leader_key_active = true;
             app.leader_key_timeout = Some(std::time::Instant::now());
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('i')) => {
             app.show_info_sidebar = !app.show_info_sidebar;
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('s')) => {
             app.show_info_sidebar = !app.show_info_sidebar;
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         // Ctrl+T cycles the expanded view: none → tasks → teammates → none.
         // Mirrors Claude Code's `app:toggleTodos` keybinding behavior.
@@ -469,7 +489,7 @@ async fn handle_command_keys(
             };
             // Sync the legacy show_task_panel bool for backward compat
             app.show_task_panel = app.expanded_view == ExpandedView::Tasks;
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         // Alt+S opens the session picker popup — same shape as the
         // model picker (Alt+M) and theme picker, so the muscle memory
@@ -478,26 +498,26 @@ async fn handle_command_keys(
         // Ctrl+B.
         (KeyModifiers::ALT, KeyCode::Char('s')) => {
             open_session_picker(app);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         // Alt+Up / Alt+Down scroll the right-side info sidebar when it's
         // visible — surfaces overflow rows from the Tasks section without
         // stealing the main transcript scroll keys.
         (KeyModifiers::ALT, KeyCode::Up) if app.show_info_sidebar => {
             app.info_sidebar_scroll = app.info_sidebar_scroll.saturating_sub(2);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::ALT, KeyCode::Down) if app.show_info_sidebar => {
             app.info_sidebar_scroll = app.info_sidebar_scroll.saturating_add(2);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::ALT, KeyCode::PageUp) if app.show_info_sidebar => {
             app.info_sidebar_scroll = app.info_sidebar_scroll.saturating_sub(10);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::ALT, KeyCode::PageDown) if app.show_info_sidebar => {
             app.info_sidebar_scroll = app.info_sidebar_scroll.saturating_add(10);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('v')) => {
             // Image-paste keybind. Some terminals don't translate Ctrl+V
@@ -524,20 +544,20 @@ async fn handle_command_keys(
                         height: h,
                     });
                     app.textarea.insert_str(format!("[Image #{id}]"));
-                    return Some(Ok(false));
+                    Some(Ok(false))
                 }
                 Ok(None) => {
                     // Try text clipboard fallback.
-                    if let Ok(mut cb) = arboard::Clipboard::new() {
-                        if let Ok(text) = cb.get_text() {
-                            app.textarea.insert_str(&text);
-                        }
+                    if let Ok(mut cb) = arboard::Clipboard::new()
+                        && let Ok(text) = cb.get_text()
+                    {
+                        app.textarea.insert_str(&text);
                     }
-                    return Some(Ok(false));
+                    Some(Ok(false))
                 }
                 Err(e) => {
                     tracing::debug!(target: "jfc::input", error = %e, "Ctrl+V image paste failed");
-                    return Some(Ok(false));
+                    Some(Ok(false))
                 }
             }
         }
@@ -603,7 +623,7 @@ async fn handle_command_keys(
                         .await;
                 }
             }
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
             // Ctrl+O is v126's universal "expand" key (cli.js:338038
@@ -637,15 +657,15 @@ async fn handle_command_keys(
                 let entry = app.reasoning_expanded.entry(last_idx).or_insert(false);
                 *entry = !*entry;
             }
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::ALT, KeyCode::Char('.')) => {
             step_reasoning_effort(app, true);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::ALT, KeyCode::Char(',')) => {
             step_reasoning_effort(app, false);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         // ─── Diagnostic panel scroll ───────────────────────────────────────
         // Up/Down/PgUp/PgDn/Home/End/j/k/g/G all move the cursor inside
@@ -657,34 +677,34 @@ async fn handle_command_keys(
         // each frame, so over-scrolling at the bottom stays in range.
         (KeyModifiers::NONE, KeyCode::Down | KeyCode::Char('j')) if app.show_diagnostic_panel => {
             app.diagnostic_panel_scroll = app.diagnostic_panel_scroll.saturating_add(1);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Up | KeyCode::Char('k')) if app.show_diagnostic_panel => {
             app.diagnostic_panel_scroll = app.diagnostic_panel_scroll.saturating_sub(1);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::PageDown) if app.show_diagnostic_panel => {
             app.diagnostic_panel_scroll = app.diagnostic_panel_scroll.saturating_add(10);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::PageUp) if app.show_diagnostic_panel => {
             app.diagnostic_panel_scroll = app.diagnostic_panel_scroll.saturating_sub(10);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Home | KeyCode::Char('g')) if app.show_diagnostic_panel => {
             app.diagnostic_panel_scroll = 0;
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::End | KeyCode::Char('G')) if app.show_diagnostic_panel => {
             // The renderer clamps overflow each frame, so passing a
             // large value lands at the bottom regardless of the
             // current diagnostic-set size.
             app.diagnostic_panel_scroll = usize::MAX / 2;
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Esc) if app.show_diagnostic_panel => {
             app.show_diagnostic_panel = false;
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         // ─── Vim-style transcript navigation (input empty) ────────────────
         // h/j/k/l for scroll, g/G for top/bottom. Only fire when the
@@ -692,16 +712,16 @@ async fn handle_command_keys(
         // jump the transcript.
         (KeyModifiers::NONE, KeyCode::Char('j')) if !input_has_text(app) => {
             app.scroll_down(1);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Char('k')) if !input_has_text(app) => {
             app.scroll_up(1);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Char('G')) if !input_has_text(app) => {
             app.scroll_to_bottom();
             app.follow_bottom = true;
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Char('g')) if !input_has_text(app) => {
             // Lone `g` jumps to top. v126 / Vim use `gg` (double-g)
@@ -709,18 +729,18 @@ async fn handle_command_keys(
             // typos here so a single `g` is fine.
             app.scroll_offset = 0;
             app.follow_bottom = false;
-            return Some(Ok(false));
+            Some(Ok(false))
         }
 
         (KeyModifiers::NONE, KeyCode::Char('?')) if !input_has_text(app) => {
             // `?` toggles the help overlay. Gated on empty input so
             // the user can still type a literal `?` mid-message.
             app.show_help = !app.show_help;
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::SHIFT, KeyCode::Char('?')) if !input_has_text(app) => {
             app.show_help = !app.show_help;
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Char('o')) if !input_has_text(app) => {
             // In the subagent task view (`viewing_task_id.is_some()`),
@@ -785,7 +805,7 @@ async fn handle_command_keys(
                     }
                 }
             }
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         // ─── Task view: sticky arrow navigation ──────────────────────────
         // Once you're inside the task view (Ctrl+X then ↓ to enter, or you
@@ -815,7 +835,7 @@ async fn handle_command_keys(
                 app.viewing_task_id = Some(task_ids[next].clone());
                 app.scroll_to_bottom();
             }
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Up)
             if app.viewing_task_id.is_some() && !input_has_text(app) =>
@@ -827,7 +847,7 @@ async fn handle_command_keys(
             // task restores what was expanded.
             app.viewing_task_id = None;
             app.scroll_to_bottom();
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Down)
             if app.viewing_task_id.is_some() && !input_has_text(app) =>
@@ -840,7 +860,7 @@ async fn handle_command_keys(
                 app.viewing_task_id = Some(last.clone());
                 app.scroll_to_bottom();
             }
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Esc) => {
             if app.show_help {
@@ -933,7 +953,7 @@ async fn handle_command_keys(
                 return Some(Ok(false));
             }
             reset_input(app);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::SHIFT, KeyCode::BackTab) | (KeyModifiers::NONE, KeyCode::BackTab) => {
             // Shift+Tab cycles permission modes
@@ -951,76 +971,76 @@ async fn handle_command_keys(
                     ),
                 ),
             );
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::PageUp) => {
             app.scroll_page_up();
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::PageDown) => {
             app.scroll_page_down();
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Home) => {
             app.scroll_to_top();
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::End) => {
             app.scroll_to_bottom();
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Home) => {
             app.textarea.move_cursor(CursorMove::Head);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::End) => {
             app.textarea.move_cursor(CursorMove::End);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('a')) => {
             app.textarea.move_cursor(CursorMove::Head);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('e')) => {
             app.textarea.move_cursor(CursorMove::End);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
             app.textarea.delete_line_by_head();
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('k')) => {
             app.textarea.delete_line_by_end();
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('w')) => {
             app.textarea.delete_word();
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
             if input_has_text(app) {
                 app.textarea.delete_next_char();
                 return Some(Ok(false));
             }
-            return Some(Ok(true));
+            Some(Ok(true))
         }
         (KeyModifiers::ALT, KeyCode::Char('d')) => {
             app.textarea.delete_next_word();
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::ALT, KeyCode::Char('b')) => {
             app.textarea.move_cursor(CursorMove::WordBack);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::ALT, KeyCode::Char('f')) => {
             app.textarea.move_cursor(CursorMove::WordForward);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         // Ctrl+B is sidebar toggle (defined above). Ctrl+F is full-page-down.
         (KeyModifiers::CONTROL, KeyCode::Char('f')) => {
             let full = app.viewport_height.max(1);
             app.scroll_down(full);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         _ => None,
     }
@@ -1165,10 +1185,10 @@ fn handle_transcript_search_keys(
                 // Commit + exit. Scroll to the currently-focused
                 // match (already done via Up/Down navigation), then
                 // close the search bar.
-                if let Some(s) = app.transcript_search.take() {
-                    if let Some(&idx) = s.matches.get(s.cursor) {
-                        scroll_to_message(app, idx);
-                    }
+                if let Some(s) = app.transcript_search.take()
+                    && let Some(&idx) = s.matches.get(s.cursor)
+                {
+                    scroll_to_message(app, idx);
                 }
             }
             KeyCode::Backspace => {
@@ -1186,25 +1206,25 @@ fn handle_transcript_search_keys(
                 }
             }
             KeyCode::Down => {
-                if let Some(s) = app.transcript_search.as_mut() {
-                    if !s.matches.is_empty() {
-                        s.cursor = (s.cursor + 1) % s.matches.len();
-                        let target = s.matches[s.cursor];
-                        scroll_to_message(app, target);
-                    }
+                if let Some(s) = app.transcript_search.as_mut()
+                    && !s.matches.is_empty()
+                {
+                    s.cursor = (s.cursor + 1) % s.matches.len();
+                    let target = s.matches[s.cursor];
+                    scroll_to_message(app, target);
                 }
             }
             KeyCode::Up => {
-                if let Some(s) = app.transcript_search.as_mut() {
-                    if !s.matches.is_empty() {
-                        s.cursor = if s.cursor == 0 {
-                            s.matches.len() - 1
-                        } else {
-                            s.cursor - 1
-                        };
-                        let target = s.matches[s.cursor];
-                        scroll_to_message(app, target);
-                    }
+                if let Some(s) = app.transcript_search.as_mut()
+                    && !s.matches.is_empty()
+                {
+                    s.cursor = if s.cursor == 0 {
+                        s.matches.len() - 1
+                    } else {
+                        s.cursor - 1
+                    };
+                    let target = s.matches[s.cursor];
+                    scroll_to_message(app, target);
                 }
             }
             _ => {}
@@ -1217,28 +1237,25 @@ fn handle_transcript_search_keys(
 /// Up/Down arrow history-recall match. Arms always `return`, so this
 /// returns `Some(result)` when a binding fired and `None` to fall
 /// through. Extracted from `handle_key` for cohesion.
-fn handle_arrow_history_keys(
-    app: &mut App,
-    key: event::KeyEvent,
-) -> Option<anyhow::Result<bool>> {
+fn handle_arrow_history_keys(app: &mut App, key: event::KeyEvent) -> Option<anyhow::Result<bool>> {
     match (key.modifiers, key.code) {
         (KeyModifiers::NONE, KeyCode::Up) => {
             // Up at empty input → recall previous user prompt. Multiple
             // presses cycle backwards through history. Mirrors v126's
             // `useArrowKeyHistory` (cli.js) — quality-of-life win for
             // resending or editing recent submissions.
-            if !input_has_text(app) {
-                if let Some(prompt) = recall_previous_prompt(app) {
-                    app.textarea =
-                        TextArea::from(prompt.lines().map(str::to_string).collect::<Vec<_>>());
-                    app.textarea.set_cursor_line_style(Style::default());
-                    app.textarea.set_placeholder_text("send a message…");
-                    app.textarea.move_cursor(CursorMove::End);
-                    return Some(Ok(false));
-                }
+            if !input_has_text(app)
+                && let Some(prompt) = recall_previous_prompt(app)
+            {
+                app.textarea =
+                    TextArea::from(prompt.lines().map(str::to_string).collect::<Vec<_>>());
+                app.textarea.set_cursor_line_style(Style::default());
+                app.textarea.set_placeholder_text("send a message…");
+                app.textarea.move_cursor(CursorMove::End);
+                return Some(Ok(false));
             }
             move_input_cursor_visual_up(app);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Down) => {
             // Symmetric to Up — cycle forward through history when the
@@ -1286,9 +1303,9 @@ fn handle_arrow_history_keys(
                 return Some(Ok(false));
             }
             move_input_cursor_visual_down(app);
-            return Some(Ok(false));
+            Some(Ok(false))
         }
-        _ => return None,
+        _ => None,
     }
 }
 
@@ -1348,48 +1365,46 @@ fn handle_leader_key_keys(
             // BackgroundTask status drives the fan UI, so flipping it
             // stops the visual bleed and lets the user move on.
             KeyCode::Char('x') => {
-                if let Some(id) = app.viewing_task_id.clone() {
-                    if let Some(bt) = app.background_tasks.get_mut(&id) {
-                        if matches!(
-                            bt.status,
-                            crate::types::TaskLifecycle::Running
-                                | crate::types::TaskLifecycle::Idle
-                        ) {
-                            bt.status = crate::types::TaskLifecycle::Failed;
-                            bt.error = Some("cancelled by user".into());
-                            crate::toast::push_with_cap(
-                                &mut app.toasts,
-                                crate::toast::Toast::new(
-                                    crate::toast::ToastKind::Warning,
-                                    format!("Cancelled task {id}"),
-                                ),
-                            );
-                        }
-                    }
+                if let Some(id) = app.viewing_task_id.clone()
+                    && let Some(bt) = app.background_tasks.get_mut(&id)
+                    && matches!(
+                        bt.status,
+                        crate::types::TaskLifecycle::Running | crate::types::TaskLifecycle::Idle
+                    )
+                {
+                    bt.status = crate::types::TaskLifecycle::Failed;
+                    bt.error = Some("cancelled by user".into());
+                    crate::toast::push_with_cap(
+                        &mut app.toasts,
+                        crate::toast::Toast::new(
+                            crate::toast::ToastKind::Warning,
+                            format!("Cancelled task {id}"),
+                        ),
+                    );
                 }
             }
             // `r` retries: re-queue the original task description as a
             // fresh user prompt so the leader dispatches a new agent.
             KeyCode::Char('r') => {
-                if let Some(id) = app.viewing_task_id.clone() {
-                    if let Some(bt) = app.background_tasks.get(&id) {
-                        let prompt = bt.description.clone();
-                        let tx_clone = tx.clone();
-                        tokio::spawn(async move {
-                            let _ = tx_clone
-                                .send(crate::runtime::AppEvent::Ui(
-                                    crate::runtime::UiEvent::Submit(prompt),
-                                ))
-                                .await;
-                        });
-                        crate::toast::push_with_cap(
-                            &mut app.toasts,
-                            crate::toast::Toast::new(
-                                crate::toast::ToastKind::Info,
-                                format!("Retrying task {id}"),
-                            ),
-                        );
-                    }
+                if let Some(id) = app.viewing_task_id.clone()
+                    && let Some(bt) = app.background_tasks.get(&id)
+                {
+                    let prompt = bt.description.clone();
+                    let tx_clone = tx.clone();
+                    tokio::spawn(async move {
+                        let _ = tx_clone
+                            .send(crate::runtime::AppEvent::Ui(
+                                crate::runtime::UiEvent::Submit(prompt),
+                            ))
+                            .await;
+                    });
+                    crate::toast::push_with_cap(
+                        &mut app.toasts,
+                        crate::toast::Toast::new(
+                            crate::toast::ToastKind::Info,
+                            format!("Retrying task {id}"),
+                        ),
+                    );
                 }
             }
             _ => {}
@@ -1399,92 +1414,83 @@ fn handle_leader_key_keys(
     None
 }
 
-
 /// Up-arrow queued-prompt recall when the textarea is empty. Returns `Some(result)` when handled, `None` to fall through.
-fn handle_up_recall_keys(
-    app: &mut App,
-    key: event::KeyEvent,
-) -> Option<anyhow::Result<bool>> {
+fn handle_up_recall_keys(app: &mut App, key: event::KeyEvent) -> Option<anyhow::Result<bool>> {
     if key.code == KeyCode::Up
         && key.modifiers == KeyModifiers::NONE
         && !app.queued_prompts.is_empty()
         && app.textarea.lines().iter().all(|l| l.is_empty())
+        && let Some(qp) = app.queued_prompts.pop_back()
     {
-        if let Some(qp) = app.queued_prompts.pop_back() {
-            let glyph = if qp.is_meta { "⚙" } else { "⏳" };
-            let placeholder = format!("{glyph} {}", qp.text);
-            // Remove the matching placeholder user message (last occurrence).
-            for i in (0..app.messages.len()).rev() {
-                if app.messages[i].role == Role::User
-                    && app.messages[i]
-                        .parts
-                        .iter()
-                        .any(|p| matches!(p, MessagePart::Text(t) if t == &placeholder))
+        let glyph = if qp.is_meta { "⚙" } else { "⏳" };
+        let placeholder = format!("{glyph} {}", qp.text);
+        // Remove the matching placeholder user message (last occurrence).
+        for i in (0..app.messages.len()).rev() {
+            if app.messages[i].role == Role::User
+                && app.messages[i]
+                    .parts
+                    .iter()
+                    .any(|p| matches!(p, MessagePart::Text(t) if t == &placeholder))
+            {
+                let streaming_before = app.streaming_assistant_idx;
+                let editing_before = app.editing_message_idx;
+                app.messages.remove(i);
+                // Removing a message shifts every subsequent index down
+                // by one. `streaming_assistant_idx` would otherwise point
+                // one slot past the live assistant if a fresh sub-stream
+                // already staged a slot after the queued user (agentic
+                // continuation, pause_turn resume). A stale index lets
+                // `StreamEvent::Tool` push `MessagePart::Tool` into a
+                // `Role::User` message → API 400 on the next request:
+                // "tool_use blocks can only appear in assistant messages".
+                // Reproduced as session ses_20260516_071052 msg[20]/msg[21].
+                if let Some(streaming_idx) = app.streaming_assistant_idx
+                    && i < streaming_idx
                 {
-                    let streaming_before = app.streaming_assistant_idx;
-                    let editing_before = app.editing_message_idx;
-                    app.messages.remove(i);
-                    // Removing a message shifts every subsequent index down
-                    // by one. `streaming_assistant_idx` would otherwise point
-                    // one slot past the live assistant if a fresh sub-stream
-                    // already staged a slot after the queued user (agentic
-                    // continuation, pause_turn resume). A stale index lets
-                    // `StreamEvent::Tool` push `MessagePart::Tool` into a
-                    // `Role::User` message → API 400 on the next request:
-                    // "tool_use blocks can only appear in assistant messages".
-                    // Reproduced as session ses_20260516_071052 msg[20]/msg[21].
-                    if let Some(streaming_idx) = app.streaming_assistant_idx
-                        && i < streaming_idx
-                    {
-                        app.streaming_assistant_idx = Some(streaming_idx - 1);
-                    }
-                    if let Some(edit_idx) = app.editing_message_idx {
-                        if i == edit_idx {
-                            app.editing_message_idx = None;
-                        } else if i < edit_idx {
-                            app.editing_message_idx = Some(edit_idx - 1);
-                        }
-                    }
-                    tracing::info!(
-                        target: "jfc::ui::queue::recall",
-                        removed_at = i,
-                        message_count = app.messages.len(),
-                        streaming_before = ?streaming_before,
-                        streaming_after = ?app.streaming_assistant_idx,
-                        editing_before = ?editing_before,
-                        editing_after = ?app.editing_message_idx,
-                        is_streaming = app.is_streaming,
-                        "up_recall: removed queued placeholder, adjusted indices"
-                    );
-                    break;
+                    app.streaming_assistant_idx = Some(streaming_idx - 1);
                 }
+                if let Some(edit_idx) = app.editing_message_idx {
+                    if i == edit_idx {
+                        app.editing_message_idx = None;
+                    } else if i < edit_idx {
+                        app.editing_message_idx = Some(edit_idx - 1);
+                    }
+                }
+                tracing::info!(
+                    target: "jfc::ui::queue::recall",
+                    removed_at = i,
+                    message_count = app.messages.len(),
+                    streaming_before = ?streaming_before,
+                    streaming_after = ?app.streaming_assistant_idx,
+                    editing_before = ?editing_before,
+                    editing_after = ?app.editing_message_idx,
+                    is_streaming = app.is_streaming,
+                    "up_recall: removed queued placeholder, adjusted indices"
+                );
+                break;
             }
-            // Recall into the textarea.
-            for line in qp.text.split('\n') {
-                app.textarea.insert_str(line);
-                app.textarea.insert_newline();
-            }
-            // Drop the trailing newline added by the loop's last iteration.
-            // tui-textarea's `delete_line_by_end` after a final newline
-            // removes the empty trailing line cleanly.
-            app.textarea.delete_line_by_end();
-            tracing::info!(
-                target: "jfc::ui::queue",
-                remaining = app.queued_prompts.len(),
-                "recall_queued_prompt"
-            );
-            return Some(Ok(false));
         }
+        // Recall into the textarea.
+        for line in qp.text.split('\n') {
+            app.textarea.insert_str(line);
+            app.textarea.insert_newline();
+        }
+        // Drop the trailing newline added by the loop's last iteration.
+        // tui-textarea's `delete_line_by_end` after a final newline
+        // removes the empty trailing line cleanly.
+        app.textarea.delete_line_by_end();
+        tracing::info!(
+            target: "jfc::ui::queue",
+            remaining = app.queued_prompts.len(),
+            "recall_queued_prompt"
+        );
+        return Some(Ok(false));
     }
     None
 }
 
-
 /// `Ctrl+Y` yank-last-assistant-message-to-clipboard. Returns `Some(result)` when handled, `None` to fall through.
-fn handle_yank_key(
-    app: &mut App,
-    key: event::KeyEvent,
-) -> Option<anyhow::Result<bool>> {
+fn handle_yank_key(app: &mut App, key: event::KeyEvent) -> Option<anyhow::Result<bool>> {
     if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('y') {
         let last_text: Option<String> = app
             .messages
@@ -1538,10 +1544,7 @@ fn handle_yank_key(
 /// Returns `Some(Ok(false))` for arms that consume the key; `None` for
 /// the deliberate fall-through arms (Enter-on-exact-match, Esc, other
 /// keys) which still mutate `app.slash_popup_selected` before yielding.
-fn handle_slash_popup_keys(
-    app: &mut App,
-    key: event::KeyEvent,
-) -> Option<anyhow::Result<bool>> {
+fn handle_slash_popup_keys(app: &mut App, key: event::KeyEvent) -> Option<anyhow::Result<bool>> {
     if let Some(prefix) = crate::render::current_slash_prefix(app) {
         let matches = crate::render::slash_matches(&prefix);
         if !matches.is_empty() {
@@ -1598,10 +1601,3 @@ fn handle_slash_popup_keys(
     }
     None
 }
-
-
-
-
-
-
-

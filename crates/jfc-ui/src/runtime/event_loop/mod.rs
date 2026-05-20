@@ -138,66 +138,65 @@ pub(crate) async fn run(
                 Some(id) => Some(id),
                 None => jfc_session::most_recent_session().await, // legacy fallback
             };
-            if let Some(session_id) = id {
-                if let Some((messages, saved_model)) =
+            if let Some(session_id) = id
+                && let Some((messages, saved_model)) =
                     session::load_session_with_model(&session_id).await
-                {
+            {
+                tracing::info!(
+                    target: "jfc::session",
+                    session_id = %session_id,
+                    message_count = messages.len(),
+                    saved_model = ?saved_model,
+                    cwd = ?cwd_str,
+                    "continuing most recent session"
+                );
+                app.messages = messages;
+                app.current_session_id = Some(session_id.clone());
+                // Re-open task store so tasks from the resumed session are loaded.
+                app.task_store = jfc_session::TaskStore::open(session_id.as_str());
+                // Rebuild any active stop-condition from the goal
+                // sidecar — without this, /continue forgets the
+                // user's goal and the next EndTurn settles silently.
+                if let Some(goal) = crate::goal::load_sidecar(session_id.as_str()) {
                     tracing::info!(
-                        target: "jfc::session",
+                        target: "jfc::goal",
                         session_id = %session_id,
-                        message_count = messages.len(),
-                        saved_model = ?saved_model,
-                        cwd = ?cwd_str,
-                        "continuing most recent session"
+                        condition = %goal.condition,
+                        iterations = goal.iterations,
+                        "restored goal from sidecar"
                     );
-                    app.messages = messages;
-                    app.current_session_id = Some(session_id.clone());
-                    // Re-open task store so tasks from the resumed session are loaded.
-                    app.task_store = jfc_session::TaskStore::open(session_id.as_str());
-                    // Rebuild any active stop-condition from the goal
-                    // sidecar — without this, /continue forgets the
-                    // user's goal and the next EndTurn settles silently.
-                    if let Some(goal) = crate::goal::load_sidecar(session_id.as_str()) {
+                    app.goal = Some(goal);
+                }
+                if let Some(model_id) = saved_model {
+                    if let Some(p) = crate::provider_for_model(&app.providers, &model_id) {
                         tracing::info!(
-                            target: "jfc::goal",
-                            session_id = %session_id,
-                            condition = %goal.condition,
-                            iterations = goal.iterations,
-                            "restored goal from sidecar"
+                            target: "jfc::session",
+                            model = %model_id,
+                            routed_provider = %p.name(),
+                            "rerouting active provider to match saved session model"
                         );
-                        app.goal = Some(goal);
+                        app.provider = p;
                     }
-                    if let Some(model_id) = saved_model {
-                        if let Some(p) = crate::provider_for_model(&app.providers, &model_id) {
-                            tracing::info!(
-                                target: "jfc::session",
-                                model = %model_id,
-                                routed_provider = %p.name(),
-                                "rerouting active provider to match saved session model"
-                            );
-                            app.provider = p;
-                        }
-                        app.model = model_id.into();
-                    }
-                    app.recompute_token_estimate();
-                    // Warm the tool-height cache so the first render frame
-                    // doesn't visibly spike — without this the first paint
-                    // computes heights for every terminal-state tool from
-                    // scratch (each height = one full `tool_body_lines`
-                    // build), and on a 100-tool conversation that's a
-                    // noticeable hitch right after the UI appears. We use
-                    // the current terminal width as the best-guess inner
-                    // width; render::messages may use a slightly different
-                    // value (sidebars open/closed) but mismatched widths
-                    // just produce a few extra cache entries — correctness
-                    // is unaffected and they get evicted by the LRU.
-                    if let Ok((cols, _rows)) = crossterm::terminal::size() {
-                        let inner_w = (cols as usize).saturating_sub(5);
-                        crate::message_view::warm_tool_height_cache_for_messages(
-                            &app.messages,
-                            inner_w,
-                        );
-                    }
+                    app.model = model_id.into();
+                }
+                app.recompute_token_estimate();
+                // Warm the tool-height cache so the first render frame
+                // doesn't visibly spike — without this the first paint
+                // computes heights for every terminal-state tool from
+                // scratch (each height = one full `tool_body_lines`
+                // build), and on a 100-tool conversation that's a
+                // noticeable hitch right after the UI appears. We use
+                // the current terminal width as the best-guess inner
+                // width; render::messages may use a slightly different
+                // value (sidebars open/closed) but mismatched widths
+                // just produce a few extra cache entries — correctness
+                // is unaffected and they get evicted by the LRU.
+                if let Ok((cols, _rows)) = crossterm::terminal::size() {
+                    let inner_w = (cols as usize).saturating_sub(5);
+                    crate::message_view::warm_tool_height_cache_for_messages(
+                        &app.messages,
+                        inner_w,
+                    );
                 }
             }
         }

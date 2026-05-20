@@ -137,12 +137,11 @@ pub(crate) async fn handle_stream_done(
                 });
             if let (Some(sid), Some(u), Some(a)) =
                 (app.current_session_id.clone(), first_user, first_assistant)
+                && let Some((p, m)) = crate::tools::snapshot_active_provider()
             {
-                if let Some((p, m)) = crate::tools::snapshot_active_provider() {
-                    tokio::spawn(async move {
-                        let _ = crate::session_naming::generate_and_save(sid, p, m, u, a).await;
-                    });
-                }
+                tokio::spawn(async move {
+                    let _ = crate::session_naming::generate_and_save(sid, p, m, u, a).await;
+                });
             }
         }
         if let (Some(start), Some(idx)) = (app.turn_started_at, app.streaming_assistant_idx) {
@@ -201,34 +200,33 @@ pub(crate) async fn handle_stream_done(
         // chat.ai2s.org `rate_limit_inlet_filter` is globally active
         // and its outlet half wouldn't fire for us. Spawned as a
         // detached task so a slow OWUI ack never blocks the UI.
-        if app.provider.name() == "openwebui" {
-            if let Some(sid) = app
+        if app.provider.name() == "openwebui"
+            && let Some(sid) = app
                 .current_session_id
                 .as_ref()
                 .map(|s| s.as_str().to_string())
-            {
-                let model = app.model.to_string();
-                let msg_id = uuid::Uuid::new_v4().to_string();
-                // The provider holds its own auth-resolution code path;
-                // we need to extract base_url + token. Use the store
-                // helpers directly since the provider trait doesn't
-                // expose them.
-                tokio::spawn(async move {
-                    let store_path = crate::providers::openwebui::default_store_path();
-                    let store = crate::providers::openwebui::load_store(&store_path);
-                    if let Some(account) = crate::providers::openwebui::get_current(&store) {
-                        crate::providers::openwebui::notify_chat_completed(
-                            &account.base_url,
-                            &account.token,
-                            &model,
-                            &sid,
-                            &sid, // session_id = chat_id when no websocket
-                            &msg_id,
-                        )
-                        .await;
-                    }
-                });
-            }
+        {
+            let model = app.model.to_string();
+            let msg_id = uuid::Uuid::new_v4().to_string();
+            // The provider holds its own auth-resolution code path;
+            // we need to extract base_url + token. Use the store
+            // helpers directly since the provider trait doesn't
+            // expose them.
+            tokio::spawn(async move {
+                let store_path = crate::providers::openwebui::default_store_path();
+                let store = crate::providers::openwebui::load_store(&store_path);
+                if let Some(account) = crate::providers::openwebui::get_current(&store) {
+                    crate::providers::openwebui::notify_chat_completed(
+                        &account.base_url,
+                        &account.token,
+                        &model,
+                        &sid,
+                        &sid, // session_id = chat_id when no websocket
+                        &msg_id,
+                    )
+                    .await;
+                }
+            });
         }
     }
     app.streaming_started_at = None;
@@ -240,38 +238,38 @@ pub(crate) async fn handle_stream_done(
     // switch to a cheaper model. We never hard-block (an
     // in-flight investigation shouldn't be killed mid-turn
     // by an estimate); the toast is the user's signal.
-    if let Some(budget_usd) = config::load().session_cost_budget_usd {
-        if budget_usd > 0.0 {
-            let spent = crate::cost::total_cost(&app.usage_by_model);
-            let pct = ((spent / budget_usd) * 100.0).round() as u8;
-            let cross = |th: u8| pct >= th && app.cost_budget_warned_at < th;
-            if cross(100) {
-                app.cost_budget_warned_at = 100;
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Error,
-                        format!(
-                            "Session cost {} exceeds budget {} — consider /quit or switching models",
-                            crate::cost::fmt_cost(spent),
-                            crate::cost::fmt_cost(budget_usd),
-                        ),
+    if let Some(budget_usd) = config::load().session_cost_budget_usd
+        && budget_usd > 0.0
+    {
+        let spent = crate::cost::total_cost(&app.usage_by_model);
+        let pct = ((spent / budget_usd) * 100.0).round() as u8;
+        let cross = |th: u8| pct >= th && app.cost_budget_warned_at < th;
+        if cross(100) {
+            app.cost_budget_warned_at = 100;
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Error,
+                    format!(
+                        "Session cost {} exceeds budget {} — consider /quit or switching models",
+                        crate::cost::fmt_cost(spent),
+                        crate::cost::fmt_cost(budget_usd),
                     ),
-                );
-            } else if cross(80) {
-                app.cost_budget_warned_at = 80;
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Warning,
-                        format!(
-                            "Session cost {} at {pct}% of {} budget",
-                            crate::cost::fmt_cost(spent),
-                            crate::cost::fmt_cost(budget_usd),
-                        ),
+                ),
+            );
+        } else if cross(80) {
+            app.cost_budget_warned_at = 80;
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Warning,
+                    format!(
+                        "Session cost {} at {pct}% of {} budget",
+                        crate::cost::fmt_cost(spent),
+                        crate::cost::fmt_cost(budget_usd),
                     ),
-                );
-            }
+                ),
+            );
         }
     }
 
@@ -427,17 +425,17 @@ pub(crate) async fn handle_stream_done(
             streaming_idx = ?app.streaming_assistant_idx,
             "stream_done ToolUse with no tools — stripping dangling assistant turn"
         );
-        if let Some(idx) = app.streaming_assistant_idx {
-            if idx < app.messages.len() {
-                let msg = &app.messages[idx];
-                let is_empty = msg.parts.is_empty()
-                    || msg
-                        .parts
-                        .iter()
-                        .all(|p| matches!(p, MessagePart::Text(t) if t.trim().is_empty()));
-                if is_empty {
-                    app.messages.remove(idx);
-                }
+        if let Some(idx) = app.streaming_assistant_idx
+            && idx < app.messages.len()
+        {
+            let msg = &app.messages[idx];
+            let is_empty = msg.parts.is_empty()
+                || msg
+                    .parts
+                    .iter()
+                    .all(|p| matches!(p, MessagePart::Text(t) if t.trim().is_empty()));
+            if is_empty {
+                app.messages.remove(idx);
             }
         }
         app.streaming_assistant_idx = None;

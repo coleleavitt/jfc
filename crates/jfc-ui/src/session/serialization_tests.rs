@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::session::deserialize::*;
-    use crate::session::serialize::*;
-    use crate::session::serialization::*;
     use crate::ids::SessionId;
+    use crate::session::deserialize::*;
+    use crate::session::serialization::*;
+    use crate::session::serialize::*;
     use crate::types::{
         ChatMessage, DiffHunk, DiffLine, DiffLineKind, DiffView, LargeText, MessagePart,
         ReplacementMode, Role, TaskInput, TaskLifecycle, TaskStatusPart, ToolCall, ToolInput,
@@ -284,10 +284,10 @@ mod tests {
 
 #[cfg(test)]
 mod cwd_filter_tests {
-    use crate::session::deserialize::*;
-    use crate::session::serialize::*;
-    use crate::session::serialization::*;
     use crate::ids::SessionId;
+    use crate::session::deserialize::*;
+    use crate::session::serialization::*;
+    use crate::session::serialize::*;
     use crate::types::*;
     use jfc_session::SessionMetadata;
 
@@ -426,4 +426,3 @@ mod cwd_filter_tests {
         assert!(round.usage.is_none());
     }
 }
-

@@ -310,4 +310,3 @@ mod coalesce_tests {
         );
     }
 }
-

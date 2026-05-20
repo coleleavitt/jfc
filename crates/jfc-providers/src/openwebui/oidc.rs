@@ -16,7 +16,18 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::time::Duration;
+
+/// JS `window.location = '…'` redirect extractor — used in the Duo SSO
+/// follow-redirect loop. Compiled once (was per-iteration, a perf bug).
+static JS_LOCATION_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r#"window\.location\s*=\s*['"]([^'"]+)"#).unwrap());
+
+/// `<meta http-equiv="refresh" content="N;url=…">` redirect extractor.
+static META_REFRESH_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"http-equiv="refresh"\s+content="\d+;url=([^"]+)""#).unwrap()
+});
 
 use serde::{Deserialize, Serialize};
 
@@ -428,37 +439,37 @@ async fn step1_initiate_oidc(
         .and_then(|u| u.host_str().map(|s| s.to_owned()))
         .unwrap_or_default();
 
-    if final_host == base_host {
-        if let Some(token) = jar.get(&base_host, "token").map(str::to_owned) {
-            tracing::info!(
-                target: "jfc::oidc",
-                url = %r.url,
-                "Step 1: IdP recognized existing session — already authenticated"
-            );
-            let oauth_id_token = jar
-                .get(&base_host, "oauth_id_token")
-                .unwrap_or("")
-                .to_owned();
-            let oauth_session_id = jar
-                .get(&base_host, "oauth_session_id")
-                .unwrap_or("")
-                .to_owned();
-            let default_expiry_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64 + 28 * 24 * 60 * 60 * 1000)
-                .unwrap_or(0);
-            let expires_at = super::jwt::token_expires_at_ms(&token).unwrap_or(default_expiry_ms);
-            return Ok(Step1Outcome::AlreadyAuthenticated(OidcLoginResult {
-                token,
-                oauth_id_token,
-                oauth_session_id,
-                expires_at,
-            }));
-        }
-        // Same host but no token cookie — likely an error or unexpected
-        // redirect. Fall through to the normal "expected Shibboleth" error
-        // so the user gets a clear diagnostic instead of a hang.
+    if final_host == base_host
+        && let Some(token) = jar.get(&base_host, "token").map(str::to_owned)
+    {
+        tracing::info!(
+            target: "jfc::oidc",
+            url = %r.url,
+            "Step 1: IdP recognized existing session — already authenticated"
+        );
+        let oauth_id_token = jar
+            .get(&base_host, "oauth_id_token")
+            .unwrap_or("")
+            .to_owned();
+        let oauth_session_id = jar
+            .get(&base_host, "oauth_session_id")
+            .unwrap_or("")
+            .to_owned();
+        let default_expiry_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64 + 28 * 24 * 60 * 60 * 1000)
+            .unwrap_or(0);
+        let expires_at = super::jwt::token_expires_at_ms(&token).unwrap_or(default_expiry_ms);
+        return Ok(Step1Outcome::AlreadyAuthenticated(OidcLoginResult {
+            token,
+            oauth_id_token,
+            oauth_session_id,
+            expires_at,
+        }));
     }
+    // Same host but no token cookie — likely an error or unexpected
+    // redirect. Fall through to the normal "expected Shibboleth" error
+    // so the user gets a clear diagnostic instead of a hang.
 
     if !r.url.contains("shibboleth.arizona.edu")
         && !r.url.contains("webauth.arizona.edu")
@@ -781,24 +792,23 @@ async fn step3_navigate_to_duo(
     } else {
         None
     };
-    if duo_url.is_none() {
-        if let Some(m) = duo_embedded_re.find(&body) {
-            duo_url = Some(m.as_str().replace("&amp;", "&"));
-        }
+    if duo_url.is_none()
+        && let Some(m) = duo_embedded_re.find(&body)
+    {
+        duo_url = Some(m.as_str().replace("&amp;", "&"));
     }
-    if duo_url.is_none() {
-        if let Some(m) = duo_auth_re.find(&body) {
-            let path = m.as_str().replace("&amp;", "&");
-            let abs = url::Url::parse(&url)?.join(&path)?.to_string();
-            tracing::info!(target: "jfc::oidc", url = %abs, "Step 3: Following late-discovered Duo authorize");
-            let r =
-                follow_redirects(client, jar, &abs, reqwest::Method::GET, None, &[], 10).await?;
-            if r.url.contains("duosecurity.com") {
-                duo_url = Some(r.url.clone());
-            }
-            url = r.url;
-            body = r.body;
+    if duo_url.is_none()
+        && let Some(m) = duo_auth_re.find(&body)
+    {
+        let path = m.as_str().replace("&amp;", "&");
+        let abs = url::Url::parse(&url)?.join(&path)?.to_string();
+        tracing::info!(target: "jfc::oidc", url = %abs, "Step 3: Following late-discovered Duo authorize");
+        let r = follow_redirects(client, jar, &abs, reqwest::Method::GET, None, &[], 10).await?;
+        if r.url.contains("duosecurity.com") {
+            duo_url = Some(r.url.clone());
         }
+        url = r.url;
+        body = r.body;
     }
 
     let duo_url = duo_url.ok_or_else(|| {
@@ -1421,13 +1431,11 @@ async fn step5_and_6_extract_token(
             .await?;
             continue;
         }
-        let next = regex::Regex::new(r#"window\.location\s*=\s*['"]([^'"]+)"#)
-            .unwrap()
+        let next = JS_LOCATION_RE
             .captures(&r.body)
             .and_then(|c| c.get(1).map(|m| m.as_str().to_owned()))
             .or_else(|| {
-                regex::Regex::new(r#"http-equiv="refresh"\s+content="\d+;url=([^"]+)""#)
-                    .unwrap()
+                META_REFRESH_RE
                     .captures(&r.body)
                     .and_then(|c| c.get(1).map(|m| m.as_str().to_owned()))
             });

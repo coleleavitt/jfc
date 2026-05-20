@@ -107,16 +107,16 @@ pub fn find_claude_md(start: &Path) -> Option<(PathBuf, String)> {
     let mut dir = start.to_path_buf();
     loop {
         let candidate = dir.join("CLAUDE.md");
-        if let Ok(content) = std::fs::read_to_string(&candidate) {
-            if !content.trim().is_empty() {
-                tracing::info!(
-                    target: "jfc::context",
-                    path = %candidate.display(),
-                    size_bytes = content.len(),
-                    "found CLAUDE.md"
-                );
-                return Some((candidate, content));
-            }
+        if let Ok(content) = std::fs::read_to_string(&candidate)
+            && !content.trim().is_empty()
+        {
+            tracing::info!(
+                target: "jfc::context",
+                path = %candidate.display(),
+                size_bytes = content.len(),
+                "found CLAUDE.md"
+            );
+            return Some((candidate, content));
         }
         match dir.parent() {
             Some(parent) if parent != dir => dir = parent.to_path_buf(),
@@ -175,17 +175,17 @@ impl ClaudeMdHierarchy {
     pub fn render(&self) -> Option<String> {
         let mut out = String::new();
         let mut push = |label: &str, layer: &Option<(PathBuf, String)>| {
-            if let Some((path, content)) = layer {
-                if !content.trim().is_empty() {
-                    if !out.is_empty() {
-                        out.push_str("\n\n");
-                    }
-                    out.push_str(&format!(
-                        "# {label} ({})\n\n{}",
-                        path.display(),
-                        content.trim()
-                    ));
+            if let Some((path, content)) = layer
+                && !content.trim().is_empty()
+            {
+                if !out.is_empty() {
+                    out.push_str("\n\n");
                 }
+                out.push_str(&format!(
+                    "# {label} ({})\n\n{}",
+                    path.display(),
+                    content.trim()
+                ));
             }
         };
         push("Managed policy", &self.managed);

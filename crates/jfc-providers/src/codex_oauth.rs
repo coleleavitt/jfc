@@ -52,6 +52,12 @@ pub struct CodexTokenSet {
     pub account_id: Option<String>,
 }
 
+impl Default for CodexOAuthProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CodexOAuthProvider {
     pub fn new() -> Self {
         Self {
@@ -390,10 +396,10 @@ impl Provider for CodexOAuthProvider {
             if let Ok(value) = HeaderValue::from_str(&format!("Bearer {access_token}")) {
                 headers.insert(reqwest::header::AUTHORIZATION, value);
             }
-            if let Some(account_id) = account_id {
-                if let Ok(value) = HeaderValue::from_str(&account_id) {
-                    headers.insert(HeaderName::from_static("chatgpt-account-id"), value);
-                }
+            if let Some(account_id) = account_id
+                && let Ok(value) = HeaderValue::from_str(&account_id)
+            {
+                headers.insert(HeaderName::from_static("chatgpt-account-id"), value);
             }
             headers.insert(
                 HeaderName::from_static("originator"),
@@ -518,7 +524,10 @@ mod tests {
             output_tokens: 1_000_000,
             ..Default::default()
         };
-        assert_eq!(jfc_provider::cost::cost_for("codex/gpt-5.1-codex", &usage), 0.0);
+        assert_eq!(
+            jfc_provider::cost::cost_for("codex/gpt-5.1-codex", &usage),
+            0.0
+        );
     }
 }
 

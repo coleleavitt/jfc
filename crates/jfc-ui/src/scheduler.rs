@@ -23,6 +23,10 @@ use jfc_session::TaskStore;
 pub const MAX_CONCURRENCY: usize = 10;
 
 /// A scheduled batch of tool calls.
+// `Sequential(ToolCall)` is fatter than `Parallel(Vec<ToolCall>)` (Vec is a
+// 24-byte handle). Boxing would shrink the enum but every batch lives only
+// long enough to run once, so this is a non-issue in practice.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum ToolBatch {
     /// Tools that can execute simultaneously (Read, Glob, Grep, Search).

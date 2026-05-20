@@ -274,10 +274,10 @@ pub fn build_transcript(messages: &[ChatMessage], pending: &ToolCall) -> String 
         match msg.role {
             Role::User => {
                 for part in &msg.parts {
-                    if let MessagePart::Text(t) = part {
-                        if !t.trim().is_empty() {
-                            out.push_str(&format!("User: {}\n\n", t.trim()));
-                        }
+                    if let MessagePart::Text(t) = part
+                        && !t.trim().is_empty()
+                    {
+                        out.push_str(&format!("User: {}\n\n", t.trim()));
                     }
                 }
             }
@@ -369,14 +369,12 @@ fn parse_classification(resp: &CompletionResponse) -> Option<ClassifyResult> {
     }
     // Some providers wrap the tool result in `{ "tool_use": {...} }` etc. Try
     // pulling the first JSON object out of the string.
-    if let Some(start) = s.find('{') {
-        if let Some(end) = s.rfind('}') {
-            if start < end {
-                if let Ok(v) = serde_json::from_str::<Value>(&s[start..=end]) {
-                    return parse_from_value(&v);
-                }
-            }
-        }
+    if let Some(start) = s.find('{')
+        && let Some(end) = s.rfind('}')
+        && start < end
+        && let Ok(v) = serde_json::from_str::<Value>(&s[start..=end])
+    {
+        return parse_from_value(&v);
     }
     None
 }

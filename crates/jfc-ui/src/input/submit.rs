@@ -492,25 +492,25 @@ pub(super) async fn handle_submit(
         // the user didn't explicitly ask for is destructive) — the
         // toast is a one-keystroke nudge. Suppressed via
         // JFC_AUTO_DOC_SUGGEST=0.
-        if let Some(cmd) = intent_for_inject.doc_command() {
-            if crate::intent::auto_doc_suggest_enabled() {
-                tracing::info!(
-                    target: "jfc::intent::doc_suggest",
-                    intent = ?intent_for_inject,
-                    cmd,
-                    "doc-request detected — surfacing slash-command suggestion"
-                );
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Info,
-                        format!(
-                            "This looks like a doc request — type `{cmd}` to draft \
+        if let Some(cmd) = intent_for_inject.doc_command()
+            && crate::intent::auto_doc_suggest_enabled()
+        {
+            tracing::info!(
+                target: "jfc::intent::doc_suggest",
+                intent = ?intent_for_inject,
+                cmd,
+                "doc-request detected — surfacing slash-command suggestion"
+            );
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Info,
+                    format!(
+                        "This looks like a doc request — type `{cmd}` to draft \
                              it with the strict format contract."
-                        ),
                     ),
-                );
-            }
+                ),
+            );
         }
 
         // (3) Auto-Plan-Mode: planning-shaped prompts flip the session

@@ -28,13 +28,13 @@ pub(super) fn parse_skill(path: &Path, raw: &str) -> Option<Skill> {
         .unwrap_or("unnamed");
     let mut name = stem.to_owned();
     let mut description = None;
-    if let Some(yaml) = front {
-        if let Ok(parsed) = serde_yaml::from_str::<SkillFront>(yaml) {
-            if let Some(n) = parsed.name {
-                name = n;
-            }
-            description = parsed.description;
+    if let Some(yaml) = front
+        && let Ok(parsed) = serde_yaml::from_str::<SkillFront>(yaml)
+    {
+        if let Some(n) = parsed.name {
+            name = n;
         }
+        description = parsed.description;
     }
     Some(Skill {
         name,

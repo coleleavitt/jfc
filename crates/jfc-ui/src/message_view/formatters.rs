@@ -184,13 +184,13 @@ pub(super) fn produce_path_list_output_lines(
 ) -> Vec<Line<'static>> {
     let max_lines = if expanded { 500usize } else { 80usize };
     let mut lines: Vec<Line<'static>> = Vec::new();
-    if let Some(code) = exit_code {
-        if code != 0 {
-            lines.push(Line::from(Span::styled(
-                format!("[exit {code}]"),
-                Style::default().fg(t.error),
-            )));
-        }
+    if let Some(code) = exit_code
+        && code != 0
+    {
+        lines.push(Line::from(Span::styled(
+            format!("[exit {code}]"),
+            Style::default().fg(t.error),
+        )));
     }
     let mut total = 0usize;
     for raw in stdout.lines() {
@@ -560,14 +560,15 @@ fn produce_difftastic_output_lines(
 
 fn style_difftastic_line(line: &str, t: Theme) -> Line<'static> {
     let trimmed = line.trim_start();
-    if let Some((path, rest)) = line.split_once(" --- ") {
-        if !path.trim().is_empty() && !rest.trim().is_empty() {
-            return Line::from(vec![
-                Span::styled(path.to_owned(), Style::default().fg(path_color(path, t))),
-                Span::styled(" --- ", Style::default().fg(t.text_muted)),
-                Span::styled(rest.to_owned(), Style::default().fg(t.accent)),
-            ]);
-        }
+    if let Some((path, rest)) = line.split_once(" --- ")
+        && !path.trim().is_empty()
+        && !rest.trim().is_empty()
+    {
+        return Line::from(vec![
+            Span::styled(path.to_owned(), Style::default().fg(path_color(path, t))),
+            Span::styled(" --- ", Style::default().fg(t.text_muted)),
+            Span::styled(rest.to_owned(), Style::default().fg(t.accent)),
+        ]);
     }
 
     let number_prefix_len = trimmed
@@ -607,13 +608,13 @@ pub(super) fn produce_git_log_output_lines(
 ) -> Vec<Line<'static>> {
     let max_lines = if expanded { 500usize } else { 100usize };
     let mut lines: Vec<Line<'static>> = Vec::new();
-    if let Some(code) = exit_code {
-        if code != 0 {
-            lines.push(Line::from(Span::styled(
-                format!("[exit {code}]"),
-                Style::default().fg(t.error),
-            )));
-        }
+    if let Some(code) = exit_code
+        && code != 0
+    {
+        lines.push(Line::from(Span::styled(
+            format!("[exit {code}]"),
+            Style::default().fg(t.error),
+        )));
     }
     let mut total = 0usize;
     for raw in stdout.lines() {
@@ -723,13 +724,13 @@ pub(super) fn produce_cat_markdown_output_lines(
     let inner_w = content_w.saturating_sub(2);
     let mut lines: Vec<Line<'static>> = Vec::new();
 
-    if let Some(code) = exit_code {
-        if code != 0 {
-            lines.push(Line::from(Span::styled(
-                format!("[exit {code}]"),
-                Style::default().fg(t.warning),
-            )));
-        }
+    if let Some(code) = exit_code
+        && code != 0
+    {
+        lines.push(Line::from(Span::styled(
+            format!("[exit {code}]"),
+            Style::default().fg(t.warning),
+        )));
     }
 
     let body = markdown::to_lines(stdout, &t, inner_w.max(1));

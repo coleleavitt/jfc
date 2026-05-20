@@ -10,10 +10,12 @@ use crate::types::{ChatMessage, validate_turn_invariants};
 
 use jfc_session::sessions_dir;
 
-use super::compaction::{extract_first_prompt, persistent_session_messages, repair_loaded_messages};
+use super::compaction::{
+    extract_first_prompt, persistent_session_messages, repair_loaded_messages,
+};
 use super::deserialize::deserialize_message;
-use super::serialize::serialize_message;
 use super::serialization::SerializedSession;
+use super::serialize::serialize_message;
 
 #[tracing::instrument(target = "jfc::session", skip(messages), fields(n = messages.len()))]
 pub async fn save_session(
@@ -286,14 +288,12 @@ pub async fn set_session_title(session_id: &SessionId, title: &str) {
 
 #[cfg(test)]
 mod disk_io_tests {
-    use super::*;
     use super::super::deserialize::{
         deserialize_part, deserialize_tool_input, deserialize_tool_input_for_kind,
     };
+    use super::super::serialization::{SerializedPart, SerializedToolInput, SerializedToolOutput};
     use super::super::serialize::{serialize_part, serialize_tool_input, serialize_tool_output};
-    use super::super::serialization::{
-        SerializedPart, SerializedToolInput, SerializedToolOutput,
-    };
+    use super::*;
     use crate::ids::SessionId;
     use crate::types::{
         ChatMessage, TaskInput, ToolCall, ToolInput, ToolKind, ToolOutput, ToolStatus,

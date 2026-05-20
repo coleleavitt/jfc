@@ -243,10 +243,10 @@ pub(crate) fn handle_task_progress(
     }
     for msg in &mut app.messages {
         for part in &mut msg.parts {
-            if let MessagePart::TaskStatus(ts) = part {
-                if ts.task_id == task_id {
-                    ts.elapsed_ms = Some(elapsed_ms);
-                }
+            if let MessagePart::TaskStatus(ts) = part
+                && ts.task_id == task_id
+            {
+                ts.elapsed_ms = Some(elapsed_ms);
             }
         }
     }
@@ -282,21 +282,21 @@ pub(crate) fn handle_task_completed(
     // finish cleanly while its queued task stayed
     // `in_progress` — the Task tool result and the
     // persistent todo were never connected.
-    if let Some(ref ptid) = linked_task_id {
-        if let Err(e) = app.task_store.update(
+    if let Some(ref ptid) = linked_task_id
+        && let Err(e) = app.task_store.update(
             ptid,
             jfc_session::TaskPatch {
                 status: Some(jfc_session::TaskStatus::Completed),
                 ..Default::default()
             },
-        ) {
-            tracing::warn!(
-                target: "jfc::task",
-                parent_task_id = %ptid,
-                error = %e,
-                "TaskCompleted: failed to mark linked task completed"
-            );
-        }
+        )
+    {
+        tracing::warn!(
+            target: "jfc::task",
+            parent_task_id = %ptid,
+            error = %e,
+            "TaskCompleted: failed to mark linked task completed"
+        );
     }
     crate::daemon::record_background_agent_finished(
         task_id.as_str(),
@@ -305,12 +305,12 @@ pub(crate) fn handle_task_completed(
     );
     for msg in &mut app.messages {
         for part in &mut msg.parts {
-            if let MessagePart::TaskStatus(ts) = part {
-                if ts.task_id == task_id {
-                    ts.status = TaskLifecycle::Completed;
-                    ts.summary = Some(summary.clone());
-                    ts.elapsed_ms = Some(elapsed_ms);
-                }
+            if let MessagePart::TaskStatus(ts) = part
+                && ts.task_id == task_id
+            {
+                ts.status = TaskLifecycle::Completed;
+                ts.summary = Some(summary.clone());
+                ts.elapsed_ms = Some(elapsed_ms);
             }
         }
     }
@@ -384,15 +384,15 @@ pub(crate) async fn handle_task_failed(
     );
     for msg in &mut app.messages {
         for part in &mut msg.parts {
-            if let MessagePart::TaskStatus(ts) = part {
-                if ts.task_id == task_id {
-                    ts.status = if was_cancelled {
-                        TaskLifecycle::Cancelled
-                    } else {
-                        TaskLifecycle::Failed
-                    };
-                    ts.error = Some(error.clone());
-                }
+            if let MessagePart::TaskStatus(ts) = part
+                && ts.task_id == task_id
+            {
+                ts.status = if was_cancelled {
+                    TaskLifecycle::Cancelled
+                } else {
+                    TaskLifecycle::Failed
+                };
+                ts.error = Some(error.clone());
             }
         }
     }

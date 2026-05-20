@@ -10,6 +10,13 @@ use super::lsp::execute_lsp;
 use super::memory::{execute_memory_create, execute_memory_delete};
 use super::notebook::{notebook_edit_text, notebook_read_text};
 use super::notifications::{execute_push_notification, execute_remote_trigger, parse_trigger_url};
+use super::registry::{
+    active_event_sender_handle, auto_context_queue, get_or_build_graph_session, graph_history,
+    graph_session_cache, market_orchestrator, record_graph_query, with_graph_session_mut,
+};
+use super::safe_tools::{
+    configure_tool_command, non_interactive_shell_command, terminal_safe_text,
+};
 use super::scratchpad::{execute_scratchpad_read, execute_scratchpad_write};
 use super::search::{execute_glob, execute_grep};
 use super::subagent::{execute_skill_in, filter_tools_for_agent};
@@ -18,12 +25,6 @@ use super::tasks::{
     execute_task_create, execute_task_done, execute_task_list, execute_task_update,
 };
 use super::worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
-use super::safe_tools::{configure_tool_command, non_interactive_shell_command, terminal_safe_text};
-use super::registry::{
-    active_event_sender_handle, auto_context_queue, get_or_build_graph_session,
-    graph_history, graph_session_cache, market_orchestrator,
-    record_graph_query, with_graph_session_mut,
-};
 use super::*;
 
 use crate::runtime::{DiagnosticLevel, ToolOutcome};
@@ -3184,4 +3185,27 @@ async fn graph_query_returns_failure_on_parse_error_robust() {
         "unexpected error message: {}",
         result.output
     );
+}
+
+// ─── defs.rs ↔ ToolKind drift guard ──────────────────────────────────
+//
+// defs.rs carries hand-written JSON schemas + LLM-facing prose; the prose
+// can't be macro-generated and the schemas vary too much to share a builder
+// without bloat (see the t13 investigation). Instead of forcing a macro
+// table, this test enforces the consistency guarantee a macro would have
+// given: every name in `all_tool_defs()` must round-trip through
+// `ToolKind::from_name` to a real (non-`UnknownTool`) variant. Adding a
+// `ToolDef` whose name doesn't match any `ToolKind`, or renaming a kind
+// without updating the def, fails here at test time.
+#[test]
+fn every_tool_def_name_resolves_to_a_real_tool_kind_robust() {
+    for def in all_tool_defs() {
+        let kind = ToolKind::from_name(&def.name);
+        assert!(
+            !matches!(kind, ToolKind::UnknownTool { .. }),
+            "ToolDef `{}` has no matching ToolKind — defs.rs has drifted \
+             from the enum (add the variant, or fix the def's name)",
+            def.name,
+        );
+    }
 }

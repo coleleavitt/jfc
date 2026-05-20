@@ -160,10 +160,10 @@ async fn handle_runner(
             // A new text delta means the teammate is producing
             // output again — revive Idle → Running so the
             // task panel resumes its "Receiving output…" spinner.
-            if let Some(bt) = app.background_tasks.get_mut(&task_id) {
-                if matches!(bt.status, crate::types::TaskLifecycle::Idle) {
-                    bt.status = crate::types::TaskLifecycle::Running;
-                }
+            if let Some(bt) = app.background_tasks.get_mut(&task_id)
+                && matches!(bt.status, crate::types::TaskLifecycle::Idle)
+            {
+                bt.status = crate::types::TaskLifecycle::Running;
             }
             // Translate to AgentChunk so the existing
             // chunk handler (with coalescing rules and

@@ -1,16 +1,14 @@
-use super::{
-    ChatMessage, MessagePart, ReplacementMode, ToolInput, ToolKind,
-    ToolStatus, parse_unified_diff,
-};
 use super::tool_call::ToolCall;
 use super::tool_display::ToolDisplayState;
 use super::tool_output::ToolOutput;
+use super::{
+    ChatMessage, MessagePart, ReplacementMode, ToolInput, ToolKind, ToolStatus, parse_unified_diff,
+};
 #[cfg(test)]
 use super::{
     ModelUsage, Role, TaskLifecycle, TaskStatusPart, TurnInvariantError, parse_hunk_header,
     parse_hunk_start, truncate_lines, validate_turn_invariants, validate_turn_invariants_inner,
 };
-
 
 #[cfg(test)]
 mod cumulative_usage_tests {
@@ -215,7 +213,6 @@ pub fn sample_tool_harness_message() -> ChatMessage {
         }),
     ])
 }
-
 
 #[cfg(test)]
 mod tests {

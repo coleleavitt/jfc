@@ -199,26 +199,26 @@ pub(crate) fn handle_server_tool_result(
     let result_bytes = content.to_string().len() as u64;
     app.network_bytes_in = app.network_bytes_in.saturating_add(result_bytes);
     let mut applied = false;
-    if let Some(idx) = app.streaming_assistant_idx {
-        if let Some(msg) = app.messages.get_mut(idx) {
-            for part in msg.parts.iter_mut() {
-                if let MessagePart::Tool(tc) = part {
-                    if tc.id == tool_use_id {
-                        tc.output = ToolOutput::ServerToolResult {
-                            tool_kind: tool_kind.clone(),
-                            content: content.clone(),
-                        };
-                        // Tool was set Running on the
-                        // server_tool_use block; flip to
-                        // Completed now that the paired
-                        // result has arrived. mark_completed
-                        // is idempotent if it ever fires
-                        // twice from a duplicate event.
-                        let _ = tc.mark_completed();
-                        applied = true;
-                        break;
-                    }
-                }
+    if let Some(idx) = app.streaming_assistant_idx
+        && let Some(msg) = app.messages.get_mut(idx)
+    {
+        for part in msg.parts.iter_mut() {
+            if let MessagePart::Tool(tc) = part
+                && tc.id == tool_use_id
+            {
+                tc.output = ToolOutput::ServerToolResult {
+                    tool_kind: tool_kind.clone(),
+                    content: content.clone(),
+                };
+                // Tool was set Running on the
+                // server_tool_use block; flip to
+                // Completed now that the paired
+                // result has arrived. mark_completed
+                // is idempotent if it ever fires
+                // twice from a duplicate event.
+                let _ = tc.mark_completed();
+                applied = true;
+                break;
             }
         }
     }

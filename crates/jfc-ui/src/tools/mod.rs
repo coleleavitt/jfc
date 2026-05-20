@@ -35,37 +35,32 @@ pub(crate) use defs::all_tool_defs;
 pub use safe_tools::all_tool_defs_with_mcp;
 
 // economy
-pub(crate) use economy::{
-    EconomyAgentInvoker, EconomySwarmProvider, apply_winning_solution, market_report_string,
-};
+pub(crate) use economy::market_report_string;
+// Used by the test suite (tools/tests.rs is #[path]-included into the test
+// module below), not by the non-test build — hence the cfg guard.
+#[cfg(test)]
+pub(crate) use economy::{EconomyAgentInvoker, EconomySwarmProvider, apply_winning_solution};
 
 // subagent
 pub(crate) use subagent::{execute_task, selected_subagent_model};
 
 // tasks / skills
+#[cfg(test)]
 pub(crate) use tasks::execute_skill;
 
 // swarm
 pub(crate) use swarm::CURRENT_AGENT_NAME;
 
 // registry
+#[cfg(test)]
+pub use registry::invalidate_graph_session_cache;
+#[cfg(test)]
+pub(crate) use registry::record_edited_file;
 pub use registry::{
-    graph_history_snapshot,
-    invalidate_graph_session_cache,
-    pop_undo_entry,
-    push_undo_entry,
-    register_active_provider,
-    register_event_sender,
-    register_mcp_registry,
-    render_pending_auto_context,
-    restore_undo_entry,
+    graph_history_snapshot, pop_undo_entry, push_undo_entry, register_active_provider,
+    register_event_sender, register_mcp_registry, render_pending_auto_context, restore_undo_entry,
 };
-pub(crate) use registry::{
-    record_edited_file,
-    snapshot_active_provider,
-    snapshot_event_sender,
-    snapshot_mcp_registry,
-};
+pub(crate) use registry::{snapshot_active_provider, snapshot_event_sender, snapshot_mcp_registry};
 
 // slop guard sentinel
 pub(crate) use safe_tools::SLOP_GUARD_MARKER;

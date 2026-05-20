@@ -6,8 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::state::{parse_agent, parse_skill, Skill};
-pub use jfc_core::{AgentCost, AgentDef, Effort, MemoryScope, PermissionMode};
+use super::state::{Skill, parse_agent, parse_skill};
+pub use jfc_core::{AgentCost, AgentDef};
 
 // ─── Skill loading ────────────────────────────────────────────────────────────
 

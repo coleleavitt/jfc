@@ -213,19 +213,19 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
                     .chain(other)
                     .map(|s| s.id)
                     .collect();
-                if let Some(id) = ordered.get(idx).cloned() {
-                    if let Some(messages) = crate::session::load_session(&id).await {
-                        app.messages = messages;
-                        app.switch_session(Some(id));
-                        app.streaming_text = String::new();
-                        app.streaming_reasoning = String::new();
-                        app.streaming_response_bytes = 0;
-                        app.streaming_assistant_idx = None;
-                        app.session_selected = idx;
-                        app.session_list_state.select(Some(idx));
-                        app.scroll_to_bottom();
-                        handled_in_sidebar = true;
-                    }
+                if let Some(id) = ordered.get(idx).cloned()
+                    && let Some(messages) = crate::session::load_session(&id).await
+                {
+                    app.messages = messages;
+                    app.switch_session(Some(id));
+                    app.streaming_text = String::new();
+                    app.streaming_reasoning = String::new();
+                    app.streaming_response_bytes = 0;
+                    app.streaming_assistant_idx = None;
+                    app.session_selected = idx;
+                    app.session_list_state.select(Some(idx));
+                    app.scroll_to_bottom();
+                    handled_in_sidebar = true;
                 }
             }
         }
@@ -259,18 +259,18 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
         };
         for msg in &mut app.messages {
             for part in &mut msg.parts {
-                if let MessagePart::Tool(tc) = part {
-                    if tc.id == tool_id {
-                        if is_double_click {
-                            // Toggle pin. Pinning
-                            // forces expanded; unpinning
-                            // leaves cap state as-is so
-                            // the user can collapse with
-                            // a subsequent single click.
-                            tc.display.toggle_pinned();
-                        } else {
-                            tc.display.toggle_expanded();
-                        }
+                if let MessagePart::Tool(tc) = part
+                    && tc.id == tool_id
+                {
+                    if is_double_click {
+                        // Toggle pin. Pinning
+                        // forces expanded; unpinning
+                        // leaves cap state as-is so
+                        // the user can collapse with
+                        // a subsequent single click.
+                        tc.display.toggle_pinned();
+                    } else {
+                        tc.display.toggle_expanded();
                     }
                 }
             }

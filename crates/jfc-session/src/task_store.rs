@@ -779,10 +779,10 @@ impl TaskStore {
 
         // Detect orphaned tasks (parent_id points to non-existent task)
         for t in &tasks {
-            if let Some(ref pid) = t.parent_id {
-                if !inner.tasks.contains_key(pid.as_str()) {
-                    orphaned.push(t.id.clone());
-                }
+            if let Some(ref pid) = t.parent_id
+                && !inner.tasks.contains_key(pid.as_str())
+            {
+                orphaned.push(t.id.clone());
             }
         }
 

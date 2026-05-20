@@ -16,9 +16,7 @@ use std::sync::Arc;
 use crate::runtime::ExecutionResult;
 use jfc_session::TaskStore;
 
-use super::economy::{
-    apply_winning_solution, EconomyAgentInvoker, EconomySwarmProvider,
-};
+use super::economy::{EconomyAgentInvoker, EconomySwarmProvider, apply_winning_solution};
 use super::registry::{
     get_or_build_graph_session, invalidate_graph_session_cache, market_orchestrator,
     record_edited_file, record_graph_query, snapshot_active_provider, with_graph_session_mut,
@@ -35,7 +33,7 @@ pub(super) fn execute_graph_query(
 ) -> ExecutionResult {
     let budget = max_tokens.unwrap_or(4000);
     let want_handles = include_handles.unwrap_or(true);
-    let session = get_or_build_graph_session(&cwd);
+    let session = get_or_build_graph_session(cwd);
     // Run twice: once raw (so we can record the structured
     // QueryResult to history *and* extract chain-able handles)
     // and once formatted with the budget. The raw call is
@@ -61,10 +59,8 @@ pub(super) fn execute_graph_query(
             {
                 let mut preds_block = String::new();
                 for node_id in raw.nodes.iter().take(10) {
-                    let preds = jfc_graph::predicates::outgoing_call_predicates(
-                        &session.graph,
-                        node_id,
-                    );
+                    let preds =
+                        jfc_graph::predicates::outgoing_call_predicates(&session.graph, node_id);
                     if preds.is_empty() {
                         continue;
                     }
@@ -139,9 +135,7 @@ pub(super) fn execute_run_coverage(
         let file = match std::fs::File::open(path) {
             Ok(f) => f,
             Err(e) => {
-                return ExecutionResult::failure(format!(
-                    "Failed to open lcov file {path}: {e}"
-                ));
+                return ExecutionResult::failure(format!("Failed to open lcov file {path}: {e}"));
             }
         };
         let reader = std::io::BufReader::new(file);
@@ -150,7 +144,7 @@ pub(super) fn execute_run_coverage(
         // Run cargo llvm-cov to generate lcov output.
         let output = std::process::Command::new("cargo")
             .args(["llvm-cov", "--lcov", "--output-path", "-"])
-            .current_dir(&cwd)
+            .current_dir(cwd)
             .output();
         match output {
             Ok(out) if out.status.success() => {
@@ -169,13 +163,13 @@ pub(super) fn execute_run_coverage(
         }
     };
 
-    match with_graph_session_mut(&cwd, |session| {
+    match with_graph_session_mut(cwd, |session| {
         let mut summary = String::new();
 
         match lcov_result {
             Ok((lcov_data, warnings)) => {
                 let (annotated, untested) =
-                    annotate_graph_from_lcov(&mut session.graph, &lcov_data, &cwd);
+                    annotate_graph_from_lcov(&mut session.graph, &lcov_data, cwd);
                 let tested = annotated - untested;
 
                 summary.push_str(&format!(
@@ -193,8 +187,7 @@ pub(super) fn execute_run_coverage(
                         .graph
                         .nodes_by_kind(jfc_graph::nodes::NodeKind::Function)
                     {
-                        if node.metadata.get("coverage_tested").map(|v| v.as_str())
-                            == Some("false")
+                        if node.metadata.get("coverage_tested").map(|v| v.as_str()) == Some("false")
                         {
                             summary.push_str(&format!(
                                 "\n  - {} ({}:{})",
@@ -223,8 +216,7 @@ pub(super) fn execute_run_coverage(
         }
 
         // Step 2: Always run possible-types propagation.
-        let (pt_annotated, pt_inputs, pt_returns) =
-            propagate_possible_types(&mut session.graph);
+        let (pt_annotated, pt_inputs, pt_returns) = propagate_possible_types(&mut session.graph);
         summary.push_str(&format!(
             "\n\nPossible-types propagated: {pt_annotated} functions, \
          {pt_inputs} input type entries, {pt_returns} return type entries"
@@ -252,7 +244,7 @@ pub(super) async fn execute_symbol_edit(
     cwd: &Path,
     task_store: Option<Arc<TaskStore>>,
 ) -> ExecutionResult {
-    let session = get_or_build_graph_session(&cwd);
+    let session = get_or_build_graph_session(cwd);
     let entry = match session.symbols().resolve(&handle) {
         Some(e) => e.clone(),
         None => {
@@ -316,8 +308,7 @@ pub(super) async fn execute_symbol_edit(
                         .join(", ")
                 ));
             }
-            summary
-                .push_str("\nDispatch the Task tool per file to update them in parallel.");
+            summary.push_str("\nDispatch the Task tool per file to update them in parallel.");
             cascade_summary = summary;
             tracing::info!(
                 target: "jfc::tools",
@@ -404,9 +395,7 @@ pub(super) async fn execute_symbol_edit(
     let start = entry.span.byte_range.start;
     let end = entry.span.byte_range.end;
     if end > file_content.len() {
-        return ExecutionResult::failure(
-            "Span out of bounds — file changed since graph was built",
-        );
+        return ExecutionResult::failure("Span out of bounds — file changed since graph was built");
     }
 
     let new_file = format!(
@@ -422,7 +411,7 @@ pub(super) async fn execute_symbol_edit(
     // the next graph_query re-parses the modified file and the
     // user sees the symbol's new shape. Also queue the file
     // for auto-context injection on the next stream call.
-    invalidate_graph_session_cache(Some(&cwd));
+    invalidate_graph_session_cache(Some(cwd));
     record_edited_file(&entry.file_path);
 
     let result = ExecutionResult::success(format!(
@@ -432,7 +421,7 @@ pub(super) async fn execute_symbol_edit(
         cascade_summary
     ));
     // Slop guard: check the new file content for quality issues.
-    maybe_run_slop_guard(result, &entry.file_path, &new_file, &cwd).await
+    maybe_run_slop_guard(result, &entry.file_path, &new_file, cwd).await
 }
 
 /// `post_bounty` tool — register a bounty and (when `auto_dispatch`) drive
@@ -520,7 +509,7 @@ pub(super) async fn execute_post_bounty(
     match cycle_result {
         Ok(outcome) => {
             let written =
-                apply_winning_solution(&cwd, &bounty_id, outcome.winning_solution.as_ref());
+                apply_winning_solution(cwd, &bounty_id, outcome.winning_solution.as_ref());
             tracing::info!(
                 target: "jfc::ui::bounty",
                 bounty_id = %bounty_id,
@@ -548,9 +537,9 @@ pub(super) async fn execute_post_bounty(
                 written.summary,
             ))
         }
-        Err(e) => ExecutionResult::failure(format!(
-            "auto_dispatch cycle for `{bounty_id}` failed: {e}"
-        )),
+        Err(e) => {
+            ExecutionResult::failure(format!("auto_dispatch cycle for `{bounty_id}` failed: {e}"))
+        }
     }
 }
 
@@ -580,9 +569,7 @@ pub(super) async fn execute_run_bounty(
         orch.bounty_state(&bounty_id)
     };
     let Some(state) = state else {
-        return ExecutionResult::failure(format!(
-            "run_bounty: bounty `{bounty_id}` not found"
-        ));
+        return ExecutionResult::failure(format!("run_bounty: bounty `{bounty_id}` not found"));
     };
     if !matches!(state, jfc_economy::types::MarketState::Open) {
         return ExecutionResult::failure(format!(
@@ -608,7 +595,7 @@ pub(super) async fn execute_run_bounty(
     match cycle_result {
         Ok(outcome) => {
             let written =
-                apply_winning_solution(&cwd, &bounty_id, outcome.winning_solution.as_ref());
+                apply_winning_solution(cwd, &bounty_id, outcome.winning_solution.as_ref());
             tracing::info!(
                 target: "jfc::ui::bounty",
                 bounty_id = %bounty_id,
@@ -636,8 +623,8 @@ pub(super) async fn execute_run_bounty(
                 written.summary,
             ))
         }
-        Err(e) => ExecutionResult::failure(format!(
-            "run_bounty cycle for `{bounty_id}` failed: {e}"
-        )),
+        Err(e) => {
+            ExecutionResult::failure(format!("run_bounty cycle for `{bounty_id}` failed: {e}"))
+        }
     }
 }

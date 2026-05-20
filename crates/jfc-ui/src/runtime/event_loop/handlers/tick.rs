@@ -308,132 +308,130 @@ pub(crate) async fn handle_tick(
     // leader-side response: apply the leader's own
     // permission_mode to the request and write a resolution
     // file the teammate's poll picks up.
-    if app.team_context.is_active() && app.spinner_frame % 12 == 0 {
-        if let Some(team_name) = app.team_context.team_name.clone() {
-            let mode = app.permission_mode;
-            let tx_swarm = tx.clone();
-            tokio::spawn(async move {
-                let pending =
-                    crate::swarm::permission_sync::read_pending_permissions(&team_name).await;
-                for req in pending {
-                    if !matches!(
-                        req.status,
-                        crate::swarm::types::PermissionRequestStatus::Pending
-                    ) {
-                        continue;
+    if app.team_context.is_active()
+        && app.spinner_frame.is_multiple_of(12)
+        && let Some(team_name) = app.team_context.team_name.clone()
+    {
+        let mode = app.permission_mode;
+        let tx_swarm = tx.clone();
+        tokio::spawn(async move {
+            let pending = crate::swarm::permission_sync::read_pending_permissions(&team_name).await;
+            for req in pending {
+                if !matches!(
+                    req.status,
+                    crate::swarm::types::PermissionRequestStatus::Pending
+                ) {
+                    continue;
+                }
+                let mutation = matches!(
+                    req.tool_name.as_str(),
+                    "Bash" | "Write" | "Edit" | "ApplyPatch"
+                );
+                // Three outcomes:
+                //   Some(true)  → auto-approve
+                //   Some(false) → auto-deny
+                //   None        → defer to the user
+                let auto: Option<bool> = match mode {
+                    crate::app::PermissionMode::BypassPermissions => Some(true),
+                    crate::app::PermissionMode::Plan => Some(false),
+                    crate::app::PermissionMode::AcceptEdits => {
+                        if matches!(req.tool_name.as_str(), "Bash") {
+                            None
+                        } else {
+                            Some(true)
+                        }
                     }
-                    let mutation = matches!(
-                        req.tool_name.as_str(),
-                        "Bash" | "Write" | "Edit" | "ApplyPatch"
-                    );
-                    // Three outcomes:
-                    //   Some(true)  → auto-approve
-                    //   Some(false) → auto-deny
-                    //   None        → defer to the user
-                    let auto: Option<bool> = match mode {
-                        crate::app::PermissionMode::BypassPermissions => Some(true),
-                        crate::app::PermissionMode::Plan => Some(false),
-                        crate::app::PermissionMode::AcceptEdits => {
-                            if matches!(req.tool_name.as_str(), "Bash") {
+                    crate::app::PermissionMode::Default | crate::app::PermissionMode::Auto => {
+                        if mutation {
+                            // Mutations need a human in
+                            // Default/Auto. Surface to
+                            // the user via toast +
+                            // /swarm-approve|deny.
+                            None
+                        } else {
+                            Some(true)
+                        }
+                    }
+                };
+                match auto {
+                    Some(approve) => {
+                        let resolution = crate::swarm::types::PermissionResolution {
+                            decision: if approve {
+                                crate::swarm::types::PermissionDecision::Approved
+                            } else {
+                                crate::swarm::types::PermissionDecision::Rejected
+                            },
+                            resolved_by: "leader".to_owned(),
+                            feedback: if approve {
                                 None
                             } else {
-                                Some(true)
-                            }
-                        }
-                        crate::app::PermissionMode::Default | crate::app::PermissionMode::Auto => {
-                            if mutation {
-                                // Mutations need a human in
-                                // Default/Auto. Surface to
-                                // the user via toast +
-                                // /swarm-approve|deny.
-                                None
-                            } else {
-                                Some(true)
-                            }
-                        }
-                    };
-                    match auto {
-                        Some(approve) => {
-                            let resolution = crate::swarm::types::PermissionResolution {
-                                decision: if approve {
-                                    crate::swarm::types::PermissionDecision::Approved
-                                } else {
-                                    crate::swarm::types::PermissionDecision::Rejected
-                                },
-                                resolved_by: "leader".to_owned(),
-                                feedback: if approve {
-                                    None
-                                } else {
-                                    Some(format!(
-                                        "Auto-denied by leader permission_mode={:?}",
-                                        mode
-                                    ))
-                                },
-                                updated_input: None,
-                                permission_updates: Vec::new(),
-                            };
-                            if let Err(e) = crate::swarm::permission_sync::resolve_permission(
-                                &req.id,
-                                &resolution,
-                                &team_name,
-                            )
-                            .await
-                            {
-                                tracing::warn!(
-                                    target: "jfc::swarm",
-                                    error = %e,
-                                    request_id = %req.id,
-                                    "failed to resolve permission request"
-                                );
-                            }
-                        }
-                        None => {
-                            // User-gate path: surface a
-                            // toast (once per request id).
-                            // The toast tells the user
-                            // exactly which slash command
-                            // resolves it.
-                            let toast_text = format!(
-                                "🔒 {} wants to {} — /swarm-approve {} or /swarm-deny {}",
-                                req.worker_name, req.tool_name, req.id, req.id,
+                                Some(format!("Auto-denied by leader permission_mode={:?}", mode))
+                            },
+                            updated_input: None,
+                            permission_updates: Vec::new(),
+                        };
+                        if let Err(e) = crate::swarm::permission_sync::resolve_permission(
+                            &req.id,
+                            &resolution,
+                            &team_name,
+                        )
+                        .await
+                        {
+                            tracing::warn!(
+                                target: "jfc::swarm",
+                                error = %e,
+                                request_id = %req.id,
+                                "failed to resolve permission request"
                             );
-                            let _ = tx_swarm
-                                .send(AppEvent::Ui(UiEvent::Toast {
-                                    kind: crate::toast::ToastKind::Warning,
-                                    text: toast_text,
-                                }))
-                                .await;
                         }
+                    }
+                    None => {
+                        // User-gate path: surface a
+                        // toast (once per request id).
+                        // The toast tells the user
+                        // exactly which slash command
+                        // resolves it.
+                        let toast_text = format!(
+                            "🔒 {} wants to {} — /swarm-approve {} or /swarm-deny {}",
+                            req.worker_name, req.tool_name, req.id, req.id,
+                        );
+                        let _ = tx_swarm
+                            .send(AppEvent::Ui(UiEvent::Toast {
+                                kind: crate::toast::ToastKind::Warning,
+                                text: toast_text,
+                            }))
+                            .await;
                     }
                 }
-            });
-        }
+            }
+        });
     }
 
     // Poll leader inbox for teammate messages every ~1s (12 ticks * 80ms).
     // Only active when a team is running.
-    if app.team_context.is_active() && app.spinner_frame % 12 == 0 {
-        if let Some(ref team_name) = app.team_context.team_name {
-            let team_name = team_name.clone();
-            let tx_inbox = tx.clone();
-            tokio::spawn(async move {
-                let messages = crate::swarm::runner::poll_leader_inbox(&team_name).await;
-                for msg in messages {
-                    // Hand off to the main thread which has
-                    // mutable access to `app.messages` —
-                    // injects into the transcript AND shows
-                    // a toast in one place. Mirrors v126's
-                    // `<teammate-message>` injection.
-                    let _ = tx_inbox
-                        .send(AppEvent::Team(TeamEvent::Inbox {
-                            from: msg.from,
-                            text: msg.text,
-                            summary: msg.summary,
-                        }))
-                        .await;
-                }
-            });
-        }
+    if app.team_context.is_active()
+        && app.spinner_frame.is_multiple_of(12)
+        && let Some(ref team_name) = app.team_context.team_name
+    {
+        let team_name = team_name.clone();
+        let tx_inbox = tx.clone();
+        tokio::spawn(async move {
+            let messages = crate::swarm::runner::poll_leader_inbox(&team_name).await;
+            for msg in messages {
+                // Hand off to the main thread which has
+                // mutable access to `app.messages` —
+                // injects into the transcript AND shows
+                // a toast in one place. Mirrors v126's
+                // `<teammate-message>` injection.
+                let _ = tx_inbox
+                    .send(AppEvent::Team(TeamEvent::Inbox {
+                        from: msg.from,
+                        text: msg.text,
+                        summary: msg.summary,
+                    }))
+                    .await;
+            }
+        });
     }
 
     needs_draw

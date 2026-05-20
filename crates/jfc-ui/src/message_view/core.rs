@@ -257,24 +257,23 @@ impl Widget for MessageView<'_> {
                     // typing cursor there now. Reduced-motion skips
                     // the cursor entirely — the gutter already gives
                     // a static "this message is in flight" signal.
-                    if let Some((cx, cy, _w)) = last_streaming_cursor.take() {
-                        if !crate::spinner::reduced_motion()
-                            && cx < buf.area().right()
-                            && cy < buf.area().bottom()
-                        {
-                            let elapsed_ms = self.app.launched_at.elapsed().as_millis();
-                            let phase = (elapsed_ms % 1200) as f32 / 1200.0;
-                            let intensity = if phase < 0.5 {
-                                phase * 2.0
-                            } else {
-                                (1.0 - phase) * 2.0
-                            };
-                            let cursor_color =
-                                crate::render::pulse_color_pub(t.text_muted, t.accent, intensity);
-                            let cell = &mut buf[(cx, cy)];
-                            cell.set_symbol("▋");
-                            cell.set_style(Style::default().fg(cursor_color));
-                        }
+                    if let Some((cx, cy, _w)) = last_streaming_cursor.take()
+                        && !crate::spinner::reduced_motion()
+                        && cx < buf.area().right()
+                        && cy < buf.area().bottom()
+                    {
+                        let elapsed_ms = self.app.launched_at.elapsed().as_millis();
+                        let phase = (elapsed_ms % 1200) as f32 / 1200.0;
+                        let intensity = if phase < 0.5 {
+                            phase * 2.0
+                        } else {
+                            (1.0 - phase) * 2.0
+                        };
+                        let cursor_color =
+                            crate::render::pulse_color_pub(t.text_muted, t.accent, intensity);
+                        let cell = &mut buf[(cx, cy)];
+                        cell.set_symbol("▋");
+                        cell.set_style(Style::default().fg(cursor_color));
                     }
                     scope = None;
                     continue;
@@ -339,25 +338,25 @@ impl Widget for MessageView<'_> {
             // the bottom row of the just-rendered area for the
             // rightmost non-space cell, then bump x by 1 so the
             // cursor sits in the cell immediately after the text.
-            if let Some(s) = &scope {
-                if s.is_streaming_placeholder {
-                    let last_y = y + render_h.saturating_sub(1);
-                    if last_y < buf.area().bottom() {
-                        let row_left = item_area.x;
-                        let row_right = (item_area.x + item_area.width).min(buf.area().right());
-                        let mut last_content_x: Option<u16> = None;
-                        let mut x_pos = row_left;
-                        while x_pos < row_right {
-                            let cell = &buf[(x_pos, last_y)];
-                            if cell.symbol() != " " && !cell.symbol().is_empty() {
-                                last_content_x = Some(x_pos);
-                            }
-                            x_pos += 1;
+            if let Some(s) = &scope
+                && s.is_streaming_placeholder
+            {
+                let last_y = y + render_h.saturating_sub(1);
+                if last_y < buf.area().bottom() {
+                    let row_left = item_area.x;
+                    let row_right = (item_area.x + item_area.width).min(buf.area().right());
+                    let mut last_content_x: Option<u16> = None;
+                    let mut x_pos = row_left;
+                    while x_pos < row_right {
+                        let cell = &buf[(x_pos, last_y)];
+                        if cell.symbol() != " " && !cell.symbol().is_empty() {
+                            last_content_x = Some(x_pos);
                         }
-                        if let Some(lx) = last_content_x {
-                            let cursor_x = (lx + 1).min(row_right.saturating_sub(1));
-                            last_streaming_cursor = Some((cursor_x, last_y, render_h));
-                        }
+                        x_pos += 1;
+                    }
+                    if let Some(lx) = last_content_x {
+                        let cursor_x = (lx + 1).min(row_right.saturating_sub(1));
+                        last_streaming_cursor = Some((cursor_x, last_y, render_h));
                     }
                 }
             }
@@ -685,13 +684,12 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
                     // Probe forward for consecutive same-kind tools.
                     let mut run_end = p + 1;
                     while run_end < msg.parts.len() {
-                        if let MessagePart::Tool(t2) = &msg.parts[run_end] {
-                            if std::mem::discriminant(&t2.kind)
+                        if let MessagePart::Tool(t2) = &msg.parts[run_end]
+                            && std::mem::discriminant(&t2.kind)
                                 == std::mem::discriminant(&first_tool.kind)
-                            {
-                                run_end += 1;
-                                continue;
-                            }
+                        {
+                            run_end += 1;
+                            continue;
                         }
                         break;
                     }
@@ -787,20 +785,21 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
         // turns (skip user messages, skip the in-flight placeholder which
         // already has its own spinner row). `msg.elapsed` carries the
         // duration string written at StreamDone time.
-        if msg.role == Role::Assistant && !is_streaming_placeholder {
-            if let Some(elapsed) = &msg.elapsed {
-                // Dim italic, no leading glyph. The earlier `▎`
-                // prefix bracketed the message visually with the
-                // role-header gutter; with the gutter gone, the
-                // bracket is gone too. The elapsed line just sits
-                // muted under the body, which reads cleaner.
-                items.push(RenderItem::TextLine(Line::from(Span::styled(
-                    elapsed.clone(),
-                    Style::default()
-                        .fg(t.text_muted)
-                        .add_modifier(Modifier::DIM),
-                ))));
-            }
+        if msg.role == Role::Assistant
+            && !is_streaming_placeholder
+            && let Some(elapsed) = &msg.elapsed
+        {
+            // Dim italic, no leading glyph. The earlier `▎`
+            // prefix bracketed the message visually with the
+            // role-header gutter; with the gutter gone, the
+            // bracket is gone too. The elapsed line just sits
+            // muted under the body, which reads cleaner.
+            items.push(RenderItem::TextLine(Line::from(Span::styled(
+                elapsed.clone(),
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::DIM),
+            ))));
         }
         // Close the message scope BEFORE the Blank separator so the
         // gutter doesn't bleed into the empty row between messages.

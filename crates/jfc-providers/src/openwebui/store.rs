@@ -169,12 +169,11 @@ pub fn save_store(path: &Path, store: &AccountStore) -> anyhow::Result<()> {
 
 /// Get the currently-selected (or first enabled) account.
 pub fn get_current(store: &AccountStore) -> Option<Account> {
-    if let Some(ref name) = store.current {
-        if let Some(a) = store.accounts.get(name) {
-            if !a.disabled.unwrap_or(false) {
-                return Some(a.clone());
-            }
-        }
+    if let Some(ref name) = store.current
+        && let Some(a) = store.accounts.get(name)
+        && !a.disabled.unwrap_or(false)
+    {
+        return Some(a.clone());
     }
     store
         .accounts

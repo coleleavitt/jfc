@@ -379,12 +379,12 @@ Do not use a colon before tool calls.";
     // Inject the last session's handoff summary so the model knows where
     // the previous session left off. Only on the first request per session
     // (handoff is static context).
-    if let Some(root) = crate::context::discover_git_root() {
-        if let Some(handoff) = crate::sprint::HandoffSummary::read_latest(&root) {
-            let truncated: String = handoff.chars().take(4000).collect();
-            system_prompt.push_str("\n\n## Previous Session Handoff\n");
-            system_prompt.push_str(&truncated);
-        }
+    if let Some(root) = crate::context::discover_git_root()
+        && let Some(handoff) = crate::sprint::HandoffSummary::read_latest(&root)
+    {
+        let truncated: String = handoff.chars().take(4000).collect();
+        system_prompt.push_str("\n\n## Previous Session Handoff\n");
+        system_prompt.push_str(&truncated);
     }
 
     // Temporal awareness is now fully implemented in

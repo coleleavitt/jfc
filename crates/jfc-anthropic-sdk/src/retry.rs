@@ -57,19 +57,17 @@ fn rand_u64() -> u64 {
 /// Parse the `Retry-After-Ms` (preferred) or `Retry-After` (seconds)
 /// response header. Returns `None` if neither is present or parseable.
 pub fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
-    if let Some(v) = headers.get("retry-after-ms") {
-        if let Ok(s) = v.to_str() {
-            if let Ok(ms) = s.trim().parse::<u64>() {
-                return Some(Duration::from_millis(ms));
-            }
-        }
+    if let Some(v) = headers.get("retry-after-ms")
+        && let Ok(s) = v.to_str()
+        && let Ok(ms) = s.trim().parse::<u64>()
+    {
+        return Some(Duration::from_millis(ms));
     }
-    if let Some(v) = headers.get("retry-after") {
-        if let Ok(s) = v.to_str() {
-            if let Ok(secs) = s.trim().parse::<u64>() {
-                return Some(Duration::from_secs(secs));
-            }
-        }
+    if let Some(v) = headers.get("retry-after")
+        && let Ok(s) = v.to_str()
+        && let Ok(secs) = s.trim().parse::<u64>()
+    {
+        return Some(Duration::from_secs(secs));
     }
     None
 }

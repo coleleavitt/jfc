@@ -11,8 +11,8 @@
 mod compaction;
 mod core;
 mod deserialize;
-mod serialize;
 mod serialization;
+mod serialize;
 
 #[cfg(test)]
 mod serialization_tests;

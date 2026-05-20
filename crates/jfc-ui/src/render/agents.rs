@@ -405,4 +405,3 @@ pub(crate) fn render_teammate_tree(f: &mut Frame, app: &App, area: Rect) {
         area,
     );
 }
-

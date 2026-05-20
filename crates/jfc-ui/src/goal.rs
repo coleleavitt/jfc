@@ -305,10 +305,10 @@ pub fn parse_verdict(reply: &str) -> Result<GoalVerdict> {
             reason: "evaluator returned empty reply".to_owned(),
         });
     }
-    if let Some(json) = extract_first_json_object(trimmed) {
-        if let Ok(v) = serde_json::from_str::<GoalVerdict>(&json) {
-            return Ok(v);
-        }
+    if let Some(json) = extract_first_json_object(trimmed)
+        && let Ok(v) = serde_json::from_str::<GoalVerdict>(&json)
+    {
+        return Ok(v);
     }
     Ok(GoalVerdict {
         ok: false,

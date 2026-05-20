@@ -286,7 +286,7 @@ pub async fn list_sessions_filtered(cwd_filter: Option<&str>) -> Vec<SessionMeta
         .flatten()
         .filter(|meta| match cwd_filter {
             None => true,
-            Some(target) => meta.cwd.as_deref().map_or(true, |c| c == target),
+            Some(target) => meta.cwd.as_deref().is_none_or(|c| c == target),
         })
         .collect();
     sessions.sort_by(|a, b| {

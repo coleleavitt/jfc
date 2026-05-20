@@ -1,6 +1,6 @@
-use super::*;
 use super::super::coordinator::check_task_list_for_work;
-use super::super::executor::{run_single_turn, TurnResult};
+use super::super::executor::{TurnResult, run_single_turn};
+use super::*;
 use crate::swarm::mailbox;
 use crate::swarm::test_support::HomeOverride;
 

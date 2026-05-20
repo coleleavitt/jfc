@@ -353,19 +353,17 @@ pub(super) fn render_tool_block(
     if skip == 0
         && matches!(tool.status, crate::types::ToolStatus::Completed)
         && !crate::spinner::reduced_motion()
+        && let Some((id, when)) = &app.recent_tool_completion
+        && id == &tool.id
     {
-        if let Some((id, when)) = &app.recent_tool_completion {
-            if id == &tool.id {
-                let age = when.elapsed();
-                if age < std::time::Duration::from_millis(600) {
-                    let intensity = 1.0 - (age.as_millis() as f32 / 600.0);
-                    if area.x < buf.area().right() {
-                        let cell = &mut buf[(area.x, area.y)];
-                        cell.set_symbol("✦");
-                        let blended = crate::render::pulse_color_pub(t.bg, t.accent, intensity);
-                        cell.set_style(Style::default().fg(blended));
-                    }
-                }
+        let age = when.elapsed();
+        if age < std::time::Duration::from_millis(600) {
+            let intensity = 1.0 - (age.as_millis() as f32 / 600.0);
+            if area.x < buf.area().right() {
+                let cell = &mut buf[(area.x, area.y)];
+                cell.set_symbol("✦");
+                let blended = crate::render::pulse_color_pub(t.bg, t.accent, intensity);
+                cell.set_style(Style::default().fg(blended));
             }
         }
     }
@@ -711,7 +709,7 @@ pub fn tool_status_icon_animated(
             // periodicities take ~25 ticks (2s) to align — beyond
             // perceptual gestalt.
             let glyph = RUNNING_FRAMES[(frame / 4) % RUNNING_FRAMES.len()];
-            let bright = (frame / 9) % 2 == 0;
+            let bright = (frame / 9).is_multiple_of(2);
             let style = if bright {
                 Style::default()
                     .fg(t.accent)

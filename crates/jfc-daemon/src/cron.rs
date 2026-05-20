@@ -70,7 +70,7 @@ impl CronField {
         match self {
             Self::Any => true,
             Self::Exact(v) => *v == value,
-            Self::Step(step) => *step > 0 && value % step == 0,
+            Self::Step(step) => *step > 0 && value.is_multiple_of(*step),
         }
     }
 

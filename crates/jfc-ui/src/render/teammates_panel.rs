@@ -167,15 +167,15 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
         ]));
 
         // Show last tool activity as a sub-line
-        if let Some(ref tool) = bt.last_tool {
-            if lines.len() < inner.height as usize {
-                let sub = format!("  › {tool}");
-                let sub_trimmed = super::truncate_str(&sub, render_width.saturating_sub(2));
-                lines.push(Line::from(Span::styled(
-                    sub_trimmed,
-                    Style::default().fg(t.text_muted),
-                )));
-            }
+        if let Some(ref tool) = bt.last_tool
+            && lines.len() < inner.height as usize
+        {
+            let sub = format!("  › {tool}");
+            let sub_trimmed = super::truncate_str(&sub, render_width.saturating_sub(2));
+            lines.push(Line::from(Span::styled(
+                sub_trimmed,
+                Style::default().fg(t.text_muted),
+            )));
         }
 
         if lines.len() >= inner.height as usize {

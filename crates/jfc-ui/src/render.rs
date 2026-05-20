@@ -7,9 +7,9 @@ pub(crate) use ratatui::{
 };
 
 #[cfg(test)]
-pub(crate) use ratatui::backend::TestBackend;
-#[cfg(test)]
 pub(crate) use ratatui::Terminal;
+#[cfg(test)]
+pub(crate) use ratatui::backend::TestBackend;
 
 pub(crate) use crate::app::App;
 pub(crate) use crate::theme::Theme;
@@ -40,14 +40,14 @@ pub use frame::frame;
 
 // Re-export utilities needed by other modules
 #[cfg(test)]
-pub(crate) use messages::task_view_body_lines;
-pub(crate) use messages::{TASK_VIEW_COLLAPSE_BYTES, TASK_VIEW_COLLAPSE_LINES};
+pub(crate) use agents::format_subagent_counters;
 pub(crate) use agents::format_token_count;
 #[cfg(test)]
-pub(crate) use agents::format_subagent_counters;
+pub(crate) use messages::task_view_body_lines;
+pub(crate) use messages::{TASK_VIEW_COLLAPSE_BYTES, TASK_VIEW_COLLAPSE_LINES};
 pub(crate) use overlays::{current_slash_prefix, slash_matches};
-pub(crate) use visual::{pulse_color_pub, DiffStats, collect_diff_stats, truncate_str};
 pub use session_sidebar::ordered_sidebar_sessions;
+pub(crate) use visual::{DiffStats, collect_diff_stats, pulse_color_pub, truncate_str};
 
 // Internal cross-module helpers — visible to all render submodules via `use super::*`
 pub use visual::*;

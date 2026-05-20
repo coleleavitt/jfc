@@ -33,4 +33,4 @@ pub use state::{
     TERMINAL_AGENT_RETENTION, compact_background_agents, load_state, load_state_if_changed,
     save_state, state_file_mtime,
 };
-pub use worker::{spawn_background_agent_worker};
+pub use worker::spawn_background_agent_worker;

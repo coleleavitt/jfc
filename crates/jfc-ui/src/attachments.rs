@@ -209,31 +209,29 @@ fn read_clipboard_image_shell() -> Result<Option<Vec<u8>>, String> {
     if let Ok(out) = std::process::Command::new("xclip")
         .args(["-selection", "clipboard", "-t", "image/png", "-o"])
         .output()
+        && out.status.success()
+        && !out.stdout.is_empty()
     {
-        if out.status.success() && !out.stdout.is_empty() {
-            return Ok(Some(out.stdout));
-        }
+        return Ok(Some(out.stdout));
     }
     // Try wl-paste (Wayland)
     if let Ok(out) = std::process::Command::new("wl-paste")
         .args(["--type", "image/png"])
         .output()
+        && out.status.success()
+        && !out.stdout.is_empty()
     {
-        if out.status.success() && !out.stdout.is_empty() {
-            return Ok(Some(out.stdout));
-        }
+        return Ok(Some(out.stdout));
     }
     // Try xsel (legacy X11 fallback)
     if let Ok(out) = std::process::Command::new("xsel")
         .args(["--clipboard", "--output"])
         .output()
+        && out.status.success()
+        && !out.stdout.is_empty()
+        && out.stdout.starts_with(&[0x89, b'P', b'N', b'G'])
     {
-        if out.status.success()
-            && !out.stdout.is_empty()
-            && out.stdout.starts_with(&[0x89, b'P', b'N', b'G'])
-        {
-            return Ok(Some(out.stdout));
-        }
+        return Ok(Some(out.stdout));
     }
     Ok(None)
 }

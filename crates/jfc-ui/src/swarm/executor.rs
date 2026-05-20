@@ -13,7 +13,6 @@
 use tracing::warn;
 
 use super::runner::{TeammateEvent, TeammateRunnerConfig};
-use super::types::*;
 
 // ─── Turn result ─────────────────────────────────────────────────────────────
 
@@ -503,18 +502,17 @@ pub(super) async fn run_single_turn(
             //
             // Race tool execution against the abort channel so user
             // cancellation kills running tools immediately.
-            let tool_future = tools::CURRENT_AGENT_NAME
-                .scope(
-                    identity.agent_name.clone(),
-                    tools::execute_tool(
-                        kind.clone(),
-                        input.clone(),
-                        cwd.clone(),
-                        None,
-                        config.task_store.clone(),
-                        Some(identity.team_name.as_str()),
-                    ),
-                );
+            let tool_future = tools::CURRENT_AGENT_NAME.scope(
+                identity.agent_name.clone(),
+                tools::execute_tool(
+                    kind.clone(),
+                    input.clone(),
+                    cwd.clone(),
+                    None,
+                    config.task_store.clone(),
+                    Some(identity.team_name.as_str()),
+                ),
+            );
             tokio::pin!(tool_future);
 
             let result = tokio::select! {

@@ -175,11 +175,13 @@ fn merge_consecutive_same_role(msgs: Vec<ProviderMessage>) -> Vec<ProviderMessag
     // with chat text. Same rule for the inverse direction.
     let mut merged: Vec<ProviderMessage> = Vec::with_capacity(msgs.len());
     for msg in msgs {
-        if let Some(last) = merged.last_mut() {
-            if last.role == msg.role && !contains_tool_result(last) && !contains_tool_result(&msg) {
-                last.content.extend(msg.content);
-                continue;
-            }
+        if let Some(last) = merged.last_mut()
+            && last.role == msg.role
+            && !contains_tool_result(last)
+            && !contains_tool_result(&msg)
+        {
+            last.content.extend(msg.content);
+            continue;
         }
         merged.push(msg);
     }

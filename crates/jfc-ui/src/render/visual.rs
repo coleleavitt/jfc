@@ -410,7 +410,11 @@ pub fn prompt_mode_frame(mode: &PromptMode, streaming: bool, ms: u128) -> &'stat
             if !streaming {
                 return "⌛";
             }
-            if (ms / 800) % 2 == 0 { "⌛" } else { "⌚" }
+            if (ms / 800).is_multiple_of(2) {
+                "⌛"
+            } else {
+                "⌚"
+            }
         }
         PromptMode::Static(_) => {
             // Static is handled via fallback below (returns the
@@ -504,10 +508,11 @@ pub fn collect_diff_stats(app: &App) -> DiffStats {
 
     {
         let cache = app.diff_stats_cache.borrow();
-        if let Some((cached_msgs, cached_parts, ref stats)) = *cache {
-            if cached_msgs == msg_count && cached_parts == total_parts {
-                return stats.clone();
-            }
+        if let Some((cached_msgs, cached_parts, ref stats)) = *cache
+            && cached_msgs == msg_count
+            && cached_parts == total_parts
+        {
+            return stats.clone();
         }
     }
 
@@ -524,13 +529,13 @@ pub fn compute_diff_stats(app: &App) -> DiffStats {
     let mut order: Vec<String> = Vec::new();
     for msg in &app.messages {
         for part in &msg.parts {
-            if let MessagePart::Tool(call) = part {
-                if let ToolOutput::Diff(view) = &call.output {
-                    let entry = by_file.entry(view.file_path.clone()).or_insert((0, 0));
-                    *entry = (view.additions, view.deletions);
-                    if !order.contains(&view.file_path) {
-                        order.push(view.file_path.clone());
-                    }
+            if let MessagePart::Tool(call) = part
+                && let ToolOutput::Diff(view) = &call.output
+            {
+                let entry = by_file.entry(view.file_path.clone()).or_insert((0, 0));
+                *entry = (view.additions, view.deletions);
+                if !order.contains(&view.file_path) {
+                    order.push(view.file_path.clone());
                 }
             }
         }

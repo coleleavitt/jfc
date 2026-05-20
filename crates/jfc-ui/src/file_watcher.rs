@@ -105,10 +105,10 @@ fn spawn_watcher() -> Result<(), String> {
                             return true;
                         }
                         // File inside a watched directory (e.g. .claude/agents/).
-                        if let Some(parent) = p.parent() {
-                            if config_dirs_set.contains(parent) {
-                                return true;
-                            }
+                        if let Some(parent) = p.parent()
+                            && config_dirs_set.contains(parent)
+                        {
+                            return true;
                         }
                         false
                     });

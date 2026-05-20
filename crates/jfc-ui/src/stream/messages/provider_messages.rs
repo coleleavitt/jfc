@@ -159,12 +159,12 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
 
         if !assistant_content.is_empty() {
             out.push(ProviderMessage {
-                role: role.clone(),
+                role,
                 content: assistant_content,
             });
         } else if !text.is_empty() {
             out.push(ProviderMessage {
-                role: role.clone(),
+                role,
                 content: vec![ProviderContent::Text(text)],
             });
         }

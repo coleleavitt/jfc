@@ -42,8 +42,8 @@ pub fn filtered_sessions(app: &App) -> Vec<&jfc_session::SessionMetadata> {
 pub(super) fn session_picker(f: &mut Frame, app: &mut App) {
     let t = app.theme;
     let area = f.area();
-    let width = (area.width * 9 / 10).min(130).max(60);
-    let height = (area.height * 8 / 10).min(28).max(12);
+    let width = (area.width * 9 / 10).clamp(60, 130);
+    let height = (area.height * 8 / 10).clamp(12, 28);
     let x = area.width.saturating_sub(width) / 2;
     let y = area.height.saturating_sub(height) / 2;
     let picker_area = Rect::new(x, y, width, height);

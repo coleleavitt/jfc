@@ -18,20 +18,20 @@ pub(crate) fn handle_output_chunk(app: &mut App, tool_id: crate::ids::ToolId, ch
     // real-time visibility into long-running processes.
     for msg in &mut app.messages {
         for part in &mut msg.parts {
-            if let MessagePart::Tool(tc) = part {
-                if tc.id == tool_id {
-                    // Append to existing output or create new
-                    match &mut tc.output {
-                        ToolOutput::Text(s) => {
-                            s.push_str(&chunk);
-                            s.push('\n');
-                        }
-                        _ => {
-                            tc.output = ToolOutput::Text(format!("{chunk}\n"));
-                        }
+            if let MessagePart::Tool(tc) = part
+                && tc.id == tool_id
+            {
+                // Append to existing output or create new
+                match &mut tc.output {
+                    ToolOutput::Text(s) => {
+                        s.push_str(&chunk);
+                        s.push('\n');
                     }
-                    break;
+                    _ => {
+                        tc.output = ToolOutput::Text(format!("{chunk}\n"));
+                    }
                 }
+                break;
             }
         }
     }
@@ -68,85 +68,85 @@ pub(crate) fn handle_tool_result(
     let mut found = false;
     for msg in &mut app.messages {
         for part in &mut msg.parts {
-            if let MessagePart::Tool(tc) = part {
-                if tc.id == tool_id {
-                    // Stamp wall-clock duration as soon as
-                    // the result lands. The renderer reads
-                    // `tc.elapsed_ms` to draw a muted
-                    // "[2.3s]" badge after the title. Falls
-                    // back to None if `started_at` was lost
-                    // (e.g., resumed session) — the badge
-                    // just doesn't appear in that case.
-                    if let Some(start) = tc.started_at {
-                        tc.elapsed_ms = Some(start.elapsed().as_millis() as u64);
-                    }
-                    // Tool authors can attach a structured
-                    // DiffView (Edit, Write-overwrite) so
-                    // the renderer shows colorized hunks
-                    // instead of a flat success string.
-                    tc.output = if let Some(diff) = result.diff.clone() {
-                        ToolOutput::Diff(diff)
-                    } else if LargeText::should_collapse(&result.output) {
-                        ToolOutput::LargeText(LargeText::new(result.output.clone()))
-                    } else {
-                        ToolOutput::Text(result.output.clone())
-                    };
-                    if matches!(tc.output, ToolOutput::LargeText(_)) {
-                        tc.display.collapse();
-                    }
-                    // Fresh tool output → reset the
-                    // path-yank cursor so the next
-                    // `Ctrl+L` starts from the newest
-                    // file:line ref.
-                    app.path_yank_cursor = 0;
-                    if result.is_error() {
-                        crate::notifications::notify_tool_failed(tc.kind.label(), &result.output);
-                    }
-                    // Use the typestate-style transition
-                    // helpers — they refuse to revive a
-                    // terminal tool (Failed → Completed
-                    // would be a logic bug, e.g. a stale
-                    // ToolResult arriving after a denial).
-                    // On invalid transition we log + leave
-                    // the existing terminal status alone,
-                    // since the second result is the
-                    // duplicate, not the first.
-                    let transition = if result.is_error() {
-                        tc.mark_failed()
-                    } else {
-                        tc.mark_completed()
-                    };
-                    if let Err(err) = transition {
-                        tracing::warn!(
-                            target: "jfc::event_loop",
-                            tool_id = %tc.id.as_str(),
-                            from = ?err.from,
-                            to = ?err.to,
-                            "ToolResult: refusing to revive terminal tool — \
-                             keeping prior status",
-                        );
-                    }
-                    let new_status = tc.status;
-                    // Sparkle on success: stamp the tool
-                    // id so the renderer can flash a `✦`
-                    // for ~600ms next to its gutter, then
-                    // fade. Failures intentionally don't
-                    // sparkle — celebration on red would
-                    // be confusing.
-                    if matches!(new_status, ToolStatus::Completed) {
-                        app.recent_tool_completion =
-                            Some((tc.id.as_str().to_owned(), std::time::Instant::now()));
-                    }
-                    // Reset plan verification when new tasks are
-                    // created so the next factory cycle re-verifies.
-                    if matches!(tc.kind, ToolKind::TaskCreate)
-                        && matches!(new_status, ToolStatus::Completed)
-                    {
-                        app.plan_verified_this_batch = false;
-                    }
-                    found = true;
-                    break;
+            if let MessagePart::Tool(tc) = part
+                && tc.id == tool_id
+            {
+                // Stamp wall-clock duration as soon as
+                // the result lands. The renderer reads
+                // `tc.elapsed_ms` to draw a muted
+                // "[2.3s]" badge after the title. Falls
+                // back to None if `started_at` was lost
+                // (e.g., resumed session) — the badge
+                // just doesn't appear in that case.
+                if let Some(start) = tc.started_at {
+                    tc.elapsed_ms = Some(start.elapsed().as_millis() as u64);
                 }
+                // Tool authors can attach a structured
+                // DiffView (Edit, Write-overwrite) so
+                // the renderer shows colorized hunks
+                // instead of a flat success string.
+                tc.output = if let Some(diff) = result.diff.clone() {
+                    ToolOutput::Diff(diff)
+                } else if LargeText::should_collapse(&result.output) {
+                    ToolOutput::LargeText(LargeText::new(result.output.clone()))
+                } else {
+                    ToolOutput::Text(result.output.clone())
+                };
+                if matches!(tc.output, ToolOutput::LargeText(_)) {
+                    tc.display.collapse();
+                }
+                // Fresh tool output → reset the
+                // path-yank cursor so the next
+                // `Ctrl+L` starts from the newest
+                // file:line ref.
+                app.path_yank_cursor = 0;
+                if result.is_error() {
+                    crate::notifications::notify_tool_failed(tc.kind.label(), &result.output);
+                }
+                // Use the typestate-style transition
+                // helpers — they refuse to revive a
+                // terminal tool (Failed → Completed
+                // would be a logic bug, e.g. a stale
+                // ToolResult arriving after a denial).
+                // On invalid transition we log + leave
+                // the existing terminal status alone,
+                // since the second result is the
+                // duplicate, not the first.
+                let transition = if result.is_error() {
+                    tc.mark_failed()
+                } else {
+                    tc.mark_completed()
+                };
+                if let Err(err) = transition {
+                    tracing::warn!(
+                        target: "jfc::event_loop",
+                        tool_id = %tc.id.as_str(),
+                        from = ?err.from,
+                        to = ?err.to,
+                        "ToolResult: refusing to revive terminal tool — \
+                         keeping prior status",
+                    );
+                }
+                let new_status = tc.status;
+                // Sparkle on success: stamp the tool
+                // id so the renderer can flash a `✦`
+                // for ~600ms next to its gutter, then
+                // fade. Failures intentionally don't
+                // sparkle — celebration on red would
+                // be confusing.
+                if matches!(new_status, ToolStatus::Completed) {
+                    app.recent_tool_completion =
+                        Some((tc.id.as_str().to_owned(), std::time::Instant::now()));
+                }
+                // Reset plan verification when new tasks are
+                // created so the next factory cycle re-verifies.
+                if matches!(tc.kind, ToolKind::TaskCreate)
+                    && matches!(new_status, ToolStatus::Completed)
+                {
+                    app.plan_verified_this_batch = false;
+                }
+                found = true;
+                break;
             }
         }
         if found {
@@ -536,10 +536,10 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
                 .parts
                 .iter()
                 .filter_map(|p| {
-                    if let MessagePart::TaskStatus(ts) = p {
-                        if ts.status.is_terminal() {
-                            return ts.summary.clone().or_else(|| ts.error.clone());
-                        }
+                    if let MessagePart::TaskStatus(ts) = p
+                        && ts.status.is_terminal()
+                    {
+                        return ts.summary.clone().or_else(|| ts.error.clone());
                     }
                     None
                 })

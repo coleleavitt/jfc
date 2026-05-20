@@ -151,10 +151,9 @@ pub async fn read_mailbox(agent_name: &str, team_name: &str) -> Vec<MailboxMessa
     let path = inbox_path(agent_name, team_name);
     let lock_file = lock_path(&path);
 
-    let _lock = match FileLock::acquire(lock_file, Duration::from_millis(1500)).await {
-        Ok(l) => Some(l),
-        Err(_) => None,
-    };
+    let _lock = FileLock::acquire(lock_file, Duration::from_millis(1500))
+        .await
+        .ok();
 
     match fs::read_to_string(&path).await {
         Ok(content) => serde_json::from_str(&content).unwrap_or_default(),

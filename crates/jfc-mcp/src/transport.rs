@@ -528,14 +528,14 @@ async fn handle_inbound(msg: &Value, pending: &PendingRequests) {
     // `notifications/tools/list_changed` — when an MCP server's tool
     // catalog mutates (server-side hot-reload, plugin install), we
     // refresh the catalog and emit a UI signal so the user knows.
-    if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
-        if method == "notifications/tools/list_changed" {
-            crate::registry::request_refresh();
-            tracing::info!(
-                target: "jfc::mcp",
-                "received notifications/tools/list_changed — registry refresh requested"
-            );
-        }
+    if let Some(method) = msg.get("method").and_then(|v| v.as_str())
+        && method == "notifications/tools/list_changed"
+    {
+        crate::registry::request_refresh();
+        tracing::info!(
+            target: "jfc::mcp",
+            "received notifications/tools/list_changed — registry refresh requested"
+        );
     }
 }
 

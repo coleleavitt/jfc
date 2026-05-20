@@ -158,10 +158,10 @@ impl VertexProvider {
         }
         {
             let guard = self.token_cache.lock().await;
-            if let Some(c) = guard.as_ref() {
-                if c.is_fresh() {
-                    return Ok(c.token.clone());
-                }
+            if let Some(c) = guard.as_ref()
+                && c.is_fresh()
+            {
+                return Ok(c.token.clone());
             }
         }
         let fresh = fetch_gcloud_token()?;

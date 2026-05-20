@@ -15,6 +15,11 @@ impl std::fmt::Display for Role {
     }
 }
 
+// `MessagePart::Tool(ToolCall)` is the heaviest variant but also the central
+// payload of the transcript model. Boxing it would add an alloc per tool
+// message and a deref on every render frame (which walks every part) — net
+// pessimization when tools are the *common* part on agentic turns.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum MessagePart {
     Text(String),
@@ -354,13 +359,13 @@ pub(crate) fn validate_turn_invariants_inner(
             continue;
         }
         for part in &m.parts {
-            if let MessagePart::Tool(tc) = part {
-                if matches!(tc.status, ToolStatus::Pending | ToolStatus::Running) {
-                    return Err(TurnInvariantError::OrphanToolUse {
-                        tool_id: tc.id.clone(),
-                        at_index: i,
-                    });
-                }
+            if let MessagePart::Tool(tc) = part
+                && matches!(tc.status, ToolStatus::Pending | ToolStatus::Running)
+            {
+                return Err(TurnInvariantError::OrphanToolUse {
+                    tool_id: tc.id.clone(),
+                    at_index: i,
+                });
             }
         }
     }

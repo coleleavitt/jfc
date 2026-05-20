@@ -14,7 +14,7 @@ use tracing::debug;
 
 use super::TEAM_LEAD_NAME;
 use super::mailbox;
-use super::runner::{PollResult, TeammateEvent, TeammateRunnerConfig, TeammateExit};
+use super::runner::{PollResult, TeammateEvent, TeammateExit, TeammateRunnerConfig};
 use super::types::*;
 
 // ─── Main agent loop ─────────────────────────────────────────────────────────
@@ -300,16 +300,15 @@ pub(super) async fn poll_for_next_message(
 
         // Priority 1: Shutdown requests
         for (idx, msg) in messages.iter().enumerate() {
-            if !msg.read {
-                if let Some(shutdown) = mailbox::parse_shutdown_request(&msg.text) {
-                    let _ =
-                        mailbox::mark_message_read(&identity.agent_name, &identity.team_name, idx)
-                            .await;
-                    return PollResult::ShutdownRequest {
-                        request: Some(shutdown),
-                        original_message: msg.text.clone(),
-                    };
-                }
+            if !msg.read
+                && let Some(shutdown) = mailbox::parse_shutdown_request(&msg.text)
+            {
+                let _ = mailbox::mark_message_read(&identity.agent_name, &identity.team_name, idx)
+                    .await;
+                return PollResult::ShutdownRequest {
+                    request: Some(shutdown),
+                    original_message: msg.text.clone(),
+                };
             }
         }
 

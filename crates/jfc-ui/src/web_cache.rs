@@ -47,14 +47,14 @@ pub fn put(url: &str, body: String) {
         return;
     };
     let map = guard.get_or_insert_with(HashMap::new);
-    if map.len() >= MAX_ENTRIES && !map.contains_key(url) {
-        if let Some(oldest_key) = map
+    if map.len() >= MAX_ENTRIES
+        && !map.contains_key(url)
+        && let Some(oldest_key) = map
             .iter()
             .min_by_key(|(_, e)| e.fetched_at)
             .map(|(k, _)| k.clone())
-        {
-            map.remove(&oldest_key);
-        }
+    {
+        map.remove(&oldest_key);
     }
     map.insert(
         url.to_owned(),

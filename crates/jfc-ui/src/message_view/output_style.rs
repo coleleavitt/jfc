@@ -145,35 +145,35 @@ pub(super) fn colorize_git_log_line(
         ),
         Span::styled(" ".to_owned(), Style::default().fg(fallback)),
     ];
-    if let Some(rest2) = rest.strip_prefix('(') {
-        if let Some(end) = rest2.find(')') {
-            let refs = &rest2[..end];
-            spans.push(Span::styled("(".to_owned(), Style::default().fg(t.warning)));
-            for (i, part) in refs.split(", ").enumerate() {
-                if i > 0 {
-                    spans.push(Span::styled(
-                        ", ".to_owned(),
-                        Style::default().fg(t.warning),
-                    ));
-                }
-                let style = if part.starts_with("HEAD") {
-                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
-                } else if part.starts_with("origin/") || part.starts_with("upstream/") {
-                    Style::default().fg(t.error)
-                } else if part.starts_with("tag:") {
-                    Style::default().fg(t.warning)
-                } else {
-                    Style::default().fg(t.success)
-                };
-                spans.push(Span::styled(part.to_owned(), style));
+    if let Some(rest2) = rest.strip_prefix('(')
+        && let Some(end) = rest2.find(')')
+    {
+        let refs = &rest2[..end];
+        spans.push(Span::styled("(".to_owned(), Style::default().fg(t.warning)));
+        for (i, part) in refs.split(", ").enumerate() {
+            if i > 0 {
+                spans.push(Span::styled(
+                    ", ".to_owned(),
+                    Style::default().fg(t.warning),
+                ));
             }
-            spans.push(Span::styled(")".to_owned(), Style::default().fg(t.warning)));
-            spans.push(Span::styled(
-                rest2[end + 1..].to_owned(),
-                Style::default().fg(fallback),
-            ));
-            return Some(spans);
+            let style = if part.starts_with("HEAD") {
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
+            } else if part.starts_with("origin/") || part.starts_with("upstream/") {
+                Style::default().fg(t.error)
+            } else if part.starts_with("tag:") {
+                Style::default().fg(t.warning)
+            } else {
+                Style::default().fg(t.success)
+            };
+            spans.push(Span::styled(part.to_owned(), style));
         }
+        spans.push(Span::styled(")".to_owned(), Style::default().fg(t.warning)));
+        spans.push(Span::styled(
+            rest2[end + 1..].to_owned(),
+            Style::default().fg(fallback),
+        ));
+        return Some(spans);
     }
     spans.push(Span::styled(rest.to_owned(), Style::default().fg(fallback)));
     Some(spans)

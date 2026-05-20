@@ -164,7 +164,6 @@ pub enum PermissionDecision {
     NeedsClassifier,
 }
 
-
 #[derive(Clone, Copy, PartialEq)]
 pub enum ApprovalChoice {
     Yes,

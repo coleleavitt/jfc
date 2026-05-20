@@ -1,20 +1,22 @@
-use super::*;
-use super::sidebar::info_sidebar;
+use super::approval::approval;
+use super::input_box::{input, input_visual_line_count};
 use super::messages::messages;
 use super::messages::{agent_fan_below_input, subagent_footer};
-use super::input_box::{input, input_visual_line_count};
-use super::overlays::{toast_overlay, diagnostic_row, slash_popup, search_bar, help_overlay, diagnostic_panel, mention_popup};
 use super::messages::{spinner_row, tasks_pinned_row};
-use super::approval::approval;
 use super::model_picker::model_picker;
+use super::overlays::{
+    diagnostic_panel, diagnostic_row, help_overlay, mention_popup, search_bar, slash_popup,
+    toast_overlay,
+};
 use super::palette::palette;
 use super::session_picker::session_picker;
 use super::session_sidebar::sidebar;
+use super::sidebar::info_sidebar;
 use super::status::status;
 use super::task_panel::task_panel;
 use super::teammates_panel::teammates_panel;
 use super::theme_picker::theme_picker;
-
+use super::*;
 
 pub fn frame(f: &mut Frame, app: &mut App) {
     let t = app.theme;
@@ -134,7 +136,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         if rows <= 10 {
             0
         } else {
-            rows.saturating_sub(14).max(3).min(5)
+            rows.saturating_sub(14).clamp(3, 5)
         }
     };
     // Collapse out entirely when there's nothing live OR recently-done to
@@ -320,4 +322,3 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         approval(f, app);
     }
 }
-

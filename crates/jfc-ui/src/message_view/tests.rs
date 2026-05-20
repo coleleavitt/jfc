@@ -6,7 +6,6 @@ use super::detection::{looks_like_difftastic_output, looks_like_git_diff_output}
 use super::formatters::{produce_command_output_lines, produce_git_diff_output_lines};
 use super::output_style::path_color;
 use super::outputs::produce_diff_view_lines;
-use super::truncation::{GrepLine, grep_target_file, parse_grep_line, parse_grep_no_path, parse_grep_with_sep};
 use super::syntax::{
     infer_lang_from_bash, infer_lang_from_tool, lang_from_path, looks_like_markdown, redact_quoted,
 };
@@ -16,6 +15,9 @@ use super::tool_blocks::{
     render_tool_block, tool_body_lines_themed, tool_title_width_cap,
 };
 use super::tool_height::{tool_block_height, tool_block_height_pub, tool_content_height_with_tool};
+use super::truncation::{
+    GrepLine, grep_target_file, parse_grep_line, parse_grep_no_path, parse_grep_with_sep,
+};
 use super::*;
 
 #[cfg(test)]

@@ -42,9 +42,7 @@ pub(super) fn classify_readonly_bash(cmd: &str) -> Result<(), &'static str> {
         return Err(REASON_EMPTY_SEGMENT);
     }
     for segment in &segments {
-        if let Err(reason) = classify_readonly_segment(segment) {
-            return Err(reason);
-        }
+        classify_readonly_segment(segment)?;
     }
     Ok(())
 }
@@ -1102,7 +1100,7 @@ fn is_env_assignment(token: &str) -> bool {
         "LESS",
         "MANROFFSEQ",
     ];
-    !DENY_ENV.iter().any(|d| name == *d)
+    !DENY_ENV.contains(&name)
 }
 
 /// Does a `sed` script argument use the `/e` modifier (which executes

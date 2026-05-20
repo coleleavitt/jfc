@@ -19,8 +19,7 @@ use futures::StreamExt;
 
 type HmacSha256 = Hmac<Sha256>;
 
-pub const AUTO_RETRY_SENTINEL: &str =
-    jfc_provider::retry::ANTHROPIC_OAUTH_AUTO_RETRY_SENTINEL;
+pub const AUTO_RETRY_SENTINEL: &str = jfc_provider::retry::ANTHROPIC_OAUTH_AUTO_RETRY_SENTINEL;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,15 +74,15 @@ fn version_cache_mutex() -> &'static Mutex<Option<VersionCache>> {
 async fn fetch_cli_version(client: &reqwest::Client) -> String {
     {
         let guard = version_cache_mutex().lock().await;
-        if let Some(ref cache) = *guard {
-            if cache.fetched_at.elapsed().unwrap_or(Duration::MAX) < VERSION_CACHE_TTL {
-                tracing::debug!(
-                    target: "jfc::provider::anthropic_oauth",
-                    version = %cache.version,
-                    "using cached CLI version"
-                );
-                return cache.version.clone();
-            }
+        if let Some(ref cache) = *guard
+            && cache.fetched_at.elapsed().unwrap_or(Duration::MAX) < VERSION_CACHE_TTL
+        {
+            tracing::debug!(
+                target: "jfc::provider::anthropic_oauth",
+                version = %cache.version,
+                "using cached CLI version"
+            );
+            return cache.version.clone();
         }
     }
 
@@ -246,10 +245,10 @@ async fn refresh_access_token(
 
     let json: TokenResponse = resp.json().await?;
 
-    if let Some(scope) = &json.scope {
-        if !scope.contains("user:inference") {
-            anyhow::bail!("user:inference not in granted scopes: {scope}");
-        }
+    if let Some(scope) = &json.scope
+        && !scope.contains("user:inference")
+    {
+        anyhow::bail!("user:inference not in granted scopes: {scope}");
     }
 
     let new_refresh = json
@@ -458,6 +457,12 @@ const MAX_TOTAL_WAIT: Duration = Duration::from_secs(10 * 60);
 /// pinned a different fallback via `slate`, that takes precedence.
 const DEFAULT_OVERLOAD_FALLBACK_MODEL: &str = "claude-sonnet-4-5";
 
+impl Default for AnthropicOAuthProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AnthropicOAuthProvider {
     pub fn new() -> Self {
         let store_path = default_store_path();
@@ -596,18 +601,20 @@ impl AnthropicOAuthProvider {
     ) -> anyhow::Result<String> {
         {
             let guard = self.token.read().await;
-            if let Some(t) = guard.as_ref() {
-                if t.account_name == account_name && now_ms() < t.expires_at {
-                    return Ok(t.access_token.clone());
-                }
+            if let Some(t) = guard.as_ref()
+                && t.account_name == account_name
+                && now_ms() < t.expires_at
+            {
+                return Ok(t.access_token.clone());
             }
         }
 
         let mut guard = self.token.write().await;
-        if let Some(t) = guard.as_ref() {
-            if t.account_name == account_name && now_ms() < t.expires_at {
-                return Ok(t.access_token.clone());
-            }
+        if let Some(t) = guard.as_ref()
+            && t.account_name == account_name
+            && now_ms() < t.expires_at
+        {
+            return Ok(t.access_token.clone());
         }
 
         let (access_token, new_refresh, expires_at) =
@@ -684,17 +691,17 @@ impl AnthropicOAuthProvider {
     async fn get_access_token_legacy(&self) -> anyhow::Result<String> {
         {
             let guard = self.token.read().await;
-            if let Some(t) = guard.as_ref() {
-                if now_ms() < t.expires_at {
-                    return Ok(t.access_token.clone());
-                }
+            if let Some(t) = guard.as_ref()
+                && now_ms() < t.expires_at
+            {
+                return Ok(t.access_token.clone());
             }
         }
         let mut guard = self.token.write().await;
-        if let Some(t) = guard.as_ref() {
-            if now_ms() < t.expires_at {
-                return Ok(t.access_token.clone());
-            }
+        if let Some(t) = guard.as_ref()
+            && now_ms() < t.expires_at
+        {
+            return Ok(t.access_token.clone());
         }
         let store = load_store(&self.store_path).map_err(|e| {
             anyhow::anyhow!(
@@ -1127,13 +1134,13 @@ fn build_body(
     // context_hint: when compaction has saved significant tokens, hint to
     // the API that we want context management assistance. Mirrors v144's
     // context-hint-2026-04-09 beta behavior.
-    if let Some(saved) = opts.context_hint_tokens_saved {
-        if saved >= 20_000 {
-            body["context_hint"] = json!({
-                "enabled": true,
-                "target_tokens_saved": saved
-            });
-        }
+    if let Some(saved) = opts.context_hint_tokens_saved
+        && saved >= 20_000
+    {
+        body["context_hint"] = json!({
+            "enabled": true,
+            "target_tokens_saved": saved
+        });
     }
     for (key, value) in &opts.provider_options {
         body[key] = value.clone();
@@ -1550,15 +1557,14 @@ impl Provider for AnthropicOAuthProvider {
         body_value["stream"] = serde_json::json!(false);
         // Force the classifier tool when one was provided — mirrors v126's
         // tool_choice on classify_result.
-        if let Some(tools) = body_value.get("tools").and_then(|v| v.as_array()) {
-            if let Some(first) = tools.first() {
-                if let Some(name) = first.get("name").and_then(|v| v.as_str()) {
-                    body_value["tool_choice"] = serde_json::json!({
-                        "type": "tool",
-                        "name": name,
-                    });
-                }
-            }
+        if let Some(tools) = body_value.get("tools").and_then(|v| v.as_array())
+            && let Some(first) = tools.first()
+            && let Some(name) = first.get("name").and_then(|v| v.as_str())
+        {
+            body_value["tool_choice"] = serde_json::json!({
+                "type": "tool",
+                "name": name,
+            });
         }
         let body_str = serde_json::to_string(&body_value)?;
         let attested_body = {

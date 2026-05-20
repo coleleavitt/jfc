@@ -57,14 +57,14 @@ impl RetryConfig {
 /// Whether a response status code should be retried.
 pub fn should_retry_status(status: u16, headers: Option<&reqwest::header::HeaderMap>) -> bool {
     // Check x-should-retry header override
-    if let Some(hdrs) = headers {
-        if let Some(val) = hdrs.get("x-should-retry") {
-            if val == "true" {
-                return true;
-            }
-            if val == "false" {
-                return false;
-            }
+    if let Some(hdrs) = headers
+        && let Some(val) = hdrs.get("x-should-retry")
+    {
+        if val == "true" {
+            return true;
+        }
+        if val == "false" {
+            return false;
         }
     }
 

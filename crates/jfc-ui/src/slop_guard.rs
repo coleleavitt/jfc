@@ -82,10 +82,10 @@ pub fn check_duplication(new_content: &str, file_path: &Path, cwd: &Path) -> Vec
             continue;
         }
         // Skip self.
-        if let Some(ref cn) = canonical_new {
-            if path.canonicalize().ok().as_ref() == Some(cn) {
-                continue;
-            }
+        if let Some(ref cn) = canonical_new
+            && path.canonicalize().ok().as_ref() == Some(cn)
+        {
+            continue;
         }
         let Ok(content) = std::fs::read_to_string(path) else {
             continue;
@@ -458,11 +458,12 @@ pub fn check_test_quality(file_content: &str) -> Vec<SlopFinding> {
             depth = 0;
             continue;
         }
-        if in_test_fn && depth == 0 {
-            if let Some(m) = fn_re.captures(line) {
-                fn_name = m.get(1).map(|m| m.as_str().to_owned()).unwrap_or_default();
-                fn_start = i + 1;
-            }
+        if in_test_fn
+            && depth == 0
+            && let Some(m) = fn_re.captures(line)
+        {
+            fn_name = m.get(1).map(|m| m.as_str().to_owned()).unwrap_or_default();
+            fn_start = i + 1;
         }
         if in_test_fn {
             for ch in line.chars() {

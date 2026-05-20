@@ -16,7 +16,6 @@ pub mod tool_kind;
 pub mod tool_output;
 
 pub use diff::*;
-pub(crate) use message::validate_turn_invariants_inner;
 pub use message::*;
 pub use status::*;
 #[allow(unused_imports)]

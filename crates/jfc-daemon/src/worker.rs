@@ -364,4 +364,3 @@ pub(super) fn record_background_agent_launch_path(
         save_state(paths, &state)
     })
 }
-

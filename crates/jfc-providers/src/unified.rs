@@ -188,10 +188,10 @@ pub fn parse_retry_after(headers: &HeaderMap, now_ms: u64) -> Option<Duration> {
         if let Ok(ms) = raw.trim().parse::<u64>() {
             return Some(clamp_retry(Duration::from_millis(ms)));
         }
-        if let Some(ms_f) = parse_f64(Some(raw)) {
-            if ms_f > 0.0 {
-                return Some(clamp_retry(Duration::from_millis(ms_f as u64)));
-            }
+        if let Some(ms_f) = parse_f64(Some(raw))
+            && ms_f > 0.0
+        {
+            return Some(clamp_retry(Duration::from_millis(ms_f as u64)));
         }
     }
     let raw = header_str(headers, "retry-after")?.trim();

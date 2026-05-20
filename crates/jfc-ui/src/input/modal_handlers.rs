@@ -72,11 +72,8 @@ fn handle_teammates_panel_key(app: &mut App, key: event::KeyEvent) -> bool {
     if app.expanded_view != ExpandedView::Teammates {
         return false;
     }
-    match key.code {
-        KeyCode::Esc => {
-            app.expanded_view = ExpandedView::None;
-        }
-        _ => {}
+    if key.code == KeyCode::Esc {
+        app.expanded_view = ExpandedView::None;
     }
     true
 }
@@ -112,16 +109,16 @@ async fn handle_sidebar_key(app: &mut App, key: event::KeyEvent) -> bool {
             }
         }
         KeyCode::Enter => {
-            if let Some(id) = ordered.get(app.session_selected).cloned() {
-                if let Some(messages) = crate::session::load_session(&id).await {
-                    app.messages = messages;
-                    app.switch_session(Some(id));
-                    app.streaming_text.clear();
-                    app.streaming_reasoning.clear();
-                    app.streaming_response_bytes = 0;
-                    app.streaming_assistant_idx = None;
-                    app.scroll_to_bottom();
-                }
+            if let Some(id) = ordered.get(app.session_selected).cloned()
+                && let Some(messages) = crate::session::load_session(&id).await
+            {
+                app.messages = messages;
+                app.switch_session(Some(id));
+                app.streaming_text.clear();
+                app.streaming_reasoning.clear();
+                app.streaming_response_bytes = 0;
+                app.streaming_assistant_idx = None;
+                app.scroll_to_bottom();
             }
         }
         _ => {}

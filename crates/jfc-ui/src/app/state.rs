@@ -140,7 +140,7 @@ impl MessageQueue {
         }
         self.entries = remaining;
         // Stable sort: highest priority first, FIFO within same level
-        drained.sort_by(|a, b| b.priority.cmp(&a.priority));
+        drained.sort_by_key(|b| std::cmp::Reverse(b.priority));
         drained
     }
 

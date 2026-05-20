@@ -1,7 +1,6 @@
 /// Main tool dispatcher for jfc.
 /// Contains the `execute_tool` async fn and all its match arms.
 /// State helpers live in `registry`; synchronous helpers in `safe_tools`.
-
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -12,11 +11,11 @@ use crate::types::{ToolInput, ToolKind};
 use jfc_session::TaskStore;
 
 use super::bash::execute_bash;
-use super::dispatch_heavy;
 use super::daemon::{
     execute_cron_create, execute_cron_delete, execute_cron_list, execute_monitor,
     execute_schedule_wakeup,
 };
+use super::dispatch_heavy;
 use super::economy::strip_html_tags;
 use super::filesystem::{execute_edit, execute_read, execute_write};
 use super::lsp::execute_lsp;
@@ -38,11 +37,11 @@ use super::registry::{
     collusion_detector, invalidate_graph_session_cache, market_orchestrator, record_edited_file,
     snapshot_event_sender, snapshot_mcp_registry,
 };
+#[cfg(feature = "permission-automation")]
+use super::safe_tools::tool_permission_path;
 use super::safe_tools::{
     execute_code_index, execute_tool_search, execute_tool_suggest, maybe_run_slop_guard,
 };
-#[cfg(feature = "permission-automation")]
-use super::safe_tools::tool_permission_path;
 
 #[tracing::instrument(target = "jfc::tools", skip(input, cwd, dedup, task_store), fields(kind = ?kind))]
 pub async fn execute_tool(
@@ -322,18 +321,14 @@ pub async fn execute_tool(
                 max_tokens,
                 include_handles,
             },
-        ) => {
-            dispatch_heavy::execute_graph_query(query, max_tokens, include_handles, &cwd)
-        }
+        ) => dispatch_heavy::execute_graph_query(query, max_tokens, include_handles, &cwd),
         (
             ToolKind::RunCoverage,
             ToolInput::RunCoverage {
                 lcov_path,
                 include_untested_list,
             },
-        ) => {
-            dispatch_heavy::execute_run_coverage(lcov_path, include_untested_list, &cwd)
-        }
+        ) => dispatch_heavy::execute_run_coverage(lcov_path, include_untested_list, &cwd),
         (
             ToolKind::SymbolEdit,
             ToolInput::SymbolEdit {
@@ -343,7 +338,15 @@ pub async fn execute_tool(
                 dispatch_cascade,
             },
         ) => {
-            dispatch_heavy::execute_symbol_edit(handle, new_content, validate, dispatch_cascade, &cwd, task_store).await
+            dispatch_heavy::execute_symbol_edit(
+                handle,
+                new_content,
+                validate,
+                dispatch_cascade,
+                &cwd,
+                task_store,
+            )
+            .await
         }
         (
             ToolKind::PostBounty,
@@ -355,7 +358,15 @@ pub async fn execute_tool(
                 auto_dispatch,
             },
         ) => {
-            dispatch_heavy::execute_post_bounty(description, budget, acceptance_criteria, max_solvers, auto_dispatch, &cwd).await
+            dispatch_heavy::execute_post_bounty(
+                description,
+                budget,
+                acceptance_criteria,
+                max_solvers,
+                auto_dispatch,
+                &cwd,
+            )
+            .await
         }
         (
             ToolKind::RunBounty,
@@ -363,9 +374,7 @@ pub async fn execute_tool(
                 bounty_id,
                 max_solvers,
             },
-        ) => {
-            dispatch_heavy::execute_run_bounty(bounty_id, max_solvers, &cwd).await
-        }
+        ) => dispatch_heavy::execute_run_bounty(bounty_id, max_solvers, &cwd).await,
         (ToolKind::MarketStatus, ToolInput::MarketStatus { bounty_id }) => {
             let orch = market_orchestrator().lock().await;
             let detector = match collusion_detector().lock() {

@@ -207,10 +207,10 @@ static RUNTIME_OVERRIDE: Mutex<Option<bool>> = Mutex::new(None);
 /// config. Used by both the stream-prep path and the `/memory recall status`
 /// slash command.
 pub fn is_enabled(persisted: bool) -> bool {
-    if let Ok(g) = RUNTIME_OVERRIDE.lock() {
-        if let Some(b) = *g {
-            return b;
-        }
+    if let Ok(g) = RUNTIME_OVERRIDE.lock()
+        && let Some(b) = *g
+    {
+        return b;
     }
     persisted
 }

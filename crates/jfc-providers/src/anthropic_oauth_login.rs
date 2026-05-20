@@ -726,10 +726,10 @@ fn duplicate_account_names(
 }
 
 fn account_matches_profile_identity(account: &Account, profile: &ProfileSnapshot) -> bool {
-    if let Some(email) = profile.email.as_deref() {
-        if account.name == email || account.email.as_deref() == Some(email) {
-            return true;
-        }
+    if let Some(email) = profile.email.as_deref()
+        && (account.name == email || account.email.as_deref() == Some(email))
+    {
+        return true;
     }
     let Some(org_uuid) = profile.organization_uuid.as_deref() else {
         return false;

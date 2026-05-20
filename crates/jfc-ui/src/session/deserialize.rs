@@ -7,7 +7,6 @@ use crate::types::{
     ToolOutput, ToolStatus,
 };
 
-
 pub(crate) fn deserialize_message(msg: SerializedMessage) -> ChatMessage {
     let role = if msg.role == "user" {
         Role::User
@@ -748,4 +747,3 @@ pub(crate) fn deserialize_diff_line(line: SerializedDiffLine) -> DiffLine {
         content: line.content,
     }
 }
-

@@ -98,16 +98,16 @@ fn advance_approval_queue(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
 /// rather than appending a duplicate. The agentic loop's
 /// `should_continue_loop` then sees a Failed entry and continues normally.
 fn deny_tool(app: &mut App, tool: ToolCall) {
-    if let Some(idx) = app.streaming_assistant_idx {
-        if let Some(msg) = app.messages.get_mut(idx) {
-            for part in &mut msg.parts {
-                if let MessagePart::Tool(tc) = part {
-                    if tc.id == tool.id {
-                        tc.status = ToolStatus::Failed;
-                        tc.output = ToolOutput::Text("Denied by user".into());
-                        return;
-                    }
-                }
+    if let Some(idx) = app.streaming_assistant_idx
+        && let Some(msg) = app.messages.get_mut(idx)
+    {
+        for part in &mut msg.parts {
+            if let MessagePart::Tool(tc) = part
+                && tc.id == tool.id
+            {
+                tc.status = ToolStatus::Failed;
+                tc.output = ToolOutput::Text("Denied by user".into());
+                return;
             }
         }
     }

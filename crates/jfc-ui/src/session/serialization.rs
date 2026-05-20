@@ -6,13 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::{
-    ChatMessage, DiffHunk, DiffLine, DiffLineKind, DiffView, LargeText, MessagePart,
-    ReplacementMode, Role, TaskInput, TaskLifecycle, TaskStatusPart, ToolCall, ToolInput, ToolKind,
-    ToolOutput, ToolStatus,
-};
-
-
 fn default_true() -> bool {
     true
 }
@@ -73,6 +66,10 @@ pub struct SerializedMessage {
     pub parts: Vec<SerializedPart>,
 }
 
+// Mirrors `MessagePart`'s shape for on-disk session round-tripping. Same
+// rationale as MessagePart — the Tool variant is the dominant payload, and
+// this enum exists for one purpose (serde) where size doesn't drive perf.
+#[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SerializedPart {
@@ -619,4 +616,3 @@ pub struct SerializedDiffLine {
     pub new_line: Option<usize>,
     pub content: String,
 }
-

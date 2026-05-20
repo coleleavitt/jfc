@@ -1208,5 +1208,5 @@ mod tests {
     }
 }
 
-pub mod cost;
 pub mod content;
+pub mod cost;

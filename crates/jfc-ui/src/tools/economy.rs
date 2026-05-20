@@ -247,29 +247,29 @@ impl EconomyAgentInvoker {
     }
 
     fn emit_completed(&self, task_id: &str, summary: &str, elapsed_ms: u64) {
-        if let Some(tx) = &self.event_tx {
-            if let Err(e) = tx.try_send(crate::runtime::AppEvent::Task(
+        if let Some(tx) = &self.event_tx
+            && let Err(e) = tx.try_send(crate::runtime::AppEvent::Task(
                 crate::runtime::TaskEvent::Completed {
                     task_id: crate::ids::TaskId::from(task_id),
                     summary: summary.to_owned(),
                     elapsed_ms,
                 },
-            )) {
-                tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskCompleted dropped: channel full");
-            }
+            ))
+        {
+            tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskCompleted dropped: channel full");
         }
     }
 
     fn emit_failed(&self, task_id: &str, error: &str) {
-        if let Some(tx) = &self.event_tx {
-            if let Err(e) = tx.try_send(crate::runtime::AppEvent::Task(
+        if let Some(tx) = &self.event_tx
+            && let Err(e) = tx.try_send(crate::runtime::AppEvent::Task(
                 crate::runtime::TaskEvent::Failed {
                     task_id: crate::ids::TaskId::from(task_id),
                     error: error.to_owned(),
                 },
-            )) {
-                tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskFailed dropped: channel full");
-            }
+            ))
+        {
+            tracing::warn!(target: "jfc::tools", task_id, error = %e, "TaskFailed dropped: channel full");
         }
     }
 }

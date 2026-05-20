@@ -119,7 +119,7 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     if bar_width > 4 {
         const BARS: &[char] = &['·', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
         let samples_len = app.network_samples.len();
-        let mut chars: Vec<char> = std::iter::repeat(' ').take(bar_width).collect();
+        let mut chars: Vec<char> = std::iter::repeat_n(' ', bar_width).collect();
         let to_take = samples_len.min(bar_width);
         for (i, level) in app.network_samples.iter().rev().take(to_take).enumerate() {
             let col = bar_width.saturating_sub(1 + i);
@@ -461,4 +461,3 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         body_area,
     );
 }
-

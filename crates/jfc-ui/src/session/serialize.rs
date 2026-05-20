@@ -2,8 +2,7 @@
 
 use super::serialization::*;
 use crate::types::{
-    ChatMessage, DiffHunk, DiffLine, DiffLineKind, DiffView, LargeText, MessagePart,
-    ReplacementMode, Role, TaskInput, TaskLifecycle, TaskStatusPart, ToolCall, ToolInput, ToolKind,
+    ChatMessage, DiffHunk, DiffLine, DiffLineKind, MessagePart, Role, TaskLifecycle, ToolInput,
     ToolOutput, ToolStatus,
 };
 

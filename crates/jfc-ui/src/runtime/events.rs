@@ -24,16 +24,11 @@ pub enum AppEvent {
     Goal(GoalEvent),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum StreamToolChoice {
+    #[default]
     Auto,
     Any,
-}
-
-impl Default for StreamToolChoice {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -92,6 +87,12 @@ pub enum UiEvent {
     LoadSession(crate::ids::SessionId),
 }
 
+// `StreamEvent::Tool(ToolCall)` is the dominant streaming payload (every
+// tool_use block on every turn flows through this variant). Boxing it would
+// trade a one-time heap alloc per tool for shrinking the *common* path's
+// variant size — net-negative when Tool is the most-constructed variant.
+// Same rationale on `ToolEvent` below.
+#[allow(clippy::large_enum_variant)]
 pub enum StreamEvent {
     Chunk {
         text: Option<String>,
@@ -137,6 +138,7 @@ pub enum StreamEvent {
     RequestMetadata(StreamRequestMetadata),
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum ToolEvent {
     Result {
         tool_id: crate::ids::ToolId,

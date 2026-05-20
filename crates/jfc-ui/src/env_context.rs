@@ -27,10 +27,10 @@ impl EnvContext {
     pub fn to_prompt_string(&self) -> Option<String> {
         let mut lines: Vec<String> = Vec::new();
         let mut push = |label: &str, val: &Option<String>| {
-            if let Some(v) = val.as_deref() {
-                if !v.is_empty() {
-                    lines.push(format!("- {label}: {v}"));
-                }
+            if let Some(v) = val.as_deref()
+                && !v.is_empty()
+            {
+                lines.push(format!("- {label}: {v}"));
             }
         };
         push("rustc", &self.rustc);

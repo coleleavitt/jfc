@@ -614,11 +614,11 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
         .collect();
     let mut user_breakpoints_set = 0usize;
     for &idx in user_indices.iter().rev().take(2) {
-        if let Some(content) = out[idx].get_mut("content").and_then(|c| c.as_array_mut()) {
-            if let Some(last_block) = content.last_mut() {
-                last_block["cache_control"] = json!({ "type": "ephemeral" });
-                user_breakpoints_set += 1;
-            }
+        if let Some(content) = out[idx].get_mut("content").and_then(|c| c.as_array_mut())
+            && let Some(last_block) = content.last_mut()
+        {
+            last_block["cache_control"] = json!({ "type": "ephemeral" });
+            user_breakpoints_set += 1;
         }
     }
 
@@ -632,19 +632,17 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
         .rev()
         .find(|(_, m)| m.get("role").and_then(|r| r.as_str()) == Some("assistant"))
         .map(|(i, _)| i)
-    {
-        if let Some(content) = out[asst_idx]
+        && let Some(content) = out[asst_idx]
             .get_mut("content")
             .and_then(|c| c.as_array_mut())
-        {
-            // Find last block that isn't thinking/redacted_thinking
-            if let Some(block) = content.iter_mut().rev().find(|b| {
-                let ty = b.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                ty != "thinking" && ty != "redacted_thinking"
-            }) {
-                block["cache_control"] = json!({ "type": "ephemeral" });
-                assistant_breakpoint_set = true;
-            }
+    {
+        // Find last block that isn't thinking/redacted_thinking
+        if let Some(block) = content.iter_mut().rev().find(|b| {
+            let ty = b.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            ty != "thinking" && ty != "redacted_thinking"
+        }) {
+            block["cache_control"] = json!({ "type": "ephemeral" });
+            assistant_breakpoint_set = true;
         }
     }
 

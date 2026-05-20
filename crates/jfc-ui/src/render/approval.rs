@@ -25,8 +25,8 @@ pub(super) fn approval(f: &mut Frame, app: &App) {
 
     let (width, height) = if has_preview {
         (
-            (area.width * 8 / 10).min(110).max(70),
-            (area.height * 7 / 10).min(28).max(14),
+            (area.width * 8 / 10).clamp(70, 110),
+            (area.height * 7 / 10).clamp(14, 28),
         )
     } else {
         (
