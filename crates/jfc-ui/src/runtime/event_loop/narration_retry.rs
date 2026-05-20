@@ -159,15 +159,21 @@ mod tests {
 
     use super::*;
     use crate::runtime::{StreamRequestMetadata, StreamToolChoice};
-    use crate::types::{ChatMessage, MessagePart, ToolCall, ToolInput, ToolKind, ToolOutput, ToolStatus};
+    use crate::types::{
+        ChatMessage, MessagePart, ToolCall, ToolInput, ToolKind, ToolOutput, ToolStatus,
+    };
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
     use std::sync::Arc;
 
     struct TestProvider;
     #[async_trait::async_trait]
     impl Provider for TestProvider {
-        fn name(&self) -> &str { "test" }
-        fn available_models(&self) -> Vec<ModelInfo> { Vec::new() }
+        fn name(&self) -> &str {
+            "test"
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
         async fn stream(
             &self,
             _messages: Vec<ProviderMessage>,
@@ -181,7 +187,8 @@ mod tests {
     fn base_app(assistant_text: &str) -> App {
         let mut app = App::new(Arc::new(TestProvider), "test-model");
         app.messages.push(ChatMessage::user("fix the bug".into()));
-        app.messages.push(ChatMessage::assistant(assistant_text.into()));
+        app.messages
+            .push(ChatMessage::assistant(assistant_text.into()));
         app.current_stream_request = Some(StreamRequestMetadata {
             advertised_tool_count: 4,
             action_expected: true,
@@ -241,7 +248,9 @@ mod tests {
             id: crate::ids::ToolId::from("toolu_x"),
             kind: ToolKind::Bash,
             status: ToolStatus::Completed,
-            input: ToolInput::Generic { summary: "x".into() },
+            input: ToolInput::Generic {
+                summary: "x".into(),
+            },
             output: ToolOutput::Empty,
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,

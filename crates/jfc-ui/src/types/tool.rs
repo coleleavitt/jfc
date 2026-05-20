@@ -1,9 +1,10 @@
 use super::{
-    ChatMessage, DiffView, ExecutionStatus, MessagePart, ReplacementMode, ToolInput, ToolKind, ToolStatus, parse_unified_diff,
+    ChatMessage, DiffView, ExecutionStatus, MessagePart, ReplacementMode, ToolInput, ToolKind,
+    ToolStatus, parse_unified_diff,
 };
 #[cfg(test)]
 use super::{
-    McpStatus, ModelUsage, Role, TaskLifecycle, TaskInput, TaskStatusPart, ToolInputError,
+    McpStatus, ModelUsage, Role, TaskInput, TaskLifecycle, TaskStatusPart, ToolInputError,
     TurnInvariantError, parse_hunk_header, parse_hunk_start, truncate_lines,
     validate_turn_invariants, validate_turn_invariants_inner,
 };

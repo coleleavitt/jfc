@@ -1,4 +1,3 @@
-
 mod bash;
 mod daemon;
 mod defs;
@@ -18,9 +17,7 @@ mod tests;
 mod worktree;
 
 // Re-exports from submodules
-pub use crate::runtime::{
-    ExecutionResult, ToolProvenance, ToolSource,
-};
+pub use crate::runtime::{ExecutionResult, ToolProvenance, ToolSource};
 pub(crate) use defs::all_tool_defs;
 pub(crate) use economy::{
     EconomyAgentInvoker, EconomySwarmProvider, apply_winning_solution, market_report_string,
@@ -47,8 +44,7 @@ use swarm::{
     execute_send_message, execute_team_create, execute_team_delete, execute_team_member_mode,
 };
 use tasks::{
-    execute_task_create, execute_task_done, execute_task_get, execute_task_list,
-    execute_task_stop,
+    execute_task_create, execute_task_done, execute_task_get, execute_task_list, execute_task_stop,
     execute_task_update, execute_task_validate,
 };
 use worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
@@ -1267,9 +1263,7 @@ pub async fn execute_tool(
         (ToolKind::TaskDone, ToolInput::TaskDone { task_id }) => {
             execute_task_done(task_store, &task_id)
         }
-        (ToolKind::TaskStop, ToolInput::TaskStop { task_id }) => {
-            execute_task_stop("", &task_id)
-        }
+        (ToolKind::TaskStop, ToolInput::TaskStop { task_id }) => execute_task_stop("", &task_id),
         (ToolKind::TaskGet, ToolInput::TaskGet { task_id }) => {
             execute_task_get(task_store, &task_id)
         }

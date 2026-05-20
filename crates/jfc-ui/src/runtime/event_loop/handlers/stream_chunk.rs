@@ -161,6 +161,7 @@ pub(crate) fn handle_response_id(app: &mut App, id: String) {
     // server is still alive — bump the EKG counter a
     // small fixed amount so the heartbeat reflects
     // server keepalives even when the model is silent.
+    app.record_stream_activity();
     app.network_bytes_in = app.network_bytes_in.saturating_add(id.len() as u64);
     app.last_response_id = Some(id);
 }

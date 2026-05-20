@@ -26,10 +26,10 @@ use crate::types::*;
 
 use approval::approval;
 use model_picker::model_picker;
-use session_picker::session_picker;
 #[cfg(test)]
 use model_picker::{provider_color, provider_label};
 use palette::palette;
+use session_picker::session_picker;
 pub use session_sidebar::ordered_sidebar_sessions;
 use session_sidebar::sidebar;
 #[cfg(test)]
@@ -422,7 +422,10 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     )]));
     if !id_str.is_empty() {
         lines.push(Line::from(vec![Span::styled(
-            format!("  {}", truncate_str(&id_str, inner.width.saturating_sub(2) as usize)),
+            format!(
+                "  {}",
+                truncate_str(&id_str, inner.width.saturating_sub(2) as usize)
+            ),
             Style::default().fg(t.text_muted),
         )]));
     }
@@ -482,13 +485,7 @@ fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         let samples_len = app.network_samples.len();
         let mut chars: Vec<char> = std::iter::repeat(' ').take(bar_width).collect();
         let to_take = samples_len.min(bar_width);
-        for (i, level) in app
-            .network_samples
-            .iter()
-            .rev()
-            .take(to_take)
-            .enumerate()
-        {
+        for (i, level) in app.network_samples.iter().rev().take(to_take).enumerate() {
             let col = bar_width.saturating_sub(1 + i);
             let idx = (*level as usize).min(BARS.len() - 1);
             chars[col] = BARS[idx];
@@ -2370,6 +2367,7 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             .streaming_last_token_at
             .map(|t| now.duration_since(t))
             .unwrap_or_default();
+        let stream_idle = app.last_stream_event_at.map(|t| now.duration_since(t));
         // Anthropic SSE pushes cumulative `output_tokens` in every
         // `message_delta` event (sse.rs:212-218 → StreamEvent::Usage →
         // app.last_usage_output) — wire-truth, no estimation needed. OWUI /
@@ -2395,6 +2393,7 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             elapsed,
             live_tokens,
             stall,
+            stream_idle,
             thinking,
         );
         head_glyph = segs.glyph;
@@ -2403,7 +2402,8 @@ fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // model is actually doing rather than a random decorative verb.
         let active_verb: std::borrow::Cow<'_, str> = {
             let tasks = app.task_store.list(jfc_session::DeletedFilter::Exclude);
-            tasks.iter()
+            tasks
+                .iter()
                 .find(|t| t.status == jfc_session::TaskStatus::InProgress)
                 .and_then(|t| t.active_form.as_deref())
                 .map(|s| std::borrow::Cow::Owned(s.to_owned()))
@@ -2662,8 +2662,14 @@ fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
 
     // Sort pending: unblocked first, then blocked (sorted by id for stability).
     pending.sort_by(|a, b| {
-        let a_blocked = a.blocked_by.iter().any(|id| !completed_ids.contains(id.as_str()));
-        let b_blocked = b.blocked_by.iter().any(|id| !completed_ids.contains(id.as_str()));
+        let a_blocked = a
+            .blocked_by
+            .iter()
+            .any(|id| !completed_ids.contains(id.as_str()));
+        let b_blocked = b
+            .blocked_by
+            .iter()
+            .any(|id| !completed_ids.contains(id.as_str()));
         a_blocked.cmp(&b_blocked).then_with(|| a.id.cmp(&b.id))
     });
 
@@ -2677,13 +2683,26 @@ fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
                 .fg(t.text_primary)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("tasks", Style::default().fg(t.text_primary).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "tasks",
+            Style::default()
+                .fg(t.text_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(
             format!(
                 " ({} done{}{})",
                 completed.len(),
-                if in_prog_count > 0 { format!(", {} in progress", in_prog_count) } else { String::new() },
-                if pending.len() > 0 { format!(", {} open", pending.len()) } else { String::new() },
+                if in_prog_count > 0 {
+                    format!(", {} in progress", in_prog_count)
+                } else {
+                    String::new()
+                },
+                if pending.len() > 0 {
+                    format!(", {} open", pending.len())
+                } else {
+                    String::new()
+                },
             ),
             Style::default().fg(t.text_muted),
         ),
@@ -2731,9 +2750,7 @@ fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         rendered.push(Line::from(vec![
             Span::styled(
                 "◐ ",
-                Style::default()
-                    .fg(t.accent)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 truncate_str(&task.subject, avail),
@@ -2784,7 +2801,10 @@ fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         let avail = render_width.saturating_sub(3 + blockers_suffix.len());
         rendered.push(Line::from(vec![
             Span::styled(format!("{icon} "), Style::default().fg(color)),
-            Span::styled(truncate_str(&task.subject, avail), Style::default().fg(color)),
+            Span::styled(
+                truncate_str(&task.subject, avail),
+                Style::default().fg(color),
+            ),
             Span::styled(
                 blockers_suffix,
                 Style::default()
@@ -2807,10 +2827,7 @@ fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
     }
 
     lines.extend(rendered);
-    f.render_widget(
-        Paragraph::new(lines).style(Style::default().bg(t.bg)),
-        area,
-    );
+    f.render_widget(Paragraph::new(lines).style(Style::default().bg(t.bg)), area);
 }
 
 /// Render the running-agents tree in its own chunk beneath the input box.
@@ -2904,10 +2921,7 @@ fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
                 return true;
             }
             // Recently terminal — keep on the fan until the pin window expires.
-            now.duration_since(bt.started_at) < COMPLETED_PIN_WINDOW
-                || bt
-                    .last_tool
-                    .is_some() // had at least one tool — surface its summary briefly
+            now.duration_since(bt.started_at) < COMPLETED_PIN_WINDOW || bt.last_tool.is_some() // had at least one tool — surface its summary briefly
         })
         .collect();
     if active.is_empty() {
@@ -3018,7 +3032,10 @@ fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
             elapsed_label.clone().into()
         };
         let right_side = if total_tokens > 0 {
-            format!(" {right_label} · ↓ {} tok", format_token_count(total_tokens))
+            format!(
+                " {right_label} · ↓ {} tok",
+                format_token_count(total_tokens)
+            )
         } else {
             format!(" {right_label}")
         };
@@ -4611,8 +4628,8 @@ mod render_helpers_tests {
 
 #[cfg(test)]
 mod pure_helper_tests {
-    use super::*;
     use super::status::effort_status_badge;
+    use super::*;
     use std::sync::Arc;
 
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
@@ -4632,10 +4649,8 @@ mod pure_helper_tests {
         }
         async fn stream(
             &self,
-            #[allow(dead_code)]
-            messages: Vec<ProviderMessage>,
-            #[allow(dead_code)]
-            options: &StreamOptions,
+            #[allow(dead_code)] messages: Vec<ProviderMessage>,
+            #[allow(dead_code)] options: &StreamOptions,
         ) -> anyhow::Result<EventStream> {
             Ok(Box::pin(futures::stream::empty()))
         }
@@ -5508,7 +5523,8 @@ mod subagent_counter_tests {
             latest_cache_read_tokens: 0,
             latest_cache_write_tokens: 0,
             cumulative_output_tokens: out_tok,
-            model_used: None, agent_messages: Vec::new(),
+            model_used: None,
+            agent_messages: Vec::new(),
             max_input_tokens: None,
             budget_killed: false,
             parent_task_id: None,

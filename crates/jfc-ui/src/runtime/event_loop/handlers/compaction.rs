@@ -108,8 +108,7 @@ pub(super) async fn handle_done(
         // while the next request actually sends system+messages which can
         // be 50-100k+ of overhead.
         let overhead = app.last_system_prompt_len.unwrap_or(30_000);
-        app.tool_ctx.approx_tokens =
-            app.tool_ctx.approx_tokens.saturating_add(overhead);
+        app.tool_ctx.approx_tokens = app.tool_ctx.approx_tokens.saturating_add(overhead);
         app.last_usage_input = 0;
         // Reset the per-turn baseline so the next
         // `StreamUsage` cumulative delta builds from 0,

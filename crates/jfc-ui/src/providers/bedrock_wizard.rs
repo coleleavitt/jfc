@@ -11,7 +11,6 @@
 //! it from both the slash-command console (`/login bedrock`) and a future
 //! TUI panel; both surfaces share these step transitions.
 
-
 use std::path::PathBuf;
 
 use super::bedrock::{

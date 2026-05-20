@@ -266,9 +266,14 @@ pub(super) async fn drain_stream_events(
                     stop_reason = r;
                 }
             }
-            StreamEvent::ResponseMetadata { response_id, input_tokens } => {
+            StreamEvent::ResponseMetadata {
+                response_id,
+                input_tokens,
+            } => {
                 let _ = tx
-                    .send(AppEvent::Stream(RuntimeStreamEvent::ResponseId(response_id)))
+                    .send(AppEvent::Stream(RuntimeStreamEvent::ResponseId(
+                        response_id,
+                    )))
                     .await;
                 // Feed early input-token count so context estimates are
                 // available even if the stream aborts before message_delta.

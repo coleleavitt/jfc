@@ -568,7 +568,7 @@ fn responses_events_from_sse(data: &str) -> Vec<anyhow::Result<StreamEvent>> {
                 .and_then(Value::as_str)
             {
                 events.push(Ok(StreamEvent::ResponseMetadata {
-                        input_tokens: None,
+                    input_tokens: None,
                     response_id: response_id.to_owned(),
                 }));
             }

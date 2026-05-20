@@ -58,10 +58,7 @@ pub(crate) fn handle_system_prompt_len(app: &mut App, len: usize) {
 }
 
 /// Handle `StreamEvent::RequestMetadata(meta)`.
-pub(crate) fn handle_request_metadata(
-    app: &mut App,
-    meta: crate::runtime::StreamRequestMetadata,
-) {
+pub(crate) fn handle_request_metadata(app: &mut App, meta: crate::runtime::StreamRequestMetadata) {
     tracing::debug!(
         target: "jfc::stream",
         advertised_tool_count = meta.advertised_tool_count,
@@ -137,9 +134,7 @@ pub(crate) fn handle_exit_plan_mode(app: &mut App, plan: String) {
         from_mode = ?app.permission_mode,
         "ExitPlanMode: surfacing plan + transitioning out of Plan"
     );
-    let body = format!(
-        "\n\n**Plan presented (Plan Mode → Accept Edits)**\n\n---\n\n{plan}"
-    );
+    let body = format!("\n\n**Plan presented (Plan Mode → Accept Edits)**\n\n---\n\n{plan}");
     // Append to the current streaming assistant message if we
     // have one; otherwise fall back to the last assistant msg.
     // Only accept `streaming_assistant_idx` if it still points

@@ -5,7 +5,6 @@
 //! [`VertexWizard::advance`] so the slash-command flow and a future TUI panel
 //! can both reuse it.
 
-
 use std::path::PathBuf;
 
 use super::vertex::{

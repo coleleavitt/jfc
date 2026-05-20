@@ -272,9 +272,7 @@ pub fn merge_consecutive_text_parts(parts: &mut Vec<MessagePart>) {
         if merge {
             // Take ownership of the next part's text and append to current.
             let next = parts.remove(i + 1);
-            if let (MessagePart::Text(cur), MessagePart::Text(nxt)) =
-                (&mut parts[i], next)
-            {
+            if let (MessagePart::Text(cur), MessagePart::Text(nxt)) = (&mut parts[i], next) {
                 cur.push_str(&nxt);
             }
             // Don't advance i — there may be another Text after this.

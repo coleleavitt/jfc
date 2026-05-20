@@ -12,7 +12,6 @@
 //! 5. Complexity budget (LOC + nesting depth per function)
 //! 6. Test quality (implementation-coupling heuristics)
 
-
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::Path;

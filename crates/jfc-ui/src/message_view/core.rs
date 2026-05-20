@@ -641,10 +641,7 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
             // (cli.beautified.js:501634 hints "Press up to edit
             // queued messages" surfaces when queued items exist).
             Role::User if msg.queued => Line::from(vec![
-                Span::styled(
-                    "you",
-                    t.user_label().add_modifier(Modifier::DIM),
-                ),
+                Span::styled("you", t.user_label().add_modifier(Modifier::DIM)),
                 Span::styled(
                     " [queued]",
                     Style::default()

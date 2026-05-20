@@ -280,11 +280,10 @@ pub(crate) async fn handle_tick(
             .unwrap_or(true);
     if due {
         let cwd = std::env::current_dir().unwrap_or_default();
-        app.worktree_count =
-            match crate::worktrees::list_worktrees_async(&cwd).await {
-                Ok(list) => list.len().saturating_sub(1),
-                Err(_) => 0,
-            };
+        app.worktree_count = match crate::worktrees::list_worktrees_async(&cwd).await {
+            Ok(list) => list.len().saturating_sub(1),
+            Err(_) => 0,
+        };
         app.worktree_count_last_refresh = Some(now);
     }
 
@@ -315,10 +314,7 @@ pub(crate) async fn handle_tick(
             let tx_swarm = tx.clone();
             tokio::spawn(async move {
                 let pending =
-                    crate::swarm::permission_sync::read_pending_permissions(
-                        &team_name,
-                    )
-                    .await;
+                    crate::swarm::permission_sync::read_pending_permissions(&team_name).await;
                 for req in pending {
                     if !matches!(
                         req.status,
@@ -344,8 +340,7 @@ pub(crate) async fn handle_tick(
                                 Some(true)
                             }
                         }
-                        crate::app::PermissionMode::Default
-                        | crate::app::PermissionMode::Auto => {
+                        crate::app::PermissionMode::Default | crate::app::PermissionMode::Auto => {
                             if mutation {
                                 // Mutations need a human in
                                 // Default/Auto. Surface to
@@ -359,32 +354,30 @@ pub(crate) async fn handle_tick(
                     };
                     match auto {
                         Some(approve) => {
-                            let resolution =
-                                crate::swarm::types::PermissionResolution {
-                                    decision: if approve {
-                                        crate::swarm::types::PermissionDecision::Approved
-                                    } else {
-                                        crate::swarm::types::PermissionDecision::Rejected
-                                    },
-                                    resolved_by: "leader".to_owned(),
-                                    feedback: if approve {
-                                        None
-                                    } else {
-                                        Some(format!(
-                                            "Auto-denied by leader permission_mode={:?}",
-                                            mode
-                                        ))
-                                    },
-                                    updated_input: None,
-                                    permission_updates: Vec::new(),
-                                };
-                            if let Err(e) =
-                                crate::swarm::permission_sync::resolve_permission(
-                                    &req.id,
-                                    &resolution,
-                                    &team_name,
-                                )
-                                .await
+                            let resolution = crate::swarm::types::PermissionResolution {
+                                decision: if approve {
+                                    crate::swarm::types::PermissionDecision::Approved
+                                } else {
+                                    crate::swarm::types::PermissionDecision::Rejected
+                                },
+                                resolved_by: "leader".to_owned(),
+                                feedback: if approve {
+                                    None
+                                } else {
+                                    Some(format!(
+                                        "Auto-denied by leader permission_mode={:?}",
+                                        mode
+                                    ))
+                                },
+                                updated_input: None,
+                                permission_updates: Vec::new(),
+                            };
+                            if let Err(e) = crate::swarm::permission_sync::resolve_permission(
+                                &req.id,
+                                &resolution,
+                                &team_name,
+                            )
+                            .await
                             {
                                 tracing::warn!(
                                     target: "jfc::swarm",
@@ -424,8 +417,7 @@ pub(crate) async fn handle_tick(
             let team_name = team_name.clone();
             let tx_inbox = tx.clone();
             tokio::spawn(async move {
-                let messages =
-                    crate::swarm::runner::poll_leader_inbox(&team_name).await;
+                let messages = crate::swarm::runner::poll_leader_inbox(&team_name).await;
                 for msg in messages {
                     // Hand off to the main thread which has
                     // mutable access to `app.messages` —

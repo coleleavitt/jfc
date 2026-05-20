@@ -208,12 +208,7 @@ pub(super) fn task_panel(f: &mut Frame, app: &mut App) {
 }
 
 /// Render the detail pane for the currently-selected task.
-fn render_task_detail(
-    f: &mut Frame,
-    app: &App,
-    tasks: &[Task],
-    area: Rect,
-) {
+fn render_task_detail(f: &mut Frame, app: &App, tasks: &[Task], area: Rect) {
     let t = app.theme;
     let Some(task) = tasks.get(app.task_panel_selected) else {
         return;

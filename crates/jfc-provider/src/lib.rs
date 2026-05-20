@@ -412,7 +412,9 @@ pub enum ProviderContent {
     /// round-tripped verbatim on subsequent requests (the API uses it
     /// to reconstruct thinking context server-side). No text content
     /// is ever shown to the user.
-    RedactedThinking { data: String },
+    RedactedThinking {
+        data: String,
+    },
 }
 
 /// Discriminates the wire `type` of a `ProviderContent::ServerToolResult`.

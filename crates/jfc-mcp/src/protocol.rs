@@ -27,7 +27,6 @@
 //! win — same call we made for [`crate::lsp_rpc`]. We lean on
 //! `serde_json::json!` macros and pull-out helpers below.
 
-
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 

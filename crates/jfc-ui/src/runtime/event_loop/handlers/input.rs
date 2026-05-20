@@ -35,12 +35,7 @@ pub(crate) async fn handle_term_event(
                         &mut app.toasts,
                         toast::Toast::new(
                             toast::ToastKind::Info,
-                            format!(
-                                "📎 image attached ({}x{}, {} bytes)",
-                                w,
-                                h,
-                                att.bytes.len()
-                            ),
+                            format!("📎 image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
                         ),
                     );
                     app.image_counter += 1;
@@ -75,11 +70,7 @@ pub(crate) async fn handle_term_event(
 }
 
 /// Handle mouse events: scroll, drag, click.
-async fn handle_mouse(
-    app: &mut App,
-    mouse: crossterm::event::MouseEvent,
-    _tx: &EventSender,
-) {
+async fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent, _tx: &EventSender) {
     use crossterm::event::{MouseButton, MouseEventKind};
     match mouse.kind {
         MouseEventKind::ScrollUp => {
@@ -99,13 +90,12 @@ async fn handle_mouse(
             // up (look at older content); down-drag
             // scrolls down. Gated to the messages area —
             // dragging in the input bar still selects.
-            let in_messages =
-                app.messages_rect.borrow().as_ref().is_some_and(|r| {
-                    mouse.column >= r.x
-                        && mouse.column < r.x + r.width
-                        && mouse.row >= r.y
-                        && mouse.row < r.y + r.height
-                });
+            let in_messages = app.messages_rect.borrow().as_ref().is_some_and(|r| {
+                mouse.column >= r.x
+                    && mouse.column < r.x + r.width
+                    && mouse.row >= r.y
+                    && mouse.row < r.y + r.height
+            });
             if in_messages {
                 if let Some(anchor) = app.drag_anchor_y {
                     let delta = mouse.row as i32 - anchor as i32;
@@ -147,12 +137,8 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
     // affordance (cmd-click on iTerm2; we use a plain
     // click since non-iTerm terminals don't surface
     // the cmd modifier the same way).
-    let hit = message_view::find_tool_at(
-        &app.tool_hit_regions.borrow(),
-        mouse.column,
-        mouse.row,
-    )
-    .map(str::to_owned);
+    let hit = message_view::find_tool_at(&app.tool_hit_regions.borrow(), mouse.column, mouse.row)
+        .map(str::to_owned);
     // Toast click → dismiss. Toasts render newest-
     // first; row 0 corresponds to the last entry
     // in `app.toasts`, row 1 to the second-to-last,
@@ -198,10 +184,8 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
         // Skip the empty/no-sessions placeholder row.
         if !app.session_meta.is_empty() {
             let cwd = app.cwd.clone();
-            let (this_project, other) = jfc_session::group_by_cwd(
-                app.session_meta.clone(),
-                Some(cwd.as_str()),
-            );
+            let (this_project, other) =
+                jfc_session::group_by_cwd(app.session_meta.clone(), Some(cwd.as_str()));
             // Walk rows: header rows are 1 each; rest are sessions.
             let mut row = 0u16;
             let mut session_idx: Option<usize> = None;
@@ -230,9 +214,7 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
                     .map(|s| s.id)
                     .collect();
                 if let Some(id) = ordered.get(idx).cloned() {
-                    if let Some(messages) =
-                        crate::session::load_session(&id).await
-                    {
+                    if let Some(messages) = crate::session::load_session(&id).await {
                         app.messages = messages;
                         app.switch_session(Some(id));
                         app.streaming_text = String::new();
@@ -269,8 +251,7 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
         let is_double_click = match &app.last_tool_click {
             Some((prev_id, prev_at))
                 if prev_id == &tool_id
-                    && now.duration_since(*prev_at).as_millis()
-                        < DOUBLE_CLICK_MS =>
+                    && now.duration_since(*prev_at).as_millis() < DOUBLE_CLICK_MS =>
             {
                 true
             }

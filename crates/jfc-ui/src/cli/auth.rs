@@ -213,10 +213,7 @@ async fn run_openwebui_auth_subcommand(sub: OpenWebUIAuthSubcommand) -> anyhow::
                 let token = result.token.clone();
                 tokio::spawn(async move {
                     let tz = crate::providers::openwebui::detect_iana_timezone();
-                    crate::providers::openwebui::update_user_timezone(
-                        &base, &token, &tz,
-                    )
-                    .await;
+                    crate::providers::openwebui::update_user_timezone(&base, &token, &tz).await;
                 });
             }
 

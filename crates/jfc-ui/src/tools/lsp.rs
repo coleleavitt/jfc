@@ -11,9 +11,15 @@ pub(super) async fn execute_lsp(
 ) -> ExecutionResult {
     let kind_norm = kind.to_ascii_lowercase();
     let valid_kinds = [
-        "hover", "definition", "references", "implementation",
-        "type_definition", "document_symbols", "workspace_symbols",
-        "incoming_calls", "outgoing_calls",
+        "hover",
+        "definition",
+        "references",
+        "implementation",
+        "type_definition",
+        "document_symbols",
+        "workspace_symbols",
+        "incoming_calls",
+        "outgoing_calls",
     ];
     if !valid_kinds.contains(&kind_norm.as_str()) {
         return ExecutionResult::failure(format!(
@@ -119,7 +125,10 @@ pub(super) async fn execute_lsp(
             let params = serde_json::json!({
                 "textDocument": { "uri": uri },
             });
-            match client.send_request("textDocument/documentSymbol", params).await {
+            match client
+                .send_request("textDocument/documentSymbol", params)
+                .await
+            {
                 Some(v) => format_symbols_response(&v),
                 None => "lsp: document symbols request returned nothing".to_owned(),
             }
@@ -140,7 +149,9 @@ pub(super) async fn execute_lsp(
                     "character": column.saturating_sub(1),
                 },
             });
-            let items = client.send_request("textDocument/prepareCallHierarchy", prep_params).await;
+            let items = client
+                .send_request("textDocument/prepareCallHierarchy", prep_params)
+                .await;
             match items {
                 Some(arr) if arr.is_array() && !arr.as_array().unwrap().is_empty() => {
                     let item = &arr.as_array().unwrap()[0];

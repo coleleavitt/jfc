@@ -62,8 +62,7 @@ pub(crate) async fn handle_stream_tool(app: &mut App, tx: &EventSender, tool: To
         );
         let mut tool = tool;
         let _ = tool.mark_failed();
-        tool.output =
-            ToolOutput::Text(format!("Denied by permission mode: {reason}"));
+        tool.output = ToolOutput::Text(format!("Denied by permission mode: {reason}"));
         if let Some(msg) = streaming_assistant_mut(app) {
             msg.parts.push(MessagePart::Tool(tool));
         }

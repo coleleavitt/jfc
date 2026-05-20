@@ -20,6 +20,4 @@ pub use orchestrator::stream_response;
 use request::prepare_stream_request;
 pub(crate) use retry::open_stream_with_bedrock_retries;
 pub(crate) use tool_dispatch::dispatch_tools_batched;
-pub(crate) use tool_results::{
-    cap_tool_result, cleanup_tool_result_spills,
-};
+pub(crate) use tool_results::{cap_tool_result, cleanup_tool_result_spills};

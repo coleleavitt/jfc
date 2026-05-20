@@ -2,11 +2,9 @@
 //! session save, continuation logic.
 
 use crate::app::{self, App};
-use crate::runtime::{
-    EventSender, drain_queued_prompts,
-};
-use crate::{config, session, stream, types};
+use crate::runtime::{EventSender, drain_queued_prompts};
 use crate::types::*;
+use crate::{config, session, stream, types};
 
 use super::super::narration_retry::retry_narration_only_end_turn;
 
@@ -56,9 +54,7 @@ pub(crate) async fn handle_stream_done(
             let segments = crate::inline_tools::parse(&text);
             let tool_calls = segments
                 .iter()
-                .filter(|s| {
-                    matches!(s, crate::inline_tools::Segment::ToolCall { .. })
-                })
+                .filter(|s| matches!(s, crate::inline_tools::Segment::ToolCall { .. }))
                 .count();
             tracing::warn!(
                 target: "jfc::stream::inline_tools",
@@ -144,17 +140,12 @@ pub(crate) async fn handle_stream_done(
             {
                 if let Some((p, m)) = crate::tools::snapshot_active_provider() {
                     tokio::spawn(async move {
-                        let _ = crate::session_naming::generate_and_save(
-                            sid, p, m, u, a,
-                        )
-                        .await;
+                        let _ = crate::session_naming::generate_and_save(sid, p, m, u, a).await;
                     });
                 }
             }
         }
-        if let (Some(start), Some(idx)) =
-            (app.turn_started_at, app.streaming_assistant_idx)
-        {
+        if let (Some(start), Some(idx)) = (app.turn_started_at, app.streaming_assistant_idx) {
             let elapsed = std::time::Instant::now().duration_since(start);
             let label = crate::spinner::format_finished(elapsed);
             // v132 per-turn cost surfacing: append the
@@ -178,9 +169,7 @@ pub(crate) async fn handle_stream_done(
                 .get(idx)
                 .and_then(|m| {
                     m.parts.iter().find_map(|p| match p {
-                        types::MessagePart::Text(s) if !s.is_empty() => {
-                            Some(s.clone())
-                        }
+                        types::MessagePart::Text(s) if !s.is_empty() => Some(s.clone()),
                         _ => None,
                     })
                 })
@@ -196,8 +185,7 @@ pub(crate) async fn handle_stream_done(
         // the turn) and `last_usage_output` is the model's
         // generated count. Together they give a per-turn
         // sense of "how much work did this take."
-        let turn_total = (app.last_usage_input as u64)
-            .saturating_add(app.last_usage_output as u64);
+        let turn_total = (app.last_usage_input as u64).saturating_add(app.last_usage_output as u64);
         if turn_total > 0 {
             if app.token_history.len() >= app::TOKEN_HISTORY_CAP {
                 app.token_history.pop_front();
@@ -214,7 +202,11 @@ pub(crate) async fn handle_stream_done(
         // and its outlet half wouldn't fire for us. Spawned as a
         // detached task so a slow OWUI ack never blocks the UI.
         if app.provider.name() == "openwebui" {
-            if let Some(sid) = app.current_session_id.as_ref().map(|s| s.as_str().to_string()) {
+            if let Some(sid) = app
+                .current_session_id
+                .as_ref()
+                .map(|s| s.as_str().to_string())
+            {
                 let model = app.model.to_string();
                 let msg_id = uuid::Uuid::new_v4().to_string();
                 // The provider holds its own auth-resolution code path;
@@ -222,11 +214,9 @@ pub(crate) async fn handle_stream_done(
                 // helpers directly since the provider trait doesn't
                 // expose them.
                 tokio::spawn(async move {
-                    let store_path =
-                        crate::providers::openwebui::default_store_path();
+                    let store_path = crate::providers::openwebui::default_store_path();
                     let store = crate::providers::openwebui::load_store(&store_path);
-                    if let Some(account) = crate::providers::openwebui::get_current(&store)
-                    {
+                    if let Some(account) = crate::providers::openwebui::get_current(&store) {
                         crate::providers::openwebui::notify_chat_completed(
                             &account.base_url,
                             &account.token,
@@ -321,13 +311,7 @@ pub(crate) async fn handle_stream_done(
         let cwd = app.cwd.clone();
         let model = app.model.clone();
         tokio::spawn(async move {
-            session::save_session(
-                &sid,
-                &msgs,
-                Some(cwd.as_str()),
-                Some(model.as_str()),
-            )
-            .await;
+            session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
         });
         app.last_session_save_at = Some(std::time::Instant::now());
     }
@@ -355,8 +339,7 @@ pub(crate) async fn handle_stream_done(
     // leaving the model's "I'll write the file now" claim
     // unbacked — the "hallucinated Done" symptom.
     let has_pending_tools = !app.pending_tool_calls.is_empty();
-    let waiting_on_approval =
-        app.pending_approval.is_some() || !app.approval_queue.is_empty();
+    let waiting_on_approval = app.pending_approval.is_some() || !app.approval_queue.is_empty();
     // Mixed-mode pause_turn handling. When a response
     // carries BOTH local tool_use AND stop_reason=pause_turn,
     // the `has_pending_tools` branch below shadows the
@@ -448,9 +431,10 @@ pub(crate) async fn handle_stream_done(
             if idx < app.messages.len() {
                 let msg = &app.messages[idx];
                 let is_empty = msg.parts.is_empty()
-                    || msg.parts.iter().all(|p| {
-                        matches!(p, MessagePart::Text(t) if t.trim().is_empty())
-                    });
+                    || msg
+                        .parts
+                        .iter()
+                        .all(|p| matches!(p, MessagePart::Text(t) if t.trim().is_empty()));
                 if is_empty {
                     app.messages.remove(idx);
                 }

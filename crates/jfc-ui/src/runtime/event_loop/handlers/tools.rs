@@ -11,7 +11,6 @@ use crate::runtime::{
 use crate::types::*;
 use crate::{session, stream, types};
 
-
 /// Handle `ToolEvent::OutputChunk { tool_id, chunk }`.
 pub(crate) fn handle_output_chunk(app: &mut App, tool_id: crate::ids::ToolId, chunk: String) {
     // Append streaming output to the tool's live preview.

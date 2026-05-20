@@ -38,7 +38,8 @@ pub use model_picker::filtered_models;
 use model_picker::{handle_model_picker_key, open_model_picker};
 use navigation::{
     collect_recent_paths, jump_to_last_assistant, jump_to_last_error, jump_to_last_tool,
-    jump_to_last_user, recall_next_prompt, recall_previous_prompt, refresh_search_matches, scroll_to_message,
+    jump_to_last_user, recall_next_prompt, recall_previous_prompt, refresh_search_matches,
+    scroll_to_message,
 };
 pub use palette::{collect_all_models, palette_items};
 use session_picker::{handle_session_picker_key, open_session_picker};
@@ -4701,8 +4702,8 @@ mod tests {
 
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    use super::*;
     use super::navigation::{scan_path_refs, user_prompts};
+    use super::*;
     use crate::app::App;
     use crate::runtime::{AppEvent, UiEvent};
     #[allow(unused_imports)]
@@ -4723,10 +4724,8 @@ mod tests {
 
         async fn stream(
             &self,
-            #[allow(dead_code)]
-            messages: Vec<ProviderMessage>,
-            #[allow(dead_code)]
-            options: &StreamOptions,
+            #[allow(dead_code)] messages: Vec<ProviderMessage>,
+            #[allow(dead_code)] options: &StreamOptions,
         ) -> anyhow::Result<EventStream> {
             Ok(Box::pin(futures::stream::empty()))
         }
@@ -4747,10 +4746,8 @@ mod tests {
 
         async fn stream(
             &self,
-            #[allow(dead_code)]
-            messages: Vec<ProviderMessage>,
-            #[allow(dead_code)]
-            options: &StreamOptions,
+            #[allow(dead_code)] messages: Vec<ProviderMessage>,
+            #[allow(dead_code)] options: &StreamOptions,
         ) -> anyhow::Result<EventStream> {
             Ok(Box::pin(futures::stream::empty()))
         }

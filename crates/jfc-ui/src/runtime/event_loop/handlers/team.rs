@@ -23,7 +23,9 @@ pub(crate) async fn handle_team_event(app: &mut App, tx: &EventSender, ev: TeamE
             agent_type,
             cwd,
             abort_tx,
-        } => handle_spawned(app, name, team_name, agent_id, color, agent_type, cwd, abort_tx),
+        } => handle_spawned(
+            app, name, team_name, agent_id, color, agent_type, cwd, abort_tx,
+        ),
     }
 }
 
@@ -41,9 +43,7 @@ async fn handle_runner(
             reason,
             summary,
         } => {
-            tracing::info!(
-                "[Swarm] Teammate {agent_name} went idle (reason: {reason:?})"
-            );
+            tracing::info!("[Swarm] Teammate {agent_name} went idle (reason: {reason:?})");
             // Mark the BackgroundTask Idle so the task
             // panel stops showing "Receiving output…" forever
             // and the subagent tree can render the agent
@@ -112,10 +112,8 @@ async fn handle_runner(
                 // `bt.status` to decide whether to keep
                 // accepting work, so flipping it stops
                 // the bleed.
-                if let (Some(cap), false) = (bt.max_input_tokens, bt.budget_killed)
-                {
-                    let total =
-                        bt.latest_input_tokens + bt.cumulative_output_tokens;
+                if let (Some(cap), false) = (bt.max_input_tokens, bt.budget_killed) {
+                    let total = bt.latest_input_tokens + bt.cumulative_output_tokens;
                     if total > cap {
                         bt.budget_killed = true;
                         bt.status = crate::types::TaskLifecycle::Failed;
@@ -257,9 +255,7 @@ async fn handle_runner(
             // logging.
             let team_name = app.team_context.team_name.clone().unwrap_or_default();
             if team_name.is_empty() {
-                tracing::warn!(
-                    "[Swarm] MessageSent dropped — no active team_context"
-                );
+                tracing::warn!("[Swarm] MessageSent dropped — no active team_context");
             } else {
                 let recipient = to.clone();
                 let msg = crate::swarm::types::MailboxMessage {
@@ -271,14 +267,10 @@ async fn handle_runner(
                     read: false,
                 };
                 tokio::spawn(async move {
-                    if let Err(e) = crate::swarm::mailbox::write_to_mailbox(
-                        &recipient, msg, &team_name,
-                    )
-                    .await
+                    if let Err(e) =
+                        crate::swarm::mailbox::write_to_mailbox(&recipient, msg, &team_name).await
                     {
-                        tracing::warn!(
-                            "[Swarm] Failed to deliver message {from} → {to}: {e}"
-                        );
+                        tracing::warn!("[Swarm] Failed to deliver message {from} → {to}: {e}");
                     }
                 });
             }
@@ -286,12 +278,7 @@ async fn handle_runner(
     }
 }
 
-async fn handle_inbox(
-    app: &mut App,
-    from: String,
-    text: String,
-    summary: Option<String>,
-) {
+async fn handle_inbox(app: &mut App, from: String, text: String, summary: Option<String>) {
     // Append the teammate's message to the transcript as a
     // user-role turn tagged with the teammate's name so it
     // survives session save/load and the model sees it on
@@ -333,13 +320,7 @@ async fn handle_inbox(
         let cwd = app.cwd.clone();
         let model = app.model.clone();
         tokio::spawn(async move {
-            session::save_session(
-                &sid,
-                &msgs,
-                Some(cwd.as_str()),
-                Some(model.as_str()),
-            )
-            .await;
+            session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
         });
     }
 }

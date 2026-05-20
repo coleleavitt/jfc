@@ -1,33 +1,23 @@
 use std::{io, sync::Arc, time::Duration};
 
-use crossterm::{
-    cursor::SetCursorStyle,
-    event,
-    execute,
-};
+use crossterm::{cursor::SetCursorStyle, event, execute};
 use futures::StreamExt;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::mpsc;
 
 use crate::app::{ANIM_TICK_MS, App, IDLE_TICK_MS};
 use crate::runtime::{
-    APP_EVENT_BUFFER, AppEvent, EventReceiver, EventSender, GoalEvent,
-    ProviderEvent, StreamEvent, StreamRequestOverrides, TaskEvent, TeamEvent,
-    ToolEvent, UiEvent, draw_synchronized,
-    handle_goal_verdict, restore_persistent_background_agents,
-    set_terminal_title,
+    APP_EVENT_BUFFER, AppEvent, EventReceiver, EventSender, GoalEvent, ProviderEvent, StreamEvent,
+    StreamRequestOverrides, TaskEvent, TeamEvent, ToolEvent, UiEvent, draw_synchronized,
+    handle_goal_verdict, restore_persistent_background_agents, set_terminal_title,
 };
 use crate::types::*;
-use crate::{
-    config, diagnostics_producer, lsp_client, session,
-    slate, stream,
-};
+use crate::{config, diagnostics_producer, lsp_client, session, slate, stream};
 use jfc_provider::{ModelId, Provider, ProviderId};
 
 mod guards;
 mod handlers;
 mod narration_retry;
-
 
 pub(crate) async fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -556,7 +546,8 @@ pub(crate) async fn run(
 
                 // ── Tick ────────────────────────────────────────────────
                 AppEvent::Ui(UiEvent::Tick) => {
-                    if handlers::tick::handle_tick(&mut app, &tx, oauth_for_snapshot.as_ref()).await {
+                    if handlers::tick::handle_tick(&mut app, &tx, oauth_for_snapshot.as_ref()).await
+                    {
                         needs_draw = true;
                     }
                 }
@@ -579,8 +570,14 @@ pub(crate) async fn run(
                 AppEvent::Stream(StreamEvent::Tool(tool)) => {
                     handlers::stream_tool::handle_stream_tool(&mut app, &tx, tool).await;
                 }
-                AppEvent::Tool(ToolEvent::ClassifierDecision { tool, blocked, reason }) => {
-                    handlers::stream_tool::handle_classifier_decision(&mut app, tool, blocked, reason);
+                AppEvent::Tool(ToolEvent::ClassifierDecision {
+                    tool,
+                    blocked,
+                    reason,
+                }) => {
+                    handlers::stream_tool::handle_classifier_decision(
+                        &mut app, tool, blocked, reason,
+                    );
                 }
                 AppEvent::Stream(StreamEvent::ServerToolResult {
                     tool_use_id,
@@ -588,7 +585,10 @@ pub(crate) async fn run(
                     content,
                 }) => {
                     handlers::stream_tool::handle_server_tool_result(
-                        &mut app, tool_use_id, tool_kind, content,
+                        &mut app,
+                        tool_use_id,
+                        tool_kind,
+                        content,
                     );
                 }
 
@@ -610,7 +610,11 @@ pub(crate) async fn run(
                     cache_write_tokens,
                 }) => {
                     handlers::stream_usage::handle_stream_usage(
-                        &mut app, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+                        &mut app,
+                        input_tokens,
+                        output_tokens,
+                        cache_read_tokens,
+                        cache_write_tokens,
                     );
                 }
 
@@ -678,8 +682,13 @@ pub(crate) async fn run(
                     parent_task_id,
                 }) => {
                     handlers::task::handle_task_started(
-                        &mut app, task_id, description, model_used, max_input_tokens,
-                        is_detached, parent_task_id,
+                        &mut app,
+                        task_id,
+                        description,
+                        model_used,
+                        max_input_tokens,
+                        is_detached,
+                        parent_task_id,
                     );
                 }
                 AppEvent::Task(TaskEvent::Progress {
@@ -693,8 +702,15 @@ pub(crate) async fn run(
                     output_tokens,
                 }) => {
                     handlers::task::handle_task_progress(
-                        &mut app, task_id, last_tool, elapsed_ms, tool_use_count,
-                        input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,
+                        &mut app,
+                        task_id,
+                        last_tool,
+                        elapsed_ms,
+                        tool_use_count,
+                        input_tokens,
+                        cache_read_tokens,
+                        cache_write_tokens,
+                        output_tokens,
                     );
                 }
                 AppEvent::Task(TaskEvent::Completed {
@@ -823,10 +839,7 @@ mod effort_resolve_tests {
 
     #[test]
     fn exact_qualified_match_wins_over_default_normal() {
-        let cfg = cfg_with(
-            Some("low"),
-            &[("anthropic/claude-opus-4-7", "max")],
-        );
+        let cfg = cfg_with(Some("low"), &[("anthropic/claude-opus-4-7", "max")]);
         assert_eq!(
             resolve_effort_for_model(&cfg, "anthropic/claude-opus-4-7"),
             Some("max".to_string())
@@ -851,4 +864,3 @@ mod effort_resolve_tests {
         );
     }
 }
-

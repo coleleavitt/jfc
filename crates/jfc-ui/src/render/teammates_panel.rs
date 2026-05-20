@@ -87,7 +87,9 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
     all_tasks.sort_by(|a, b| {
         let a_alive = a.status.is_alive();
         let b_alive = b.status.is_alive();
-        b_alive.cmp(&a_alive).then_with(|| a.started_at.cmp(&b.started_at))
+        b_alive
+            .cmp(&a_alive)
+            .then_with(|| a.started_at.cmp(&b.started_at))
     });
 
     for bt in &all_tasks {

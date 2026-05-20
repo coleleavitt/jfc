@@ -95,7 +95,12 @@ impl MessageQueue {
 
     /// Convenience: push with Later priority (default for user submissions).
     #[allow(dead_code)]
-    pub fn push_later(&mut self, text: String, is_meta: bool, attachments: Vec<crate::attachments::Attachment>) {
+    pub fn push_later(
+        &mut self,
+        text: String,
+        is_meta: bool,
+        attachments: Vec<crate::attachments::Attachment>,
+    ) {
         self.entries.push_back(QueuedPrompt {
             text,
             is_meta,

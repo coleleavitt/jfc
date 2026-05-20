@@ -741,7 +741,9 @@ pub async fn save_session(
             crate::types::TurnInvariantError::OrphanToolResult { .. } => "orphan_tool_in_user",
             crate::types::TurnInvariantError::OrphanToolUse { .. } => "orphan_tool_use_no_result",
             crate::types::TurnInvariantError::ConsecutiveUser { .. } => "consecutive_user",
-            crate::types::TurnInvariantError::ConsecutiveAssistant { .. } => "consecutive_assistant",
+            crate::types::TurnInvariantError::ConsecutiveAssistant { .. } => {
+                "consecutive_assistant"
+            }
             crate::types::TurnInvariantError::EmptyMessage { .. } => "empty_message",
             crate::types::TurnInvariantError::LeadingAssistant { .. } => "leading_assistant",
         };
@@ -1026,9 +1028,9 @@ fn serialize_part(part: &MessagePart) -> SerializedPart {
             pre_tokens: *pre_tokens,
         },
         MessagePart::Advisor(t) => SerializedPart::Advisor { content: t.clone() },
-        MessagePart::RedactedThinking(data) => SerializedPart::RedactedThinking {
-            data: data.clone(),
-        },
+        MessagePart::RedactedThinking(data) => {
+            SerializedPart::RedactedThinking { data: data.clone() }
+        }
     }
 }
 
@@ -2826,12 +2828,12 @@ mod disk_io_tests {
     use crate::types::{
         ChatMessage, TaskInput, ToolCall, ToolInput, ToolKind, ToolOutput, ToolStatus,
     };
-    use std::sync::Mutex;
-    use tempfile::TempDir;
     use jfc_session::{
         list_sessions, list_sessions_filtered, load_session_metadata, most_recent_session,
         most_recent_session_for_cwd,
     };
+    use std::sync::Mutex;
+    use tempfile::TempDir;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -2859,10 +2861,10 @@ mod disk_io_tests {
             }
             Self {
                 #[allow(dead_code)]
-                dir: dir,
+                dir,
                 prior,
                 #[allow(dead_code)]
-                guard: guard,
+                guard,
             }
         }
     }

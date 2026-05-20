@@ -333,7 +333,7 @@ pub(super) async fn handle_doc_command(
         app.queued_prompts.push(crate::app::QueuedPrompt {
             text: body,
             is_meta: false,
-                priority: crate::app::QueuePriority::Later,
+            priority: crate::app::QueuePriority::Later,
             attachments: Vec::new(),
         });
         app.scroll_to_bottom();

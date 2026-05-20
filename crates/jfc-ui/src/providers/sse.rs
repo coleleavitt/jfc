@@ -1,4 +1,3 @@
-
 use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -82,9 +81,7 @@ pub enum ContentBlock {
     },
     /// Server-redacted thinking block — opaque base64 blob, no deltas.
     /// Must be round-tripped verbatim in subsequent requests.
-    RedactedThinking {
-        data: String,
-    },
+    RedactedThinking { data: String },
     ToolUse {
         id: String,
         name: String,
@@ -109,22 +106,13 @@ pub enum ContentBlock {
     ///
     /// We keep `content` as `Value` so the error variant and any
     /// future field additions round-trip without parse loss.
-    WebSearchToolResult {
-        tool_use_id: String,
-        content: Value,
-    },
+    WebSearchToolResult { tool_use_id: String, content: Value },
     /// Server-side tool result for `code_execution`. Wire type
     /// `code_execution_tool_result` per cli.js v142:246154.
-    CodeExecutionToolResult {
-        tool_use_id: String,
-        content: Value,
-    },
+    CodeExecutionToolResult { tool_use_id: String, content: Value },
     /// Server-side tool result for `web_fetch`. Wire type
     /// `web_fetch_tool_result` per cli.js v142:246159.
-    WebFetchToolResult {
-        tool_use_id: String,
-        content: Value,
-    },
+    WebFetchToolResult { tool_use_id: String, content: Value },
 }
 
 #[derive(Debug, Deserialize)]
@@ -277,9 +265,7 @@ pub fn translate(
                 ContentBlock::Thinking { .. } => BlockState::Thinking {
                     accumulated: String::new(),
                 },
-                ContentBlock::RedactedThinking { data } => {
-                    BlockState::RedactedThinking { data }
-                }
+                ContentBlock::RedactedThinking { data } => BlockState::RedactedThinking { data },
                 ContentBlock::ToolUse { id, name, .. } => BlockState::ToolUse {
                     id,
                     name,
@@ -647,7 +633,10 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
         .find(|(_, m)| m.get("role").and_then(|r| r.as_str()) == Some("assistant"))
         .map(|(i, _)| i)
     {
-        if let Some(content) = out[asst_idx].get_mut("content").and_then(|c| c.as_array_mut()) {
+        if let Some(content) = out[asst_idx]
+            .get_mut("content")
+            .and_then(|c| c.as_array_mut())
+        {
             // Find last block that isn't thinking/redacted_thinking
             if let Some(block) = content.iter_mut().rev().find(|b| {
                 let ty = b.get("type").and_then(|t| t.as_str()).unwrap_or("");

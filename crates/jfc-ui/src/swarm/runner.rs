@@ -1450,10 +1450,8 @@ mod tests {
         }
         async fn stream(
             &self,
-            #[allow(dead_code)]
-            messages: Vec<jfc_provider::ProviderMessage>,
-            #[allow(dead_code)]
-            options: &jfc_provider::StreamOptions,
+            #[allow(dead_code)] messages: Vec<jfc_provider::ProviderMessage>,
+            #[allow(dead_code)] options: &jfc_provider::StreamOptions,
         ) -> anyhow::Result<jfc_provider::EventStream> {
             use futures::stream;
             let events = self
@@ -1565,10 +1563,8 @@ mod tests {
         }
         async fn stream(
             &self,
-            #[allow(dead_code)]
-            messages: Vec<jfc_provider::ProviderMessage>,
-            #[allow(dead_code)]
-            options: &jfc_provider::StreamOptions,
+            #[allow(dead_code)] messages: Vec<jfc_provider::ProviderMessage>,
+            #[allow(dead_code)] options: &jfc_provider::StreamOptions,
         ) -> anyhow::Result<jfc_provider::EventStream> {
             use futures::stream;
             let next = self

@@ -1187,12 +1187,7 @@ fn restore_recent_files(cache: &crate::context::ReadDedupCache) -> Vec<String> {
         } else {
             String::new()
         };
-        let entry = format!(
-            "--- {} ---\n{}{}",
-            path.display(),
-            truncated,
-            suffix,
-        );
+        let entry = format!("--- {} ---\n{}{}", path.display(), truncated, suffix,);
         let entry_len = entry.len();
         total_chars += entry_len;
         results.push(entry);

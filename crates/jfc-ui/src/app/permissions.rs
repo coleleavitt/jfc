@@ -220,8 +220,7 @@ pub(super) const REASON_MULTILINE: &str =
     "Plan mode: multi-line command without continuation (use `|` or `\\`)";
 pub(super) const REASON_SHELL_CONTROL: &str =
     "Plan mode: command substitution / backgrounding not allowed";
-pub(super) const REASON_EMPTY_SEGMENT: &str =
-    "Plan mode: empty command segment";
+pub(super) const REASON_EMPTY_SEGMENT: &str = "Plan mode: empty command segment";
 pub(super) const REASON_DEV_TCP: &str =
     "Plan mode: /dev/tcp /dev/udp pseudo-devices (network exfiltration)";
 pub(super) const REASON_ENV_MUTATE: &str =
@@ -230,14 +229,12 @@ pub(super) const REASON_PARAM_MUTATE: &str =
     "Plan mode: parameter-expansion mutation (${var:=…} / ${var@P})";
 pub(super) const REASON_HEREDOC: &str =
     "Plan mode: heredoc / herestring (body may contain command substitution)";
-pub(super) const REASON_PROCESS_SUB: &str =
-    "Plan mode: process substitution <(…) / >(…)";
+pub(super) const REASON_PROCESS_SUB: &str = "Plan mode: process substitution <(…) / >(…)";
 pub(super) const REASON_LONG_OPT_RCE: &str =
     "Plan mode: long-option RCE vector (--pre / --checkpoint-action / --html=…)";
 pub(super) const REASON_HEAD_BLOCKED: &str =
     "Plan mode: shell wrapper / REPL-from-args head (bash -c / eval / xargs / make / …)";
-pub(super) const REASON_NOT_ALLOWLISTED: &str =
-    "Plan mode: command not in read-only allowlist";
+pub(super) const REASON_NOT_ALLOWLISTED: &str = "Plan mode: command not in read-only allowlist";
 pub(super) const REASON_FIND_WRITE: &str =
     "Plan mode: find with write action (-delete / -exec / -fprint / -fls)";
 pub(super) const REASON_SED_EXEC: &str =
@@ -246,18 +243,13 @@ pub(super) const REASON_AWK_EXEC: &str =
     "Plan mode: awk script with system() / getline / print-to-file";
 pub(super) const REASON_GIT_HOOK_RCE: &str =
     "Plan mode: `git -c` flag (pager/editor/sshCommand RCE)";
-pub(super) const REASON_GIT_SUBCOMMAND: &str =
-    "Plan mode: git subcommand not in read-only set";
+pub(super) const REASON_GIT_SUBCOMMAND: &str = "Plan mode: git subcommand not in read-only set";
 pub(super) const REASON_CURL_WRITE: &str =
     "Plan mode: curl with write flag (-X / -d / --data / -T / -o / -F)";
-pub(super) const REASON_WGET_WRITE: &str =
-    "Plan mode: wget without --spider (writes to disk)";
-pub(super) const REASON_SSH_FORWARD: &str =
-    "Plan mode: ssh with port-forward / agent-forward flag";
-pub(super) const REASON_SSH_INTERACTIVE: &str =
-    "Plan mode: ssh without an explicit remote command";
-pub(super) const REASON_SUDO_BARE: &str =
-    "Plan mode: sudo / doas without a command to elevate";
+pub(super) const REASON_WGET_WRITE: &str = "Plan mode: wget without --spider (writes to disk)";
+pub(super) const REASON_SSH_FORWARD: &str = "Plan mode: ssh with port-forward / agent-forward flag";
+pub(super) const REASON_SSH_INTERACTIVE: &str = "Plan mode: ssh without an explicit remote command";
+pub(super) const REASON_SUDO_BARE: &str = "Plan mode: sudo / doas without a command to elevate";
 pub(super) const REASON_REDIRECT: &str =
     "Plan mode: redirect target is not /dev/null or another FD";
 #[allow(dead_code)]
@@ -286,20 +278,39 @@ fn first_dangerous_reason(cmd: &str) -> Option<&'static str> {
         return Some(REASON_PROCESS_SUB);
     }
     for needle in [
-        "--html=", "--pager=", "--compress-program=", "--use-compress-program=",
-        "--preprocessor=", "--pre=", "--checkpoint-action=", "--unzip-command=",
-        "--rsh=", "--upload-pack=", "--receive-pack=", "--exec-path=",
+        "--html=",
+        "--pager=",
+        "--compress-program=",
+        "--use-compress-program=",
+        "--preprocessor=",
+        "--pre=",
+        "--checkpoint-action=",
+        "--unzip-command=",
+        "--rsh=",
+        "--upload-pack=",
+        "--receive-pack=",
+        "--exec-path=",
     ] {
         if cmd.contains(needle) {
             return Some(REASON_LONG_OPT_RCE);
         }
     }
     for needle in [
-        "LD_PRELOAD=", "LD_AUDIT=", "LD_LIBRARY_PATH=",
-        "BASH_ENV=", "ENV=", "PROMPT_COMMAND=",
-        "GIT_EXTERNAL_DIFF=", "GIT_PAGER=", "GIT_SSH_COMMAND=",
-        "PAGER=", "MANPAGER=", "LESS=",
-        "PATH=", "IFS=", "SHELL=",
+        "LD_PRELOAD=",
+        "LD_AUDIT=",
+        "LD_LIBRARY_PATH=",
+        "BASH_ENV=",
+        "ENV=",
+        "PROMPT_COMMAND=",
+        "GIT_EXTERNAL_DIFF=",
+        "GIT_PAGER=",
+        "GIT_SSH_COMMAND=",
+        "PAGER=",
+        "MANPAGER=",
+        "LESS=",
+        "PATH=",
+        "IFS=",
+        "SHELL=",
     ] {
         if cmd.contains(needle) {
             return Some(REASON_ENV_MUTATE);
@@ -495,11 +506,14 @@ fn classify_readonly_segment(segment: &str) -> Result<(), &'static str> {
     // syntax-only subset is whitelisted.
     if command.as_str() == "bash" || command.as_str() == "sh" {
         let has_inspection_flag = args.iter().any(|a| {
-            matches!(a.as_str(), "-n" | "--noexec" | "-V" | "--version" | "-h" | "--help")
+            matches!(
+                a.as_str(),
+                "-n" | "--noexec" | "-V" | "--version" | "-h" | "--help"
+            )
         });
-        let no_exec_flag = !args.iter().any(|a| {
-            matches!(a.as_str(), "-c" | "-i" | "-l" | "--login" | "-s")
-        });
+        let no_exec_flag = !args
+            .iter()
+            .any(|a| matches!(a.as_str(), "-c" | "-i" | "-l" | "--login" | "-s"));
         if !args.is_empty() && has_inspection_flag && no_exec_flag {
             return Ok(());
         }
@@ -513,21 +527,92 @@ fn classify_readonly_segment(segment: &str) -> Result<(), &'static str> {
     // in published bypass chains (Flatt #3-5, GTFOBins).
     if matches!(
         command.as_str(),
-        "bash" | "sh" | "dash" | "zsh" | "ksh" | "busybox" | "ash" | "fish"
-        | "eval" | "exec" | "source" | "."
-        | "command" | "builtin" | "enable" | "trap" | "alias" | "unalias"
-        | "export" | "declare" | "typeset" | "local" | "readonly" | "unset"
-        | "set" | "shopt" | "ulimit" | "umask" | "fc" | "history" | "bind"
-        | "nice" | "nohup" | "setsid" | "timeout" | "time" | "coproc"
-        | "xargs" | "parallel"
-        | "make" | "ninja" | "just" | "cmake" | "msbuild" | "ant" | "gradle"
-        | "python" | "python3" | "perl" | "ruby" | "node" | "lua" | "php" | "deno" | "bun"
-        | "tar" | "zip" | "unzip" | "gzip" | "gunzip" | "bzip2" | "bunzip2" | "xz" | "unxz"
-        | "7z" | "rar" | "unrar"
-        | "tee" | "dd" | "rsync" | "scp" | "sftp"
-        | "man"
-        | "apt" | "apt-get" | "yum" | "dnf" | "pacman" | "zypper" | "brew" | "pip" | "pip3"
-        | "npm" | "yarn" | "pnpm" | "cargo-install"
+        "bash"
+            | "sh"
+            | "dash"
+            | "zsh"
+            | "ksh"
+            | "busybox"
+            | "ash"
+            | "fish"
+            | "eval"
+            | "exec"
+            | "source"
+            | "."
+            | "command"
+            | "builtin"
+            | "enable"
+            | "trap"
+            | "alias"
+            | "unalias"
+            | "export"
+            | "declare"
+            | "typeset"
+            | "local"
+            | "readonly"
+            | "unset"
+            | "set"
+            | "shopt"
+            | "ulimit"
+            | "umask"
+            | "fc"
+            | "history"
+            | "bind"
+            | "nice"
+            | "nohup"
+            | "setsid"
+            | "timeout"
+            | "time"
+            | "coproc"
+            | "xargs"
+            | "parallel"
+            | "make"
+            | "ninja"
+            | "just"
+            | "cmake"
+            | "msbuild"
+            | "ant"
+            | "gradle"
+            | "python"
+            | "python3"
+            | "perl"
+            | "ruby"
+            | "node"
+            | "lua"
+            | "php"
+            | "deno"
+            | "bun"
+            | "tar"
+            | "zip"
+            | "unzip"
+            | "gzip"
+            | "gunzip"
+            | "bzip2"
+            | "bunzip2"
+            | "xz"
+            | "unxz"
+            | "7z"
+            | "rar"
+            | "unrar"
+            | "tee"
+            | "dd"
+            | "rsync"
+            | "scp"
+            | "sftp"
+            | "man"
+            | "apt"
+            | "apt-get"
+            | "yum"
+            | "dnf"
+            | "pacman"
+            | "zypper"
+            | "brew"
+            | "pip"
+            | "pip3"
+            | "npm"
+            | "yarn"
+            | "pnpm"
+            | "cargo-install"
     ) {
         return Err(REASON_HEAD_BLOCKED);
     }
@@ -536,7 +621,11 @@ fn classify_readonly_segment(segment: &str) -> Result<(), &'static str> {
     // denied (e.g. "git -c flag" vs "git subcommand not in read-only set").
     match command.as_str() {
         "cd" | "pushd" | "popd" => {
-            if is_readonly_cd(args) { Ok(()) } else { Err(REASON_NOT_ALLOWLISTED) }
+            if is_readonly_cd(args) {
+                Ok(())
+            } else {
+                Err(REASON_NOT_ALLOWLISTED)
+            }
         }
         "find" => {
             let has_write = args.iter().any(|arg| {
@@ -550,7 +639,11 @@ fn classify_readonly_segment(segment: &str) -> Result<(), &'static str> {
                     || a.starts_with("-fprint")
                     || a == "-fls"
             });
-            if has_write { Err(REASON_FIND_WRITE) } else { Ok(()) }
+            if has_write {
+                Err(REASON_FIND_WRITE)
+            } else {
+                Ok(())
+            }
         }
         _x if {
             // Sentinel: every remaining arm in the original match runs
@@ -559,7 +652,10 @@ fn classify_readonly_segment(segment: &str) -> Result<(), &'static str> {
             // sentinel + always-true guard short-circuits this arm so
             // it never matches and the real dispatch follows.
             false
-        } => unreachable!(),
+        } =>
+        {
+            unreachable!()
+        }
         _ => match_remaining_segment(&command, args),
     }
 }
@@ -573,7 +669,10 @@ fn match_remaining_segment(command: &str, args: &[String]) -> Result<(), &'stati
             if args.iter().any(|a| a == "-i" || a.starts_with("-i.")) {
                 return Err(REASON_SED_EXEC);
             }
-            if args.iter().any(|a| a == "--file" || a.starts_with("--file=")) {
+            if args
+                .iter()
+                .any(|a| a == "--file" || a.starts_with("--file="))
+            {
                 return Err(REASON_SED_EXEC);
             }
             for a in args {
@@ -604,13 +703,30 @@ fn match_remaining_segment(command: &str, args: &[String]) -> Result<(), &'stati
                 .is_some_and(|subcommand| {
                     matches!(
                         subcommand.as_str(),
-                        "log" | "show" | "diff" | "status" | "branch"
-                        | "ls-files" | "ls-tree" | "rev-parse" | "blame"
-                        | "describe" | "tag" | "remote" | "shortlog"
-                        | "reflog" | "submodule" | "for-each-ref" | "cat-file"
+                        "log"
+                            | "show"
+                            | "diff"
+                            | "status"
+                            | "branch"
+                            | "ls-files"
+                            | "ls-tree"
+                            | "rev-parse"
+                            | "blame"
+                            | "describe"
+                            | "tag"
+                            | "remote"
+                            | "shortlog"
+                            | "reflog"
+                            | "submodule"
+                            | "for-each-ref"
+                            | "cat-file"
                     )
                 });
-            if sub_ok { Ok(()) } else { Err(REASON_GIT_SUBCOMMAND) }
+            if sub_ok {
+                Ok(())
+            } else {
+                Err(REASON_GIT_SUBCOMMAND)
+            }
         }
         "cargo" => {
             let sub_ok = args.first().is_some_and(|subcommand| {
@@ -619,79 +735,164 @@ fn match_remaining_segment(command: &str, args: &[String]) -> Result<(), &'stati
                     "check" | "test" | "clippy" | "tree" | "metadata" | "search" | "doc" | "fmt"
                 )
             });
-            if sub_ok { Ok(()) } else { Err(REASON_NOT_ALLOWLISTED) }
+            if sub_ok {
+                Ok(())
+            } else {
+                Err(REASON_NOT_ALLOWLISTED)
+            }
         }
         "kubectl" => {
             let sub_ok = args.first().is_some_and(|sub| {
                 matches!(
                     sub.as_str(),
-                    "get" | "describe" | "logs" | "version" | "cluster-info"
-                    | "explain" | "top" | "api-resources" | "api-versions" | "config"
+                    "get"
+                        | "describe"
+                        | "logs"
+                        | "version"
+                        | "cluster-info"
+                        | "explain"
+                        | "top"
+                        | "api-resources"
+                        | "api-versions"
+                        | "config"
                 )
             });
-            if sub_ok { Ok(()) } else { Err(REASON_NOT_ALLOWLISTED) }
+            if sub_ok {
+                Ok(())
+            } else {
+                Err(REASON_NOT_ALLOWLISTED)
+            }
         }
         "docker" | "podman" => {
             let sub_ok = args.first().is_some_and(|sub| {
                 matches!(
                     sub.as_str(),
-                    "ps" | "inspect" | "logs" | "version" | "info" | "images"
-                    | "image" | "history" | "stats" | "top" | "diff" | "port" | "search"
+                    "ps" | "inspect"
+                        | "logs"
+                        | "version"
+                        | "info"
+                        | "images"
+                        | "image"
+                        | "history"
+                        | "stats"
+                        | "top"
+                        | "diff"
+                        | "port"
+                        | "search"
                 )
             });
-            if sub_ok { Ok(()) } else { Err(REASON_NOT_ALLOWLISTED) }
+            if sub_ok {
+                Ok(())
+            } else {
+                Err(REASON_NOT_ALLOWLISTED)
+            }
         }
         "helm" => {
             let sub_ok = args.first().is_some_and(|sub| {
                 matches!(
                     sub.as_str(),
-                    "list" | "ls" | "get" | "show" | "version" | "history" | "status" | "search" | "env"
+                    "list"
+                        | "ls"
+                        | "get"
+                        | "show"
+                        | "version"
+                        | "history"
+                        | "status"
+                        | "search"
+                        | "env"
                 )
             });
-            if sub_ok { Ok(()) } else { Err(REASON_NOT_ALLOWLISTED) }
+            if sub_ok {
+                Ok(())
+            } else {
+                Err(REASON_NOT_ALLOWLISTED)
+            }
         }
         "terraform" | "tofu" => {
             let sub_ok = args.first().is_some_and(|sub| {
                 matches!(
                     sub.as_str(),
-                    "plan" | "show" | "output" | "version" | "validate" | "fmt" | "providers" | "graph"
+                    "plan"
+                        | "show"
+                        | "output"
+                        | "version"
+                        | "validate"
+                        | "fmt"
+                        | "providers"
+                        | "graph"
                 )
             });
-            if sub_ok { Ok(()) } else { Err(REASON_NOT_ALLOWLISTED) }
+            if sub_ok {
+                Ok(())
+            } else {
+                Err(REASON_NOT_ALLOWLISTED)
+            }
         }
         "systemctl" => {
             let sub_ok = args.first().is_some_and(|sub| {
                 matches!(
                     sub.as_str(),
-                    "status" | "show" | "is-active" | "is-enabled" | "is-failed"
-                    | "list-units" | "list-unit-files" | "list-timers" | "list-dependencies"
-                    | "list-jobs" | "list-machines" | "list-sockets" | "list-paths" | "cat"
+                    "status"
+                        | "show"
+                        | "is-active"
+                        | "is-enabled"
+                        | "is-failed"
+                        | "list-units"
+                        | "list-unit-files"
+                        | "list-timers"
+                        | "list-dependencies"
+                        | "list-jobs"
+                        | "list-machines"
+                        | "list-sockets"
+                        | "list-paths"
+                        | "cat"
                 )
             });
-            if sub_ok { Ok(()) } else { Err(REASON_NOT_ALLOWLISTED) }
+            if sub_ok {
+                Ok(())
+            } else {
+                Err(REASON_NOT_ALLOWLISTED)
+            }
         }
         "journalctl" => {
             let has_write = args.iter().any(|arg| {
                 matches!(
                     arg.as_str(),
-                    "--vacuum-size" | "--vacuum-time" | "--vacuum-files"
-                    | "--rotate" | "--flush" | "--sync" | "--relinquish-var"
+                    "--vacuum-size"
+                        | "--vacuum-time"
+                        | "--vacuum-files"
+                        | "--rotate"
+                        | "--flush"
+                        | "--sync"
+                        | "--relinquish-var"
                 )
             });
-            if has_write { Err(REASON_NOT_ALLOWLISTED) } else { Ok(()) }
+            if has_write {
+                Err(REASON_NOT_ALLOWLISTED)
+            } else {
+                Ok(())
+            }
         }
         "curl" => {
             let has_write = args.iter().any(|a| {
                 let lower = a.to_ascii_lowercase();
                 lower.starts_with("-d")
-                    || lower == "--data" || lower.starts_with("--data-")
-                    || lower == "-t" || lower == "--upload-file"
-                    || lower == "-f" || lower == "--form"
-                    || lower == "-o" || lower == "--output"
+                    || lower == "--data"
+                    || lower.starts_with("--data-")
+                    || lower == "-t"
+                    || lower == "--upload-file"
+                    || lower == "-f"
+                    || lower == "--form"
+                    || lower == "-o"
+                    || lower == "--output"
                     || lower == "--cookie-jar"
                     || (lower == "-x" || lower == "--request")
             });
-            if has_write { Err(REASON_CURL_WRITE) } else { Ok(()) }
+            if has_write {
+                Err(REASON_CURL_WRITE)
+            } else {
+                Ok(())
+            }
         }
         "wget" => {
             let ok = args.iter().any(|a| a == "--spider")
@@ -700,33 +901,31 @@ fn match_remaining_segment(command: &str, args: &[String]) -> Result<(), &'stati
         }
         "ssh" => is_readonly_ssh_reasoned(args),
         "sudo" | "doas" => is_readonly_sudo_reasoned(args),
-        "dig" | "host" | "nslookup" | "getent" | "whois"
-        | "ping" | "ping6" | "traceroute" | "traceroute6" | "tracepath" | "mtr"
-        | "ip" | "ifconfig" | "ss" | "netstat" | "ip6" | "arp" | "route" => Ok(()),
+        "dig" | "host" | "nslookup" | "getent" | "whois" | "ping" | "ping6" | "traceroute"
+        | "traceroute6" | "tracepath" | "mtr" | "ip" | "ifconfig" | "ss" | "netstat" | "ip6"
+        | "arp" | "route" => Ok(()),
         "nc" | "ncat" | "socat" => {
             let ok = args.iter().any(|a| a == "-z" || a.starts_with("-z"));
-            if ok { Ok(()) } else { Err(REASON_NOT_ALLOWLISTED) }
+            if ok {
+                Ok(())
+            } else {
+                Err(REASON_NOT_ALLOWLISTED)
+            }
         }
         // System inspection — explicitly read-only across the board.
-        "top" | "htop" | "btop" | "iotop" | "iostat" | "vmstat" | "mpstat" | "sar"
-        | "lsmod" | "lspci" | "lsusb" | "lsblk" | "lscpu" | "lshw" | "dmidecode"
-        | "uptime" | "w" | "users" | "last" | "lastlog" | "groups"
-        | "uname" | "hostname" | "id" | "whoami" | "pwd" | "tty" | "stty"
-        | "env" | "printenv" | "locale"
-        | "ps" | "pgrep" | "pidof"
-        | "free" | "df" | "du"
-        | "lsof" | "fuser"
-        | "ldd" | "objdump" | "nm" | "readelf" | "size" | "strings" | "file"
-        | "hexdump" | "xxd" | "od" | "base64" => Ok(()),
+        "top" | "htop" | "btop" | "iotop" | "iostat" | "vmstat" | "mpstat" | "sar" | "lsmod"
+        | "lspci" | "lsusb" | "lsblk" | "lscpu" | "lshw" | "dmidecode" | "uptime" | "w"
+        | "users" | "last" | "lastlog" | "groups" | "uname" | "hostname" | "id" | "whoami"
+        | "pwd" | "tty" | "stty" | "env" | "printenv" | "locale" | "ps" | "pgrep" | "pidof"
+        | "free" | "df" | "du" | "lsof" | "fuser" | "ldd" | "objdump" | "nm" | "readelf"
+        | "size" | "strings" | "file" | "hexdump" | "xxd" | "od" | "base64" => Ok(()),
         // Plain inspection / piping.
-        "ls" | "cat" | "tac" | "head" | "tail" | "less" | "more" | "bat"
-        | "grep" | "egrep" | "fgrep" | "rg" | "ack" | "fd"
-        | "wc" | "stat" | "which" | "type" | "command" | "whereis"
-        | "echo" | "printf" | "yes" | "true" | "false"
-        | "date" | "cal" | "bc" | "expr"
-        | "tree" | "diff" | "cmp" | "comm"
-        | "sort" | "uniq" | "cut" | "paste" | "join" | "tr" | "rev" | "fold" | "expand" | "unexpand"
-        | "jq" | "yq" | "tomlq" | "xq" | "dasel" | "miller" | "mlr" | "csvkit" => Ok(()),
+        "ls" | "cat" | "tac" | "head" | "tail" | "less" | "more" | "bat" | "grep" | "egrep"
+        | "fgrep" | "rg" | "ack" | "fd" | "wc" | "stat" | "which" | "type" | "command"
+        | "whereis" | "echo" | "printf" | "yes" | "true" | "false" | "date" | "cal" | "bc"
+        | "expr" | "tree" | "diff" | "cmp" | "comm" | "sort" | "uniq" | "cut" | "paste"
+        | "join" | "tr" | "rev" | "fold" | "expand" | "unexpand" | "jq" | "yq" | "tomlq" | "xq"
+        | "dasel" | "miller" | "mlr" | "csvkit" => Ok(()),
         _ => Err(REASON_NOT_ALLOWLISTED),
     }
 }
@@ -750,7 +949,10 @@ fn is_readonly_ssh_reasoned(args: &[String]) -> Result<(), &'static str> {
     let mut host: Option<&str> = None;
     while let Some(a) = iter.next() {
         if a.starts_with('-') {
-            if matches!(a.as_str(), "-i" | "-p" | "-o" | "-F" | "-c" | "-J" | "-b" | "-B") {
+            if matches!(
+                a.as_str(),
+                "-i" | "-p" | "-o" | "-F" | "-c" | "-J" | "-b" | "-B"
+            ) {
                 let _ = iter.next();
             }
             continue;
@@ -821,7 +1023,10 @@ fn is_readonly_ssh(args: &[String]) -> bool {
     while let Some(a) = iter.next() {
         if a.starts_with('-') {
             // Skip flags that take a value.
-            if matches!(a.as_str(), "-i" | "-p" | "-o" | "-F" | "-c" | "-J" | "-b" | "-B") {
+            if matches!(
+                a.as_str(),
+                "-i" | "-p" | "-o" | "-F" | "-c" | "-J" | "-b" | "-B"
+            ) {
                 let _ = iter.next();
             }
             continue;
@@ -1034,12 +1239,29 @@ fn is_env_assignment(token: &str) -> bool {
     // followed by something — empty `LD_PRELOAD=` somehow ends up not
     // hitting the substring, this still rejects it).
     const DENY_ENV: &[&str] = &[
-        "LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH",
-        "BASH_ENV", "ENV", "PROMPT_COMMAND",
-        "PS0", "PS1", "PS2", "PS3", "PS4",
-        "IFS", "PATH", "SHELL", "BASH",
-        "GIT_EXTERNAL_DIFF", "GIT_PAGER", "GIT_SSH_COMMAND", "GIT_DIR",
-        "PAGER", "MANPAGER", "LESS", "MANROFFSEQ",
+        "LD_PRELOAD",
+        "LD_AUDIT",
+        "LD_LIBRARY_PATH",
+        "BASH_ENV",
+        "ENV",
+        "PROMPT_COMMAND",
+        "PS0",
+        "PS1",
+        "PS2",
+        "PS3",
+        "PS4",
+        "IFS",
+        "PATH",
+        "SHELL",
+        "BASH",
+        "GIT_EXTERNAL_DIFF",
+        "GIT_PAGER",
+        "GIT_SSH_COMMAND",
+        "GIT_DIR",
+        "PAGER",
+        "MANPAGER",
+        "LESS",
+        "MANROFFSEQ",
     ];
     !DENY_ENV.iter().any(|d| name == *d)
 }
@@ -1071,7 +1293,9 @@ fn sed_script_has_e_modifier(script: &str) -> bool {
         if c != 's' {
             continue;
         }
-        let Some(&sep) = chars.peek() else { return false; };
+        let Some(&sep) = chars.peek() else {
+            return false;
+        };
         if !"/|#@!,".contains(sep) {
             continue;
         }
@@ -1120,10 +1344,18 @@ fn awk_script_has_dangerous(script: &str) -> bool {
     // happened at tokenization, so what we see is the program text.
     let lower = script.to_ascii_lowercase();
     for needle in [
-        "system(", "getline",
-        "print>", "print >", "print|", "print |",
-        "printf>", "printf >", "printf|", "printf |",
-        "| getline", "|getline",
+        "system(",
+        "getline",
+        "print>",
+        "print >",
+        "print|",
+        "print |",
+        "printf>",
+        "printf >",
+        "printf|",
+        "printf |",
+        "| getline",
+        "|getline",
     ] {
         if lower.contains(needle) {
             return true;

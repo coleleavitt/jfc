@@ -1,4 +1,3 @@
-
 pub mod jwt;
 pub mod oidc;
 pub mod store;
@@ -499,10 +498,8 @@ mod tests {
     fn build_body_provider_options_overrides_field_normal() {
         let mut opts = StreamOptions::new("m");
         opts.reasoning_effort = Some("high".to_string());
-        opts.provider_options.insert(
-            "reasoning_effort".to_string(),
-            Value::from("low"),
-        );
+        opts.provider_options
+            .insert("reasoning_effort".to_string(), Value::from("low"));
         let body = build_body(vec![user_msg("hi")], &opts);
         assert_eq!(body["reasoning_effort"], "low");
     }
@@ -519,9 +516,7 @@ mod tests {
 
         // Inline the strip logic from OpenWebUIProvider::stream so the
         // test catches drift if someone refactors one but not the other.
-        let in_provider_options = opts
-            .provider_options
-            .contains_key("reasoning_effort");
+        let in_provider_options = opts.provider_options.contains_key("reasoning_effort");
         if let Some(obj) = body.as_object_mut() {
             if !in_provider_options {
                 obj.remove("reasoning_effort");
@@ -540,15 +535,11 @@ mod tests {
     fn owui_stream_post_build_strip_respects_provider_options_normal() {
         let mut opts = StreamOptions::new("m");
         opts.reasoning_effort = Some("high".to_string());
-        opts.provider_options.insert(
-            "reasoning_effort".to_string(),
-            Value::from("medium"),
-        );
+        opts.provider_options
+            .insert("reasoning_effort".to_string(), Value::from("medium"));
         let mut body = build_body(vec![user_msg("hi")], &opts);
 
-        let in_provider_options = opts
-            .provider_options
-            .contains_key("reasoning_effort");
+        let in_provider_options = opts.provider_options.contains_key("reasoning_effort");
         if let Some(obj) = body.as_object_mut() {
             if !in_provider_options {
                 obj.remove("reasoning_effort");
@@ -2197,9 +2188,7 @@ impl Provider for OpenWebUIProvider {
         if let Some(obj) = body.as_object_mut() {
             // Only strip if provider_options didn't re-add it as the
             // intentional escape hatch.
-            let in_provider_options = options
-                .provider_options
-                .contains_key("reasoning_effort");
+            let in_provider_options = options.provider_options.contains_key("reasoning_effort");
             if !in_provider_options {
                 obj.remove("reasoning_effort");
             }

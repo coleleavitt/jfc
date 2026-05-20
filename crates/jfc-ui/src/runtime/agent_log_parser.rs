@@ -110,7 +110,9 @@ pub(crate) fn parse_agent_log_to_chat_messages(lines: &[String]) -> Vec<ChatMess
         }
         let trimmed = buf.trim_end_matches('\n').to_owned();
         if !trimmed.is_empty() {
-            out.push(ChatMessage::assistant_parts(vec![MessagePart::Text(trimmed)]));
+            out.push(ChatMessage::assistant_parts(vec![MessagePart::Text(
+                trimmed,
+            )]));
         }
         buf.clear();
     };
@@ -146,8 +148,8 @@ pub(crate) fn parse_agent_log_to_chat_messages(lines: &[String]) -> Vec<ChatMess
                     }
                     _ => (Some(body.to_owned()), None),
                 };
-                out.push(ChatMessage::assistant_parts(vec![
-                    MessagePart::TaskStatus(TaskStatusPart {
+                out.push(ChatMessage::assistant_parts(vec![MessagePart::TaskStatus(
+                    TaskStatusPart {
                         task_id: TaskId::from("agent-log"),
                         description: "agent".to_owned(),
                         status,
@@ -155,8 +157,8 @@ pub(crate) fn parse_agent_log_to_chat_messages(lines: &[String]) -> Vec<ChatMess
                         error,
                         elapsed_ms: None,
                         model: None,
-                    }),
-                ]));
+                    },
+                )]));
             }
             LogEntry::Lifecycle(_) => {
                 // Dropped intentionally — see fn doc.
@@ -203,11 +205,7 @@ mod tests {
 
     #[test]
     fn tool_marker_between_prose_splits_into_three_messages() {
-        let input = lines(&[
-            "I'll write the file.",
-            "[tool] write",
-            "And then it ran.",
-        ]);
+        let input = lines(&["I'll write the file.", "[tool] write", "And then it ran."]);
         let out = parse_agent_log_to_chat_messages(&input);
         assert_eq!(out.len(), 3);
         assert!(matches!(out[0].parts[0], MessagePart::Text(_)));

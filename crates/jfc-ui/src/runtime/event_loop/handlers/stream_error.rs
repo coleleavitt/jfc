@@ -248,10 +248,8 @@ mod tests {
 
         async fn stream(
             &self,
-            #[allow(dead_code)]
-            messages: Vec<ProviderMessage>,
-            #[allow(dead_code)]
-            options: &StreamOptions,
+            #[allow(dead_code)] messages: Vec<ProviderMessage>,
+            #[allow(dead_code)] options: &StreamOptions,
         ) -> anyhow::Result<EventStream> {
             Ok(Box::pin(futures::stream::empty()))
         }

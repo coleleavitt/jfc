@@ -94,10 +94,7 @@ impl SprintBudget {
         if self.utilization < 0.50 {
             return None;
         }
-        Some(format!(
-            "\n## Sprint Budget\n{}\n",
-            self.status_line
-        ))
+        Some(format!("\n## Sprint Budget\n{}\n", self.status_line))
     }
 }
 
@@ -181,11 +178,7 @@ impl HandoffSummary {
         let mut entries: Vec<_> = std::fs::read_dir(&dir)
             .ok()?
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map_or(false, |ext| ext == "md")
-            })
+            .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"))
             .collect();
         // Sort by filename (which contains timestamp) descending.
         entries.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
@@ -385,7 +378,11 @@ impl std::fmt::Display for EvaluationResult {
         if self.passed {
             write!(f, "Evaluation passed: no stub patterns detected")
         } else {
-            writeln!(f, "Evaluation FAILED: {} stub patterns detected:", self.issues.len())?;
+            writeln!(
+                f,
+                "Evaluation FAILED: {} stub patterns detected:",
+                self.issues.len()
+            )?;
             for issue in &self.issues {
                 writeln!(
                     f,
@@ -411,19 +408,17 @@ pub fn evaluate_work_quality(git_root: &Path) -> EvaluationResult {
         .current_dir(git_root)
         .output()
     {
-        Ok(output) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .filter(|l| {
-                    l.ends_with(".rs")
-                        || l.ends_with(".ts")
-                        || l.ends_with(".py")
-                        || l.ends_with(".go")
-                        || l.ends_with(".js")
-                })
-                .map(|l| git_root.join(l))
-                .collect::<Vec<_>>()
-        }
+        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|l| {
+                l.ends_with(".rs")
+                    || l.ends_with(".ts")
+                    || l.ends_with(".py")
+                    || l.ends_with(".go")
+                    || l.ends_with(".js")
+            })
+            .map(|l| git_root.join(l))
+            .collect::<Vec<_>>(),
         _ => {
             // Also check staged files
             match std::process::Command::new("git")
@@ -431,20 +426,23 @@ pub fn evaluate_work_quality(git_root: &Path) -> EvaluationResult {
                 .current_dir(git_root)
                 .output()
             {
-                Ok(output) if output.status.success() => {
-                    String::from_utf8_lossy(&output.stdout)
-                        .lines()
-                        .filter(|l| {
-                            l.ends_with(".rs")
-                                || l.ends_with(".ts")
-                                || l.ends_with(".py")
-                                || l.ends_with(".go")
-                                || l.ends_with(".js")
-                        })
-                        .map(|l| git_root.join(l))
-                        .collect::<Vec<_>>()
+                Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .filter(|l| {
+                        l.ends_with(".rs")
+                            || l.ends_with(".ts")
+                            || l.ends_with(".py")
+                            || l.ends_with(".go")
+                            || l.ends_with(".js")
+                    })
+                    .map(|l| git_root.join(l))
+                    .collect::<Vec<_>>(),
+                _ => {
+                    return EvaluationResult {
+                        passed: true,
+                        issues: vec![],
+                    };
                 }
-                _ => return EvaluationResult { passed: true, issues: vec![] },
             }
         }
     };

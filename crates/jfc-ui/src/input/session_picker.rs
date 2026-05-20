@@ -81,7 +81,8 @@ pub(super) fn handle_session_picker_key(
         }
         KeyCode::PageDown => {
             let max = total.saturating_sub(1);
-            app.session_picker_state.select(Some((current + 10).min(max)));
+            app.session_picker_state
+                .select(Some((current + 10).min(max)));
         }
         KeyCode::Char(c) => {
             app.session_picker_filter.push(c);

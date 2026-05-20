@@ -380,10 +380,8 @@ mod tests {
         }
         async fn complete(
             &self,
-            #[allow(dead_code)]
-            messages: Vec<PMsg>,
-            #[allow(dead_code)]
-            options: &SOpts,
+            #[allow(dead_code)] messages: Vec<PMsg>,
+            #[allow(dead_code)] options: &SOpts,
         ) -> Result<CompletionResponse> {
             self.result
                 .lock()

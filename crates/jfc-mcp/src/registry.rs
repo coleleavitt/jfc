@@ -16,7 +16,6 @@
 //! transparently — modulo a window where `dispatch_tool` returns
 //! `Disconnected` if the call lands during the swap.
 
-
 use std::collections::HashMap;
 use std::sync::Arc;
 

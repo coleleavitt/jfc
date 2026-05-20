@@ -178,14 +178,21 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         // Idle → flat. No pulse, no fake "things are happening" signal.
         0.0
     };
-    let dot_color = blend_color(t.border, provider_accent(app.provider.name()), dot_intensity);
+    let dot_color = blend_color(
+        t.border,
+        provider_accent(app.provider.name()),
+        dot_intensity,
+    );
 
     let badge_str = format!(" {} · ", badges.join(" · "));
     // Budget for the badge string = right_start − provider prefix width.
     let provider_prefix_width = 4 + provider_badge.chars().count(); // " ● " + name + " · "
     let badge_budget = right_start.saturating_sub(provider_prefix_width).max(1);
     let badge_truncated = if badge_str.chars().count() > badge_budget {
-        let truncated: String = badge_str.chars().take(badge_budget.saturating_sub(1)).collect();
+        let truncated: String = badge_str
+            .chars()
+            .take(badge_budget.saturating_sub(1))
+            .collect();
         format!("{truncated}…")
     } else {
         badge_str
@@ -195,7 +202,10 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
 
     let line = Line::from(vec![
         Span::raw(" "),
-        Span::styled("●", Style::default().fg(dot_color).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "●",
+            Style::default().fg(dot_color).add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" "),
         Span::styled(
             provider_badge,

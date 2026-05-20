@@ -129,14 +129,7 @@ fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sen
     };
     tokio::spawn(async move {
         stream_response(
-            provider,
-            messages,
-            model,
-            tx,
-            interrupt,
-            cancel,
-            None,
-            overrides,
+            provider, messages, model, tx, interrupt, cancel, None, overrides,
         )
         .await;
     });

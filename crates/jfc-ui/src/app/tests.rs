@@ -26,10 +26,8 @@ impl Provider for TestProvider {
 
     async fn stream(
         &self,
-        #[allow(dead_code)]
-        messages: Vec<ProviderMessage>,
-        #[allow(dead_code)]
-        options: &StreamOptions,
+        #[allow(dead_code)] messages: Vec<ProviderMessage>,
+        #[allow(dead_code)] options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
         Ok(Box::pin(futures::stream::empty()))
     }
@@ -611,10 +609,10 @@ impl TempConfigHome {
         }
         Self {
             #[allow(dead_code)]
-            dir: dir,
+            dir,
             prior,
             #[allow(dead_code)]
-            guard: guard,
+            guard,
         }
     }
 }

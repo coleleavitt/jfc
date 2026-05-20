@@ -747,8 +747,7 @@ impl jfc_economy::reporting::AgentInvoker for StubInvoker {
     }
     async fn invoke_validator(
         &self,
-        #[allow(dead_code)]
-        prompt: jfc_economy::reporting::ValidatorPrompt,
+        #[allow(dead_code)] prompt: jfc_economy::reporting::ValidatorPrompt,
     ) -> Result<jfc_economy::reporting::ValidatorOutcome, String> {
         *self.validator_calls.lock().unwrap() += 1;
         Ok(jfc_economy::reporting::ValidatorOutcome {

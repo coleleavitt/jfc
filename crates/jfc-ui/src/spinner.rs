@@ -317,6 +317,19 @@ pub fn stall_status(time_since_last_token: Duration) -> Option<&'static str> {
     }
 }
 
+/// User-facing stream liveness chip. Token counts tell us how much has
+/// arrived; this tells us whether the SSE wire is still moving right now.
+pub fn stream_activity_status(time_since_last_stream_event: Duration) -> String {
+    let secs = time_since_last_stream_event.as_secs();
+    if secs <= 1 {
+        "stream active".to_string()
+    } else if secs < 10 {
+        format!("stream {secs}s ago")
+    } else {
+        format!("stream idle {}", fmt_elapsed(time_since_last_stream_event))
+    }
+}
+
 /// Past-tense verbs for the `Cooked for Nm Ns` post-turn marker. Sourced
 /// from v126 cli.js:233999-234008; falls back to "Worked" if the bucket
 /// math overflows. Same 2-second-window rotation as the live verb so the
@@ -437,6 +450,7 @@ pub fn status_segments(
     elapsed: Duration,
     output_tokens: u64,
     time_since_last_token: Duration,
+    time_since_last_stream_event: Option<Duration>,
     thinking: Option<ThinkingStatus>,
 ) -> StatusSegments {
     let mut parts: Vec<String> = vec![fmt_elapsed(elapsed)];
@@ -449,6 +463,9 @@ pub fn status_segments(
                 parts.push(format!("{:.0} tok/s", rate));
             }
         }
+    }
+    if let Some(d) = time_since_last_stream_event {
+        parts.push(stream_activity_status(d));
     }
     match thinking {
         Some(ThinkingStatus::Live) => {
@@ -491,6 +508,7 @@ pub fn format_status(
     elapsed: Duration,
     output_tokens: u64,
     time_since_last_token: Duration,
+    time_since_last_stream_event: Option<Duration>,
     thinking: Option<ThinkingStatus>,
 ) -> String {
     let mut parts: Vec<String> = vec![fmt_elapsed(elapsed)];
@@ -508,6 +526,9 @@ pub fn format_status(
                 parts.push(format!("{:.0} tok/s", rate));
             }
         }
+    }
+    if let Some(d) = time_since_last_stream_event {
+        parts.push(stream_activity_status(d));
     }
     // Thinking signal beats stall_status while live (mid-reasoning the
     // wire is silent for tens of seconds and the user would otherwise
@@ -663,11 +684,13 @@ mod tests {
             Duration::from_secs(310),
             14_600,
             Duration::from_secs(70),
+            Some(Duration::from_secs(0)),
             None,
         );
         assert!(s.contains("…"), "verb ellipsis missing: {s}");
         assert!(s.contains("5m 10s"), "elapsed missing: {s}");
         assert!(s.contains("14k tokens"), "token line missing: {s}");
+        assert!(s.contains("stream active"), "stream liveness missing: {s}");
         assert!(
             s.contains("almost done thinking"),
             "stall hint missing: {s}"
@@ -676,7 +699,14 @@ mod tests {
 
     #[test]
     fn format_status_omits_tokens_when_zero_robust() {
-        let s = format_status(0, Duration::from_secs(3), 0, Duration::from_secs(0), None);
+        let s = format_status(
+            0,
+            Duration::from_secs(3),
+            0,
+            Duration::from_secs(0),
+            None,
+            None,
+        );
         assert!(
             !s.contains("tokens"),
             "should hide token suffix when 0: {s}"
@@ -686,7 +716,14 @@ mod tests {
 
     #[test]
     fn format_status_omits_stall_when_fresh_robust() {
-        let s = format_status(0, Duration::from_secs(5), 100, Duration::from_secs(2), None);
+        let s = format_status(
+            0,
+            Duration::from_secs(5),
+            100,
+            Duration::from_secs(2),
+            None,
+            None,
+        );
         assert!(
             !s.contains("thinking"),
             "fresh stream shouldn't say 'thinking': {s}"
@@ -701,9 +738,14 @@ mod tests {
             Duration::from_secs(20),
             500,
             Duration::from_secs(20),
+            Some(Duration::from_secs(20)),
             Some(ThinkingStatus::Live),
         );
         assert!(s.contains("thinking"), "expected live thinking: {s}");
+        assert!(
+            s.contains("stream idle 20s"),
+            "live thinking should expose stream idleness: {s}"
+        );
         // While live, we suppress stall messages so a 20s gap doesn't
         // double-display "warming up · thinking".
         assert!(
@@ -721,6 +763,7 @@ mod tests {
             Duration::from_secs(60),
             5_000,
             Duration::from_secs(0),
+            Some(Duration::from_secs(1)),
             Some(ThinkingStatus::Done(Duration::from_secs(12))),
         );
         assert!(s.contains("thought for 12s"), "expected duration: {s}");
@@ -735,6 +778,7 @@ mod tests {
             Duration::from_secs(5),
             100,
             Duration::from_secs(0),
+            None,
             Some(ThinkingStatus::Done(Duration::from_millis(400))),
         );
         assert!(s.contains("thought for 1s"), "expected 1s floor: {s}");

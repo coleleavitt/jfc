@@ -21,7 +21,6 @@
 //! the scope of this provider, and the wizard already detects gcloud as a
 //! prerequisite. Trade-off: we depend on `gcloud` being on `$PATH`.
 
-
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::{Duration, Instant};

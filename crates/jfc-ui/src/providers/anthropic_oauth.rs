@@ -1,4 +1,3 @@
-
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -1294,7 +1293,10 @@ impl Provider for AnthropicOAuthProvider {
                             .header("x-app", "cli")
                             .header("anthropic-client-platform", "cli")
                             .header("x-client-request-id", request_id.clone())
-                            .header("x-claude-code-session-id", options.session_id.as_deref().unwrap_or(""))
+                            .header(
+                                "x-claude-code-session-id",
+                                options.session_id.as_deref().unwrap_or(""),
+                            )
                             .body(effective_body.clone())
                             .send()
                     })
@@ -2108,15 +2110,15 @@ mod tests {
     fn anthropic_beta_contains_required_values() {
         for val in &[
             "claude-code-20250219",
-             "oauth-2025-04-20",
-             "interleaved-thinking-2025-05-14",
-             "prompt-caching-scope-2026-01-05",
-             "output-128k-2025-02-19",
-             "structured-outputs-2025-12-15",
-             "afk-mode-2026-01-31",
-             "advisor-tool-2026-03-01",
-             "files-api-2025-04-14",
-         ] {
+            "oauth-2025-04-20",
+            "interleaved-thinking-2025-05-14",
+            "prompt-caching-scope-2026-01-05",
+            "output-128k-2025-02-19",
+            "structured-outputs-2025-12-15",
+            "afk-mode-2026-01-31",
+            "advisor-tool-2026-03-01",
+            "files-api-2025-04-14",
+        ] {
             assert!(
                 ANTHROPIC_BETA.contains(val),
                 "ANTHROPIC_BETA missing: {val}"

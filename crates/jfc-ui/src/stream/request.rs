@@ -491,7 +491,10 @@ Do not use a colon before tool calls.";
     // we must strip thinking for that one request — the model is
     // being instructed to commit to an action, not deliberate.
     if matches!(overrides.tool_choice, StreamToolChoice::Any) {
-        if opts.adaptive_thinking || opts.thinking_budget.is_some() || opts.thinking_display.is_some() {
+        if opts.adaptive_thinking
+            || opts.thinking_budget.is_some()
+            || opts.thinking_display.is_some()
+        {
             tracing::debug!(
                 target: "jfc::stream::guard",
                 "stripping thinking on tool_choice=any (Anthropic API constraint)"

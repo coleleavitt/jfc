@@ -44,7 +44,6 @@
 //! no real win — we only need a handful of message shapes and they're
 //! tiny. We stick with `serde_json::json!` macros throughout.
 
-
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;

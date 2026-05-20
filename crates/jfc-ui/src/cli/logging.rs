@@ -87,10 +87,7 @@ pub(super) fn init_tracing(
     let env_rust_log = std::env::var("RUST_LOG").unwrap_or_default();
     let filter = if env_rust_log.is_empty() {
         EnvFilter::new("debug,reqwest=warn,hyper=warn,h2=warn")
-    } else if env_rust_log
-        .split(',')
-        .any(|d| d.trim().starts_with("jfc"))
-    {
+    } else if env_rust_log.split(',').any(|d| d.trim().starts_with("jfc")) {
         EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| EnvFilter::new("debug,reqwest=warn,hyper=warn,h2=warn"))
     } else {

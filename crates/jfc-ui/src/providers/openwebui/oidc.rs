@@ -14,7 +14,6 @@
 //! Cookies are persisted to `~/.config/opencode/openwebui-cookies.json` so a
 //! warm session can skip credentials and only re-do Duo (matches the plugin).
 
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;

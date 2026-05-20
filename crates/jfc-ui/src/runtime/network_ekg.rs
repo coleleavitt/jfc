@@ -188,7 +188,10 @@ mod tests {
     fn r_peak_scales_with_activity_normal() {
         let idle = sample(5, 0.0);
         let active = sample(5, 1.0);
-        assert!(active > idle, "active R must exceed idle R: {idle} {active}");
+        assert!(
+            active > idle,
+            "active R must exceed idle R: {idle} {active}"
+        );
         assert_eq!(active, 8, "full activity should saturate R at 8");
     }
 
@@ -230,7 +233,13 @@ mod tests {
         let mut activity: f32 = 0.0;
         let mut beat_remaining: usize = 0;
         for _ in 0..20 {
-            tick(&mut samples, &mut phase, &mut activity, &mut beat_remaining, 0);
+            tick(
+                &mut samples,
+                &mut phase,
+                &mut activity,
+                &mut beat_remaining,
+                0,
+            );
         }
         // Every pushed sample should be the isoelectric baseline.
         assert!(
@@ -251,14 +260,32 @@ mod tests {
         let mut activity: f32 = 0.0;
         let mut beat_remaining: usize = 0;
         // Burst at t=0.
-        tick(&mut samples, &mut phase, &mut activity, &mut beat_remaining, 4096);
+        tick(
+            &mut samples,
+            &mut phase,
+            &mut activity,
+            &mut beat_remaining,
+            4096,
+        );
         // Quiet for the rest of the beat.
         for _ in 0..(PATTERN_LEN - 1) {
-            tick(&mut samples, &mut phase, &mut activity, &mut beat_remaining, 0);
+            tick(
+                &mut samples,
+                &mut phase,
+                &mut activity,
+                &mut beat_remaining,
+                0,
+            );
         }
         // Now flat-line.
         for _ in 0..5 {
-            tick(&mut samples, &mut phase, &mut activity, &mut beat_remaining, 0);
+            tick(
+                &mut samples,
+                &mut phase,
+                &mut activity,
+                &mut beat_remaining,
+                0,
+            );
         }
         assert_eq!(beat_remaining, 0);
         assert_eq!(samples.len(), PATTERN_LEN + 5);
@@ -269,7 +296,11 @@ mod tests {
         // The R-wave should be among the first PATTERN_LEN samples.
         let beat_samples: Vec<u8> = samples.iter().take(PATTERN_LEN).copied().collect();
         let r_value = beat_samples.iter().max().copied().unwrap();
-        assert!(r_value >= R_PEAK_BASE as u8, "expected R-peak in beat, got {:?}", beat_samples);
+        assert!(
+            r_value >= R_PEAK_BASE as u8,
+            "expected R-peak in beat, got {:?}",
+            beat_samples
+        );
     }
 
     #[test]
@@ -281,10 +312,22 @@ mod tests {
         let mut phase: usize = 0;
         let mut activity: f32 = 0.0;
         let mut beat_remaining: usize = 0;
-        tick(&mut samples, &mut phase, &mut activity, &mut beat_remaining, 4096);
+        tick(
+            &mut samples,
+            &mut phase,
+            &mut activity,
+            &mut beat_remaining,
+            4096,
+        );
         // We're now at phase=1 with beat_remaining=PATTERN_LEN-1.
         // A second burst should snap phase back to 0 and re-arm.
-        tick(&mut samples, &mut phase, &mut activity, &mut beat_remaining, 4096);
+        tick(
+            &mut samples,
+            &mut phase,
+            &mut activity,
+            &mut beat_remaining,
+            4096,
+        );
         // After the second burst's tick we should be at phase=1
         // again with beat_remaining=PATTERN_LEN-1, NOT PATTERN_LEN-2.
         assert_eq!(beat_remaining, PATTERN_LEN - 1);
@@ -298,7 +341,13 @@ mod tests {
         let mut activity: f32 = 0.0;
         let mut beat_remaining: usize = 0;
         for _ in 0..200 {
-            tick(&mut samples, &mut phase, &mut activity, &mut beat_remaining, 0);
+            tick(
+                &mut samples,
+                &mut phase,
+                &mut activity,
+                &mut beat_remaining,
+                0,
+            );
         }
         assert_eq!(samples.len(), 80);
     }
@@ -309,7 +358,13 @@ mod tests {
         let mut phase: usize = 0;
         let mut activity: f32 = 0.0;
         let mut beat_remaining: usize = 0;
-        tick(&mut samples, &mut phase, &mut activity, &mut beat_remaining, 100_000);
+        tick(
+            &mut samples,
+            &mut phase,
+            &mut activity,
+            &mut beat_remaining,
+            100_000,
+        );
         assert!(activity > 0.0 && activity < 1.0, "got {activity}");
     }
 }

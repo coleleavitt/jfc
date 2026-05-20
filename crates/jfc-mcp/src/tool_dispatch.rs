@@ -13,7 +13,6 @@
 //! and propagate `isError` separately so the streaming layer can decide
 //! whether to surface it as a tool failure.
 
-
 use serde_json::Value;
 
 use super::protocol::ToolCallOutcome;

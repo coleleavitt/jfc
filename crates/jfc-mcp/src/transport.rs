@@ -26,7 +26,6 @@
 //! See `lsp_client.rs`'s module docs for the rationale on this layout
 //! (stderr drain prevents deadlock; tasks vs. shared writer mutex).
 
-
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::process::Stdio;

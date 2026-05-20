@@ -168,8 +168,7 @@ pub(crate) fn copy_to_clipboard(text: &str, source: &str) {
 /// `base64` crate dependency just for this one path — the OSC 52 alphabet
 /// is the standard one, no URL-safe variant.
 fn base64_encode(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
     for chunk in input.chunks(3) {
         let b0 = chunk[0] as u32;
@@ -218,9 +217,10 @@ mod tests {
         // leaks into the index math.
         let raw: Vec<u8> = (0u8..=255).collect();
         let out = base64_encode(&raw);
-        assert!(out.chars().all(|c| {
-            c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='
-        }));
+        assert!(
+            out.chars()
+                .all(|c| { c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' })
+        );
         // 256 bytes → 344 chars (256 / 3 = 85.33, round up to 86 groups × 4 = 344).
         assert_eq!(out.len(), 344);
     }
