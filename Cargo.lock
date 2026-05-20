@@ -2179,6 +2179,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "jfc-theme"
+version = "0.1.0"
+dependencies = [
+ "ratatui",
+]
+
+[[package]]
 name = "jfc-ui"
 version = "0.1.0"
 dependencies = [
@@ -2212,6 +2219,7 @@ dependencies = [
  "jfc-provider",
  "jfc-providers",
  "jfc-session",
+ "jfc-theme",
  "libc",
  "notify",
  "notify-rust",

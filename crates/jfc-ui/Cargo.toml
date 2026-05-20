@@ -89,6 +89,7 @@ indexmap = "2"
 url = "2"
 urlencoding = "2"
 serde_urlencoded = "0.7"
+jfc-theme = { path = "../jfc-theme" }
 jfc-graph = { path = "../jfc-graph" }
 jfc-economy = { path = "../jfc-economy" }
 jfc-mcp = { path = "../jfc-mcp" }
