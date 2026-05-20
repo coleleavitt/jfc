@@ -469,6 +469,34 @@ impl AntigravityOAuthProvider {
     fn endpoint(&self) -> &'static str {
         CODE_ASSIST_ENDPOINTS[0]
     }
+
+    /// Pull the live access token + persisted project id out of the store.
+    /// `account_id` was packed as `{email}|{project}|{tier}` at login time
+    /// (see [`Self::persist`]) — we split it back out here.
+    fn access_token_and_project(&self) -> anyhow::Result<(String, String)> {
+        let Some(AuthMethod::OAuth {
+            access_token,
+            account_id,
+            ..
+        }) = self.store.get(PROVIDER_ID)?
+        else {
+            anyhow::bail!(
+                "not logged in to Antigravity \u{2014} run `/login antigravity` first"
+            );
+        };
+        let project_id = account_id
+            .as_deref()
+            .and_then(|s| s.split('|').nth(1))
+            .map(str::to_owned)
+            .unwrap_or_default();
+        if project_id.is_empty() {
+            anyhow::bail!(
+                "Antigravity login is missing a project id \u{2014} re-run \
+                 `/login antigravity` so loadCodeAssist can resolve one"
+            );
+        }
+        Ok((access_token, project_id))
+    }
 }
 
 impl jfc_provider::seal::Sealed for AntigravityOAuthProvider {}
@@ -547,20 +575,57 @@ impl Provider for AntigravityOAuthProvider {
 
     async fn stream(
         &self,
-        _messages: Vec<ProviderMessage>,
-        _options: &StreamOptions,
+        messages: Vec<ProviderMessage>,
+        options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
-        // Streaming through the Code Assist `v1internal:streamGenerateContent`
-        // envelope (with the Gemini/Claude request transforms) is tracked as a
-        // follow-up task. Auth + the model catalogue are wired so accounts can
-        // be added today; surface a clear error rather than a silent failure.
+        // Refresh tokens if they're stale, then pull the access token + the
+        // project id we encoded into `account_id` at login time.
         self.ensure_auth().await?;
-        anyhow::bail!(
-            "Antigravity streaming is not wired yet (OAuth login works; Code \
-             Assist request/response transform is the next milestone). \
-             Endpoint: {}/{CODE_ASSIST_API_VERSION}",
+        let (access_token, project_id) = self.access_token_and_project()?;
+
+        // Build the Code Assist envelope (project / model / requestId /
+        // request{contents, tools, generationConfig, ...}). Claude-via-
+        // Antigravity models go through a different transform that isn't
+        // ported yet, so reject them with a clear error rather than hand
+        // Google a malformed body.
+        let body = super::antigravity_transform::build_gemini_request(
+            &project_id,
+            &messages,
+            options,
+        )?;
+        let url = format!(
+            "{}/{CODE_ASSIST_API_VERSION}:streamGenerateContent?alt=sse",
             self.endpoint(),
-        )
+        );
+
+        tracing::debug!(
+            target: "jfc::provider::antigravity",
+            url = %url,
+            model = %options.model.as_str(),
+            messages = messages.len(),
+            "POST streamGenerateContent"
+        );
+
+        let resp = self
+            .client
+            .post(&url)
+            .bearer_auth(&access_token)
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .header(reqwest::header::USER_AGENT, user_agent())
+            .header("X-Goog-Api-Client", API_CLIENT)
+            .header("Client-Metadata", CLIENT_METADATA)
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Antigravity Code Assist error {status}: {text}");
+        }
+
+        Ok(super::antigravity_transform::into_event_stream(resp))
     }
 
     async fn complete(
@@ -569,7 +634,10 @@ impl Provider for AntigravityOAuthProvider {
         _options: &StreamOptions,
     ) -> anyhow::Result<CompletionResponse> {
         self.ensure_auth().await?;
-        anyhow::bail!("Antigravity complete() is not wired yet")
+        anyhow::bail!(
+            "Antigravity complete() is not wired yet — non-streaming completion \
+             would route to v1internal:generateContent; use stream() for now"
+        )
     }
 }
 

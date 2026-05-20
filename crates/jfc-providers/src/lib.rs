@@ -4,6 +4,7 @@ pub mod anthropic_models;
 pub mod anthropic_oauth;
 pub mod anthropic_oauth_login;
 pub mod antigravity_oauth;
+pub mod antigravity_transform;
 pub mod bedrock;
 pub mod bedrock_wizard;
 pub mod codex_oauth;
