@@ -4,6 +4,7 @@
 //! runtime orchestration. Types move here only after their ownership is stable
 //! enough to be shared without dragging `jfc-ui` dependencies with them.
 
+mod agent_def;
 mod attachment;
 mod execution;
 mod ids;
@@ -13,6 +14,7 @@ mod tool_input;
 mod tool_kind;
 mod usage;
 
+pub use agent_def::{AgentCost, AgentDef, Effort, MemoryScope, PermissionMode};
 pub use attachment::{Attachment, AttachmentKind, PastedContent};
 pub use execution::{ExecutionStatus, TaskLifecycle, ToolStatus};
 pub use ids::{AgentId, SessionId, TaskId, ToolId};
