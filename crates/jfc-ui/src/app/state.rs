@@ -42,16 +42,137 @@ pub struct TranscriptSearch {
     pub cursor: usize,
 }
 
+/// Priority levels for the message queue. Higher priority messages
+/// are drained first. Mirrors CC 2.1.144's `getCommandsByMaxPriority`
+/// which supports "now" (jump the queue), "next" (drain between tool
+/// batches), and implicit "later" (drain at turn end).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum QueuePriority {
+    /// Drain at end of turn (default for normal user submissions).
+    Later = 0,
+    /// Drain between tool batches (mid-loop steering).
+    Next = 1,
+    /// Immediate — jump the queue, used by interrupt-on-submit.
+    Now = 2,
+}
+
 #[derive(Debug, Clone)]
 pub struct QueuedPrompt {
     pub text: String,
     pub is_meta: bool,
+    /// Priority level controlling when this prompt is drained.
+    pub priority: QueuePriority,
     /// Image/PDF attachments captured at queue time. If the user pasted
     /// an image and then typed a prompt while another turn was already
     /// streaming, the referenced `[Image #N]` attachments are extracted
     /// from `app.pasted_images` and pinned to THIS prompt so they
     /// attach atomically when `drain_queued_prompts` promotes the entry.
     pub attachments: Vec<crate::attachments::Attachment>,
+}
+
+/// Priority-based message queue wrapping a VecDeque with priority semantics.
+/// Provides CC 2.1.144-style operations: enqueue with priority, dequeue by
+/// max priority, filter, pop editable, etc.
+#[derive(Debug, Clone, Default)]
+pub struct MessageQueue {
+    entries: std::collections::VecDeque<QueuedPrompt>,
+}
+
+impl MessageQueue {
+    pub fn new() -> Self {
+        Self {
+            entries: std::collections::VecDeque::new(),
+        }
+    }
+
+    /// Enqueue a prompt with the given priority.
+    pub fn push(&mut self, prompt: QueuedPrompt) {
+        self.entries.push_back(prompt);
+    }
+
+    /// Convenience: push with Later priority (default for user submissions).
+    pub fn push_later(&mut self, text: String, is_meta: bool, attachments: Vec<crate::attachments::Attachment>) {
+        self.entries.push_back(QueuedPrompt {
+            text,
+            is_meta,
+            priority: QueuePriority::Later,
+            attachments,
+        });
+    }
+
+    /// Dequeue the highest-priority entry. Among same-priority entries,
+    /// FIFO order is preserved (front of the deque wins).
+    pub fn pop_max_priority(&mut self) -> Option<QueuedPrompt> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        let max_idx = self
+            .entries
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, e)| e.priority)
+            .map(|(i, _)| i)?;
+        self.entries.remove(max_idx)
+    }
+
+    /// Dequeue entries matching a minimum priority level (inclusive).
+    /// Returns entries sorted highest-priority-first, FIFO within same level.
+    pub fn drain_at_least(&mut self, min_priority: QueuePriority) -> Vec<QueuedPrompt> {
+        let mut drained = Vec::new();
+        let mut remaining = std::collections::VecDeque::new();
+        for entry in self.entries.drain(..) {
+            if entry.priority >= min_priority {
+                drained.push(entry);
+            } else {
+                remaining.push_back(entry);
+            }
+        }
+        self.entries = remaining;
+        // Stable sort: highest priority first, FIFO within same level
+        drained.sort_by(|a, b| b.priority.cmp(&a.priority));
+        drained
+    }
+
+    /// Drain ALL entries regardless of priority (turn-end full drain).
+    pub fn drain_all(&mut self) -> Vec<QueuedPrompt> {
+        self.entries.drain(..).collect()
+    }
+
+    /// Pop the last entry (for Up-arrow "edit queued" feature).
+    pub fn pop_back(&mut self) -> Option<QueuedPrompt> {
+        self.entries.pop_back()
+    }
+
+    /// Pop the first entry (FIFO drain for legacy compat).
+    pub fn pop_front(&mut self) -> Option<QueuedPrompt> {
+        self.entries.pop_front()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Index access (for test assertions).
+    pub fn get(&self, index: usize) -> Option<&QueuedPrompt> {
+        self.entries.get(index)
+    }
+
+    /// Iterate (for rendering, contains checks, etc.).
+    pub fn iter(&self) -> impl Iterator<Item = &QueuedPrompt> {
+        self.entries.iter()
+    }
+}
+
+// Support indexing for backward compat with tests that do `app.queued_prompts[0]`
+impl std::ops::Index<usize> for MessageQueue {
+    type Output = QueuedPrompt;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.entries[index]
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +264,11 @@ pub struct BackgroundTask {
     /// Model the agent is currently using. Captured from the spawn site
     /// so per-agent cost can be computed via `cost::cost_for(model, usage)`.
     pub model_used: Option<String>,
+    /// Agent's own message transcript — populated by AgentChunk events
+    /// from the swarm runner. Used for transcript foregrounding (when
+    /// the user presses Enter on an agent in Ctrl+X, we render these
+    /// instead of app.messages).
+    pub agent_messages: Vec<crate::types::ChatMessage>,
     /// Per-agent token budget. When set and `latest_input + cumulative_output`
     /// exceeds it, the agent is forcibly terminated and an error toast
     /// fires. Defaults to None (unlimited).
@@ -212,6 +338,9 @@ pub struct App {
     /// 2.1.144's `maxTurns`). Without this, a model stuck in a retry loop
     /// runs indefinitely, burning unlimited API credits.
     pub agentic_turn_count: u32,
+    /// Text saved by Esc-clear so Up-arrow can recall it. Single slot —
+    /// each Esc-clear overwrites. None when no text has been cleared.
+    pub esc_saved_text: Option<String>,
     /// Index into `messages` of the user-prompt the up-arrow recall is
     /// currently displaying, counting backwards from the end. `None`
     /// means the user is editing a fresh prompt (not recalled). Each
@@ -274,7 +403,7 @@ pub struct App {
     /// AND the approval pipeline is empty. Each entry remembers whether the
     /// user typed a slash command (v126's `isMeta: true`) — those run
     /// locally on drain instead of going to the API.
-    pub queued_prompts: std::collections::VecDeque<QueuedPrompt>,
+    pub queued_prompts: MessageQueue,
     /// Cached count of agent-isolated worktrees (excludes the primary
     /// checkout). Refreshed by the Tick handler at most every
     /// `WORKTREE_REFRESH_MS` so the status-bar badge stays accurate
@@ -885,6 +1014,7 @@ impl App {
             thinking_ended_at: None,
             turn_started_at: None,
             agentic_turn_count: 0,
+            esc_saved_text: None,
             history_cursor: None,
             is_streaming: false,
             last_stream_event_at: None,
@@ -907,7 +1037,7 @@ impl App {
             reasoning_expanded: HashMap::new(),
             pending_approval: None,
             approval_queue: std::collections::VecDeque::new(),
-            queued_prompts: std::collections::VecDeque::new(),
+            queued_prompts: MessageQueue::new(),
             worktree_count: 0,
             worktree_count_last_refresh: None,
             git_branch: None,

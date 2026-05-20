@@ -330,9 +330,10 @@ pub(super) async fn handle_doc_command(
             "{action} `{}` … (queued — will run when the current turn finishes)",
             target.display()
         )));
-        app.queued_prompts.push_back(crate::app::QueuedPrompt {
+        app.queued_prompts.push(crate::app::QueuedPrompt {
             text: body,
             is_meta: false,
+                priority: crate::app::QueuePriority::Later,
             attachments: Vec::new(),
         });
         app.scroll_to_bottom();

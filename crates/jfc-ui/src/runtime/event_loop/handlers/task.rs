@@ -121,6 +121,7 @@ pub(crate) fn handle_task_started(
             latest_cache_write_tokens: 0,
             cumulative_output_tokens: 0,
             model_used: model_used
+            agent_messages: Vec::new(),
                 .clone()
                 .or_else(|| Some(app.model.as_str().to_owned())),
             max_input_tokens,

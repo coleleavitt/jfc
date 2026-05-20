@@ -5498,7 +5498,7 @@ mod subagent_counter_tests {
             latest_cache_read_tokens: 0,
             latest_cache_write_tokens: 0,
             cumulative_output_tokens: out_tok,
-            model_used: None,
+            model_used: None, agent_messages: Vec::new(),
             max_input_tokens: None,
             budget_killed: false,
             parent_task_id: None,

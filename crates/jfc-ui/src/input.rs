@@ -1399,6 +1399,29 @@ pub async fn handle_key(
                 || !app.pending_tool_calls.is_empty();
             let compacting = app.compacting_started_at.is_some();
             if app.is_streaming || pipeline_busy || compacting {
+                // Check if we can interrupt: if streaming with only
+                // safe/interruptible tools, abort and inject instead
+                // of queuing. This gives real-time steering.
+                let can_interrupt = app.is_streaming
+                    && !compacting
+                    && app.pending_approval.is_none()
+                    && app.pending_tool_calls.iter().all(|t| {
+                        crate::scheduler::is_concurrency_safe(&t.kind)
+                    });
+                if can_interrupt {
+                    tracing::info!(
+                        target: "jfc::input::interrupt",
+                        "interrupt-on-submit: aborting interruptible stream"
+                    );
+                    // Cancel the current stream
+                    app.cancel_token.cancel();
+                    app.cancel_token = tokio_util::sync::CancellationToken::new();
+                    app.interrupt_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                    app.is_streaming = false;
+                    app.streaming_started_at = None;
+                    app.last_stream_event_at = None;
+                    // Don't queue — fall through to handle_submit below
+                } else {
                 let is_meta = text.starts_with('/');
                 let glyph = if is_meta { "⚙" } else { "⏳" };
                 tracing::info!(
@@ -1431,9 +1454,10 @@ pub async fn handle_key(
                     app.pasted_images = remaining;
                     matched
                 };
-                app.queued_prompts.push_back(crate::app::QueuedPrompt {
+                app.queued_prompts.push(crate::app::QueuedPrompt {
                     text: text.clone(),
                     is_meta,
+                    priority: crate::app::QueuePriority::Later,
                     attachments,
                 });
                 // Insert as a `queued` user message so the user can SEE
@@ -1446,6 +1470,7 @@ pub async fn handle_key(
                 app.messages
                     .push(ChatMessage::user_queued(format!("{glyph} {text}")));
                 app.scroll_to_bottom();
+                } // end else (not can_interrupt)
             } else {
                 handle_submit(app, text, tx).await?;
             }
@@ -3906,7 +3931,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                         );
                         app.messages
                             .push(ChatMessage::assistant("Analyzing staged changes…".into()));
-                        app.queued_prompts.push_back(crate::app::QueuedPrompt {
+                        app.queued_prompts.push(crate::app::QueuedPrompt {
                             text: prompt,
                             is_meta: false,
                             attachments: Vec::new(),
@@ -3971,7 +3996,7 @@ async fn handle_slash_command(app: &mut App, text: &str, tx: Option<&mpsc::Sende
                 );
                 app.messages
                     .push(ChatMessage::assistant("Reviewing changes…".into()));
-                app.queued_prompts.push_back(crate::app::QueuedPrompt {
+                app.queued_prompts.push(crate::app::QueuedPrompt {
                     text: prompt,
                     is_meta: false,
                     attachments: Vec::new(),
@@ -5533,8 +5558,9 @@ mod tests {
     #[tokio::test]
     async fn up_recalls_queued_prompt_robust() {
         let mut app = test_app();
-        app.queued_prompts.push_back(crate::app::QueuedPrompt {
+        app.queued_prompts.push(crate::app::QueuedPrompt {
             text: "queued".into(),
+                    priority: crate::app::QueuePriority::Later,
             is_meta: false,
             attachments: Vec::new(),
         });

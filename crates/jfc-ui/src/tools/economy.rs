@@ -231,7 +231,7 @@ impl EconomyAgentInvoker {
                 crate::runtime::TaskEvent::Started {
                     task_id: crate::ids::TaskId::from(task_id),
                     description: description.to_owned(),
-                    model_used: None,
+                    model_used: None, agent_messages: Vec::new(),
                     max_input_tokens: None,
                     // Economy solver/validator agents run in-process via the
                     // same Task tool path as ordinary subagents.
