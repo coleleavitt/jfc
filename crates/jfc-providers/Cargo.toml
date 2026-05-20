@@ -36,3 +36,7 @@ uuid = { version = "1", features = ["v4"] }
 serial_test = "3"
 tempfile = "3"
 tokio = { workspace = true, features = ["full"] }
+
+[features]
+default = ["anthropic-oauth-sensitive"]
+anthropic-oauth-sensitive = []
