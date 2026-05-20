@@ -630,6 +630,25 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
             is_streaming_placeholder,
         });
         let label_line = match msg.role {
+            // Queued user message (pending submit): dim the role label
+            // and append "[queued]" so it visually reads as pending vs
+            // already-processed turns. Mirrors CC 2.1.144's queued-
+            // message rendering where pending input is muted to
+            // distinguish it from in-flight or completed turns
+            // (cli.beautified.js:501634 hints "Press up to edit
+            // queued messages" surfaces when queued items exist).
+            Role::User if msg.queued => Line::from(vec![
+                Span::styled(
+                    "you",
+                    t.user_label().add_modifier(Modifier::DIM),
+                ),
+                Span::styled(
+                    " [queued]",
+                    Style::default()
+                        .fg(t.text_muted)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ]),
             Role::User => Line::from(Span::styled("you", t.user_label())),
             Role::Assistant => {
                 let mut spans = Vec::new();

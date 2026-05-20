@@ -1,23 +1,32 @@
 {
-  "next_id": 47,
+  "next_id": 48,
   "tasks": {
-    "t21": {
-      "id": "t21",
+    "t13": {
+      "id": "t13",
       "subject": "subj",
       "description": "desc",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779212450289
+      "created_at_ms": 1779174843069
     },
-    "t46": {
-      "id": "t46",
+    "t35": {
+      "id": "t35",
       "subject": "subj",
       "description": "desc",
-      "status": "in_progress",
+      "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779233945131
+      "created_at_ms": 1779216176196
+    },
+    "t25": {
+      "id": "t25",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779214712468
     },
     "t9": {
       "id": "t9",
@@ -28,19 +37,19 @@
       "blockedBy": [],
       "created_at_ms": 1779172544275
     },
-    "t18": {
-      "id": "t18",
+    "t36": {
+      "id": "t36",
       "subject": "subj",
       "description": "desc",
-      "status": "deleted",
+      "status": "in_progress",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779211042195
+      "created_at_ms": 1779216973443
     },
-    "t31": {
-      "id": "t31",
-      "subject": "Show activeForm/live activity text under running tasks",
-      "description": "When a task is in_progress and its owner agent is running, show the agent's current activity description (from subagent progress) as a dim indented line below the task subject. This is the live \"what they're doing now\" text Claude Code shows.",
+    "t28": {
+      "id": "t28",
+      "subject": "Agent fan: show name + description + elapsed + tokens right-aligned",
+      "description": "Already implemented — render_subagent_tree at render.rs:2821 already shows: pointer + bullet + name + middle stats (tool + model + tool_count) + activity glyph + elapsed + token count right-aligned. Matches Claude Code's format.",
       "status": "completed",
       "blocks": [],
       "blockedBy": [],
@@ -56,35 +65,6 @@
       "blockedBy": [],
       "created_at_ms": 1779212307721
     },
-    "t33": {
-      "id": "t33",
-      "subject": "Expandable view cycling (Ctrl+T: none → tasks → teammates → none)",
-      "description": "Future work: Make Ctrl+T cycle through 3 states: hidden → tasks pinned view → teammates/agents expanded view → hidden. Requires adding an ExpandedView enum to App state, modifying input handling for Ctrl+T to cycle rather than toggle, and updating render to switch between task list and teammate transcript views. Medium complexity — needs new App state + input + render coordination.",
-      "status": "completed",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779215365790,
-      "kind": "task"
-    },
-    "t16": {
-      "id": "t16",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779178449048
-    },
-    "t29": {
-      "id": "t29",
-      "subject": "Improve agent detail view in task panel (progress + tokens + elapsed)",
-      "description": "Future work: Add an expanded detail pane when Enter is pressed on a task row in Ctrl+T panel. Show: elapsed time (from task_completion_times), token count (from BackgroundTask), tool use count, recent activities with › prefix, prompt (truncated), error if failed. Requires correlating task_store entries with background_tasks by task_id/owner.",
-      "status": "completed",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779215365789,
-      "kind": "task"
-    },
     "t45": {
       "id": "t45",
       "subject": "subj",
@@ -94,74 +74,28 @@
       "blockedBy": [],
       "created_at_ms": 1779230903854
     },
-    "t41": {
-      "id": "t41",
-      "subject": "subj",
-      "description": "desc",
-      "status": "in_progress",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779222972461
-    },
-    "t4": {
-      "id": "t4",
+    "t17": {
+      "id": "t17",
       "subject": "subj",
       "description": "desc",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779172385805
+      "created_at_ms": 1779179213454
     },
-    "t24": {
-      "id": "t24",
+    "t23": {
+      "id": "t23",
       "subject": "subj",
       "description": "desc",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779214665629
+      "created_at_ms": 1779214515775
     },
-    "t28": {
-      "id": "t28",
-      "subject": "Agent fan: show name + description + elapsed + tokens right-aligned",
-      "description": "Already implemented — render_subagent_tree at render.rs:2821 already shows: pointer + bullet + name + middle stats (tool + model + tool_count) + activity glyph + elapsed + token count right-aligned. Matches Claude Code's format.",
-      "status": "completed",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779215365789,
-      "kind": "task"
-    },
-    "t7": {
-      "id": "t7",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779172511967
-    },
-    "t42": {
-      "id": "t42",
-      "subject": "subj",
-      "description": "desc",
-      "status": "in_progress",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779224595780
-    },
-    "t12": {
-      "id": "t12",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779174507675
-    },
-    "t34": {
-      "id": "t34",
-      "subject": "Smart task ordering in pinned row (priority sort)",
-      "description": "Reorder tasks in pinned row: recently-completed (fade tail) first, then in-progress, then pending (unblocked before blocked). Matches Claude Code's priority ordering instead of our current flat iteration.",
+    "t33": {
+      "id": "t33",
+      "subject": "Expandable view cycling (Ctrl+T: none → tasks → teammates → none)",
+      "description": "Future work: Make Ctrl+T cycle through 3 states: hidden → tasks pinned view → teammates/agents expanded view → hidden. Requires adding an ExpandedView enum to App state, modifying input handling for Ctrl+T to cycle rather than toggle, and updating render to switch between task list and teammate transcript views. Medium complexity — needs new App state + input + render coordination.",
       "status": "completed",
       "blocks": [],
       "blockedBy": [],
@@ -177,10 +111,46 @@
       "blockedBy": [],
       "created_at_ms": 1779217329481
     },
-    "t30": {
-      "id": "t30",
-      "subject": "Add activeForm field to Task struct for present-tense labels",
-      "description": "Add `active_form: Option<String>` to Task in jfc-session. This is the present-continuous label (e.g. \"Fixing auth bug\") shown while a task is in_progress. Populate it from TaskCreate/TaskUpdate input. Display it in the spinner verb line when the task is the current work item.",
+    "t41": {
+      "id": "t41",
+      "subject": "subj",
+      "description": "desc",
+      "status": "in_progress",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779222972461
+    },
+    "t16": {
+      "id": "t16",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779178449048
+    },
+    "t18": {
+      "id": "t18",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779211042195
+    },
+    "t6": {
+      "id": "t6",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172435825
+    },
+    "t32": {
+      "id": "t32",
+      "subject": "Dynamic task_pin_visible based on terminal height",
+      "description": "Change TASK_PIN_VISIBLE from fixed 6 to dynamic: `rows <= 10 ? 0 : min(5, max(3, rows - 14))` matching Claude Code's approach. Prevents task pin from eating the whole screen on small terminals.",
       "status": "completed",
       "blocks": [],
       "blockedBy": [],
@@ -196,24 +166,133 @@
       "blockedBy": [],
       "created_at_ms": 1779172170441
     },
-    "t39": {
-      "id": "t39",
+    "t15": {
+      "id": "t15",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779175585744
+    },
+    "t47": {
+      "id": "t47",
       "subject": "subj",
       "description": "desc",
       "status": "in_progress",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779218398515
+      "created_at_ms": 1779235741039
     },
-    "t32": {
-      "id": "t32",
-      "subject": "Dynamic task_pin_visible based on terminal height",
-      "description": "Change TASK_PIN_VISIBLE from fixed 6 to dynamic: `rows <= 10 ? 0 : min(5, max(3, rows - 14))` matching Claude Code's approach. Prevents task pin from eating the whole screen on small terminals.",
+    "t37": {
+      "id": "t37",
+      "subject": "subj",
+      "description": "desc",
+      "status": "in_progress",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779217196197
+    },
+    "t3": {
+      "id": "t3",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172244959
+    },
+    "t12": {
+      "id": "t12",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779174507675
+    },
+    "t1": {
+      "id": "t1",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172147806
+    },
+    "t14": {
+      "id": "t14",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779174948556
+    },
+    "t43": {
+      "id": "t43",
+      "subject": "subj",
+      "description": "desc",
+      "status": "in_progress",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779224603342
+    },
+    "t48": {
+      "id": "t48",
+      "subject": "subj",
+      "description": "desc",
+      "status": "in_progress",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779235853419
+    },
+    "t26": {
+      "id": "t26",
+      "subject": "Explore Claude Code 2.1.144 agent/task view implementation",
+      "description": "Dig into ~/RustProjects/active/claude-code-2.1.144-audit/cli.beautified.js to understand their agent/task modal UI and compare with our implementation",
       "status": "completed",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779215365789,
+      "created_at_ms": 1779214866563,
       "kind": "task"
+    },
+    "t4": {
+      "id": "t4",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172385805
+    },
+    "t10": {
+      "id": "t10",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779174352330
+    },
+    "t34": {
+      "id": "t34",
+      "subject": "Smart task ordering in pinned row (priority sort)",
+      "description": "Reorder tasks in pinned row: recently-completed (fade tail) first, then in-progress, then pending (unblocked before blocked). Matches Claude Code's priority ordering instead of our current flat iteration.",
+      "status": "completed",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779215365790,
+      "kind": "task"
+    },
+    "t42": {
+      "id": "t42",
+      "subject": "subj",
+      "description": "desc",
+      "status": "in_progress",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779224595780
     },
     "t40": {
       "id": "t40",
@@ -233,87 +312,52 @@
       "blockedBy": [],
       "created_at_ms": 1779174374284
     },
-    "t17": {
-      "id": "t17",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779179213454
-    },
-    "t35": {
-      "id": "t35",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779216176196
-    },
-    "t26": {
-      "id": "t26",
-      "subject": "Explore Claude Code 2.1.144 agent/task view implementation",
-      "description": "Dig into ~/RustProjects/active/claude-code-2.1.144-audit/cli.beautified.js to understand their agent/task modal UI and compare with our implementation",
+    "t30": {
+      "id": "t30",
+      "subject": "Add activeForm field to Task struct for present-tense labels",
+      "description": "Add `active_form: Option<String>` to Task in jfc-session. This is the present-continuous label (e.g. \"Fixing auth bug\") shown while a task is in_progress. Populate it from TaskCreate/TaskUpdate input. Display it in the spinner verb line when the task is the current work item.",
       "status": "completed",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779214866563,
+      "created_at_ms": 1779215365789,
       "kind": "task"
     },
-    "t47": {
-      "id": "t47",
+    "t39": {
+      "id": "t39",
       "subject": "subj",
       "description": "desc",
       "status": "in_progress",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779235741039
+      "created_at_ms": 1779218398515
     },
-    "t23": {
-      "id": "t23",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
+    "t31": {
+      "id": "t31",
+      "subject": "Show activeForm/live activity text under running tasks",
+      "description": "When a task is in_progress and its owner agent is running, show the agent's current activity description (from subagent progress) as a dim indented line below the task subject. This is the live \"what they're doing now\" text Claude Code shows.",
+      "status": "completed",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779214515775
+      "created_at_ms": 1779215365789,
+      "kind": "task"
     },
-    "t1": {
-      "id": "t1",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779172147806
-    },
-    "t5": {
-      "id": "t5",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779172389595
-    },
-    "t10": {
-      "id": "t10",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779174352330
-    },
-    "t37": {
-      "id": "t37",
+    "t46": {
+      "id": "t46",
       "subject": "subj",
       "description": "desc",
       "status": "in_progress",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779217196197
+      "created_at_ms": 1779233945131
+    },
+    "t24": {
+      "id": "t24",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779214665629
     },
     "t8": {
       "id": "t8",
@@ -324,24 +368,6 @@
       "blockedBy": [],
       "created_at_ms": 1779172539804
     },
-    "t15": {
-      "id": "t15",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779175585744
-    },
-    "t3": {
-      "id": "t3",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779172244959
-    },
     "t27": {
       "id": "t27",
       "subject": "Investigate task display bug (0/25 with sub-sub-subject rendering)",
@@ -351,6 +377,34 @@
       "blockedBy": [],
       "created_at_ms": 1779214866563,
       "kind": "task"
+    },
+    "t29": {
+      "id": "t29",
+      "subject": "Improve agent detail view in task panel (progress + tokens + elapsed)",
+      "description": "Future work: Add an expanded detail pane when Enter is pressed on a task row in Ctrl+T panel. Show: elapsed time (from task_completion_times), token count (from BackgroundTask), tool use count, recent activities with › prefix, prompt (truncated), error if failed. Requires correlating task_store entries with background_tasks by task_id/owner.",
+      "status": "completed",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779215365789,
+      "kind": "task"
+    },
+    "t21": {
+      "id": "t21",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779212450289
+    },
+    "t5": {
+      "id": "t5",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172389595
     },
     "t19": {
       "id": "t19",
@@ -370,23 +424,14 @@
       "blockedBy": [],
       "created_at_ms": 1779214492653
     },
-    "t13": {
-      "id": "t13",
+    "t7": {
+      "id": "t7",
       "subject": "subj",
       "description": "desc",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779174843069
-    },
-    "t25": {
-      "id": "t25",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779214712468
+      "created_at_ms": 1779172511967
     },
     "t44": {
       "id": "t44",
@@ -396,42 +441,6 @@
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779224788873
-    },
-    "t14": {
-      "id": "t14",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779174948556
-    },
-    "t36": {
-      "id": "t36",
-      "subject": "subj",
-      "description": "desc",
-      "status": "in_progress",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779216973443
-    },
-    "t6": {
-      "id": "t6",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779172435825
-    },
-    "t43": {
-      "id": "t43",
-      "subject": "subj",
-      "description": "desc",
-      "status": "in_progress",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779224603342
     }
   }
 }
