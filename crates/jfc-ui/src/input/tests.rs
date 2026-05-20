@@ -2401,3 +2401,59 @@ fn palette_items_unfiltered_robust() {
     let v = palette_items(&app);
     assert!(!v.is_empty());
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Drift guard: the SLASH_COMMANDS registry table is the single source of
+// truth for dispatch + autocomplete + /help. This test makes drift
+// IMPOSSIBLE: every entry in the table must route to a real handler, never
+// the skill-fallthrough's "Unknown command" branch. If someone adds a row
+// to the table without a handler (or vice-versa), the macro won't compile;
+// if the canonical/alias literal in the table ever diverges from the match
+// arm, this catches it at test time.
+// ─────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn slash_registry_every_entry_dispatches_robust() {
+    for (name, _help) in crate::input::SLASH_COMMANDS {
+        let mut app = test_app();
+        run_slash_command(&mut app, name).await;
+        let hit_fallthrough = app.messages.iter().any(|m| {
+            m.parts.iter().any(|p| {
+                if let crate::types::MessagePart::Text(t) = p {
+                    t.contains("Unknown command:")
+                } else {
+                    false
+                }
+            })
+        });
+        assert!(
+            !hit_fallthrough,
+            "table entry `{name}` fell through to the Unknown-command branch — \
+             the SLASH_COMMANDS table has drifted from the dispatch match",
+        );
+    }
+}
+
+#[test]
+fn slash_registry_table_is_nonempty_and_unique_normal() {
+    // The macro emits one row per canonical name + one per alias. Names must
+    // be unique (a duplicate literal would make the dispatch match arm
+    // unreachable and silently shadow a command).
+    let names: Vec<&str> = crate::input::SLASH_COMMANDS
+        .iter()
+        .map(|(n, _)| *n)
+        .collect();
+    assert!(
+        names.len() >= 80,
+        "expected the full command set, got {}",
+        names.len()
+    );
+    let mut deduped = names.clone();
+    deduped.sort_unstable();
+    deduped.dedup();
+    assert_eq!(
+        deduped.len(),
+        names.len(),
+        "duplicate command literal in SLASH_COMMANDS table",
+    );
+}

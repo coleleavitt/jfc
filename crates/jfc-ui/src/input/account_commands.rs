@@ -1,0 +1,364 @@
+//! Slash handlers: account, auth & external actions.
+
+use super::*;
+
+pub(super) async fn cmd_workflow(
+    app: &mut App,
+    parts: &[&str],
+    text: &str,
+    tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    // v132 workflow templates. `/workflow` lists; `/workflow run <name>`
+    // queues each step's prompt as a follow-up Submit so the leader
+    // dispatches them in order. `parallel = true` steps batch into
+    // a single multi-Task fan-out turn (the leader sees all the
+    // prompts in one user message and is told to use parallel
+    // dispatch).
+    app.messages.push(ChatMessage::user(text.to_owned()));
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let arg = parts.get(1).copied().unwrap_or("").trim();
+    let mut sub = arg.split_whitespace();
+    let verb = sub.next().unwrap_or("");
+    let rest: String = sub.collect::<Vec<_>>().join(" ");
+    match verb {
+        "" | "list" => {
+            let names = crate::workflows::list(&cwd);
+            if names.is_empty() {
+                app.messages.push(ChatMessage::assistant(
+                            "No workflows found. Create `.jfc/workflows/<name>.toml` with a TOML body containing `[[step]]` tables.".into(),
+                        ));
+            } else {
+                let mut body = String::from("**Available workflows:**\n\n");
+                for name in &names {
+                    match crate::workflows::load(&cwd, name) {
+                        Ok(w) => body.push_str(&crate::workflows::render_summary(name, &w)),
+                        Err(e) => body.push_str(&format!("- `{name}` (parse error: {e})\n")),
+                    }
+                }
+                body.push_str("\nRun with `/workflow run <name>`.");
+                app.messages.push(ChatMessage::assistant(body));
+            }
+        }
+        "run" => {
+            if rest.is_empty() {
+                app.messages.push(ChatMessage::assistant(
+                    "Usage: `/workflow run <name>`. List available workflows with `/workflow`."
+                        .into(),
+                ));
+                return;
+            }
+            match crate::workflows::load(&cwd, &rest) {
+                Err(e) => {
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Failed to load workflow `{rest}`: {e}"
+                    )));
+                }
+                Ok(workflow) => {
+                    // Queue each step as a Submit so the leader sees
+                    // them sequentially. Parallel steps would need
+                    // a multi-Task aggregator — flag for now and
+                    // dispatch sequentially as a stop-gap.
+                    if let Some(tx) = tx {
+                        for step in workflow.step {
+                            let prompt = format!(
+                                "Use the `{}` agent (Task tool) for this step:\n\n{}",
+                                step.agent, step.prompt
+                            );
+                            let _ = tx
+                                .send(crate::runtime::AppEvent::Ui(
+                                    crate::runtime::UiEvent::Submit(prompt),
+                                ))
+                                .await;
+                        }
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Workflow `{rest}` queued — steps will fire sequentially."
+                        )));
+                    } else {
+                        app.messages.push(ChatMessage::assistant(
+                                    "Workflow runner needs the event channel; called from a context that doesn't have one.".into(),
+                                ));
+                    }
+                }
+            }
+        }
+        other => {
+            app.messages.push(ChatMessage::assistant(format!(
+                "Unknown subcommand `{other}`. Use `/workflow list` or `/workflow run <name>`."
+            )));
+        }
+    }
+}
+
+pub(super) async fn cmd_login(
+    app: &mut App,
+    parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    // v132 `/login` flow. With no arg, prints the chooser. With
+    // a sub-target, the dispatcher returns a body string +
+    // some side effects need a browser open. We always shell
+    // out to xdg-open / open / start to launch the browser
+    // (cheap, async-safe; failures are silent on systems
+    // without one of those binaries).
+    app.messages.push(ChatMessage::user(text.to_owned()));
+    let arg = parts
+        .get(1)
+        .copied()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let dispatch = crate::providers::login_dispatch::dispatch(arg);
+    let url = match &dispatch {
+        crate::providers::login_dispatch::LoginDispatch::AnthropicApiKey(_)
+        | crate::providers::login_dispatch::LoginDispatch::ConsoleApiKey(_) => {
+            Some("https://console.anthropic.com/settings/keys")
+        }
+        crate::providers::login_dispatch::LoginDispatch::ClaudeAiOAuth(_) => {
+            Some("https://claude.ai/login")
+        }
+        crate::providers::login_dispatch::LoginDispatch::CodexOAuth(_) => {
+            Some("https://auth.openai.com/codex/device")
+        }
+        _ => None,
+    };
+    if let Some(url) = url {
+        // Best-effort: shell out to the platform browser opener.
+        // Don't await — the browser launch is fire-and-forget.
+        #[cfg(target_os = "linux")]
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open").arg(url).spawn();
+        #[cfg(target_os = "windows")]
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", url])
+            .spawn();
+        tracing::info!(target: "jfc::login", %url, "opened browser for /login");
+    }
+    app.messages.push(ChatMessage::assistant(format!(
+        "{dispatch}{}",
+        if url.is_some() {
+            "\n\n_(opened the browser for you)_"
+        } else {
+            ""
+        }
+    )));
+}
+
+pub(super) async fn cmd_logout(
+    app: &mut App,
+    parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    app.messages.push(ChatMessage::user(text.to_owned()));
+    let arg = parts
+        .get(1)
+        .copied()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    // Wipe the OAuth token + API-key stores under
+    // ~/.config/jfc/. We deliberately keep this contained to
+    // jfc's own state (opencode shares anthropic-accounts.json,
+    // so blindly nuking that file would also log them out of
+    // a sibling client).
+    let scope = arg.unwrap_or("jfc");
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut removed = Vec::new();
+    for relpath in [
+        ".config/jfc/credentials.json",
+        ".config/jfc/anthropic-oauth.json",
+        ".config/jfc/codex-tokens.json",
+    ] {
+        let p = std::path::PathBuf::from(&home).join(relpath);
+        if p.exists() && std::fs::remove_file(&p).is_ok() {
+            removed.push(p.display().to_string());
+        }
+    }
+    let summary = if removed.is_empty() {
+        format!("No credential files found to remove (scope: `{scope}`).")
+    } else {
+        format!(
+            "Removed {} credential file(s):\n{}\nRun `/login` to authenticate again.",
+            removed.len(),
+            removed
+                .iter()
+                .map(|p| format!("  - `{p}`"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+    app.messages.push(ChatMessage::assistant(summary));
+}
+
+pub(super) async fn cmd_release_notes(
+    app: &mut App,
+    _parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    app.messages.push(ChatMessage::user(text.to_owned()));
+    // Try to read the workspace CHANGELOG; fall back to a stub
+    // pointer when the binary was installed somewhere without it.
+    let candidates = ["CHANGELOG.md", "../CHANGELOG.md", "../../CHANGELOG.md"];
+    let notes = candidates
+        .iter()
+        .find_map(|p| std::fs::read_to_string(p).ok())
+        .map(|s| {
+            let trimmed = s.lines().take(80).collect::<Vec<_>>().join("\n");
+            if s.lines().count() > 80 {
+                format!("{trimmed}\n\n*(showing first 80 lines — see CHANGELOG.md for the rest)*")
+            } else {
+                trimmed
+            }
+        })
+        .unwrap_or_else(|| {
+            "Release notes unavailable in this build. Visit \
+                     https://github.com/RustProjects/jfc/releases for the full changelog."
+                .to_owned()
+        });
+    app.messages.push(ChatMessage::assistant(notes));
+}
+
+pub(super) async fn cmd_feedback(
+    app: &mut App,
+    _parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    app.messages.push(ChatMessage::user(text.to_owned()));
+    let url = "https://github.com/RustProjects/jfc/issues/new";
+    #[cfg(target_os = "linux")]
+    let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("cmd")
+        .args(["/C", "start", url])
+        .spawn();
+    app.messages.push(ChatMessage::assistant(format!(
+                "Opened {url} in your browser. File the issue there — the session id is `{}` if you want to attach it.",
+                app.current_session_id
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or("(none)")
+            )));
+}
+
+pub(super) async fn cmd_upgrade(
+    app: &mut App,
+    _parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    app.messages.push(ChatMessage::user(text.to_owned()));
+    app.messages.push(ChatMessage::assistant(
+                "To upgrade jfc, run one of:\n\
+                 * `cargo install --git https://github.com/RustProjects/jfc` (HEAD)\n\
+                 * `cargo install jfc` (latest crates.io release)\n\
+                 \n\
+                 If you installed via a package manager (homebrew, nix, AUR), use its update path instead.".to_owned(),
+            ));
+}
+
+pub(super) async fn cmd_batch(
+    app: &mut App,
+    parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    // /batch <prompt-file>: read newline-delimited prompts and
+    // submit them via Anthropic's Message Batches API for the
+    // 50% discount. The batch ID is returned synchronously;
+    // results stream back via the Sessions API in a follow-up
+    // turn (poll `/batch status <id>`).
+    app.messages.push(ChatMessage::user(text.to_owned()));
+    let arg = parts.get(1).copied().unwrap_or("").trim();
+    if arg.is_empty() {
+        app.messages.push(ChatMessage::assistant(
+            "Usage: `/batch <prompt-file>`. The file should contain one prompt per line.".into(),
+        ));
+        return;
+    }
+    let path = std::path::PathBuf::from(arg);
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            app.messages.push(ChatMessage::assistant(format!(
+                "Failed to read `{}`: {e}",
+                path.display(),
+            )));
+            return;
+        }
+    };
+    let prompts: Vec<String> = content
+        .lines()
+        .map(|l| l.trim().to_owned())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
+    if prompts.is_empty() {
+        app.messages.push(ChatMessage::assistant(
+            "No prompts found (each non-empty, non-`#`-comment line counts as one).".into(),
+        ));
+        return;
+    }
+    let Some(client) = crate::sdk_bridge::build_client() else {
+        app.messages.push(ChatMessage::assistant(
+            "No Anthropic API key configured — `/batch` needs one (set ANTHROPIC_API_KEY).".into(),
+        ));
+        return;
+    };
+    let model = app.model.as_str().to_owned();
+    let prompt_count = prompts.len();
+    let path_for_msg = path.display().to_string();
+    tokio::spawn(async move {
+        use jfc_anthropic_sdk::batches::{BatchRequest, MessageBatchService};
+        use jfc_anthropic_sdk::messages::{ContentBlock, Message, MessageRequest, Role};
+        let svc = MessageBatchService::new(client);
+        let requests: Vec<BatchRequest> = prompts
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| BatchRequest {
+                custom_id: format!("batch-{i}"),
+                params: MessageRequest {
+                    model: model.clone(),
+                    messages: vec![Message {
+                        role: Role::User,
+                        content: vec![ContentBlock::Text { text: p }],
+                    }],
+                    max_tokens: 4096,
+                    system: None,
+                    temperature: None,
+                    top_p: None,
+                    stop_sequences: Vec::new(),
+                    tools: Vec::new(),
+                    tool_choice: None,
+                    stream: Some(false),
+                    thinking: None,
+                    reasoning_effort: None,
+                },
+            })
+            .collect();
+        match svc.create(requests).await {
+            Ok(batch) => {
+                tracing::info!(
+                    target: "jfc::batch",
+                    batch_id = %batch.id,
+                    count = prompt_count,
+                    "batch submitted"
+                );
+                eprintln!(
+                    "[batch] submitted {prompt_count} prompts from {path_for_msg} → batch {}",
+                    batch.id
+                );
+            }
+            Err(e) => {
+                eprintln!("[batch] failed: {e}");
+            }
+        }
+    });
+    app.messages.push(ChatMessage::assistant(format!(
+        "Queued {prompt_count} prompts from `{}` for batch processing. \
+                 Watch stderr / `/doctor` for the batch ID.",
+        path.display()
+    )));
+}

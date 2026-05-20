@@ -1,4 +1,6 @@
 use super::*;
+use crate::input::SLASH_COMMANDS;
+
 pub(super) fn toast_overlay(f: &mut Frame, app: &App) {
     use crate::toast::ToastKind;
     let t = app.theme;
@@ -183,49 +185,10 @@ pub(super) fn diagnostic_row(f: &mut Frame, app: &App, area: Rect) {
 /// emission order) and listed underneath. We don't render the URI scheme
 /// suffix v126 does (`(file://)`) — paths are already cwd-relative so
 /// it's noise.
-/// All slash commands jfc accepts, with a one-line description for
-/// the autocomplete popup. Order = display order. Keep in sync with
-/// the actual handlers in `input.rs`.
-const SLASH_COMMANDS: &[(&str, &str)] = &[
-    ("/clear", "clear the conversation"),
-    ("/compact", "summarize earlier messages to free context"),
-    ("/help", "show jfc help"),
-    ("/export", "save the transcript as markdown"),
-    (
-        "/theme",
-        "open picker or switch theme: catppuccin / tokyo-night / gruvbox / ...",
-    ),
-    (
-        "/dump-context",
-        "show what the model sees: memories, skills, tools",
-    ),
-    ("/worktree", "create / list / remove a git worktree"),
-    ("/swarm-approve", "approve a pending swarm tool request"),
-    ("/swarm-deny", "deny a pending swarm tool request"),
-    ("/auto-mode", "toggle the autonomous classifier"),
-    (
-        "/advisor",
-        "ask a parallel advisor without disturbing the main agent",
-    ),
-    (
-        "/install-github-app",
-        "install the Claude GitHub App on this repo",
-    ),
-    ("/pr", "show a PR + review comments (`/pr <num>`)"),
-    ("/pr-autofix", "ask the model to fix PR review comments"),
-    (
-        "/setup-github-actions",
-        "scaffold .github/workflows/jfc-review.yml",
-    ),
-    ("/plan", "draft or update PLAN.md (Atlas-compatible)"),
-    (
-        "/roadmap",
-        "draft or update ROADMAP.md (stable decimal IDs)",
-    ),
-    ("/parity", "draft or update PARITY.md (evidence required)"),
-    ("/philosophy", "draft or update PHILOSOPHY.md"),
-    ("/usage", "draft or update USAGE.md (operator commands)"),
-];
+// The autocomplete popup's command list is NOT defined here — it is the
+// macro-generated `SLASH_COMMANDS` table from the `slash_commands!` registry
+// (the single source of truth for dispatch + metadata), imported at the top
+// of this module so the popup and `/help` can never drift from the handlers.
 
 /// Returns the `/<prefix>` the user is currently typing, when the
 /// input bar contains a single line that starts with `/`. The popup
@@ -732,4 +695,3 @@ pub(super) fn mention_popup(f: &mut Frame, app: &App, input_area: Rect) {
         .collect();
     f.render_widget(List::new(items), inner);
 }
-

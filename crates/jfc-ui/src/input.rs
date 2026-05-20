@@ -4,10 +4,14 @@ use ratatui_textarea::{CursorMove, TextArea};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+mod account_commands;
 mod approval;
 mod automation_commands;
+mod context_commands;
+mod delegating_commands;
 mod editing;
 mod github_commands;
+mod info_commands;
 mod key_dispatch;
 mod local_commands;
 mod mcp_commands;
@@ -16,11 +20,11 @@ mod modal_handlers;
 mod model_picker;
 mod navigation;
 mod palette;
+mod session_commands;
 mod session_picker;
 mod slash_commands;
-mod slash_commands_ext;
-mod slash_commands_ext2;
 mod submit;
+mod task_commands;
 mod theme_picker;
 mod worktree_commands;
 
@@ -60,5 +64,6 @@ use crate::types::*;
 
 // Re-export the public functions from sub-modules
 pub use key_dispatch::handle_key;
-pub use submit::handle_submit_text;
+pub(crate) use slash_commands::SLASH_COMMANDS;
 pub use slash_commands::run_slash_command;
+pub use submit::handle_submit_text;

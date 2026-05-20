@@ -1,355 +1,27 @@
 {
-  "next_id": 71,
+  "next_id": 79,
   "tasks": {
-    "t17": {
-      "id": "t17",
-      "subject": "subj",
-      "description": "desc",
+    "t54": {
+      "id": "t54",
+      "subject": "Fix broken test build: double-nested mod tests bug",
+      "description": "The previous session ended with a broken `cargo test` build. `input/tests.rs` and `render/tests.rs` both wrap content in `mod tests { use super::*; }` but the parent `input.rs`/`render.rs` already declares `mod tests;` — causing double-nesting where `use super::*` resolves to the empty `tests` module instead of the parent. Fix by removing the outer `mod tests { ... }` wrapper from the file-based test modules so the content lives at file scope with `use super::*;` directly.",
       "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779179213454
-    },
-    "t63": {
-      "id": "t63",
-      "subject": "Add streaming/tool-dispatch integration tests (t16 from prior session)",
-      "description": "Deferred: streaming/tool-dispatch integration tests require significant mock infrastructure. Both prior agent attempts failed. Will tackle in a dedicated session.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "metadata": {
-        "agent_task_id": "tooluse_rPeUOkTe68US494pDALO1d",
-        "model": "bedrock-claude-4-6-opus"
-      },
-      "created_at_ms": 1779281566763,
-      "acceptance_criteria": "cargo test --workspace passes; at least 5 new integration tests covering tool dispatch pipeline",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | grep \"integration\" | head -10",
-      "risk": "medium",
-      "kind": "task"
-    },
-    "t24": {
-      "id": "t24",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779214665629
-    },
-    "t21": {
-      "id": "t21",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779212450289
-    },
-    "t7": {
-      "id": "t7",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779172511967
-    },
-    "t49": {
-      "id": "t49",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779236127602
-    },
-    "t29": {
-      "id": "t29",
-      "subject": "Improve agent detail view in task panel (progress + tokens + elapsed)",
-      "description": "Future work: Add an expanded detail pane when Enter is pressed on a task row in Ctrl+T panel. Show: elapsed time (from task_completion_times), token count (from BackgroundTask), tool use count, recent activities with › prefix, prompt (truncated), error if failed. Requires correlating task_store entries with background_tasks by task_id/owner.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779215365789,
-      "kind": "task"
-    },
-    "t71": {
-      "id": "t71",
-      "subject": "Fix uncontrolled tool execution leak during aborts",
-      "description": "Race execute_tool against abort_rx in the swarm executor tool loop so cancellation kills running tools immediately via tokio::select!",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779288157632,
-      "acceptance_criteria": "Tool execution loop uses tokio::select! to race against abort signal; cargo build -p jfc-ui passes",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo build -p jfc-ui 2>&1 | grep -E \"^error\" | head -5",
-      "kind": "task"
-    },
-    "t40": {
-      "id": "t40",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779221102325
-    },
-    "t11": {
-      "id": "t11",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779174374284
-    },
-    "t34": {
-      "id": "t34",
-      "subject": "Smart task ordering in pinned row (priority sort)",
-      "description": "Reorder tasks in pinned row: recently-completed (fade tail) first, then in-progress, then pending (unblocked before blocked). Matches Claude Code's priority ordering instead of our current flat iteration.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779215365790,
-      "kind": "task"
-    },
-    "t2": {
-      "id": "t2",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779172170441
-    },
-    "t60": {
-      "id": "t60",
-      "subject": "Split swarm/runner.rs (2,022 lines) into swarm/{runner,executor,coordinator}.rs",
-      "description": "Split swarm/runner.rs (currently 2,022 lines) into runner.rs (lifecycle/state, under 500 lines), executor.rs (per-agent tool execution), coordinator.rs (fan-out/fan-in). executor.rs and coordinator.rs already exist from prior agent work but runner.rs was never trimmed. Do in main agent.",
-      "status": "completed",
-      "blocks": [],
-      "blockedBy": [],
-      "metadata": {
-        "agent_task_id": "tooluse_OcGmDAKwOk3fk4WR8pbJVM",
-        "model": "bedrock-claude-4-6-opus"
-      },
-      "created_at_ms": 1779281566762,
-      "acceptance_criteria": "cargo test --workspace passes; swarm/runner.rs under 500 lines",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && wc -l crates/jfc-ui/src/swarm/runner.rs",
-      "risk": "medium",
-      "kind": "task"
-    },
-    "t9": {
-      "id": "t9",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779172544275
-    },
-    "t23": {
-      "id": "t23",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779214515775
-    },
-    "t36": {
-      "id": "t36",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779216973443
-    },
-    "t65": {
-      "id": "t65",
-      "subject": "Border the agent fan panel",
-      "description": "Wrap agent_fan_below_input in a rounded surface-tinted Block with a contextual title (agents/team), pass inner rect to render_subagent_tree/render_teammate_tree, and change their paragraph bg from t.bg to t.surface. Bump agent_fan_height in frame.rs by +2.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779284194935,
-      "verification_command": "cargo build -p jfc-ui"
-    },
-    "t6": {
-      "id": "t6",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779172435825
-    },
-    "t18": {
-      "id": "t18",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779211042195
-    },
-    "t58": {
-      "id": "t58",
-      "subject": "Extract jfc-theme crate from theme.rs (1,162 lines)",
-      "description": "DONE: jfc-theme crate extracted and committed at 9701d16. theme.rs in jfc-ui is now a 2-line re-export shim. All tests pass.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "metadata": {
-        "agent_task_id": "tooluse_oaF69C0qedKLzte6zw1c2i",
-        "model": "bedrock-claude-4-6-sonnet"
-      },
-      "created_at_ms": 1779281566761,
-      "acceptance_criteria": "cargo test --workspace passes; theme.rs in jfc-ui deleted; jfc-theme crate present in workspace",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && ls crates/jfc-theme/",
-      "risk": "low",
-      "kind": "task"
-    },
-    "t44": {
-      "id": "t44",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779224788873
-    },
-    "t28": {
-      "id": "t28",
-      "subject": "Agent fan: show name + description + elapsed + tokens right-aligned",
-      "description": "Already implemented — render_subagent_tree at render.rs:2821 already shows: pointer + bullet + name + middle stats (tool + model + tool_count) + activity glyph + elapsed + token count right-aligned. Matches Claude Code's format.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779215365789,
-      "kind": "task"
-    },
-    "t14": {
-      "id": "t14",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779174948556
-    },
-    "t38": {
-      "id": "t38",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779217329481
-    },
-    "t56": {
-      "id": "t56",
-      "subject": "Split types/tool.rs (2,529 lines) into types/{tool_input,tool_kind,tool_result,tool_call}.rs",
-      "description": "DONE: tool.rs split from 2,529 to 638 lines. Extracted tool_input.rs (835), tool_kind.rs (185), tool_call.rs (352), tool_output.rs (412), tool_display.rs (121). Largest file just 35 lines over 800-line target — acceptable.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "metadata": {
-        "agent_task_id": "tooluse_fmTgIYHpirD12TNWDxZh1C",
-        "model": "bedrock-claude-4-6-sonnet"
-      },
-      "created_at_ms": 1779281566760,
-      "acceptance_criteria": "cargo test --workspace passes; no file in types/ over 800 lines",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && find crates/jfc-ui/src/types -name \"*.rs\" | xargs wc -l | sort -rn | head -10",
-      "risk": "medium",
-      "kind": "task"
-    },
-    "t69": {
-      "id": "t69",
-      "subject": "Fix false-failure penalty on prose-less agents",
-      "description": "Remove the empty final_text = failure logic in both tools/subagent.rs and swarm/executor.rs. If tools completed successfully, return success with a synthetic summary.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779288157632,
-      "acceptance_criteria": "Empty final_text with no error returns ExecutionResult::success; cargo build -p jfc-ui passes",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo build -p jfc-ui 2>&1 | grep -E \"^error\" | head -5",
-      "kind": "task"
-    },
-    "t42": {
-      "id": "t42",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779224595780
-    },
-    "t55": {
-      "id": "t55",
-      "subject": "Extract jfc-markdown crate from markdown.rs (2,611 lines)",
-      "description": "markdown.rs is pure text-rendering logic (no runtime/tools/app dependencies). It's a natural crate extraction candidate following the tracing-core/ratatui-core minimal-core pattern. Create crates/jfc-markdown/ with its own Cargo.toml, extract the markdown renderer, expose a clean public API. jfc-ui depends on it. Verify no circular deps.",
-      "status": "deleted",
-      "owner": "jfc-factory",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779281566760,
-      "acceptance_criteria": "cargo test --workspace passes; markdown.rs in jfc-ui deleted; jfc-markdown crate present in workspace",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && ls crates/jfc-markdown/",
-      "risk": "medium",
-      "kind": "task"
-    },
-    "t64": {
-      "id": "t64",
-      "subject": "Build + run render tests",
-      "description": "Render tests pass: 183 render-related tests all green, no regressions.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779284194934,
-      "verification_command": "cargo test -p jfc-ui render"
-    },
-    "t15": {
-      "id": "t15",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779175585744
-    },
-    "t39": {
-      "id": "t39",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779218398515
-    },
-    "t53": {
-      "id": "t53",
-      "subject": "Fix 20 unused-import warnings left from render/input splits",
-      "description": "After fixing tests, surgically remove the 20 unused imports identified in the current diagnostics across jfc-daemon/src/worker.rs, jfc-ui/src/input/key_dispatch.rs, jfc-ui/src/render.rs, render/agents.rs, render/frame.rs, render/overlays.rs, render/sidebar.rs. Must NOT use cargo fix (it removes test-visible re-exports). Remove only imports unused in both test and non-test builds.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779281566759,
-      "acceptance_criteria": "cargo build --workspace produces 0 warnings",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo build --workspace 2>&1 | grep \"^warning:\" | wc -l",
+      "acceptance_criteria": "cargo test --workspace compiles and all tests pass",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | grep -E \"^test result:|^error\" | head -20",
       "risk": "low",
       "kind": "task"
     },
-    "t30": {
-      "id": "t30",
-      "subject": "Add activeForm field to Task struct for present-tense labels",
-      "description": "Add `active_form: Option<String>` to Task in jfc-session. This is the present-continuous label (e.g. \"Fixing auth bug\") shown while a task is in_progress. Populate it from TaskCreate/TaskUpdate input. Display it in the spinner verb line when the task is the current work item.",
+    "t8": {
+      "id": "t8",
+      "subject": "subj",
+      "description": "desc",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779215365789,
-      "kind": "task"
+      "created_at_ms": 1779172539804
     },
     "t32": {
       "id": "t32",
@@ -359,101 +31,6 @@
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779215365789,
-      "kind": "task"
-    },
-    "t45": {
-      "id": "t45",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779230903854
-    },
-    "t20": {
-      "id": "t20",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779212307721
-    },
-    "t26": {
-      "id": "t26",
-      "subject": "Explore Claude Code 2.1.144 agent/task view implementation",
-      "description": "Dig into ~/RustProjects/active/claude-code-2.1.144-audit/cli.beautified.js to understand their agent/task modal UI and compare with our implementation",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779214866563,
-      "kind": "task"
-    },
-    "t61": {
-      "id": "t61",
-      "subject": "Git commit each split cleanly with descriptive messages",
-      "description": "After all splits are verified, make one commit per logical split (not one mega-commit). Each commit message follows the pattern: \"refactor: split X (N lines) into X/{a,b,c}.rs\". This preserves git blame and makes bisect useful. Final commit: \"refactor: extract jfc-markdown and jfc-theme crates\".",
-      "status": "deleted",
-      "owner": "jfc-factory",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779281566762,
-      "acceptance_criteria": "git log --oneline shows one commit per split; cargo test --workspace passes on HEAD",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && git log --oneline -15",
-      "risk": "low",
-      "kind": "task"
-    },
-    "t19": {
-      "id": "t19",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779212153795
-    },
-    "t12": {
-      "id": "t12",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779174507675
-    },
-    "t47": {
-      "id": "t47",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779235741039
-    },
-    "t13": {
-      "id": "t13",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779174843069
-    },
-    "t57": {
-      "id": "t57",
-      "subject": "Split session/mod.rs (3,501 lines) into focused submodules",
-      "description": "Partially done: session/mod.rs = 13 lines ✓, core.rs = 933 ✓, compaction.rs = 313 ✓. BUT serialization.rs = 2,284 lines (over 1000 limit). Needs serialization split into serialization.rs + history.rs or similar.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "metadata": {
-        "agent_task_id": "tooluse_7RfPV9vh3OwfrniRCaLgHB",
-        "model": "bedrock-claude-4-6-opus"
-      },
-      "created_at_ms": 1779281566761,
-      "acceptance_criteria": "cargo test --workspace passes; session/mod.rs under 300 lines; no file in session/ over 1000 lines",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && wc -l crates/jfc-ui/src/session/*.rs",
-      "risk": "medium",
       "kind": "task"
     },
     "t62": {
@@ -473,34 +50,6 @@
       "risk": "medium",
       "kind": "task"
     },
-    "t37": {
-      "id": "t37",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779217196197
-    },
-    "t43": {
-      "id": "t43",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779224603342
-    },
-    "t31": {
-      "id": "t31",
-      "subject": "Show activeForm/live activity text under running tasks",
-      "description": "When a task is in_progress and its owner agent is running, show the agent's current activity description (from subagent progress) as a dim indented line below the task subject. This is the live \"what they're doing now\" text Claude Code shows.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779215365789,
-      "kind": "task"
-    },
     "t66": {
       "id": "t66",
       "subject": "Border the pinned-tasks panel",
@@ -511,107 +60,186 @@
       "created_at_ms": 1779284194935,
       "verification_command": "cargo build -p jfc-ui"
     },
-    "t3": {
-      "id": "t3",
+    "t36": {
+      "id": "t36",
       "subject": "subj",
       "description": "desc",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779172244959
+      "created_at_ms": 1779216973443
     },
-    "t25": {
-      "id": "t25",
+    "t35": {
+      "id": "t35",
       "subject": "subj",
       "description": "desc",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779214712468
+      "created_at_ms": 1779216176196
     },
-    "t5": {
-      "id": "t5",
-      "subject": "subj",
-      "description": "desc",
+    "t63": {
+      "id": "t63",
+      "subject": "Add streaming/tool-dispatch integration tests (t16 from prior session)",
+      "description": "Deferred: streaming/tool-dispatch integration tests require significant mock infrastructure. Both prior agent attempts failed. Will tackle in a dedicated session.",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779172389595
-    },
-    "t67": {
-      "id": "t67",
-      "subject": "Segment the status bar into scannable, color-coded groups",
-      "description": "Replace the flat `badges.join(\" · \")` single-color string in status.rs with visually distinguished segments. Key metrics (model, branch, cost) should be color-coded so they're scannable at a glance, rather than all rendered in text_secondary. Keep it tasteful — colored separators / accent-colored values, not loud background pills.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779284552317,
-      "verification_command": "cargo build -p jfc-ui && cargo test -p jfc-ui render"
-    },
-    "t41": {
-      "id": "t41",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779222972461
-    },
-    "t16": {
-      "id": "t16",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779178449048
-    },
-    "t54": {
-      "id": "t54",
-      "subject": "Fix broken test build: double-nested mod tests bug",
-      "description": "The previous session ended with a broken `cargo test` build. `input/tests.rs` and `render/tests.rs` both wrap content in `mod tests { use super::*; }` but the parent `input.rs`/`render.rs` already declares `mod tests;` — causing double-nesting where `use super::*` resolves to the empty `tests` module instead of the parent. Fix by removing the outer `mod tests { ... }` wrapper from the file-based test modules so the content lives at file scope with `use super::*;` directly.",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779281566760,
-      "acceptance_criteria": "cargo test --workspace compiles and all tests pass",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | grep -E \"^test result:|^error\" | head -20",
-      "risk": "low",
+      "metadata": {
+        "agent_task_id": "tooluse_rPeUOkTe68US494pDALO1d",
+        "model": "bedrock-claude-4-6-opus"
+      },
+      "created_at_ms": 1779281566763,
+      "acceptance_criteria": "cargo test --workspace passes; at least 5 new integration tests covering tool dispatch pipeline",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | grep \"integration\" | head -10",
+      "risk": "medium",
       "kind": "task"
     },
-    "t48": {
-      "id": "t48",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779235853419
-    },
-    "t8": {
-      "id": "t8",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779172539804
-    },
-    "t52": {
-      "id": "t52",
-      "subject": "Split input/slash_commands.rs (2,496 lines) into slash_commands/{parser,handlers,completions}.rs",
-      "description": "Agent died without completing. slash_commands.rs is still 2,493 lines. Split into slash_commands.rs (routing, under 1000) + command_handlers.rs (impls).",
+    "t60": {
+      "id": "t60",
+      "subject": "Split swarm/runner.rs (2,022 lines) into swarm/{runner,executor,coordinator}.rs",
+      "description": "Split swarm/runner.rs (currently 2,022 lines) into runner.rs (lifecycle/state, under 500 lines), executor.rs (per-agent tool execution), coordinator.rs (fan-out/fan-in). executor.rs and coordinator.rs already exist from prior agent work but runner.rs was never trimmed. Do in main agent.",
       "status": "completed",
       "blocks": [],
       "blockedBy": [],
       "metadata": {
-        "agent_task_id": "tooluse_XblKx1EFSN70iSfpfrNhOQ",
+        "agent_task_id": "tooluse_OcGmDAKwOk3fk4WR8pbJVM",
         "model": "bedrock-claude-4-6-opus"
       },
-      "created_at_ms": 1779281566759,
-      "acceptance_criteria": "cargo test --workspace passes; no file in input/ over 1000 lines",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && find crates/jfc-ui/src/input -name \"*.rs\" | xargs wc -l | sort -rn | head -10",
+      "created_at_ms": 1779281566762,
+      "acceptance_criteria": "cargo test --workspace passes; swarm/runner.rs under 500 lines",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && wc -l crates/jfc-ui/src/swarm/runner.rs",
       "risk": "medium",
+      "kind": "task"
+    },
+    "t65": {
+      "id": "t65",
+      "subject": "Border the agent fan panel",
+      "description": "Wrap agent_fan_below_input in a rounded surface-tinted Block with a contextual title (agents/team), pass inner rect to render_subagent_tree/render_teammate_tree, and change their paragraph bg from t.bg to t.surface. Bump agent_fan_height in frame.rs by +2.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779284194935,
+      "verification_command": "cargo build -p jfc-ui"
+    },
+    "t57": {
+      "id": "t57",
+      "subject": "Split session/mod.rs (3,501 lines) into focused submodules",
+      "description": "Partially done: session/mod.rs = 13 lines ✓, core.rs = 933 ✓, compaction.rs = 313 ✓. BUT serialization.rs = 2,284 lines (over 1000 limit). Needs serialization split into serialization.rs + history.rs or similar.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "metadata": {
+        "agent_task_id": "tooluse_7RfPV9vh3OwfrniRCaLgHB",
+        "model": "bedrock-claude-4-6-opus"
+      },
+      "created_at_ms": 1779281566761,
+      "acceptance_criteria": "cargo test --workspace passes; session/mod.rs under 300 lines; no file in session/ over 1000 lines",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && wc -l crates/jfc-ui/src/session/*.rs",
+      "risk": "medium",
+      "kind": "task"
+    },
+    "t6": {
+      "id": "t6",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172435825
+    },
+    "t55": {
+      "id": "t55",
+      "subject": "Extract jfc-markdown crate from markdown.rs (2,611 lines)",
+      "description": "markdown.rs is pure text-rendering logic (no runtime/tools/app dependencies). It's a natural crate extraction candidate following the tracing-core/ratatui-core minimal-core pattern. Create crates/jfc-markdown/ with its own Cargo.toml, extract the markdown renderer, expose a clean public API. jfc-ui depends on it. Verify no circular deps.",
+      "status": "deleted",
+      "owner": "jfc-factory",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779281566760,
+      "acceptance_criteria": "cargo test --workspace passes; markdown.rs in jfc-ui deleted; jfc-markdown crate present in workspace",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && ls crates/jfc-markdown/",
+      "risk": "medium",
+      "kind": "task"
+    },
+    "t22": {
+      "id": "t22",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779214492653
+    },
+    "t76": {
+      "id": "t76",
+      "subject": "Normalize ext2.rs handlers (fat → fns, thin delegations stay)",
+      "description": "slash_commands_ext2.rs has two classes: (a) FAT inline handlers (/memory+/mem, /commit, /review, /skills, /agents, /market, /cascade, /graph-history, /task-list+/tasks, /task-add, /task-done, /task-rm+/task-delete, /claude-md, /mode, /auto-mode, /swarm-approve+/swarm-deny) — hoist these into async fns like t74/t75; (b) THIN one-line delegations to already-cohesive modules (/worktree→worktree_commands, /mcp→mcp_commands, /theme,/fleet,/teleport,/init,/plan,/roadmap,/parity,/philosophy,/usage,/cost,/status,/bug,/rewind,/output-style,/dump-context→local_commands; /install-github-app,/pr,/pr-autofix,/setup-github-actions→github_commands; /dream,/loop,/schedule→automation_commands) — these become thin async fn wrappers too so the macro can call them uniformly. Preserve the SKILL-NAME FALLBACK (the final _ arm that inline-expands or forks a skill) as the macro's fallthrough hook. Place hoisted fns in slash_commands/handlers_ext2.rs.",
+      "status": "completed",
+      "blocks": [
+        "t77"
+      ],
+      "blockedBy": [
+        "t73"
+      ],
+      "created_at_ms": 1779291806116,
+      "acceptance_criteria": "cargo build -p jfc-ui compiles; fat ext2 arms are standalone async fns; thin delegations are uniform async fn wrappers; skill fallback preserved as fallthrough",
+      "parent_id": "t72",
+      "kind": "task"
+    },
+    "t77": {
+      "id": "t77",
+      "subject": "Wire all 88 commands through slash_commands! and delete catch-all chain",
+      "description": "Replace the three hand-written match blocks + the two `_ => handle_slash_command_extended*` catch-all forwards with ONE slash_commands! { ... } invocation listing all 88 commands (with aliases as additional match patterns) mapping to the async fns from t74/t75/t76. The macro generates the single dispatch match and the SLASH_COMMANDS table. Keep run_slash_command + handle_slash_command as the public entry. Preserve the trailing app.scroll_to_bottom(). Delete slash_commands_ext.rs and slash_commands_ext2.rs files; remove their `mod` lines from input.rs. Verify alias handling: /c, /wf, /f, /mem, /tasks, /releasenotes, /changelog, /fleetview, /stats, /style, /brief, /debug-context, /learn, /proactive, /routines, /task-delete, /swarm-deny all still route correctly.",
+      "status": "completed",
+      "blocks": [
+        "t78"
+      ],
+      "blockedBy": [
+        "t74",
+        "t75",
+        "t76"
+      ],
+      "created_at_ms": 1779291814483,
+      "acceptance_criteria": "cargo build -p jfc-ui compiles; rg 'slash_commands_ext' returns nothing; rg 'handle_slash_command_extended' returns nothing; all 88 command literals + aliases present in the single macro invocation",
+      "parent_id": "t72",
+      "kind": "task"
+    },
+    "t2": {
+      "id": "t2",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172170441
+    },
+    "t1": {
+      "id": "t1",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172147806
+    },
+    "t19": {
+      "id": "t19",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779212153795
+    },
+    "t29": {
+      "id": "t29",
+      "subject": "Improve agent detail view in task panel (progress + tokens + elapsed)",
+      "description": "Future work: Add an expanded detail pane when Enter is pressed on a task row in Ctrl+T panel. Show: elapsed time (from task_completion_times), token count (from BackgroundTask), tool use count, recent activities with › prefix, prompt (truncated), error if failed. Requires correlating task_store entries with background_tasks by task_id/owner.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779215365789,
       "kind": "task"
     },
     "t51": {
@@ -631,23 +259,226 @@
       "risk": "medium",
       "kind": "task"
     },
-    "t35": {
-      "id": "t35",
+    "t13": {
+      "id": "t13",
       "subject": "subj",
       "description": "desc",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779216176196
+      "created_at_ms": 1779174843069
     },
-    "t1": {
-      "id": "t1",
+    "t26": {
+      "id": "t26",
+      "subject": "Explore Claude Code 2.1.144 agent/task view implementation",
+      "description": "Dig into ~/RustProjects/active/claude-code-2.1.144-audit/cli.beautified.js to understand their agent/task modal UI and compare with our implementation",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779214866563,
+      "kind": "task"
+    },
+    "t37": {
+      "id": "t37",
       "subject": "subj",
       "description": "desc",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779172147806
+      "created_at_ms": 1779217196197
+    },
+    "t72": {
+      "id": "t72",
+      "subject": "Replace ext/ext2 slop with macro-driven slash-command registry",
+      "description": "Collapse input/slash_commands{,_ext,_ext2}.rs (3 files, 88 commands, ~2500 lines) into a single macro_rules! registry that is the SOLE source of truth for dispatch + autocomplete metadata. Grounded in the rust-lang Zulip wg-macros thread \"Please help me figure out these very old macro guidelines\": functions are preferred for handler LOGIC; a macro is the blessed tool when it \"generates a static table and a function guaranteed to take action on all items in that list, significantly reducing human error\" (kpreid). Macro defined in the SAME module as its use site. Eliminates the drifted second table in render/overlays.rs.",
+      "status": "completed",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779291766400,
+      "acceptance_criteria": "cargo build -p jfc-ui succeeds; cargo test -p jfc-ui passes; ripgrep finds no slash_commands_ext references; render/overlays.rs no longer defines its own SLASH_COMMANDS const",
+      "kind": "milestone"
+    },
+    "t20": {
+      "id": "t20",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779212307721
+    },
+    "t38": {
+      "id": "t38",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779217329481
+    },
+    "t15": {
+      "id": "t15",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779175585744
+    },
+    "t30": {
+      "id": "t30",
+      "subject": "Add activeForm field to Task struct for present-tense labels",
+      "description": "Add `active_form: Option<String>` to Task in jfc-session. This is the present-continuous label (e.g. \"Fixing auth bug\") shown while a task is in_progress. Populate it from TaskCreate/TaskUpdate input. Display it in the spinner verb line when the task is the current work item.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779215365789,
+      "kind": "task"
+    },
+    "t68": {
+      "id": "t68",
+      "subject": "Fix multi-agent billing blind spot",
+      "description": "Propagate teammate cost_usd and per-model usage back to the parent App's usage_by_model map so the status bar reflects actual spend across all agents.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779288157631,
+      "acceptance_criteria": "TeammateEvent::Progress cost data is aggregated into app.usage_by_model; status bar reflects subagent costs",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo build -p jfc-ui 2>&1 | grep -E \"^error\" | head -5",
+      "kind": "task"
+    },
+    "t70": {
+      "id": "t70",
+      "subject": "Fix mailbox dirty reads — atomic read locking",
+      "description": "Add file lock acquisition to read_mailbox() in swarm/mailbox.rs to prevent partial JSON reads during concurrent writes.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779288157632,
+      "acceptance_criteria": "read_mailbox acquires the advisory lock before reading; cargo test --workspace passes",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo build -p jfc-ui 2>&1 | grep -E \"^error\" | head -5",
+      "kind": "task"
+    },
+    "t12": {
+      "id": "t12",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779174507675
+    },
+    "t45": {
+      "id": "t45",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779230903854
+    },
+    "t40": {
+      "id": "t40",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779221102325
+    },
+    "t49": {
+      "id": "t49",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779236127602
+    },
+    "t74": {
+      "id": "t74",
+      "subject": "Extract handler bodies from slash_commands.rs into async fns",
+      "description": "Convert each inline match-arm body from slash_commands.rs (21 commands: /rename, /clear, /check, /compact, /advisor, /config, /continue+/c, /resume, /sessions, /workflow+/wf, /login, /logout, /release-notes+/releasenotes+/changelog, /feedback, /upgrade, /copy, /fork) into a free `async fn cmd_<name>(app: &mut App, parts: &[&str], text: &str, tx: Option<&mpsc::Sender<AppEvent>>)`. Keep handler bodies BYTE-IDENTICAL — just hoist them. Per the wg-macros guidance, \"Functions should always be preferred over macros\" for the LOGIC; the macro only generates the wiring. Place these fns in a new slash_commands/handlers_core.rs module.",
+      "status": "completed",
+      "blocks": [
+        "t77"
+      ],
+      "blockedBy": [
+        "t73"
+      ],
+      "created_at_ms": 1779291789902,
+      "acceptance_criteria": "cargo build -p jfc-ui compiles; each former match arm in slash_commands.rs is now a standalone async fn; original dispatch still works via the old match (parallel structure, no behavior change yet)",
+      "parent_id": "t72",
+      "kind": "task"
+    },
+    "t42": {
+      "id": "t42",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779224595780
+    },
+    "t17": {
+      "id": "t17",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779179213454
+    },
+    "t7": {
+      "id": "t7",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172511967
+    },
+    "t34": {
+      "id": "t34",
+      "subject": "Smart task ordering in pinned row (priority sort)",
+      "description": "Reorder tasks in pinned row: recently-completed (fade tail) first, then in-progress, then pending (unblocked before blocked). Matches Claude Code's priority ordering instead of our current flat iteration.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779215365790,
+      "kind": "task"
+    },
+    "t23": {
+      "id": "t23",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779214515775
+    },
+    "t48": {
+      "id": "t48",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779235853419
+    },
+    "t61": {
+      "id": "t61",
+      "subject": "Git commit each split cleanly with descriptive messages",
+      "description": "After all splits are verified, make one commit per logical split (not one mega-commit). Each commit message follows the pattern: \"refactor: split X (N lines) into X/{a,b,c}.rs\". This preserves git blame and makes bisect useful. Final commit: \"refactor: extract jfc-markdown and jfc-theme crates\".",
+      "status": "deleted",
+      "owner": "jfc-factory",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779281566762,
+      "acceptance_criteria": "git log --oneline shows one commit per split; cargo test --workspace passes on HEAD",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && git log --oneline -15",
+      "risk": "low",
+      "kind": "task"
     },
     "t33": {
       "id": "t33",
@@ -659,14 +490,14 @@
       "created_at_ms": 1779215365790,
       "kind": "task"
     },
-    "t50": {
-      "id": "t50",
+    "t43": {
+      "id": "t43",
       "subject": "subj",
       "description": "desc",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779237119210
+      "created_at_ms": 1779224603342
     },
     "t4": {
       "id": "t4",
@@ -676,6 +507,52 @@
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779172385805
+    },
+    "t53": {
+      "id": "t53",
+      "subject": "Fix 20 unused-import warnings left from render/input splits",
+      "description": "After fixing tests, surgically remove the 20 unused imports identified in the current diagnostics across jfc-daemon/src/worker.rs, jfc-ui/src/input/key_dispatch.rs, jfc-ui/src/render.rs, render/agents.rs, render/frame.rs, render/overlays.rs, render/sidebar.rs. Must NOT use cargo fix (it removes test-visible re-exports). Remove only imports unused in both test and non-test builds.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779281566759,
+      "acceptance_criteria": "cargo build --workspace produces 0 warnings",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo build --workspace 2>&1 | grep \"^warning:\" | wc -l",
+      "risk": "low",
+      "kind": "task"
+    },
+    "t79": {
+      "id": "t79",
+      "subject": "Verify: tests pass, no drift, behavior identical",
+      "description": "Run cargo test -p jfc-ui (covers the existing run_slash_command dispatch tests in input/tests.rs:1810+ and the slash_matches/current_slash_prefix tests in render/tests.rs:1184+). Run cargo build --release. Confirm: (1) all dispatch tests green; (2) the render tests that filter SLASH_COMMANDS by prefix still pass against the generated table; (3) no new warnings introduced by the refactor; (4) add a NEW test asserting every SLASH_COMMANDS entry has a live dispatch arm (round-trip: feed each table name through run_slash_command on a scratch App and assert it does NOT hit the \"Unknown command\" fallback) — this is the regression guard that makes drift impossible going forward. Fire the verification subagent to run + report.",
+      "status": "completed",
+      "blocks": [],
+      "blockedBy": [
+        "t78"
+      ],
+      "created_at_ms": 1779291830073,
+      "acceptance_criteria": "cargo test -p jfc-ui passes; cargo build --release succeeds; new drift-guard test asserts every table entry dispatches; warning count not increased by this change",
+      "verification_command": "cargo test -p jfc-ui 2>&1 | tail -20",
+      "parent_id": "t72",
+      "kind": "check"
+    },
+    "t18": {
+      "id": "t18",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779211042195
+    },
+    "t9": {
+      "id": "t9",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172544275
     },
     "t59": {
       "id": "t59",
@@ -694,17 +571,83 @@
       "risk": "medium",
       "kind": "task"
     },
-    "t68": {
-      "id": "t68",
-      "subject": "Fix multi-agent billing blind spot",
-      "description": "Propagate teammate cost_usd and per-model usage back to the parent App's usage_by_model map so the status bar reflects actual spend across all agents.",
+    "t56": {
+      "id": "t56",
+      "subject": "Split types/tool.rs (2,529 lines) into types/{tool_input,tool_kind,tool_result,tool_call}.rs",
+      "description": "DONE: tool.rs split from 2,529 to 638 lines. Extracted tool_input.rs (835), tool_kind.rs (185), tool_call.rs (352), tool_output.rs (412), tool_display.rs (121). Largest file just 35 lines over 800-line target — acceptable.",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
-      "created_at_ms": 1779288157631,
-      "acceptance_criteria": "TeammateEvent::Progress cost data is aggregated into app.usage_by_model; status bar reflects subagent costs",
-      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo build -p jfc-ui 2>&1 | grep -E \"^error\" | head -5",
+      "metadata": {
+        "agent_task_id": "tooluse_fmTgIYHpirD12TNWDxZh1C",
+        "model": "bedrock-claude-4-6-sonnet"
+      },
+      "created_at_ms": 1779281566760,
+      "acceptance_criteria": "cargo test --workspace passes; no file in types/ over 800 lines",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && find crates/jfc-ui/src/types -name \"*.rs\" | xargs wc -l | sort -rn | head -10",
+      "risk": "medium",
       "kind": "task"
+    },
+    "t46": {
+      "id": "t46",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779233945131
+    },
+    "t52": {
+      "id": "t52",
+      "subject": "Split input/slash_commands.rs (2,496 lines) into slash_commands/{parser,handlers,completions}.rs",
+      "description": "Agent died without completing. slash_commands.rs is still 2,493 lines. Split into slash_commands.rs (routing, under 1000) + command_handlers.rs (impls).",
+      "status": "completed",
+      "blocks": [],
+      "blockedBy": [],
+      "metadata": {
+        "agent_task_id": "tooluse_XblKx1EFSN70iSfpfrNhOQ",
+        "model": "bedrock-claude-4-6-opus"
+      },
+      "created_at_ms": 1779281566759,
+      "acceptance_criteria": "cargo test --workspace passes; no file in input/ over 1000 lines",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && find crates/jfc-ui/src/input -name \"*.rs\" | xargs wc -l | sort -rn | head -10",
+      "risk": "medium",
+      "kind": "task"
+    },
+    "t58": {
+      "id": "t58",
+      "subject": "Extract jfc-theme crate from theme.rs (1,162 lines)",
+      "description": "DONE: jfc-theme crate extracted and committed at 9701d16. theme.rs in jfc-ui is now a 2-line re-export shim. All tests pass.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "metadata": {
+        "agent_task_id": "tooluse_oaF69C0qedKLzte6zw1c2i",
+        "model": "bedrock-claude-4-6-sonnet"
+      },
+      "created_at_ms": 1779281566761,
+      "acceptance_criteria": "cargo test --workspace passes; theme.rs in jfc-ui deleted; jfc-theme crate present in workspace",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo test --workspace 2>&1 | tail -5 && ls crates/jfc-theme/",
+      "risk": "low",
+      "kind": "task"
+    },
+    "t25": {
+      "id": "t25",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779214712468
+    },
+    "t3": {
+      "id": "t3",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172244959
     },
     "t10": {
       "id": "t10",
@@ -714,6 +657,185 @@
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779174352330
+    },
+    "t78": {
+      "id": "t78",
+      "subject": "Point autocomplete + /help at the generated SLASH_COMMANDS table",
+      "description": "Kill the second source of truth. render/overlays.rs:189 currently hand-maintains its own `const SLASH_COMMANDS: &[(&str,&str)]` (~21 of 88 commands, comment literally says \"Keep in sync with handlers in input.rs\"). Remove it and have slash_matches() / slash_popup() read the macro-generated table from input::slash_commands (re-export as needed). Also update the /help handler (from t75) to ITERATE the generated table instead of a hand-written list, so help can never drift either. This is the core payoff per kpreid: \"a macro that generates a static table AND a function guaranteed to take action on all of the items in that list.\"",
+      "status": "completed",
+      "blocks": [
+        "t79"
+      ],
+      "blockedBy": [
+        "t77"
+      ],
+      "created_at_ms": 1779291821966,
+      "acceptance_criteria": "render/overlays.rs no longer defines SLASH_COMMANDS; slash_matches reads the generated table; /help iterates the table; autocomplete popup shows all 88 commands; cargo build compiles",
+      "parent_id": "t72",
+      "kind": "task"
+    },
+    "t47": {
+      "id": "t47",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779235741039
+    },
+    "t5": {
+      "id": "t5",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779172389595
+    },
+    "t64": {
+      "id": "t64",
+      "subject": "Build + run render tests",
+      "description": "Render tests pass: 183 render-related tests all green, no regressions.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779284194934,
+      "verification_command": "cargo test -p jfc-ui render"
+    },
+    "t24": {
+      "id": "t24",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779214665629
+    },
+    "t69": {
+      "id": "t69",
+      "subject": "Fix false-failure penalty on prose-less agents",
+      "description": "Remove the empty final_text = failure logic in both tools/subagent.rs and swarm/executor.rs. If tools completed successfully, return success with a synthetic summary.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779288157632,
+      "acceptance_criteria": "Empty final_text with no error returns ExecutionResult::success; cargo build -p jfc-ui passes",
+      "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo build -p jfc-ui 2>&1 | grep -E \"^error\" | head -5",
+      "kind": "task"
+    },
+    "t16": {
+      "id": "t16",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779178449048
+    },
+    "t50": {
+      "id": "t50",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779237119210
+    },
+    "t41": {
+      "id": "t41",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779222972461
+    },
+    "t44": {
+      "id": "t44",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779224788873
+    },
+    "t39": {
+      "id": "t39",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779218398515
+    },
+    "t28": {
+      "id": "t28",
+      "subject": "Agent fan: show name + description + elapsed + tokens right-aligned",
+      "description": "Already implemented — render_subagent_tree at render.rs:2821 already shows: pointer + bullet + name + middle stats (tool + model + tool_count) + activity glyph + elapsed + token count right-aligned. Matches Claude Code's format.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779215365789,
+      "kind": "task"
+    },
+    "t11": {
+      "id": "t11",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779174374284
+    },
+    "t21": {
+      "id": "t21",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779212450289
+    },
+    "t75": {
+      "id": "t75",
+      "subject": "Extract handler bodies from slash_commands_ext.rs into async fns",
+      "description": "Same hoist pattern as t74 for slash_commands_ext.rs (15 commands: /batch, /diff, /undo, /export, /verbose, /fast+/f, /pin, /unpin, /timeline, /doctor, /effort, /feature, /goal, /help). Convert each fat inline match arm into a standalone `async fn cmd_<name>(...)` with byte-identical bodies. Note /help currently hand-lists commands — flag it for t78 (it should iterate SLASH_COMMANDS). Place these in slash_commands/handlers_ext.rs (kept as a cohesion-named module, NOT ext-by-line-count).",
+      "status": "completed",
+      "blocks": [
+        "t77"
+      ],
+      "blockedBy": [
+        "t73"
+      ],
+      "created_at_ms": 1779291796369,
+      "acceptance_criteria": "cargo build -p jfc-ui compiles; each former arm in ext.rs is a standalone async fn",
+      "parent_id": "t72",
+      "kind": "task"
+    },
+    "t73": {
+      "id": "t73",
+      "subject": "Design the slash_commands! macro + SlashCommand descriptor",
+      "description": "In a new crates/jfc-ui/src/input/slash_commands/registry.rs (or top of slash_commands.rs), define: (1) a `struct SlashSpec { name: &str, aliases: &[&str], help: &str }` descriptor; (2) a `macro_rules! slash_commands!` that takes rows like `\"/clear\" [] \"clear the conversation\" => clear_handler` and emits BOTH (a) a `pub(crate) const SLASH_COMMANDS: &[SlashSpec]` static table for autocomplete/help, AND (b) the `match parts[0] { ... }` dispatch arms calling each async handler. Macro must live in the same module as use site per kpreid's guidance. Handler signature: async fn(app: &mut App, parts: &[&str], text: &str, tx: Option<&mpsc::Sender<AppEvent>>). Include a trailing fallthrough hook for the skill-name fallback. Do NOT yet move handler bodies — just establish the macro + descriptor shape and get it compiling with a couple of sample commands.",
+      "status": "completed",
+      "blocks": [
+        "t74",
+        "t75",
+        "t76"
+      ],
+      "blockedBy": [],
+      "created_at_ms": 1779291775713,
+      "acceptance_criteria": "cargo build -p jfc-ui compiles with the macro expanding 2-3 sample commands; SLASH_COMMANDS const is generated by the macro, not hand-written",
+      "parent_id": "t72",
+      "kind": "task"
+    },
+    "t14": {
+      "id": "t14",
+      "subject": "subj",
+      "description": "desc",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779174948556
     },
     "t27": {
       "id": "t27",
@@ -725,34 +847,36 @@
       "created_at_ms": 1779214866563,
       "kind": "task"
     },
-    "t22": {
-      "id": "t22",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779214492653
-    },
-    "t46": {
-      "id": "t46",
-      "subject": "subj",
-      "description": "desc",
-      "status": "deleted",
-      "blocks": [],
-      "blockedBy": [],
-      "created_at_ms": 1779233945131
-    },
-    "t70": {
-      "id": "t70",
-      "subject": "Fix mailbox dirty reads — atomic read locking",
-      "description": "Add file lock acquisition to read_mailbox() in swarm/mailbox.rs to prevent partial JSON reads during concurrent writes.",
+    "t71": {
+      "id": "t71",
+      "subject": "Fix uncontrolled tool execution leak during aborts",
+      "description": "Race execute_tool against abort_rx in the swarm executor tool loop so cancellation kills running tools immediately via tokio::select!",
       "status": "deleted",
       "blocks": [],
       "blockedBy": [],
       "created_at_ms": 1779288157632,
-      "acceptance_criteria": "read_mailbox acquires the advisory lock before reading; cargo test --workspace passes",
+      "acceptance_criteria": "Tool execution loop uses tokio::select! to race against abort signal; cargo build -p jfc-ui passes",
       "verification_command": "cd /home/cole/RustProjects/active/jfc && cargo build -p jfc-ui 2>&1 | grep -E \"^error\" | head -5",
+      "kind": "task"
+    },
+    "t67": {
+      "id": "t67",
+      "subject": "Segment the status bar into scannable, color-coded groups",
+      "description": "Replace the flat `badges.join(\" · \")` single-color string in status.rs with visually distinguished segments. Key metrics (model, branch, cost) should be color-coded so they're scannable at a glance, rather than all rendered in text_secondary. Keep it tasteful — colored separators / accent-colored values, not loud background pills.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779284552317,
+      "verification_command": "cargo build -p jfc-ui && cargo test -p jfc-ui render"
+    },
+    "t31": {
+      "id": "t31",
+      "subject": "Show activeForm/live activity text under running tasks",
+      "description": "When a task is in_progress and its owner agent is running, show the agent's current activity description (from subagent progress) as a dim indented line below the task subject. This is the live \"what they're doing now\" text Claude Code shows.",
+      "status": "deleted",
+      "blocks": [],
+      "blockedBy": [],
+      "created_at_ms": 1779215365789,
       "kind": "task"
     }
   }
