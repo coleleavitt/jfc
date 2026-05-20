@@ -143,3 +143,177 @@ pub(super) struct AgentFront {
     #[serde(default)]
     pub cost: Option<AgentCost>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Normal: a well-formed skill file with frontmatter parses into a
+    // Skill record.
+    #[test]
+    fn parse_skill_with_frontmatter_normal() {
+        let raw = "---\nname: my-skill\ndescription: A test skill\n---\n# Body\n\nDo the thing.";
+        let s = parse_skill(Path::new("/x/skills/my.md"), raw).expect("parsed");
+        assert_eq!(s.name, "my-skill");
+        assert_eq!(s.description.as_deref(), Some("A test skill"));
+        assert!(s.body.contains("Do the thing"));
+    }
+
+    // Normal: a skill without frontmatter still parses, falling back to the
+    // filename stem for the `name` field.
+    #[test]
+    fn parse_skill_no_frontmatter_uses_filename_stem_normal() {
+        let s = parse_skill(Path::new("/x/skills/snake.md"), "Just a body").expect("parsed");
+        assert_eq!(s.name, "snake");
+        assert_eq!(s.description, None);
+        assert_eq!(s.body, "Just a body");
+    }
+
+    // Normal: a well-formed agent file parses into an AgentDef.
+    #[test]
+    fn parse_agent_full_frontmatter_normal() {
+        let raw = "---\nname: impl\nmodel: opus\nisolation: worktree\nskills:\n  - rust-style\nallowedTools:\n  - Read\n  - Edit\ndisallowedTools:\n  - Task\npermissionMode: acceptEdits\nbackground: true\ncolor: \"#ff0000\"\n---\n# Implementer\n\nYou implement features.";
+        let a = parse_agent(Path::new("/x/agents/impl.md"), raw).expect("parsed");
+        assert_eq!(a.name, "impl");
+        assert_eq!(a.model.as_deref(), Some("opus"));
+        assert_eq!(a.isolation.as_deref(), Some("worktree"));
+        assert_eq!(a.skills, vec!["rust-style".to_owned()]);
+        assert_eq!(a.allowed_tools, vec!["Read", "Edit"]);
+        assert_eq!(a.disallowed_tools, vec!["Task"]);
+        assert_eq!(a.permission_mode, Some(PermissionMode::AcceptEdits));
+        assert_eq!(a.background, Some(true));
+        assert_eq!(a.color.as_deref(), Some("#ff0000"));
+        assert!(a.system_prompt.contains("You implement features"));
+    }
+
+    // Robust: an agent file without frontmatter is rejected — we need at
+    // least the `name` field. Returns None.
+    #[test]
+    fn parse_agent_no_frontmatter_returns_none_robust() {
+        let s = parse_agent(Path::new("/x/agents/x.md"), "Just a body");
+        assert!(s.is_none());
+    }
+
+    // Robust: malformed YAML in the frontmatter returns None for agents
+    // (which require `name`). Skills tolerate it (fallback to filename).
+    #[test]
+    fn parse_agent_malformed_yaml_returns_none_robust() {
+        let raw = "---\nname: [missing close bracket\n---\nbody";
+        assert!(parse_agent(Path::new("/x/a.md"), raw).is_none());
+    }
+
+    // Normal: `split_frontmatter` extracts YAML between `---` delimiters.
+    #[test]
+    fn split_frontmatter_extracts_yaml_normal() {
+        let raw = "---\nkey: value\n---\nbody";
+        let (front, body) = split_frontmatter(raw);
+        assert_eq!(front, Some("key: value"));
+        assert_eq!(body, "body");
+    }
+
+    // Normal: PermissionMode round-trips through serde for all variants.
+    #[test]
+    fn permission_mode_serde_roundtrip_normal() {
+        for (mode, expected) in [
+            (PermissionMode::Default, "default"),
+            (PermissionMode::AcceptEdits, "acceptEdits"),
+            (PermissionMode::BypassPermissions, "bypassPermissions"),
+            (PermissionMode::Plan, "plan"),
+            (PermissionMode::DontAsk, "dontAsk"),
+            (PermissionMode::Auto, "auto"),
+        ] {
+            let s = serde_yaml::to_string(&mode).unwrap();
+            assert!(s.trim().contains(expected), "{mode:?} → {s:?}");
+            let parsed: PermissionMode = serde_yaml::from_str(&format!("---\n{expected}")).unwrap();
+            assert_eq!(parsed, mode);
+        }
+    }
+
+    #[test]
+    fn parse_agent_full_v126_frontmatter_normal() {
+        // Every new field at once — confirms `effort`/`maxTurns`/`memory`/
+        // `mcpServers`/`hooks` all land via the existing parse path. v126
+        // schema reference: cli.js:225207-225281.
+        let raw = "---\n\
+            name: deep-thinker\n\
+            model: claude-opus-4-7\n\
+            effort: high\n\
+            maxTurns: 25\n\
+            memory: project\n\
+            mcpServers:\n  - github\n  - search\n\
+            hooks:\n  pre-edit:\n    - ./scripts/lint.sh\n  post-test:\n    - echo done\n\
+            ---\nYou are a deep thinker.";
+        let agent = parse_agent(Path::new("/x/agents/dt.md"), raw).expect("parsed");
+        assert_eq!(agent.effort, Some(Effort::High));
+        assert_eq!(agent.max_turns, Some(25));
+        assert_eq!(agent.memory, Some(MemoryScope::Project));
+        assert_eq!(agent.mcp_servers, vec!["github", "search"]);
+        assert_eq!(
+            agent.hooks.get("pre-edit").map(|v| v.as_slice()),
+            Some(&["./scripts/lint.sh".to_string()][..])
+        );
+        assert!(agent.system_prompt.contains("deep thinker"));
+    }
+
+    #[test]
+    fn effort_xhigh_renames_normal() {
+        // v126 emits `xhigh` as one token, not `x_high` like serde's
+        // default kebab-from-PascalCase rename would produce. Pin the
+        // explicit `#[serde(rename = "xhigh")]` so a future cleanup
+        // doesn't regress to the snake-cased form.
+        let parsed: Effort = serde_yaml::from_str("xhigh").unwrap();
+        assert_eq!(parsed, Effort::XHigh);
+        let serialized = serde_yaml::to_string(&Effort::XHigh).unwrap();
+        assert!(serialized.contains("xhigh"), "got: {serialized}");
+    }
+
+    #[test]
+    fn effort_all_levels_round_trip_normal() {
+        for (level, expected) in [
+            (Effort::Minimal, "minimal"),
+            (Effort::Low, "low"),
+            (Effort::Medium, "medium"),
+            (Effort::High, "high"),
+            (Effort::XHigh, "xhigh"),
+        ] {
+            let s = serde_yaml::to_string(&level).unwrap();
+            assert!(s.trim().contains(expected), "{level:?} → {s:?}");
+        }
+    }
+
+    #[test]
+    fn memory_scopes_all_three_parse_normal() {
+        for (s, expected) in [
+            ("user", MemoryScope::User),
+            ("project", MemoryScope::Project),
+            ("local", MemoryScope::Local),
+        ] {
+            let parsed: MemoryScope = serde_yaml::from_str(s).unwrap();
+            assert_eq!(parsed, expected);
+        }
+    }
+
+    #[test]
+    fn parse_agent_minimal_defaults_new_fields_robust() {
+        // Only `name` set — every new field defaults to None / empty.
+        let raw = "---\nname: bare\n---\nbody";
+        let agent = parse_agent(Path::new("/x/bare.md"), raw).expect("parsed");
+        assert_eq!(agent.effort, None);
+        assert_eq!(agent.max_turns, None);
+        assert_eq!(agent.memory, None);
+        assert!(agent.mcp_servers.is_empty());
+        assert!(agent.hooks.is_empty());
+    }
+
+    #[test]
+    fn unknown_effort_value_returns_none_robust() {
+        // A typo'd effort like `ultra` (not in the enum) shouldn't
+        // crash the loader — `parse_agent` returns None for the
+        // whole file when its frontmatter fails to parse, so the
+        // bad agent is silently skipped rather than poisoning the
+        // registry.
+        let raw = "---\nname: bad\neffort: ultra\n---\nbody";
+        let result = parse_agent(Path::new("/x/bad.md"), raw);
+        assert!(result.is_none());
+    }
+}

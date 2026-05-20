@@ -456,3 +456,516 @@ pub fn built_in_agents() -> Vec<AgentDef> {
         },
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::lifecycle::{
+        build_agent_system_prompt, render_dispatch_section, render_skills_section,
+    };
+
+    fn make_agent(name: &str, system_prompt: &str, skills: Vec<String>) -> AgentDef {
+        AgentDef {
+            name: name.to_owned(),
+            source: PathBuf::from(format!("/x/agents/{name}.md")),
+            model: None,
+            isolation: None,
+            skills,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
+            permission_mode: None,
+            forks_parent_context: None,
+            background: None,
+            color: None,
+            system_prompt: system_prompt.to_owned(),
+            effort: None,
+            max_turns: None,
+            max_input_tokens: None,
+            memory: None,
+            mcp_servers: Vec::new(),
+            hooks: std::collections::HashMap::new(),
+            key_trigger: None,
+            use_when: Vec::new(),
+            avoid_when: Vec::new(),
+            cost: None,
+        }
+    }
+
+    fn make_skill(name: &str, body: &str) -> Skill {
+        Skill {
+            name: name.to_owned(),
+            source: PathBuf::from(format!("/x/skills/{name}.md")),
+            description: None,
+            body: body.to_owned(),
+        }
+    }
+
+    fn skill(name: &str, description: Option<&str>) -> Skill {
+        Skill {
+            name: name.to_owned(),
+            source: PathBuf::from("/x/skills/x.md"),
+            description: description.map(str::to_owned),
+            body: String::new(),
+        }
+    }
+
+    // Normal: `load_skills` against an empty root produces an empty list
+    // (when ~/.claude/skills is also empty or missing). Doesn't panic.
+    #[test]
+    fn load_skills_empty_root_normal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_skills_empty_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        // Don't crash; we only assert it returns a Vec without panic.
+        let _ = load_skills(&tmp);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Robust: directory-based skills resolve via `<dir>/SKILL.md` and use
+    // the directory name as the skill name. Regression for the
+    // user-visible "Unknown skill: do-178b" failure when the loader only
+    // walked flat `.md` files.
+    #[test]
+    fn load_skills_finds_directory_based_skill_robust() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_skill_dir_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let skills_dir = tmp.join(".claude/skills");
+        let do178b_dir = skills_dir.join("do-178b");
+        std::fs::create_dir_all(&do178b_dir).unwrap();
+        std::fs::write(
+            do178b_dir.join("SKILL.md"),
+            "---\ndescription: avionics certification reference\n---\n# DO-178B\n\nbody",
+        )
+        .unwrap();
+        let skills = load_skills(&tmp);
+        let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"do-178b"),
+            "expected `do-178b` in loaded skills, got {names:?}"
+        );
+        let s = skills.iter().find(|s| s.name == "do-178b").unwrap();
+        assert_eq!(
+            s.description.as_deref(),
+            Some("avionics certification reference")
+        );
+        assert!(s.body.contains("body"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Robust: project-level skill files override user-level ones with the
+    // same name. We can't easily mock `~/.claude/skills`, but we can verify
+    // the dedup happens with a single project file.
+    #[test]
+    fn load_skills_project_skill_loads_robust() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_skills_proj_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let skills_dir = tmp.join(".claude/skills");
+        std::fs::create_dir_all(&skills_dir).unwrap();
+        std::fs::write(
+            skills_dir.join("alpha.md"),
+            "---\nname: alpha\ndescription: project alpha\n---\nbody",
+        )
+        .unwrap();
+        let skills = load_skills(&tmp);
+        let alpha = skills
+            .iter()
+            .find(|s| s.name == "alpha")
+            .expect("project skill should be loaded");
+        assert_eq!(alpha.description.as_deref(), Some("project alpha"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn load_skills_finds_codex_and_agents_roots_normal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_skills_codex_agents_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let codex_skill = tmp.join(".codex/skills/codex-skill");
+        let agents_skill = tmp.join(".agents/skills/agents-skill");
+        std::fs::create_dir_all(&codex_skill).unwrap();
+        std::fs::create_dir_all(&agents_skill).unwrap();
+        std::fs::write(
+            codex_skill.join("SKILL.md"),
+            "---\ndescription: codex root\n---\ncodex body",
+        )
+        .unwrap();
+        std::fs::write(
+            agents_skill.join("SKILL.md"),
+            "---\ndescription: agents root\n---\nagents body",
+        )
+        .unwrap();
+
+        let skills = load_skills(&tmp);
+        let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"codex-skill"), "names: {names:?}");
+        assert!(names.contains(&"agents-skill"), "names: {names:?}");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn load_skills_namespaces_plugin_skills_normal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_skills_plugin_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let skill_dir = tmp.join(".agents/plugins/github/skills/review-pr");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "---\n---\nreview body").unwrap();
+
+        let skills = load_skills(&tmp);
+        assert!(
+            skills.iter().any(|s| s.name == "github:review-pr"),
+            "skills: {:?}",
+            skills.iter().map(|s| &s.name).collect::<Vec<_>>()
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Normal: `built_in_agents` ships at least the four canonical agents
+    // every jfc session can discover.
+    #[test]
+    fn built_in_agents_includes_canonical_set_normal() {
+        let agents = built_in_agents();
+        let names: Vec<&str> = agents.iter().map(|a| a.name.as_str()).collect();
+        for needed in ["general-purpose", "Explore", "Plan", "verification"] {
+            assert!(
+                names.contains(&needed),
+                "built-in {needed} missing from {names:?}"
+            );
+        }
+        // The Explore agent ships with a haiku-pinned model and is
+        // restricted to read-only tools.
+        let explore = agents.iter().find(|a| a.name == "Explore").unwrap();
+        assert_eq!(explore.model.as_deref(), Some("haiku"));
+        assert!(explore.allowed_tools.iter().any(|t| t == "Read"));
+        assert!(explore.disallowed_tools.iter().any(|t| t == "Edit"));
+        assert!(!explore.system_prompt.is_empty());
+    }
+
+    // Normal: `load_agents` against an empty project root falls back to
+    // built-in agents.
+    #[test]
+    fn load_agents_empty_root_returns_builtins_normal() {
+        // Use a tempdir we know has no `.claude/agents` to ensure the
+        // result == built-in set (modulo any user-level ~/.claude content).
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_agents_empty_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let agents = load_agents(&tmp);
+        let names: Vec<&str> = agents.iter().map(|a| a.name.as_str()).collect();
+        // Built-ins always show up.
+        for needed in ["general-purpose", "Explore", "Plan", "verification"] {
+            assert!(names.contains(&needed), "missing {needed}: {names:?}");
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Robust: a project-defined agent with the same name as a built-in
+    // overrides the built-in (project precedence wins).
+    #[test]
+    fn load_agents_project_overrides_builtin_robust() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_agents_override_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let agents_dir = tmp.join(".claude/agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        // Override `Explore` with a non-haiku model — confirms the loader
+        // treats the project file as authoritative.
+        std::fs::write(
+            agents_dir.join("Explore.md"),
+            "---\nname: Explore\nmodel: opus\n---\nCustom explorer body.",
+        )
+        .unwrap();
+
+        let agents = load_agents(&tmp);
+        let explore = agents
+            .iter()
+            .find(|a| a.name == "Explore")
+            .expect("Explore must be present after override");
+        assert_eq!(
+            explore.model.as_deref(),
+            Some("opus"),
+            "project file should override built-in Explore"
+        );
+        assert!(explore.system_prompt.contains("Custom explorer body"));
+        // built-ins for other names still surface.
+        assert!(agents.iter().any(|a| a.name == "Plan"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Robust: a malformed agent file in the project directory is silently
+    // skipped — the rest of the registry still loads.
+    #[test]
+    fn load_agents_skips_malformed_files_robust() {
+        let tmp = std::env::temp_dir().join(format!(
+            "jfc_agents_malformed_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let agents_dir = tmp.join(".claude/agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        // No frontmatter at all — `parse_agent` returns None.
+        std::fs::write(agents_dir.join("broken.md"), "Just a body, no frontmatter").unwrap();
+        // Frontmatter with bad YAML.
+        std::fs::write(
+            agents_dir.join("yaml-bad.md"),
+            "---\nname: [unterminated\n---\nbody",
+        )
+        .unwrap();
+        // A valid one mixed in.
+        std::fs::write(
+            agents_dir.join("ok.md"),
+            "---\nname: ok-agent\n---\nValid body.",
+        )
+        .unwrap();
+        // Non-md file should be ignored.
+        std::fs::write(agents_dir.join("README.txt"), "ignored").unwrap();
+        let agents = load_agents(&tmp);
+        assert!(agents.iter().any(|a| a.name == "ok-agent"));
+        assert!(!agents.iter().any(|a| a.name == "broken"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Normal: an exact lowercase match returns the matching skill.
+    #[test]
+    fn find_skill_by_name_exact_normal() {
+        let skills = vec![make_skill("explain", ""), make_skill("review", "")];
+        let hit = find_skill_by_name(&skills, "explain").expect("found");
+        assert_eq!(hit.name, "explain");
+    }
+
+    // Robust: lookup is case-insensitive — "EXPLAIN" still finds "explain".
+    #[test]
+    fn find_skill_by_name_case_insensitive_robust() {
+        let skills = vec![make_skill("explain", "")];
+        let hit = find_skill_by_name(&skills, "EXPLAIN").expect("found");
+        assert_eq!(hit.name, "explain");
+    }
+
+    // Robust: a name that doesn't match any loaded skill returns None rather
+    // than a misleading partial hit.
+    #[test]
+    fn find_skill_by_name_unknown_returns_none_robust() {
+        let skills = vec![make_skill("explain", "")];
+        assert!(find_skill_by_name(&skills, "unknown-skill").is_none());
+    }
+
+    // Robust: an empty skills list returns None (no panic, no out-of-bounds).
+    #[test]
+    fn find_skill_by_name_empty_list_returns_none_robust() {
+        assert!(find_skill_by_name(&[], "anything").is_none());
+    }
+
+    // Normal: an empty slice yields the empty string so callers can
+    // unconditionally `push_str` the result without polluting the prompt
+    // with a header that has no items beneath it.
+    #[test]
+    fn render_skills_section_empty_returns_empty_normal() {
+        assert_eq!(render_skills_section(&[]), "");
+    }
+
+    // Normal: each skill renders as a single bullet line containing the
+    // backticked name, an em-dash separator, and the description.
+    #[test]
+    fn render_skills_section_renders_each_skill_normal() {
+        let skills = vec![
+            skill("first", Some("does the first thing")),
+            skill("second", Some("does the second thing")),
+        ];
+        let out = render_skills_section(&skills);
+        assert!(out.contains("- `first` — does the first thing\n"));
+        assert!(out.contains("- `second` — does the second thing\n"));
+        // Two lines for the two skills, plus header lines.
+        assert_eq!(out.matches("\n- `").count(), 2);
+    }
+
+    // Normal: the rendered block leads with the `## Available skills`
+    // header so the model can find it by section name.
+    #[test]
+    fn render_skills_section_starts_with_header_normal() {
+        let out = render_skills_section(&[skill("only", Some("only one"))]);
+        let first_lines: Vec<&str> = out.lines().take(4).collect();
+        assert!(
+            first_lines
+                .iter()
+                .any(|l| l.contains("## Available skills")),
+            "header missing from first 4 lines: {first_lines:?}"
+        );
+    }
+
+    // Robust: a 500-char description is truncated to 200 chars + a single
+    // ellipsis. The cap is char-based, not byte-based.
+    #[test]
+    fn render_skills_section_truncates_long_description_robust() {
+        let long: String = "a".repeat(500);
+        let out = render_skills_section(&[skill("big", Some(&long))]);
+        // Find the line for our skill.
+        let line = out
+            .lines()
+            .find(|l| l.starts_with("- `big`"))
+            .expect("line for `big` skill");
+        // Strip the leading `- \`big\` — ` prefix to isolate the description.
+        let desc = line.strip_prefix("- `big` — ").expect("desc prefix");
+        assert!(
+            desc.ends_with('…'),
+            "expected ellipsis suffix, got {desc:?}"
+        );
+        // 200 a's plus the ellipsis = 201 chars.
+        assert_eq!(desc.chars().count(), 201);
+    }
+
+    // Robust: a skill with `description: None` renders as a bare bullet —
+    // no em-dash, no trailing whitespace, no panic.
+    #[test]
+    fn render_skills_section_handles_no_description_robust() {
+        let out = render_skills_section(&[skill("naked", None)]);
+        assert!(out.contains("- `naked`\n"));
+        // Must NOT contain the em-dash separator for this entry.
+        assert!(
+            !out.contains("- `naked` —"),
+            "naked skill should not have a dash: {out:?}"
+        );
+    }
+
+    /// Normal: dispatch section is empty when no agent has a key_trigger.
+    /// Existing user agents (no metadata) shouldn't create noise in the
+    /// system prompt.
+    #[test]
+    fn render_dispatch_section_empty_when_no_triggers_normal() {
+        let agents = vec![make_agent("plain", "system", vec![])];
+        let out = render_dispatch_section(&agents);
+        assert_eq!(out, "");
+    }
+
+    /// Normal: dispatch section lists every trigger-bearing agent with
+    /// its keyTrigger line. Pin the v132-style "Default Bias: DELEGATE"
+    /// language so future refactors can't accidentally weaken it.
+    #[test]
+    fn render_dispatch_section_includes_triggers_normal() {
+        let mut a = make_agent("Explore", "...", vec![]);
+        a.key_trigger = Some("broad codebase exploration → fire Explore".into());
+        a.use_when = vec!["how does X work".into()];
+        a.avoid_when = vec!["already running".into()];
+        a.cost = Some(AgentCost::Cheap);
+        let out = render_dispatch_section(&[a]);
+        assert!(out.contains("Default Bias: DELEGATE"), "{out}");
+        assert!(out.contains("Explore"), "{out}");
+        assert!(out.contains("broad codebase exploration"), "{out}");
+        assert!(out.contains("how does X work"), "{out}");
+        assert!(out.contains("Delegation Trust Rule"), "{out}");
+        assert!(out.contains("Intent → dispatch routing"), "{out}");
+    }
+
+    /// Robust: built-in agents already have triggers populated, so a
+    /// fresh `built_in_agents()` always yields a non-empty section.
+    /// This test pins that contract — if someone removes a key_trigger
+    /// the system prompt loses the dispatch nudge silently otherwise.
+    #[test]
+    fn built_in_agents_have_dispatch_triggers_robust() {
+        let agents = built_in_agents();
+        let with_triggers: Vec<&str> = agents
+            .iter()
+            .filter(|a| a.key_trigger.is_some())
+            .map(|a| a.name.as_str())
+            .collect();
+        // All four built-ins should advertise auto-dispatch.
+        for expected in ["general-purpose", "Explore", "Plan", "verification"] {
+            assert!(
+                with_triggers.contains(&expected),
+                "{expected} must have a keyTrigger; got {with_triggers:?}"
+            );
+        }
+    }
+
+    // Normal: an agent with no skills returns its base `system_prompt`
+    // verbatim — no header, no trailing whitespace.
+    #[test]
+    fn build_agent_system_prompt_no_skills_returns_base_normal() {
+        let agent = make_agent("a", "You are an agent.", Vec::new());
+        let out = build_agent_system_prompt(&agent, &[]);
+        assert_eq!(out, "You are an agent.");
+    }
+
+    // Normal: when an agent lists two skills that both resolve, both bodies
+    // appear in the output, each preceded by a `## Skill: <name>` header.
+    #[test]
+    fn build_agent_system_prompt_appends_resolved_skills_normal() {
+        let agent = make_agent(
+            "impl",
+            "Base prompt.",
+            vec!["one".to_owned(), "two".to_owned()],
+        );
+        let skills = vec![
+            make_skill("one", "Body of skill one."),
+            make_skill("two", "Body of skill two."),
+        ];
+        let out = build_agent_system_prompt(&agent, &skills);
+        assert!(out.starts_with("Base prompt."));
+        assert!(out.contains("## Skill: one"));
+        assert!(out.contains("## Skill: two"));
+        assert!(out.contains("Body of skill one."));
+        assert!(out.contains("Body of skill two."));
+    }
+
+    // Robust: a skill name that doesn't resolve in `all_skills` is silently
+    // skipped — no crash, no placeholder. Other resolved skills still appear.
+    #[test]
+    fn build_agent_system_prompt_skips_unknown_skill_robust() {
+        let agent = make_agent(
+            "x",
+            "Base.",
+            vec!["missing-skill".to_owned(), "real".to_owned()],
+        );
+        let skills = vec![make_skill("real", "Real body.")];
+        let out = build_agent_system_prompt(&agent, &skills);
+        assert!(!out.contains("missing-skill"));
+        assert!(out.contains("## Skill: real"));
+        assert!(out.contains("Real body."));
+    }
+
+    // Robust: skill bodies appear in the order listed in `agent.skills`,
+    // not the order of `all_skills`. Order matters for prompt composition.
+    #[test]
+    fn build_agent_system_prompt_preserves_order_robust() {
+        let agent = make_agent("x", "Base.", vec!["a".to_owned(), "b".to_owned()]);
+        // Pass `all_skills` in reverse to ensure the agent's order wins.
+        let skills = vec![make_skill("b", "BBBB body."), make_skill("a", "AAAA body.")];
+        let out = build_agent_system_prompt(&agent, &skills);
+        let pos_a = out.find("AAAA body.").expect("a present");
+        let pos_b = out.find("BBBB body.").expect("b present");
+        assert!(pos_a < pos_b, "skill 'a' must appear before skill 'b'");
+    }
+}
