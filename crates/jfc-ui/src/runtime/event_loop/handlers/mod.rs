@@ -11,3 +11,4 @@ pub(crate) mod team;
 pub(crate) mod tick;
 pub(crate) mod tools;
 pub(crate) mod ui_actions;
+pub(crate) mod workflow;

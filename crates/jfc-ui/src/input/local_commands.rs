@@ -651,7 +651,7 @@ pub(super) fn handle_bug_command(app: &mut App, description: String) {
         app.permission_mode,
         std::env::consts::OS,
     );
-    let url = super::support::bug_report_url(&title, &body);
+    let _url = super::support::bug_report_url(&title, &body);
     // TODO: re-enable browser launch when in interactive mode (not in tests).
     // #[cfg(target_os = "linux")]
     // let _ = std::process::Command::new("xdg-open").arg(&url).spawn();

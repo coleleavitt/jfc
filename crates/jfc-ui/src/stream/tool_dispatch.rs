@@ -773,6 +773,9 @@ fn spawn_workflow(
             cancel,
             tx: Some(tx.clone()),
             workflow_task_id: bg_task_id.clone(),
+            depth: 0,
+            cwd: std::env::current_dir().unwrap_or_default(),
+            token_budget: None,
         })
         .await;
         let elapsed_ms = started.elapsed().as_millis() as u64;
@@ -879,9 +882,22 @@ fn build_task_notification(
         let truncated: String = result_json.chars().take(8000).collect();
         body.push_str(&format!("\n<result>{truncated}</result>"));
     }
+    if !outcome.logs.is_empty() {
+        let log_text: String = outcome
+            .logs
+            .iter()
+            .map(|l| format!("  {l}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        body.push_str(&format!("\n<logs>\n{log_text}\n</logs>"));
+    }
     body.push_str(&format!(
-        "\n<usage><agent_count>{}</agent_count><cache_hits>{}</cache_hits><duration_ms>{}</duration_ms></usage>\n</task-notification>",
-        outcome.agent_count, outcome.cache_hits, elapsed_ms
+        "\n<usage><agent_count>{}</agent_count><agents_dispatched>{}</agents_dispatched>\
+         <cache_hits>{}</cache_hits><duration_ms>{}</duration_ms></usage>\n</task-notification>",
+        outcome.agent_count,
+        outcome.total_agents_dispatched,
+        outcome.cache_hits,
+        elapsed_ms
     ));
     body
 }

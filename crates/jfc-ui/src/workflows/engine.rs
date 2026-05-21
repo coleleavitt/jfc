@@ -31,6 +31,19 @@ use boa_engine::{
 };
 use tokio::sync::{mpsc, oneshot};
 
+/// A request from the script's `workflow()` call to the orchestrator for
+/// nested sub-workflow execution.
+#[derive(Debug)]
+pub struct SubWorkflowRequest {
+    /// Name of the workflow to run (registry name).
+    pub name: String,
+    /// Args JSON to pass to the sub-workflow.
+    pub args: serde_json::Value,
+    /// Reply channel — the orchestrator sends the sub-workflow's result value
+    /// (or an error string) back here.
+    pub reply: oneshot::Sender<Result<serde_json::Value, String>>,
+}
+
 /// A request from the script's `agent()` call to the orchestrator.
 #[derive(Debug)]
 pub struct AgentRequest {
@@ -73,12 +86,15 @@ pub struct EngineOutcome {
     pub error: Option<String>,
 }
 
-/// JS prelude: defines parallel(), pipeline(), and the phase/log/agent
+/// JS prelude: defines parallel(), pipeline(), and the phase/log/agent/workflow
 /// wrappers on top of the native host bindings (`__agent`, `__phase`,
-/// `__log`). Kept minimal and deterministic.
+/// `__log`, `__workflow`). Kept minimal and deterministic.
 const JS_PRELUDE: &str = r#"
 globalThis.agent = function(prompt, opts) {
     return __agent(prompt, opts || {});
+};
+globalThis.workflow = function(name, args) {
+    return __workflow(name, args || {});
 };
 globalThis.phase = function(title) {
     __phase(title);
@@ -194,13 +210,17 @@ impl JobQueue for WorkflowJobQueue {
 /// inside a tokio `LocalSet` (the futures driven here are `!Send`).
 ///
 /// `agent_tx` carries [`AgentRequest`]s to the orchestrator; `progress_tx`
-/// carries phase/log signals. `args_json` is exposed to the script as the
-/// global `args`.
+/// carries phase/log signals; `sub_workflow_tx` carries [`SubWorkflowRequest`]s
+/// for nested sub-workflow invocations. `args_json` is exposed to the script
+/// as the global `args`. `token_budget` is exposed as the global `budget`
+/// informational object.
 pub async fn run_script(
     script_body: &str,
     args_json: serde_json::Value,
     agent_tx: mpsc::UnboundedSender<AgentRequest>,
     progress_tx: mpsc::UnboundedSender<ProgressSignal>,
+    sub_workflow_tx: mpsc::UnboundedSender<SubWorkflowRequest>,
+    token_budget: Option<u64>,
 ) -> EngineOutcome {
     let queue = Rc::new(WorkflowJobQueue::default());
     let mut context = match Context::builder().job_queue(queue).build() {
@@ -316,12 +336,78 @@ pub async fn run_script(
             .expect("register __log");
     }
 
+    // ── __workflow(name, args) → Promise<value> ─────────────────────────
+    {
+        let sub_workflow_tx = sub_workflow_tx.clone();
+        let workflow_fn =
+            move |_this: &JsValue, args: &[JsValue], ctx: &mut Context| -> JsResult<JsValue> {
+                let name = args
+                    .get_or_undefined(0)
+                    .to_string(ctx)?
+                    .to_std_string_escaped();
+                let args_js = args.get_or_undefined(1).clone();
+                let args_val = args_js.to_json(ctx).unwrap_or(serde_json::Value::Null);
+
+                let (reply_tx, reply_rx) = oneshot::channel();
+                let req = SubWorkflowRequest {
+                    name,
+                    args: args_val,
+                    reply: reply_tx,
+                };
+
+                if sub_workflow_tx.send(req).is_err() {
+                    return Ok(JsPromise::from_future(
+                        async move {
+                            Err(JsNativeError::error()
+                                .with_message("workflow orchestrator unavailable")
+                                .into())
+                        },
+                        ctx,
+                    )
+                    .into());
+                }
+
+                let fut = async move {
+                    match reply_rx.await {
+                        Ok(Ok(val)) => {
+                            // We can't convert serde_json::Value to JsValue here because
+                            // Context is not Send. We return it serialized and let boa parse it.
+                            Ok(JsValue::from(js_string!(val.to_string())))
+                        }
+                        Ok(Err(e)) => Err(JsNativeError::error().with_message(e).into()),
+                        Err(_) => Err(JsNativeError::error()
+                            .with_message("sub-workflow reply channel closed")
+                            .into()),
+                    }
+                };
+                Ok(JsPromise::from_future(fut, ctx).into())
+            };
+        let native = unsafe { NativeFunction::from_closure(workflow_fn) };
+        context
+            .register_global_callable(js_string!("__workflow"), 2, native)
+            .expect("register __workflow");
+    }
+
     // ── inject `args` global ────────────────────────────────────────────
     {
         let args_val = json_to_js(&args_json, &mut context);
         context
             .register_global_property(js_string!("args"), args_val, Attribute::all())
             .expect("register args");
+    }
+
+    // ── inject `budget` global (informational snapshot) ─────────────────
+    {
+        let total = token_budget.unwrap_or(0);
+        let budget_json = serde_json::json!({
+            "totalTokens": total,
+            "spentTokens": 0u64,
+            "remainingTokens": total,
+        });
+        let budget_val = json_to_js(&budget_json, &mut context);
+        context
+            .register_global_property(js_string!("budget"), budget_val, Attribute::all())
+            .expect("register budget");
     }
 
     // ── run the prelude ─────────────────────────────────────────────────
@@ -462,6 +548,7 @@ mod tests {
     async fn run_with_echo(script: &str, args: serde_json::Value) -> EngineOutcome {
         let (agent_tx, mut agent_rx) = mpsc::unbounded_channel::<AgentRequest>();
         let (progress_tx, _progress_rx) = mpsc::unbounded_channel::<ProgressSignal>();
+        let (sub_wf_tx, _sub_wf_rx) = mpsc::unbounded_channel::<SubWorkflowRequest>();
 
         // Mock orchestrator: reply to each agent request with "ok:<prompt>".
         let orchestrator = tokio::spawn(async move {
@@ -473,7 +560,9 @@ mod tests {
         let local = LocalSet::new();
         let script = script.to_owned();
         let outcome = local
-            .run_until(async move { run_script(&script, args, agent_tx, progress_tx).await })
+            .run_until(async move {
+                run_script(&script, args, agent_tx, progress_tx, sub_wf_tx, None).await
+            })
             .await;
         orchestrator.abort();
         outcome

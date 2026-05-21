@@ -62,9 +62,174 @@ pub(super) async fn cmd_workflow(
                 "Dispatching workflow `{rest}` via the Workflow tool…"
             )));
         }
+        "save" => {
+            // `/workflow save [user|project] <name>` — persist a named workflow
+            // from the registry into the user or project workflows directory.
+            let mut parts_iter = rest.split_whitespace();
+            let (scope, name) = match parts_iter.next() {
+                Some("user") => (
+                    crate::workflows::SaveScope::User,
+                    parts_iter.collect::<Vec<_>>().join(" "),
+                ),
+                Some("project") => (
+                    crate::workflows::SaveScope::Project,
+                    parts_iter.collect::<Vec<_>>().join(" "),
+                ),
+                Some(first) => (
+                    crate::workflows::SaveScope::Project,
+                    format!("{} {}", first, parts_iter.collect::<Vec<_>>().join(" "))
+                        .trim()
+                        .to_owned(),
+                ),
+                None => {
+                    app.messages.push(ChatMessage::assistant(
+                        "Usage: `/workflow save [user|project] <name>`".into(),
+                    ));
+                    return;
+                }
+            };
+            if name.is_empty() {
+                app.messages.push(ChatMessage::assistant(
+                    "Usage: `/workflow save [user|project] <name>`".into(),
+                ));
+                return;
+            }
+            match crate::workflows::resolve(&cwd, &name) {
+                None => {
+                    app.messages.push(ChatMessage::assistant(format!(
+                        "Workflow `{name}` not found. List available workflows with `/workflow`."
+                    )));
+                }
+                Some(wf) => {
+                    match crate::workflows::save_workflow(&cwd, scope, &name, &wf.script) {
+                        Ok(path) => {
+                            app.messages.push(ChatMessage::assistant(format!(
+                                "Saved workflow `{name}` to `{}`.",
+                                path.display()
+                            )));
+                        }
+                        Err(e) => {
+                            app.messages.push(ChatMessage::assistant(format!(
+                                "Failed to save workflow `{name}`: {e}"
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+        "status" => {
+            // Collect bgwf_ background tasks, optionally filtered by id.
+            use crate::types::TaskLifecycle;
+            let id_filter = rest.trim().to_owned();
+
+            // Collect matching tasks: running + recently completed (terminal).
+            let tasks: Vec<&crate::app::BackgroundTask> = app
+                .background_tasks
+                .values()
+                .filter(|bt| {
+                    // Must be a workflow task.
+                    if !bt.task_id.as_str().starts_with("bgwf_") {
+                        return false;
+                    }
+                    // Filter by id if one was provided.
+                    if !id_filter.is_empty() {
+                        let tid = bt.task_id.as_str();
+                        // Match on full task_id (bgwf_wf_...) or run_id (wf_...)
+                        // by checking both forms.
+                        let run_id_form = tid.strip_prefix("bgwf_").unwrap_or(tid);
+                        return tid == id_filter.as_str()
+                            || run_id_form == id_filter.as_str();
+                    }
+                    // No filter: include running + terminal tasks.
+                    matches!(
+                        bt.status,
+                        TaskLifecycle::Running
+                            | TaskLifecycle::Idle
+                            | TaskLifecycle::Completed
+                            | TaskLifecycle::Failed
+                            | TaskLifecycle::Cancelled
+                    )
+                })
+                .collect();
+
+            if tasks.is_empty() {
+                app.messages.push(ChatMessage::assistant(
+                    "No active workflow tasks.".into(),
+                ));
+                return;
+            }
+
+            let mut output = String::from("**Workflow status**\n");
+            for bt in tasks {
+                let elapsed = bt.started_at.elapsed().as_secs();
+                let status_label = match bt.status {
+                    TaskLifecycle::Running => "running",
+                    TaskLifecycle::Idle => "idle",
+                    TaskLifecycle::Completed => "completed",
+                    TaskLifecycle::Failed => "failed",
+                    TaskLifecycle::Cancelled => "cancelled",
+                    TaskLifecycle::Pending => "pending",
+                };
+                output.push('\n');
+                output.push_str(&format!(
+                    "`{}` — {} · {} · {}s\n",
+                    bt.task_id.as_str(),
+                    bt.description,
+                    status_label,
+                    elapsed,
+                ));
+
+                if let Some(wfp) = &bt.workflow_progress {
+                    // Phase
+                    if let Some(phase) = &wfp.current_phase {
+                        output.push_str(&format!("  Phase: {phase}\n"));
+                    }
+
+                    // Agent counts
+                    let running = wfp.running_count();
+                    let done = wfp
+                        .agents
+                        .iter()
+                        .filter(|a| a.status == crate::workflows::AgentStatus::Done)
+                        .count();
+                    let failed = wfp
+                        .agents
+                        .iter()
+                        .filter(|a| a.status == crate::workflows::AgentStatus::Failed)
+                        .count();
+                    output.push_str(&format!(
+                        "  Agents: {done} done · {running} running · {failed} failed\n"
+                    ));
+
+                    // Dispatch stats
+                    output.push_str(&format!(
+                        "  Dispatched: {} · Cache hits: {}\n",
+                        wfp.total_dispatched, wfp.cache_hits,
+                    ));
+
+                    // Last 5 log lines
+                    if !wfp.logs.is_empty() {
+                        let tail: Vec<&str> = wfp
+                            .logs
+                            .iter()
+                            .rev()
+                            .take(5)
+                            .rev()
+                            .map(|s| s.as_str())
+                            .collect();
+                        output.push_str("  Logs (last 5):\n");
+                        for line in tail {
+                            output.push_str(&format!("    {line}\n"));
+                        }
+                    }
+                }
+            }
+
+            app.messages.push(ChatMessage::assistant(output));
+        }
         other => {
             app.messages.push(ChatMessage::assistant(format!(
-                "Unknown subcommand `{other}`. Use `/workflow list` or `/workflow run <name>`."
+                "Unknown subcommand `{other}`. Use `/workflow list`, `/workflow run <name>`, `/workflow save [user|project] <name>`, or `/workflow status [id]`."
             )));
         }
     }
@@ -100,16 +265,17 @@ fn render_workflow_listing(app: &App, cwd: &std::path::Path) -> String {
     }
 
     // ── available named workflows (registry) ────────────────────────────
-    let registry = crate::workflows::discover(cwd);
+    let registry = crate::workflows::list_meta(cwd);
     if !registry.is_empty() {
         body.push_str("**Available workflows** (run with `/workflow run <name>`):\n\n");
-        for wf in &registry {
-            let src = match wf.source {
+        for (name, description, source) in &registry {
+            let src = match source {
                 crate::workflows::WorkflowSource::BuiltIn => "built-in",
+                crate::workflows::WorkflowSource::Plugin => "plugin",
                 crate::workflows::WorkflowSource::User => "user",
                 crate::workflows::WorkflowSource::Project => "project",
             };
-            body.push_str(&format!("- `{}` ({src}) — {}\n", wf.name, wf.description));
+            body.push_str(&format!("- `{name}` ({src}) — {description}\n"));
         }
         body.push('\n');
     }
@@ -119,7 +285,12 @@ fn render_workflow_listing(app: &App, cwd: &std::path::Path) -> String {
     if !legacy.is_empty() {
         body.push_str("**Legacy TOML templates** (`.jfc/workflows/*.toml`):\n\n");
         for name in &legacy {
-            body.push_str(&format!("- `{name}`\n"));
+            // Attempt to load + render the summary; fall back to the bare name.
+            let line = match crate::workflows::load(cwd, name) {
+                Ok(wf) => crate::workflows::render_summary(name, &wf),
+                Err(_) => format!("- `{name}`\n"),
+            };
+            body.push_str(&line);
         }
         body.push('\n');
     }
@@ -169,7 +340,7 @@ pub(super) async fn cmd_login(
         }
         _ => None,
     };
-    if let Some(url) = url {
+    if let Some(_url) = url {
         // TODO: re-enable browser launch when in interactive mode (not in tests).
         // Best-effort: shell out to the platform browser opener.
         // Don't await — the browser launch is fire-and-forget.
@@ -295,7 +466,7 @@ pub(super) async fn cmd_feedback(
         app.model.as_str(),
         std::env::consts::OS,
     );
-    let url = super::support::bug_report_url("", &body);
+    let _url = super::support::bug_report_url("", &body);
     // TODO: re-enable browser launch when in interactive mode (not in tests).
     // #[cfg(target_os = "linux")]
     // let _ = std::process::Command::new("xdg-open").arg(&url).spawn();

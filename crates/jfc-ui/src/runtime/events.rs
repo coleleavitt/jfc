@@ -47,6 +47,8 @@ pub enum AppEvent {
     Task(TaskEvent),
     Team(TeamEvent),
     Goal(GoalEvent),
+    /// Live progress update from a running workflow background task.
+    WorkflowProgress(WorkflowProgressEvent),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -372,4 +374,46 @@ pub enum GoalEvent {
     /// The event_loop handler decides whether to inject a continuation
     /// reminder (`ok=false`) or stamp a success banner (`ok=true`).
     Verdict { ok: bool, reason: String },
+}
+
+/// A progress update from a running workflow, routed to the matching
+/// `BackgroundTask::workflow_progress` entry. Emitted by the runner's
+/// orchestrator loop so the UI can show live phase/agent/log state without
+/// waiting for the workflow to complete.
+pub enum WorkflowProgressEvent {
+    /// The script called `phase(title)` — advance `current_phase`.
+    Phase {
+        task_id: crate::ids::TaskId,
+        title: String,
+    },
+    /// A new `agent()` call was dispatched (not a cache hit).
+    AgentStarted {
+        task_id: crate::ids::TaskId,
+        index: u32,
+        label: String,
+        phase: Option<String>,
+    },
+    /// An `agent()` call was satisfied from the resume cache (no dispatch).
+    AgentCacheHit {
+        task_id: crate::ids::TaskId,
+        index: u32,
+        label: String,
+        phase: Option<String>,
+    },
+    /// An `agent()` dispatch completed successfully.
+    AgentDone {
+        task_id: crate::ids::TaskId,
+        index: u32,
+    },
+    /// An `agent()` dispatch failed.
+    AgentFailed {
+        task_id: crate::ids::TaskId,
+        index: u32,
+        error: String,
+    },
+    /// The script emitted a `log(message)` call.
+    Log {
+        task_id: crate::ids::TaskId,
+        message: String,
+    },
 }

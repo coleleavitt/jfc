@@ -24,8 +24,13 @@ pub use legacy::{Workflow, WorkflowStep, list, load, render_summary, workflows_d
 #[allow(unused_imports)]
 pub use meta::{WorkflowMeta, parse_meta, validate_script};
 #[allow(unused_imports)]
-pub use registry::{RegisteredWorkflow, WorkflowSource, discover, resolve};
+pub use registry::{RegisteredWorkflow, WorkflowSource, discover, list_meta, resolve};
+#[allow(unused_imports)]
+pub use permissions::{SaveScope, WorkflowPermission, decide, save_workflow};
 #[allow(unused_imports)]
 pub use runner::{WorkflowOutcome, WorkflowRunConfig, run_workflow};
 #[allow(unused_imports)]
-pub use task::{WorkflowRunStatus, generate_run_id};
+pub use task::{
+    AgentProgress, AgentStatus, WorkflowRunStatus, WorkflowTaskProgress, WorkflowTaskState,
+    generate_run_id,
+};

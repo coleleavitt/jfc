@@ -62,6 +62,7 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
                 max_input_tokens: None,
                 budget_killed: false,
                 parent_task_id: None,
+                workflow_progress: None,
             });
 
         if entry.description != agent.description {
@@ -204,6 +205,7 @@ pub(crate) fn restore_persistent_background_agents(app: &mut App) {
                 max_input_tokens: None,
                 budget_killed: false,
                 parent_task_id: None,
+                workflow_progress: None,
             },
         );
     }

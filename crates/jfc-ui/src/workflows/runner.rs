@@ -10,12 +10,12 @@
 //!     chain hash so a resumed run replays the longest unchanged prefix.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use tokio::sync::{Semaphore, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use super::engine::{AgentRequest, ProgressSignal, run_script};
+use super::engine::{AgentRequest, ProgressSignal, SubWorkflowRequest, run_script};
 use super::journal::{self, JournalCache, JournalEntry, JournalWriter};
 use jfc_provider::{ModelId, Provider};
 
@@ -45,6 +45,13 @@ pub struct WorkflowRunConfig {
     pub tx: Option<mpsc::Sender<crate::runtime::AppEvent>>,
     /// The workflow's own background task id (for progress routing).
     pub workflow_task_id: String,
+    /// Nesting depth (0 = top-level). Max depth = 3.
+    pub depth: u32,
+    /// Project root for resolving sub-workflow names from the registry.
+    pub cwd: std::path::PathBuf,
+    /// Optional token budget (None = unlimited). When set, the orchestrator
+    /// will reject new agent dispatches once tokens_spent >= token_budget.
+    pub token_budget: Option<u64>,
 }
 
 /// Final outcome of a workflow run.
@@ -74,13 +81,41 @@ struct Orchestrator {
     cancel: CancellationToken,
     agent_tasks: tokio::task::JoinSet<()>,
     logs: Vec<String>,
+    /// Optional hard token budget; None means unlimited.
+    token_budget: Option<u64>,
+    /// Running tally of tokens consumed (estimated as output_len / 4).
+    tokens_spent: Arc<AtomicU64>,
 }
 
 impl Orchestrator {
+    /// Emit a `WorkflowProgress` event if the event channel is open.
+    fn emit(&self, ev: crate::runtime::WorkflowProgressEvent) {
+        if let Some(tx) = &self.tx {
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let _ = tx
+                    .send(crate::runtime::AppEvent::WorkflowProgress(ev))
+                    .await;
+            });
+        }
+    }
+
     fn record_progress(&mut self, sig: ProgressSignal) {
         match sig {
-            ProgressSignal::Phase(title) => self.logs.push(format!("phase: {title}")),
-            ProgressSignal::Log(msg) => self.logs.push(msg),
+            ProgressSignal::Phase(ref title) => {
+                self.logs.push(format!("phase: {title}"));
+                self.emit(crate::runtime::WorkflowProgressEvent::Phase {
+                    task_id: crate::ids::TaskId::from(self.workflow_task_id.clone()),
+                    title: title.clone(),
+                });
+            }
+            ProgressSignal::Log(ref msg) => {
+                self.logs.push(msg.clone());
+                self.emit(crate::runtime::WorkflowProgressEvent::Log {
+                    task_id: crate::ids::TaskId::from(self.workflow_task_id.clone()),
+                    message: msg.clone(),
+                });
+            }
         }
     }
 
@@ -102,6 +137,16 @@ impl Orchestrator {
     /// Handle one agent request: enforce the cap, check the resume cache, and
     /// otherwise spawn a semaphore-gated dispatch.
     fn dispatch(&mut self, req: AgentRequest) {
+        // Enforce token budget before the agent cap.
+        if let Some(budget) = self.token_budget {
+            if self.tokens_spent.load(Ordering::Relaxed) >= budget {
+                let _ = req
+                    .reply
+                    .send(Err("workflow token budget exhausted".to_owned()));
+                return;
+            }
+        }
+
         if self.dispatched.load(Ordering::Relaxed) >= MAX_AGENTS {
             let _ = req
                 .reply
@@ -118,6 +163,12 @@ impl Orchestrator {
             .and_then(|c| c.results.get(&key).cloned())
         {
             self.cache_hits.fetch_add(1, Ordering::Relaxed);
+            self.emit(crate::runtime::WorkflowProgressEvent::AgentCacheHit {
+                task_id: crate::ids::TaskId::from(self.workflow_task_id.clone()),
+                index: req.index,
+                label: req.label.clone(),
+                phase: req.phase.clone(),
+            });
             let text = cached
                 .as_str()
                 .map(str::to_owned)
@@ -127,6 +178,19 @@ impl Orchestrator {
         }
 
         self.dispatched.fetch_add(1, Ordering::Relaxed);
+        tracing::debug!(
+            target: "jfc::workflow",
+            index = req.index,
+            label = %req.label,
+            phase = req.phase.as_deref().unwrap_or(""),
+            "dispatching workflow agent"
+        );
+        self.emit(crate::runtime::WorkflowProgressEvent::AgentStarted {
+            task_id: crate::ids::TaskId::from(self.workflow_task_id.clone()),
+            index: req.index,
+            label: req.label.clone(),
+            phase: req.phase.clone(),
+        });
 
         let permit_sem = self.semaphore.clone();
         let provider = self.provider.clone();
@@ -135,6 +199,7 @@ impl Orchestrator {
         let journal_writer = self.journal_writer.clone();
         let workflow_task_id = self.workflow_task_id.clone();
         let cancel = self.cancel.clone();
+        let tokens_spent = self.tokens_spent.clone();
         self.agent_tasks.spawn(async move {
             let _permit = permit_sem.acquire().await;
             run_one_agent(
@@ -146,6 +211,7 @@ impl Orchestrator {
                 journal_writer,
                 workflow_task_id,
                 cancel,
+                tokens_spent,
             )
             .await;
         });
@@ -166,18 +232,45 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
         cancel,
         tx,
         workflow_task_id,
+        depth,
+        cwd,
+        token_budget,
     } = config;
 
     // Resume cache: load the prior run's journal if requested.
     let cache: Option<JournalCache> = match &resume_from_run_id {
-        Some(prev) => Some(journal::load_journal(&session_dir, prev).await),
+        Some(prev) => {
+            let c = journal::load_journal(&session_dir, prev).await;
+            // Warn about agents that were started but never completed in the
+            // prior run — their results won't be in the cache and will re-run.
+            let incomplete: Vec<&String> = c
+                .started
+                .keys()
+                .filter(|k| !c.results.contains_key(*k))
+                .collect();
+            if !incomplete.is_empty() {
+                tracing::debug!(
+                    target: "jfc::workflow",
+                    count = incomplete.len(),
+                    "resume: {} agent(s) from prior run were interrupted and will re-run",
+                    incomplete.len()
+                );
+            }
+            Some(c)
+        }
         None => None,
     };
     let journal_writer = JournalWriter::new(&session_dir, &run_id);
+    tracing::debug!(
+        target: "jfc::workflow",
+        path = %journal_writer.path().display(),
+        "workflow journal opened"
+    );
 
     // Channels bridging the engine thread to this orchestrator.
     let (agent_tx, mut agent_rx) = mpsc::unbounded_channel::<AgentRequest>();
     let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<ProgressSignal>();
+    let (sub_wf_tx, mut sub_wf_rx) = mpsc::unbounded_channel::<SubWorkflowRequest>();
 
     // Spawn the engine on a dedicated OS thread with its own LocalSet — boa's
     // Context and promise futures are !Send so they cannot live on the shared
@@ -200,7 +293,7 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
         };
         let local = tokio::task::LocalSet::new();
         local.block_on(&rt, async move {
-            run_script(&engine_body, engine_args, agent_tx, progress_tx).await
+            run_script(&engine_body, engine_args, agent_tx, progress_tx, sub_wf_tx, token_budget).await
         })
     });
 
@@ -219,6 +312,8 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
         cancel: cancel.clone(),
         agent_tasks: tokio::task::JoinSet::new(),
         logs: Vec::new(),
+        token_budget,
+        tokens_spent: Arc::new(AtomicU64::new(0)),
     };
 
     // Drive both channels until the engine thread finishes.
@@ -238,6 +333,69 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
                     Some(req) => orch.dispatch(req),
                     // Engine dropped the agent sender — script finished.
                     None => break,
+                }
+            }
+
+            maybe_sub = sub_wf_rx.recv() => {
+                if let Some(sub_req) = maybe_sub {
+                    // Enforce max depth.
+                    if depth >= 3 {
+                        let _ = sub_req.reply.send(Err(format!(
+                            "workflow nesting limit reached (max depth 3, current depth {})",
+                            depth
+                        )));
+                        continue;
+                    }
+                    // Resolve the named workflow from the registry.
+                    let resolved = crate::workflows::resolve(&cwd, &sub_req.name);
+                    let Some(registered) = resolved else {
+                        let _ = sub_req.reply.send(Err(format!(
+                            "sub-workflow '{}' not found",
+                            sub_req.name
+                        )));
+                        continue;
+                    };
+                    // Parse meta + body.
+                    let body = match crate::workflows::parse_meta(&registered.script) {
+                        Ok((_, b)) => b,
+                        Err(e) => {
+                            let _ = sub_req.reply.send(Err(format!(
+                                "failed to parse sub-workflow '{}': {e}",
+                                sub_req.name
+                            )));
+                            continue;
+                        }
+                    };
+                    // Build a fresh run_id for the child.
+                    let child_run_id = format!(
+                        "{}_sub{}_{}",
+                        run_id,
+                        depth + 1,
+                        crate::workflows::generate_run_id()
+                    );
+                    let child_config = WorkflowRunConfig {
+                        run_id: child_run_id,
+                        script_body: body,
+                        args: sub_req.args,
+                        provider: orch.provider.clone(),
+                        model: orch.model.clone(),
+                        session_dir: session_dir.clone(),
+                        resume_from_run_id: None,
+                        cancel: orch.cancel.clone(),
+                        tx: orch.tx.clone(),
+                        workflow_task_id: orch.workflow_task_id.clone(),
+                        depth: depth + 1,
+                        cwd: cwd.clone(),
+                        token_budget: None,
+                    };
+                    // Run the child workflow and reply.
+                    let sub_outcome = Box::pin(run_workflow(child_config)).await;
+                    let reply_val = if let Some(err) = sub_outcome.error {
+                        Err(err)
+                    } else {
+                        Ok(sub_outcome.result)
+                    };
+                    let _ = sub_req.reply.send(reply_val);
                 }
             }
         }
@@ -287,6 +445,7 @@ async fn run_one_agent(
     journal_writer: Arc<JournalWriter>,
     workflow_task_id: String,
     cancel: CancellationToken,
+    tokens_spent: Arc<AtomicU64>,
 ) {
     let agent_id = format!("{workflow_task_id}:agent_{}", req.index);
 
@@ -351,11 +510,33 @@ async fn run_one_agent(
     };
 
     if result.is_error() {
+        // Emit failure progress event before replying.
+        if let Some(tx) = &tx {
+            let task_id = crate::ids::TaskId::from(workflow_task_id.clone());
+            let index = req.index;
+            let error = result.output.clone();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let _ = tx
+                    .send(crate::runtime::AppEvent::WorkflowProgress(
+                        crate::runtime::WorkflowProgressEvent::AgentFailed {
+                            task_id,
+                            index,
+                            error,
+                        },
+                    ))
+                    .await;
+            });
+        }
         let _ = req.reply.send(Err(result.output.clone()));
         return;
     }
 
     let text = result.output.clone();
+
+    // Accumulate token estimate (4 chars ≈ 1 token).
+    let token_estimate = text.len() as u64 / 4;
+    tokens_spent.fetch_add(token_estimate, Ordering::Relaxed);
 
     // Record the result journal entry (store as a JSON string).
     let _ = journal_writer
@@ -365,6 +546,20 @@ async fn run_one_agent(
             result: serde_json::Value::String(text.clone()),
         })
         .await;
+
+    // Emit success progress event.
+    if let Some(tx) = &tx {
+        let task_id = crate::ids::TaskId::from(workflow_task_id.clone());
+        let index = req.index;
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let _ = tx
+                .send(crate::runtime::AppEvent::WorkflowProgress(
+                    crate::runtime::WorkflowProgressEvent::AgentDone { task_id, index },
+                ))
+                .await;
+        });
+    }
 
     let _ = req.reply.send(Ok(text));
 }
@@ -435,6 +630,9 @@ mod tests {
             cancel: CancellationToken::new(),
             tx: None,
             workflow_task_id: "bgwf_1".into(),
+            depth: 0,
+            cwd: dir.to_path_buf(),
+            token_budget: None,
         }
     }
 

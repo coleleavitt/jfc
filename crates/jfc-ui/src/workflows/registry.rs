@@ -1,11 +1,14 @@
-//! Workflow registry — discovers JS workflows from built-in, user, and project
-//! sources and resolves a name to its script.
+//! Workflow registry — discovers JS workflows from built-in, user, plugin, and
+//! project sources and resolves a name to its script.
 //!
 //! Precedence (highest wins): project (`.jfc/workflows/`) > user
-//! (`~/.config/jfc/workflows/`) > built-in (embedded). A project workflow with
-//! the same name as a built-in shadows it.
+//! (`~/.config/jfc/workflows/`) > plugin (`~/.config/jfc/plugins/*/`) >
+//! built-in (embedded). A project workflow with the same name as a built-in
+//! shadows it.
 
 use std::path::{Path, PathBuf};
+
+use serde::Deserialize;
 
 use super::meta::{WorkflowMeta, parse_meta};
 
@@ -13,8 +16,49 @@ use super::meta::{WorkflowMeta, parse_meta};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkflowSource {
     BuiltIn,
+    /// A plugin installed under `~/.config/jfc/plugins/`.
+    Plugin,
     User,
     Project,
+}
+
+// ── Plugin manifest ────────────────────────────────────────────────────────
+
+/// Deserialized form of a `.jfc-plugin.toml` manifest file.
+#[derive(Debug, Deserialize)]
+struct PluginManifest {
+    plugin: PluginMeta,
+}
+
+#[derive(Debug, Deserialize)]
+struct PluginMeta {
+    #[allow(dead_code)]
+    name: String,
+    workflows_dir: String,
+}
+
+/// Scan `~/.config/jfc/plugins/*/` for `.jfc-plugin.toml` manifests and
+/// return the resolved `workflows_dir` paths for every valid manifest found.
+pub fn plugin_workflow_dirs() -> Vec<PathBuf> {
+    let Some(plugins_root) = dirs::config_dir().map(|c| c.join("jfc").join("plugins")) else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(&plugins_root) else {
+        return Vec::new();
+    };
+    let mut dirs = Vec::new();
+    for entry in entries.flatten() {
+        let manifest_path = entry.path().join(".jfc-plugin.toml");
+        let Ok(text) = std::fs::read_to_string(&manifest_path) else {
+            continue;
+        };
+        let Ok(manifest) = toml::from_str::<PluginManifest>(&text) else {
+            continue;
+        };
+        let workflows_dir = entry.path().join(&manifest.plugin.workflows_dir);
+        dirs.push(workflows_dir);
+    }
+    dirs
 }
 
 /// A discovered workflow: its metadata, source, and full script text.
@@ -133,7 +177,7 @@ fn load_dir(dir: &Path, source: WorkflowSource) -> Vec<RegisteredWorkflow> {
 fn builtins() -> Vec<RegisteredWorkflow> {
     BUILTINS
         .iter()
-        .filter_map(|(name, script)| {
+        .filter_map(|(_name, script)| {
             let (meta, _body) = parse_meta(script).ok()?;
             Some(RegisteredWorkflow {
                 name: meta.name,
@@ -146,14 +190,23 @@ fn builtins() -> Vec<RegisteredWorkflow> {
         .collect()
 }
 
-/// Discover all workflows, applying precedence project > user > built-in.
+/// Discover all workflows, applying precedence project > user > plugin > built-in.
 /// Returns a name-sorted list with shadowed entries removed.
 pub fn discover(project_root: &Path) -> Vec<RegisteredWorkflow> {
     use std::collections::HashMap;
-    // Insert in increasing-precedence order so later inserts overwrite.
+    // Insert in increasing-precedence order so later inserts overwrite:
+    // 1. builtins
+    // 2. plugins  ← new
+    // 3. user
+    // 4. project
     let mut by_name: HashMap<String, RegisteredWorkflow> = HashMap::new();
     for wf in builtins() {
         by_name.insert(wf.name.clone(), wf);
+    }
+    for plugin_dir in plugin_workflow_dirs() {
+        for wf in load_dir(&plugin_dir, WorkflowSource::Plugin) {
+            by_name.insert(wf.name.clone(), wf);
+        }
     }
     if let Some(udir) = user_workflows_dir() {
         for wf in load_dir(&udir, WorkflowSource::User) {
@@ -242,5 +295,37 @@ mod tests {
     fn unknown_name_returns_none_robust() {
         let tmp = tempfile::TempDir::new().unwrap();
         assert!(resolve(tmp.path(), "nonexistent").is_none());
+    }
+
+    #[test]
+    fn plugin_workflows_load_normal() {
+        // Simulate ~/.config/jfc/plugins/my-plugin/ with a manifest and workflow.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("plugins").join("my-plugin");
+        let workflows_dir = plugin_dir.join("workflows");
+        std::fs::create_dir_all(&workflows_dir).unwrap();
+
+        // Write the plugin manifest.
+        std::fs::write(
+            plugin_dir.join(".jfc-plugin.toml"),
+            "[plugin]\nname = \"my-plugin\"\nworkflows_dir = \"workflows\"\n",
+        )
+        .unwrap();
+
+        // Write a simple workflow script.
+        std::fs::write(
+            workflows_dir.join("plugin-demo.js"),
+            "export const meta = { name: 'plugin-demo', description: 'Plugin demo workflow' }\nreturn 42",
+        )
+        .unwrap();
+
+        // Use load_dir directly (avoids needing HOME set for full discover).
+        let loaded = load_dir(&workflows_dir, WorkflowSource::Plugin);
+        assert_eq!(loaded.len(), 1);
+        let wf = &loaded[0];
+        assert_eq!(wf.name, "plugin-demo");
+        assert_eq!(wf.description, "Plugin demo workflow");
+        assert_eq!(wf.source, WorkflowSource::Plugin);
+        assert!(wf.script.contains("return 42"));
     }
 }

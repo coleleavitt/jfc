@@ -326,6 +326,11 @@ pub struct BackgroundTask {
     /// `task_id` (the agent's run id, not the todo id) — can look up which
     /// `TaskStore` entry to transition. `None` for un-linked delegations.
     pub parent_task_id: Option<String>,
+    /// Live workflow progress snapshot. Populated only for background tasks
+    /// launched by the Workflow tool (task_id starts with `bgwf_`). Updated
+    /// incrementally by `AppEvent::WorkflowProgress` handlers in the event
+    /// loop. `None` for regular subagent/swarm background tasks.
+    pub workflow_progress: Option<crate::workflows::WorkflowTaskProgress>,
 }
 
 pub struct App {

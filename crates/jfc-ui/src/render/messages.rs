@@ -334,6 +334,115 @@ pub(crate) fn task_view_body_lines(
     out
 }
 
+/// Build a `Line` for one agent row inside the workflow detail panel.
+fn workflow_agent_line(
+    agent: &crate::workflows::task::AgentProgress,
+    in_current_phase: bool,
+    frame: usize,
+    t: Theme,
+) -> Line<'static> {
+    use crate::workflows::task::AgentStatus;
+    let bullet = if in_current_phase { "●" } else { "○" };
+    let (status_glyph, status_color) = match agent.status {
+        AgentStatus::Running => {
+            let ch = crate::app::SPINNER[frame % crate::app::SPINNER.len()];
+            (ch.to_string(), t.accent)
+        }
+        AgentStatus::Done => ("✓".to_string(), t.success),
+        AgentStatus::Failed => ("✗".to_string(), t.error),
+        AgentStatus::Queued => ("○".to_string(), t.text_muted),
+        AgentStatus::Skipped => ("–".to_string(), t.text_muted),
+    };
+    let label = truncate_str(&agent.label, 42);
+    let status_str = agent.status.to_string();
+    // Right-pad label to fixed width so status aligns.
+    let pad = 44usize.saturating_sub(label.chars().count());
+    let padded_label = format!("{}{}", label, " ".repeat(pad));
+    Line::from(vec![
+        Span::styled(format!("  {} #{:<2} ", bullet, agent.index), Style::default().fg(t.text_muted)),
+        Span::styled(padded_label, t.style_text_primary),
+        Span::styled(status_str, Style::default().fg(status_color)),
+        Span::raw(" "),
+        Span::styled(status_glyph, Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+    ])
+}
+
+/// Render the workflow progress detail panel (called when `bt.workflow_progress.is_some()`).
+fn render_workflow_detail(
+    f: &mut Frame,
+    area: Rect,
+    bt: &crate::app::BackgroundTask,
+    t: Theme,
+    scroll_offset: usize,
+    visible: usize,
+) {
+    let wfp = match bt.workflow_progress.as_ref() {
+        Some(w) => w,
+        None => return,
+    };
+
+    let frame = {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+        (ms / 80) as usize
+    };
+
+    let elapsed_s = wfp.started_at.elapsed().as_secs();
+    let running_count = wfp.running_count();
+
+    // Header line: "workflow: <name> · <status> · N agents · K cache hits · Xs"
+    let header = format!(
+        " workflow: {} · {} · {} agent{} · {} cache hit{} · {}s",
+        wfp.meta.name,
+        wfp.status,
+        running_count,
+        if running_count == 1 { "" } else { "s" },
+        wfp.cache_hits,
+        if wfp.cache_hits == 1 { "" } else { "s" },
+        elapsed_s,
+    );
+
+    let divider = "─".repeat(area.width.saturating_sub(2) as usize);
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    lines.push(Line::from(Span::styled(header, t.style_accent_bold)));
+    lines.push(Line::from(Span::styled(divider.clone(), Style::default().fg(t.border))));
+
+    // Phase header
+    if let Some(ref phase_name) = wfp.current_phase {
+        lines.push(Line::from(vec![
+            Span::styled(" Phase: ", Style::default().fg(t.text_muted)),
+            Span::styled(phase_name.clone(), t.style_text_primary_bold),
+            Span::styled("  (current)", Style::default().fg(t.text_muted).add_modifier(Modifier::ITALIC)),
+        ]));
+    }
+
+    // Agent rows
+    for agent in &wfp.agents {
+        let in_current = wfp.current_phase.as_deref() == agent.phase.as_deref();
+        lines.push(workflow_agent_line(agent, in_current, frame, t));
+    }
+
+    lines.push(Line::from(Span::styled(divider, Style::default().fg(t.border))));
+    lines.push(Line::from(Span::styled(" Logs:", Style::default().fg(t.text_muted))));
+    for entry in &wfp.logs {
+        lines.push(Line::from(vec![
+            Span::raw("   "),
+            Span::styled(entry.clone(), Style::default().fg(t.text_muted)),
+        ]));
+    }
+    if wfp.logs.is_empty() {
+        lines.push(Line::from(Span::styled("   (none)", Style::default().fg(t.text_muted))));
+    }
+
+    let total = lines.len();
+    let scroll = scroll_offset.min(total.saturating_sub(visible));
+    let para = Paragraph::new(lines)
+        .style(Style::default().bg(t.bg))
+        .scroll((scroll as u16, 0));
+    f.render_widget(para, area);
+}
+
 pub(super) fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_id: &str) {
     let t = app.theme;
     // Reserve same width as the main view: borders(2) + padding(2) + scrollbar(1) = 5
@@ -391,6 +500,20 @@ pub(super) fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_
     // streaming" and "agent finished its turn, waiting for next ping"
     // without staring at the panel for a few seconds.
     let visible = inner.height as usize;
+
+    // Workflow tasks get a dedicated progress panel.
+    let has_workflow = app
+        .background_tasks
+        .get(task_id)
+        .map(|bt| bt.workflow_progress.is_some())
+        .unwrap_or(false);
+    if has_workflow {
+        if let Some(bt) = app.background_tasks.get(task_id) {
+            let scroll = app.scroll_offset;
+            render_workflow_detail(f, inner, bt, t, scroll, visible);
+        }
+        return;
+    }
 
     if use_message_view {
         // Rich MessageView path — same pipeline as the main chat.

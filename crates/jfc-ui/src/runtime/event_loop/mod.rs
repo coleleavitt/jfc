@@ -792,6 +792,9 @@ pub(crate) async fn run(
                 AppEvent::Task(TaskEvent::Failed { task_id, error }) => {
                     handlers::task::handle_task_failed(&mut app, &tx, task_id, error).await;
                 }
+                AppEvent::WorkflowProgress(ev) => {
+                    handlers::workflow::handle_workflow_progress(&mut app, ev);
+                }
             }
         }
 

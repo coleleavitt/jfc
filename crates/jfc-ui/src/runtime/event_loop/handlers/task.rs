@@ -125,6 +125,7 @@ pub(crate) fn handle_task_started(
             max_input_tokens,
             budget_killed: false,
             parent_task_id: parent_task_id.clone(),
+            workflow_progress: None,
         },
     );
     // Only register detached workers into the daemon
