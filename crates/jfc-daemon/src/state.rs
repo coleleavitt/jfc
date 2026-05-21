@@ -296,6 +296,22 @@ pub fn load_state(paths: &DaemonPaths) -> Option<DaemonState> {
     serde_json::from_str(&data).ok()
 }
 
+/// Load daemon state for a read-modify-write cycle. Unlike [`load_state`],
+/// this distinguishes a genuinely-absent (or empty) state file — which
+/// yields a fresh `DaemonState::default()` — from a corrupt/unreadable
+/// file, which returns `Err`. Mutating callers must use this so a
+/// transient parse failure (e.g. reading a half-written file mid-rename)
+/// does NOT silently collapse to a default that then clobbers the real
+/// roster on the subsequent `save_state`.
+pub fn load_state_for_update(paths: &DaemonPaths) -> std::io::Result<DaemonState> {
+    match std::fs::read_to_string(&paths.state_file) {
+        Ok(data) if data.trim().is_empty() => Ok(DaemonState::default()),
+        Ok(data) => serde_json::from_str(&data).map_err(std::io::Error::other),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(DaemonState::default()),
+        Err(e) => Err(e),
+    }
+}
+
 /// Default retention for terminal (completed/failed/cancelled) background
 /// agents. Anything older than this is dropped on `compact_background_agents`.
 pub const TERMINAL_AGENT_RETENTION: std::time::Duration =
@@ -528,8 +544,10 @@ mod tests {
         let cached = first.1;
         // Sleep past the filesystem mtime granularity, then rewrite.
         std::thread::sleep(std::time::Duration::from_millis(50));
-        let mut state = DaemonState::default();
-        state.pid = 42;
+        let state = DaemonState {
+            pid: 42,
+            ..DaemonState::default()
+        };
         save_state(&paths, &state).unwrap();
         let second = load_state_if_changed(&paths, Some(cached));
         assert!(second.is_some(), "modified file must re-parse");

@@ -22,8 +22,8 @@ use std::time::SystemTime;
 use super::logs::{append_log_line, background_agent_launch_path, background_agent_log_path};
 use super::registry::record_background_agent_started_at;
 use super::state::{
-    BackgroundAgentLaunch, BackgroundAgentStatus, DaemonPaths, load_state, save_state,
-    with_state_lock,
+    BackgroundAgentInfo, BackgroundAgentLaunch, BackgroundAgentStatus, DaemonPaths,
+    load_state_for_update, save_state, with_state_lock,
 };
 
 fn path_is_executable_file(path: &Path) -> bool {
@@ -208,7 +208,7 @@ pub(super) fn record_background_agent_worker_pid(
     launch_path: &Path,
 ) -> std::io::Result<()> {
     with_state_lock(paths, || -> std::io::Result<()> {
-        let mut state = load_state(paths).unwrap_or_default();
+        let mut state = load_state_for_update(paths)?;
         let Some(agent) = state.background_agents.get_mut(id) else {
             return Ok(());
         };
@@ -226,7 +226,7 @@ pub(super) fn mark_background_agent_spawn_failed(
     error: &str,
 ) -> std::io::Result<()> {
     let log_path = with_state_lock(paths, || -> std::io::Result<Option<PathBuf>> {
-        let mut state = load_state(paths).unwrap_or_default();
+        let mut state = load_state_for_update(paths)?;
         let now = SystemTime::now();
         let Some(agent) = state.background_agents.get_mut(id) else {
             return Ok(None);
@@ -320,34 +320,89 @@ fn max_running_agents() -> usize {
 
 pub fn spawn_background_agent_worker(launch: BackgroundAgentLaunch) -> std::io::Result<u32> {
     let paths = DaemonPaths::default_user();
-    // Enforce concurrency cap before forking a new worker. Count
-    // currently-running agents in daemon state; if at cap, return an
-    // error so the caller surfaces "too many agents" to the model
-    // instead of silently spawning unbounded processes.
-    let running_count = with_state_lock(&paths, || {
-        let state = load_state(&paths).unwrap_or_default();
-        state
+    let cap = max_running_agents();
+    // Enforce concurrency cap before forking a new worker. The count
+    // check AND the slot reservation happen under a single state lock so
+    // two concurrent callers can't both observe `count < cap` and then
+    // both spawn (TOCTOU). We reserve by inserting a Running record for
+    // this task up front; a sibling caller will count it immediately.
+    // `spawn_*_with_paths` later overwrites this record with full
+    // metadata, and `mark_background_agent_spawn_failed` flips it to
+    // Failed (no longer counted) if the spawn errors out — that's the
+    // rollback path.
+    let reserved = with_state_lock(&paths, || -> std::io::Result<bool> {
+        let mut state = load_state_for_update(&paths)?;
+        let running_count = state
             .background_agents
             .values()
             .filter(|a| a.status == BackgroundAgentStatus::Running)
-            .count()
-    });
-    let cap = max_running_agents();
-    if running_count >= cap {
+            .count();
+        if running_count >= cap {
+            return Ok(false);
+        }
+        let now = SystemTime::now();
+        state.background_agents.insert(
+            launch.task_id.clone(),
+            BackgroundAgentInfo {
+                id: launch.task_id.clone(),
+                description: launch.task_input.description.clone(),
+                parent_session_id: launch.parent_session_id.clone(),
+                status: BackgroundAgentStatus::Running,
+                started_at: now,
+                updated_at: now,
+                completed_at: None,
+                pid: None,
+                model: Some(launch.model.as_str().to_owned()),
+                worktree_path: None,
+                log_path: background_agent_log_path(&paths, &launch.task_id),
+                launch_path: None,
+                cancel_requested: false,
+                respawn_count: 0,
+                summary: None,
+                error: None,
+                tool_use_count: 0,
+                latest_input_tokens: 0,
+                latest_cache_read_tokens: 0,
+                latest_cache_write_tokens: 0,
+                cumulative_output_tokens: 0,
+                last_tool: None,
+            },
+        );
+        save_state(&paths, &state)?;
+        Ok(true)
+    })?;
+    if !reserved {
         tracing::warn!(
             target: "jfc::daemon::worker",
-            running_count, cap,
+            cap,
             "background agent spawn rejected — at capacity"
         );
         return Err(std::io::Error::new(
             std::io::ErrorKind::ResourceBusy,
             format!(
-                "Cannot spawn background agent: {running_count}/{cap} already running. \
+                "Cannot spawn background agent: {cap}/{cap} already running. \
                  Wait for one to finish or set JFC_MAX_BACKGROUND_AGENTS higher."
             ),
         ));
     }
-    spawn_background_agent_worker_with_paths(&paths, launch)
+    let task_id = launch.task_id.clone();
+    let result = spawn_background_agent_worker_with_paths(&paths, launch);
+    if result.is_err() {
+        // Spawn failed after reservation — release the slot so it doesn't
+        // leak as a phantom Running agent forever.
+        let _ = with_state_lock(&paths, || -> std::io::Result<()> {
+            let mut state = load_state_for_update(&paths)?;
+            if let Some(agent) = state.background_agents.get_mut(&task_id)
+                && agent.status == BackgroundAgentStatus::Running
+                && agent.pid.is_none()
+            {
+                agent.status = BackgroundAgentStatus::Failed;
+                agent.completed_at = Some(SystemTime::now());
+            }
+            save_state(&paths, &state)
+        });
+    }
+    result
 }
 
 pub(super) fn record_background_agent_launch_path(
@@ -356,7 +411,7 @@ pub(super) fn record_background_agent_launch_path(
     launch_path: &Path,
 ) -> std::io::Result<()> {
     with_state_lock(paths, || -> std::io::Result<()> {
-        let mut state = load_state(paths).unwrap_or_default();
+        let mut state = load_state_for_update(paths)?;
         if let Some(agent) = state.background_agents.get_mut(id) {
             agent.launch_path = Some(launch_path.to_path_buf());
             agent.updated_at = SystemTime::now();

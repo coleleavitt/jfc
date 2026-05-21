@@ -231,15 +231,50 @@ pub(super) async fn execute_bash_inner(
                 return ExecutionResult::failure(format!("Failed to spawn bash: {e}"));
             }
         };
+        let mut child = child;
         let _pid_guard = child.id().map(crate::bash_processes::PidGuard::register);
-        let result = tokio::time::timeout(
-            std::time::Duration::from_millis(timeout),
-            child.wait_with_output(),
-        )
-        .await;
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        let stdout_task = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            if let Some(mut s) = stdout {
+                use tokio::io::AsyncReadExt;
+                let _ = s.read_to_end(&mut buf).await;
+            }
+            buf
+        });
+        let stderr_task = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            if let Some(mut s) = stderr {
+                use tokio::io::AsyncReadExt;
+                let _ = s.read_to_end(&mut buf).await;
+            }
+            buf
+        });
+        let status =
+            tokio::time::timeout(std::time::Duration::from_millis(timeout), child.wait()).await;
+        let status = match status {
+            Ok(s) => s,
+            Err(_) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                stdout_task.abort();
+                stderr_task.abort();
+                warn!(target: "jfc::tools", timeout_ms = timeout, "bash: command timed out");
+                return ExecutionResult::failure(format!("Command timed out after {timeout}ms"));
+            }
+        };
+        let stdout_buf = stdout_task.await.unwrap_or_default();
+        let stderr_buf = stderr_task.await.unwrap_or_default();
+        let result: std::io::Result<std::process::Output> =
+            status.map(|status| std::process::Output {
+                status,
+                stdout: stdout_buf,
+                stderr: stderr_buf,
+            });
 
         match result {
-            Ok(Ok(out)) => {
+            Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 let exit = out.status.code().unwrap_or(-1);
@@ -272,13 +307,9 @@ pub(super) async fn execute_bash_inner(
                     },
                 )
             }
-            Ok(Err(e)) => {
-                warn!(target: "jfc::tools", error = %e, "bash: failed to spawn");
-                ExecutionResult::failure(format!("Failed to spawn bash: {e}"))
-            }
-            Err(_) => {
-                warn!(target: "jfc::tools", timeout_ms = timeout, "bash: command timed out");
-                ExecutionResult::failure(format!("Command timed out after {timeout}ms"))
+            Err(e) => {
+                warn!(target: "jfc::tools", error = %e, "bash: failed to wait for child");
+                ExecutionResult::failure(format!("Failed to run bash: {e}"))
             }
         }
     }

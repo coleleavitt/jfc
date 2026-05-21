@@ -104,9 +104,7 @@ fn build_beta_header(
 /// Classify a 400 body for capability-strip-and-retry. Returns the capability
 /// update that should be persisted, if any. Mirrors opencode-anthropic-auth's
 /// `classifyRequestErrorBody` in `plugin/routing.ts`.
-fn classify_beta_400(
-    body: &str,
-) -> Option<super::anthropic_accounts::AccountCapabilities> {
+fn classify_beta_400(body: &str) -> Option<super::anthropic_accounts::AccountCapabilities> {
     let lower = body.to_lowercase();
     let is_beta_error = lower.contains("anthropic-beta")
         || lower.contains("not yet available for this subscription");
@@ -121,8 +119,7 @@ fn classify_beta_400(
         || lower.contains("invalid beta")
         || lower.contains("unknown beta")
         || lower.contains("unexpected value");
-    if availability_phrase
-        && (lower.contains("context-1m") || lower.contains("long context beta"))
+    if availability_phrase && (lower.contains("context-1m") || lower.contains("long context beta"))
     {
         update.context1m = Some(false);
     }
@@ -424,6 +421,13 @@ fn write_back_tokens(
     }
     let tmp = format!("{}.tmp-{}", path.display(), std::process::id());
     std::fs::write(&tmp, serde_json::to_string_pretty(&store)?)?;
+    // Refresh/access tokens are secrets — lock down the temp file to
+    // owner-only before the rename publishes it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
     std::fs::rename(&tmp, path)?;
     Ok(())
 }
@@ -1391,7 +1395,10 @@ impl Provider for AnthropicOAuthProvider {
 
                 let send_started = std::time::Instant::now();
                 let request_id = uuid::Uuid::new_v4().to_string();
-                let caps = mgr.capabilities_for(&account.name).await.unwrap_or_default();
+                let caps = mgr
+                    .capabilities_for(&account.name)
+                    .await
+                    .unwrap_or_default();
                 let beta_header = build_beta_header(&caps, fast_mode, want_task_budget);
                 let resp =
                     match jfc_provider::http::send_with_retry("anthropic_oauth.stream", || {
@@ -1473,16 +1480,14 @@ impl Provider for AnthropicOAuthProvider {
                         // prepend a FallbackTriggered event so the UI can
                         // surface "Using X (fallback from Y)" cleanly.
                         if model_in_use != options.model.as_str() {
-                            let fallback_event = StreamEvent::FallbackTriggered(
-                                FallbackTriggered {
+                            let fallback_event =
+                                StreamEvent::FallbackTriggered(FallbackTriggered {
                                     original_model: ModelId::new(options.model.as_str()),
                                     fallback_model: ModelId::new(&model_in_use),
                                     reason: "overloaded (529 threshold crossed)".to_owned(),
-                                },
-                            );
-                            let prefix = futures::stream::once(futures::future::ready(
-                                Ok(fallback_event),
-                            ));
+                                });
+                            let prefix =
+                                futures::stream::once(futures::future::ready(Ok(fallback_event)));
                             return Ok(Box::pin(prefix.chain(stream)));
                         }
                         return Ok(stream);
@@ -1596,9 +1601,8 @@ impl Provider for AnthropicOAuthProvider {
                                 update = ?update,
                                 "marking gated capability unsupported — will retry same account with beta stripped"
                             );
-                            if let Err(e) = mgr
-                                .atomic_update_capabilities(&account.name, update)
-                                .await
+                            if let Err(e) =
+                                mgr.atomic_update_capabilities(&account.name, update).await
                             {
                                 tracing::warn!(
                                     target: "jfc::provider::anthropic_oauth::rotation",
@@ -1771,7 +1775,10 @@ impl Provider for AnthropicOAuthProvider {
                 };
 
                 let send_started = std::time::Instant::now();
-                let caps = mgr.capabilities_for(&account.name).await.unwrap_or_default();
+                let caps = mgr
+                    .capabilities_for(&account.name)
+                    .await
+                    .unwrap_or_default();
                 let beta_header_complete = build_beta_header(&caps, fast_mode, want_task_budget);
                 let resp =
                     match jfc_provider::http::send_with_retry("anthropic_oauth.complete", || {
@@ -1933,9 +1940,8 @@ impl Provider for AnthropicOAuthProvider {
                                 update = ?update,
                                 "marking gated capability unsupported — will retry same account with beta stripped"
                             );
-                            if let Err(e) = mgr
-                                .atomic_update_capabilities(&account.name, update)
-                                .await
+                            if let Err(e) =
+                                mgr.atomic_update_capabilities(&account.name, update).await
                             {
                                 tracing::warn!(
                                     target: "jfc::provider::anthropic_oauth::rotation",

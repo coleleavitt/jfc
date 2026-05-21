@@ -49,8 +49,7 @@ static SESSION_ID: LazyLock<String> = LazyLock::new(|| {
 
 // ─── Antigravity mandatory system instruction ────────────────────────────────
 
-const ANTIGRAVITY_BASE_SYSTEM_INSTRUCTION: &str =
-    "You are Antigravity, a powerful agentic AI coding assistant designed by the \
+const ANTIGRAVITY_BASE_SYSTEM_INSTRUCTION: &str = "You are Antigravity, a powerful agentic AI coding assistant designed by the \
      Google Deepmind team working on Advanced Agentic Coding. You are pair \
      programming with a USER to solve their coding task. The task may require \
      creating a new codebase, modifying or debugging an existing codebase, or \
@@ -115,9 +114,7 @@ pub(crate) fn is_gemini_3(model: &str) -> bool {
 
 /// Does this model need the Antigravity system instruction injected?
 fn needs_antigravity_system_instruction(model: &str) -> bool {
-    is_claude_model(model)
-        || model.contains("gemini-3")
-        || model.contains("antigravity")
+    is_claude_model(model) || model.contains("gemini-3") || model.contains("antigravity")
 }
 
 /// Default thinking budget for Claude `-thinking` models when the caller
@@ -171,16 +168,10 @@ pub fn build_gemini_request(
         if is_gemini_3(model) {
             // Gemini 3 models use thinkingLevel ('low'|'medium'|'high')
             let level = budget_to_thinking_level(budget);
-            generation_config.insert(
-                "thinkingConfig".into(),
-                json!({ "thinkingLevel": level }),
-            );
+            generation_config.insert("thinkingConfig".into(), json!({ "thinkingLevel": level }));
         } else {
             // Gemini 2.5 models use thinkingBudget (number)
-            generation_config.insert(
-                "thinkingConfig".into(),
-                json!({ "thinkingBudget": budget }),
-            );
+            generation_config.insert("thinkingConfig".into(), json!({ "thinkingBudget": budget }));
         }
     }
     if !generation_config.is_empty() {
@@ -217,7 +208,9 @@ pub fn build_claude_request(
     let mut generation_config = base_generation_config(options);
     let is_thinking_model = model.contains("-thinking");
     if is_thinking_model {
-        let budget = options.thinking_budget.unwrap_or(CLAUDE_DEFAULT_THINKING_BUDGET);
+        let budget = options
+            .thinking_budget
+            .unwrap_or(CLAUDE_DEFAULT_THINKING_BUDGET);
         generation_config.insert(
             "thinkingConfig".into(),
             json!({
@@ -283,9 +276,11 @@ fn build_core_request(model: &str, messages: &[ProviderMessage], options: &Strea
     // Build tools with sanitization + STRICT PARAMETERS augmentation
     if !options.tools.is_empty() {
         let is_gemini_native = !is_claude_model(model);
-        let decls: Vec<Value> = options.tools.iter().map(|tool| {
-            tool_to_decl_augmented(tool, is_gemini_native)
-        }).collect();
+        let decls: Vec<Value> = options
+            .tools
+            .iter()
+            .map(|tool| tool_to_decl_augmented(tool, is_gemini_native))
+            .collect();
         request["tools"] = json!([ { "functionDeclarations": decls } ]);
     }
     request
@@ -500,8 +495,15 @@ fn summarize_schema_params(schema: &Value) -> String {
 
     let mut parts: Vec<String> = Vec::new();
     for (key, prop) in props.iter().take(10) {
-        let typ = prop.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
-        let req = if required.contains(&key.as_str()) { " REQUIRED" } else { "" };
+        let typ = prop
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let req = if required.contains(&key.as_str()) {
+            " REQUIRED"
+        } else {
+            ""
+        };
         parts.push(format!("{key}: {typ}{req}"));
     }
     if props.len() > 10 {
@@ -677,7 +679,10 @@ fn part_to_event(part: GeminiPart, state: &mut ParserState) -> Option<StreamEven
         })
     } else {
         let idx = state.next_text_idx();
-        Some(StreamEvent::TextDelta { index: idx, delta: text })
+        Some(StreamEvent::TextDelta {
+            index: idx,
+            delta: text,
+        })
     }
 }
 
@@ -737,8 +742,15 @@ mod tests {
         assert_eq!(body["request"]["contents"][0]["role"], "user");
         assert_eq!(body["request"]["contents"][0]["parts"][0]["text"], "hi");
         // Antigravity system instruction is prepended for gemini-3-pro
-        let sys_parts = body["request"]["systemInstruction"]["parts"].as_array().unwrap();
-        assert!(sys_parts[0]["text"].as_str().unwrap().contains("Antigravity"));
+        let sys_parts = body["request"]["systemInstruction"]["parts"]
+            .as_array()
+            .unwrap();
+        assert!(
+            sys_parts[0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("Antigravity")
+        );
         // User system prompt is last
         assert_eq!(sys_parts.last().unwrap()["text"], "be helpful");
     }
@@ -775,9 +787,11 @@ mod tests {
     fn build_claude_request_omits_thinking_config_for_non_thinking_normal() {
         let opts = StreamOptions::new("gemini-claude-sonnet-4-5");
         let body = build_request("p", &[user_msg("x")], &opts).unwrap();
-        assert!(body["request"]["generationConfig"]
-            .get("thinkingConfig")
-            .is_none());
+        assert!(
+            body["request"]["generationConfig"]
+                .get("thinkingConfig")
+                .is_none()
+        );
     }
 
     #[test]
@@ -881,9 +895,7 @@ mod tests {
             ],
         };
         let body = build_request("p", &[msg], &opts).unwrap();
-        let parts = body["request"]["contents"][0]["parts"]
-            .as_array()
-            .unwrap();
+        let parts = body["request"]["contents"][0]["parts"].as_array().unwrap();
         assert_eq!(
             parts[0]["thoughtSignature"], SYNTHETIC_THOUGHT_SIGNATURE,
             "first functionCall must have the synthetic signature"
@@ -1045,11 +1057,13 @@ mod tests {
     #[test]
     fn parse_frame_emits_done_on_finish_reason_normal() {
         let mut state = ParserState::default();
-        let events =
-            parse_frame(r#"{"candidates":[{"finishReason":"STOP"}]}"#, &mut state);
-        assert!(events.iter().any(
-            |e| matches!(e, StreamEvent::Done { stop_reason: StopReason::EndTurn })
-        ));
+        let events = parse_frame(r#"{"candidates":[{"finishReason":"STOP"}]}"#, &mut state);
+        assert!(events.iter().any(|e| matches!(
+            e,
+            StreamEvent::Done {
+                stop_reason: StopReason::EndTurn
+            }
+        )));
     }
 
     #[test]

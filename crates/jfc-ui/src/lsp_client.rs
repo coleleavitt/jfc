@@ -679,7 +679,18 @@ pub fn maybe_spawn_lsp_clients(cwd: std::path::PathBuf, app_tx: mpsc::Sender<App
     tokio::spawn(async move {
         let root_uri = format!("file://{}", cwd.display());
         let owned_args: Vec<&str> = args.to_vec();
+        let lsp_tx = app_tx.clone();
+        let server_name = cmd.to_owned();
         if let Some(_client) = LspClient::spawn(cmd, &owned_args, &root_uri, app_tx).await {
+            // Notify the sidebar that this LSP is active.
+            let _ = lsp_tx
+                .send(AppEvent::Provider(ProviderEvent::LspUpdated {
+                    servers: vec![crate::types::LspServerInfo {
+                        name: server_name,
+                        status: crate::types::LspStatus::Active,
+                    }],
+                }))
+                .await;
             // Hold the client alive forever (until the task is cancelled
             // when the runtime shuts down). A more refined integration
             // would store this in App state and call shutdown on exit;

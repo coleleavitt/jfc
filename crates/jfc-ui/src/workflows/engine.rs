@@ -221,58 +221,57 @@ pub async fn run_script(
     {
         let agent_tx = agent_tx.clone();
         let counter = counter.clone();
-        let agent_fn = move |_this: &JsValue, args: &[JsValue], ctx: &mut Context| -> JsResult<JsValue> {
-            let prompt = args
-                .get_or_undefined(0)
-                .to_string(ctx)?
-                .to_std_string_escaped();
-            let opts = args.get_or_undefined(1).clone();
-            let (label, phase, model, schema, agent_type, isolation) =
-                parse_agent_opts(&opts, ctx, &prompt);
+        let agent_fn =
+            move |_this: &JsValue, args: &[JsValue], ctx: &mut Context| -> JsResult<JsValue> {
+                let prompt = args
+                    .get_or_undefined(0)
+                    .to_string(ctx)?
+                    .to_std_string_escaped();
+                let opts = args.get_or_undefined(1).clone();
+                let (label, phase, model, schema, agent_type, isolation) =
+                    parse_agent_opts(&opts, ctx, &prompt);
 
-            *counter.borrow_mut() += 1;
-            let index = *counter.borrow();
+                *counter.borrow_mut() += 1;
+                let index = *counter.borrow();
 
-            let (reply_tx, reply_rx) = oneshot::channel();
-            let req = AgentRequest {
-                index,
-                prompt,
-                label,
-                phase,
-                model,
-                schema,
-                agent_type,
-                isolation,
-                reply: reply_tx,
-            };
+                let (reply_tx, reply_rx) = oneshot::channel();
+                let req = AgentRequest {
+                    index,
+                    prompt,
+                    label,
+                    phase,
+                    model,
+                    schema,
+                    agent_type,
+                    isolation,
+                    reply: reply_tx,
+                };
 
-            // If the orchestrator hung up, reject immediately.
-            if agent_tx.send(req).is_err() {
-                return Ok(JsPromise::from_future(
-                    async move {
-                        Err(JsNativeError::error()
-                            .with_message("workflow orchestrator unavailable")
-                            .into())
-                    },
-                    ctx,
-                )
-                .into());
-            }
-
-            // Bridge the oneshot reply into a JS promise.
-            let fut = async move {
-                match reply_rx.await {
-                    Ok(Ok(text)) => Ok(JsValue::from(js_string!(text))),
-                    Ok(Err(e)) => {
-                        Err(JsNativeError::error().with_message(e).into())
-                    }
-                    Err(_) => Err(JsNativeError::error()
-                        .with_message("agent reply channel closed")
-                        .into()),
+                // If the orchestrator hung up, reject immediately.
+                if agent_tx.send(req).is_err() {
+                    return Ok(JsPromise::from_future(
+                        async move {
+                            Err(JsNativeError::error()
+                                .with_message("workflow orchestrator unavailable")
+                                .into())
+                        },
+                        ctx,
+                    )
+                    .into());
                 }
+
+                // Bridge the oneshot reply into a JS promise.
+                let fut = async move {
+                    match reply_rx.await {
+                        Ok(Ok(text)) => Ok(JsValue::from(js_string!(text))),
+                        Ok(Err(e)) => Err(JsNativeError::error().with_message(e).into()),
+                        Err(_) => Err(JsNativeError::error()
+                            .with_message("agent reply channel closed")
+                            .into()),
+                    }
+                };
+                Ok(JsPromise::from_future(fut, ctx).into())
             };
-            Ok(JsPromise::from_future(fut, ctx).into())
-        };
         // SAFETY: the closure captures only Send channels + Rc counters that
         // live on this thread; no GC-traced values are captured.
         let native = unsafe { NativeFunction::from_closure(agent_fn) };
@@ -284,14 +283,15 @@ pub async fn run_script(
     // ── __phase(title) ──────────────────────────────────────────────────
     {
         let progress_tx = progress_tx.clone();
-        let phase_fn = move |_this: &JsValue, args: &[JsValue], ctx: &mut Context| -> JsResult<JsValue> {
-            let title = args
-                .get_or_undefined(0)
-                .to_string(ctx)?
-                .to_std_string_escaped();
-            let _ = progress_tx.send(ProgressSignal::Phase(title));
-            Ok(JsValue::undefined())
-        };
+        let phase_fn =
+            move |_this: &JsValue, args: &[JsValue], ctx: &mut Context| -> JsResult<JsValue> {
+                let title = args
+                    .get_or_undefined(0)
+                    .to_string(ctx)?
+                    .to_std_string_escaped();
+                let _ = progress_tx.send(ProgressSignal::Phase(title));
+                Ok(JsValue::undefined())
+            };
         let native = unsafe { NativeFunction::from_closure(phase_fn) };
         context
             .register_global_callable(js_string!("__phase"), 1, native)
@@ -301,14 +301,15 @@ pub async fn run_script(
     // ── __log(message) ──────────────────────────────────────────────────
     {
         let progress_tx = progress_tx.clone();
-        let log_fn = move |_this: &JsValue, args: &[JsValue], ctx: &mut Context| -> JsResult<JsValue> {
-            let msg = args
-                .get_or_undefined(0)
-                .to_string(ctx)?
-                .to_std_string_escaped();
-            let _ = progress_tx.send(ProgressSignal::Log(msg));
-            Ok(JsValue::undefined())
-        };
+        let log_fn =
+            move |_this: &JsValue, args: &[JsValue], ctx: &mut Context| -> JsResult<JsValue> {
+                let msg = args
+                    .get_or_undefined(0)
+                    .to_string(ctx)?
+                    .to_std_string_escaped();
+                let _ = progress_tx.send(ProgressSignal::Log(msg));
+                Ok(JsValue::undefined())
+            };
         let native = unsafe { NativeFunction::from_closure(log_fn) };
         context
             .register_global_callable(js_string!("__log"), 1, native)
@@ -334,9 +335,7 @@ pub async fn run_script(
 
     // ── wrap the user script in an async IIFE so top-level await works,
     //    and capture its returned value ──────────────────────────────────
-    let wrapped = format!(
-        "globalThis.__wf_result = (async () => {{\n{script_body}\n}})();"
-    );
+    let wrapped = format!("globalThis.__wf_result = (async () => {{\n{script_body}\n}})();");
 
     let eval_result = context.eval(Source::from_bytes(wrapped.as_bytes()));
     if let Err(e) = eval_result {
@@ -376,9 +375,7 @@ pub async fn run_script(
                             )),
                         };
                     }
-                    boa_engine::builtins::promise::PromiseState::Pending => {
-                        serde_json::Value::Null
-                    }
+                    boa_engine::builtins::promise::PromiseState::Pending => serde_json::Value::Null,
                 },
                 Err(_) => js_to_json(&v, &mut context),
             }
@@ -407,7 +404,11 @@ fn parse_agent_opts(
     Option<String>,
     Option<String>,
 ) {
-    let default_label: String = prompt.chars().take(60).collect::<String>().replace('\n', " ");
+    let default_label: String = prompt
+        .chars()
+        .take(60)
+        .collect::<String>()
+        .replace('\n', " ");
     if !opts.is_object() {
         return (default_label, None, None, None, None, None);
     }
@@ -441,9 +442,7 @@ fn json_to_js(value: &serde_json::Value, ctx: &mut Context) -> JsValue {
 
 /// Convert a JsValue into a serde_json::Value (best-effort).
 fn js_to_json(value: &JsValue, ctx: &mut Context) -> serde_json::Value {
-    value
-        .to_json(ctx)
-        .unwrap_or(serde_json::Value::Null)
+    value.to_json(ctx).unwrap_or(serde_json::Value::Null)
 }
 
 /// Format a JsError for human display.
@@ -496,10 +495,7 @@ mod tests {
         )
         .await;
         assert!(out.error.is_none(), "error: {:?}", out.error);
-        assert_eq!(
-            out.result,
-            serde_json::json!(["ok:a", "ok:b", "ok:c"])
-        );
+        assert_eq!(out.result, serde_json::json!(["ok:a", "ok:b", "ok:c"]));
         assert_eq!(out.agent_count, 3);
     }
 

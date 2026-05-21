@@ -336,11 +336,30 @@ pub(super) fn field_str(f: &CronField) -> String {
 
 pub(super) async fn run_cron_command(job: &CronJob) -> std::io::Result<()> {
     use tokio::process::Command;
-    let status = Command::new("bash")
-        .arg("-c")
-        .arg(&job.command)
-        .status()
-        .await?;
+    let mut command = Command::new("bash");
+    command.arg("-c").arg(&job.command);
+    // Strip environment variables that can hijack a freshly-spawned shell
+    // before the user's command even runs (preloaded libs, alternate init
+    // files, IFS tricks). The cron command string is user-controlled, so
+    // we harden the spawn the same way the interactive tool path does.
+    for var in [
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "LD_AUDIT",
+        "BASH_ENV",
+        "ENV",
+        "PROMPT_COMMAND",
+        "IFS",
+        "SHELLOPTS",
+        "BASHOPTS",
+    ] {
+        command.env_remove(var);
+    }
+    command
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("SUDO_ASKPASS", "/bin/false")
+        .env("SSH_ASKPASS", "/bin/false");
+    let status = command.status().await?;
     tracing::info!(
         target: "jfc::daemon",
         cron_id = %job.id,

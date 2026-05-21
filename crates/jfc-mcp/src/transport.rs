@@ -2,11 +2,11 @@
 //!
 //! ## Framing
 //!
-//! Same as LSP: `Content-Length: N\r\n\r\n{json}`. The MCP spec calls
-//! out an alternative newline-delimited stdio mode but in practice the
-//! servers we care about (anthropic-published, npm-published) all use
-//! Content-Length framing. We mirror lsp_rpc's implementation
-//! verbatim.
+//! Supports both LSP-style `Content-Length: N\r\n\r\n{json}` framing
+//! and bare newline-delimited JSON (`{json}\n`). The mode is auto-
+//! detected from the first byte of the server's response: `{` means
+//! bare JSON lines, `C` means Content-Length headers. Once detected
+//! the mode is locked for the lifetime of the connection.
 //!
 //! ## Lifecycle
 //!
@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -52,20 +52,48 @@ const DEFAULT_STDERR_RING_CAPACITY: usize = 200;
 /// result we've seen in practice (a recursive directory listing).
 const MAX_BUFFER_BYTES: usize = 8 * 1024 * 1024;
 
-/// LSP-style framing: encode a JSON value as a complete framed message.
-pub fn encode(value: &Value) -> Vec<u8> {
+/// Framing mode for an MCP connection. Auto-detected from the first
+/// byte of server output.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FramingMode {
+    /// `Content-Length: N\r\n\r\n{json}` (LSP-style).
+    ContentLength,
+    /// `{json}\n` (newline-delimited JSON lines).
+    NewlineDelimited,
+}
+
+/// Encode a JSON value for sending to the server. Uses Content-Length
+/// framing when `mode` is `ContentLength`, bare JSON + newline
+/// otherwise.
+pub fn encode_with_framing(value: &Value, mode: FramingMode) -> Vec<u8> {
     let body = serde_json::to_vec(value).expect("Value serialization is infallible");
-    let mut out = Vec::with_capacity(body.len() + 32);
-    out.extend_from_slice(b"Content-Length: ");
-    out.extend_from_slice(body.len().to_string().as_bytes());
-    out.extend_from_slice(b"\r\n\r\n");
-    out.extend_from_slice(&body);
-    out
+    match mode {
+        FramingMode::ContentLength => {
+            let mut out = Vec::with_capacity(body.len() + 32);
+            out.extend_from_slice(b"Content-Length: ");
+            out.extend_from_slice(body.len().to_string().as_bytes());
+            out.extend_from_slice(b"\r\n\r\n");
+            out.extend_from_slice(&body);
+            out
+        }
+        FramingMode::NewlineDelimited => {
+            let mut out = body;
+            out.push(b'\n');
+            out
+        }
+    }
+}
+
+/// LSP-style framing encode (Content-Length). Used as default before
+/// the server's framing mode is detected.
+pub fn encode(value: &Value) -> Vec<u8> {
+    encode_with_framing(value, FramingMode::ContentLength)
 }
 
 /// Try to parse a single framed JSON-RPC message off the front of
-/// `buf`. Returns `Ok(Some((value, consumed)))` on success,
-/// `Ok(None)` when more bytes are needed, `Err` on protocol violation.
+/// `buf` using Content-Length framing. Returns `Ok(Some((value,
+/// consumed)))` on success, `Ok(None)` when more bytes are needed,
+/// `Err` on protocol violation.
 pub fn try_parse(buf: &[u8]) -> Result<Option<(Value, usize)>, FrameError> {
     let Some(header_end) = find_header_end(buf) else {
         return Ok(None);
@@ -84,6 +112,38 @@ pub fn try_parse(buf: &[u8]) -> Result<Option<(Value, usize)>, FrameError> {
     let body = &buf[body_start..body_end];
     let value: Value = serde_json::from_slice(body)?;
     Ok(Some((value, body_end)))
+}
+
+/// Try to parse a single newline-delimited JSON message from `buf`.
+/// Returns `Ok(Some((value, consumed)))` when a complete `\n`-
+/// terminated line is available, `Ok(None)` when more data is needed.
+pub fn try_parse_ndjson(buf: &[u8]) -> Result<Option<(Value, usize)>, FrameError> {
+    let Some(newline_pos) = buf.iter().position(|&b| b == b'\n') else {
+        if buf.len() > MAX_BUFFER_BYTES {
+            return Err(FrameError::OversizedBody);
+        }
+        return Ok(None);
+    };
+    let line = &buf[..newline_pos];
+    // Skip empty lines.
+    let trimmed = line.iter().copied().filter(|b| !b.is_ascii_whitespace()).count();
+    if trimmed == 0 {
+        return Ok(Some((Value::Null, newline_pos + 1)));
+    }
+    let value: Value = serde_json::from_slice(line)?;
+    Ok(Some((value, newline_pos + 1)))
+}
+
+/// Detect framing mode from the first non-whitespace byte in `buf`.
+pub fn detect_framing(buf: &[u8]) -> Option<FramingMode> {
+    for &b in buf {
+        match b {
+            b' ' | b'\t' | b'\r' | b'\n' => continue,
+            b'{' | b'[' => return Some(FramingMode::NewlineDelimited),
+            _ => return Some(FramingMode::ContentLength),
+        }
+    }
+    None
 }
 
 /// Framing-layer parse failures. The `Json` variant chains the underlying
@@ -149,6 +209,9 @@ struct TransportInner {
     next_id: AtomicU64,
     pending: PendingRequests,
     stderr_ring: StderrRing,
+    /// Detected framing mode: 0 = unknown, 1 = ContentLength, 2 = NewlineDelimited.
+    /// Shared with the reader task that performs detection.
+    framing: Arc<AtomicU8>,
     /// Held so the child is killed on drop (we use kill_on_drop on the
     /// Command). Wrapped in Mutex<Option> so `shutdown` can take it.
     child: Mutex<Option<Child>>,
@@ -165,6 +228,20 @@ impl Transport {
     /// from any task is safe.
     pub fn next_id(&self) -> u64 {
         self.inner.next_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Get the detected framing mode (defaults to NewlineDelimited
+    /// until detection runs).
+    fn framing_mode(&self) -> FramingMode {
+        match self.inner.framing.load(Ordering::Relaxed) {
+            1 => FramingMode::ContentLength,
+            _ => FramingMode::NewlineDelimited,
+        }
+    }
+
+    /// Encode a message using the detected framing mode.
+    fn encode_msg(&self, value: &Value) -> Vec<u8> {
+        encode_with_framing(value, self.framing_mode())
     }
 
     /// Send a JSON-RPC request and await its response. Returns the
@@ -191,7 +268,7 @@ impl Transport {
             pending.insert(id, tx);
         }
 
-        if self.inner.stdin_tx.send(encode(&msg)).is_err() {
+        if self.inner.stdin_tx.send(self.encode_msg(&msg)).is_err() {
             let mut pending = self.inner.pending.lock().await;
             pending.remove(&id);
             return Err(RequestError::Disconnected);
@@ -223,7 +300,7 @@ impl Transport {
         });
         self.inner
             .stdin_tx
-            .send(encode(&msg))
+            .send(self.encode_msg(&msg))
             .map_err(|_| RequestError::Disconnected)
     }
 
@@ -359,14 +436,17 @@ impl Transport {
             }
         });
 
-        // 3. Stdout reader.
+        // 3. Stdout reader — auto-detects framing from first byte.
         let pending: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
         let pending_for_reader = Arc::clone(&pending);
         let server_name_for_reader = cfg.server_name.clone();
+        let framing = Arc::new(AtomicU8::new(0));
+        let framing_for_reader = Arc::clone(&framing);
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout);
             let mut buf: Vec<u8> = Vec::with_capacity(8 * 1024);
             let mut chunk = [0u8; 4096];
+            let mut mode: Option<FramingMode> = None;
             loop {
                 let n = match reader.read(&mut chunk).await {
                     Ok(0) => {
@@ -390,8 +470,35 @@ impl Transport {
                 };
                 buf.extend_from_slice(&chunk[..n]);
 
+                // Detect framing from first non-whitespace byte.
+                if mode.is_none() {
+                    if let Some(detected) = detect_framing(&buf) {
+                        mode = Some(detected);
+                        let code = match detected {
+                            FramingMode::ContentLength => 1u8,
+                            FramingMode::NewlineDelimited => 2u8,
+                        };
+                        framing_for_reader.store(code, Ordering::Relaxed);
+                        tracing::debug!(
+                            target: "jfc::mcp",
+                            server = %server_name_for_reader,
+                            ?detected,
+                            "auto-detected framing mode"
+                        );
+                    }
+                }
+
+                let parser = mode.unwrap_or(FramingMode::NewlineDelimited);
                 loop {
-                    match try_parse(&buf) {
+                    let result = match parser {
+                        FramingMode::ContentLength => try_parse(&buf),
+                        FramingMode::NewlineDelimited => try_parse_ndjson(&buf),
+                    };
+                    match result {
+                        Ok(Some((Value::Null, consumed))) => {
+                            // Empty line in ndjson — skip.
+                            buf.drain(..consumed);
+                        }
                         Ok(Some((msg, consumed))) => {
                             buf.drain(..consumed);
                             handle_inbound(&msg, &pending_for_reader).await;
@@ -418,14 +525,19 @@ impl Transport {
             next_id: AtomicU64::new(1),
             pending,
             stderr_ring,
+            framing,
             child: Mutex::new(Some(child)),
         });
         let transport = Self { inner };
 
         // Handshake: initialize → wait → initialized notification.
+        // Send as bare JSON (newline-delimited) — universally parseable
+        // by both Content-Length and ndjson servers. Once the server
+        // responds, we detect its framing and lock in for future sends.
         let init =
             protocol::build_initialize(transport.next_id(), "jfc", env!("CARGO_PKG_VERSION"));
-        if transport.inner.stdin_tx.send(encode(&init)).is_err() {
+        let init_bytes = encode_with_framing(&init, FramingMode::NewlineDelimited);
+        if transport.inner.stdin_tx.send(init_bytes).is_err() {
             tracing::warn!(
                 target: "jfc::mcp",
                 server = %cfg.server_name,
@@ -478,7 +590,7 @@ impl Transport {
         }
 
         let initialized = protocol::build_initialized_notification();
-        if transport.inner.stdin_tx.send(encode(&initialized)).is_err() {
+        if transport.inner.stdin_tx.send(transport.encode_msg(&initialized)).is_err() {
             tracing::warn!(
                 target: "jfc::mcp",
                 server = %cfg.server_name,
@@ -704,5 +816,57 @@ mod tests {
         handle_inbound(&note, &pending).await;
         // id=1 is still pending; notification didn't fire it.
         assert!(pending.lock().await.contains_key(&1));
+    }
+
+    #[test]
+    fn try_parse_ndjson_complete_line_normal() {
+        let buf = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n";
+        let (val, consumed) = try_parse_ndjson(buf).unwrap().unwrap();
+        assert_eq!(consumed, buf.len());
+        assert_eq!(val["id"], 1);
+    }
+
+    #[test]
+    fn try_parse_ndjson_partial_returns_none_normal() {
+        let buf = b"{\"jsonrpc\":\"2.0\",\"id\":1";
+        assert!(try_parse_ndjson(buf).unwrap().is_none());
+    }
+
+    #[test]
+    fn try_parse_ndjson_empty_line_returns_null_normal() {
+        let buf = b"\n{\"id\":1}\n";
+        let (val, consumed) = try_parse_ndjson(buf).unwrap().unwrap();
+        assert_eq!(val, Value::Null);
+        assert_eq!(consumed, 1);
+    }
+
+    #[test]
+    fn detect_framing_json_start_normal() {
+        assert_eq!(detect_framing(b"{\"jsonrpc"), Some(FramingMode::NewlineDelimited));
+        assert_eq!(detect_framing(b"  \n{"), Some(FramingMode::NewlineDelimited));
+    }
+
+    #[test]
+    fn detect_framing_content_length_normal() {
+        assert_eq!(
+            detect_framing(b"Content-Length: 42\r\n"),
+            Some(FramingMode::ContentLength)
+        );
+    }
+
+    #[test]
+    fn detect_framing_empty_returns_none_robust() {
+        assert_eq!(detect_framing(b""), None);
+        assert_eq!(detect_framing(b"  \n\r\n"), None);
+    }
+
+    #[test]
+    fn encode_with_framing_ndjson_normal() {
+        let val = json!({"id": 1});
+        let bytes = encode_with_framing(&val, FramingMode::NewlineDelimited);
+        assert!(bytes.ends_with(b"\n"));
+        assert!(!bytes.starts_with(b"Content-Length"));
+        let parsed: Value = serde_json::from_slice(&bytes[..bytes.len() - 1]).unwrap();
+        assert_eq!(parsed["id"], 1);
     }
 }

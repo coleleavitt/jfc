@@ -32,8 +32,7 @@ pub fn parse_meta(script: &str) -> Result<(WorkflowMeta, String), String> {
     // Find `export const meta = {`
     let Some(start) = script.find("export const meta") else {
         return Err(
-            "Script must begin with `export const meta = { name, description, phases }`"
-                .to_owned(),
+            "Script must begin with `export const meta = { name, description, phases }`".to_owned(),
         );
     };
 
@@ -93,10 +92,9 @@ pub fn validate_script(script: &str) -> Result<(), String> {
         ));
     }
 
-    let determinism_violations = regex::Regex::new(
-        r"\bDate\s*\.\s*now\b|\bMath\s*\.\s*random\b|\bnew\s+Date\s*\(\s*\)",
-    )
-    .unwrap();
+    let determinism_violations =
+        regex::Regex::new(r"\bDate\s*\.\s*now\b|\bMath\s*\.\s*random\b|\bnew\s+Date\s*\(\s*\)")
+            .unwrap();
 
     if determinism_violations.is_match(script) {
         return Err(

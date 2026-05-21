@@ -460,7 +460,10 @@ mod tests {
         ))
         .await;
         assert!(out.error.is_none(), "error: {:?}", out.error);
-        assert_eq!(out.result, serde_json::json!(["AGENT_OUTPUT", "AGENT_OUTPUT"]));
+        assert_eq!(
+            out.result,
+            serde_json::json!(["AGENT_OUTPUT", "AGENT_OUTPUT"])
+        );
         assert_eq!(out.total_agents_dispatched, 2);
     }
 

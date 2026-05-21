@@ -40,6 +40,21 @@ mod tests {
     }
 
     #[test]
+    fn roundtrip_tool_input_task_stop_preserves_variant() {
+        // Regression: TaskStop must NOT collapse into TaskDone on resume —
+        // a cancellation request and a completion are semantically distinct.
+        let input = ToolInput::TaskStop {
+            task_id: "t42".into(),
+        };
+        let serialized = serialize_tool_input(&input);
+        let deserialized = deserialize_tool_input(serialized);
+        match deserialized {
+            ToolInput::TaskStop { task_id } => assert_eq!(task_id, "t42"),
+            other => panic!("expected TaskStop, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn roundtrip_tool_output_diff() {
         let output = ToolOutput::Diff(DiffView {
             file_path: "test.rs".into(),

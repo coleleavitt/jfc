@@ -18,8 +18,8 @@ use std::time::SystemTime;
 use super::logs::{append_log_line, background_agent_log_path};
 use super::pid::process_is_running;
 use super::state::{
-    BackgroundAgentLaunch, BackgroundAgentStatus, DaemonPaths, DaemonState, load_state, save_state,
-    with_state_lock,
+    BackgroundAgentLaunch, BackgroundAgentStatus, DaemonPaths, DaemonState, load_state_for_update,
+    save_state, with_state_lock,
 };
 use super::worker::{
     mark_background_agent_spawn_failed, reap_worker_process, record_background_agent_worker_pid,
@@ -28,7 +28,7 @@ use super::worker::{
 
 pub(super) fn reconcile_background_agents(paths: &DaemonPaths) -> std::io::Result<DaemonState> {
     let (state, stale_logs, respawns) = with_state_lock(paths, || -> std::io::Result<_> {
-        let mut state = load_state(paths).unwrap_or_default();
+        let mut state = load_state_for_update(paths)?;
         let now = SystemTime::now();
         let mut changed = false;
         let mut stale_logs: Vec<(PathBuf, String)> = Vec::new();

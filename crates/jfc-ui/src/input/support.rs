@@ -80,7 +80,10 @@ mod tests {
     #[test]
     fn repo_url_points_at_real_remote_normal() {
         assert_eq!(repo_url(), "https://github.com/coleleavitt/jfc");
-        assert_eq!(releases_url(), "https://github.com/coleleavitt/jfc/releases");
+        assert_eq!(
+            releases_url(),
+            "https://github.com/coleleavitt/jfc/releases"
+        );
     }
 
     // Normal: bug URL puts title + body into the standard GitHub query

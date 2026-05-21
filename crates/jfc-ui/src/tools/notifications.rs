@@ -47,6 +47,23 @@ pub(super) async fn execute_remote_trigger(
         Ok(u) => u,
         Err(e) => return ExecutionResult::failure(format!("remote_trigger: {e}")),
     };
+    // Only allow http(s) destinations. A triggers.toml entry with a
+    // file://, gopher://, or other scheme could otherwise coax the client
+    // into unexpected local/SSRF-adjacent behavior.
+    match reqwest::Url::parse(&url) {
+        Ok(parsed) if matches!(parsed.scheme(), "http" | "https") => {}
+        Ok(parsed) => {
+            return ExecutionResult::failure(format!(
+                "remote_trigger: refusing non-http(s) URL scheme '{}' for trigger '{trigger_id}'",
+                parsed.scheme()
+            ));
+        }
+        Err(e) => {
+            return ExecutionResult::failure(format!(
+                "remote_trigger: invalid URL for trigger '{trigger_id}': {e}"
+            ));
+        }
+    }
 
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))

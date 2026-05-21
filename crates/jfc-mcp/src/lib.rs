@@ -15,7 +15,8 @@ use std::collections::HashMap;
 
 pub use protocol::ToolCallOutcome;
 pub use registry::{
-    DispatchError, McpRegistry, McpServer, register_servers_from_config, restart_server,
+    DispatchError, McpRegistry, McpServer, McpServerStatus, register_servers_from_config,
+    restart_server,
 };
 pub use tool_dispatch::{
     DEFAULT_DISPATCH_TIMEOUT, dispatch_mcp_tool, dispatch_mcp_tool_with_timeout, is_mcp_tool_name,

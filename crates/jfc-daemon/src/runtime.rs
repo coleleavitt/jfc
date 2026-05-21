@@ -20,7 +20,7 @@ use super::pid::{is_daemon_running, remove_pid_file, write_pid_file};
 use super::reconcile::reconcile_background_agents;
 use super::state::{
     DaemonPaths, DaemonState, ScheduledWakeup, SessionId, SessionInfo, SessionStatus, load_state,
-    save_state,
+    load_state_for_update, save_state, with_state_lock,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,14 +81,19 @@ impl Daemon {
 
     /// Persist current state to disk (best-effort).
     pub fn persist(&self) {
-        let mut state = self.state.clone();
-        if let Some(current) = load_state(&self.paths) {
+        // Merge + save under the state lock so we don't race a detached
+        // worker's read-modify-write and clobber its background_agents
+        // subtree. Skip the save entirely if the on-disk state is corrupt
+        // rather than overwriting it with our in-memory copy.
+        let _ = with_state_lock(&self.paths, || -> std::io::Result<()> {
+            let mut state = self.state.clone();
+            let current = load_state_for_update(&self.paths)?;
             // Background workers update their roster/log metadata out-of-process.
             // Preserve that live subtree when the cron daemon persists its own
             // in-memory cron/wakeup/session state.
             state.background_agents = current.background_agents;
-        }
-        let _ = save_state(&self.paths, &state);
+            save_state(&self.paths, &state)
+        });
     }
 
     /// Register a new headless session.

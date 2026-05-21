@@ -164,7 +164,10 @@ mod tests {
         assert!(path.exists());
         let resolved = super::super::registry::resolve(tmp.path(), "demo").unwrap();
         assert_eq!(resolved.name, "demo");
-        assert_eq!(resolved.source, super::super::registry::WorkflowSource::Project);
+        assert_eq!(
+            resolved.source,
+            super::super::registry::WorkflowSource::Project
+        );
     }
 
     #[test]

@@ -5,8 +5,8 @@
 //! The running_hash chains: each agent's key becomes the next's running_hash
 //! input, giving "longest unchanged prefix" semantics.
 
-use sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;

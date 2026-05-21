@@ -67,6 +67,14 @@ pub fn write_atomic_sync(path: &Path, content: impl AsRef<[u8]>) -> io::Result<(
         f.sync_all()?;
         drop(f);
         rename(&tmp, path)?;
+        // fsync the parent directory so the rename (the directory entry
+        // update) is itself durable. Without this, a power loss after
+        // rename returns can still lose the new entry on some filesystems.
+        if let Some(parent) = path.parent()
+            && let Ok(dir) = File::open(parent)
+        {
+            let _ = dir.sync_all();
+        }
         Ok(())
     })();
 
@@ -96,6 +104,13 @@ pub async fn write_atomic(path: &Path, content: impl AsRef<[u8]>) -> io::Result<
         f.sync_all().await?;
         drop(f);
         rename(&tmp, path).await?;
+        // fsync the parent directory so the rename is durable across a
+        // power loss (see the sync variant for the full rationale).
+        if let Some(parent) = path.parent()
+            && let Ok(dir) = File::open(parent).await
+        {
+            let _ = dir.sync_all().await;
+        }
         Ok::<(), io::Error>(())
     }
     .await;

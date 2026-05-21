@@ -24,9 +24,7 @@ pub struct KeywordScanResult {
 /// Case-insensitive whole-word match for "ultrawork".
 fn ultrawork_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"(?i)\bultrawork\b").expect("ultrawork regex is valid")
-    })
+    RE.get_or_init(|| Regex::new(r"(?i)\bultrawork\b").expect("ultrawork regex is valid"))
 }
 
 /// Scan `input` for recognised magic keywords. Returns the cleaned text
@@ -50,8 +48,7 @@ pub fn scan_and_strip(input: &str) -> KeywordScanResult {
 }
 
 /// The system-reminder body injected when "ultrawork" is detected.
-pub const ULTRAWORK_REMINDER: &str =
-    "The user included the keyword \"ultrawork\", which means you should \
+pub const ULTRAWORK_REMINDER: &str = "The user included the keyword \"ultrawork\", which means you should \
      use the Workflow tool to fulfill their request.";
 
 #[cfg(test)]

@@ -213,9 +213,7 @@ pub(crate) async fn auto_compact_subagent_history(
     // eviction instead.
     const MAX_SUMMARY_RATIO_NUMERATOR: usize = 4;
     const MAX_SUMMARY_RATIO_DENOMINATOR: usize = 10;
-    let max_summary_bytes = transcript
-        .len()
-        .saturating_mul(MAX_SUMMARY_RATIO_NUMERATOR)
+    let max_summary_bytes = transcript.len().saturating_mul(MAX_SUMMARY_RATIO_NUMERATOR)
         / MAX_SUMMARY_RATIO_DENOMINATOR;
     if summary.len() > max_summary_bytes {
         tracing::warn!(
@@ -694,7 +692,10 @@ mod auto_compact_tests {
         ];
         let original_len = msgs.len();
         let did = auto_compact_subagent_history(&mut msgs, &provider, ModelId::new("stub")).await;
-        assert!(!did, "must reject summary that is ~equal in size to transcript");
+        assert!(
+            !did,
+            "must reject summary that is ~equal in size to transcript"
+        );
         assert_eq!(msgs.len(), original_len);
     }
 

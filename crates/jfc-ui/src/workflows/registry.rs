@@ -160,7 +160,10 @@ pub fn discover(project_root: &Path) -> Vec<RegisteredWorkflow> {
             by_name.insert(wf.name.clone(), wf);
         }
     }
-    for wf in load_dir(&project_workflows_dir(project_root), WorkflowSource::Project) {
+    for wf in load_dir(
+        &project_workflows_dir(project_root),
+        WorkflowSource::Project,
+    ) {
         by_name.insert(wf.name.clone(), wf);
     }
     let mut out: Vec<RegisteredWorkflow> = by_name.into_values().collect();

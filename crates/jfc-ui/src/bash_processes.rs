@@ -55,7 +55,16 @@ pub fn terminate_all() -> usize {
     let pids = snapshot();
     let mut count = 0;
     for pid in pids {
-        let target = pid as libc::pid_t;
+        // Checked conversion: a u32 PID larger than pid_t::MAX would wrap
+        // to a negative/garbage value under `as`, and a negative target
+        // makes kill(2) signal a process *group* (or every process for -1).
+        let target = match libc::pid_t::try_from(pid) {
+            Ok(t) => t,
+            Err(_) => {
+                tracing::warn!(target: "jfc::bash::pids", pid, "skipping out-of-range pid");
+                continue;
+            }
+        };
         // Guard: pid 0 signals the process group, pid -1 signals ALL user
         // processes. Never allow either — they'd nuke the session.
         if target <= 0 {

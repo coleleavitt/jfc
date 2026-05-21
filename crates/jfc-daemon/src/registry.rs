@@ -22,8 +22,8 @@ use std::time::{Duration, Instant, SystemTime};
 use super::logs::{append_chunk_raw, append_log_line, background_agent_log_path, read_last_lines};
 use super::reconcile::reconcile_background_agents;
 use super::state::{
-    BackgroundAgentInfo, BackgroundAgentStatus, DaemonPaths, load_state, save_state,
-    with_state_lock,
+    BackgroundAgentInfo, BackgroundAgentStatus, DaemonPaths, load_state, load_state_for_update,
+    save_state, with_state_lock,
 };
 
 /// Persist that a background agent started. Safe to call repeatedly for the
@@ -63,8 +63,14 @@ pub fn record_background_agent_started_at(
 ) {
     let id = id.to_owned();
     let description_owned = description.to_owned();
-    let (log_path, existed) = with_state_lock(paths, || {
-        let mut state = load_state(paths).unwrap_or_default();
+    let result = with_state_lock(paths, || {
+        let mut state = match load_state_for_update(paths) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(target: "jfc::daemon", error = %e, "refusing to overwrite corrupt daemon state in record_background_agent_started_at");
+                return None;
+            }
+        };
         let now = SystemTime::now();
         let log_path = state
             .background_agents
@@ -132,9 +138,9 @@ pub fn record_background_agent_started_at(
         entry.summary = None;
         entry.error = None;
         let _ = save_state(paths, &state);
-        (log_path, existed)
+        Some((log_path, existed))
     });
-    if !existed {
+    if let Some((log_path, false)) = result {
         append_log_line(&log_path, &format!("[started] {description}"));
     }
 }
@@ -157,7 +163,13 @@ pub fn record_background_agent_started_at(
 pub fn record_background_agent_log(id: &str, text: &str) {
     let paths = DaemonPaths::default_user();
     let log_path = with_state_lock(&paths, || {
-        let mut state = load_state(&paths).unwrap_or_default();
+        let mut state = match load_state_for_update(&paths) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(target: "jfc::daemon", error = %e, "refusing to overwrite corrupt daemon state in record_background_agent_log");
+                return background_agent_log_path(&paths, id);
+            }
+        };
         if let Some(agent) = state.background_agents.get(id) {
             return agent.log_path.clone();
         }
@@ -214,7 +226,13 @@ pub fn record_background_agent_progress(
 ) {
     let paths = DaemonPaths::default_user();
     let log_path = with_state_lock(&paths, || {
-        let mut state = load_state(&paths).unwrap_or_default();
+        let mut state = match load_state_for_update(&paths) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(target: "jfc::daemon", error = %e, "refusing to overwrite corrupt daemon state in record_background_agent_progress");
+                return None;
+            }
+        };
         let Some(agent) = state.background_agents.get_mut(id) else {
             return None;
         };
@@ -253,7 +271,13 @@ pub fn record_background_agent_finished(
 ) {
     let paths = DaemonPaths::default_user();
     let log_path = with_state_lock(&paths, || {
-        let mut state = load_state(&paths).unwrap_or_default();
+        let mut state = match load_state_for_update(&paths) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(target: "jfc::daemon", error = %e, "refusing to overwrite corrupt daemon state in record_background_agent_finished");
+                return None;
+            }
+        };
         let now = SystemTime::now();
         let Some(agent) = state.background_agents.get_mut(id) else {
             return None;
@@ -282,15 +306,17 @@ pub fn record_background_agent_finished(
 
 pub fn background_agent_cancel_requested(id: &str) -> bool {
     let paths = DaemonPaths::default_user();
-    load_state(&paths)
-        .and_then(|state| state.background_agents.get(id).cloned())
-        .map(|agent| agent.cancel_requested && !agent.status.is_terminal())
-        .unwrap_or(false)
+    with_state_lock(&paths, || {
+        load_state(&paths)
+            .and_then(|state| state.background_agents.get(id).cloned())
+            .map(|agent| agent.cancel_requested && !agent.status.is_terminal())
+            .unwrap_or(false)
+    })
 }
 
 pub fn request_background_agent_cancel(paths: &DaemonPaths, id: &str) -> std::io::Result<()> {
     let result = with_state_lock(paths, || -> std::io::Result<Option<PathBuf>> {
-        let mut state = load_state(paths).unwrap_or_default();
+        let mut state = load_state_for_update(paths)?;
         let Some(agent) = state.background_agents.get_mut(id) else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,

@@ -259,6 +259,9 @@ pub enum SerializedToolInput {
     TaskDone {
         task_id: String,
     },
+    TaskStop {
+        task_id: String,
+    },
     TaskGet {
         task_id: String,
     },

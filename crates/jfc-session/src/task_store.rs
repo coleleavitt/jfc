@@ -397,7 +397,16 @@ impl TaskStore {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(json) = serde_json::to_string_pretty(inner) {
-            let tmp = self.path.with_extension("tmp");
+            // Unique temp name (pid + nanos) so two processes persisting
+            // concurrently don't collide on a shared `.tmp` sibling and
+            // rename each other's partial write into place.
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let tmp = self
+                .path
+                .with_extension(format!("tmp-{}-{nonce}", std::process::id()));
             if std::fs::write(&tmp, json).is_ok() && std::fs::rename(&tmp, &self.path).is_ok() {
                 // Record the mtime of the revision we just wrote so a
                 // subsequent `reload_if_changed` doesn't treat our own

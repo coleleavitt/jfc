@@ -259,9 +259,9 @@ pub async fn execute_tool(
         (ToolKind::Task, ToolInput::Task(_)) => {
             ExecutionResult::failure("Task tool must be dispatched via the streaming executor")
         }
-        (ToolKind::Workflow, ToolInput::Workflow { .. }) => {
-            ExecutionResult::failure("Workflow tool must be dispatched via the streaming executor (background task)")
-        }
+        (ToolKind::Workflow, ToolInput::Workflow { .. }) => ExecutionResult::failure(
+            "Workflow tool must be dispatched via the streaming executor (background task)",
+        ),
         (ToolKind::Skill, ToolInput::Skill { name, args }) => {
             execute_skill(&name, args.as_deref()).await
         }
@@ -770,10 +770,19 @@ pub async fn execute_tool(
             },
         ) => execute_notebook_edit(&path, &cell_id, &new_source, edit_mode.as_deref()).await,
         (ToolKind::ScratchpadRead, ToolInput::ScratchpadRead { key }) => {
-            execute_scratchpad_read(&key)
+            // Blocking flock + file IO: move off the async reactor thread.
+            tokio::task::spawn_blocking(move || execute_scratchpad_read(&key))
+                .await
+                .unwrap_or_else(|e| {
+                    ExecutionResult::failure(format!("scratchpad read task failed: {e}"))
+                })
         }
         (ToolKind::ScratchpadWrite, ToolInput::ScratchpadWrite { key, value }) => {
-            execute_scratchpad_write(&key, &value)
+            tokio::task::spawn_blocking(move || execute_scratchpad_write(&key, &value))
+                .await
+                .unwrap_or_else(|e| {
+                    ExecutionResult::failure(format!("scratchpad write task failed: {e}"))
+                })
         }
         (kind, input) => ExecutionResult::failure(format!(
             "tool input mismatch: {kind:?} was paired with an incompatible \

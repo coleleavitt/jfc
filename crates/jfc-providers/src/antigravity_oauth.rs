@@ -26,8 +26,7 @@ use jfc_provider::{
 // ─── Constants (mirror of src/constants.ts) ──────────────────────────────────
 
 const PROVIDER_ID: &str = "antigravity";
-const CLIENT_ID: &str =
-    "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
+const CLIENT_ID: &str = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
 const CLIENT_SECRET: &str = "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";
 const CALLBACK_PORT: u16 = 36742;
 
@@ -334,7 +333,9 @@ fn parse_account_info(data: &serde_json::Value) -> (String, AccountTier) {
 
     let mut tier = AccountTier::Free;
     if let Some(tiers) = data["allowedTiers"].as_array()
-        && let Some(default) = tiers.iter().find(|t| t["isDefault"].as_bool() == Some(true))
+        && let Some(default) = tiers
+            .iter()
+            .find(|t| t["isDefault"].as_bool() == Some(true))
         && let Some(id) = default["id"].as_str()
         && id != "legacy-tier"
         && !id.contains("free")
@@ -443,9 +444,24 @@ impl AntigravityOAuthProvider {
         vec![
             // Gemini 3.x (native via Antigravity)
             mk("gemini-3.5-flash", "Gemini 3.5 Flash", 1_048_576, 65_536),
-            mk("gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview", 1_048_576, 65_536),
-            mk("gemini-3-pro-preview", "Gemini 3 Pro Preview", 1_048_576, 65_536),
-            mk("gemini-3-flash-preview", "Gemini 3 Flash Preview", 1_048_576, 65_536),
+            mk(
+                "gemini-3.1-pro-preview",
+                "Gemini 3.1 Pro Preview",
+                1_048_576,
+                65_536,
+            ),
+            mk(
+                "gemini-3-pro-preview",
+                "Gemini 3 Pro Preview",
+                1_048_576,
+                65_536,
+            ),
+            mk(
+                "gemini-3-flash-preview",
+                "Gemini 3 Flash Preview",
+                1_048_576,
+                65_536,
+            ),
             // Gemini 2.5 (native via Antigravity)
             mk("gemini-2.5-flash", "Gemini 2.5 Flash", 1_048_576, 65_536),
             mk("gemini-2.5-pro", "Gemini 2.5 Pro", 1_048_576, 65_536),
@@ -486,9 +502,7 @@ impl AntigravityOAuthProvider {
             ..
         }) = self.store.get(PROVIDER_ID)?
         else {
-            anyhow::bail!(
-                "not logged in to Antigravity \u{2014} run `/login antigravity` first"
-            );
+            anyhow::bail!("not logged in to Antigravity \u{2014} run `/login antigravity` first");
         };
         let project_id = account_id
             .as_deref()
@@ -531,9 +545,7 @@ impl Provider for AntigravityOAuthProvider {
             ..
         }) = self.store.get(PROVIDER_ID)?
         else {
-            anyhow::bail!(
-                "not logged in to Antigravity — run `/login antigravity` first",
-            );
+            anyhow::bail!("not logged in to Antigravity — run `/login antigravity` first",);
         };
 
         let method = AuthMethod::OAuth {
@@ -580,8 +592,7 @@ impl Provider for AntigravityOAuthProvider {
     fn auth_headers(&self) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
         if let Ok(Some(AuthMethod::OAuth { access_token, .. })) = self.store.get(PROVIDER_ID)
-            && let Ok(v) =
-                reqwest::header::HeaderValue::from_str(&format!("Bearer {access_token}"))
+            && let Ok(v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {access_token}"))
         {
             headers.insert(reqwest::header::AUTHORIZATION, v);
         }
@@ -613,11 +624,7 @@ impl Provider for AntigravityOAuthProvider {
         // request{contents, tools, generationConfig, …}). `build_request`
         // auto-dispatches between the Gemini-native and Claude-via-
         // Antigravity body shapes by inspecting the model id.
-        let body = super::antigravity_transform::build_request(
-            &project_id,
-            &messages,
-            options,
-        )?;
+        let body = super::antigravity_transform::build_request(&project_id, &messages, options)?;
         let url = format!(
             "{}/{CODE_ASSIST_API_VERSION}:streamGenerateContent?alt=sse",
             self.endpoint(),

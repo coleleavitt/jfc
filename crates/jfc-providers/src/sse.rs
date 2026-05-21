@@ -554,7 +554,9 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
                         "content": content,
                         "is_error": is_error,
                     }),
-                    ProviderContent::ToolUse { id, name, input, .. } => json!({
+                    ProviderContent::ToolUse {
+                        id, name, input, ..
+                    } => json!({
                         "type": "tool_use",
                         "id": id,
                         "name": name,

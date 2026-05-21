@@ -28,7 +28,7 @@ pub(crate) use factory::{factory_mode_enabled, maybe_continue_task_factory};
 pub(crate) use goal_loop::{dispatch_goal_evaluator_if_active, handle_goal_verdict};
 pub(crate) use network::record_network_recovery;
 pub(crate) use queue::drain_queued_prompts;
-pub(crate) use stream_control::{restart_stream_in_place, restart_stream_in_place_with_overrides};
+pub(crate) use stream_control::restart_stream_in_place;
 pub(crate) use task_activity::update_task_activities;
 pub(crate) use terminal::{draw_synchronized, read_git_branch_from_root, set_terminal_title};
 pub(crate) use yank::{

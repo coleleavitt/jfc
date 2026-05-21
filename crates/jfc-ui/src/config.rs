@@ -1837,7 +1837,10 @@ model = "garbage"
         let third = load_cached(&path);
 
         // All three observe the same parsed value …
-        assert_eq!(first.default.model.as_deref(), Some("anthropic/claude-opus-4-7"));
+        assert_eq!(
+            first.default.model.as_deref(),
+            Some("anthropic/claude-opus-4-7")
+        );
         assert_eq!(first, second);
         assert_eq!(second, third);
 

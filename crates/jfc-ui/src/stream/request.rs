@@ -69,15 +69,70 @@ fn user_text_requests_action(text: &str) -> bool {
     }
 
     let strong_action_terms = [
-        "add", "apply", "build", "change", "check", "commit", "continue", "create", "debug",
-        "delete", "do", "edit", "find", "fix", "grep", "implement", "inspect", "investigate",
-        "look", "open", "patch", "proceed", "push", "read", "remove", "run", "search", "test",
-        "trace", "update", "write",
+        "add",
+        "apply",
+        "build",
+        "change",
+        "check",
+        "commit",
+        "continue",
+        "create",
+        "debug",
+        "delete",
+        "do",
+        "edit",
+        "find",
+        "fix",
+        "grep",
+        "implement",
+        "inspect",
+        "investigate",
+        "look",
+        "open",
+        "patch",
+        "proceed",
+        "push",
+        "read",
+        "remove",
+        "run",
+        "search",
+        "test",
+        "trace",
+        "update",
+        "write",
         // Extended developer verb allowlist:
-        "refactor", "optimize", "reorganize", "cleanup", "clean", "format", "lint", "compile",
-        "audit", "review", "restructure", "verify", "profile", "revert", "stage", "merge",
-        "pull", "clone", "analyze", "migrate", "deploy", "install", "configure", "scaffold",
-        "generate", "rename", "move", "copy", "replace", "extract", "inline", "split",
+        "refactor",
+        "optimize",
+        "reorganize",
+        "cleanup",
+        "clean",
+        "format",
+        "lint",
+        "compile",
+        "audit",
+        "review",
+        "restructure",
+        "verify",
+        "profile",
+        "revert",
+        "stage",
+        "merge",
+        "pull",
+        "clone",
+        "analyze",
+        "migrate",
+        "deploy",
+        "install",
+        "configure",
+        "scaffold",
+        "generate",
+        "rename",
+        "move",
+        "copy",
+        "replace",
+        "extract",
+        "inline",
+        "split",
     ];
     let has_action_term = trimmed
         .split(' ')
@@ -537,7 +592,10 @@ mod tests {
     // tool_result blocks — that's mid-loop, so tools must stay advertised.
     #[test]
     fn mid_tool_loop_detected_on_trailing_tool_result_normal() {
-        let msgs = vec![user_text("what is ownership in rust"), user_tool_result("toolu_1")];
+        let msgs = vec![
+            user_text("what is ownership in rust"),
+            user_tool_result("toolu_1"),
+        ];
         assert!(conversation_is_mid_tool_loop(&msgs));
     }
 

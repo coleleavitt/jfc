@@ -164,13 +164,13 @@ impl EconomyAgentInvoker {
                 Ok(StreamEvent::TextDelta { delta, .. }) => {
                     if let (Some(tx), Some(id)) = (&self.event_tx, task_id) {
                         tx.send(crate::runtime::AppEvent::Task(
-                                crate::runtime::TaskEvent::AgentChunk {
-                                    task_id: crate::ids::TaskId::from(id),
-                                    text: delta.clone(),
-                                },
-                            ))
-                            .await
-                            .ok();
+                            crate::runtime::TaskEvent::AgentChunk {
+                                task_id: crate::ids::TaskId::from(id),
+                                text: delta.clone(),
+                            },
+                        ))
+                        .await
+                        .ok();
                     }
                     text.push_str(&delta);
                 }
@@ -314,9 +314,7 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
              Use them to explore the codebase, understand the problem, implement \
              the solution, and verify it compiles/passes tests. Work directly in the \
              current directory — it is your isolated worktree.",
-            prompt.bounty_id,
-            prompt.bounty_description,
-            prompt.acceptance_criteria,
+            prompt.bounty_id, prompt.bounty_description, prompt.acceptance_criteria,
         );
         let task_input = jfc_core::TaskInput {
             description: desc.clone(),
@@ -390,8 +388,7 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
 
         // Mechanistically verify the solution in the worktree
         if let Some(ref worktree) = prompt.worktree {
-            let verification =
-                verify_bounty_solution(worktree, &prompt.bounty_id, &solution).await;
+            let verification = verify_bounty_solution(worktree, &prompt.bounty_id, &solution).await;
             solution.compiles = Some(verification.passed);
             solution.tests_pass = Some(verification.passed);
             solution.suspicious = !verification.passed;
@@ -401,9 +398,9 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
             solution.explanation.push_str(&verification.summary);
         } else {
             solution.suspicious = true;
-            solution.explanation.push_str(
-                "\n\nMechanistic verification: no solver worktree was available.",
-            );
+            solution
+                .explanation
+                .push_str("\n\nMechanistic verification: no solver worktree was available.");
         }
 
         let summary = format!("{} bytes patch", patch.len());
@@ -498,11 +495,7 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
         }
     }
 
-    async fn adjudicate_test(
-        &self,
-        test_code: &str,
-        worktree: Option<&std::path::Path>,
-    ) -> bool {
+    async fn adjudicate_test(&self, test_code: &str, worktree: Option<&std::path::Path>) -> bool {
         let Some(wt_path) = worktree else {
             return false;
         };
@@ -517,7 +510,13 @@ impl jfc_economy::reporting::AgentInvoker for EconomyAgentInvoker {
         }
         // Run cargo test against this specific test file
         let result = tokio::process::Command::new("cargo")
-            .args(["test", "--test", "_validator_adjudication_test", "--", "--nocapture"])
+            .args([
+                "test",
+                "--test",
+                "_validator_adjudication_test",
+                "--",
+                "--nocapture",
+            ])
             .current_dir(wt_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1060,12 +1059,10 @@ pub(crate) async fn market_report_string() -> Result<String, String> {
     let orch = match market_orchestrator().try_lock() {
         Ok(g) => g,
         Err(_) => {
-            return Ok(
-                "Agent economy is busy executing a bounty cycle. \
+            return Ok("Agent economy is busy executing a bounty cycle. \
                  Spend, trust, and ledger figures will refresh once the cycle \
                  completes — re-run /market in a moment."
-                    .to_owned(),
-            );
+                .to_owned());
         }
     };
     let detector = collusion_detector()

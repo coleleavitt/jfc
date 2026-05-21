@@ -209,7 +209,7 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::TaskDone { task_id } => SerializedToolInput::TaskDone {
             task_id: task_id.clone(),
         },
-        ToolInput::TaskStop { task_id } => SerializedToolInput::TaskDone {
+        ToolInput::TaskStop { task_id } => SerializedToolInput::TaskStop {
             task_id: task_id.clone(),
         },
         ToolInput::TaskGet { task_id } => SerializedToolInput::TaskGet {
@@ -427,16 +427,20 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             key: key.clone(),
             value: value.clone(),
         },
-        ToolInput::Workflow { script, name, script_path, args, resume_from_run_id } => {
-            SerializedToolInput::Generic {
-                summary: format!(
-                    "Workflow({})",
-                    name.as_deref()
-                        .or(script_path.as_deref())
-                        .unwrap_or("inline")
-                ),
-            }
-        }
+        ToolInput::Workflow {
+            script: _,
+            name,
+            script_path,
+            args: _,
+            resume_from_run_id: _,
+        } => SerializedToolInput::Generic {
+            summary: format!(
+                "Workflow({})",
+                name.as_deref()
+                    .or(script_path.as_deref())
+                    .unwrap_or("inline")
+            ),
+        },
         ToolInput::Generic { summary } => SerializedToolInput::Generic {
             summary: summary.clone(),
         },

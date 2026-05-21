@@ -1469,8 +1469,22 @@ async fn write_store(path: &Path, store: &AccountStore) -> anyhow::Result<()> {
         fs::create_dir_all(parent).await.ok();
     }
     let body = serde_json::to_vec_pretty(store)?;
-    let tmp = path.with_extension("json.tmp");
+    // Unique temp name (pid + nanos) so concurrent writers in different
+    // processes don't collide on a fixed `.tmp` sibling and rename each
+    // other's half-written file into place.
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = path.with_extension(format!("json.tmp-{}-{nonce}", std::process::id()));
     fs::write(&tmp, &body).await?;
+    // Tokens are secrets — restrict to owner read/write before the rename
+    // publishes the file at its final path.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).await;
+    }
     fs::rename(&tmp, path).await?;
     Ok(())
 }

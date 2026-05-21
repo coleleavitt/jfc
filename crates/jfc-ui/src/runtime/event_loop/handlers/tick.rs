@@ -233,6 +233,26 @@ pub(crate) async fn handle_tick(
             ),
         );
         app.queue_background_reminder(MCP_REFRESH_REMINDER);
+        // Re-sync sidebar MCP status after catalog change.
+        if let Some(registry) = crate::tools::snapshot_mcp_registry() {
+            let servers = registry
+                .list()
+                .await
+                .iter()
+                .map(|s| crate::types::McpServerInfo {
+                    name: s.name.clone(),
+                    status: match s.status {
+                        crate::mcp::McpServerStatus::Connected => {
+                            crate::types::McpStatus::Connected
+                        }
+                        crate::mcp::McpServerStatus::Failed => crate::types::McpStatus::Error,
+                        crate::mcp::McpServerStatus::Disabled => crate::types::McpStatus::Disabled,
+                    },
+                })
+                .collect();
+            app.mcp_servers = servers;
+            needs_draw = true;
+        }
     }
 
     // v132 file-watcher reload — detect CLAUDE.md /

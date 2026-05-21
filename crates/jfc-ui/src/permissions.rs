@@ -102,7 +102,13 @@ impl RuleSet {
             });
         }
 
-        rules.extend(config.permissions.rules.iter().map(PermissionRule::from_config));
+        rules.extend(
+            config
+                .permissions
+                .rules
+                .iter()
+                .map(PermissionRule::from_config),
+        );
 
         Self {
             ceiling: config

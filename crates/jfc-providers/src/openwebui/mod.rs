@@ -1005,7 +1005,10 @@ mod tests {
         // Trailing prose survives; neither tag NOR the fabricated result leaks.
         assert!(text.contains("Here's my take:"), "prose lost: {text:?}");
         assert!(!text.contains("<tool_use>"), "tool_use leaked: {text:?}");
-        assert!(!text.contains("fabricated"), "fabricated result leaked: {text:?}");
+        assert!(
+            !text.contains("fabricated"),
+            "fabricated result leaked: {text:?}"
+        );
     }
 
     // Robust: a `<tool_call>` open tag split across two content deltas is held
@@ -1026,16 +1029,19 @@ mod tests {
         );
         // The partial tag must be held back — only "pre " is safe to emit.
         assert!(
-            !first
-                .iter()
-                .any(|e| matches!(e, StreamEvent::TextDelta { delta, .. } if delta.contains("<tool_c"))),
+            !first.iter().any(
+                |e| matches!(e, StreamEvent::TextDelta { delta, .. } if delta.contains("<tool_c"))
+            ),
             "partial open tag leaked: {first:?}"
         );
         let second = evs_stateful(
             &mut state,
             chunk(
                 ChunkDelta {
-                    content: Some("all>{\"name\":\"read\",\"arguments\":{\"path\":\"/x\"}}</tool_call>".into()),
+                    content: Some(
+                        "all>{\"name\":\"read\",\"arguments\":{\"path\":\"/x\"}}</tool_call>"
+                            .into(),
+                    ),
                     ..Default::default()
                 },
                 None,
@@ -1097,7 +1103,10 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert!(text.contains("Let me look."), "trailing prose lost: {text:?}");
+        assert!(
+            text.contains("Let me look."),
+            "trailing prose lost: {text:?}"
+        );
         assert!(!text.contains("<tool_call"), "plural XML leaked: {text:?}");
         assert!(!text.contains("<tool_name>"), "child tag leaked: {text:?}");
     }
@@ -1147,7 +1156,9 @@ mod tests {
             &mut state,
             chunk(
                 ChunkDelta {
-                    content: Some("<tool_results>\nfabricated output\n</tool_results> after".into()),
+                    content: Some(
+                        "<tool_results>\nfabricated output\n</tool_results> after".into(),
+                    ),
                     ..Default::default()
                 },
                 None,
@@ -1161,7 +1172,10 @@ mod tests {
             })
             .collect();
         assert!(text.contains("after"), "trailing prose lost: {text:?}");
-        assert!(!text.contains("fabricated"), "fabricated results leaked: {text:?}");
+        assert!(
+            !text.contains("fabricated"),
+            "fabricated results leaked: {text:?}"
+        );
         assert!(!text.contains("<tool_results>"), "wrapper leaked: {text:?}");
     }
 
@@ -2215,7 +2229,9 @@ pub(crate) fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -
                     },
                     "content": t,
                 })),
-                ProviderContent::ToolUse { id, name, input, .. } => Some(json!({
+                ProviderContent::ToolUse {
+                    id, name, input, ..
+                } => Some(json!({
                     "role": "assistant",
                     "tool_calls": [{
                         "id": id,
@@ -2953,7 +2969,11 @@ fn parse_json_tool_call(body: &str) -> Option<(String, String)> {
     let input_json = match v.get("arguments") {
         Some(serde_json::Value::String(s)) => {
             let s = s.trim();
-            if s.is_empty() { "{}".to_owned() } else { s.to_owned() }
+            if s.is_empty() {
+                "{}".to_owned()
+            } else {
+                s.to_owned()
+            }
         }
         Some(other) => serde_json::to_string(other).unwrap_or_else(|_| "{}".to_owned()),
         None => "{}".to_owned(),
@@ -3046,14 +3066,20 @@ fn drain_inline_tool_calls(
             let emit_len = buf.len() - hold;
             if emit_len > 0 {
                 let text: String = buf.drain(..emit_len).collect();
-                out.push(Ok(StreamEvent::TextDelta { index: 0, delta: text }));
+                out.push(Ok(StreamEvent::TextDelta {
+                    index: 0,
+                    delta: text,
+                }));
             }
             break;
         };
 
         if open_at > 0 {
             let text: String = buf.drain(..open_at).collect();
-            out.push(Ok(StreamEvent::TextDelta { index: 0, delta: text }));
+            out.push(Ok(StreamEvent::TextDelta {
+                index: 0,
+                delta: text,
+            }));
         }
         // `buf` now starts with `open`. Search for the matching close *after*
         // the open tag so an empty/degenerate block can't match itself.
@@ -3108,7 +3134,10 @@ fn drain_inline_tool_calls(
                 // Open tag with no close yet.
                 if flush {
                     let text: String = std::mem::take(buf);
-                    out.push(Ok(StreamEvent::TextDelta { index: 0, delta: text }));
+                    out.push(Ok(StreamEvent::TextDelta {
+                        index: 0,
+                        delta: text,
+                    }));
                 }
                 break;
             }

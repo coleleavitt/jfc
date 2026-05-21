@@ -13,13 +13,13 @@ use crate::input::filtered_models;
 pub(super) fn provider_color(provider: &str) -> Color {
     match provider {
         "anthropic" | "anthropic-oauth" => Color::Rgb(204, 120, 50), // Anthropic orange
-        "openai" | "codex" => Color::Rgb(116, 170, 156),            // OpenAI green
-        "gemini" => Color::Rgb(66, 133, 244),                       // Google blue
-        "antigravity" => Color::Rgb(52, 168, 83),                   // Antigravity green
-        "vertex" => Color::Rgb(234, 67, 53),                        // GCP red
-        "bedrock" => Color::Rgb(255, 153, 0),                       // AWS orange
-        "litellm" => Color::Rgb(168, 85, 247),                      // purple
-        "openwebui" => Color::Rgb(100, 180, 200),                   // teal
+        "openai" | "codex" => Color::Rgb(116, 170, 156),             // OpenAI green
+        "gemini" => Color::Rgb(66, 133, 244),                        // Google blue
+        "antigravity" => Color::Rgb(52, 168, 83),                    // Antigravity green
+        "vertex" => Color::Rgb(234, 67, 53),                         // GCP red
+        "bedrock" => Color::Rgb(255, 153, 0),                        // AWS orange
+        "litellm" => Color::Rgb(168, 85, 247),                       // purple
+        "openwebui" => Color::Rgb(100, 180, 200),                    // teal
         _ => Color::Gray,
     }
 }

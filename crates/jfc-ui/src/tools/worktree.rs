@@ -135,6 +135,9 @@ pub(super) async fn execute_exit_worktree(cwd: &Path) -> ExecutionResult {
 pub(super) fn find_repo_root(start: &Path) -> Option<std::path::PathBuf> {
     let mut cur = start;
     loop {
+        // `.git` may be a directory (normal clone) OR a file containing
+        // `gitdir: <path>` (linked worktrees, submodules). `exists()`
+        // already accepts both, so this naturally covers gitfile layouts.
         if cur.join(".git").exists() {
             return Some(cur.to_path_buf());
         }

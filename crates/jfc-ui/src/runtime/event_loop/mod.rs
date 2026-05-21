@@ -425,8 +425,26 @@ pub(crate) async fn run(
         let registry = crate::mcp::McpRegistry::new();
         crate::tools::register_mcp_registry(registry.clone());
         let mcp_configs = crate::config::load().mcp;
+        let tx_mcp = tx.clone();
         tokio::spawn(async move {
             crate::mcp::register_servers_from_config(&registry, &mcp_configs).await;
+            // Notify UI so the sidebar shows server status.
+            let servers = registry
+                .list()
+                .await
+                .iter()
+                .map(|s| McpServerInfo {
+                    name: s.name.clone(),
+                    status: match s.status {
+                        crate::mcp::McpServerStatus::Connected => McpStatus::Connected,
+                        crate::mcp::McpServerStatus::Failed => McpStatus::Error,
+                        crate::mcp::McpServerStatus::Disabled => McpStatus::Disabled,
+                    },
+                })
+                .collect();
+            let _ = tx_mcp
+                .send(AppEvent::Provider(ProviderEvent::McpUpdated { servers }))
+                .await;
         });
     }
 

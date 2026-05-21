@@ -493,6 +493,7 @@ pub(crate) fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             owner_filter,
         },
         SerializedToolInput::TaskDone { task_id } => ToolInput::TaskDone { task_id },
+        SerializedToolInput::TaskStop { task_id } => ToolInput::TaskStop { task_id },
         SerializedToolInput::TaskGet { task_id } => ToolInput::TaskGet { task_id },
         SerializedToolInput::TaskValidate => ToolInput::TaskValidate,
         SerializedToolInput::Skill { name, args } => ToolInput::Skill { name, args },

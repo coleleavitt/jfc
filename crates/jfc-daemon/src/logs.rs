@@ -88,13 +88,38 @@ fn last_byte_is_not_newline(path: &Path) -> bool {
     matches!(file.read(&mut buf), Ok(1) if buf[0] != b'\n')
 }
 
+/// Convert an arbitrary agent/task id into a filesystem-safe filename
+/// stem. Path separators, `..`, NUL, and other non-alphanumeric bytes
+/// would otherwise allow a crafted id to escape the agents log directory
+/// (path traversal / arbitrary file write under daemon privileges). We
+/// keep ASCII alphanumerics plus `-` and `_` verbatim and replace every
+/// other byte with `_`, so the result always stays a single path
+/// component. An empty or all-stripped id falls back to a stable token.
+fn safe_id_stem(id: &str) -> String {
+    let mut out = String::with_capacity(id.len());
+    for ch in id.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() {
+        out.push_str("unnamed");
+    }
+    out
+}
+
 pub fn background_agent_log_path(paths: &DaemonPaths, id: &str) -> PathBuf {
-    paths.log_dir.join("agents").join(format!("{id}.log"))
+    paths
+        .log_dir
+        .join("agents")
+        .join(format!("{}.log", safe_id_stem(id)))
 }
 
 pub fn background_agent_launch_path(paths: &DaemonPaths, id: &str) -> PathBuf {
     paths
         .log_dir
         .join("agents")
-        .join(format!("{id}.launch.json"))
+        .join(format!("{}.launch.json", safe_id_stem(id)))
 }

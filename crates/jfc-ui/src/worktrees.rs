@@ -320,7 +320,20 @@ pub async fn remove_worktree_async(repo_root: &Path, name: &str) -> Result<(), S
 /// Tmux session naming convention for jfc worktree agents.
 #[allow(dead_code)]
 pub fn tmux_session_name(agent_name: &str) -> String {
-    format!("jfc-{}", agent_name.replace(' ', "-").to_lowercase())
+    // Restrict to a safe subset so the name can't carry tmux control
+    // characters or shell metacharacters into later `-t <session>` args.
+    let sanitized: String = agent_name
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    format!("jfc-{sanitized}")
 }
 
 /// Check if tmux is available on the system.
@@ -392,6 +405,10 @@ pub fn create_tmux_session(agent_name: &str, worktree_path: &Path) -> Result<Str
 /// Create a split pane in an existing tmux session for log tailing.
 #[allow(dead_code)]
 pub fn tmux_add_log_pane(session_name: &str, log_path: &Path) -> Result<(), String> {
+    // Pass the command as separate argv entries (tail, -f, <path>) rather
+    // than a single "tail -f <path>" string. tmux executes a multi-arg
+    // command directly without handing it to an intermediate shell, so a
+    // path containing spaces or shell metacharacters can't be reinterpreted.
     let result = Command::new("tmux")
         .args([
             "split-window",
@@ -401,7 +418,9 @@ pub fn tmux_add_log_pane(session_name: &str, log_path: &Path) -> Result<(), Stri
             "-l",
             "30%", // 30% height for logs
             "-d",  // don't switch focus
-            &format!("tail -f {}", log_path.to_string_lossy()),
+            "tail",
+            "-f",
+            &log_path.to_string_lossy(),
         ])
         .output()
         .map_err(|e| format!("Failed to split tmux pane: {e}"))?;
