@@ -1,4 +1,4 @@
-use super::bash::execute_bash;
+use super::bash::{execute_bash, execute_bash_inner};
 use super::daemon::execute_monitor;
 use super::defs::all_tool_defs;
 use super::economy::{
@@ -27,7 +27,7 @@ use super::tasks::{
 use super::worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
 use super::*;
 
-use crate::runtime::{DiagnosticLevel, ToolOutcome};
+use crate::runtime::{AppEvent, DiagnosticLevel, ToolEvent, ToolOutcome};
 use crate::types::{ReplacementMode, ToolInput, ToolKind};
 use jfc_provider::ToolDef;
 use jfc_session::{DeletedFilter, TaskStore};
@@ -1503,6 +1503,37 @@ async fn execute_bash_strips_ansi_escape_codes_normal() {
         result.output
     );
     assert!(result.output.contains("red"), "{}", result.output);
+}
+
+#[tokio::test]
+async fn execute_bash_streaming_progress_delivers_bursty_lines_regression() {
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    let receiver = tokio::spawn(async move {
+        let mut chunks = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let AppEvent::Tool(ToolEvent::OutputChunk { chunk, .. }) = event {
+                chunks.push(chunk);
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        }
+        chunks
+    });
+
+    let result = execute_bash_inner(
+        "printf 'line1\\nline2\\nline3\\nline4\\nline5\\n'",
+        Some(5_000),
+        Path::new("."),
+        Some(("tool-stream".to_string(), tx)),
+    )
+    .await;
+
+    assert!(!result.is_error(), "{}", result.output);
+    let chunks = receiver.await.expect("receiver task");
+    assert_eq!(
+        chunks,
+        ["line1", "line2", "line3", "line4", "line5"],
+        "streaming progress dropped output chunks"
+    );
 }
 
 // ─── execute_read ─────────────────────────────────────────────────────

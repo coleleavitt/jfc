@@ -29,6 +29,8 @@ pub(crate) fn handle_stream_usage(
     // (the user's "84,284 in" with `ctx 28k / 200k` is this
     // bug). Compute the genuine delta against the per-turn
     // baseline before adding.
+    let partial_input_only =
+        output_tokens == 0 && cache_read_tokens == 0 && cache_write_tokens == 0;
     app.last_usage_input = input_tokens;
     app.last_usage_output = output_tokens;
     // v126's tokenCountWithEstimation uses input + cache_creation +
@@ -36,10 +38,19 @@ pub(crate) fn handle_stream_usage(
     // Previously this only summed input + output, under-reporting by
     // the cache contribution — which can be 50-80% of context on
     // prompt-cache-heavy sessions.
-    app.tool_ctx.approx_tokens = input_tokens as usize
+    let reported_total = input_tokens as usize
         + output_tokens as usize
         + cache_read_tokens as usize
         + cache_write_tokens as usize;
+    app.tool_ctx.approx_tokens = if partial_input_only {
+        // ResponseMetadata can arrive before full Usage and carries only
+        // input_tokens. Treat it as an early lower-bound so the context gauge
+        // doesn't visibly drop from a calibrated cache-inclusive total to an
+        // incomplete input-only value, then jump back on message_delta.
+        app.tool_ctx.approx_tokens.max(reported_total)
+    } else {
+        reported_total
+    };
     // Stamp the cumulative usage onto the streaming
     // assistant message. v126 attaches usage to each
     // assistant message (cli.js:416673) so on resume
@@ -47,7 +58,13 @@ pub(crate) fn handle_stream_usage(
     // recover the gauge total. We do the same: at
     // resume time the picker reads the last message's
     // `usage` rather than a default of 0.
-    if let Some(msg) = streaming_assistant_mut(app) {
+    if let Some(msg) = streaming_assistant_mut(app)
+        && (!partial_input_only
+            || msg
+                .usage
+                .as_ref()
+                .is_none_or(|usage| usage.total_context_tokens() <= reported_total as u64))
+    {
         msg.usage = Some(crate::types::ModelUsage {
             input_tokens: input_tokens as u64,
             output_tokens: output_tokens as u64,
@@ -89,5 +106,80 @@ pub(crate) fn handle_stream_usage(
             cache_write_tokens,
             "cache warming — writing new prefix to cache (first turn or invalidation)"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+
+    use super::*;
+    use crate::types::ChatMessage;
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    fn test_app() -> App {
+        App::new(Arc::new(TestProvider), "test-model")
+    }
+
+    #[test]
+    fn partial_input_only_usage_does_not_lower_visible_context_regression() {
+        let mut app = test_app();
+        app.tool_ctx.approx_tokens = 120_000;
+
+        handle_stream_usage(&mut app, 40_000, 0, 0, 0);
+
+        assert_eq!(app.tool_ctx.approx_tokens, 120_000);
+        assert_eq!(app.last_usage_input, 40_000);
+        assert_eq!(app.last_usage_output, 0);
+    }
+
+    #[test]
+    fn full_usage_replaces_partial_visible_context_normal() {
+        let mut app = test_app();
+        app.tool_ctx.approx_tokens = 120_000;
+        handle_stream_usage(&mut app, 40_000, 0, 0, 0);
+
+        handle_stream_usage(&mut app, 40_000, 2_000, 75_000, 5_000);
+
+        assert_eq!(app.tool_ctx.approx_tokens, 122_000);
+        assert_eq!(app.last_usage_input, 40_000);
+        assert_eq!(app.last_usage_output, 2_000);
+    }
+
+    #[test]
+    fn partial_input_only_usage_does_not_clobber_richer_message_usage_regression() {
+        let mut app = test_app();
+        app.messages.push(ChatMessage::assistant(String::new()));
+        app.streaming_assistant_idx = Some(0);
+        handle_stream_usage(&mut app, 40_000, 2_000, 75_000, 5_000);
+
+        handle_stream_usage(&mut app, 41_000, 0, 0, 0);
+
+        let usage = app.messages[0].usage.as_ref().expect("usage");
+        assert_eq!(usage.total_context_tokens(), 122_000);
     }
 }

@@ -583,6 +583,7 @@ pub(crate) async fn run(
         // ~12.5 idle redraws per second.
         let mut needs_draw = std::mem::take(&mut pending_draw);
         let mut should_quit = false;
+        let mut force_draw = false;
 
         for ev in events {
             // Tick alone doesn't dirty the screen; everything else does. The
@@ -595,6 +596,11 @@ pub(crate) async fn run(
             match ev {
                 // ── Terminal input (key, paste, mouse) ───────────────────
                 AppEvent::Ui(UiEvent::Term(ev)) => {
+                    // Human input should echo immediately. Stream/tool events
+                    // can be coalesced behind FRAME_BUDGET, but deferring a
+                    // keypress right after a session-load draw makes the first
+                    // typed character appear "missing" until the next key/tick.
+                    force_draw = true;
                     if handlers::input::handle_term_event(&mut app, ev, &tx).await? {
                         should_quit = true;
                         break;
@@ -834,7 +840,7 @@ pub(crate) async fn run(
         }
 
         let elapsed_since_draw = last_draw.elapsed();
-        if needs_draw && elapsed_since_draw >= FRAME_BUDGET {
+        if needs_draw && (force_draw || elapsed_since_draw >= FRAME_BUDGET) {
             // `terminal.draw` flushes stdout synchronously; `block_in_place`
             // tells the multi-threaded runtime to migrate other tasks off this
             // worker so they keep running while we hold the I/O.

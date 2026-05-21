@@ -35,12 +35,14 @@ where
                 buf.push_str(&safe);
                 buf.push('\n');
                 if let Some((tool_id, tx)) = &progress {
-                    let _ = tx.try_send(crate::runtime::AppEvent::Tool(
-                        crate::runtime::ToolEvent::OutputChunk {
-                            tool_id: crate::ids::ToolId::from(tool_id.clone()),
-                            chunk: safe,
-                        },
-                    ));
+                    let _ = tx
+                        .send(crate::runtime::AppEvent::Tool(
+                            crate::runtime::ToolEvent::OutputChunk {
+                                tool_id: crate::ids::ToolId::from(tool_id.clone()),
+                                chunk: safe,
+                            },
+                        ))
+                        .await;
                 }
             }
             Ok(None) | Err(_) => break,

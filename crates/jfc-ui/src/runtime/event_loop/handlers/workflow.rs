@@ -134,10 +134,7 @@ fn ensure_progress<'a>(
     task_id: &str,
 ) -> &'a mut WorkflowTaskProgress {
     if bt.workflow_progress.is_none() {
-        let run_id = task_id
-            .strip_prefix("bgwf_")
-            .unwrap_or(task_id)
-            .to_owned();
+        let run_id = task_id.strip_prefix("bgwf_").unwrap_or(task_id).to_owned();
         let meta = WorkflowMeta {
             name: bt.description.clone(),
             description: String::new(),
