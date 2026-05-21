@@ -366,6 +366,22 @@ pub(super) async fn drain_stream_events(
                     .await;
                 return None;
             }
+            StreamEvent::FallbackTriggered(info) => {
+                tracing::info!(
+                    target: "jfc::stream",
+                    original = %info.original_model,
+                    fallback = %info.fallback_model,
+                    reason = %info.reason,
+                    "model fallback triggered"
+                );
+                let _ = tx
+                    .send(AppEvent::Stream(RuntimeStreamEvent::FallbackTriggered {
+                        original_model: info.original_model.to_string(),
+                        fallback_model: info.fallback_model.to_string(),
+                        reason: info.reason,
+                    }))
+                    .await;
+            }
         }
     }
 

@@ -427,6 +427,16 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             key: key.clone(),
             value: value.clone(),
         },
+        ToolInput::Workflow { script, name, script_path, args, resume_from_run_id } => {
+            SerializedToolInput::Generic {
+                summary: format!(
+                    "Workflow({})",
+                    name.as_deref()
+                        .or(script_path.as_deref())
+                        .unwrap_or("inline")
+                ),
+            }
+        }
         ToolInput::Generic { summary } => SerializedToolInput::Generic {
             summary: summary.clone(),
         },

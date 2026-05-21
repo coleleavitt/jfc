@@ -347,6 +347,27 @@ impl App {
     }
 
     pub fn tool_needs_approval(&self, tool: &ToolCall) -> bool {
+        // Fast path: when running inside a landlock sandbox, permission
+        // prompts add friction without security value — auto-approve
+        // unless the user has explicitly opted out via config.
+        if crate::is_sandbox_active() {
+            let auto_allow = crate::config::load()
+                .permission_automation
+                .as_ref()
+                .map(|pa| pa.auto_allow_if_sandboxed)
+                .unwrap_or(true);
+            if auto_allow {
+                tracing::debug!(
+                    target: "jfc::app",
+                    tool_kind = tool.kind.label(),
+                    result = false,
+                    reason = "sandbox_active",
+                    "tool_needs_approval"
+                );
+                return false;
+            }
+        }
+
         // Permission mode takes priority
         match self.permission_mode.auto_approves(tool) {
             PermissionDecision::Approved => return false,

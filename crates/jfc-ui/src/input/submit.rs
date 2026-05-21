@@ -403,14 +403,39 @@ pub(super) async fn handle_submit(
         return Ok(());
     }
 
+    // Keyword scan: detect and strip magic keywords (e.g. "ultrawork")
+    // from the user's input before it becomes a message. The stripped
+    // text is what gets stored in the conversation; the keyword's effect
+    // is delivered via a system-reminder injected after the message push.
+    let keyword_result = crate::keywords::scan_and_strip(&text);
+    let display_text = if keyword_result.ultrawork {
+        tracing::info!(
+            target: "jfc::keywords",
+            keyword = "ultrawork",
+            "detected ultrawork keyword — stripping and injecting reminder"
+        );
+        keyword_result.text.clone()
+    } else {
+        text.clone()
+    };
+
     let assistant_idx = app.messages.len() + 1;
-    let mut user_msg = ChatMessage::user(text.clone());
+    let mut user_msg = ChatMessage::user(display_text.clone());
     // Combine pasted images ([Image #N] refs) with @-mention binary files.
     let mut all_attachments = submit_attachments;
     all_attachments.extend(mention_attachments);
     user_msg.attachments = all_attachments;
     app.messages.push(user_msg);
     app.tool_ctx.total_user_turns += 1;
+
+    // Ultrawork keyword: inject the system-reminder telling the model
+    // to use the Workflow tool.
+    if keyword_result.ultrawork {
+        crate::system_reminder::append_to_last_user(
+            &mut app.messages,
+            crate::keywords::ULTRAWORK_REMINDER,
+        );
+    }
 
     // Inject background-agent completion notification if any detached
     // agents finished since the last user turn. The counter is
@@ -646,23 +671,27 @@ pub(super) async fn handle_submit(
 
     // wg-async: stream_response holds the SSE connection + tx sender —
     // cancel has to thread through so ESC×2 can drop them coherently.
+    // Park the *inner* task's abort handle on App so the watchdog can
+    // forcefully abort the actual stream task (see App::active_stream_handle).
+    // Previously this path stored no handle at all, so a wedged normal-submit
+    // stream was uninterruptible by the watchdog's forceful-abort escalation.
     let tx_guard = tx.clone();
-    tokio::spawn(async move {
-        let result = tokio::spawn(async move {
-            crate::stream::stream_response(
-                provider,
-                messages,
-                model,
-                tx,
-                interrupt,
-                cancel,
-                None,
-                crate::runtime::StreamRequestOverrides::default(),
-            )
-            .await;
-        })
+    let inner = tokio::spawn(async move {
+        crate::stream::stream_response(
+            provider,
+            messages,
+            model,
+            tx,
+            interrupt,
+            cancel,
+            None,
+            crate::runtime::StreamRequestOverrides::default(),
+        )
         .await;
-        if let Err(join_err) = result {
+    });
+    app.active_stream_handle = Some(inner.abort_handle());
+    tokio::spawn(async move {
+        if let Err(join_err) = inner.await {
             let msg = if join_err.is_panic() {
                 format!("stream task panicked: {join_err}")
             } else {

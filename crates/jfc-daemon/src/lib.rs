@@ -26,7 +26,7 @@ pub use registry::{
     record_background_agent_log, record_background_agent_progress, record_background_agent_started,
     request_background_agent_cancel, wait_background_agent_cli,
 };
-pub use runtime::{Daemon, fire_cron_cli, list_string, run_daemon, status_string, stop_daemon};
+pub use runtime::{Daemon, WorkerInfo, fire_cron_cli, list_string, run_daemon, status_string, stop_daemon};
 pub use state::{
     BackgroundAgentInfo, BackgroundAgentLaunch, BackgroundAgentStatus, DaemonPaths, DaemonState,
     ScheduledWakeup, SessionId, SessionInfo, SessionStatus, TERMINAL_AGENT_CAP,

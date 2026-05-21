@@ -465,13 +465,28 @@ pub(crate) async fn maybe_resume_after_background(app: &mut App, tx: &EventSende
         && app.pending_approval.is_none()
         && app.approval_queue.is_empty()
         && !app.is_streaming
+        && app.compacting_started_at.is_none()
         && stream::should_continue_loop(&app.messages)
     {
-        tracing::info!(
-            target: "jfc::task",
-            "all background tasks terminal — triggering agentic continuation"
-        );
-        stream::continue_agentic_loop(app, tx).await;
+        // Respect the same policy gates as the post-tool AllComplete path
+        // (handlers/tools.rs): never continue while a compaction is in flight
+        // (the compaction-done handler resumes), and yield to a queued user
+        // prompt rather than silently continuing the agentic loop ahead of
+        // the user's steering input.
+        if app.queued_prompts.iter().any(|queued| !queued.is_meta) {
+            tracing::info!(
+                target: "jfc::task",
+                queued = app.queued_prompts.len(),
+                "all background tasks terminal — yielding to queued user prompt"
+            );
+            crate::runtime::drain_queued_prompts(app, tx).await;
+        } else {
+            tracing::info!(
+                target: "jfc::task",
+                "all background tasks terminal — triggering agentic continuation"
+            );
+            stream::continue_agentic_loop(app, tx).await;
+        }
     } else if app.turn_started_at.is_some()
         && app.pending_tool_calls.is_empty()
         && !app.is_streaming

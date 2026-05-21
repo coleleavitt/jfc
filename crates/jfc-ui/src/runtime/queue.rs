@@ -72,11 +72,19 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
         }
     }
 
-    if !app.queued_prompts.is_empty() {
-        Box::pin(drain_queued_prompts(app, tx)).await;
-    }
-
+    // Meta (slash) commands run above may themselves enqueue more prompts.
+    // Only recurse to drain those when THIS batch produced no stream of its
+    // own (i.e. every entry was meta). When we *do* have non-meta text to
+    // stream, we stage exactly one combined stream below and intentionally
+    // leave any newly-enqueued prompts in the queue — they drain after this
+    // stream finishes (stream_done re-drains on EndTurn). Recursing here while
+    // also staging our own stream below would start a *second* concurrent
+    // stream into the same conversation buffer, clobbering
+    // `streaming_assistant_idx` so the live stream's chunks can't attach.
     if non_meta_texts.is_empty() {
+        if !app.queued_prompts.is_empty() {
+            Box::pin(drain_queued_prompts(app, tx)).await;
+        }
         return;
     }
 
@@ -162,17 +170,20 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
         background_reminders: app.take_background_reminders(),
         ..Default::default()
     };
-    // Park the outer handle on App so the watchdog can forcefully
-    // abort a wedged stream task (see App::active_stream_handle).
-    let handle = tokio::spawn(async move {
-        let result = tokio::spawn(async move {
-            stream::stream_response(
-                provider, messages, model, tx_spawn, interrupt, cancel, None, overrides,
-            )
-            .await;
-        })
+    // Park the *inner* task's abort handle on App so the watchdog can
+    // forcefully abort the actual stream_response task (see
+    // App::active_stream_handle). Aborting the outer supervisor would only
+    // drop its JoinHandle to the inner task, detaching rather than cancelling
+    // it.
+    let inner = tokio::spawn(async move {
+        stream::stream_response(
+            provider, messages, model, tx_spawn, interrupt, cancel, None, overrides,
+        )
         .await;
-        if let Err(join_err) = result {
+    });
+    app.active_stream_handle = Some(inner.abort_handle());
+    tokio::spawn(async move {
+        if let Err(join_err) = inner.await {
             let msg = if join_err.is_panic() {
                 format!("stream task panicked: {join_err}")
             } else {
@@ -183,5 +194,4 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
                 .await;
         }
     });
-    app.active_stream_handle = Some(handle);
 }

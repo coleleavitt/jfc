@@ -70,6 +70,17 @@ pub(crate) async fn handle_tick(
         }
         if sync_detached_background_tasks_from_daemon(app) {
             needs_draw = true;
+            // A detached agent reaching a terminal state via daemon sync (not
+            // an AppEvent) must be able to wake a parked leader. The agentic
+            // resume hook normally fires from the TaskCompleted/TaskFailed
+            // AppEvent handlers (handlers/task.rs), but detached agents never
+            // emit those events back to the UI — only the JSON-file sync sees
+            // their completion. Without this call a leader that delegated all
+            // its remaining work to detached agents would stay parked until
+            // the user sends another prompt. Resume first so a still-active
+            // turn picks up its continuation before the factory considers new
+            // queue work.
+            super::task::maybe_resume_after_background(app, tx).await;
             // Re-evaluate the task factory after detached
             // agents transition. Without this,
             // maybe_continue_task_factory's

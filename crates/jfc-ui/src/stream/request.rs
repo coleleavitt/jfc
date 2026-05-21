@@ -41,6 +41,25 @@ fn last_user_text(messages: &[ProviderMessage]) -> Option<String> {
     None
 }
 
+/// True when the conversation is in the middle of an agentic tool loop —
+/// i.e. the most recent provider message carries `ToolResult` blocks the
+/// model still has to react to. On a post-tool continuation the trailing
+/// user turn holds ONLY tool results (no plain text), so `last_user_text`
+/// skips it and walks back to an older prompt; if that older prompt was
+/// informational ("what is X"), `user_text_requests_action` returns false
+/// and the tool catalog is wrongly cleared — leaving the model with zero
+/// tools mid-loop, which it answers with raw `<tool_calls>` XML and a
+/// max-token stall. Tools must NEVER be suppressed while tool results are
+/// outstanding: the model is continuing work, not starting a new prose Q&A.
+fn conversation_is_mid_tool_loop(messages: &[ProviderMessage]) -> bool {
+    let Some(last) = messages.last() else {
+        return false;
+    };
+    last.content
+        .iter()
+        .any(|c| matches!(c, ProviderContent::ToolResult { .. }))
+}
+
 fn user_text_requests_action(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
     let normalized = lower.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -455,10 +474,17 @@ Do not use a colon before tool calls.";
         let _ = before;
     }
 
-    let action_expected = last_user_text(messages)
-        .as_deref()
-        .map(user_text_requests_action)
-        .unwrap_or(false);
+    // A post-tool continuation re-sends the conversation with the trailing
+    // user turn carrying only tool_result blocks. The model is mid-loop and
+    // MUST keep its tools — treat that as action-expected regardless of what
+    // the last *text* prompt looked like, otherwise the catalog is stripped
+    // and the model emits raw <tool_calls> XML until it hits max tokens.
+    let mid_tool_loop = conversation_is_mid_tool_loop(messages);
+    let action_expected = mid_tool_loop
+        || last_user_text(messages)
+            .as_deref()
+            .map(user_text_requests_action)
+            .unwrap_or(false);
     if !action_expected && !advertised_tools.is_empty() {
         tracing::debug!(
             target: "jfc::stream::tools",
@@ -527,7 +553,48 @@ Do not use a colon before tool calls.";
 
 #[cfg(test)]
 mod tests {
-    use super::user_text_requests_action;
+    use super::{conversation_is_mid_tool_loop, user_text_requests_action};
+    use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole};
+
+    fn user_text(s: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::User,
+            content: vec![ProviderContent::Text(s.into())],
+        }
+    }
+
+    fn user_tool_result(id: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::User,
+            content: vec![ProviderContent::ToolResult {
+                tool_use_id: id.into(),
+                content: "ok".into(),
+                is_error: false,
+            }],
+        }
+    }
+
+    // Normal: a post-tool continuation ends with a user message carrying
+    // tool_result blocks — that's mid-loop, so tools must stay advertised.
+    #[test]
+    fn mid_tool_loop_detected_on_trailing_tool_result_normal() {
+        let msgs = vec![user_text("what is ownership in rust"), user_tool_result("toolu_1")];
+        assert!(conversation_is_mid_tool_loop(&msgs));
+    }
+
+    // Robust: a conversation whose last turn is plain user text is NOT
+    // mid-loop — the normal action-intent heuristic governs tool suppression.
+    #[test]
+    fn plain_trailing_user_text_is_not_mid_loop_robust() {
+        let msgs = vec![user_text("explain how borrowing works")];
+        assert!(!conversation_is_mid_tool_loop(&msgs));
+    }
+
+    // Robust: empty conversation is never mid-loop.
+    #[test]
+    fn empty_conversation_is_not_mid_loop_robust() {
+        assert!(!conversation_is_mid_tool_loop(&[]));
+    }
 
     #[test]
     fn action_intent_detects_toolish_prompts_normal() {

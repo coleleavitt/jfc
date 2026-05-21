@@ -8,12 +8,10 @@ pub(super) async fn cmd_workflow(
     text: &str,
     tx: Option<&mpsc::Sender<AppEvent>>,
 ) {
-    // v132 workflow templates. `/workflow` lists; `/workflow run <name>`
-    // queues each step's prompt as a follow-up Submit so the leader
-    // dispatches them in order. `parallel = true` steps batch into
-    // a single multi-Task fan-out turn (the leader sees all the
-    // prompts in one user message and is told to use parallel
-    // dispatch).
+    // `/workflow` (or `/workflows`) lists available JS workflows + running
+    // workflow tasks. `/workflow run <name>` injects a `Workflow({name})`
+    // request so the model invokes the real Workflow tool (deterministic JS
+    // orchestration). Legacy TOML step-templates are also surfaced.
     app.messages.push(ChatMessage::user(text.to_owned()));
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let arg = parts.get(1).copied().unwrap_or("").trim();
@@ -22,22 +20,8 @@ pub(super) async fn cmd_workflow(
     let rest: String = sub.collect::<Vec<_>>().join(" ");
     match verb {
         "" | "list" => {
-            let names = crate::workflows::list(&cwd);
-            if names.is_empty() {
-                app.messages.push(ChatMessage::assistant(
-                            "No workflows found. Create `.jfc/workflows/<name>.toml` with a TOML body containing `[[step]]` tables.".into(),
-                        ));
-            } else {
-                let mut body = String::from("**Available workflows:**\n\n");
-                for name in &names {
-                    match crate::workflows::load(&cwd, name) {
-                        Ok(w) => body.push_str(&crate::workflows::render_summary(name, &w)),
-                        Err(e) => body.push_str(&format!("- `{name}` (parse error: {e})\n")),
-                    }
-                }
-                body.push_str("\nRun with `/workflow run <name>`.");
-                app.messages.push(ChatMessage::assistant(body));
-            }
+            app.messages
+                .push(ChatMessage::assistant(render_workflow_listing(app, &cwd)));
         }
         "run" => {
             if rest.is_empty() {
@@ -47,39 +31,36 @@ pub(super) async fn cmd_workflow(
                 ));
                 return;
             }
-            match crate::workflows::load(&cwd, &rest) {
-                Err(e) => {
-                    app.messages.push(ChatMessage::assistant(format!(
-                        "Failed to load workflow `{rest}`: {e}"
-                    )));
-                }
-                Ok(workflow) => {
-                    // Queue each step as a Submit so the leader sees
-                    // them sequentially. Parallel steps would need
-                    // a multi-Task aggregator — flag for now and
-                    // dispatch sequentially as a stop-gap.
-                    if let Some(tx) = tx {
-                        for step in workflow.step {
-                            let prompt = format!(
-                                "Use the `{}` agent (Task tool) for this step:\n\n{}",
-                                step.agent, step.prompt
-                            );
-                            let _ = tx
-                                .send(crate::runtime::AppEvent::Ui(
-                                    crate::runtime::UiEvent::Submit(prompt),
-                                ))
-                                .await;
-                        }
-                        app.messages.push(ChatMessage::assistant(format!(
-                            "Workflow `{rest}` queued — steps will fire sequentially."
-                        )));
-                    } else {
-                        app.messages.push(ChatMessage::assistant(
-                                    "Workflow runner needs the event channel; called from a context that doesn't have one.".into(),
-                                ));
-                    }
-                }
+            // Resolve the name against the registry (built-in/user/project).
+            if crate::workflows::resolve(&cwd, &rest).is_none() {
+                app.messages.push(ChatMessage::assistant(format!(
+                    "Workflow `{rest}` not found. List available workflows with `/workflow`."
+                )));
+                return;
             }
+            let Some(tx) = tx else {
+                app.messages.push(ChatMessage::assistant(
+                    "Workflow runner needs the event channel; called from a context without one."
+                        .into(),
+                ));
+                return;
+            };
+            // Inject a prompt instructing the model to call the Workflow tool.
+            // This is the slash-command bridge: the command doesn't run the
+            // workflow directly — it tells the model to invoke it, so the
+            // normal tool-permission + background-task path applies.
+            let prompt = format!(
+                "Run the saved workflow named \"{rest}\" by calling the Workflow tool: \
+                 Workflow({{ name: \"{rest}\" }}). Do not describe it — call the tool."
+            );
+            let _ = tx
+                .send(crate::runtime::AppEvent::Ui(
+                    crate::runtime::UiEvent::Submit(prompt),
+                ))
+                .await;
+            app.messages.push(ChatMessage::assistant(format!(
+                "Dispatching workflow `{rest}` via the Workflow tool…"
+            )));
         }
         other => {
             app.messages.push(ChatMessage::assistant(format!(
@@ -87,6 +68,70 @@ pub(super) async fn cmd_workflow(
             )));
         }
     }
+}
+
+/// Build the `/workflow` listing: running workflow tasks, then available
+/// named workflows (registry), then legacy TOML templates.
+fn render_workflow_listing(app: &App, cwd: &std::path::Path) -> String {
+    use jfc_core::ExecutionStatus;
+    let mut body = String::new();
+
+    // ── running workflow background tasks ───────────────────────────────
+    let running: Vec<&crate::app::BackgroundTask> = app
+        .background_tasks
+        .values()
+        .filter(|bt| {
+            bt.task_id.as_str().starts_with("bgwf_") && bt.status == ExecutionStatus::Running
+        })
+        .collect();
+    if !running.is_empty() {
+        body.push_str("**Running workflows:**\n\n");
+        for bt in running {
+            let elapsed = bt.started_at.elapsed().as_secs();
+            body.push_str(&format!(
+                "- `{}` — {} ({}s, {} tools)\n",
+                bt.task_id.as_str(),
+                bt.description,
+                elapsed,
+                bt.tool_use_count,
+            ));
+        }
+        body.push('\n');
+    }
+
+    // ── available named workflows (registry) ────────────────────────────
+    let registry = crate::workflows::discover(cwd);
+    if !registry.is_empty() {
+        body.push_str("**Available workflows** (run with `/workflow run <name>`):\n\n");
+        for wf in &registry {
+            let src = match wf.source {
+                crate::workflows::WorkflowSource::BuiltIn => "built-in",
+                crate::workflows::WorkflowSource::User => "user",
+                crate::workflows::WorkflowSource::Project => "project",
+            };
+            body.push_str(&format!("- `{}` ({src}) — {}\n", wf.name, wf.description));
+        }
+        body.push('\n');
+    }
+
+    // ── legacy TOML step templates ──────────────────────────────────────
+    let legacy = crate::workflows::list(cwd);
+    if !legacy.is_empty() {
+        body.push_str("**Legacy TOML templates** (`.jfc/workflows/*.toml`):\n\n");
+        for name in &legacy {
+            body.push_str(&format!("- `{name}`\n"));
+        }
+        body.push('\n');
+    }
+
+    if body.is_empty() {
+        body.push_str(
+            "No workflows found. Built-in workflows (bughunt, review-branch, deep-research) \
+             are available, or create `.jfc/workflows/<name>.js` starting with \
+             `export const meta = { name, description }`.",
+        );
+    }
+    body
 }
 
 pub(super) async fn cmd_login(

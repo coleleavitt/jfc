@@ -79,24 +79,26 @@ pub(crate) fn restart_stream_in_place_with_overrides(
     let cancel = app.cancel_token.clone();
     let prev_msg_id = app.last_response_id.take();
     let tx_guard = tx.clone();
-    // Track the outer JoinHandle so the watchdog can forcefully abort
-    // it if the inner stream task gets stuck in a blocking syscall.
-    let handle = tokio::spawn(async move {
-        let result = tokio::spawn(async move {
-            stream::stream_response(
-                provider,
-                messages,
-                model,
-                tx_spawn,
-                interrupt,
-                cancel,
-                prev_msg_id,
-                overrides,
-            )
-            .await;
-        })
+    // Track the *inner* task's abort handle so the watchdog can forcefully
+    // abort the actual stream task if it gets stuck in a blocking syscall.
+    // Aborting the outer supervisor would only drop its JoinHandle to the
+    // inner task, detaching rather than cancelling it.
+    let inner = tokio::spawn(async move {
+        stream::stream_response(
+            provider,
+            messages,
+            model,
+            tx_spawn,
+            interrupt,
+            cancel,
+            prev_msg_id,
+            overrides,
+        )
         .await;
-        if let Err(join_err) = result {
+    });
+    app.active_stream_handle = Some(inner.abort_handle());
+    tokio::spawn(async move {
+        if let Err(join_err) = inner.await {
             let msg = if join_err.is_panic() {
                 format!("stream task panicked: {join_err}")
             } else {
@@ -107,5 +109,4 @@ pub(crate) fn restart_stream_in_place_with_overrides(
                 .await;
         }
     });
-    app.active_stream_handle = Some(handle);
 }

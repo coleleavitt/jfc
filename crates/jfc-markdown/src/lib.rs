@@ -568,7 +568,14 @@ pub fn strip_inline_tool_xml(text: &str) -> String {
         out.push_str(rest);
         out
     }
-    let s = drop_block(text, "<tool_call>", "</tool_call>", "⟪tool_call⟫");
+    // Collapse the plural wrappers FIRST — `<tool_calls>…</tool_calls>` /
+    // `<tool_results>…</tool_results>` (LiteLLM/Bedrock multi-call shape).
+    // Stripping the whole wrapper before the singular pass means the inner
+    // `<tool_call>`/`<tool_result>` children are consumed in one marker rather
+    // than leaving a dangling `</tool_calls>` behind.
+    let s = drop_block(text, "<tool_calls>", "</tool_calls>", "⟪tool_call⟫");
+    let s = drop_block(&s, "<tool_results>", "</tool_results>", "⟪tool_result⟫");
+    let s = drop_block(&s, "<tool_call>", "</tool_call>", "⟪tool_call⟫");
     // Bedrock Claude via LiteLLM emits Anthropic-style `<tool_use>` instead of
     // `<tool_call>`; strip it too so it doesn't render as a raw JSON wall.
     let s = drop_block(&s, "<tool_use>", "</tool_use>", "⟪tool_call⟫");
@@ -662,10 +669,30 @@ mod tool_xml_strip_tests {
 
     #[test]
     fn does_not_strip_lookalike_text_robust() {
-        // Substring "<tool_" inside a code block or prose shouldn't trigger
-        // unless the full opening tag is present.
-        let s = strip_inline_tool_xml("Use the <tool_calls> block in the API");
-        assert_eq!(s, "Use the <tool_calls> block in the API");
+        // A bare substring without a full opening tag must not trigger —
+        // mentioning the bare word or a partial `<tool_cal` fragment in prose
+        // stays verbatim.
+        let s = strip_inline_tool_xml("The tool_calls array in the OpenAI API");
+        assert_eq!(s, "The tool_calls array in the OpenAI API");
+    }
+
+    #[test]
+    fn strips_plural_wrapper_with_child_tags_normal() {
+        // The live LiteLLM/Bedrock plural shape — a complete
+        // `<tool_calls>…</tool_calls>` wrapper with `<tool_name>`/`<tool_input>`
+        // children — collapses to a single marker (belt-and-suspenders for
+        // whatever the provider interceptor misses).
+        let s = strip_inline_tool_xml(concat!(
+            "<tool_calls>\n<tool_call><tool_name>Bash</tool_name>",
+            "<tool_input>{\"command\":\"ls\"}</tool_input></tool_call>\n</tool_calls> after"
+        ));
+        assert_eq!(s, "⟪tool_call⟫ after");
+    }
+
+    #[test]
+    fn strips_plural_tool_results_wrapper_normal() {
+        let s = strip_inline_tool_xml("<tool_results>\nfabricated\n</tool_results> done");
+        assert_eq!(s, "⟪tool_result⟫ done");
     }
 
     #[test]
@@ -1627,10 +1654,6 @@ mod tests {
             .iter()
             .map(|s| s.content.as_ref())
             .collect::<String>()
-    }
-
-    fn first_line_with(text: &str, lines: &[Line]) -> Option<usize> {
-        lines.iter().position(|l| line_text(l).contains(text))
     }
 
     // ── Plain text ────────────────────────────────────────────────────────

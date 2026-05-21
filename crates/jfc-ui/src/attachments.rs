@@ -96,6 +96,76 @@ pub fn read_pdf_file(path: &std::path::Path) -> Result<Attachment, String> {
     })
 }
 
+/// Threshold: PDFs with more pages than this get a lightweight
+/// reference instead of being loaded in full. Saves context tokens
+/// for large documents — the model gets metadata and can request
+/// specific pages later via Read with offset/limit.
+/// Mirrors Claude Code v146's `tryGetPDFReference` behaviour.
+const PDF_REFERENCE_PAGE_THRESHOLD: usize = 10;
+
+/// Estimated bytes per page when `pdfinfo` is unavailable. ~100 KB
+/// is a conservative average across typical mixed-content PDFs.
+const BYTES_PER_PAGE_ESTIMATE: u64 = 102_400;
+
+/// Try to get the page count of a PDF via `pdfinfo` (poppler-utils).
+/// Falls back to a size-based estimate when `pdfinfo` is unavailable
+/// or its output can't be parsed.
+pub async fn pdf_page_count(path: &std::path::Path) -> usize {
+    match tokio::process::Command::new("pdfinfo")
+        .arg(path)
+        .output()
+        .await
+    {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if let Some(rest) = line.strip_prefix("Pages:") {
+                    if let Ok(n) = rest.trim().parse::<usize>() {
+                        return n;
+                    }
+                }
+            }
+            // pdfinfo ran but no Pages line — estimate from size.
+            estimate_pdf_pages(path)
+        }
+        _ => estimate_pdf_pages(path),
+    }
+}
+
+/// Estimate page count from file size. Rounds up.
+fn estimate_pdf_pages(path: &std::path::Path) -> usize {
+    std::fs::metadata(path)
+        .map(|m| {
+            ((m.len() + BYTES_PER_PAGE_ESTIMATE - 1) / BYTES_PER_PAGE_ESTIMATE).max(1) as usize
+        })
+        .unwrap_or(1)
+}
+
+/// Returns a formatted reference string for large PDFs (more than
+/// [`PDF_REFERENCE_PAGE_THRESHOLD`] pages), or `None` if the PDF is
+/// small enough to be read in full.
+///
+/// When `Some(...)` is returned the caller should use this string
+/// instead of loading the full document — the model gets enough
+/// metadata to decide whether to request specific pages via
+/// Read with offset/limit.
+pub async fn try_pdf_reference(path: &std::path::Path) -> Option<String> {
+    let ext = path.extension()?.to_str()?;
+    if !ext.eq_ignore_ascii_case("pdf") {
+        return None;
+    }
+    let page_count = pdf_page_count(path).await;
+    if page_count <= PDF_REFERENCE_PAGE_THRESHOLD {
+        return None;
+    }
+    let file_size = std::fs::metadata(path).ok()?.len();
+    let display_path = path.display();
+    Some(format!(
+        "[PDF Reference: {display_path} — {page_count} pages, {file_size} bytes. \
+         Use Read with offset/limit to access specific page ranges.]",
+    ))
+}
+
 /// Anthropic's per-image base64 payload cap. Their docs say "5 MB
 /// when base64-encoded", which means the *raw* bytes must be ≤ ~3.75
 /// MiB. We use a slightly conservative 3.5 MiB here so a small JSON

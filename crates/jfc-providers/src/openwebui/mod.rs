@@ -1056,6 +1056,115 @@ mod tests {
         assert_eq!(done.1, "{\"path\":\"/x\"}");
     }
 
+    // Normal: the live LiteLLM/Bedrock plural shape from
+    // ses_20260521_062804.json — `<tool_calls><tool_call><tool_name>NAME
+    // </tool_name><tool_input>{json}</tool_input></tool_call></tool_calls>`.
+    // The wrapper is intercepted and one ToolDone is synthesized with the
+    // child-tag name + input; the raw XML never leaks into text.
+    #[test]
+    fn inline_plural_wrapper_child_tags_becomes_tool_done_normal() {
+        let mut state = OpenAiStreamState::default();
+        let evs = evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    content: Some(
+                        "\n<tool_calls>\n<tool_call><tool_name>Bash</tool_name>\n<tool_input>{\"command\": \"ls\"}</tool_input></tool_call>\n</tool_calls>\n\nLet me look."
+                            .into(),
+                    ),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+        let done = evs
+            .iter()
+            .find_map(|e| match e {
+                StreamEvent::ToolDone {
+                    tool_name,
+                    input_json,
+                    ..
+                } => Some((tool_name.clone(), input_json.clone())),
+                _ => None,
+            })
+            .expect("ToolDone synthesized from plural-wrapper XML");
+        assert_eq!(done.0, "Bash");
+        assert_eq!(done.1, "{\"command\": \"ls\"}");
+        let text: String = evs
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::TextDelta { delta, .. } => Some(delta.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(text.contains("Let me look."), "trailing prose lost: {text:?}");
+        assert!(!text.contains("<tool_call"), "plural XML leaked: {text:?}");
+        assert!(!text.contains("<tool_name>"), "child tag leaked: {text:?}");
+    }
+
+    // Normal: a single `<tool_calls>` wrapper holding TWO `<tool_call>`
+    // children yields TWO synthesized ToolDone events (parallel calls in one
+    // turn — the exact shape that stalled in the live session).
+    #[test]
+    fn inline_plural_wrapper_multiple_children_normal() {
+        let mut state = OpenAiStreamState::default();
+        let evs = evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    content: Some(
+                        "<tool_calls><tool_call><tool_name>Read</tool_name><tool_input>{\"file_path\":\"/a\"}</tool_input></tool_call><tool_call><tool_name>Read</tool_name><tool_input>{\"file_path\":\"/b\"}</tool_input></tool_call></tool_calls>"
+                            .into(),
+                    ),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+        let dones: Vec<(String, String)> = evs
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::ToolDone {
+                    tool_name,
+                    input_json,
+                    ..
+                } => Some((tool_name.clone(), input_json.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(dones.len(), 2, "expected 2 ToolDone, got {dones:?}");
+        assert_eq!(dones[0], ("Read".into(), "{\"file_path\":\"/a\"}".into()));
+        assert_eq!(dones[1], ("Read".into(), "{\"file_path\":\"/b\"}".into()));
+    }
+
+    // Robust: an inline `<tool_results>` echo (plural) is suppressed exactly
+    // like the singular `<tool_result>` — the model's fabricated results must
+    // never feed back as truth.
+    #[test]
+    fn inline_plural_tool_results_suppressed_robust() {
+        let mut state = OpenAiStreamState::default();
+        let evs = evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    content: Some("<tool_results>\nfabricated output\n</tool_results> after".into()),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+        let text: String = evs
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::TextDelta { delta, .. } => Some(delta.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(text.contains("after"), "trailing prose lost: {text:?}");
+        assert!(!text.contains("fabricated"), "fabricated results leaked: {text:?}");
+        assert!(!text.contains("<tool_results>"), "wrapper leaked: {text:?}");
+    }
+
     // Robust: plain content with no inline tags streams through verbatim — the
     // interceptor must not hold back or alter ordinary text.
     #[test]
@@ -2773,6 +2882,13 @@ const INLINE_TAGS: &[(&str, &str, bool)] = &[
     ("<tool_use>", "</tool_use>", true),
     ("<tool_call>", "</tool_call>", true),
     ("<tool_result>", "</tool_result>", false),
+    // Plural wrapper emitted by LiteLLM/Bedrock when a model produces several
+    // calls in one turn: `<tool_calls><tool_call>…</tool_call>…</tool_calls>`.
+    // The whole wrapper is consumed as a single block; `parse_inline_tool_call`
+    // splits the inner `<tool_call>` children. The matching `<tool_results>`
+    // echo is suppressed like the singular `<tool_result>`.
+    ("<tool_calls>", "</tool_calls>", true),
+    ("<tool_results>", "</tool_results>", false),
 ];
 /// Index base for synthesized inline tool calls — keeps them out of the
 /// structured `tool_calls` index space (which starts at 0).
@@ -2793,11 +2909,45 @@ fn partial_prefix_suffix_len(buf: &str, needle: &str) -> usize {
     0
 }
 
-/// Parse an inline `<tool_call>` body — `{"name": "...", "arguments": {...}}` —
+/// Extract the inner text of the first `<tag>…</tag>` element in `s`.
+/// Used to pull `<tool_name>`/`<tool_input>` children out of the plural-
+/// wrapper shape LiteLLM/Bedrock emits.
+fn extract_xml_tag(s: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = s.find(&open)? + open.len();
+    let end = s[start..].find(&close)? + start;
+    Some(s[start..end].to_owned())
+}
+
+/// Normalize a tool-arguments payload to a JSON object string. Accepts a
+/// JSON object/value or a JSON-encoded string (some gateways double-encode);
+/// an empty payload becomes `{}`.
+fn normalize_tool_args(raw: &str) -> String {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return "{}".to_owned();
+    }
+    match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(serde_json::Value::String(s)) => {
+            let s = s.trim();
+            if s.is_empty() {
+                "{}".to_owned()
+            } else {
+                s.to_owned()
+            }
+        }
+        // A parsed object/array/number round-trips through its source text so
+        // formatting is preserved; an unparseable body is passed through
+        // verbatim and validated downstream by the tool dispatch layer.
+        Ok(_) | Err(_) => raw.to_owned(),
+    }
+}
+
+/// Parse an inline JSON tool body — `{"name": "...", "arguments": {...}}` —
 /// into `(name, arguments_json_string)`. `arguments` may itself be a
-/// JSON-encoded string (some gateways double-encode); both shapes normalize to
-/// a JSON object string suitable for `StreamEvent::ToolDone.input_json`.
-fn parse_inline_tool_call(body: &str) -> Option<(String, String)> {
+/// JSON-encoded string (some gateways double-encode).
+fn parse_json_tool_call(body: &str) -> Option<(String, String)> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
     let name = v.get("name")?.as_str()?.to_owned();
     let input_json = match v.get("arguments") {
@@ -2809,6 +2959,55 @@ fn parse_inline_tool_call(body: &str) -> Option<(String, String)> {
         None => "{}".to_owned(),
     };
     Some((name, input_json))
+}
+
+/// Parse the body of an inline tool block into zero or more
+/// `(tool_name, arguments_json)` pairs. Handles every shape seen in the wild:
+///
+///   1. **Plural wrapper children** — the body is a run of
+///      `<tool_call>…</tool_call>` elements (the outer `<tool_calls>` wrapper
+///      was already stripped by the drain loop). Each child parses on its own,
+///      so one wrapper can yield multiple tool calls.
+///   2. **Child-tag form** — `<tool_name>NAME</tool_name>
+///      <tool_input>{json}</tool_input>` (the live LiteLLM/Bedrock plural
+///      shape, e.g. `ses_20260521_062804.json`).
+///   3. **JSON-body form** — `{"name": "...", "arguments": {...}}` (the legacy
+///      singular `<tool_call>`/`<tool_use>` shape).
+fn parse_inline_tool_calls(body: &str) -> Vec<(String, String)> {
+    let trimmed = body.trim();
+
+    // Shape 1: nested <tool_call> children (plural wrapper). Drain each child
+    // element and parse it on its own. The recursion terminates because every
+    // step strips an outer <tool_call>…</tool_call> and advances past it.
+    // Require BOTH the open and close child tags so a singular JSON body that
+    // merely mentions "<tool_call>" inside an argument string isn't misrouted.
+    if trimmed.contains("<tool_call>") && trimmed.contains("</tool_call>") {
+        let mut calls = Vec::new();
+        let mut rest = trimmed;
+        while let Some(start) = rest.find("<tool_call>") {
+            let after = &rest[start + "<tool_call>".len()..];
+            let Some(end) = after.find("</tool_call>") else {
+                break;
+            };
+            calls.extend(parse_inline_tool_calls(&after[..end]));
+            rest = &after[end + "</tool_call>".len()..];
+        }
+        return calls;
+    }
+
+    // Shape 2: child-tag form.
+    if let Some(name) = extract_xml_tag(trimmed, "tool_name") {
+        let input_json = extract_xml_tag(trimmed, "tool_input")
+            .map(|raw| normalize_tool_args(&raw))
+            .unwrap_or_else(|| "{}".to_owned());
+        let name = name.trim();
+        if !name.is_empty() {
+            return vec![(name.to_owned(), input_json)];
+        }
+    }
+
+    // Shape 3: JSON body.
+    parse_json_tool_call(trimmed).into_iter().collect()
 }
 
 /// Drain complete inline `<tool_call>…</tool_call>` blocks out of `buf`,
@@ -2865,18 +3064,26 @@ fn drain_inline_tool_calls(
                 let block_end = close_at + close.len();
                 buf.drain(..block_end);
                 if !is_call {
-                    // Inline <tool_result> — suppress entirely. The real result
-                    // comes from dispatching the call; a model-fabricated one
-                    // here must not be fed back as truth.
+                    // Inline <tool_result>/<tool_results> — suppress entirely.
+                    // The real result comes from dispatching the call; a
+                    // model-fabricated one here must not be fed back as truth.
                     tracing::debug!(
                         target: "jfc::provider::openai_compatible",
-                        "suppressed inline <tool_result> block ({} bytes)",
+                        "suppressed inline {open} block ({} bytes)",
                         body.len()
                     );
                     continue;
                 }
-                match parse_inline_tool_call(&body) {
-                    Some((name, input_json)) => {
+                let calls = parse_inline_tool_calls(&body);
+                if calls.is_empty() {
+                    // Unparseable body — surface verbatim rather than
+                    // silently dropping the model's content.
+                    out.push(Ok(StreamEvent::TextDelta {
+                        index: 0,
+                        delta: format!("{open}{body}{close}"),
+                    }));
+                } else {
+                    for (name, input_json) in calls {
                         let idx = INLINE_TOOL_INDEX_BASE + *inline_index;
                         *inline_index += 1;
                         tracing::info!(
@@ -2892,14 +3099,6 @@ fn drain_inline_tool_calls(
                             tool_use_id: format!("toolu_{}", uuid::Uuid::new_v4().simple()),
                             input_json,
                             thought_signature: None,
-                        }));
-                    }
-                    None => {
-                        // Unparseable body — surface verbatim rather than
-                        // silently dropping the model's content.
-                        out.push(Ok(StreamEvent::TextDelta {
-                            index: 0,
-                            delta: format!("{open}{body}{close}"),
                         }));
                     }
                 }

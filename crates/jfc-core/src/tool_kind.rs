@@ -56,6 +56,7 @@ pub enum ToolKind {
     NotebookEdit,
     ScratchpadRead,
     ScratchpadWrite,
+    Workflow,
     ServerWebSearch,
     ServerCodeExecution,
     Generic(String),
@@ -144,6 +145,7 @@ impl ToolKind {
             Self::NotebookEdit => ["notebook_edit"],
             Self::ScratchpadRead => ["scratchpad_read"],
             Self::ScratchpadWrite => ["scratchpad_write"],
+            Self::Workflow => ["workflow", "run_workflow"],
         );
 
         if let Some(inner) = name.strip_prefix(SERVER_TOOL_USE_PREFIX) {
@@ -218,6 +220,7 @@ impl ToolKind {
             Self::NotebookEdit => "NotebookEdit",
             Self::ScratchpadRead => "ScratchpadRead",
             Self::ScratchpadWrite => "ScratchpadWrite",
+            Self::Workflow => "Workflow",
             Self::ServerWebSearch => "ServerWebSearch",
             Self::ServerCodeExecution => "ServerCodeExecution",
             Self::Generic(name) => name.as_str(),
@@ -280,6 +283,7 @@ impl ToolKind {
             Self::NotebookEdit => "NotebookEdit",
             Self::ScratchpadRead => "ScratchpadRead",
             Self::ScratchpadWrite => "ScratchpadWrite",
+            Self::Workflow => "Workflow",
             Self::ServerWebSearch => "server_tool_use:web_search",
             Self::ServerCodeExecution => "server_tool_use:code_execution",
             Self::Generic(name) => name.as_str(),

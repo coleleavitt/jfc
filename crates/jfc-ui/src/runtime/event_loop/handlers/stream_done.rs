@@ -327,6 +327,16 @@ pub(crate) async fn handle_stream_done(
         && !app.queued_prompts.is_empty()
     {
         drain_queued_prompts(app, tx).await;
+        // If the drain staged a fresh turn (non-meta prompt → new assistant
+        // slot + live `streaming_assistant_idx`), bail out now. The cleanup
+        // ladder below — specifically the EndTurn `else` arm — would otherwise
+        // null out `streaming_assistant_idx`/`current_stream_request`, and the
+        // newly-spawned stream's chunks would then arrive with no slot to
+        // attach to (stream alive but no visible output). A meta-only drain
+        // leaves `is_streaming` false and falls through to the normal cleanup.
+        if app.is_streaming {
+            return;
+        }
     }
     // Dispatch any tools that were emitted during streaming,
     // regardless of `stop_reason`. Some providers (OpenWebUI,
@@ -459,11 +469,55 @@ pub(crate) async fn handle_stream_done(
                     .all(|p| matches!(p, MessagePart::Text(t) if t.trim().is_empty()));
             if is_empty {
                 app.messages.remove(idx);
+            } else if stream::should_continue_loop(&app.messages) {
+                // The assistant DID emit tool_use blocks, but every one was
+                // recorded terminal *before* dispatch — denied by the active
+                // permission mode, or malformed provider input (handle_stream_tool's
+                // terminal-on-arrival / denied-by-mode arms record the tool with a
+                // Failed status and synthetic tool_result but never push it onto
+                // `pending_tool_calls`). No ToolResult event will fire, so no
+                // AllToolsComplete drives the loop forward. Without continuing here
+                // the model is left staring at its own failed tool_result with no
+                // follow-up turn — the "denied tool stalls the turn" symptom.
+                // `should_continue_loop` confirms the last assistant ends with
+                // all-terminal tools, so resuming is safe (no dangling Pending).
+                tracing::info!(
+                    target: "jfc::stream",
+                    streaming_idx = ?app.streaming_assistant_idx,
+                    "stream_done ToolUse with only pre-resolved (denied/malformed) tools — continuing agentic loop"
+                );
+                stream::continue_agentic_loop(app, tx).await;
+                return;
             }
         }
         app.streaming_assistant_idx = None;
         app.current_stream_request = None;
         app.scroll_to_bottom();
+    } else if stream::should_continue_loop(&app.messages) {
+        // The assistant emitted tool_use blocks that were all recorded
+        // terminal *before* dispatch — denied by the active permission mode,
+        // or malformed provider input (handle_stream_tool's denied-by-mode /
+        // terminal-on-arrival arms mark the tool Failed and synthesize a
+        // tool_result but never enqueue it onto `pending_tool_calls`, so no
+        // ToolResult/AllToolsComplete event ever drives the loop).
+        //
+        // The ToolUse stop-reason arm above already handles this when the
+        // gateway reports `finish_reason="tool_calls"`. But OpenWebUI/LiteLLM
+        // commonly map a denied-tool turn to `finish_reason="stop"` → EndTurn,
+        // which lands HERE. Without continuing, the model is frozen staring at
+        // its own failed tool_result with no follow-up turn — the "denied tool
+        // halts the loop" symptom. `should_continue_loop` confirms the last
+        // assistant ends with all-terminal tools, so resuming is safe (no
+        // dangling Pending / Running). The mid-tool-loop guard in
+        // prepare_stream_request keeps the catalog advertised on the resend.
+        tracing::info!(
+            target: "jfc::stream",
+            ?stop_reason,
+            streaming_idx = ?app.streaming_assistant_idx,
+            "stream_done with only pre-resolved (denied/malformed) tools — continuing agentic loop"
+        );
+        stream::continue_agentic_loop(app, tx).await;
+        return;
     } else {
         // Non-standard stop reasons (MaxTokens, StopSequence, Other)
         // mean the response was terminated early. Surface a warning so

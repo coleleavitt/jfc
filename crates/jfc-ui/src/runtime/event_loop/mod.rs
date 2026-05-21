@@ -152,8 +152,16 @@ pub(crate) async fn run(
                 );
                 app.messages = messages;
                 app.current_session_id = Some(session_id.clone());
-                // Re-open task store so tasks from the resumed session are loaded.
-                app.task_store = jfc_session::TaskStore::open(session_id.as_str());
+                // Task store: prefer the project store (`.jfc/tasks.json`)
+                // that `App::new` already opened — it survives across every
+                // session in the repo. ONLY fall back to the per-session store
+                // (`~/.config/jfc/tasks/<session>.json`) when there's no git
+                // root. Unconditionally reopening the per-session store here
+                // was the `--continue` subj/desc-resurrection bug: it clobbered
+                // the live project store with stale placeholder rows.
+                if !matches!(app.git_root, Some(Some(_))) {
+                    app.task_store = jfc_session::TaskStore::open(session_id.as_str());
+                }
                 // Rebuild any active stop-condition from the goal
                 // sidecar — without this, /continue forgets the
                 // user's goal and the next EndTurn settles silently.
@@ -229,8 +237,14 @@ pub(crate) async fn run(
                 }
                 app.messages = messages;
                 app.current_session_id = Some(session_id.clone());
-                // Re-open task store so tasks from the resumed session are loaded.
-                app.task_store = jfc_session::TaskStore::open(session_id.as_str());
+                // Same project-store-first rule as --continue (see above):
+                // keep the project `.jfc/tasks.json` and only fall back to the
+                // per-session store when no git root exists. Prevents the
+                // resumed session's old per-session placeholders from
+                // overwriting the live project task list.
+                if !matches!(app.git_root, Some(Some(_))) {
+                    app.task_store = jfc_session::TaskStore::open(session_id.as_str());
+                }
                 // Rebuild any active stop-condition from the goal sidecar.
                 if let Some(goal) = crate::goal::load_sidecar(session_id.as_str()) {
                     tracing::info!(
@@ -477,24 +491,27 @@ pub(crate) async fn run(
             ..Default::default()
         };
         let tx_guard = tx.clone();
-        // Outer JoinHandle parked on App so the watchdog can forcefully
-        // abort a wedged stream task (see App::active_stream_handle).
-        let handle = tokio::spawn(async move {
-            let result = tokio::spawn(async move {
-                stream::stream_response(
-                    provider,
-                    messages,
-                    model,
-                    tx_clone,
-                    interrupt,
-                    cancel,
-                    prev_msg_id,
-                    overrides,
-                )
-                .await;
-            })
+        // Inner task's abort handle parked on App so the watchdog can
+        // forcefully abort the actual stream_response task (see
+        // App::active_stream_handle). Aborting the outer supervisor would
+        // only drop its JoinHandle to the inner task, detaching rather than
+        // cancelling it.
+        let inner = tokio::spawn(async move {
+            stream::stream_response(
+                provider,
+                messages,
+                model,
+                tx_clone,
+                interrupt,
+                cancel,
+                prev_msg_id,
+                overrides,
+            )
             .await;
-            if let Err(join_err) = result {
+        });
+        app.active_stream_handle = Some(inner.abort_handle());
+        tokio::spawn(async move {
+            if let Err(join_err) = inner.await {
                 let msg = if join_err.is_panic() {
                     format!("stream task panicked: {join_err}")
                 } else {
@@ -505,7 +522,6 @@ pub(crate) async fn run(
                     .await;
             }
         });
-        app.active_stream_handle = Some(handle);
     }
 
     // Track when we last drew to implement frame-rate limiting.
@@ -618,6 +634,20 @@ pub(crate) async fn run(
                 // ── Stream: error ───────────────────────────────────────
                 AppEvent::Stream(StreamEvent::Error(e)) => {
                     handlers::stream_error::handle_stream_error(&mut app, &tx, e).await;
+                }
+
+                // ── Stream: fallback ────────────────────────────────────
+                AppEvent::Stream(StreamEvent::FallbackTriggered {
+                    original_model,
+                    fallback_model,
+                    reason,
+                }) => {
+                    handlers::stream_error::handle_fallback_triggered(
+                        &mut app,
+                        &original_model,
+                        &fallback_model,
+                        &reason,
+                    );
                 }
 
                 // ── Stream: usage ───────────────────────────────────────

@@ -14,6 +14,16 @@ pub(crate) fn factory_mode_enabled() -> bool {
 pub(crate) async fn maybe_continue_task_factory(app: &mut App, tx: &EventSender) {
     if !factory_mode_enabled()
         || app.is_streaming
+        // A live user/agentic turn keeps `turn_started_at` set until it
+        // genuinely concludes (stream_done clears it only on EndTurn with
+        // nothing pending). The factory must not inject a new task prompt
+        // while the leader is still mid-turn — between sub-streams of an
+        // agentic loop, or while it still has tool results to process,
+        // `is_streaming` briefly drops to false but the turn is NOT over.
+        // Firing here would race a second concurrent turn into the same
+        // conversation buffer (the "random task queue / partially committed"
+        // symptom). Only inject when the leader is fully idle.
+        || app.turn_started_at.is_some()
         || app.pending_approval.is_some()
         || !app.approval_queue.is_empty()
         || !app.pending_tool_calls.is_empty()

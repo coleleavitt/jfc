@@ -334,6 +334,18 @@ pub enum StreamEvent {
     Error {
         message: String,
     },
+    /// Emitted when a model fallback occurs — the requested model was
+    /// unavailable (e.g. 529 overload) and a fallback was used instead.
+    FallbackTriggered(FallbackTriggered),
+}
+
+/// Emitted when a model fallback occurs — the requested model was unavailable
+/// and a fallback was used instead.
+#[derive(Debug, Clone)]
+pub struct FallbackTriggered {
+    pub original_model: ModelId,
+    pub fallback_model: ModelId,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

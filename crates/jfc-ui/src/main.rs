@@ -28,6 +28,7 @@ mod ids;
 mod inline_tools;
 mod input;
 mod keybindings;
+mod keywords;
 mod lsp_client;
 mod lsp_rpc;
 mod managed_session;
@@ -78,6 +79,19 @@ mod permissions;
 #[cfg(feature = "landlock-sandbox")]
 mod sandbox;
 mod slop_guard;
+
+/// Returns `true` when the landlock sandbox feature is enabled AND the
+/// sandbox was successfully initialized for this process. Used by the
+/// permission system to auto-approve tool calls without prompting.
+#[cfg(feature = "landlock-sandbox")]
+pub(crate) fn is_sandbox_active() -> bool {
+    sandbox::is_sandbox_active()
+}
+
+#[cfg(not(feature = "landlock-sandbox"))]
+pub(crate) fn is_sandbox_active() -> bool {
+    false
+}
 
 pub(crate) use cli::{StartupSession, build_providers, provider_for_model};
 

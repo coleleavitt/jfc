@@ -147,6 +147,14 @@ pub enum StreamEvent {
     },
     Done(StopReason),
     Error(String),
+    /// The provider switched from the requested model to a fallback
+    /// (e.g. 529 overload caused an Opus→Sonnet swap). The UI shows a
+    /// toast and optionally updates `app.model`.
+    FallbackTriggered {
+        original_model: String,
+        fallback_model: String,
+        reason: String,
+    },
     Usage {
         input_tokens: u32,
         output_tokens: u32,

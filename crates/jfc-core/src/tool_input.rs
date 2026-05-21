@@ -245,6 +245,7 @@ macro_rules! for_each_regular_tool_input {
             NotebookEdit => { path: req_str @ "path", cell_id: req_str @ "cell_id", new_source: req_str @ "new_source", edit_mode: opt_str @ "edit_mode" }
             ScratchpadRead => { key: req_str @ "key" }
             ScratchpadWrite => { key: req_str @ "key", value: req_str @ "value" }
+            Workflow => { script: opt_str @ "script", name: opt_str @ "name", script_path: opt_str @ "scriptPath", args: raw_opt @ "args", resume_from_run_id: opt_str @ "resumeFromRunId" }
         }
     };
 }
@@ -600,6 +601,13 @@ pub enum ToolInput {
         key: String,
         value: String,
     },
+    Workflow {
+        script: Option<String>,
+        name: Option<String>,
+        script_path: Option<String>,
+        args: Option<serde_json::Value>,
+        resume_from_run_id: Option<String>,
+    },
     Generic {
         summary: String,
     },
@@ -803,6 +811,15 @@ impl ToolInput {
             }
             Self::ScratchpadRead { key } => format!("scratchpad read: {key}"),
             Self::ScratchpadWrite { key, .. } => format!("scratchpad write: {key}"),
+            Self::Workflow { name, script_path, .. } => {
+                if let Some(n) = name {
+                    format!("workflow: {n}")
+                } else if let Some(p) = script_path {
+                    format!("workflow: {p}")
+                } else {
+                    "workflow (inline script)".into()
+                }
+            }
             Self::Generic { summary } => summary.clone(),
         }
     }

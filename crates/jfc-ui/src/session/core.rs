@@ -678,6 +678,7 @@ mod disk_io_tests {
             is_collapsed: false,
             input: None,
             output: None,
+            thought_signature: None,
         };
         let mp = deserialize_part(part);
         match mp {

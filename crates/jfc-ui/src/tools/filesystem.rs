@@ -82,6 +82,20 @@ pub(super) async fn execute_read(
         .map(|e| e.eq_ignore_ascii_case("pdf"))
         .unwrap_or(false);
     if is_pdf && !path.is_dir() {
+        // Large-PDF reference gate: if the PDF exceeds the page threshold,
+        // return a lightweight reference instead of loading the full binary.
+        // This saves context tokens — the model gets metadata and can
+        // request specific pages via Read with offset/limit. Mirrors
+        // Claude Code v146's `tryGetPDFReference` pattern.
+        if let Some(reference) = crate::attachments::try_pdf_reference(&path).await {
+            tracing::info!(
+                target: "jfc::tools",
+                file_path,
+                "read: returning PDF reference (large file)"
+            );
+            return ExecutionResult::success(reference);
+        }
+
         match crate::attachments::read_pdf_file(&path) {
             Ok(att) => {
                 let bytes = att.bytes.len();

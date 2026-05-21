@@ -77,6 +77,33 @@ pub struct RuleSet {
 
 impl RuleSet {
     pub fn from_config(config: &FeatureConfig) -> Self {
+        // Expand allowed_tools / denied_tools shorthand into synthetic rules.
+        // Order: denied_tools first (highest priority), then allowed_tools,
+        // then explicit rules — so the shorthand lists act as a quick
+        // allow/deny layer that explicit rules can still override via
+        // specificity.
+        let mut rules: Vec<PermissionRule> = Vec::new();
+
+        for tool in &config.permissions.denied_tools {
+            rules.push(PermissionRule {
+                action: PermissionAction::Deny,
+                tool_pattern: GlobPattern::new(tool),
+                path_pattern: None,
+                reason: Some(format!("denied by denied_tools shorthand: {tool}")),
+            });
+        }
+
+        for tool in &config.permissions.allowed_tools {
+            rules.push(PermissionRule {
+                action: PermissionAction::Allow,
+                tool_pattern: GlobPattern::new(tool),
+                path_pattern: None,
+                reason: Some(format!("allowed by allowed_tools shorthand: {tool}")),
+            });
+        }
+
+        rules.extend(config.permissions.rules.iter().map(PermissionRule::from_config));
+
         Self {
             ceiling: config
                 .permissions
@@ -84,12 +111,7 @@ impl RuleSet {
                 .iter()
                 .map(|pattern| GlobPattern::new(pattern))
                 .collect(),
-            rules: config
-                .permissions
-                .rules
-                .iter()
-                .map(PermissionRule::from_config)
-                .collect(),
+            rules,
         }
     }
 
@@ -547,5 +569,51 @@ mod tests {
             "deny must win regardless of registration order",
         );
         assert_eq!(decision.reason.as_deref(), Some("strict"));
+    }
+
+    #[test]
+    fn test_allowed_denied_tools_shorthand() {
+        let mut config = FeatureConfig::default();
+        config.permissions.ceiling.clear();
+        config.permissions.allowed_tools = vec!["Read".to_owned(), "Glob".to_owned()];
+        config.permissions.denied_tools = vec!["Bash".to_owned()];
+        config.permissions.rules = vec![rule("allow", "Write", Some("src/**"), Some("explicit"))];
+
+        let rules = RuleSet::from_config(&config);
+
+        // denied_tools produces Deny
+        let decision = rules.evaluate("Bash", Some("echo hi"));
+        assert_eq!(decision.action, PermissionAction::Deny);
+
+        // allowed_tools produces Allow
+        let decision = rules.evaluate("Read", Some("anything"));
+        assert_eq!(decision.action, PermissionAction::Allow);
+
+        let decision = rules.evaluate("Glob", None);
+        assert_eq!(decision.action, PermissionAction::Allow);
+
+        // explicit rule still works
+        let decision = rules.evaluate("Write", Some("src/lib.rs"));
+        assert_eq!(decision.action, PermissionAction::Allow);
+        assert_eq!(decision.reason.as_deref(), Some("explicit"));
+
+        // unmatched tool falls through to Ask
+        let decision = rules.evaluate("Edit", Some("src/lib.rs"));
+        assert_eq!(decision.action, PermissionAction::Ask);
+    }
+
+    #[test]
+    fn test_denied_tools_beats_allowed_tools() {
+        // If a tool appears in both lists, denied wins because denied rules
+        // are prepended first (higher priority via specificity tiebreaker).
+        let mut config = FeatureConfig::default();
+        config.permissions.ceiling.clear();
+        config.permissions.allowed_tools = vec!["Bash".to_owned()];
+        config.permissions.denied_tools = vec!["Bash".to_owned()];
+
+        let rules = RuleSet::from_config(&config);
+        let decision = rules.evaluate("Bash", None);
+
+        assert_eq!(decision.action, PermissionAction::Deny);
     }
 }

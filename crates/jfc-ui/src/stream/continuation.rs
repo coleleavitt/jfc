@@ -131,17 +131,20 @@ fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sen
         ..Default::default()
     };
     let tx_guard = tx.clone();
-    // Park the outer handle on App so the watchdog can forcefully
-    // abort a wedged stream task (see App::active_stream_handle).
-    let handle = tokio::spawn(async move {
-        let result = tokio::spawn(async move {
-            stream_response(
-                provider, messages, model, tx, interrupt, cancel, None, overrides,
-            )
-            .await;
-        })
+    // Park the *inner* task's abort handle on App so the watchdog can
+    // forcefully abort the actual stream_response task (see
+    // App::active_stream_handle). Aborting the outer supervisor would only
+    // drop its JoinHandle to the inner task, detaching rather than cancelling
+    // it.
+    let inner = tokio::spawn(async move {
+        stream_response(
+            provider, messages, model, tx, interrupt, cancel, None, overrides,
+        )
         .await;
-        if let Err(join_err) = result {
+    });
+    app.active_stream_handle = Some(inner.abort_handle());
+    tokio::spawn(async move {
+        if let Err(join_err) = inner.await {
             let msg = if join_err.is_panic() {
                 format!("stream task panicked: {join_err}")
             } else {
@@ -152,7 +155,6 @@ fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sen
                 .await;
         }
     });
-    app.active_stream_handle = Some(handle);
 }
 
 /// Resume an Anthropic server-side sampling loop after `stop_reason: "pause_turn"`.

@@ -1177,5 +1177,33 @@ pub fn all_tool_defs() -> Vec<ToolDef> {
                 "required": ["key", "value"]
             }),
         },
+        ToolDef {
+            name: "Workflow".into(),
+            description: "Execute a workflow script that orchestrates multiple subagents deterministically. Workflows run in the background — this tool returns immediately with a task ID, and a <task-notification> arrives when the workflow completes. ONLY call this tool when the user has explicitly opted into multi-agent orchestration (ultrawork keyword, direct request, or skill instruction).".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "script": {
+                        "type": "string",
+                        "description": "Self-contained workflow script. Must begin with `export const meta = { name, description, phases }` followed by the script body using agent()/parallel()/pipeline()/phase()."
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name of a predefined workflow (built-in or from .claude/workflows/). Resolves to a script."
+                    },
+                    "scriptPath": {
+                        "type": "string",
+                        "description": "Path to a workflow script file on disk."
+                    },
+                    "args": {
+                        "description": "Optional input value exposed to the script as the global `args`."
+                    },
+                    "resumeFromRunId": {
+                        "type": "string",
+                        "description": "Run ID of a prior Workflow invocation to resume from. Completed agent() calls return cached results instantly."
+                    }
+                }
+            }),
+        },
     ]
 }

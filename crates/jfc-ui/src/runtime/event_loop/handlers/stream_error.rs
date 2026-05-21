@@ -27,6 +27,27 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
         );
         return;
     }
+    // Interrupt-on-submit (key_dispatch) cancels the old stream's token,
+    // then immediately mints a fresh token and clears the shared interrupt
+    // flag *before* the cancelled task observes it. The old task therefore
+    // reports a watchdog-style "Stream timed out" (cancel_reason reads the
+    // now-false flag) rather than "Interrupted by user". If a fresh stream
+    // is already live (is_streaming + uncancelled current token + clear
+    // flag), this timeout belongs to the superseded stream and must be
+    // dropped — otherwise it resets the brand-new turn. A *genuine* watchdog
+    // timeout differs: check_stream_watchdog sets is_streaming=false before
+    // its task's error lands here, so it falls through and surfaces normally.
+    if e.starts_with("Stream timed out")
+        && app.is_streaming
+        && !app.cancel_token.is_cancelled()
+        && !app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
+    {
+        tracing::info!(
+            target: "jfc::stream",
+            "dropping stale watchdog-timeout from superseded stream (a fresh turn is already streaming)"
+        );
+        return;
+    }
 
     // ─── Synthetic tool_result injection on interrupt ────────
     // When a stream is interrupted with pending/running tool_use
@@ -246,6 +267,31 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
         );
         drain_queued_prompts(app, tx).await;
     }
+}
+
+/// Handle `StreamEvent::FallbackTriggered` — the provider switched from the
+/// requested model to a fallback (e.g. 529 overload triggered Opus→Sonnet).
+/// Surfaces a toast so the user knows which model is actually responding.
+pub(crate) fn handle_fallback_triggered(
+    app: &mut App,
+    original_model: &str,
+    fallback_model: &str,
+    reason: &str,
+) {
+    tracing::info!(
+        target: "jfc::stream",
+        original_model,
+        fallback_model,
+        reason,
+        "model fallback triggered"
+    );
+    toast::push_with_cap(
+        &mut app.toasts,
+        toast::Toast::new(
+            toast::ToastKind::Warning,
+            format!("Model fallback: using {fallback_model} (from {original_model})"),
+        ),
+    );
 }
 
 #[cfg(test)]

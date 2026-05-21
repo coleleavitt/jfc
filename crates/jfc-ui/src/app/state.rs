@@ -555,15 +555,17 @@ pub struct App {
     /// pattern: tasks holding state must be explicitly cancellable, not
     /// just dropped via a flag the task may never poll.
     pub cancel_token: tokio_util::sync::CancellationToken,
-    /// JoinHandle for the outer stream-driver task spawned per user turn.
-    /// Watchdog escalation: when `check_stream_watchdog` detects a
-    /// hard-idle stream it cancels the token (cooperative) *and* aborts
-    /// this handle (forceful). Without the forceful abort a stream task
-    /// stuck in a synchronous syscall (DNS resolution, audit-log write)
-    /// would survive the cancel and the next user submission would
-    /// race a second concurrent stream task writing the same conversation
-    /// buffer.
-    pub active_stream_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Abort handle for the *inner* stream-driver task spawned per user turn
+    /// (the one actually running `stream_response`). Watchdog escalation: when
+    /// `check_stream_watchdog` detects a hard-idle stream it cancels the token
+    /// (cooperative) *and* aborts this handle (forceful). Without the forceful
+    /// abort a stream task stuck in a synchronous syscall (DNS resolution,
+    /// audit-log write) would survive the cancel and the next user submission
+    /// would race a second concurrent stream task writing the same conversation
+    /// buffer. This MUST point at the inner task, not the outer supervisor:
+    /// aborting the supervisor only drops its `JoinHandle` to the inner task,
+    /// which *detaches* (keeps running) rather than cancelling it.
+    pub active_stream_handle: Option<tokio::task::AbortHandle>,
     /// Timestamp of the most recent ESC press in the main shortcut
     /// handler. The next ESC within `INTERRUPT_DOUBLE_TAP_MS` triggers
     /// an interrupt instead of just clearing the input.

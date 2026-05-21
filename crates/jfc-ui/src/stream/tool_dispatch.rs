@@ -32,22 +32,25 @@ pub(crate) fn dispatch_tools_batched(
 
     let mut regular_calls: Vec<ToolCall> = Vec::new();
     let mut task_calls: Vec<ToolCall> = Vec::new();
+    let mut workflow_calls: Vec<ToolCall> = Vec::new();
     for tc in tool_calls {
         match &tc.input {
             ToolInput::Task(_) => task_calls.push(tc),
+            ToolInput::Workflow { .. } => workflow_calls.push(tc),
             _ => regular_calls.push(tc),
         }
     }
 
     let task_count = task_calls.len();
+    let workflow_count = workflow_calls.len();
     let regular_count = regular_calls.len();
     tracing::info!(
         target: "jfc::stream",
-        task_count, regular_count,
+        task_count, workflow_count, regular_count,
         "dispatch_tools_batched: splitting tool calls"
     );
     let pending = Arc::new(AtomicUsize::new(
-        task_count + usize::from(!regular_calls.is_empty()),
+        task_count + workflow_count + usize::from(!regular_calls.is_empty()),
     ));
     let tx_done = tx.clone();
     let send_all_complete = move || {
@@ -579,6 +582,19 @@ pub(crate) fn dispatch_tools_batched(
         });
     }
 
+    for tc in workflow_calls {
+        let done = send_all_complete.clone();
+        spawn_workflow(
+            tc,
+            tx,
+            provider.clone(),
+            model.clone(),
+            current_session_id.clone(),
+            cancel.clone(),
+            done,
+        );
+    }
+
     if !regular_calls.is_empty() {
         let batches = scheduler::schedule_tools(regular_calls);
         tracing::debug!(
@@ -604,4 +620,268 @@ pub(crate) fn dispatch_tools_batched(
             done();
         });
     }
+}
+
+/// Resolve, register, and spawn a Workflow tool call. Returns immediately
+/// after sending the `async_launched` ToolResult; the workflow runs in the
+/// background and injects a `<task-notification>` when it completes.
+#[allow(clippy::too_many_arguments)]
+fn spawn_workflow(
+    tc: ToolCall,
+    tx: &mpsc::Sender<AppEvent>,
+    provider: Arc<dyn Provider>,
+    model: ModelId,
+    current_session_id: Option<String>,
+    cancel: CancellationToken,
+    done: impl FnOnce() + Send + 'static,
+) {
+    let (script, name, script_path, args, resume_from_run_id) = match tc.input.clone() {
+        ToolInput::Workflow {
+            script,
+            name,
+            script_path,
+            args,
+            resume_from_run_id,
+        } => (script, name, script_path, args, resume_from_run_id),
+        _ => {
+            done();
+            return;
+        }
+    };
+
+    let tool_id = tc.id.clone();
+    let tx = tx.clone();
+    let cwd = std::env::current_dir().unwrap_or_default();
+
+    tokio::spawn(async move {
+        // ── resolve script from inline | name | scriptPath ──────────────
+        let resolved = resolve_workflow_script(&cwd, script, name.clone(), script_path).await;
+        let (script_text, source_path) = match resolved {
+            Ok(v) => v,
+            Err(e) => {
+                send_workflow_result(&tx, &tool_id, crate::runtime::ExecutionResult::failure(e));
+                done();
+                return;
+            }
+        };
+
+        // ── parse meta + validate determinism ───────────────────────────
+        let meta = match crate::workflows::meta::parse_meta(&script_text) {
+            Ok((m, _body)) => m,
+            Err(e) => {
+                send_workflow_result(
+                    &tx,
+                    &tool_id,
+                    crate::runtime::ExecutionResult::failure(format!("invalid workflow: {e}")),
+                );
+                done();
+                return;
+            }
+        };
+        if let Err(e) = crate::workflows::meta::validate_script(&script_text) {
+            send_workflow_result(&tx, &tool_id, crate::runtime::ExecutionResult::failure(e));
+            done();
+            return;
+        }
+
+        // ── named-workflow permission gate ──────────────────────────────
+        let config = crate::config::load();
+        match crate::workflows::permissions::decide(&config, name.as_deref()) {
+            crate::workflows::permissions::WorkflowPermission::Deny => {
+                send_workflow_result(
+                    &tx,
+                    &tool_id,
+                    crate::runtime::ExecutionResult::failure(format!(
+                        "Workflow '{}' is denied by permission rules",
+                        meta.name
+                    )),
+                );
+                done();
+                return;
+            }
+            // Allow and Ask both proceed here — the upstream opt-in
+            // (ultrawork / explicit request) is the gate for Ask; a future
+            // interactive dialog can refine this.
+            _ => {}
+        }
+
+        // ── runId + session dir + persist inline script ─────────────────
+        let run_id = crate::workflows::generate_run_id();
+        let session_dir = workflow_session_dir(current_session_id.as_deref(), &run_id);
+        let _ = tokio::fs::create_dir_all(&session_dir).await;
+
+        let persisted_path = match source_path {
+            Some(p) => Some(p),
+            None => {
+                let p = session_dir.join("script.js");
+                match tokio::fs::write(&p, &script_text).await {
+                    Ok(_) => Some(p),
+                    Err(e) => {
+                        tracing::warn!(target: "jfc::workflow", error = %e, "failed to persist inline script");
+                        None
+                    }
+                }
+            }
+        };
+
+        // ── register the workflow as a background task ──────────────────
+        let bg_task_id = format!("bgwf_{run_id}");
+        let _ = tx
+            .send(AppEvent::Task(crate::runtime::TaskEvent::Started {
+                task_id: crate::ids::TaskId::from(bg_task_id.clone()),
+                description: format!("workflow: {}", meta.name),
+                model_used: Some(model.as_str().to_string()),
+                max_input_tokens: None,
+                is_detached: false,
+                parent_task_id: None,
+            }))
+            .await;
+
+        // ── return async_launched immediately ───────────────────────────
+        let launch = serde_json::json!({
+            "status": "async_launched",
+            "taskId": bg_task_id,
+            "runId": run_id,
+            "scriptPath": persisted_path.as_ref().map(|p| p.display().to_string()),
+            "summary": meta.description,
+        });
+        send_workflow_result(
+            &tx,
+            &tool_id,
+            crate::runtime::ExecutionResult::success(
+                serde_json::to_string_pretty(&launch).unwrap_or_default(),
+            ),
+        );
+        // The Workflow tool result is delivered; release the AllComplete latch
+        // so the agentic loop continues while the workflow runs in background.
+        done();
+
+        // ── parse the body (strip the meta block) and run ───────────────
+        let body = crate::workflows::meta::parse_meta(&script_text)
+            .map(|(_, b)| b)
+            .unwrap_or(script_text.clone());
+
+        let started = std::time::Instant::now();
+        let outcome = crate::workflows::run_workflow(crate::workflows::WorkflowRunConfig {
+            run_id: run_id.clone(),
+            script_body: body,
+            args: args.unwrap_or(serde_json::Value::Null),
+            provider,
+            model,
+            session_dir: session_dir.clone(),
+            resume_from_run_id,
+            cancel,
+            tx: Some(tx.clone()),
+            workflow_task_id: bg_task_id.clone(),
+        })
+        .await;
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+
+        // ── mark the background task terminal ───────────────────────────
+        // The notification body becomes the task summary so the standard
+        // background-completion path surfaces it to the model and re-engages
+        // the agentic loop (`maybe_resume_after_background`).
+        let notification = build_task_notification(&bg_task_id, &meta.name, &outcome, elapsed_ms);
+        if let Some(err) = &outcome.error {
+            let _ = tx
+                .send(AppEvent::Task(crate::runtime::TaskEvent::Failed {
+                    task_id: crate::ids::TaskId::from(bg_task_id.clone()),
+                    error: err.clone(),
+                }))
+                .await;
+        } else {
+            let _ = tx
+                .send(AppEvent::Task(crate::runtime::TaskEvent::Completed {
+                    task_id: crate::ids::TaskId::from(bg_task_id.clone()),
+                    summary: notification,
+                    elapsed_ms,
+                }))
+                .await;
+        }
+    });
+}
+
+/// Resolve a workflow's script text + optional on-disk path from the three
+/// possible inputs (scriptPath > name > inline script), matching CC 146's
+/// precedence.
+async fn resolve_workflow_script(
+    cwd: &std::path::Path,
+    script: Option<String>,
+    name: Option<String>,
+    script_path: Option<String>,
+) -> Result<(String, Option<std::path::PathBuf>), String> {
+    if let Some(p) = script_path {
+        let path = if std::path::Path::new(&p).is_absolute() {
+            std::path::PathBuf::from(&p)
+        } else {
+            cwd.join(&p)
+        };
+        let text = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        return Ok((text, Some(path)));
+    }
+    if let Some(n) = name {
+        let wf = crate::workflows::resolve(cwd, &n)
+            .ok_or_else(|| format!("workflow '{n}' not found"))?;
+        return Ok((wf.script, wf.path));
+    }
+    if let Some(s) = script {
+        return Ok((s, None));
+    }
+    Err("Workflow requires one of: script, name, or scriptPath".to_owned())
+}
+
+/// Compute the session directory that holds a workflow's journal + script.
+fn workflow_session_dir(session_id: Option<&str>, run_id: &str) -> std::path::PathBuf {
+    let base = jfc_session::sessions_dir();
+    match session_id {
+        Some(sid) => base.join(sid).join("workflows").join(run_id),
+        None => base.join("workflows").join(run_id),
+    }
+}
+
+/// Send a ToolResult for a workflow call.
+fn send_workflow_result(
+    tx: &mpsc::Sender<AppEvent>,
+    tool_id: &crate::ids::ToolId,
+    result: crate::runtime::ExecutionResult,
+) {
+    let tx = tx.clone();
+    let tool_id = tool_id.clone();
+    tokio::spawn(async move {
+        let _ = tx
+            .send(AppEvent::Tool(ToolEvent::Result { tool_id, result }))
+            .await;
+    });
+}
+
+/// Build the `<task-notification>` injected when a workflow completes.
+fn build_task_notification(
+    task_id: &str,
+    name: &str,
+    outcome: &crate::workflows::WorkflowOutcome,
+    elapsed_ms: u64,
+) -> String {
+    let status = if outcome.error.is_some() {
+        "failed"
+    } else {
+        "completed"
+    };
+    let mut body = format!(
+        "<task-notification>\n<task-id>{task_id}</task-id>\n<status>{status}</status>\n\
+         <summary>Workflow \"{name}\" {status}</summary>"
+    );
+    if let Some(err) = &outcome.error {
+        body.push_str(&format!("\n<error>{err}</error>"));
+    } else {
+        let result_json = serde_json::to_string(&outcome.result).unwrap_or_default();
+        let truncated: String = result_json.chars().take(8000).collect();
+        body.push_str(&format!("\n<result>{truncated}</result>"));
+    }
+    body.push_str(&format!(
+        "\n<usage><agent_count>{}</agent_count><cache_hits>{}</cache_hits><duration_ms>{}</duration_ms></usage>\n</task-notification>",
+        outcome.agent_count, outcome.cache_hits, elapsed_ms
+    ));
+    body
 }

@@ -12,8 +12,8 @@
 //!   call `reconcile_background_agents` before rendering so dead workers
 //!   show as `Failed` instead of phantom `Running`.
 
-use std::path::Path;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::cron::{CronJob, CronSchedule, describe_schedule, run_cron_command, should_fire_cron};
 use super::pid::{is_daemon_running, remove_pid_file, write_pid_file};
@@ -23,10 +23,38 @@ use super::state::{
     save_state,
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Worker tracking
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Metadata for an active background worker tracked in-memory by the daemon.
+/// This is *not* persisted — it uses `Instant` for monotonic elapsed time and
+/// lives only as long as the daemon process. It complements the on-disk
+/// `BackgroundAgentInfo` roster by giving the running daemon a fast, lock-free
+/// view of which worker processes are alive.
+#[derive(Debug, Clone)]
+pub struct WorkerInfo {
+    pub label: String,
+    pub pid: u32,
+    pub cwd: PathBuf,
+    pub started_at: Instant,
+}
+
+/// Default idle-exit timeout. If the daemon has no cron jobs, no pending
+/// wakeups, no active sessions, and no active workers for this long, it
+/// shuts itself down. Set `JFC_DAEMON_IDLE_TIMEOUT_SECS=0` to disable.
+const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60); // 30 minutes
+
 /// In-memory daemon state + I/O paths.
 pub struct Daemon {
     pub paths: DaemonPaths,
     pub state: DaemonState,
+    /// In-memory roster of active background workers. Not persisted — only
+    /// meaningful while the daemon process is alive.
+    workers: Vec<WorkerInfo>,
+    /// Instant when the daemon last had meaningful work (workers, cron,
+    /// wakeups, or active sessions). Used for idle-exit.
+    last_activity: Instant,
 }
 
 impl Daemon {
@@ -43,7 +71,12 @@ impl Daemon {
             state.started_at = SystemTime::now();
         }
 
-        Ok(Self { paths, state })
+        Ok(Self {
+            paths,
+            state,
+            workers: Vec::new(),
+            last_activity: Instant::now(),
+        })
     }
 
     /// Persist current state to disk (best-effort).
@@ -224,6 +257,58 @@ impl Daemon {
         });
         self.persist();
     }
+
+    // ─── Worker tracking ────────────────────────────────────────────────
+
+    /// Register an active background worker with the daemon.
+    pub fn register_worker(&mut self, info: WorkerInfo) {
+        self.last_activity = Instant::now();
+        self.workers.push(info);
+    }
+
+    /// Deregister a worker by PID. No-op if the PID isn't tracked.
+    pub fn deregister_worker(&mut self, pid: u32) {
+        self.workers.retain(|w| w.pid != pid);
+        self.last_activity = Instant::now();
+    }
+
+    /// View all currently-tracked active workers.
+    pub fn active_workers(&self) -> &[WorkerInfo] {
+        &self.workers
+    }
+
+    /// Whether the daemon has any active workers.
+    pub fn has_active_workers(&self) -> bool {
+        !self.workers.is_empty()
+    }
+
+    /// Touch activity timestamp (called on any meaningful work).
+    pub fn touch_activity(&mut self) {
+        self.last_activity = Instant::now();
+    }
+
+    /// Returns `true` if the daemon has been idle long enough to exit
+    /// and has no active workers blocking shutdown.
+    pub fn should_idle_exit(&self) -> bool {
+        if self.has_active_workers() {
+            return false;
+        }
+        let timeout = idle_timeout();
+        if timeout.is_zero() {
+            // Idle-exit disabled.
+            return false;
+        }
+        self.last_activity.elapsed() >= timeout
+    }
+}
+
+/// Read the idle-exit timeout from the environment. Zero disables idle-exit.
+fn idle_timeout() -> Duration {
+    std::env::var("JFC_DAEMON_IDLE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(DEFAULT_IDLE_TIMEOUT)
 }
 
 pub(super) fn uuid_short() -> String {
@@ -288,10 +373,17 @@ pub async fn run_daemon(paths: DaemonPaths) -> std::io::Result<()> {
         tokio::select! {
             _ = interval.tick() => {
                 let now = SystemTime::now();
-                let _ = reconcile_background_agents(&paths);
+                let reconciled = reconcile_background_agents(&paths)
+                    .unwrap_or_default();
+
+                // Sync in-memory worker roster from the persisted
+                // background_agents state. Any agent with Running status
+                // and a live PID is considered an active worker.
+                sync_workers_from_state(&mut daemon, &reconciled);
+
                 let fired = daemon.tick_cron(now);
-                for id in fired {
-                    if let Some(job) = daemon.cron_by_id(&id).cloned() {
+                for id in &fired {
+                    if let Some(job) = daemon.cron_by_id(id).cloned() {
                         tracing::info!(
                             target: "jfc::daemon",
                             cron_id = %job.id,
@@ -301,8 +393,14 @@ pub async fn run_daemon(paths: DaemonPaths) -> std::io::Result<()> {
                         let _ = run_cron_command(&job).await;
                     }
                 }
+                if !fired.is_empty() {
+                    daemon.touch_activity();
+                }
 
                 let wakes = daemon.drain_due_wakeups(now);
+                if !wakes.is_empty() {
+                    daemon.touch_activity();
+                }
                 for w in wakes {
                     tracing::info!(
                         target: "jfc::daemon",
@@ -311,6 +409,17 @@ pub async fn run_daemon(paths: DaemonPaths) -> std::io::Result<()> {
                         "wakeup firing"
                     );
                     println!("[wakeup {}] {} :: {}", w.id, w.reason, w.prompt);
+                }
+
+                // Idle-exit: if there's no meaningful work and no active
+                // workers, the daemon can shut itself down to save resources.
+                if daemon.should_idle_exit() {
+                    tracing::info!(
+                        target: "jfc::daemon",
+                        idle_secs = daemon.last_activity.elapsed().as_secs(),
+                        "idle timeout reached with no active workers, exiting"
+                    );
+                    break;
                 }
             }
             _ = &mut shutdown => {
@@ -351,6 +460,58 @@ async fn shutdown_signal() {
     }
 }
 
+/// Sync the daemon's in-memory worker roster from the persisted
+/// `background_agents` state. Agents with `Running` status and a live PID
+/// are registered; previously-tracked workers whose PID vanished or moved
+/// to terminal status are deregistered.
+fn sync_workers_from_state(daemon: &mut Daemon, state: &DaemonState) {
+    use super::state::BackgroundAgentStatus;
+
+    // Collect PIDs that are running per persisted state.
+    let running_pids: std::collections::HashSet<u32> = state
+        .background_agents
+        .values()
+        .filter(|a| a.status == BackgroundAgentStatus::Running)
+        .filter_map(|a| a.pid)
+        .collect();
+
+    // Remove workers whose PIDs are no longer running in persisted state.
+    let had_workers = daemon.has_active_workers();
+    daemon.workers.retain(|w| running_pids.contains(&w.pid));
+
+    // Register any new running agents we don't already track.
+    let tracked_pids: std::collections::HashSet<u32> =
+        daemon.workers.iter().map(|w| w.pid).collect();
+
+    for agent in state.background_agents.values() {
+        if agent.status != BackgroundAgentStatus::Running {
+            continue;
+        }
+        let Some(pid) = agent.pid else { continue };
+        if tracked_pids.contains(&pid) {
+            continue;
+        }
+        daemon.workers.push(WorkerInfo {
+            label: agent.description.clone(),
+            pid,
+            cwd: agent
+                .worktree_path
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(".")),
+            started_at: Instant::now(),
+        });
+    }
+
+    // If we gained or still have workers, touch activity so idle-exit
+    // doesn't fire while work is in progress.
+    if daemon.has_active_workers() {
+        daemon.touch_activity();
+    } else if had_workers {
+        // Workers just finished — reset activity so idle timer starts fresh.
+        daemon.touch_activity();
+    }
+}
+
 /// `jfc daemon stop` — send SIGTERM to the PID file and clean up.
 pub fn stop_daemon(paths: &DaemonPaths) -> std::io::Result<()> {
     let pid = match is_daemon_running(paths) {
@@ -383,6 +544,8 @@ pub fn stop_daemon(paths: &DaemonPaths) -> std::io::Result<()> {
 
 /// `jfc daemon status` — render a one-paragraph status string.
 pub fn status_string(paths: &DaemonPaths) -> String {
+    use super::state::BackgroundAgentStatus;
+
     let running = is_daemon_running(paths);
     let state = reconcile_background_agents(paths).unwrap_or_default();
     let uptime = SystemTime::now()
@@ -417,15 +580,37 @@ pub fn status_string(paths: &DaemonPaths) -> String {
         state.wakeups.len(),
         state.fired_wakeups.len()
     ));
+
+    let active_agents: Vec<_> = state
+        .background_agents
+        .values()
+        .filter(|a| a.status == BackgroundAgentStatus::Running)
+        .collect();
     s.push_str(&format!(
         "background agents: {} ({} active)\n",
         state.background_agents.len(),
-        state
-            .background_agents
-            .values()
-            .filter(|a| !a.status.is_terminal())
-            .count()
+        active_agents.len()
     ));
+
+    if !active_agents.is_empty() {
+        s.push_str(&format!(
+            "  {} bg worker(s) running:\n",
+            active_agents.len()
+        ));
+        for a in &active_agents {
+            let cwd = a
+                .worktree_path
+                .as_deref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| ".".into());
+            s.push_str(&format!(
+                "    `{}` (pid {}) in {}\n",
+                a.description,
+                a.pid.unwrap_or(0),
+                cwd
+            ));
+        }
+    }
     s
 }
 

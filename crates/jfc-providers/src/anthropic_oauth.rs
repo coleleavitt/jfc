@@ -10,8 +10,9 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, RwLock};
 
 use jfc_provider::{
-    CompletionResponse, EventStream, ModelInfo, Provider, ProviderContent, ProviderMessage,
-    ProviderRole, StreamConvention, StreamEvent, StreamOptions, TokenUsage,
+    CompletionResponse, EventStream, FallbackTriggered, ModelId, ModelInfo, Provider,
+    ProviderContent, ProviderMessage, ProviderRole, StreamConvention, StreamEvent, StreamOptions,
+    TokenUsage,
 };
 
 use super::sse;
@@ -1461,13 +1462,30 @@ impl Provider for AnthropicOAuthProvider {
                         // success path on disk I/O failure.
                         mgr.record_routing_state(&account.name, &rl_info).await;
                         let stream = sse::into_event_stream(resp);
-                        return Ok(wrap_with_usage_recording(
+                        let stream = wrap_with_usage_recording(
                             stream,
                             mgr.clone(),
                             request_guard,
                             account.name.clone(),
                             model_in_use.clone(),
-                        ));
+                        );
+                        // If the model was swapped due to overload fallback,
+                        // prepend a FallbackTriggered event so the UI can
+                        // surface "Using X (fallback from Y)" cleanly.
+                        if model_in_use != options.model.as_str() {
+                            let fallback_event = StreamEvent::FallbackTriggered(
+                                FallbackTriggered {
+                                    original_model: ModelId::new(options.model.as_str()),
+                                    fallback_model: ModelId::new(&model_in_use),
+                                    reason: "overloaded (529 threshold crossed)".to_owned(),
+                                },
+                            );
+                            let prefix = futures::stream::once(futures::future::ready(
+                                Ok(fallback_event),
+                            ));
+                            return Ok(Box::pin(prefix.chain(stream)));
+                        }
+                        return Ok(stream);
                     }
                     RotationDecision::RateLimited { .. } => {
                         hit_rate_limit_this_round = true;

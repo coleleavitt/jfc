@@ -142,6 +142,10 @@ fn default_auto_compact_enabled() -> bool {
     true
 }
 
+fn default_true() -> bool {
+    true
+}
+
 impl Default for Config {
     fn default() -> Self {
         // Hand-rolled rather than derive because `memory_recall_enabled`
@@ -245,7 +249,16 @@ pub struct PermissionAutomationConfig {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    #[serde(default)]
+    pub denied_tools: Vec<String>,
+    #[serde(default)]
     pub rules: Vec<PermissionRuleEntry>,
+    /// Auto-approve tool calls (Bash, Write, Edit, ApplyPatch) when running
+    /// inside a landlock sandbox. Default: true — when execution is
+    /// containerized, permission prompts add friction without security value.
+    #[serde(default = "default_true")]
+    pub auto_allow_if_sandboxed: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -343,6 +356,8 @@ pub mod feature_config {
     #[serde(default)]
     pub struct PermissionsConfig {
         pub enabled: bool,
+        pub allowed_tools: Vec<String>,
+        pub denied_tools: Vec<String>,
         pub rules: Vec<PermissionRuleConfig>,
         pub ceiling: Vec<String>,
     }
@@ -351,6 +366,8 @@ pub mod feature_config {
         fn default() -> Self {
             Self {
                 enabled: false,
+                allowed_tools: Vec::new(),
+                denied_tools: Vec::new(),
                 rules: Vec::new(),
                 ceiling: vec![
                     "Bash:rm -rf *".to_owned(),
@@ -1675,6 +1692,27 @@ reason = "no shell access"
         assert_eq!(pa.rules.len(), 2);
         assert_eq!(pa.rules[0].action, "allow");
         assert_eq!(pa.rules[1].tool, "Bash");
+    }
+
+    #[test]
+    fn parse_allowed_denied_tools_normal() {
+        let toml = r#"
+[permission_automation]
+enabled = true
+allowed_tools = ["Read", "Glob", "Grep"]
+denied_tools = ["Bash"]
+
+[[permission_automation.rules]]
+action = "allow"
+tool = "Write"
+path = "src/*"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        let pa = cfg.permission_automation.unwrap();
+        assert!(pa.enabled);
+        assert_eq!(pa.allowed_tools, vec!["Read", "Glob", "Grep"]);
+        assert_eq!(pa.denied_tools, vec!["Bash"]);
+        assert_eq!(pa.rules.len(), 1);
     }
 
     #[test]

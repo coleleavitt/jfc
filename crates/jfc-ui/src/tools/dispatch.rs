@@ -259,6 +259,9 @@ pub async fn execute_tool(
         (ToolKind::Task, ToolInput::Task(_)) => {
             ExecutionResult::failure("Task tool must be dispatched via the streaming executor")
         }
+        (ToolKind::Workflow, ToolInput::Workflow { .. }) => {
+            ExecutionResult::failure("Workflow tool must be dispatched via the streaming executor (background task)")
+        }
         (ToolKind::Skill, ToolInput::Skill { name, args }) => {
             execute_skill(&name, args.as_deref()).await
         }

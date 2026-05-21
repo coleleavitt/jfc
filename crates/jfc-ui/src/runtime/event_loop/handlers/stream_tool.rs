@@ -2,12 +2,29 @@
 //! `StreamEvent::ServerToolResult` handlers — tool announcement routing.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::app::{App, PendingApproval};
 use crate::runtime::{AppEvent, EventSender, ToolEvent};
 use crate::types::*;
+use crate::{toast, toast::ToastKind};
 
 use super::super::guards::streaming_assistant_mut;
+
+/// One-time flag: ensures the "Tools auto-approved (sandboxed)" toast
+/// is only pushed once per process lifetime.
+static SANDBOX_TOAST_SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// Push a one-time toast informing the user that tools are being auto-approved
+/// because the process is running inside a landlock sandbox.
+fn maybe_show_sandbox_toast(app: &mut App) {
+    if crate::is_sandbox_active() && !SANDBOX_TOAST_SHOWN.swap(true, Ordering::Relaxed) {
+        toast::push_with_cap(
+            &mut app.toasts,
+            toast::Toast::new(ToastKind::Info, "Tools auto-approved (sandboxed)"),
+        );
+    }
+}
 
 /// Handle a new tool announced by the stream layer.
 pub(crate) async fn handle_stream_tool(app: &mut App, tx: &EventSender, tool: ToolCall) {
@@ -148,6 +165,8 @@ pub(crate) async fn handle_stream_tool(app: &mut App, tx: &EventSender, tool: To
             app.approval_queue.push_back(tool);
         }
     } else {
+        // Sandbox auto-approval toast (first time only per session).
+        maybe_show_sandbox_toast(app);
         tracing::info!(
             target: "jfc::ui::tool",
             tool_kind = tool.kind.label(),

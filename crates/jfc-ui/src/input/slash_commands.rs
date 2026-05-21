@@ -248,7 +248,7 @@ slash_commands! {
         "/continue" ["/c"] "resume the most recent session (`/continue all` for any cwd)" => cmd_continue,
         "/resume" [] "resume a specific session by id" => cmd_resume,
         "/sessions" [] "list all saved sessions" => cmd_sessions,
-        "/workflow" ["/wf"] "list / run `.jfc/workflows/*.toml` templates" => cmd_workflow,
+        "/workflow" ["/wf", "/workflows"] "list running + available workflows; run a named workflow" => cmd_workflow,
         "/login" [] "authenticate with a provider (browser flow)" => cmd_login,
         "/logout" [] "wipe stored credentials" => cmd_logout,
         "/release-notes" ["/releasenotes", "/changelog"] "show the changelog" => cmd_release_notes,
