@@ -8,6 +8,7 @@ pub mod antigravity_transform;
 pub mod bedrock;
 pub mod bedrock_wizard;
 pub mod codex_oauth;
+pub mod gemini_api;
 
 pub mod litellm;
 pub mod login_dispatch;
@@ -24,6 +25,7 @@ pub use anthropic_oauth::AnthropicOAuthProvider;
 pub use antigravity_oauth::AntigravityOAuthProvider;
 pub use bedrock::BedrockProvider;
 pub use codex_oauth::CodexOAuthProvider;
+pub use gemini_api::GeminiApiProvider;
 pub use litellm::LiteLLMProvider;
 pub use openai::OpenAIProvider;
 pub use openwebui::OpenWebUIProvider;

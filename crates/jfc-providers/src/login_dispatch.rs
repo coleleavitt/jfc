@@ -67,6 +67,7 @@ Choose an authentication target:
   /login claudeai     Claude Code OAuth (Pro / Max / Team)
   /login codex        OpenAI Codex OAuth (ChatGPT Pro / Plus)
   /login antigravity  Google Antigravity OAuth (Gemini 3.x + Claude via AI Pro)
+  /login gemini-api   Gemini API key (GEMINI_API_KEY from AI Studio)
   /login litellm      LiteLLM proxy (base URL + API key)
   /login bedrock      AWS Bedrock (requires `aws` CLI)
   /login vertex       GCP Vertex (requires `gcloud` CLI)

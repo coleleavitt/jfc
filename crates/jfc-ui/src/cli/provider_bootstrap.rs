@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use crate::providers::{
-    AnthropicOAuthProvider, AnthropicProvider, BedrockProvider, CodexOAuthProvider,
-    LiteLLMProvider, OpenAIProvider, OpenWebUIProvider, VertexProvider,
+    AnthropicOAuthProvider, AnthropicProvider, AntigravityOAuthProvider, BedrockProvider,
+    CodexOAuthProvider, GeminiApiProvider, LiteLLMProvider, OpenAIProvider, OpenWebUIProvider,
+    VertexProvider,
 };
 use jfc_provider::{ModelId, ModelSpec, Provider};
 
@@ -134,6 +135,26 @@ pub(crate) fn build_providers() -> ProvidersInit {
             "registering Vertex provider (config + gcloud CLI present)"
         );
         providers.push(Arc::new(vertex));
+    }
+
+    // Antigravity OAuth: Google AI Pro / Gemini 3 + Claude via Code Assist API.
+    let antigravity = AntigravityOAuthProvider::new();
+    if antigravity.has_usable_config() {
+        tracing::info!(
+            target: "jfc::startup",
+            "registering Antigravity provider (OAuth tokens present)"
+        );
+        providers.push(Arc::new(antigravity));
+    }
+
+    // Direct Gemini API key: simplest path for users with a Google AI Studio key.
+    if let Some(gemini) = GeminiApiProvider::from_env() {
+        tracing::info!(
+            target: "jfc::startup",
+            "registering Gemini API provider (GEMINI_API_KEY set)"
+        );
+        providers.push(Arc::new(gemini));
+        prefer.get_or_insert("gemini");
     }
 
     if providers.is_empty() {
@@ -298,8 +319,18 @@ pub(crate) fn provider_for_model(
     }
 
     let has_openwebui = providers.iter().any(|p| p.name() == "openwebui");
-    if has_openwebui && !model_id.starts_with("claude-") {
+    if has_openwebui && !model_id.starts_with("claude-") && !model_id.starts_with("gemini") {
         return providers.iter().find(|p| p.name() == "openwebui").cloned();
+    }
+
+    // Tier 3b: gemini-prefixed ids route to the gemini or antigravity provider.
+    if model_id.starts_with("gemini") {
+        if let Some(p) = providers.iter().find(|p| p.name() == "antigravity") {
+            return Some(Arc::clone(p));
+        }
+        if let Some(p) = providers.iter().find(|p| p.name() == "gemini") {
+            return Some(Arc::clone(p));
+        }
     }
     None
 }

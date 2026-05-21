@@ -537,16 +537,36 @@ impl Provider for AntigravityOAuthProvider {
             account_id: account_id.clone(),
         };
         if method.is_expired_or_expiring(now_secs()) {
-            let (access_token, new_expiry) = refresh(&self.client, &refresh_token).await?;
-            self.store.set(
-                PROVIDER_ID,
-                AuthMethod::OAuth {
-                    access_token,
-                    refresh_token,
-                    expires_at: new_expiry,
-                    account_id,
-                },
-            )?;
+            match refresh(&self.client, &refresh_token).await {
+                Ok((access_token, new_expiry)) => {
+                    self.store.set(
+                        PROVIDER_ID,
+                        AuthMethod::OAuth {
+                            access_token,
+                            refresh_token,
+                            expires_at: new_expiry,
+                            account_id,
+                        },
+                    )?;
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    // If the refresh token was revoked, clear stored credentials
+                    // so the user doesn't get stuck in a broken refresh loop.
+                    if msg.contains("invalid_grant") || msg.contains("Token has been revoked") {
+                        tracing::warn!(
+                            target: "jfc::provider::antigravity",
+                            "refresh token revoked by Google — clearing stored credentials"
+                        );
+                        self.store.remove(PROVIDER_ID).ok();
+                        anyhow::bail!(
+                            "Google revoked the stored refresh token. \
+                             Run `/login antigravity` to reauthenticate."
+                        );
+                    }
+                    return Err(e);
+                }
+            }
         }
         Ok(())
     }

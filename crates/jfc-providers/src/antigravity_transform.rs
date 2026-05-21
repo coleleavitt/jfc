@@ -27,6 +27,8 @@
 //! module raises a clear error in `build_gemini_request` if asked for one,
 //! and the provider falls back to the auth-only behaviour for them.
 
+use std::sync::LazyLock;
+
 use futures::StreamExt;
 use jfc_provider::{
     EventStream, ProviderContent, ProviderMessage, ProviderRole, StopReason, StreamEvent,
@@ -35,6 +37,52 @@ use jfc_provider::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
+
+// ─── Per-process session ID (mirrors TS plugin's random session token) ───────
+
+static SESSION_ID: LazyLock<String> = LazyLock::new(|| {
+    // Mirrors the TS plugin's per-process random session token.
+    // Use UUID-based randomness since rand version compatibility is tricky.
+    let id = Uuid::new_v4().as_u128() % 9_000_000_000_000_000 + 1_000_000_000_000_000;
+    format!("-{id}")
+});
+
+// ─── Antigravity mandatory system instruction ────────────────────────────────
+
+const ANTIGRAVITY_BASE_SYSTEM_INSTRUCTION: &str =
+    "You are Antigravity, a powerful agentic AI coding assistant designed by the \
+     Google Deepmind team working on Advanced Agentic Coding. You are pair \
+     programming with a USER to solve their coding task. The task may require \
+     creating a new codebase, modifying or debugging an existing codebase, or \
+     simply answering a question. **Absolute paths only** **Proactiveness**";
+
+// ─── Tool schema system instruction for Gemini 3 ─────────────────────────────
+
+const GEMINI_TOOL_SCHEMA_SYSTEM_INSTRUCTION: &str = r#"<CRITICAL_TOOL_USAGE_INSTRUCTIONS>
+You are operating in a CUSTOM ENVIRONMENT where tool definitions COMPLETELY DIFFER from your training data.
+VIOLATION OF THESE RULES WILL CAUSE IMMEDIATE SYSTEM FAILURE.
+
+## ABSOLUTE RULES - NO EXCEPTIONS
+
+1. **SCHEMA IS LAW**: The JSON schema in each tool definition is the ONLY source of truth.
+   - Your pre-trained knowledge about tools like 'read_file', 'apply_diff', 'write_to_file', 'bash', etc. is INVALID here.
+   - Every tool has been REDEFINED with different parameters than what you learned during training.
+
+2. **PARAMETER NAMES ARE EXACT**: Use ONLY the parameter names from the schema.
+   - The schema's 'required' array tells you which parameters are mandatory
+
+3. **ARRAY PARAMETERS**: When a parameter has "type": "array", check the 'items' field:
+   - If items.type is "object", you MUST provide an array of objects with the EXACT properties listed
+   - If items.type is "string", you MUST provide an array of strings
+   - NEVER provide a single object when an array is expected
+
+4. **BEFORE EVERY TOOL CALL**:
+   a. Read the tool's schema completely
+   b. Identify ALL required parameters
+   c. Verify your parameter names match EXACTLY (case-sensitive)
+   d. For arrays, verify you're providing the correct item structure
+   e. Do NOT add parameters that don't exist in the schema
+</CRITICAL_TOOL_USAGE_INSTRUCTIONS>"#;
 
 /// Translate a model id like `gemini-3-pro` / `gemini-claude-sonnet-4-5` into
 /// the Code Assist short name. Mirrors `resolveModelName` in the TS plugin's
@@ -53,6 +101,16 @@ pub fn resolve_model_name(model: &str) -> &str {
 /// Is this a Claude-via-Gemini model id?
 pub fn is_claude_model(model: &str) -> bool {
     model.contains("claude")
+}
+
+/// Is this a Gemini 3 model? (uses thinkingLevel instead of thinkingBudget)
+fn is_gemini_3(model: &str) -> bool {
+    model.contains("gemini-3") || model.contains("gemini_3")
+}
+
+/// Does this model need the Antigravity system instruction injected?
+fn needs_antigravity_system_instruction(model: &str) -> bool {
+    is_claude_model(model) || model.contains("gemini-3-pro") || model.contains("gemini-3-flash")
 }
 
 /// Default thinking budget for Claude `-thinking` models when the caller
@@ -94,13 +152,29 @@ pub fn build_gemini_request(
     messages: &[ProviderMessage],
     options: &StreamOptions,
 ) -> anyhow::Result<Value> {
-    let mut request = build_core_request(messages, options);
+    let mut request = build_core_request(model, messages, options);
+
+    // Gemini also benefits from VALIDATED mode for tool calling
+    request["toolConfig"] = json!({
+        "functionCallingConfig": { "mode": "VALIDATED" },
+    });
+
     let mut generation_config = base_generation_config(options);
     if let Some(budget) = options.thinking_budget {
-        generation_config.insert(
-            "thinkingConfig".into(),
-            json!({ "thinkingBudget": budget }),
-        );
+        if is_gemini_3(model) {
+            // Gemini 3 models use thinkingLevel ('low'|'medium'|'high')
+            let level = budget_to_thinking_level(budget);
+            generation_config.insert(
+                "thinkingConfig".into(),
+                json!({ "thinkingLevel": level }),
+            );
+        } else {
+            // Gemini 2.5 models use thinkingBudget (number)
+            generation_config.insert(
+                "thinkingConfig".into(),
+                json!({ "thinkingBudget": budget }),
+            );
+        }
     }
     if !generation_config.is_empty() {
         request["generationConfig"] = Value::Object(generation_config);
@@ -125,7 +199,7 @@ pub fn build_claude_request(
     messages: &[ProviderMessage],
     options: &StreamOptions,
 ) -> anyhow::Result<Value> {
-    let mut request = build_core_request(messages, options);
+    let mut request = build_core_request(model, messages, options);
 
     // Claude requires the VALIDATED tool-calling mode so the upstream rejects
     // malformed parameters server-side rather than letting them through.
@@ -164,16 +238,45 @@ pub fn build_claude_request(
 
 /// Common `{contents, systemInstruction, tools}` core shared by both
 /// builders. Each variant adds its own `generationConfig` + extras on top.
-fn build_core_request(messages: &[ProviderMessage], options: &StreamOptions) -> Value {
+///
+/// Handles:
+/// - Antigravity system instruction injection (for Claude and Gemini 3)
+/// - Tool schema system instruction (for Gemini 3 with tools)
+/// - Tool name sanitization (Gemini requires `^[a-zA-Z_][a-zA-Z0-9_-]*$`)
+/// - STRICT PARAMETERS description augmentation (for Gemini-native models)
+fn build_core_request(model: &str, messages: &[ProviderMessage], options: &StreamOptions) -> Value {
     let contents = messages.iter().filter_map(message_to_content).collect::<Vec<_>>();
     let mut request = json!({ "contents": contents });
-    if let Some(sys) = options.system.as_deref().filter(|s| !s.is_empty()) {
-        request["systemInstruction"] = json!({ "parts": [ { "text": sys } ] });
+
+    // Build the systemInstruction parts array
+    let mut sys_parts: Vec<Value> = Vec::new();
+
+    // 1. Antigravity system instruction (prepended first for Claude + Gemini 3)
+    if needs_antigravity_system_instruction(model) {
+        sys_parts.push(json!({ "text": ANTIGRAVITY_BASE_SYSTEM_INSTRUCTION }));
     }
+
+    // 2. Tool schema system instruction (for Gemini 3 with tools)
+    if is_gemini_3(model) && !options.tools.is_empty() {
+        sys_parts.push(json!({ "text": GEMINI_TOOL_SCHEMA_SYSTEM_INSTRUCTION }));
+    }
+
+    // 3. User-provided system prompt
+    if let Some(sys) = options.system.as_deref().filter(|s| !s.is_empty()) {
+        sys_parts.push(json!({ "text": sys }));
+    }
+
+    if !sys_parts.is_empty() {
+        request["systemInstruction"] = json!({ "role": "user", "parts": sys_parts });
+    }
+
+    // Build tools with sanitization + STRICT PARAMETERS augmentation
     if !options.tools.is_empty() {
-        request["tools"] = json!([
-            { "functionDeclarations": options.tools.iter().map(tool_to_decl).collect::<Vec<_>>() }
-        ]);
+        let is_gemini_native = !is_claude_model(model);
+        let decls: Vec<Value> = options.tools.iter().map(|tool| {
+            tool_to_decl_augmented(tool, is_gemini_native)
+        }).collect();
+        request["tools"] = json!([ { "functionDeclarations": decls } ]);
     }
     request
 }
@@ -193,8 +296,10 @@ fn base_generation_config(options: &StreamOptions) -> serde_json::Map<String, Va
 }
 
 /// Wrap a core request body in the Code Assist envelope every Antigravity
-/// streaming call uses (`{project, model, userAgent, requestId, request}`).
-fn wrap_envelope(project_id: &str, model: &str, request: Value) -> Value {
+/// streaming call uses (`{project, model, userAgent, requestId, sessionId, request}`).
+fn wrap_envelope(project_id: &str, model: &str, mut request: Value) -> Value {
+    // Inject sessionId into the request payload (inside the envelope)
+    request["sessionId"] = json!(*SESSION_ID);
     json!({
         "project": project_id,
         "model": model,
@@ -213,7 +318,7 @@ fn message_to_content(message: &ProviderMessage) -> Option<Value> {
     let parts: Vec<Value> = message
         .content
         .iter()
-        .filter_map(content_to_part)
+        .filter_map(|c| content_to_part(c, message.role))
         .collect();
     if parts.is_empty() {
         return None;
@@ -221,7 +326,7 @@ fn message_to_content(message: &ProviderMessage) -> Option<Value> {
     Some(json!({ "role": role, "parts": parts }))
 }
 
-fn content_to_part(content: &ProviderContent) -> Option<Value> {
+fn content_to_part(content: &ProviderContent, _role: ProviderRole) -> Option<Value> {
     match content {
         ProviderContent::Text(text) if text.is_empty() => None,
         ProviderContent::Text(text) => Some(json!({ "text": text })),
@@ -238,20 +343,92 @@ fn content_to_part(content: &ProviderContent) -> Option<Value> {
                 "response": { "content": content, "isError": is_error },
             },
         })),
-        // Gemini doesn't have a direct analog for Anthropic-style
-        // server_tool_use / redacted thinking blocks — drop them so the
-        // request stays well-formed. The renderer keeps them in the local
-        // transcript regardless.
+        // RedactedThinking blocks from Anthropic don't have a Gemini equivalent.
+        // Thought blocks without a valid thoughtSignature are rejected by the
+        // Gemini server — strip them from history to avoid 400 errors.
+        ProviderContent::RedactedThinking { .. } => None,
+        // ServerToolUse/ServerToolResult/Attachment — no Gemini analog, drop.
         _ => None,
     }
 }
 
-fn tool_to_decl(tool: &ToolDef) -> Value {
+fn tool_to_decl_augmented(tool: &ToolDef, augment_description: bool) -> Value {
+    let name = sanitize_tool_name(&tool.name);
+    let description = if augment_description {
+        augment_tool_description(&tool.description, &tool.input_schema)
+    } else {
+        tool.description.clone()
+    };
     json!({
-        "name": tool.name,
-        "description": tool.description,
+        "name": name,
+        "description": description,
         "parameters": tool.input_schema,
     })
+}
+
+/// Sanitize a tool name for Gemini API compatibility.
+/// Gemini requires: `^[a-zA-Z_][a-zA-Z0-9_-]*$`
+pub fn sanitize_tool_name(name: &str) -> String {
+    if name.is_empty() {
+        return "unnamed_tool".to_owned();
+    }
+    let mut out = String::with_capacity(name.len() + 2);
+    let first = name.chars().next().unwrap();
+    if first.is_ascii_digit() {
+        out.push_str("t_");
+    }
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+            out.push(c);
+        } else {
+            out.push('_');
+        }
+    }
+    out
+}
+
+/// Append a STRICT PARAMETERS summary to the tool description for Gemini models.
+fn augment_tool_description(description: &str, schema: &Value) -> String {
+    if description.contains("STRICT PARAMETERS:") {
+        return description.to_owned();
+    }
+    let summary = summarize_schema_params(schema);
+    if summary.is_empty() {
+        return description.to_owned();
+    }
+    format!("{description}\n\nSTRICT PARAMETERS: {summary}")
+}
+
+/// Build a concise parameter summary from the tool's JSON schema.
+fn summarize_schema_params(schema: &Value) -> String {
+    let Some(props) = schema.get("properties").and_then(|v| v.as_object()) else {
+        return String::new();
+    };
+    let required: Vec<&str> = schema
+        .get("required")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+
+    let mut parts: Vec<String> = Vec::new();
+    for (key, prop) in props.iter().take(10) {
+        let typ = prop.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let req = if required.contains(&key.as_str()) { " REQUIRED" } else { "" };
+        parts.push(format!("{key}: {typ}{req}"));
+    }
+    if props.len() > 10 {
+        parts.push(format!("…+{} more", props.len() - 10));
+    }
+    parts.join(", ")
+}
+
+/// Map a thinking budget number to a Gemini 3 thinkingLevel string.
+fn budget_to_thinking_level(budget: u32) -> &'static str {
+    match budget {
+        0..=4096 => "low",
+        4097..=16384 => "medium",
+        _ => "high",
+    }
 }
 
 // ─── SSE response parsing ────────────────────────────────────────────────────
@@ -463,10 +640,11 @@ mod tests {
         assert_eq!(body["userAgent"], "antigravity");
         assert_eq!(body["request"]["contents"][0]["role"], "user");
         assert_eq!(body["request"]["contents"][0]["parts"][0]["text"], "hi");
-        assert_eq!(
-            body["request"]["systemInstruction"]["parts"][0]["text"],
-            "be helpful"
-        );
+        // Antigravity system instruction is prepended for gemini-3-pro
+        let sys_parts = body["request"]["systemInstruction"]["parts"].as_array().unwrap();
+        assert!(sys_parts[0]["text"].as_str().unwrap().contains("Antigravity"));
+        // User system prompt is last
+        assert_eq!(sys_parts.last().unwrap()["text"], "be helpful");
     }
 
     #[test]
