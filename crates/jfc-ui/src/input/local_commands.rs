@@ -652,14 +652,15 @@ pub(super) fn handle_bug_command(app: &mut App, description: String) {
         std::env::consts::OS,
     );
     let url = super::support::bug_report_url(&title, &body);
-    #[cfg(target_os = "linux")]
-    let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-    #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").arg(&url).spawn();
-    #[cfg(target_os = "windows")]
-    let _ = std::process::Command::new("cmd")
-        .args(["/C", "start", &url])
-        .spawn();
+    // TODO: re-enable browser launch when in interactive mode (not in tests).
+    // #[cfg(target_os = "linux")]
+    // let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+    // #[cfg(target_os = "macos")]
+    // let _ = std::process::Command::new("open").arg(&url).spawn();
+    // #[cfg(target_os = "windows")]
+    // let _ = std::process::Command::new("cmd")
+    //     .args(["/C", "start", &url])
+    //     .spawn();
     app.messages.push(crate::types::ChatMessage::user(
         format!("/bug {description}").trim_end().into(),
     ));

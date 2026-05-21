@@ -170,17 +170,18 @@ pub(super) async fn cmd_login(
         _ => None,
     };
     if let Some(url) = url {
+        // TODO: re-enable browser launch when in interactive mode (not in tests).
         // Best-effort: shell out to the platform browser opener.
         // Don't await — the browser launch is fire-and-forget.
-        #[cfg(target_os = "linux")]
-        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
-        #[cfg(target_os = "macos")]
-        let _ = std::process::Command::new("open").arg(url).spawn();
-        #[cfg(target_os = "windows")]
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", "start", url])
-            .spawn();
-        tracing::info!(target: "jfc::login", %url, "opened browser for /login");
+        // #[cfg(target_os = "linux")]
+        // let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+        // #[cfg(target_os = "macos")]
+        // let _ = std::process::Command::new("open").arg(url).spawn();
+        // #[cfg(target_os = "windows")]
+        // let _ = std::process::Command::new("cmd")
+        //     .args(["/C", "start", url])
+        //     .spawn();
+        // tracing::info!(target: "jfc::login", %url, "opened browser for /login");
     }
     app.messages.push(ChatMessage::assistant(format!(
         "{dispatch}{}",
@@ -295,14 +296,15 @@ pub(super) async fn cmd_feedback(
         std::env::consts::OS,
     );
     let url = super::support::bug_report_url("", &body);
-    #[cfg(target_os = "linux")]
-    let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-    #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").arg(&url).spawn();
-    #[cfg(target_os = "windows")]
-    let _ = std::process::Command::new("cmd")
-        .args(["/C", "start", &url])
-        .spawn();
+    // TODO: re-enable browser launch when in interactive mode (not in tests).
+    // #[cfg(target_os = "linux")]
+    // let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+    // #[cfg(target_os = "macos")]
+    // let _ = std::process::Command::new("open").arg(&url).spawn();
+    // #[cfg(target_os = "windows")]
+    // let _ = std::process::Command::new("cmd")
+    //     .args(["/C", "start", &url])
+    //     .spawn();
     app.messages.push(ChatMessage::assistant(format!(
         "Opened a pre-filled bug report at {}/issues/new in your browser \
          (version, model, OS, and session id `{session_id}` are already attached).",
