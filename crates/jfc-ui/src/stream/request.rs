@@ -459,6 +459,14 @@ Do not use a colon before tool calls.";
         .as_deref()
         .map(user_text_requests_action)
         .unwrap_or(false);
+    if !action_expected && !advertised_tools.is_empty() {
+        tracing::debug!(
+            target: "jfc::stream::tools",
+            tool_count = advertised_tools.len(),
+            "suppressing tool catalog for non-action prompt"
+        );
+        advertised_tools.clear();
+    }
     let advertised_tool_count = advertised_tools.len();
 
     let mut base = StreamOptions::new(model.clone())
@@ -535,6 +543,7 @@ mod tests {
     fn action_intent_leaves_plain_questions_alone_robust() {
         assert!(!user_text_requests_action("what is ownership in rust?"));
         assert!(!user_text_requests_action("explain how borrowing works"));
+        assert!(!user_text_requests_action("this is pretty wild right"));
         assert!(!user_text_requests_action("/help"));
     }
 }

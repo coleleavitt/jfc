@@ -137,6 +137,7 @@ impl Provider for OpenAIProvider {
     }
 
     async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
+        // First try to get the model list from OpenAI's own /v1/models endpoint.
         let resp = self
             .client
             .get(self.models_url())
@@ -161,10 +162,27 @@ impl Provider for OpenAIProvider {
 
         models.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
         if models.is_empty() {
-            Ok(Self::fallback_models())
-        } else {
-            Ok(models)
+            models = Self::fallback_models();
         }
+
+        // Enrich with live pricing from models.dev (community registry).
+        // This gives us input_cost/output_cost without hardcoding.
+        if let Ok(priced) =
+            super::models_dev::fetch_provider_models(&self.client, "openai", PROVIDER_ID).await
+        {
+            let price_map: std::collections::HashMap<&str, (Option<f64>, Option<f64>)> = priced
+                .iter()
+                .map(|m| (m.id.as_str(), (m.input_cost, m.output_cost)))
+                .collect();
+            for model in &mut models {
+                if let Some(&(input, output)) = price_map.get(model.id.as_str()) {
+                    model.input_cost = input;
+                    model.output_cost = output;
+                }
+            }
+        }
+
+        Ok(models)
     }
 
     async fn stream(
@@ -408,7 +426,9 @@ fn message_items(role: ProviderRole, content: Vec<ProviderContent>) -> Vec<Value
     };
 
     items.extend(content.into_iter().filter_map(|part| match part {
-        ProviderContent::ToolUse { id, name, input, .. } => Some(json!({
+        ProviderContent::ToolUse {
+            id, name, input, ..
+        } => Some(json!({
             "type": "function_call",
             "call_id": id,
             "name": name,

@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn teleport_target_from_branch() {
-        let targets = vec![TeleportTarget {
+        let targets = [TeleportTarget {
             branch: "jfc/feature-work".to_string(),
             session_id: Some("feature-work".to_string()),
             is_current: false,

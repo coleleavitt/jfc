@@ -131,6 +131,8 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
     app.last_stream_event_at = Some(now);
     app.streaming_last_token_at = Some(now);
     app.turn_started_at = Some(now);
+    app.turn_start_cost = crate::cost::total_cost(&app.usage_by_model);
+    app.pending_classifications = 0;
     app.agentic_turn_count = 0;
     // Reset cancel token + interrupt flag for the drained turn. Same
     // rationale as handle_submit — a stale cancel from the previous

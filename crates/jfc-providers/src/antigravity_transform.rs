@@ -109,7 +109,7 @@ pub fn is_claude_model(model: &str) -> bool {
 }
 
 /// Is this a Gemini 3 model? (uses thinkingLevel instead of thinkingBudget)
-fn is_gemini_3(model: &str) -> bool {
+pub(crate) fn is_gemini_3(model: &str) -> bool {
     model.contains("gemini-3") || model.contains("gemini_3")
 }
 
@@ -229,7 +229,7 @@ pub fn build_claude_request(
         // at or below the thinking budget — Claude rejects requests where
         // max_output_tokens <= thinking.budget_tokens.
         let caller_max = options.max_tokens;
-        if u32::from(caller_max) <= budget {
+        if caller_max <= budget {
             generation_config.insert(
                 "maxOutputTokens".into(),
                 json!(CLAUDE_SAFE_MAX_OUTPUT_TOKENS),
@@ -252,7 +252,10 @@ pub fn build_claude_request(
 /// - Tool name sanitization (Gemini requires `^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 /// - STRICT PARAMETERS description augmentation (for Gemini-native models)
 fn build_core_request(model: &str, messages: &[ProviderMessage], options: &StreamOptions) -> Value {
-    let contents = messages.iter().filter_map(message_to_content).collect::<Vec<_>>();
+    let contents = messages
+        .iter()
+        .filter_map(|m| message_to_content(m, messages))
+        .collect::<Vec<_>>();
     let mut request = json!({ "contents": contents });
 
     // Build the systemInstruction parts array
@@ -326,7 +329,28 @@ fn wrap_envelope(project_id: &str, model: &str, mut request: Value) -> Value {
 /// happy path always echoes the real signature captured from the SSE stream.
 const SYNTHETIC_THOUGHT_SIGNATURE: &str = "skip_thought_signature_validator";
 
-fn message_to_content(message: &ProviderMessage) -> Option<Value> {
+/// Walk the message history to map a transient `tool_use_id` (e.g.
+/// `toolu_abc123`) back to the original tool name (e.g. `read_file`).
+///
+/// Gemini matches a `functionResponse` to its `functionCall` by NAME, not by
+/// id — so a historical `ToolResult` must serialize with the same name the
+/// model emitted on the `functionCall`, otherwise the next turn 400s. The
+/// stored `ToolUse.name` is exactly that name (it round-trips verbatim from
+/// the SSE stream), so we reuse it as-is rather than re-sanitizing.
+pub(crate) fn find_tool_name_by_id<'a>(
+    messages: &'a [ProviderMessage],
+    id: &str,
+) -> Option<&'a str> {
+    messages
+        .iter()
+        .flat_map(|m| m.content.iter())
+        .find_map(|c| match c {
+            ProviderContent::ToolUse { id: tid, name, .. } if tid == id => Some(name.as_str()),
+            _ => None,
+        })
+}
+
+fn message_to_content(message: &ProviderMessage, all: &[ProviderMessage]) -> Option<Value> {
     let role = match message.role {
         ProviderRole::User => "user",
         ProviderRole::Assistant => "model",
@@ -344,7 +368,7 @@ fn message_to_content(message: &ProviderMessage) -> Option<Value> {
         .iter()
         .filter_map(|c| {
             let needs_synthetic_fallback = is_model && !first_function_call_seen;
-            let part = content_to_part(c, message.role, needs_synthetic_fallback);
+            let part = content_to_part(c, message.role, needs_synthetic_fallback, all);
             if part.is_some() && matches!(c, ProviderContent::ToolUse { .. }) {
                 first_function_call_seen = true;
             }
@@ -361,6 +385,7 @@ fn content_to_part(
     content: &ProviderContent,
     role: ProviderRole,
     is_first_function_call_in_model_turn: bool,
+    all: &[ProviderMessage],
 ) -> Option<Value> {
     match content {
         ProviderContent::Text(text) if text.is_empty() => None,
@@ -394,12 +419,18 @@ fn content_to_part(
             tool_use_id,
             content,
             is_error,
-        } => Some(json!({
-            "functionResponse": {
-                "name": tool_use_id,
-                "response": { "content": content, "isError": is_error },
-            },
-        })),
+        } => {
+            // Gemini maps the result back to its call by NAME — resolve the
+            // original tool name from history; fall back to the raw id only
+            // when the matching ToolUse isn't in scope (truncated history).
+            let name = find_tool_name_by_id(all, tool_use_id).unwrap_or(tool_use_id.as_str());
+            Some(json!({
+                "functionResponse": {
+                    "name": name,
+                    "response": { "content": content, "isError": is_error },
+                },
+            }))
+        }
         // RedactedThinking blocks from Anthropic don't have a Gemini equivalent.
         // Thought blocks without a valid thoughtSignature are rejected by the
         // Gemini server — strip them from history to avoid 400 errors.
@@ -480,7 +511,7 @@ fn summarize_schema_params(schema: &Value) -> String {
 }
 
 /// Map a thinking budget number to a Gemini 3 thinkingLevel string.
-fn budget_to_thinking_level(budget: u32) -> &'static str {
+pub(crate) fn budget_to_thinking_level(budget: u32) -> &'static str {
     match budget {
         0..=4096 => "low",
         4097..=16384 => "medium",
@@ -881,6 +912,59 @@ mod tests {
             parts[0].get("thoughtSignature").is_none(),
             "user-role functionCalls must NOT carry a thoughtSignature"
         );
+    }
+
+    #[test]
+    fn tool_result_resolves_function_name_from_history_normal() {
+        // A historical ToolResult must serialize its functionResponse with the
+        // ORIGINAL tool name (resolved from the matching ToolUse), not the raw
+        // transient id — otherwise Gemini 400s on the next turn.
+        let opts = StreamOptions::new("gemini-3-pro");
+        let history = vec![
+            ProviderMessage {
+                role: ProviderRole::Assistant,
+                content: vec![ProviderContent::ToolUse {
+                    id: "toolu_abc123".into(),
+                    name: "read_file".into(),
+                    input: json!({ "path": "x" }),
+                    thought_signature: Some("sig".into()),
+                }],
+            },
+            ProviderMessage {
+                role: ProviderRole::User,
+                content: vec![ProviderContent::ToolResult {
+                    tool_use_id: "toolu_abc123".into(),
+                    content: "file contents".into(),
+                    is_error: false,
+                }],
+            },
+        ];
+        let body = build_request("p", &history, &opts).unwrap();
+        let contents = body["request"]["contents"].as_array().unwrap();
+        let func_resp = &contents[1]["parts"][0]["functionResponse"];
+        assert_eq!(
+            func_resp["name"], "read_file",
+            "functionResponse.name must resolve to the original tool name"
+        );
+        assert_eq!(func_resp["response"]["content"], "file contents");
+    }
+
+    #[test]
+    fn tool_result_unknown_id_falls_back_to_id_robust() {
+        // When the matching ToolUse isn't in scope (truncated history), fall
+        // back to the raw id rather than dropping the result entirely.
+        let opts = StreamOptions::new("gemini-3-pro");
+        let history = vec![ProviderMessage {
+            role: ProviderRole::User,
+            content: vec![ProviderContent::ToolResult {
+                tool_use_id: "toolu_missing".into(),
+                content: "x".into(),
+                is_error: false,
+            }],
+        }];
+        let body = build_request("p", &history, &opts).unwrap();
+        let func_resp = &body["request"]["contents"][0]["parts"][0]["functionResponse"];
+        assert_eq!(func_resp["name"], "toolu_missing");
     }
 
     #[test]

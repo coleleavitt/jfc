@@ -69,6 +69,7 @@ Use the MemoryCreate tool for new memories and MemoryDelete for stale ones.{cron
     app.last_stream_event_at = Some(now);
     app.streaming_last_token_at = Some(now);
     app.turn_started_at = Some(now);
+    app.turn_start_cost = crate::cost::total_cost(&app.usage_by_model);
     app.thinking_started_at = None;
     app.thinking_ended_at = None;
     app.last_usage_output = 0;
@@ -230,6 +231,7 @@ Then immediately execute the prompt now (do not wait for the first cron fire)."
     app.last_stream_event_at = Some(now);
     app.streaming_last_token_at = Some(now);
     app.turn_started_at = Some(now);
+    app.turn_start_cost = crate::cost::total_cost(&app.usage_by_model);
     app.thinking_started_at = None;
     app.thinking_ended_at = None;
     app.last_usage_output = 0;
@@ -349,6 +351,7 @@ and display the results in a readable table with columns: id, schedule, command,
     app.last_stream_event_at = Some(now);
     app.streaming_last_token_at = Some(now);
     app.turn_started_at = Some(now);
+    app.turn_start_cost = crate::cost::total_cost(&app.usage_by_model);
     app.thinking_started_at = None;
     app.thinking_ended_at = None;
     app.last_usage_output = 0;

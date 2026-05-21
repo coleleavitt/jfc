@@ -104,6 +104,14 @@ pub enum SerializedPart {
         input: Option<SerializedToolInput>,
         #[serde(default)]
         output: Option<SerializedToolOutput>,
+        /// Gemini 3.x opaque thought signature captured from the stream.
+        /// Must round-trip so `--continue` doesn't lose provider
+        /// continuity — without it, the first replayed functionCall on a
+        /// resumed session falls back to the synthetic token (or 400s).
+        /// Optional + serde(default + skip-if-None) keeps old/non-Gemini
+        /// session files byte-identical.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thought_signature: Option<String>,
     },
     TaskStatus {
         task_id: String,

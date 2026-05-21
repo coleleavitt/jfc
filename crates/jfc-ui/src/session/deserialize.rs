@@ -43,6 +43,7 @@ pub(crate) fn deserialize_part(part: SerializedPart) -> MessagePart {
             is_collapsed,
             input,
             output,
+            thought_signature,
         } => {
             let tool_kind = ToolKind::from_name(&kind);
             MessagePart::Tool(ToolCall {
@@ -84,7 +85,7 @@ pub(crate) fn deserialize_part(part: SerializedPart) -> MessagePart {
                 // reload (would always say "elapsed since session-load").
                 elapsed_ms: None,
                 started_at: None,
-                thought_signature: None,
+                thought_signature,
             })
         }
         SerializedPart::TaskStatus {

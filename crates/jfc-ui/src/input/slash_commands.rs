@@ -181,6 +181,7 @@ pub(super) async fn skill_fallthrough(
         app.last_stream_event_at = Some(now);
         app.streaming_last_token_at = Some(now);
         app.turn_started_at = Some(now);
+        app.turn_start_cost = crate::cost::total_cost(&app.usage_by_model);
         app.agentic_turn_count = 0;
         app.thinking_started_at = None;
         app.pre_dispatched_tool_ids.clear();

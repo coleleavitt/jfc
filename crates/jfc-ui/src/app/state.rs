@@ -144,9 +144,17 @@ impl MessageQueue {
         drained
     }
 
-    /// Drain ALL entries regardless of priority (turn-end full drain).
+    /// Drain ALL entries (turn-end full drain), ordered highest-priority
+    /// first with FIFO preserved within a level. The previous implementation
+    /// drained in raw insertion order, which silently ignored the
+    /// `QueuePriority` of each entry — so a `Now`/`Next` steering prompt
+    /// queued behind older `Later` prompts would not jump ahead. With every
+    /// current caller enqueuing `Later`, the stable sort is a no-op; it makes
+    /// the priority levels actually take effect once callers start using them.
     pub fn drain_all(&mut self) -> Vec<QueuedPrompt> {
-        self.entries.drain(..).collect()
+        let mut drained: Vec<QueuedPrompt> = self.entries.drain(..).collect();
+        drained.sort_by_key(|p| std::cmp::Reverse(p.priority));
+        drained
     }
 
     /// Pop the last entry (for Up-arrow "edit queued" feature).
@@ -368,6 +376,13 @@ pub struct App {
     /// tokens)` after a multi-turn turn was: the timer reset every
     /// loop iteration. v126's spinner uses the same turn-level clock.
     pub turn_started_at: Option<Instant>,
+    /// Cumulative session cost (USD) snapshotted at the start of the current
+    /// user turn. The end-of-turn footer subtracts this from the live
+    /// cumulative total so it shows the *per-turn* cost ("Cooked for 2m /
+    /// $0.04") rather than the whole session's running spend. Captured at the
+    /// same points `turn_started_at` is set to a fresh `Some(now)`, so it
+    /// survives across agentic-loop sub-streams within one turn.
+    pub turn_start_cost: f64,
     /// Number of API round-trips in the current user turn (incremented each
     /// time `continue_agentic_loop` fires). Resets on each user submission.
     /// Used to enforce a max-turns safety limit (default 200, matching CC
@@ -557,6 +572,14 @@ pub struct App {
     pub session_approved: Vec<String>,
     pub follow_bottom: bool,
     pub pending_tool_calls: Vec<ToolCall>,
+    /// Count of auto-mode classifier verdicts still in flight. Each tool in
+    /// auto-mode spawns an async classifier call (2-5s); until every verdict
+    /// lands, `stream_done` must hold the turn open instead of finalizing —
+    /// otherwise a late verdict finds the streaming slot already cleared and
+    /// the tool is silently dropped (never dispatched, loop stalls). Reset to
+    /// 0 at the start of every user turn so a verdict that never arrives
+    /// (e.g. cancelled mid-classification) can't wedge the next turn.
+    pub pending_classifications: usize,
     /// Tool IDs already dispatched mid-stream (safe tools that started
     /// executing while the model was still generating). stream_done
     /// skips these to avoid double-dispatch.
@@ -1062,6 +1085,7 @@ impl App {
             thinking_started_at: None,
             thinking_ended_at: None,
             turn_started_at: None,
+            turn_start_cost: 0.0,
             agentic_turn_count: 0,
             esc_saved_text: None,
             history_cursor: None,
@@ -1117,6 +1141,7 @@ impl App {
             tool_ctx: ToolContext::new(),
             dedup_cache: Arc::new(Mutex::new(ReadDedupCache::new())),
             pending_tool_calls: Vec::new(),
+            pending_classifications: 0,
             pre_dispatched_tool_ids: std::collections::HashSet::new(),
             current_stream_request: None,
             force_compact_pending: false,

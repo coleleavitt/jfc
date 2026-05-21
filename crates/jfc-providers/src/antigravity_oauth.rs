@@ -333,19 +333,20 @@ fn parse_account_info(data: &serde_json::Value) -> (String, AccountTier) {
     }
 
     let mut tier = AccountTier::Free;
-    if let Some(tiers) = data["allowedTiers"].as_array() {
-        if let Some(default) = tiers.iter().find(|t| t["isDefault"].as_bool() == Some(true)) {
-            if let Some(id) = default["id"].as_str() {
-                if id != "legacy-tier" && !id.contains("free") && !id.contains("zero") {
-                    tier = AccountTier::Paid;
-                }
-            }
-        }
+    if let Some(tiers) = data["allowedTiers"].as_array()
+        && let Some(default) = tiers.iter().find(|t| t["isDefault"].as_bool() == Some(true))
+        && let Some(id) = default["id"].as_str()
+        && id != "legacy-tier"
+        && !id.contains("free")
+        && !id.contains("zero")
+    {
+        tier = AccountTier::Paid;
     }
-    if let Some(paid) = data["paidTier"]["id"].as_str() {
-        if !paid.contains("free") && !paid.contains("zero") {
-            tier = AccountTier::Paid;
-        }
+    if let Some(paid) = data["paidTier"]["id"].as_str()
+        && !paid.contains("free")
+        && !paid.contains("zero")
+    {
+        tier = AccountTier::Paid;
     }
     (project_id, tier)
 }
@@ -578,11 +579,11 @@ impl Provider for AntigravityOAuthProvider {
 
     fn auth_headers(&self) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
-        if let Ok(Some(AuthMethod::OAuth { access_token, .. })) = self.store.get(PROVIDER_ID) {
-            if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {access_token}"))
-            {
-                headers.insert(reqwest::header::AUTHORIZATION, v);
-            }
+        if let Ok(Some(AuthMethod::OAuth { access_token, .. })) = self.store.get(PROVIDER_ID)
+            && let Ok(v) =
+                reqwest::header::HeaderValue::from_str(&format!("Bearer {access_token}"))
+        {
+            headers.insert(reqwest::header::AUTHORIZATION, v);
         }
         if let Ok(v) = reqwest::header::HeaderValue::from_str(&user_agent()) {
             headers.insert(reqwest::header::USER_AGENT, v);

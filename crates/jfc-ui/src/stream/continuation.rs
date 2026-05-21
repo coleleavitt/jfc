@@ -6,6 +6,9 @@ use crate::runtime::{AppEvent, StreamEvent, StreamRequestOverrides};
 use crate::types::*;
 
 use super::{
+    compaction::{
+        SUBAGENT_HISTORY_BUDGET_BYTES, cap_messages_for_budget, estimate_provider_message_bytes,
+    },
     messages::{
         build_provider_messages_for_pause_turn_resume, build_provider_messages_with_tool_results,
     },
@@ -186,6 +189,30 @@ const MAX_AGENTIC_TURNS: u32 = {
     200
 };
 
+fn cap_main_continuation_history(provider_name: &str, messages: &mut Vec<ProviderMessage>) -> bool {
+    if provider_name != "gemini" {
+        return false;
+    }
+
+    let before_count = messages.len();
+    let before_bytes: usize = messages.iter().map(estimate_provider_message_bytes).sum();
+    let capped = cap_messages_for_budget(messages, SUBAGENT_HISTORY_BUDGET_BYTES);
+    if capped {
+        let after_bytes: usize = messages.iter().map(estimate_provider_message_bytes).sum();
+        tracing::info!(
+            target: "jfc::stream::budget",
+            provider = provider_name,
+            before_messages = before_count,
+            after_messages = messages.len(),
+            before_bytes,
+            after_bytes,
+            budget_bytes = SUBAGENT_HISTORY_BUDGET_BYTES,
+            "capped Gemini continuation history before provider request"
+        );
+    }
+    capped
+}
+
 pub(crate) async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     // Enforce max-turns safety limit. Without this a model stuck in a
     // retry loop (e.g. repeatedly failing Edit calls) runs indefinitely.
@@ -226,13 +253,15 @@ pub(crate) async fn continue_agentic_loop(app: &mut App, tx: &mpsc::Sender<AppEv
     }
 
     let assistant_idx = setup_new_substream_slot(app, "agentic_loop");
-    let messages = build_provider_messages_with_tool_results(&app.messages[..assistant_idx]);
+    let mut messages = build_provider_messages_with_tool_results(&app.messages[..assistant_idx]);
+    cap_main_continuation_history(app.provider.name(), &mut messages);
     spawn_substream(app, messages, tx);
 }
 
 #[cfg(test)]
 mod should_continue_loop_tests {
     use super::*;
+    use jfc_provider::{ProviderContent, ProviderRole};
 
     fn assistant_with_tool(status: ToolStatus) -> ChatMessage {
         ChatMessage::assistant_parts(vec![MessagePart::Tool(ToolCall {
@@ -303,6 +332,86 @@ mod should_continue_loop_tests {
     fn does_not_continue_on_empty_messages_robust() {
         let msgs: Vec<ChatMessage> = vec![];
         assert!(!should_continue_loop(&msgs));
+    }
+
+    fn provider_user_text(s: impl Into<String>) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::User,
+            content: vec![ProviderContent::Text(s.into())],
+        }
+    }
+
+    fn provider_assistant_text(s: impl Into<String>) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::Assistant,
+            content: vec![ProviderContent::Text(s.into())],
+        }
+    }
+
+    fn provider_tool_use(id: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::Assistant,
+            content: vec![ProviderContent::ToolUse {
+                id: id.to_owned(),
+                name: "Read".to_owned(),
+                input: serde_json::json!({ "path": "x" }),
+                thought_signature: None,
+            }],
+        }
+    }
+
+    fn provider_tool_result(id: &str, content: &str) -> ProviderMessage {
+        ProviderMessage {
+            role: ProviderRole::User,
+            content: vec![ProviderContent::ToolResult {
+                tool_use_id: id.to_owned(),
+                content: content.to_owned(),
+                is_error: false,
+            }],
+        }
+    }
+
+    #[test]
+    fn caps_gemini_continuation_history_normal() {
+        let big = "x".repeat(80_000);
+        let mut msgs = vec![provider_user_text("PROMPT")];
+        for idx in 0..12 {
+            let id = format!("toolu_{idx}");
+            msgs.push(provider_tool_use(&id));
+            msgs.push(provider_tool_result(&id, &big));
+        }
+        msgs.push(provider_assistant_text("recent tail"));
+
+        let before_len = msgs.len();
+        assert!(cap_main_continuation_history("gemini", &mut msgs));
+        assert!(msgs.len() < before_len);
+        let bytes: usize = msgs.iter().map(estimate_provider_message_bytes).sum();
+        assert!(bytes <= SUBAGENT_HISTORY_BUDGET_BYTES + 256);
+        match &msgs[1].content[0] {
+            ProviderContent::Text(t) => assert!(t.contains("elided")),
+            _ => panic!("expected budget marker"),
+        }
+        match &msgs.last().unwrap().content[0] {
+            ProviderContent::Text(t) => assert_eq!(t, "recent tail"),
+            _ => panic!("expected recent tail"),
+        }
+    }
+
+    #[test]
+    fn leaves_non_gemini_continuation_history_alone_normal() {
+        let big = "x".repeat(80_000);
+        let mut msgs = vec![
+            provider_user_text("PROMPT"),
+            provider_tool_use("toolu_1"),
+            provider_tool_result("toolu_1", &big),
+            provider_assistant_text("recent tail"),
+        ];
+        let before_len = msgs.len();
+        let before_bytes: usize = msgs.iter().map(estimate_provider_message_bytes).sum();
+        assert!(!cap_main_continuation_history("anthropic", &mut msgs));
+        assert_eq!(msgs.len(), before_len);
+        let after_bytes: usize = msgs.iter().map(estimate_provider_message_bytes).sum();
+        assert_eq!(after_bytes, before_bytes);
     }
 }
 

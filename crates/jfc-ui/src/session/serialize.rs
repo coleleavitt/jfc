@@ -35,6 +35,7 @@ pub(crate) fn serialize_part(part: &MessagePart) -> SerializedPart {
             is_collapsed: tc.display.is_collapsed(),
             input: Some(serialize_tool_input(&tc.input)),
             output: Some(serialize_tool_output(&tc.output)),
+            thought_signature: tc.thought_signature.clone(),
         },
         MessagePart::TaskStatus(ts) => SerializedPart::TaskStatus {
             task_id: ts.task_id.as_str().to_owned(),

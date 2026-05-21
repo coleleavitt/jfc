@@ -14,7 +14,7 @@ pub(crate) async fn handle_team_event(app: &mut App, tx: &EventSender, ev: TeamE
             from,
             text,
             summary,
-        } => handle_inbox(app, from, text, summary).await,
+        } => handle_inbox(app, tx, from, text, summary).await,
         TeamEvent::Spawned {
             name,
             team_name,
@@ -291,7 +291,13 @@ async fn handle_runner(
     }
 }
 
-async fn handle_inbox(app: &mut App, from: String, text: String, summary: Option<String>) {
+async fn handle_inbox(
+    app: &mut App,
+    tx: &EventSender,
+    from: String,
+    text: String,
+    summary: Option<String>,
+) {
     // Append the teammate's message to the transcript as a
     // user-role turn tagged with the teammate's name so it
     // survives session save/load and the model sees it on
@@ -335,6 +341,27 @@ async fn handle_inbox(app: &mut App, from: String, text: String, summary: Option
         tokio::spawn(async move {
             session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
         });
+    }
+
+    // Wake the leader so it actually processes the teammate's message instead
+    // of leaving it to sit until the next manual user prompt. Only when idle:
+    // if a turn is already streaming (or tools/approvals are pending) the
+    // message is already in `app.messages` and the in-flight turn picks it up
+    // on its next request — and the `is_streaming` gate means concurrent
+    // arrivals don't each spawn a duplicate stream. Treat this as a fresh
+    // turn (reset the agentic-turn counter) since it's a new external input.
+    let leader_idle = !app.is_streaming
+        && app.pending_approval.is_none()
+        && app.pending_tool_calls.is_empty()
+        && app.approval_queue.is_empty();
+    if leader_idle {
+        tracing::info!(
+            target: "jfc::swarm",
+            from = %from,
+            "leader idle — waking to process inbound teammate message"
+        );
+        app.agentic_turn_count = 0;
+        crate::stream::continue_agentic_loop(app, tx).await;
     }
 }
 

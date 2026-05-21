@@ -88,8 +88,9 @@ fn advance_approval_queue(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
         // All tools have been processed (approved/denied) with no
         // dispatched batch. Signal AllComplete so the agentic loop
         // can re-invoke the model with the denial results. Without
-        // this, a denial as the last tool leaves the loop stalled.
-        let _ = tx.try_send(AppEvent::Tool(crate::runtime::ToolEvent::AllComplete));
+        // this, a denial as the last tool leaves the loop stalled —
+        // so use send_critical (never drop it on a full channel).
+        crate::runtime::send_critical(tx, AppEvent::Tool(crate::runtime::ToolEvent::AllComplete));
     }
 }
 

@@ -11,6 +11,20 @@ use jfc_provider::{EventStream, StopReason, StreamEvent};
 const STREAM_INTERRUPT_POLL: Duration = Duration::from_millis(50);
 const TERMINAL_DONE_GRACE: Duration = Duration::from_secs(2);
 
+/// Build the user-facing error text for a cancelled stream. The user-abort
+/// path sets the interrupt flag; the watchdog only cancels the token. Without
+/// this split a watchdog timeout shows up as "Interrupted by user", making a
+/// hard-idle stream look like a phantom keypress.
+fn cancel_reason(by_user: bool) -> String {
+    if by_user {
+        "Interrupted by user".to_owned()
+    } else {
+        "Stream timed out — the model stopped sending data and the watchdog \
+         cancelled it. Press Ctrl+R to retry."
+            .to_owned()
+    }
+}
+
 pub(super) async fn drain_stream_events(
     mut stream: EventStream,
     tx: &mpsc::Sender<AppEvent>,
@@ -26,11 +40,12 @@ pub(super) async fn drain_stream_events(
         // flag covers older callers; the CancellationToken gives immediate
         // wakeups for the migrated stream/task paths.
         if interrupt.load(std::sync::atomic::Ordering::SeqCst) || cancel.is_cancelled() {
-            tracing::info!(target: "jfc::stream", "stream interrupted by user (ESCx2)");
+            let by_user = interrupt.load(std::sync::atomic::Ordering::SeqCst);
+            tracing::info!(target: "jfc::stream", by_user, "stream cancelled");
             let _ = tx
-                .send(AppEvent::Stream(RuntimeStreamEvent::Error(
-                    "Interrupted by user".to_owned(),
-                )))
+                .send(AppEvent::Stream(RuntimeStreamEvent::Error(cancel_reason(
+                    by_user,
+                ))))
                 .await;
             return None;
         }
@@ -41,11 +56,16 @@ pub(super) async fn drain_stream_events(
             // does not trap the user in "Interrupting..." until the next
             // interrupt poll.
             _ = cancel.cancelled() => {
-                tracing::info!(target: "jfc::stream", "stream cancelled via token");
+                // Distinguish a real user abort (ESC×2 / interrupt-on-submit
+                // set the interrupt flag) from a watchdog timeout, which only
+                // cancels the token. Mislabeling watchdog kills as user
+                // interrupts made hard-idle streams look like random ESCs.
+                let by_user = interrupt.load(std::sync::atomic::Ordering::SeqCst);
+                tracing::info!(target: "jfc::stream", by_user, "stream cancelled via token");
                 let _ = tx
-                    .send(AppEvent::Stream(RuntimeStreamEvent::Error(
-                        "Interrupted by user".to_owned(),
-                )))
+                    .send(AppEvent::Stream(RuntimeStreamEvent::Error(cancel_reason(
+                        by_user,
+                    ))))
                 .await;
                 return None;
             }

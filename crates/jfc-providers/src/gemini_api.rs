@@ -92,12 +92,13 @@ impl GeminiApiProvider {
                 in_gemini = false;
                 continue;
             }
-            if in_gemini && trimmed.starts_with("api_key") {
-                if let Some(val) = trimmed.split('=').nth(1) {
-                    let val = val.trim().trim_matches('"').trim_matches('\'');
-                    if !val.is_empty() {
-                        return Some(val.to_string());
-                    }
+            if in_gemini
+                && trimmed.starts_with("api_key")
+                && let Some(val) = trimmed.split('=').nth(1)
+            {
+                let val = val.trim().trim_matches('"').trim_matches('\'');
+                if !val.is_empty() {
+                    return Some(val.to_string());
                 }
             }
         }
@@ -114,33 +115,73 @@ impl GeminiApiProvider {
         vec![
             // Gemini 3.x series (thinkingLevel, not thinkingBudget)
             mk("gemini-3.5-flash", "Gemini 3.5 Flash", 1_048_576, 65_536),
-            mk("gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview", 1_048_576, 65_536),
+            mk(
+                "gemini-3.1-pro-preview",
+                "Gemini 3.1 Pro Preview",
+                1_048_576,
+                65_536,
+            ),
             mk(
                 "gemini-3.1-pro-preview-customtools",
                 "Gemini 3.1 Pro Custom Tools",
                 1_048_576,
                 65_536,
             ),
-            mk("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite", 1_048_576, 65_536),
+            mk(
+                "gemini-3.1-flash-lite",
+                "Gemini 3.1 Flash Lite",
+                1_048_576,
+                65_536,
+            ),
             mk(
                 "gemini-3.1-flash-live-preview",
                 "Gemini 3.1 Flash Live",
                 1_048_576,
                 65_536,
             ),
-            mk("gemini-3-pro-preview", "Gemini 3 Pro Preview", 1_048_576, 65_536),
-            mk("gemini-3-flash-preview", "Gemini 3 Flash Preview", 1_048_576, 65_536),
+            mk(
+                "gemini-3-pro-preview",
+                "Gemini 3 Pro Preview",
+                1_048_576,
+                65_536,
+            ),
+            mk(
+                "gemini-3-flash-preview",
+                "Gemini 3 Flash Preview",
+                1_048_576,
+                65_536,
+            ),
             // Gemini 2.5 series (thinkingBudget)
             mk("gemini-2.5-pro", "Gemini 2.5 Pro", 1_048_576, 65_536),
             mk("gemini-2.5-flash", "Gemini 2.5 Flash", 1_048_576, 65_536),
-            mk("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite", 1_048_576, 65_536),
+            mk(
+                "gemini-2.5-flash-lite",
+                "Gemini 2.5 Flash-Lite",
+                1_048_576,
+                65_536,
+            ),
             // Gemini 2.0 series
             mk("gemini-2.0-flash", "Gemini 2.0 Flash", 1_048_576, 8_192),
-            mk("gemini-2.0-flash-lite", "Gemini 2.0 Flash-Lite", 1_048_576, 8_192),
+            mk(
+                "gemini-2.0-flash-lite",
+                "Gemini 2.0 Flash-Lite",
+                1_048_576,
+                8_192,
+            ),
             // Aliases (always point to latest)
             mk("gemini-pro-latest", "Gemini Pro Latest", 1_048_576, 65_536),
-            mk("gemini-flash-latest", "Gemini Flash Latest", 1_048_576, 65_536),
-            mk("gemini-flash-lite-latest", "Gemini Flash-Lite Latest", 1_048_576, 65_536),
+            mk(
+                "gemini-flash-latest",
+                "Gemini Flash Latest",
+                1_048_576,
+                65_536,
+            ),
+            mk(
+                "gemini-flash-lite-latest",
+                "Gemini Flash-Lite Latest",
+                1_048_576,
+                65_536,
+            ),
             // Special models
             mk(
                 "antigravity-preview-05-2026",
@@ -176,6 +217,15 @@ impl Provider for GeminiApiProvider {
 
     fn available_models(&self) -> Vec<ModelInfo> {
         Self::gemini_models()
+    }
+
+    async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
+        // Fetch live pricing + model list from models.dev (community registry).
+        // Falls back to the hardcoded static list on network failure.
+        match super::models_dev::fetch_provider_models(&self.client, "google", PROVIDER_ID).await {
+            Ok(models) if !models.is_empty() => Ok(models),
+            _ => Ok(Self::gemini_models()),
+        }
     }
 
     fn stream_convention(&self) -> StreamConvention {
@@ -253,8 +303,7 @@ impl GeminiApiProvider {
                 .and_then(|v| v.as_array())
                 .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
                 .unwrap_or_default();
-            if !methods.contains(&"generateContent")
-                && !methods.contains(&"streamGenerateContent")
+            if !methods.contains(&"generateContent") && !methods.contains(&"streamGenerateContent")
             {
                 continue;
             }
@@ -267,10 +316,7 @@ impl GeminiApiProvider {
             if id.is_empty() {
                 continue;
             }
-            let display = m
-                .get("displayName")
-                .and_then(|v| v.as_str())
-                .unwrap_or(id);
+            let display = m.get("displayName").and_then(|v| v.as_str()).unwrap_or(id);
             let ctx = m
                 .get("inputTokenLimit")
                 .and_then(|v| v.as_u64())
@@ -309,9 +355,7 @@ impl GeminiApiProvider {
                     .content
                     .iter()
                     .filter_map(|c| match c {
-                        ProviderContent::Text(t) if !t.is_empty() => {
-                            Some(json!({ "text": t }))
-                        }
+                        ProviderContent::Text(t) if !t.is_empty() => Some(json!({ "text": t })),
                         _ => None,
                     })
                     .collect();
@@ -323,8 +367,14 @@ impl GeminiApiProvider {
             .collect();
 
         let body = json!({ "contents": contents });
-        let resp: serde_json::Value =
-            self.client.post(&url).json(&body).send().await?.json().await?;
+        let resp: serde_json::Value = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await?
+            .json()
+            .await?;
         Ok(resp
             .get("totalTokens")
             .and_then(|v| v.as_u64())
@@ -378,12 +428,23 @@ fn build_direct_request(
                         tool_use_id,
                         content,
                         is_error,
-                    } => Some(json!({
-                        "functionResponse": {
-                            "name": tool_use_id,
-                            "response": { "content": content, "isError": is_error },
-                        }
-                    })),
+                    } => {
+                        // Gemini matches functionResponse → functionCall by
+                        // NAME, so resolve the original tool name from history
+                        // (raw `toolu_*` ids 400 the next turn). Falls back to
+                        // the id when the ToolUse isn't in scope.
+                        let name = super::antigravity_transform::find_tool_name_by_id(
+                            messages,
+                            tool_use_id,
+                        )
+                        .unwrap_or(tool_use_id.as_str());
+                        Some(json!({
+                            "functionResponse": {
+                                "name": name,
+                                "response": { "content": content, "isError": is_error },
+                            }
+                        }))
+                    }
                     _ => None,
                 })
                 .collect();
@@ -425,7 +486,16 @@ fn build_direct_request(
         gen_config.insert("topP".into(), json!(top_p));
     }
     if let Some(budget) = options.thinking_budget {
-        gen_config.insert("thinkingConfig".into(), json!({ "thinkingBudget": budget }));
+        // Gemini 3.x uses thinkingLevel (low|medium|high); 2.5 uses a
+        // numeric thinkingBudget. Sending thinkingBudget to a Gemini-3
+        // model is ignored at best and 400s at worst.
+        let resolved = super::antigravity_transform::resolve_model_name(options.model.as_str());
+        if super::antigravity_transform::is_gemini_3(resolved) {
+            let level = super::antigravity_transform::budget_to_thinking_level(budget);
+            gen_config.insert("thinkingConfig".into(), json!({ "thinkingLevel": level }));
+        } else {
+            gen_config.insert("thinkingConfig".into(), json!({ "thinkingBudget": budget }));
+        }
     }
     if !gen_config.is_empty() {
         body["generationConfig"] = serde_json::Value::Object(gen_config);

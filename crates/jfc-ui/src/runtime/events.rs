@@ -13,6 +13,31 @@ pub const APP_EVENT_BUFFER: usize = 1024;
 pub type EventSender = mpsc::Sender<AppEvent>;
 pub type EventReceiver = mpsc::Receiver<AppEvent>;
 
+/// Send an event that must not be dropped — terminal/continuation signals
+/// such as [`ToolEvent::AllComplete`] whose loss permanently wedges the
+/// agentic loop (the next turn never fires). Tries the non-blocking path
+/// first; if the bounded channel is momentarily full, hands the event to a
+/// task that awaits capacity instead of discarding it. Only a *closed*
+/// channel (receiver gone — app shutting down) is a no-op. Must be called
+/// from within a Tokio runtime.
+pub fn send_critical(tx: &mpsc::Sender<AppEvent>, ev: AppEvent) {
+    match tx.try_send(ev) {
+        Ok(()) => {}
+        Err(mpsc::error::TrySendError::Full(ev)) => {
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let _ = tx.send(ev).await;
+            });
+        }
+        Err(mpsc::error::TrySendError::Closed(_)) => {
+            tracing::debug!(
+                target: "jfc::runtime",
+                "send_critical: event channel closed; dropping (app shutting down)"
+            );
+        }
+    }
+}
+
 pub enum AppEvent {
     Ui(UiEvent),
     Stream(StreamEvent),

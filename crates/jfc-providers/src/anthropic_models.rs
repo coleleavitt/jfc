@@ -13,9 +13,11 @@ use jfc_provider::ModelInfo;
 
 fn limits_for_anthropic_model(id: &str) -> (usize, Option<usize>) {
     let id = id.to_ascii_lowercase();
-    if id.contains("mythos") || id.contains("opus-4-7") || id.contains("opus-4-6") {
-        (1_000_000, Some(128_000))
-    } else if id.contains("sonnet-4-6") {
+    if id.contains("mythos")
+        || id.contains("opus-4-7")
+        || id.contains("opus-4-6")
+        || id.contains("sonnet-4-6")
+    {
         (1_000_000, Some(128_000))
     } else if id.contains("opus-4-5") {
         (1_000_000, Some(64_000))

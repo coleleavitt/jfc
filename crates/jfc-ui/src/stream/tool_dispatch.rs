@@ -52,7 +52,9 @@ pub(crate) fn dispatch_tools_batched(
     let tx_done = tx.clone();
     let send_all_complete = move || {
         if pending.fetch_sub(1, Ordering::AcqRel) == 1 {
-            let _ = tx_done.try_send(AppEvent::Tool(ToolEvent::AllComplete));
+            // Critical continuation signal: a dropped AllComplete permanently
+            // wedges the agentic loop, so never discard it on a full channel.
+            crate::runtime::send_critical(&tx_done, AppEvent::Tool(ToolEvent::AllComplete));
         }
     };
 

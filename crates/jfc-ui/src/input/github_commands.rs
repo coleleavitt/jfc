@@ -211,6 +211,7 @@ pub(super) async fn handle_pr_autofix(
     app.last_stream_event_at = Some(now);
     app.streaming_last_token_at = Some(now);
     app.turn_started_at = Some(now);
+    app.turn_start_cost = crate::cost::total_cost(&app.usage_by_model);
     app.thinking_started_at = None;
     app.thinking_ended_at = None;
     app.last_usage_output = 0;

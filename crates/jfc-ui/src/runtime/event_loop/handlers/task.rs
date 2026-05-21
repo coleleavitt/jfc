@@ -254,8 +254,9 @@ pub(crate) fn handle_task_progress(
 }
 
 /// Handle `TaskEvent::Completed { task_id, summary, elapsed_ms }`.
-pub(crate) fn handle_task_completed(
+pub(crate) async fn handle_task_completed(
     app: &mut App,
+    tx: &EventSender,
     task_id: crate::ids::TaskId,
     summary: String,
     elapsed_ms: u64,
@@ -316,6 +317,9 @@ pub(crate) fn handle_task_completed(
             }
         }
     }
+    // Resume the leader when this was the last in-flight background agent —
+    // a successful completion must re-engage the loop just like a failure does.
+    maybe_resume_after_background(app, tx).await;
 }
 
 /// Handle `TaskEvent::Failed { task_id, error }`.
@@ -437,20 +441,26 @@ pub(crate) async fn handle_task_failed(
         crate::system_reminder::append_to_last_user(&mut app.messages, &reminder);
         maybe_continue_task_factory(app, tx).await;
     }
-    // After a background task reaches terminal state, check
-    // if ALL background tasks are now done. If so AND the
-    // main turn is waiting (turn_started_at is set, no tools
-    // pending, should_continue_loop), trigger the agentic
-    // continuation. This fixes the "last task stays green"
-    // bug where all agents complete but the leader never
-    // resumes because no AllToolsComplete fires after the
-    // last TaskCompleted event.
+    maybe_resume_after_background(app, tx).await;
+}
+
+/// After a background agent reaches a terminal state, resume the leader if
+/// every background task is now done and the main turn is idle and waiting.
+///
+/// This previously lived inline in the *failure* handler only, so a final
+/// agent that finished **successfully** left the leader parked until the next
+/// manual prompt (no `AllToolsComplete` fires after the last `TaskCompleted`).
+/// Sharing it across both terminal paths fixes the "last task stays green,
+/// leader never resumes" bug.
+pub(crate) async fn maybe_resume_after_background(app: &mut App, tx: &EventSender) {
     let all_bg_done = app
         .background_tasks
         .values()
         .all(|bt| bt.status.is_terminal());
-    if all_bg_done
-        && app.turn_started_at.is_some()
+    if !all_bg_done {
+        return;
+    }
+    if app.turn_started_at.is_some()
         && app.pending_tool_calls.is_empty()
         && app.pending_approval.is_none()
         && app.approval_queue.is_empty()
@@ -462,14 +472,13 @@ pub(crate) async fn handle_task_failed(
             "all background tasks terminal — triggering agentic continuation"
         );
         stream::continue_agentic_loop(app, tx).await;
-    } else if all_bg_done
-        && app.turn_started_at.is_some()
+    } else if app.turn_started_at.is_some()
         && app.pending_tool_calls.is_empty()
         && !app.is_streaming
         && !stream::should_continue_loop(&app.messages)
     {
-        // All done and model already emitted EndTurn — just
-        // clear the turn timer so the spinner stops.
+        // All done and the model already emitted EndTurn — just clear the
+        // turn timer so the spinner stops.
         tracing::debug!(
             target: "jfc::task",
             "all background tasks terminal, turn complete — clearing turn_started_at"

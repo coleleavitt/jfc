@@ -436,6 +436,7 @@ pub(crate) async fn run(
         app.last_stream_event_at = Some(now);
         app.streaming_last_token_at = Some(now);
         app.turn_started_at = Some(now);
+        app.turn_start_cost = crate::cost::total_cost(&app.usage_by_model);
         app.last_usage_output = 0;
         app.usage_apply_baseline = (0, 0, 0, 0);
 
@@ -592,8 +593,9 @@ pub(crate) async fn run(
                     reason,
                 }) => {
                     handlers::stream_tool::handle_classifier_decision(
-                        &mut app, tool, blocked, reason,
-                    );
+                        &mut app, &tx, tool, blocked, reason,
+                    )
+                    .await;
                 }
                 AppEvent::Stream(StreamEvent::ServerToolResult {
                     tool_use_id,
@@ -734,7 +736,10 @@ pub(crate) async fn run(
                     summary,
                     elapsed_ms,
                 }) => {
-                    handlers::task::handle_task_completed(&mut app, task_id, summary, elapsed_ms);
+                    handlers::task::handle_task_completed(
+                        &mut app, &tx, task_id, summary, elapsed_ms,
+                    )
+                    .await;
                 }
                 AppEvent::Task(TaskEvent::Failed { task_id, error }) => {
                     handlers::task::handle_task_failed(&mut app, &tx, task_id, error).await;

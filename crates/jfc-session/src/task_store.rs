@@ -279,26 +279,35 @@ impl TaskStore {
     }
 
     fn delete_legacy_placeholders_from_inner(inner: &mut TaskStoreInner) -> usize {
-        let mut deleted_ids = BTreeSet::new();
+        // Hard-remove the fixture-shaped `subj`/`desc` rows entirely — they
+        // carry zero audit value. The previous behavior only *tombstoned*
+        // them (status=Deleted), and since it skipped already-deleted rows,
+        // those tombstones accumulated in tasks.json across every resume
+        // (50KB+ of dead placeholder rows observed in practice). Match
+        // regardless of current status so existing tombstones are purged too.
+        let placeholder_ids: BTreeSet<TaskId> = inner
+            .tasks
+            .iter()
+            .filter(|(_, task)| is_legacy_placeholder_task(task))
+            .map(|(id, _)| id.clone())
+            .collect();
 
-        for task in inner.tasks.values_mut() {
-            if task.status != TaskStatus::Deleted && is_legacy_placeholder_task(task) {
-                task.status = TaskStatus::Deleted;
-                task.owner = None;
-                deleted_ids.insert(task.id.clone());
-            }
-        }
-
-        if deleted_ids.is_empty() {
+        if placeholder_ids.is_empty() {
             return 0;
         }
 
-        for task in inner.tasks.values_mut() {
-            task.blocks.retain(|id| !deleted_ids.contains(id));
-            task.blocked_by.retain(|id| !deleted_ids.contains(id));
+        for id in &placeholder_ids {
+            inner.tasks.remove(id);
         }
 
-        deleted_ids.len()
+        // Drop dependency edges that pointed at the removed rows so no
+        // surviving task is left blocked by / blocking a vanished id.
+        for task in inner.tasks.values_mut() {
+            task.blocks.retain(|id| !placeholder_ids.contains(id));
+            task.blocked_by.retain(|id| !placeholder_ids.contains(id));
+        }
+
+        placeholder_ids.len()
     }
 
     /// Current on-disk modification time of `path`, or `None` if the file
@@ -1162,7 +1171,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_legacy_placeholders_tombstones_exact_fixture_rows_robust() {
+    fn delete_legacy_placeholders_removes_exact_fixture_rows_robust() {
         let store = TaskStore::in_memory();
         let placeholder = store
             .create("subj".into(), "desc".into(), None, Vec::<TaskId>::new())
@@ -1179,12 +1188,13 @@ mod tests {
         let deleted = store.delete_legacy_placeholders();
 
         assert_eq!(deleted, 1);
-        let placeholder_after = store.get(placeholder.id.as_str()).unwrap();
-        assert_eq!(placeholder_after.status, TaskStatus::Deleted);
+        // Hard-removed, not tombstoned — the fixture row is gone entirely so
+        // it can't accumulate across resumes.
+        assert!(store.get(placeholder.id.as_str()).is_none());
         let keeper_after = store.get(keeper.id.as_str()).unwrap();
         assert!(keeper_after.blocked_by.is_empty());
         assert_eq!(store.list(DeletedFilter::Exclude).len(), 1);
-        assert_eq!(store.list(DeletedFilter::Include).len(), 2);
+        assert_eq!(store.list(DeletedFilter::Include).len(), 1);
     }
 
     // Normal: a store re-reads the backing file when an external process

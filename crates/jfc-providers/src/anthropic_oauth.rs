@@ -723,25 +723,33 @@ impl AnthropicOAuthProvider {
                 }
             };
 
-        // Persist via the rotation manager (atomic disk + in-memory cache);
-        // also fall through to the legacy writer for back-compat.
-        if let Ok(mgr) = self.account_manager().await {
-            let _ = mgr
+        // Persist via the rotation manager (atomic disk + in-memory cache).
+        // Only fall back to the legacy unlocked writer when the manager is
+        // unavailable or its write failed: doing both means a second,
+        // un-synchronized read-modify-rename right after the locked write,
+        // which can clobber a concurrent account update. The store is shared
+        // with opencode and other jfc processes, so that race is real.
+        let persisted_via_manager = match self.account_manager().await {
+            Ok(mgr) => mgr
                 .atomic_update_tokens(
                     account_name,
                     access_token.clone(),
                     expires_at,
                     Some(new_refresh.clone()),
                 )
-                .await;
+                .await
+                .is_ok(),
+            Err(_) => false,
+        };
+        if !persisted_via_manager {
+            let _ = write_back_tokens(
+                &self.store_path,
+                account_name,
+                &access_token,
+                &new_refresh,
+                expires_at,
+            );
         }
-        let _ = write_back_tokens(
-            &self.store_path,
-            account_name,
-            &access_token,
-            &new_refresh,
-            expires_at,
-        );
 
         *guard = Some(TokenState {
             access_token: access_token.clone(),
@@ -941,11 +949,13 @@ fn wrap_with_usage_recording(
                 drop(baseline);
 
                 if !any_regression && (din | dout | dcr | dcw) != 0 {
-                    let mut um = jfc_core::ModelUsage::default();
-                    um.input_tokens = din;
-                    um.output_tokens = dout;
-                    um.cache_read_tokens = dcr;
-                    um.cache_write_tokens = dcw;
+                    let um = jfc_core::ModelUsage {
+                        input_tokens: din,
+                        output_tokens: dout,
+                        cache_read_tokens: dcr,
+                        cache_write_tokens: dcw,
+                        ..Default::default()
+                    };
                     let cost = jfc_provider::cost::cost_for(&model, &um);
                     let delta = super::anthropic_accounts::UsageDelta {
                         input_tokens: din,

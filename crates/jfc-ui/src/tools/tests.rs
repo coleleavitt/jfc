@@ -537,9 +537,9 @@ fn cascade_summary_empty_for_leaf_robust() {
 /// Tests against the process-global market orchestrator must serialize
 /// through this lock — same pattern as graph_history. Otherwise the
 /// posted-bounty count test races with the report-format test.
-fn market_test_lock() -> &'static std::sync::Mutex<()> {
-    static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+fn market_test_lock() -> &'static tokio::sync::Mutex<()> {
+    static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
 // Normal: the two market tools appear in the canonical-tool list
@@ -559,7 +559,7 @@ fn market_tools_in_catalogue_normal() {
 // breaks both the tool and the slash command.
 #[tokio::test]
 async fn market_report_string_has_expected_sections_normal() {
-    let _g = market_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _g = market_test_lock().lock().await;
     let body = market_report_string()
         .await
         .expect("market report must render");
@@ -575,7 +575,7 @@ async fn market_report_string_has_expected_sections_normal() {
 // orchestrator) is connected.
 #[tokio::test(flavor = "current_thread")]
 async fn post_bounty_dispatch_increments_market_normal() {
-    let _g = market_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _g = market_test_lock().lock().await;
     let before = {
         let orch = market_orchestrator().lock().await;
         orch.bounties.audit_log().len()
@@ -614,7 +614,7 @@ async fn post_bounty_dispatch_increments_market_normal() {
 // error — most common LLM mistake will be a typo'd ID.
 #[tokio::test(flavor = "current_thread")]
 async fn run_bounty_unknown_id_errors_robust() {
-    let _g = market_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _g = market_test_lock().lock().await;
     // Register a stub provider so the "no provider" path
     // doesn't fire first and mask the unknown-id check.
     struct NoopProvider;
@@ -667,7 +667,7 @@ async fn run_bounty_unknown_id_errors_robust() {
 // implemented and bypass to direct Bash execution.
 #[tokio::test(flavor = "current_thread")]
 async fn post_bounty_default_returns_actionable_message_normal() {
-    let _g = market_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _g = market_test_lock().lock().await;
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let res = execute_tool(
         crate::types::ToolKind::PostBounty,
@@ -1009,9 +1009,9 @@ fn clear_graph_history() {
 /// `clear_graph_history()` + `record_graph_query()` will trip each
 /// other's assertions (e.g. one test clears just after the other
 /// recorded its entry but before the assertion runs).
-fn graph_history_test_lock() -> &'static std::sync::Mutex<()> {
-    static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+fn graph_history_test_lock() -> &'static tokio::sync::Mutex<()> {
+    static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
 // Normal: parse_file_blocks extracts a single FILE block.
@@ -1170,9 +1170,7 @@ async fn verify_bounty_solution_rejects_broken_zig_build_robust() {
 // the suite may have produced entries — just that ours appears.
 #[test]
 fn graph_history_records_query_normal() {
-    let _guard = graph_history_test_lock()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let _guard = graph_history_test_lock().blocking_lock();
     clear_graph_history();
     let fixtures = std::path::Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -1191,9 +1189,7 @@ fn graph_history_records_query_normal() {
 // Push 60 distinct queries; only the most recent 50 survive.
 #[test]
 fn graph_history_caps_at_max_robust() {
-    let _guard = graph_history_test_lock()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let _guard = graph_history_test_lock().blocking_lock();
     clear_graph_history();
     let fixtures = std::path::Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -2967,9 +2963,7 @@ async fn code_index_lists_filtered_symbols_normal() {
 /// result must contain at least one match from each operand.
 #[tokio::test]
 async fn graph_query_runs_set_algebra_normal() {
-    let _guard = graph_history_test_lock()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let _guard = graph_history_test_lock().lock().await;
     clear_graph_history();
     let fixtures = graph_query_fixtures_dir();
     invalidate_graph_session_cache(Some(fixtures));
@@ -2998,9 +2992,7 @@ async fn graph_query_runs_set_algebra_normal() {
 /// along the chain. `a -> b -> c` exists in `deep_call_chain.rs`.
 #[tokio::test]
 async fn graph_query_runs_path_query_normal() {
-    let _guard = graph_history_test_lock()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let _guard = graph_history_test_lock().lock().await;
     clear_graph_history();
     let fixtures = graph_query_fixtures_dir();
     invalidate_graph_session_cache(Some(fixtures));
@@ -3037,9 +3029,7 @@ async fn graph_query_runs_path_query_normal() {
 /// `<kind>:<qualified_name>`.
 #[tokio::test]
 async fn graph_query_emits_handles_footer_normal() {
-    let _guard = graph_history_test_lock()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let _guard = graph_history_test_lock().lock().await;
     clear_graph_history();
     let fixtures = graph_query_fixtures_dir();
     invalidate_graph_session_cache(Some(fixtures));
@@ -3153,9 +3143,7 @@ fn graph_query_handles_footer_truncates_at_50_robust() {
 /// rather than crashing the dispatcher.
 #[tokio::test]
 async fn graph_query_returns_failure_on_parse_error_robust() {
-    let _guard = graph_history_test_lock()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let _guard = graph_history_test_lock().lock().await;
     clear_graph_history();
     let fixtures = graph_query_fixtures_dir();
     invalidate_graph_session_cache(Some(fixtures));

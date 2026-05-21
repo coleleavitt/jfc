@@ -154,7 +154,12 @@ pub(crate) async fn handle_stream_done(
             // recent message_delta usage (already populated
             // into usage_by_model). Skipped when no model
             // is registered (no pricing match).
-            let turn_cost = crate::cost::total_cost(&app.usage_by_model);
+            // Per-turn cost = cumulative-now minus the snapshot taken when
+            // this user turn began. Without the baseline this showed the whole
+            // session's running spend, not the turn's. saturating at 0 guards
+            // the rare case where usage_by_model is reset mid-turn.
+            let turn_cost =
+                (crate::cost::total_cost(&app.usage_by_model) - app.turn_start_cost).max(0.0);
             let label = if turn_cost > 0.0 {
                 format!("{label} / {}", crate::cost::fmt_cost(turn_cost))
             } else {
@@ -338,6 +343,12 @@ pub(crate) async fn handle_stream_done(
     // unbacked — the "hallucinated Done" symptom.
     let has_pending_tools = !app.pending_tool_calls.is_empty();
     let waiting_on_approval = app.pending_approval.is_some() || !app.approval_queue.is_empty();
+    // Auto-mode: one or more tool calls are still awaiting an async classifier
+    // verdict. We must NOT finalize the turn (which clears the streaming slot)
+    // until every verdict lands — otherwise the late ClassifierDecision finds
+    // no slot and the tool is silently dropped. The final verdict
+    // (handle_classifier_decision) dispatches the approved batch / continues.
+    let awaiting_classifier = app.pending_classifications > 0;
     // Mixed-mode pause_turn handling. When a response
     // carries BOTH local tool_use AND stop_reason=pause_turn,
     // the `has_pending_tools` branch below shadows the
@@ -360,7 +371,19 @@ pub(crate) async fn handle_stream_done(
         );
         app.pending_pause_turn_resume = true;
     }
-    if has_pending_tools {
+    if awaiting_classifier {
+        // Hold the turn open: keep streaming_assistant_idx alive so the
+        // pending ClassifierDecision events can record their tools and the
+        // final one drives dispatch/continuation. This must take priority
+        // over has_pending_tools so a partially-classified batch isn't
+        // dispatched early (leaving later-approved tools stranded).
+        tracing::info!(
+            target: "jfc::stream",
+            in_flight = app.pending_classifications,
+            already_approved = app.pending_tool_calls.len(),
+            "stream_done holding turn open for in-flight auto-mode classifier verdicts"
+        );
+    } else if has_pending_tools {
         let calls = std::mem::take(&mut app.pending_tool_calls);
         tracing::info!(
             target: "jfc::stream",

@@ -570,6 +570,8 @@ pub(super) async fn handle_submit(
     app.last_stream_event_at = Some(now);
     app.streaming_last_token_at = Some(now);
     app.turn_started_at = Some(now);
+    app.turn_start_cost = crate::cost::total_cost(&app.usage_by_model);
+    app.pending_classifications = 0;
     app.agentic_turn_count = 0;
     // Reset thinking-state for the new turn so the spinner doesn't carry
     app.pre_dispatched_tool_ids.clear();

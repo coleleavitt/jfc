@@ -75,6 +75,12 @@ pub(crate) async fn handle_stream_tool(app: &mut App, tx: &EventSender, tool: To
             tool_id = %tool.id,
             "route=auto_mode_classifier"
         );
+        // Mark a classifier verdict as in-flight so stream_done holds the
+        // turn open until it lands (see App::pending_classifications). The
+        // matching decrement is in handle_classifier_decision; the verdict is
+        // dropped (no decrement) only on cancellation, which the turn-start
+        // reset cleans up.
+        app.pending_classifications += 1;
         let provider = Arc::clone(&app.provider);
         let model = app.model.clone();
         let cfg = app.auto_mode.clone();
@@ -157,12 +163,14 @@ pub(crate) async fn handle_stream_tool(app: &mut App, tx: &EventSender, tool: To
 }
 
 /// Handle the auto-mode classifier's verdict on a tool call.
-pub(crate) fn handle_classifier_decision(
+pub(crate) async fn handle_classifier_decision(
     app: &mut App,
+    tx: &EventSender,
     mut tool: ToolCall,
     blocked: bool,
     reason: String,
 ) {
+    app.pending_classifications = app.pending_classifications.saturating_sub(1);
     if blocked {
         tool.status = ToolStatus::Failed;
         tool.output = ToolOutput::Text(format!(
@@ -176,6 +184,42 @@ pub(crate) fn handle_classifier_decision(
             msg.parts.push(MessagePart::Tool(tool.clone()));
         }
         app.pending_tool_calls.push(tool);
+    }
+
+    // If the stream already finished while verdicts were outstanding (so
+    // stream_done held the turn open via `pending_classifications`) and this
+    // was the last one, drive the turn forward now — otherwise the approved
+    // tools sit in pending_tool_calls forever and the loop stalls. While the
+    // stream is still active (`is_streaming`), defer: stream_done will
+    // dispatch normally once it ends with the counter back at 0.
+    let resolved_while_idle = !app.is_streaming
+        && app.pending_classifications == 0
+        && app.pending_approval.is_none()
+        && app.approval_queue.is_empty();
+    if !resolved_while_idle {
+        return;
+    }
+    if !app.pending_tool_calls.is_empty() {
+        let calls = std::mem::take(&mut app.pending_tool_calls);
+        crate::runtime::update_task_activities(app, &calls);
+        crate::stream::dispatch_tools_batched(
+            calls,
+            tx,
+            Arc::clone(&app.dedup_cache),
+            Some(Arc::clone(&app.task_store)),
+            app.team_context.team_name.clone(),
+            app.current_session_id
+                .as_ref()
+                .map(|id| id.as_str().to_owned()),
+            Arc::clone(&app.provider),
+            app.model.clone(),
+            app.teammate_event_tx.clone(),
+            app.cancel_token.clone(),
+        );
+    } else {
+        // Every tool was blocked — no batch to run, but the loop must still
+        // continue so the model sees the blocked tool_results it produced.
+        crate::runtime::send_critical(tx, AppEvent::Tool(ToolEvent::AllComplete));
     }
 }
 

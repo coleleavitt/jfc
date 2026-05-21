@@ -359,9 +359,7 @@ pub async fn register_servers_from_config(
 /// reconnected, `Some(false)` when the new spawn also failed, `None`
 /// when no entry by that name exists.
 pub async fn restart_server(registry: &McpRegistry, name: &str) -> Option<bool> {
-    let Some(old) = registry.remove(name).await else {
-        return None;
-    };
+    let old = registry.remove(name).await?;
     // Try to clean shutdown the old transport before rebuild.
     if let Some(t) = old.transport.as_ref() {
         t.shutdown().await;
