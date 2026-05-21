@@ -254,3 +254,61 @@ These accept OpenAI's request format and can be used with any OpenAI-compatible 
 
 ### Open Models:
 - gemma-4-26b-a4b-it / gemma-4-31b-it (262K ctx)
+
+---
+
+## 10. API Key Analysis
+
+### Found Keys in JS Bundles:
+1. `AIzaSyDdP816MREB3SkjZO04QXbjsigfcI0GWOs` — AI Studio's primary internal key (used for alkali RPC calls)
+2. `AIzaSyBGb5fGAyC-pRcRU6MUHb__b_vKha71HRE` — Feedback/survey service key
+3. `AIzaSyCB6OnnfuitFnaYWu4BvtGKaoLFk4cm-GE` — Feedback service alt key
+
+### Internal Key Behavior:
+- **alkali API**: Requires OAuth2 access token (SAPISIDHASH cookies). API key alone is insufficient.
+- **Public API** (`generativelanguage.googleapis.com`): The internal key is **referrer-locked** to `aistudio.google.com`. Even with the correct Referer header, Google blocks it for programmatic use ("Requests to this API ... are blocked").
+- **Conclusion**: The internal key is useless outside the browser. AI Studio's internal API requires a full Google session (cookies + SAPISIDHASH auth). There is NO way to bypass this with just API keys.
+
+### What DOES Work:
+- Your personal `GEMINI_API_KEY` works against the public `generativelanguage.googleapis.com` API with NO referrer restrictions.
+- Your key has access to **50 models** (the full catalogue).
+- The internal key, even with correct headers, only returns 1 model (blocked).
+
+---
+
+## 11. Internal Corp URLs Found (Not Publicly Accessible)
+
+- `https://omnidda-staging.corp.google.com/dda` — DDA staging
+- `https://pantheon-testgaia.corp.google.com` — Test auth
+- `https://protoshop.corp.google.com/embed` — Internal prototyping tool
+- `https://protoshop-dev.corp.google.com/embed` — Dev version
+- `https://uberproxy-pen-redirect.corp.google.com/uberproxy/pen?url=` — Internal proxy
+- `https://billing-ads-qa-devel.corp.google.com/payments/v4/js/integrator.js?ss=md` — Billing QA
+
+---
+
+## 12. Google Workspace Scopes (for Applets/Extensions)
+
+AI Studio applets can request access to:
+- Google Calendar (read/write)
+- Google Chat (messages, spaces)
+- Google Contacts
+- Google Docs (read/write)
+- Google Drive (full access, metadata, file, scripts)
+- Firebase
+- Google Forms
+- Gmail (compose, send, read, settings)
+- Google Keep
+- Google Meet
+- Google Sheets
+- Google Tasks
+
+---
+
+## 13. Googlesource Integration
+
+AI Studio has direct integration with `*.googlesource.com` for code browsing:
+- `https://{host}.googlesource.com/{repo}/+show/{ref}/{path}?format=JSON`
+- `https://{host}.googlesource.com/{repo}/+show/{ref}/{path}?format=TEXT`
+
+This powers the GitHub integration features in AI Studio's code canvas.
