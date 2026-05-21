@@ -90,10 +90,15 @@ VIOLATION OF THESE RULES WILL CAUSE IMMEDIATE SYSTEM FAILURE.
 /// through unchanged so the upstream returns a clean error.
 pub fn resolve_model_name(model: &str) -> &str {
     match model {
-        // Common short forms used by the upstream plugin.
+        // Common short forms → canonical names for Code Assist API.
         "gemini-pro" => "gemini-3-pro",
         "gemini-flash" => "gemini-3-flash",
-        // gemini-claude-* and explicit gemini-* pass through verbatim.
+        "gemini-3.5" => "gemini-3.5-flash",
+        "gemini-3.1-pro" => "gemini-3.1-pro-preview",
+        "gemini-3.1-flash" => "gemini-3.1-flash-lite",
+        "gemini-3-pro" => "gemini-3-pro-preview",
+        "gemini-3-flash" => "gemini-3-flash-preview",
+        // gemini-claude-* and explicit full names pass through verbatim.
         other => other,
     }
 }
@@ -110,7 +115,9 @@ fn is_gemini_3(model: &str) -> bool {
 
 /// Does this model need the Antigravity system instruction injected?
 fn needs_antigravity_system_instruction(model: &str) -> bool {
-    is_claude_model(model) || model.contains("gemini-3-pro") || model.contains("gemini-3-flash")
+    is_claude_model(model)
+        || model.contains("gemini-3")
+        || model.contains("antigravity")
 }
 
 /// Default thinking budget for Claude `-thinking` models when the caller
@@ -636,7 +643,8 @@ mod tests {
         opts.system = Some("be helpful".into());
         let body = build_request("proj-123", &[user_msg("hi")], &opts).expect("gemini req");
         assert_eq!(body["project"], "proj-123");
-        assert_eq!(body["model"], "gemini-3-pro");
+        // resolve_model_name maps "gemini-3-pro" → "gemini-3-pro-preview"
+        assert_eq!(body["model"], "gemini-3-pro-preview");
         assert_eq!(body["userAgent"], "antigravity");
         assert_eq!(body["request"]["contents"][0]["role"], "user");
         assert_eq!(body["request"]["contents"][0]["parts"][0]["text"], "hi");

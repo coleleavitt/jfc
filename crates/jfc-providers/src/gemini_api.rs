@@ -104,25 +104,56 @@ impl GeminiApiProvider {
             m
         };
         vec![
-            // Gemini 3.x series
+            // Gemini 3.x series (thinkingLevel, not thinkingBudget)
             mk("gemini-3.5-flash", "Gemini 3.5 Flash", 1_048_576, 65_536),
             mk("gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview", 1_048_576, 65_536),
+            mk(
+                "gemini-3.1-pro-preview-customtools",
+                "Gemini 3.1 Pro Custom Tools",
+                1_048_576,
+                65_536,
+            ),
             mk("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite", 1_048_576, 65_536),
+            mk(
+                "gemini-3.1-flash-live-preview",
+                "Gemini 3.1 Flash Live",
+                1_048_576,
+                65_536,
+            ),
             mk("gemini-3-pro-preview", "Gemini 3 Pro Preview", 1_048_576, 65_536),
             mk("gemini-3-flash-preview", "Gemini 3 Flash Preview", 1_048_576, 65_536),
-            // Gemini 2.5 series
+            // Gemini 2.5 series (thinkingBudget)
             mk("gemini-2.5-pro", "Gemini 2.5 Pro", 1_048_576, 65_536),
             mk("gemini-2.5-flash", "Gemini 2.5 Flash", 1_048_576, 65_536),
             mk("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite", 1_048_576, 65_536),
             // Gemini 2.0 series
             mk("gemini-2.0-flash", "Gemini 2.0 Flash", 1_048_576, 8_192),
             mk("gemini-2.0-flash-lite", "Gemini 2.0 Flash-Lite", 1_048_576, 8_192),
-            // Aliases / convenience
+            // Aliases (always point to latest)
             mk("gemini-pro-latest", "Gemini Pro Latest", 1_048_576, 65_536),
             mk("gemini-flash-latest", "Gemini Flash Latest", 1_048_576, 65_536),
-            // Special: Antigravity Agent + Deep Research
-            mk("antigravity-preview-05-2026", "Antigravity Agent Preview", 131_072, 65_536),
-            mk("deep-research-max-preview-04-2026", "Deep Research Max", 131_072, 65_536),
+            mk("gemini-flash-lite-latest", "Gemini Flash-Lite Latest", 1_048_576, 65_536),
+            // Special models
+            mk(
+                "antigravity-preview-05-2026",
+                "Antigravity Agent Preview",
+                131_072,
+                65_536,
+            ),
+            mk(
+                "deep-research-max-preview-04-2026",
+                "Deep Research Max",
+                131_072,
+                65_536,
+            ),
+            mk(
+                "deep-research-preview-04-2026",
+                "Deep Research Preview",
+                131_072,
+                65_536,
+            ),
+            // Open models
+            mk("gemma-4-31b-it", "Gemma 4 31B IT", 262_144, 32_768),
         ]
     }
 }

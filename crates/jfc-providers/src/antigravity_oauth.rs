@@ -440,10 +440,15 @@ impl AntigravityOAuthProvider {
             m
         };
         vec![
-            mk("gemini-3-pro", "Gemini 3 Pro", 1_048_576, 65_536),
-            mk("gemini-3-pro-preview", "Gemini 3 Pro (Preview)", 1_048_576, 65_536),
-            mk("gemini-3-flash", "Gemini 3 Flash", 1_048_576, 65_536),
+            // Gemini 3.x (native via Antigravity)
+            mk("gemini-3.5-flash", "Gemini 3.5 Flash", 1_048_576, 65_536),
+            mk("gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview", 1_048_576, 65_536),
+            mk("gemini-3-pro-preview", "Gemini 3 Pro Preview", 1_048_576, 65_536),
+            mk("gemini-3-flash-preview", "Gemini 3 Flash Preview", 1_048_576, 65_536),
+            // Gemini 2.5 (native via Antigravity)
             mk("gemini-2.5-flash", "Gemini 2.5 Flash", 1_048_576, 65_536),
+            mk("gemini-2.5-pro", "Gemini 2.5 Pro", 1_048_576, 65_536),
+            // Claude via Antigravity
             mk(
                 "gemini-claude-sonnet-4-5",
                 "Claude Sonnet 4.5 (via Antigravity)",
@@ -761,7 +766,7 @@ mod tests {
     fn provider_lists_gemini_and_claude_models_normal() {
         let models = AntigravityOAuthProvider::antigravity_models();
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        assert!(ids.contains(&"gemini-3-pro"));
+        assert!(ids.contains(&"gemini-3.5-flash"));
         assert!(ids.contains(&"gemini-claude-sonnet-4-5-thinking"));
         // Subscription-covered: all costs zero.
         assert!(models.iter().all(|m| m.input_cost == Some(0.0)));
