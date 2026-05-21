@@ -386,6 +386,7 @@ mod tests {
                 id: "toolu_1".to_owned(),
                 name: "Bash".to_owned(),
                 input: serde_json::json!({"command": "ls"}),
+                thought_signature: None,
             }],
         };
         let input = vec![user_text("hi"), assistant_with_tool];

@@ -413,6 +413,7 @@ mod tests {
                     id: "call_001".into(),
                     name: "Bash".into(),
                     input: json!({"command": "ls -la"}),
+                    thought_signature: None,
                 }],
             },
             ProviderMessage {
@@ -828,6 +829,7 @@ mod tests {
                     id: "call_test_001".into(),
                     name: "Bash".into(),
                     input: json!({"command": "echo hello"}),
+                    thought_signature: None,
                 }],
             },
             ProviderMessage {

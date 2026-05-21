@@ -58,6 +58,12 @@ pub struct ToolCall {
     /// completion. Not persisted (recomputing the duration after a
     /// session reload is meaningless), so this isn't serialized.
     pub started_at: Option<std::time::Instant>,
+    /// Gemini 3.x thought signature captured from the streaming response
+    /// when this tool call was emitted. Echoed back verbatim on replay so
+    /// the server's "thinking" context survives across turns.
+    /// `None` for non-Gemini providers and for pre-3.x Gemini turns.
+    /// See https://ai.google.dev/gemini-api/docs/thought-signatures
+    pub thought_signature: Option<String>,
 }
 
 impl ToolCall {
@@ -76,7 +82,16 @@ impl ToolCall {
             display: ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: Some(std::time::Instant::now()),
+            thought_signature: None,
         }
+    }
+
+    /// Attach a Gemini thought signature captured from the SSE stream.
+    /// Builder-style so the stream layer can write
+    /// `ToolCall::new_pending(...).with_thought_signature(sig)`.
+    pub fn with_thought_signature(mut self, signature: Option<String>) -> Self {
+        self.thought_signature = signature;
+        self
     }
 
     /// Construct a ToolCall that's already in the `Failed` terminal
@@ -99,6 +114,7 @@ impl ToolCall {
             display: ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }
     }
 

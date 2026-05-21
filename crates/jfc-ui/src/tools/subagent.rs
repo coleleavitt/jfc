@@ -646,7 +646,11 @@ async fn execute_task_inner(
             tokio::pin!(stream);
 
             let mut turn_text = String::new();
-            let mut tool_uses: Vec<(String, String, String)> = Vec::new(); // (id, name, input_json)
+            // (id, name, input_json, thought_signature)
+            // thought_signature is the Gemini 3.x signature captured from the
+            // SSE stream; round-tripped on next turn to keep multi-turn agentic
+            // tool calls coherent (https://ai.google.dev/gemini-api/docs/thought-signatures).
+            let mut tool_uses: Vec<(String, String, String, Option<String>)> = Vec::new();
             let mut stop_reason: Option<StopReason> = None;
             let mut usage_baseline = (0u32, 0u32, 0u32, 0u32);
             let mut reported_input_for_turn = false;
@@ -686,9 +690,10 @@ async fn execute_task_inner(
                         tool_name,
                         tool_use_id,
                         input_json,
+                        thought_signature,
                         ..
                     }) => {
-                        tool_uses.push((tool_use_id, tool_name, input_json));
+                        tool_uses.push((tool_use_id, tool_name, input_json, thought_signature));
                     }
                     Ok(StreamEvent::Usage {
                         input_tokens,
@@ -789,13 +794,14 @@ async fn execute_task_inner(
         if !turn_text.is_empty() {
             assistant_content.push(ProviderContent::Text(turn_text.clone()));
         }
-        for (id, name, input_json) in &tool_uses {
+        for (id, name, input_json, sig) in &tool_uses {
             let parsed_input: serde_json::Value =
                 serde_json::from_str(input_json).unwrap_or(serde_json::Value::Null);
             assistant_content.push(ProviderContent::ToolUse {
                 id: id.clone(),
                 name: name.clone(),
                 input: parsed_input,
+                thought_signature: sig.clone(),
             });
         }
         if !assistant_content.is_empty() {
@@ -829,7 +835,7 @@ async fn execute_task_inner(
         // requires all `tool_result`s to be batched in one user msg
         // immediately following the assistant turn that called them).
         let mut tool_results: Vec<ProviderContent> = Vec::new();
-        for (id, name, input_json) in tool_uses {
+        for (id, name, input_json, _sig) in tool_uses {
             // Defense in depth: even though the tool list was filtered
             // upstream, re-check here in case the model hallucinated a
             // disallowed name. Provider-side filtering should already

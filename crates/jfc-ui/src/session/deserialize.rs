@@ -84,6 +84,7 @@ pub(crate) fn deserialize_part(part: SerializedPart) -> MessagePart {
                 // reload (would always say "elapsed since session-load").
                 elapsed_ms: None,
                 started_at: None,
+                thought_signature: None,
             })
         }
         SerializedPart::TaskStatus {

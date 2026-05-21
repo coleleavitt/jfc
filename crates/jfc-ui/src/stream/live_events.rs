@@ -127,6 +127,7 @@ pub(super) async fn drain_stream_events(
                 tool_name,
                 tool_use_id,
                 input_json,
+                thought_signature,
             } => {
                 let assembled = if input_json.is_empty() {
                     tool_accum
@@ -159,9 +160,11 @@ pub(super) async fn drain_stream_events(
                     },
                 };
                 let id = crate::ids::ToolId::from(tool_use_id.clone());
+                let signature = thought_signature.clone();
                 let tool = match parse_outcome {
                     Ok(input_val) => match ToolInput::from_value(&tool_name, input_val) {
-                        Ok(parsed) => ToolCall::new_pending(id, kind, parsed),
+                        Ok(parsed) => ToolCall::new_pending(id, kind, parsed)
+                            .with_thought_signature(signature.clone()),
                         Err(err) => {
                             tracing::warn!(
                                 target: "jfc::stream",
@@ -177,6 +180,7 @@ pub(super) async fn drain_stream_events(
                                  tool's required schema. Retry with the correct fields."
                             );
                             ToolCall::new_failed(id, kind, make_stub(), ToolOutput::Text(msg))
+                                .with_thought_signature(signature.clone())
                         }
                     },
                     Err(err) => {
@@ -197,6 +201,7 @@ pub(super) async fn drain_stream_events(
                             err,
                         );
                         ToolCall::new_failed(id, kind, make_stub(), ToolOutput::Text(msg))
+                            .with_thought_signature(signature.clone())
                     }
                 };
                 tool_accum.remove(&index);

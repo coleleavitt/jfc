@@ -20,6 +20,14 @@ use jfc_provider::{
 const PROVIDER_ID: &str = "gemini";
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 
+/// Synthetic fallback thought signature for Gemini 3.x.
+/// Used ONLY for the first `functionCall` in a model turn when no real
+/// signature was captured from the stream (cold-start, history restore).
+/// The happy path echoes the captured signature verbatim. Mirrors Google's
+/// gemini-cli `SYNTHETIC_THOUGHT_SIGNATURE` (historyHardening.ts:10).
+/// See https://ai.google.dev/gemini-api/docs/thought-signatures
+const SYNTHETIC_THOUGHT_SIGNATURE: &str = "skip_thought_signature_validator";
+
 /// Direct Gemini API provider using `GEMINI_API_KEY`.
 #[derive(Clone)]
 pub struct GeminiApiProvider {
@@ -336,17 +344,35 @@ fn build_direct_request(
     let contents: Vec<serde_json::Value> = messages
         .iter()
         .filter_map(|msg| {
-            let role = match msg.role {
-                ProviderRole::User => "user",
-                ProviderRole::Assistant => "model",
-            };
+            let is_model = matches!(msg.role, ProviderRole::Assistant);
+            let role = if is_model { "model" } else { "user" };
+            // Track the first functionCall in a model turn for the synthetic
+            // signature fallback (gemini-cli historyHardening.ts:101-113).
+            let mut first_function_call_seen = false;
             let parts: Vec<serde_json::Value> = msg
                 .content
                 .iter()
                 .filter_map(|c| match c {
                     ProviderContent::Text(t) if !t.is_empty() => Some(json!({ "text": t })),
-                    ProviderContent::ToolUse { name, input, .. } => {
-                        Some(json!({ "functionCall": { "name": name, "args": input } }))
+                    ProviderContent::ToolUse {
+                        name,
+                        input,
+                        thought_signature,
+                        ..
+                    } => {
+                        // Prefer the real captured signature; fall back to the
+                        // synthetic token only for the first functionCall of a
+                        // model turn when no real signature exists.
+                        let mut part = json!({ "functionCall": { "name": name, "args": input } });
+                        if is_model {
+                            if let Some(sig) = thought_signature.as_deref() {
+                                part["thoughtSignature"] = json!(sig);
+                            } else if !first_function_call_seen {
+                                part["thoughtSignature"] = json!(SYNTHETIC_THOUGHT_SIGNATURE);
+                            }
+                        }
+                        first_function_call_seen = true;
+                        Some(part)
                     }
                     ProviderContent::ToolResult {
                         tool_use_id,

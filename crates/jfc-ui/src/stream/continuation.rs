@@ -246,6 +246,7 @@ mod should_continue_loop_tests {
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         })])
     }
 
@@ -583,6 +584,7 @@ mod pause_turn_end_to_end_tests {
             display: ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }
     }
 
@@ -860,6 +862,7 @@ mod pause_turn_end_to_end_tests {
             display: ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         };
         app.messages = vec![
             ChatMessage::user("research rust and run ls".into()),

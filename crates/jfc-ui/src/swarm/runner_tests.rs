@@ -466,6 +466,7 @@ async fn start_teammate_executes_tool_then_endturn_normal() {
                 tool_name: "Read".into(),
                 tool_use_id: "call-1".into(),
                 input_json: tool_input_json,
+                thought_signature: None,
             },
             StreamEvent::Done {
                 stop_reason: StopReason::ToolUse,

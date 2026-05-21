@@ -295,6 +295,12 @@ pub enum StreamEvent {
         tool_name: String,
         tool_use_id: String,
         input_json: String,
+        /// Gemini 3.x thought signature attached to this function call.
+        /// The server emits an opaque base64 blob on each `functionCall`
+        /// part that must be echoed back verbatim when the turn is replayed
+        /// (see https://ai.google.dev/gemini-api/docs/thought-signatures).
+        /// `None` for non-Gemini providers.
+        thought_signature: Option<String>,
     },
     /// Anthropic emitted a server-side tool result block (e.g.
     /// `web_search_tool_result`). These are produced server-side as
@@ -371,6 +377,11 @@ pub enum ProviderContent {
         id: String,
         name: String,
         input: serde_json::Value,
+        /// Gemini 3.x thought signature captured from the streaming response.
+        /// Echoed back verbatim when the turn is replayed in conversation
+        /// history (per https://ai.google.dev/gemini-api/docs/thought-signatures).
+        /// `None` for non-Gemini providers and for legacy/pre-3.x Gemini turns.
+        thought_signature: Option<String>,
     },
     /// Anthropic server-side tool invocation block. Wire type is
     /// `server_tool_use` (NOT `tool_use`). Per cli.js v142:7057 and

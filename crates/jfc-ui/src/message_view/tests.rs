@@ -641,6 +641,7 @@ mod helper_tests {
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }
     }
 
@@ -1314,6 +1315,7 @@ mod helper_tests {
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         };
         let (g0, _) = tool_status_icon_animated(&tool, &t, 0);
         let (g6, _) = tool_status_icon_animated(&tool, &t, 6);
@@ -1339,6 +1341,7 @@ mod helper_tests {
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         };
         let (g0, _) = tool_status_icon_animated(&tool, &t, 0);
         let (g100, _) = tool_status_icon_animated(&tool, &t, 100);
@@ -1362,6 +1365,7 @@ mod helper_tests {
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         };
         let (g, _) = tool_status_icon_animated(&tool, &t, 42);
         assert_eq!(g, "✗");
@@ -2405,6 +2409,7 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: Some(120),
             started_at: None,
+            thought_signature: None,
         };
         for w in [40u16, 80u16] {
             let predicted = tool_block_height(&tool, w as usize);
@@ -2462,6 +2467,7 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         };
         for w in [60u16, 100u16] {
             let predicted = tool_block_height(&tool, w as usize);
@@ -2504,6 +2510,7 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
             },
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         };
         for expanded in [false, true] {
             let tool = make_tool(expanded);

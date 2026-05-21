@@ -317,15 +317,39 @@ fn wrap_envelope(project_id: &str, model: &str, mut request: Value) -> Value {
     })
 }
 
+/// Synthetic fallback when no real thought signature is captured.
+///
+/// Per Google's gemini-cli (`packages/core/src/utils/historyHardening.ts:10`,
+/// `core/geminiChat.ts:860`), this token is used only as a safety net for the
+/// FIRST `functionCall` in each model turn when the original signature is
+/// unavailable (cold-start, history truncation past the active loop). The
+/// happy path always echoes the real signature captured from the SSE stream.
+const SYNTHETIC_THOUGHT_SIGNATURE: &str = "skip_thought_signature_validator";
+
 fn message_to_content(message: &ProviderMessage) -> Option<Value> {
     let role = match message.role {
         ProviderRole::User => "user",
         ProviderRole::Assistant => "model",
     };
+
+    // For assistant ("model") turns we apply the "first functionCall must have
+    // a thoughtSignature" rule (gemini-cli historyHardening.ts:101-113). Walk
+    // parts in order, tracking whether we've already emitted a functionCall
+    // for this turn; only the first one falls back to the synthetic token.
+    let is_model = matches!(message.role, ProviderRole::Assistant);
+    let mut first_function_call_seen = false;
+
     let parts: Vec<Value> = message
         .content
         .iter()
-        .filter_map(|c| content_to_part(c, message.role))
+        .filter_map(|c| {
+            let needs_synthetic_fallback = is_model && !first_function_call_seen;
+            let part = content_to_part(c, message.role, needs_synthetic_fallback);
+            if part.is_some() && matches!(c, ProviderContent::ToolUse { .. }) {
+                first_function_call_seen = true;
+            }
+            part
+        })
         .collect();
     if parts.is_empty() {
         return None;
@@ -333,13 +357,39 @@ fn message_to_content(message: &ProviderMessage) -> Option<Value> {
     Some(json!({ "role": role, "parts": parts }))
 }
 
-fn content_to_part(content: &ProviderContent, _role: ProviderRole) -> Option<Value> {
+fn content_to_part(
+    content: &ProviderContent,
+    role: ProviderRole,
+    is_first_function_call_in_model_turn: bool,
+) -> Option<Value> {
     match content {
         ProviderContent::Text(text) if text.is_empty() => None,
         ProviderContent::Text(text) => Some(json!({ "text": text })),
-        ProviderContent::ToolUse { id: _, name, input } => Some(json!({
-            "functionCall": { "name": name, "args": input },
-        })),
+        ProviderContent::ToolUse {
+            id: _,
+            name,
+            input,
+            thought_signature,
+        } => {
+            // Gemini 3.x requires `thoughtSignature` on functionCall parts in
+            // model-role history. The captured signature (round-tripped from
+            // the SSE stream) is always preferred. The synthetic fallback is
+            // applied ONLY to the first functionCall of a model turn when no
+            // real signature is available (cold-start, history restore).
+            // See research/gemini-cli/packages/core/src/core/geminiChat.ts:850-872
+            //     research/gemini-cli/packages/core/src/utils/historyHardening.ts:101-113
+            let mut part = json!({
+                "functionCall": { "name": name, "args": input },
+            });
+            if role == ProviderRole::Assistant {
+                if let Some(sig) = thought_signature.as_deref() {
+                    part["thoughtSignature"] = json!(sig);
+                } else if is_first_function_call_in_model_turn {
+                    part["thoughtSignature"] = json!(SYNTHETIC_THOUGHT_SIGNATURE);
+                }
+            }
+            Some(part)
+        }
         ProviderContent::ToolResult {
             tool_use_id,
             content,
@@ -472,6 +522,11 @@ struct GeminiPart {
     thought: Option<bool>,
     #[serde(default, rename = "functionCall")]
     function_call: Option<GeminiFunctionCall>,
+    /// Opaque base64 signature emitted by Gemini 3.x on `functionCall` and
+    /// `thought` parts. Round-tripped verbatim on replay; see
+    /// https://ai.google.dev/gemini-api/docs/thought-signatures
+    #[serde(default, rename = "thoughtSignature")]
+    thought_signature: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -576,6 +631,8 @@ fn part_to_event(part: GeminiPart, state: &mut ParserState) -> Option<StreamEven
             tool_name: call.name,
             tool_use_id: format!("toolu_{}", Uuid::new_v4().simple()),
             input_json,
+            // Capture the signature so it can be echoed back on replay.
+            thought_signature: part.thought_signature,
         });
     }
     let text = part.text?;
@@ -721,6 +778,8 @@ mod tests {
 
     #[test]
     fn build_gemini_request_omits_empty_text_and_handles_tool_use_normal() {
+        // No captured signature → first model-role functionCall gets the
+        // synthetic fallback (gemini-cli historyHardening.ts:101-113).
         let opts = StreamOptions::new("gemini-3-pro");
         let msg = ProviderMessage {
             role: ProviderRole::Assistant,
@@ -730,6 +789,7 @@ mod tests {
                     id: "x".into(),
                     name: "search".into(),
                     input: json!({ "q": "rust" }),
+                    thought_signature: None,
                 },
             ],
         };
@@ -737,6 +797,90 @@ mod tests {
         let parts = &body["request"]["contents"][0]["parts"];
         assert_eq!(parts.as_array().unwrap().len(), 1);
         assert_eq!(parts[0]["functionCall"]["name"], "search");
+        assert_eq!(
+            parts[0]["thoughtSignature"], SYNTHETIC_THOUGHT_SIGNATURE,
+            "first model-role functionCall without real signature gets the synthetic fallback"
+        );
+    }
+
+    #[test]
+    fn thought_signature_round_trip_normal() {
+        // Real captured signature is echoed back verbatim — this is the happy
+        // path. The synthetic fallback is NOT used when a real one exists.
+        let real_sig = "EpgDCpUDAb4+9vtATVUpO7R/Du3cyW+qLtXqHV5MxjoY";
+        let opts = StreamOptions::new("gemini-3-pro");
+        let msg = ProviderMessage {
+            role: ProviderRole::Assistant,
+            content: vec![ProviderContent::ToolUse {
+                id: "x".into(),
+                name: "search".into(),
+                input: json!({ "q": "rust" }),
+                thought_signature: Some(real_sig.into()),
+            }],
+        };
+        let body = build_request("p", &[msg], &opts).unwrap();
+        let parts = &body["request"]["contents"][0]["parts"];
+        assert_eq!(
+            parts[0]["thoughtSignature"], real_sig,
+            "captured signature must round-trip verbatim"
+        );
+    }
+
+    #[test]
+    fn thought_signature_only_first_function_call_in_turn_robust() {
+        // Per Google's historyHardening.ts:105-113 — only the FIRST functionCall
+        // in a model turn falls back to the synthetic token. Subsequent calls
+        // in the same turn without real signatures get no signature.
+        let opts = StreamOptions::new("gemini-3-pro");
+        let msg = ProviderMessage {
+            role: ProviderRole::Assistant,
+            content: vec![
+                ProviderContent::ToolUse {
+                    id: "a".into(),
+                    name: "first".into(),
+                    input: json!({}),
+                    thought_signature: None,
+                },
+                ProviderContent::ToolUse {
+                    id: "b".into(),
+                    name: "second".into(),
+                    input: json!({}),
+                    thought_signature: None,
+                },
+            ],
+        };
+        let body = build_request("p", &[msg], &opts).unwrap();
+        let parts = body["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap();
+        assert_eq!(
+            parts[0]["thoughtSignature"], SYNTHETIC_THOUGHT_SIGNATURE,
+            "first functionCall must have the synthetic signature"
+        );
+        assert!(
+            parts[1].get("thoughtSignature").is_none(),
+            "subsequent functionCalls in the same turn must not have a synthetic signature"
+        );
+    }
+
+    #[test]
+    fn thought_signature_is_omitted_for_user_role_robust() {
+        let opts = StreamOptions::new("gemini-3-pro");
+        let msg = ProviderMessage {
+            role: ProviderRole::User,
+            content: vec![ProviderContent::ToolUse {
+                id: "x".into(),
+                name: "noop".into(),
+                input: json!({}),
+                thought_signature: None,
+            }],
+        };
+        let body = build_request("p", &[msg], &opts).unwrap();
+        let parts = &body["request"]["contents"][0]["parts"];
+        assert!(
+            parts[0].get("thoughtSignature").is_none(),
+            "user-role functionCalls must NOT carry a thoughtSignature"
+        );
     }
 
     #[test]
@@ -769,6 +913,35 @@ mod tests {
             } => {
                 assert_eq!(tool_name, "search");
                 assert!(input_json.contains("\"q\""));
+            }
+            other => panic!("expected ToolDone, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_frame_captures_thought_signature_normal() {
+        // Real wire shape from Google's gemini-cli integration test corpus
+        // (research/gemini-cli/integration-tests/browser-agent.persistent-session.responses).
+        // The server attaches `thoughtSignature` to each functionCall part; we
+        // must capture it so it can be echoed back on replay.
+        let mut state = ParserState::default();
+        let events = parse_frame(
+            r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"invoke_agent","args":{"prompt":"go"}},"thoughtSignature":"EpgDCpUDAb4+9vtATVUpO7R"}],"role":"model"}}]}"#,
+            &mut state,
+        );
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            StreamEvent::ToolDone {
+                tool_name,
+                thought_signature,
+                ..
+            } => {
+                assert_eq!(tool_name, "invoke_agent");
+                assert_eq!(
+                    thought_signature.as_deref(),
+                    Some("EpgDCpUDAb4+9vtATVUpO7R"),
+                    "signature must be captured from the SSE frame"
+                );
             }
             other => panic!("expected ToolDone, got {other:?}"),
         }

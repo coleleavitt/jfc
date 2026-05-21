@@ -617,6 +617,7 @@ mod disk_io_tests {
             display: crate::types::ToolDisplayState::Collapsed,
             elapsed_ms: Some(123),
             started_at: None,
+            thought_signature: None,
         };
         let messages = vec![
             ChatMessage::user("run a command".into()),

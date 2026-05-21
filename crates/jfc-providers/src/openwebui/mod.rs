@@ -572,6 +572,7 @@ mod tests {
                     id: "call_abc".into(),
                     name: "Bash".into(), // PascalCase from anthropic-oauth turn
                     input: serde_json::json!({"command": "echo hi"}),
+                    thought_signature: None,
                 }],
             },
             ProviderMessage {
@@ -630,16 +631,19 @@ mod tests {
                         id: "c1".into(),
                         name: "Bash".into(),
                         input: serde_json::json!({}),
+                        thought_signature: None,
                     },
                     ProviderContent::ToolUse {
                         id: "c2".into(),
                         name: "Read".into(),
                         input: serde_json::json!({}),
+                        thought_signature: None,
                     },
                     ProviderContent::ToolUse {
                         id: "c3".into(),
                         name: "ApplyPatch".into(),
                         input: serde_json::json!({}),
+                        thought_signature: None,
                     },
                 ],
             },
@@ -801,6 +805,7 @@ mod tests {
                     tool_name,
                     tool_use_id,
                     input_json,
+                    ..
                 } => Some((
                     *index,
                     tool_name.clone(),
@@ -867,6 +872,7 @@ mod tests {
                     tool_name,
                     tool_use_id,
                     input_json,
+                    ..
                 } => Some((
                     *index,
                     tool_name.clone(),
@@ -1932,7 +1938,7 @@ pub(crate) fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -
                     },
                     "content": t,
                 })),
-                ProviderContent::ToolUse { id, name, input } => Some(json!({
+                ProviderContent::ToolUse { id, name, input, .. } => Some(json!({
                     "role": "assistant",
                     "tool_calls": [{
                         "id": id,
@@ -2654,6 +2660,7 @@ fn push_chunk_events_stateful(
                 tool_name: name,
                 tool_use_id: id,
                 input_json: accum.args,
+                thought_signature: None,
             }));
         }
         out.push(Ok(StreamEvent::Done {

@@ -335,6 +335,7 @@ mod budget_tests {
                 id: id.to_owned(),
                 name: name.to_owned(),
                 input: serde_json::json!({"path": "x"}),
+                thought_signature: None,
             }],
         }
     }
@@ -532,6 +533,7 @@ mod auto_compact_tests {
                 id: id.to_owned(),
                 name: name.to_owned(),
                 input: serde_json::json!({"path": "x"}),
+                thought_signature: None,
             }],
         }
     }

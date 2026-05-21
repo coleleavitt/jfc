@@ -112,6 +112,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             display: ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }),
         MessagePart::Tool(ToolCall {
             id: "bash-1".into(),
@@ -131,6 +132,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             display: ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }),
         MessagePart::Tool(ToolCall {
             id: "read-1".into(),
@@ -150,6 +152,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             display: ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }),
         MessagePart::Tool(ToolCall {
             id: "write-1".into(),
@@ -163,6 +166,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             display: ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }),
         MessagePart::Tool(ToolCall {
             id: "search-1".into(),
@@ -180,6 +184,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             display: ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }),
         MessagePart::Tool(ToolCall {
             id: "patch-1".into(),
@@ -198,6 +203,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             display: ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }),
         MessagePart::Tool(ToolCall {
             id: "generic-1".into(),
@@ -210,6 +216,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
             display: ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }),
     ])
 }
@@ -451,6 +458,7 @@ mod tests {
             display: ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }
     }
 

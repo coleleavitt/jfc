@@ -690,6 +690,7 @@ mod pure_helper_tests {
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         };
         app.messages.push(ChatMessage {
             role: Role::Assistant,
@@ -1118,6 +1119,7 @@ mod pure_helper_tests {
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         };
         app.messages.push(ChatMessage {
             role: Role::Assistant,
@@ -1161,6 +1163,7 @@ mod pure_helper_tests {
                 display: crate::types::ToolDisplayState::DEFAULT,
                 elapsed_ms: None,
                 started_at: None,
+                thought_signature: None,
             };
             app.messages.push(ChatMessage {
                 role: Role::Assistant,

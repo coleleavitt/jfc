@@ -299,6 +299,7 @@ mod tests {
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }
     }
 
@@ -468,6 +469,7 @@ mod tests {
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }
     }
 
@@ -484,6 +486,7 @@ mod tests {
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }
     }
 

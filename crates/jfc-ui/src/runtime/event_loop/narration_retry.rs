@@ -255,6 +255,7 @@ mod tests {
             display: crate::types::ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }));
         assert!(!should_retry_narration_only_end_turn(
             &app,

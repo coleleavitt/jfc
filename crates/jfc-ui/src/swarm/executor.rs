@@ -375,6 +375,9 @@ pub(super) async fn run_single_turn(
                 id: id.clone(),
                 name: name.clone(),
                 input: input_val.clone(),
+                // Swarm executor accumulates tool calls from its own loop;
+                // Gemini thought signatures aren't threaded through here yet.
+                thought_signature: None,
             });
         }
         if !assistant_content.is_empty() {

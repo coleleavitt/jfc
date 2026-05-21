@@ -106,6 +106,7 @@ fn make_tool(id: &str, kind: ToolKind) -> ToolCall {
         display: crate::types::ToolDisplayState::DEFAULT,
         elapsed_ms: None,
         started_at: None,
+        thought_signature: None,
     }
 }
 
@@ -264,6 +265,7 @@ fn collect_recent_paths_dedups_normal() {
         display: crate::types::ToolDisplayState::DEFAULT,
         elapsed_ms: None,
         started_at: None,
+        thought_signature: None,
     })]);
     let paths = collect_recent_paths(&[msg]);
     assert_eq!(paths.len(), 1);
@@ -775,6 +777,7 @@ async fn jump_armed_e_jumps_to_error_normal() {
                 display: crate::types::ToolDisplayState::DEFAULT,
                 elapsed_ms: None,
                 started_at: None,
+                thought_signature: None,
             },
         )]));
     app.jump_armed = true;
@@ -1441,6 +1444,7 @@ async fn lower_o_toggles_tool_expand_normal() {
                 display: crate::types::ToolDisplayState::DEFAULT,
                 elapsed_ms: None,
                 started_at: None,
+                thought_signature: None,
             },
         )]));
     let (tx, _rx) = channel();

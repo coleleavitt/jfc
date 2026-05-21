@@ -54,6 +54,10 @@ pub(super) fn tool_use_content(tc: &ToolCall, counters: &mut ToolWireCounters) -
         id: tc.id.as_str().to_owned(),
         name: tc.kind.api_name().to_owned(),
         input: tc.input.to_value(),
+        // Round-trip the captured Gemini signature verbatim. Without this,
+        // multi-turn replay against Gemini 3.x degrades model performance
+        // (https://ai.google.dev/gemini-api/docs/thought-signatures).
+        thought_signature: tc.thought_signature.clone(),
     }
 }
 

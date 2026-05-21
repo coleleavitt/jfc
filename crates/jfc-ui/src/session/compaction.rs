@@ -176,6 +176,7 @@ mod coalesce_tests {
             display: ToolDisplayState::DEFAULT,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         })
     }
 

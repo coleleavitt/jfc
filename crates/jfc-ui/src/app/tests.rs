@@ -52,6 +52,7 @@ fn make_tool(kind: ToolKind, id: &str) -> ToolCall {
         display: crate::types::ToolDisplayState::DEFAULT,
         elapsed_ms: None,
         started_at: None,
+        thought_signature: None,
     }
 }
 
@@ -891,6 +892,7 @@ fn message_part_tool_carries_input_output_normal() {
         display: crate::types::ToolDisplayState::DEFAULT,
         elapsed_ms: None,
         started_at: None,
+        thought_signature: None,
     };
     let part = MessagePart::Tool(tool);
     match part {

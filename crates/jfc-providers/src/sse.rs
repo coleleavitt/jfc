@@ -360,6 +360,7 @@ pub fn translate(
                     tool_name: name,
                     tool_use_id: id,
                     input_json: input,
+                    thought_signature: None,
                 }),
                 // Server-side tools emit a prefixed tool name so stream.rs
                 // can recognize them and skip local dispatch.
@@ -376,6 +377,7 @@ pub fn translate(
                         tool_name: format!("server_tool_use:{name}"),
                         tool_use_id: id,
                         input_json: input,
+                        thought_signature: None,
                     })
                 }
                 // Server-side tool result block (e.g. web_search). The
@@ -552,7 +554,7 @@ pub fn build_messages(messages: &[ProviderMessage]) -> Value {
                         "content": content,
                         "is_error": is_error,
                     }),
-                    ProviderContent::ToolUse { id, name, input } => json!({
+                    ProviderContent::ToolUse { id, name, input, .. } => json!({
                         "type": "tool_use",
                         "id": id,
                         "name": name,
@@ -1375,6 +1377,7 @@ mod tests {
                 id: "tu_2".into(),
                 name: "read_file".into(),
                 input: serde_json::json!({"path": "/tmp/x"}),
+                thought_signature: None,
             }],
         };
         let v = build_messages(&[msg]);

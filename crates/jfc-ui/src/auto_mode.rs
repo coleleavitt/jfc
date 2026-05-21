@@ -424,6 +424,7 @@ mod tests {
             display: crate::types::ToolDisplayState::Collapsed,
             elapsed_ms: None,
             started_at: None,
+            thought_signature: None,
         }
     }
 

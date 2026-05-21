@@ -408,7 +408,7 @@ fn message_items(role: ProviderRole, content: Vec<ProviderContent>) -> Vec<Value
     };
 
     items.extend(content.into_iter().filter_map(|part| match part {
-        ProviderContent::ToolUse { id, name, input } => Some(json!({
+        ProviderContent::ToolUse { id, name, input, .. } => Some(json!({
             "type": "function_call",
             "call_id": id,
             "name": name,
@@ -542,6 +542,7 @@ fn responses_events_from_sse(data: &str) -> Vec<anyhow::Result<StreamEvent>> {
                             .and_then(Value::as_str)
                             .unwrap_or_default()
                             .to_string(),
+                        thought_signature: None,
                     }),
                     Ok(StreamEvent::Done {
                         stop_reason: StopReason::ToolUse,
@@ -800,6 +801,7 @@ mod tests {
                         id: "call_1".to_string(),
                         name: "inspect".to_string(),
                         input: json!({ "path": "Cargo.toml" }),
+                        thought_signature: None,
                     }],
                 },
                 ProviderMessage {
