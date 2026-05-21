@@ -1,0 +1,192 @@
+# Complete AI Studio gRPC-Web Service Methods
+# Extracted from deobfuscated JS bundles (boq-makersuite)
+# Host: alkalimakersuite-pa.clients6.google.com
+# Content-Type: application/json+protobuf
+# Auth: X-Goog-Api-Key + SAPISIDHASH cookies
+
+## google.internal.alkali.applications.makersuite.v1.MakerSuiteService
+
+### Generation
+- GenerateContent (server streaming)
+- StreamCodeAssistantOfflineGeneration (server streaming)
+- CodeAssistantOffline
+- CancelCodeAssistantOfflineGeneration
+- CountTokens
+- GenerateTitle
+- GenerateImage
+- GenerateVideo
+- GetGenerateVideoOperation
+- GenerateFunctionCallAnswer
+- EnhancePrompt
+- AutocompleteAppletPrompt
+- StreamExtractVideoFrames (server streaming)
+- GetImFeelingLuckyOptions
+
+### Interactions (Streaming Sessions)
+- CreateInteraction
+- CreateInteractionStream (server streaming)
+- GetInteractionStream
+- CancelInteraction
+
+### Auth & Account
+- GenerateAccessToken (body: ["users/me"])
+- CheckUserStatus
+- GetAiStudioBenefitTier
+- GetUserPreferences
+- UpdateUserPreferences
+- GetUserRestrictions
+- AcceptTerms
+- AcceptFirebaseTos
+- GetFirebaseTos
+- GetLoggingContext
+- Log
+
+### Models & Quota
+- ListModels
+- GetModel
+- ListQuotaModels
+- GetModelQuota
+- ListModelRateLimits
+
+### Projects & Keys
+- ListCloudProjects
+- CreateCloudProject
+- UpdateCloudProject
+- GetDefaultCloudProject
+- GetCloudProjectQuotaTier
+- ListCloudApiKeys
+- GenerateCloudApiKey
+- DeleteCloudApiKey
+- ListImportedProjects
+- ImportProjects
+- RemoveProjects
+- ListBillingAccounts
+
+### Conversations & Prompts
+- ListSessionTurns
+- GetSession
+- BulkDeleteSessionTurns
+- RecordSessionTurnFeedback
+- ListPrompts
+- GetPrompt
+- CreatePrompt
+- UpdatePrompt
+- DeletePrompt
+- GetSample
+
+### Applets (AI Studio Apps)
+- ListApplets
+- GetApplet
+- CreateApplet
+- SaveApplet
+- DeleteApplet
+- ListRecentApplets
+- StoreRecentApplet
+- ForgetRecentApplet
+- GetAppFolder
+- GetAppletGalleryConfig
+- GetAppletAccess
+- UpdateAppletAccess
+- UpdateAppletChatHistorySharing
+- GetAppletDeploymentInfo
+- CreateSharedAppletDeployment
+- DeleteSharedAppletDeployment
+- ListSharedApplets
+- ListBundledApplets
+- LoadBundledApplet
+- GetAppletSecret
+- ListAppletSecrets
+- UpsertAppletSecret
+- DeleteAppletSecret
+- ProvisionAndInitializeApplet
+- DeleteDriveApplet
+- ResolveDriveResource
+- GetAppletTrajectory
+- ListAppletTrajectories
+- ListPromos
+
+### Code Assistant
+- LoadCodeAssistantInteractionHistory
+- LoadCodeAssistantSnapshots
+- GetCodeAssistantSnapshot
+- ListCodeAssistantFeatures
+- ListCodeAssistantConfigurations
+- QueryCodeSearch
+
+### GitHub Integration
+- ListGitHubRepositories
+- GetGitHubAuthStatus
+- ImportGitHubRepository
+- CreateGitHubRepository
+- PullGitHubChanges
+- PushNewCommit
+- ComputeStagedGitHubDiff
+- GenerateGitHubCommitMessage
+
+### Datasets & Logging
+- ListDatasets
+- GetDataset
+- CreateDataset
+- UpdateDataset
+- DeleteDataset
+- ExportDataset
+- GetTracesLoggingStatus
+- EnableTracesLogging
+- DisableTracesLogging
+- ToggleInteractionsLogging
+- UpdateTracesPreset
+- FetchMetricTimeSeries
+
+### Cloud Deployment
+- CreateCloudRunService
+- DeleteCloudRunService
+- CheckCloudRunService
+- ListCloudRunServices
+- UpdateCloudRunService
+- GetWorkspaceAppConfig
+
+### Billing
+- GetPrepayEligibility
+- GetProjectUsageLimit
+- UpdateProjectUsageLimit
+- UpgradeAndDisablePrepay
+
+### Figma
+- GetFigmaAuthStatus
+- GetFigmaFileMetadata
+- DisconnectFigmaAccount
+
+### Media
+- CheckImage
+- ProxyUnaryFileApiCall
+
+## google.internal.alkali.applications.makersuite.v1.applets.AppletService
+- DeleteApplet
+- RemixApplet
+- UpdateApplet
+- ReconcileDevEnvironment
+
+## google.alkali.boq.makersuite.makersuiteappletcontrol.proto.MakersuiteAppletControlService
+- CreateUserSnapshot
+- ForkApplet
+- InstallPackage
+- ApplyFileSystemOperation
+- RestoreAppletToSnapshot
+
+## google.alkali.boq.makersuite.oauth.proto.OAuthService
+- CreateOAuthClient
+- AddBrandTestUser
+- GetOAuthBrand
+
+## google.alkali.boq.makersuite.cloudsql.proto.CloudSqlService
+- UpdateSchema
+
+## google.internal.alkali.applications.makersuite.v1.documentation.DocumentationService
+- GetResource
+
+## google.internal.cloud.clientapi.sdui.BillingSduiService
+- GetSdui
+
+## google.internal.waa.v1.Waa
+- Create
+- Ping

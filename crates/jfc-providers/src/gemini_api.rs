@@ -193,6 +193,106 @@ impl Provider for GeminiApiProvider {
     }
 }
 
+// ─── Additional API methods (not part of Provider trait) ─────────────────────
+
+impl GeminiApiProvider {
+    /// Fetch available models dynamically from the Gemini API.
+    /// Returns only text-generation capable models.
+    pub async fn fetch_remote_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
+        let url = format!("{BASE_URL}/models?key={}", self.api_key);
+        let resp: serde_json::Value = self.client.get(&url).send().await?.json().await?;
+        let models = resp
+            .get("models")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        let mut out = Vec::new();
+        for m in models {
+            let methods = m
+                .get("supportedGenerationMethods")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+                .unwrap_or_default();
+            if !methods.contains(&"generateContent")
+                && !methods.contains(&"streamGenerateContent")
+            {
+                continue;
+            }
+            let id = m
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .strip_prefix("models/")
+                .unwrap_or("");
+            if id.is_empty() {
+                continue;
+            }
+            let display = m
+                .get("displayName")
+                .and_then(|v| v.as_str())
+                .unwrap_or(id);
+            let ctx = m
+                .get("inputTokenLimit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize;
+            let max_out = m
+                .get("outputTokenLimit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize;
+
+            let mut info = ModelInfo::new(id, display, PROVIDER_ID);
+            info.context_window_tokens = Some(ctx);
+            info.max_output_tokens = Some(max_out);
+            out.push(info);
+        }
+        Ok(out)
+    }
+
+    /// Count tokens for a set of messages without generating content.
+    pub async fn count_tokens(
+        &self,
+        model: &str,
+        messages: &[ProviderMessage],
+    ) -> anyhow::Result<u32> {
+        use jfc_provider::{ProviderContent, ProviderRole};
+        use serde_json::json;
+
+        let url = format!("{BASE_URL}/models/{model}:countTokens?key={}", self.api_key);
+        let contents: Vec<serde_json::Value> = messages
+            .iter()
+            .filter_map(|msg| {
+                let role = match msg.role {
+                    ProviderRole::User => "user",
+                    ProviderRole::Assistant => "model",
+                };
+                let parts: Vec<serde_json::Value> = msg
+                    .content
+                    .iter()
+                    .filter_map(|c| match c {
+                        ProviderContent::Text(t) if !t.is_empty() => {
+                            Some(json!({ "text": t }))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                if parts.is_empty() {
+                    return None;
+                }
+                Some(json!({ "role": role, "parts": parts }))
+            })
+            .collect();
+
+        let body = json!({ "contents": contents });
+        let resp: serde_json::Value =
+            self.client.post(&url).json(&body).send().await?.json().await?;
+        Ok(resp
+            .get("totalTokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32)
+    }
+}
+
 /// Build the Gemini `generateContent` request body without the Code Assist
 /// envelope. This goes directly to `generativelanguage.googleapis.com`.
 fn build_direct_request(
