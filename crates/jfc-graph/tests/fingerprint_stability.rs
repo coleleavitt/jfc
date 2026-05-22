@@ -49,6 +49,7 @@ fn make_node_with_metadata(
         span: sample_span(),
         visibility: Visibility::Public,
         metadata,
+        complexity: None,
         birth_revision: 0,
         last_modified_revision: 0,
     }

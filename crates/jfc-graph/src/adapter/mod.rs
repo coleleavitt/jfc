@@ -3,7 +3,11 @@
 //! Each supported language implements [`LanguageAdapter`] to parse files and extract
 //! nodes/edges. The [`AdapterRegistry`] maps file extensions to the appropriate adapter.
 
+pub mod c;
+pub mod cpp;
 pub mod go;
+pub mod java;
+pub mod php;
 pub mod python;
 pub mod rust;
 pub mod typescript;
