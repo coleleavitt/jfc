@@ -77,6 +77,7 @@ jfc-agents = { path = "../jfc-agents" }
 jfc-core = { path = "../jfc-core" }
 jfc-provider = { path = "../jfc-provider" }
 jfc-session = { path = "../jfc-session" }
+jfc-tools = { path = "../jfc-tools" }
 # OS-level desktop notifications. Fire-and-forget: when a long-running
 # turn completes or a tool fails while jfc isn't focused, the user gets
 # a tray bubble instead of having to refocus to check. Disabled when

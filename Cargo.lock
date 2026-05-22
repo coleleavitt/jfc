@@ -2560,6 +2560,7 @@ dependencies = [
  "jfc-providers",
  "jfc-session",
  "jfc-theme",
+ "jfc-tools",
  "libc",
  "notify",
  "notify-rust",

@@ -250,186 +250,125 @@ pub fn find_skill_by_name<'a>(all_skills: &'a [Skill], name: &str) -> Option<&'a
 
 // ─── Built-in Agent Definitions ──────────────────────────────────────────────
 
+/// Construct an `AgentDef` with built-in defaults; caller patches the fields that differ.
+fn builtin(name: &str, prompt_file: &str) -> AgentDef {
+    AgentDef {
+        name: name.into(),
+        source: PathBuf::from("built-in"),
+        model: None,
+        isolation: None,
+        skills: Vec::new(),
+        allowed_tools: Vec::new(),
+        disallowed_tools: Vec::new(),
+        permission_mode: None,
+        forks_parent_context: None,
+        background: None,
+        color: None,
+        effort: None,
+        max_turns: None,
+        max_input_tokens: None,
+        memory: None,
+        mcp_servers: Vec::new(),
+        hooks: std::collections::HashMap::new(),
+        key_trigger: None,
+        use_when: Vec::new(),
+        avoid_when: Vec::new(),
+        cost: None,
+        system_prompt: prompt_file.to_owned(),
+    }
+}
+
+fn strs(items: &[&str]) -> Vec<String> {
+    items.iter().map(|s| (*s).to_owned()).collect()
+}
+
 /// Returns the built-in agent definitions that ship with jfc.
 pub fn built_in_agents() -> Vec<AgentDef> {
+    let read_only_tools = strs(&["Read", "Glob", "Grep", "Bash"]);
+    let no_write_tools = strs(&["Task", "Edit", "Write", "ApplyPatch"]);
+    let no_write_only = strs(&["Edit", "Write", "ApplyPatch"]);
+
     vec![
-        AgentDef {
-            name: "general-purpose".into(),
-            source: PathBuf::from("built-in"),
-            model: None,
-            isolation: None,
-            skills: Vec::new(),
-            allowed_tools: Vec::new(),
-            disallowed_tools: Vec::new(),
-            permission_mode: None,
-            forks_parent_context: None,
-            background: None,
-            color: None,
-            effort: None,
-            max_turns: None,
-            max_input_tokens: None,
-            memory: None,
-            mcp_servers: Vec::new(),
-            hooks: std::collections::HashMap::new(),
-            key_trigger: Some("ambiguous / multi-step user request → general-purpose handles when no specialist fits".into()),
-            use_when: vec![
-                "request spans multiple unrelated concerns".into(),
-                "user prompt doesn't match a more specific agent's domain".into(),
-            ],
-            avoid_when: vec![
-                "the request is read-only exploration → fire Explore instead".into(),
-                "the request is plan-only design → fire Plan instead".into(),
-            ],
-            cost: Some(AgentCost::Expensive),
-            system_prompt: include_str!("builtin_prompts/general_purpose.txt").to_owned(),
+        {
+            let mut a = builtin("general-purpose", include_str!("builtin_prompts/general_purpose.txt"));
+            a.key_trigger = Some("ambiguous / multi-step user request → general-purpose handles when no specialist fits".into());
+            a.use_when = strs(&["request spans multiple unrelated concerns", "user prompt doesn't match a more specific agent's domain"]);
+            a.avoid_when = strs(&["the request is read-only exploration → fire Explore instead", "the request is plan-only design → fire Plan instead"]);
+            a.cost = Some(AgentCost::Expensive);
+            a
         },
-        AgentDef {
-            name: "Explore".into(),
-            source: PathBuf::from("built-in"),
-            model: Some("haiku".into()),
-            isolation: None,
-            skills: Vec::new(),
-            allowed_tools: vec![
-                "Read".into(), "Glob".into(), "Grep".into(), "Bash".into(),
-            ],
-            disallowed_tools: vec![
-                "Task".into(), "Edit".into(), "Write".into(), "ApplyPatch".into(),
-            ],
-            permission_mode: None,
-            forks_parent_context: None,
-            background: None,
-            color: None,
-            effort: None,
-            max_turns: None,
-            max_input_tokens: None,
-            memory: None,
-            mcp_servers: Vec::new(),
-            hooks: std::collections::HashMap::new(),
-            key_trigger: Some("broad codebase exploration / 2+ modules / unfamiliar structure → fire Explore in background".into()),
-            use_when: vec![
-                "user asks 'how does X work', 'find Y', 'where is Z', 'look into …'".into(),
-                "request spans 2+ files or modules".into(),
-                "you don't know exact file locations and the search would take >3 grep calls".into(),
-                "multiple search angles would strengthen understanding".into(),
-            ],
-            avoid_when: vec![
-                "you already know the exact file (Read directly)".into(),
-                "single-keyword grep would suffice (Grep directly)".into(),
-                "Explore is already running on the same question (Delegation Trust Rule)".into(),
-            ],
-            cost: Some(AgentCost::Cheap),
-            system_prompt: include_str!("builtin_prompts/explore.txt").to_owned(),
+        {
+            let mut a = builtin("Explore", include_str!("builtin_prompts/explore.txt"));
+            a.model = Some("haiku".into());
+            a.allowed_tools = read_only_tools.clone();
+            a.disallowed_tools = no_write_tools.clone();
+            a.key_trigger = Some("broad codebase exploration / 2+ modules / unfamiliar structure → fire Explore in background".into());
+            a.use_when = strs(&[
+                "user asks 'how does X work', 'find Y', 'where is Z', 'look into …'",
+                "request spans 2+ files or modules",
+                "you don't know exact file locations and the search would take >3 grep calls",
+                "multiple search angles would strengthen understanding",
+            ]);
+            a.avoid_when = strs(&[
+                "you already know the exact file (Read directly)",
+                "single-keyword grep would suffice (Grep directly)",
+                "Explore is already running on the same question (Delegation Trust Rule)",
+            ]);
+            a.cost = Some(AgentCost::Cheap);
+            a
         },
-        AgentDef {
-            name: "Plan".into(),
-            source: PathBuf::from("built-in"),
-            model: None,
-            isolation: None,
-            skills: Vec::new(),
-            allowed_tools: vec![
-                "Read".into(), "Glob".into(), "Grep".into(), "Bash".into(),
-            ],
-            disallowed_tools: vec![
-                "Task".into(), "Edit".into(), "Write".into(), "ApplyPatch".into(),
-            ],
-            permission_mode: None,
-            forks_parent_context: None,
-            background: None,
-            color: None,
-            effort: None,
-            max_turns: None,
-            max_input_tokens: None,
-            memory: None,
-            mcp_servers: Vec::new(),
-            hooks: std::collections::HashMap::new(),
-            key_trigger: Some("multi-step / risky / cross-cutting change → fire Plan before any destructive edit".into()),
-            use_when: vec![
-                "user asks 'how should I implement X', 'design Y', 'plan the Z refactor'".into(),
-                "the change touches 3+ files / 2+ modules and you don't have a clear approach".into(),
-                "the change is irreversible (schema migration, public API change, large refactor)".into(),
-            ],
-            avoid_when: vec![
-                "the change is a one-liner with obvious scope".into(),
-                "the user already gave a step-by-step plan".into(),
-            ],
-            cost: Some(AgentCost::Expensive),
-            system_prompt: include_str!("builtin_prompts/plan.txt").to_owned(),
+        {
+            let mut a = builtin("Plan", include_str!("builtin_prompts/plan.txt"));
+            a.allowed_tools = read_only_tools.clone();
+            a.disallowed_tools = no_write_tools.clone();
+            a.key_trigger = Some("multi-step / risky / cross-cutting change → fire Plan before any destructive edit".into());
+            a.use_when = strs(&[
+                "user asks 'how should I implement X', 'design Y', 'plan the Z refactor'",
+                "the change touches 3+ files / 2+ modules and you don't have a clear approach",
+                "the change is irreversible (schema migration, public API change, large refactor)",
+            ]);
+            a.avoid_when = strs(&["the change is a one-liner with obvious scope", "the user already gave a step-by-step plan"]);
+            a.cost = Some(AgentCost::Expensive);
+            a
         },
-        AgentDef {
-            name: "verification".into(),
-            source: PathBuf::from("built-in"),
-            model: None,
-            isolation: None,
-            skills: Vec::new(),
-            allowed_tools: vec![
-                "Read".into(), "Glob".into(), "Grep".into(), "Bash".into(),
-                "TaskList".into(), "TaskGet".into(), "TaskUpdate".into(), "TaskDone".into(),
-            ],
-            disallowed_tools: vec![
-                "Task".into(), "Edit".into(), "Write".into(), "ApplyPatch".into(),
-            ],
-            permission_mode: None,
-            forks_parent_context: None,
-            background: Some(true),
-            color: Some("red".into()),
-            effort: None,
-            max_turns: None,
-            max_input_tokens: None,
-            memory: None,
-            mcp_servers: Vec::new(),
-            hooks: std::collections::HashMap::new(),
-            key_trigger: Some("after every non-trivial edit → fire verification in background to actually run + test".into()),
-            use_when: vec![
-                "you just finished a feature, fix, or refactor and the user wants confidence".into(),
-                "the change touches a runtime path (server / CLI / build pipeline)".into(),
-                "tests exist and the user expects you to run them".into(),
-            ],
-            avoid_when: vec![
-                "the change was a doc / comment edit only".into(),
-                "the user asked you NOT to run tests this turn".into(),
-            ],
-            cost: Some(AgentCost::Cheap),
-            system_prompt: include_str!("builtin_prompts/verification.txt").to_owned(),
+        {
+            let mut a = builtin("verification", include_str!("builtin_prompts/verification.txt"));
+            a.allowed_tools = strs(&["Read", "Glob", "Grep", "Bash", "TaskList", "TaskGet", "TaskUpdate", "TaskDone"]);
+            a.disallowed_tools = no_write_tools;
+            a.background = Some(true);
+            a.color = Some("red".into());
+            a.key_trigger = Some("after every non-trivial edit → fire verification in background to actually run + test".into());
+            a.use_when = strs(&[
+                "you just finished a feature, fix, or refactor and the user wants confidence",
+                "the change touches a runtime path (server / CLI / build pipeline)",
+                "tests exist and the user expects you to run them",
+            ]);
+            a.avoid_when = strs(&["the change was a doc / comment edit only", "the user asked you NOT to run tests this turn"]);
+            a.cost = Some(AgentCost::Cheap);
+            a
         },
-        AgentDef {
-            name: "orchestrator".into(),
-            source: PathBuf::from("built-in"),
-            model: None,
-            isolation: None,
-            skills: Vec::new(),
-            allowed_tools: vec![
-                "Read".into(), "Glob".into(), "Grep".into(), "Bash".into(),
-                "TaskCreate".into(), "TaskList".into(), "TaskGet".into(),
-                "TaskUpdate".into(), "TaskDone".into(), "TaskValidate".into(),
-                "AskUserQuestion".into(),
-                "EnterPlanMode".into(), "ExitPlanMode".into(),
-            ],
-            disallowed_tools: vec![
-                "Edit".into(), "Write".into(), "ApplyPatch".into(),
-            ],
-            permission_mode: None,
-            forks_parent_context: None,
-            background: None,
-            color: Some("magenta".into()),
-            effort: None,
-            max_turns: Some(8),
-            max_input_tokens: None,
-            memory: None,
-            mcp_servers: Vec::new(),
-            hooks: std::collections::HashMap::new(),
-            key_trigger: Some("vague multi-area request → fire orchestrator to decompose into N concrete subtasks before authorizing work".into()),
-            use_when: vec![
-                "user request is broad: 'fix all the auth bugs', 'modernize the build', 'audit security'".into(),
-                "you can't tell what 'done' looks like without scoping".into(),
-                "the work would touch >5 files across multiple subsystems".into(),
-            ],
-            avoid_when: vec![
-                "user already gave a numbered plan".into(),
-                "the request is concrete (Edit / Write / single bug fix)".into(),
-                "Plan agent fits better — Plan designs the *how* for one task; orchestrator decomposes a wide request into many tasks".into(),
-            ],
-            cost: Some(AgentCost::Cheap),
-            system_prompt: include_str!("builtin_prompts/orchestrator.txt").to_owned(),
+        {
+            let mut a = builtin("orchestrator", include_str!("builtin_prompts/orchestrator.txt"));
+            a.allowed_tools = strs(&[
+                "Read", "Glob", "Grep", "Bash", "TaskCreate", "TaskList", "TaskGet",
+                "TaskUpdate", "TaskDone", "TaskValidate", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
+            ]);
+            a.disallowed_tools = no_write_only;
+            a.color = Some("magenta".into());
+            a.max_turns = Some(8);
+            a.key_trigger = Some("vague multi-area request → fire orchestrator to decompose into N concrete subtasks before authorizing work".into());
+            a.use_when = strs(&[
+                "user request is broad: 'fix all the auth bugs', 'modernize the build', 'audit security'",
+                "you can't tell what 'done' looks like without scoping",
+                "the work would touch >5 files across multiple subsystems",
+            ]);
+            a.avoid_when = strs(&[
+                "user already gave a numbered plan",
+                "the request is concrete (Edit / Write / single bug fix)",
+                "Plan agent fits better — Plan designs the *how* for one task; orchestrator decomposes a wide request into many tasks",
+            ]);
+            a.cost = Some(AgentCost::Cheap);
+            a
         },
     ]
 }
