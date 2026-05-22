@@ -37,6 +37,7 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
         }
 
         let new_status = lifecycle_from_daemon_status(agent.status);
+        let completed_at = background_agent_completed_at(agent, new_status);
         let messages = crate::daemon::read_last_lines(&agent.log_path, 200);
         let entry = app
             .background_tasks
@@ -46,7 +47,7 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
                 description: agent.description.clone(),
                 status: new_status,
                 started_at: instant_from_system_time(agent.started_at),
-                completed_at: None,
+                completed_at,
                 summary: agent.summary.clone(),
                 error: agent.error.clone(),
                 last_tool: agent.last_tool.clone(),
@@ -75,6 +76,10 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
             if !was_terminal && new_status.is_terminal() {
                 app.background_tasks_completed_since_last_turn += 1;
             }
+            changed = true;
+        }
+        if entry.completed_at != completed_at {
+            entry.completed_at = completed_at;
             changed = true;
         }
         if entry.tool_use_count != agent.tool_use_count {
@@ -180,6 +185,7 @@ pub(crate) fn restore_persistent_background_agents(app: &mut App) {
     let session_id = app.current_session_id.as_ref().map(|id| id.as_str());
     for agent in crate::daemon::background_agents_for_restore(&paths, session_id, 20) {
         let status = lifecycle_from_daemon_status(agent.status);
+        let completed_at = background_agent_completed_at(&agent, status);
         let messages = crate::daemon::read_last_lines(&agent.log_path, 200);
         let chat_messages = parse_agent_log_to_chat_messages(&messages);
         app.background_tasks.insert(
@@ -189,16 +195,16 @@ pub(crate) fn restore_persistent_background_agents(app: &mut App) {
                 description: agent.description,
                 status,
                 started_at: std::time::Instant::now(),
-                completed_at: None,
+                completed_at,
                 summary: agent.summary,
                 error: agent.error,
-                last_tool: None,
+                last_tool: agent.last_tool,
                 messages,
                 chat_messages,
                 tool_use_count: agent.tool_use_count,
                 latest_input_tokens: agent.latest_input_tokens,
-                latest_cache_read_tokens: 0,
-                latest_cache_write_tokens: 0,
+                latest_cache_read_tokens: agent.latest_cache_read_tokens,
+                latest_cache_write_tokens: agent.latest_cache_write_tokens,
                 cumulative_output_tokens: agent.cumulative_output_tokens,
                 model_used: agent.model,
                 agent_messages: Vec::new(),
@@ -209,6 +215,15 @@ pub(crate) fn restore_persistent_background_agents(app: &mut App) {
             },
         );
     }
+}
+
+fn background_agent_completed_at(
+    agent: &BackgroundAgentInfo,
+    status: TaskLifecycle,
+) -> Option<std::time::Instant> {
+    status
+        .is_terminal()
+        .then(|| instant_from_system_time(agent.completed_at.unwrap_or(agent.updated_at)))
 }
 
 fn lifecycle_from_daemon_status(status: BackgroundAgentStatus) -> TaskLifecycle {
@@ -319,6 +334,7 @@ mod tests {
         ));
         let bt = app.background_tasks.get(task_id).expect("background task");
         assert_eq!(bt.status, TaskLifecycle::Running);
+        assert!(bt.completed_at.is_none());
         assert!(bt.chat_messages.iter().any(|msg| {
             msg.role == Role::Assistant
                 && matches!(msg.parts.as_slice(), [MessagePart::Text(text)] if text.contains("initial output"))
@@ -346,6 +362,10 @@ mod tests {
         ));
         let bt = app.background_tasks.get(task_id).expect("background task");
         assert_eq!(bt.status, TaskLifecycle::Completed);
+        assert!(
+            bt.completed_at.is_some(),
+            "daemon terminal agents should pin from completion time"
+        );
         assert!(bt.chat_messages.iter().any(|msg| {
             matches!(
                 msg.parts.as_slice(),

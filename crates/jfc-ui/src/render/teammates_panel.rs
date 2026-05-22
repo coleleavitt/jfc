@@ -146,9 +146,15 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
 
         let right_side = format!("{status_str} · {elapsed_label}{token_label}{tools_label}");
         let right_len = right_side.chars().count();
-        let desc_budget = render_width.saturating_sub(3 + right_len + 2);
+        let selected = app
+            .viewing_task_id
+            .as_deref()
+            .map(|id| id == bt.task_id.as_str())
+            .unwrap_or(false);
+        let pointer = if selected { "▶ " } else { "  " };
+        let desc_budget = render_width.saturating_sub(5 + right_len + 2);
         let desc = super::truncate_str(&bt.description, desc_budget);
-        let pad_len = render_width.saturating_sub(3 + desc.chars().count() + right_len);
+        let pad_len = render_width.saturating_sub(5 + desc.chars().count() + right_len);
         let padding = " ".repeat(pad_len);
 
         let name_style = if bt.status.is_alive() {
@@ -160,6 +166,7 @@ pub(super) fn teammates_panel(f: &mut Frame, app: &mut App) {
         };
 
         lines.push(Line::from(vec![
+            Span::styled(pointer, Style::default().fg(t.accent)),
             Span::styled(icon, icon_style),
             Span::styled(desc, name_style),
             Span::styled(padding, Style::default()),

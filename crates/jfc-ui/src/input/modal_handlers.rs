@@ -33,6 +33,10 @@ fn handle_task_panel_key(app: &mut App, key: event::KeyEvent) -> bool {
     if !app.show_task_panel {
         return false;
     }
+    if is_ctrl_t(key) {
+        cycle_expanded_view(app);
+        return true;
+    }
     let total = app
         .task_store
         .list(jfc_session::DeletedFilter::Exclude)
@@ -72,10 +76,84 @@ fn handle_teammates_panel_key(app: &mut App, key: event::KeyEvent) -> bool {
     if app.expanded_view != ExpandedView::Teammates {
         return false;
     }
-    if key.code == KeyCode::Esc {
-        app.expanded_view = ExpandedView::None;
+    match key.code {
+        KeyCode::Esc => {
+            app.expanded_view = ExpandedView::None;
+        }
+        KeyCode::Char('t') if key.modifiers == KeyModifiers::CONTROL => {
+            cycle_expanded_view(app);
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            move_agent_selection(app, 1);
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            move_agent_selection(app, -1);
+        }
+        KeyCode::Enter => {
+            if app.viewing_task_id.is_some() {
+                app.expanded_view = ExpandedView::None;
+                app.scroll_to_bottom();
+            }
+        }
+        _ => {}
     }
     true
+}
+
+fn is_ctrl_t(key: event::KeyEvent) -> bool {
+    matches!(
+        (key.modifiers, key.code),
+        (KeyModifiers::CONTROL, KeyCode::Char('t'))
+    )
+}
+
+fn cycle_expanded_view(app: &mut App) {
+    use crate::app::ExpandedView;
+    let has_teammates = app.team_context.is_active()
+        || app.background_tasks.values().any(|bt| bt.status.is_alive());
+    app.expanded_view = match app.expanded_view {
+        ExpandedView::None => ExpandedView::Tasks,
+        ExpandedView::Tasks if has_teammates => ExpandedView::Teammates,
+        ExpandedView::Tasks => ExpandedView::None,
+        ExpandedView::Teammates => ExpandedView::None,
+    };
+    app.show_task_panel = app.expanded_view == ExpandedView::Tasks;
+}
+
+fn sorted_agent_task_ids(app: &App) -> Vec<String> {
+    let mut tasks: Vec<_> = app.background_tasks.values().collect();
+    tasks.sort_by(|a, b| {
+        let a_alive = a.status.is_alive();
+        let b_alive = b.status.is_alive();
+        b_alive
+            .cmp(&a_alive)
+            .then_with(|| a.started_at.cmp(&b.started_at))
+    });
+    tasks
+        .into_iter()
+        .map(|task| task.task_id.as_str().to_owned())
+        .collect()
+}
+
+fn move_agent_selection(app: &mut App, delta: isize) {
+    let task_ids = sorted_agent_task_ids(app);
+    if task_ids.is_empty() {
+        app.viewing_task_id = None;
+        return;
+    }
+
+    let current = app
+        .viewing_task_id
+        .as_ref()
+        .and_then(|id| task_ids.iter().position(|task_id| task_id == id));
+    let next = match (current, delta.cmp(&0)) {
+        (Some(i), std::cmp::Ordering::Less) => i.saturating_sub(1),
+        (Some(i), std::cmp::Ordering::Greater) => (i + 1).min(task_ids.len() - 1),
+        (Some(i), std::cmp::Ordering::Equal) => i,
+        (None, std::cmp::Ordering::Less) => task_ids.len() - 1,
+        (None, _) => 0,
+    };
+    app.viewing_task_id = Some(task_ids[next].clone());
 }
 
 async fn handle_sidebar_key(app: &mut App, key: event::KeyEvent) -> bool {

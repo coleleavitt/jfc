@@ -128,6 +128,36 @@ fn make_bash_tool(id: &str, command: &str) -> ToolCall {
     }
 }
 
+fn make_background_task(
+    id: &str,
+    description: &str,
+    status: TaskLifecycle,
+) -> crate::app::BackgroundTask {
+    crate::app::BackgroundTask {
+        task_id: id.into(),
+        description: description.into(),
+        status,
+        started_at: std::time::Instant::now(),
+        completed_at: status.is_terminal().then_some(std::time::Instant::now()),
+        summary: None,
+        error: None,
+        last_tool: None,
+        messages: Vec::new(),
+        chat_messages: Vec::new(),
+        tool_use_count: 0,
+        latest_input_tokens: 0,
+        latest_cache_read_tokens: 0,
+        latest_cache_write_tokens: 0,
+        cumulative_output_tokens: 0,
+        model_used: None,
+        agent_messages: Vec::new(),
+        max_input_tokens: None,
+        budget_killed: false,
+        parent_task_id: None,
+        workflow_progress: None,
+    }
+}
+
 /// Convenience to send a single keypress (NONE modifier).
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -492,6 +522,61 @@ async fn task_panel_arrows_robust_no_tasks() {
     handle_key(&mut app, key(KeyCode::Down), &tx).await.unwrap();
     handle_key(&mut app, key(KeyCode::Up), &tx).await.unwrap();
     assert_eq!(app.task_panel_selected, 0);
+}
+
+#[tokio::test]
+async fn task_panel_ctrl_t_cycles_to_teammates_when_agents_exist_regression() {
+    let mut app = test_app();
+    app.show_task_panel = true;
+    app.expanded_view = crate::app::ExpandedView::Tasks;
+    app.background_tasks.insert(
+        "agent-1".into(),
+        make_background_task("agent-1", "inspect ui", TaskLifecycle::Running),
+    );
+    let (tx, _rx) = channel();
+
+    handle_key(
+        &mut app,
+        key_mod(KeyCode::Char('t'), KeyModifiers::CONTROL),
+        &tx,
+    )
+    .await
+    .unwrap();
+
+    assert!(!app.show_task_panel);
+    assert_eq!(app.expanded_view, crate::app::ExpandedView::Teammates);
+}
+
+#[tokio::test]
+async fn teammates_panel_ctrl_t_closes_regression() {
+    let mut app = test_app();
+    app.expanded_view = crate::app::ExpandedView::Teammates;
+    let (tx, _rx) = channel();
+
+    handle_key(
+        &mut app,
+        key_mod(KeyCode::Char('t'), KeyModifiers::CONTROL),
+        &tx,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(app.expanded_view, crate::app::ExpandedView::None);
+}
+
+#[tokio::test]
+async fn teammates_panel_down_selects_agent_normal() {
+    let mut app = test_app();
+    app.expanded_view = crate::app::ExpandedView::Teammates;
+    app.background_tasks.insert(
+        "agent-1".into(),
+        make_background_task("agent-1", "inspect ui", TaskLifecycle::Running),
+    );
+    let (tx, _rx) = channel();
+
+    handle_key(&mut app, key(KeyCode::Down), &tx).await.unwrap();
+
+    assert_eq!(app.viewing_task_id.as_deref(), Some("agent-1"));
 }
 
 // ─────────────────────────────────────────────────────────────────────
