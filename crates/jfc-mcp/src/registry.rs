@@ -26,7 +26,7 @@ use crate::McpServerConfig;
 use jfc_provider::ToolDef;
 
 use super::protocol::{self, McpTool, ToolCallOutcome};
-use super::transport::{RequestError, SpawnConfig, Transport};
+use super::transport::{RequestError, SpawnConfig, Transport, TransportKind};
 
 /// Status of an MCP server entry. Drives the `/mcp list` display and
 /// the [`crate::types::McpServerInfo`] sidebar block.
@@ -196,15 +196,11 @@ impl McpRegistry {
         let Some(transport) = server.transport.as_ref() else {
             return Err(DispatchError::ServerNotConnected(server_name.to_owned()));
         };
-        let req = serde_json::json!({
-            "name": tool_name,
-            "arguments": arguments
-        });
         let result = transport
-            .request("tools/call", req, timeout)
+            .call_tool(tool_name, arguments, timeout)
             .await
             .map_err(DispatchError::Request)?;
-        Ok(protocol::parse_tools_call_result(&result))
+        Ok(ToolCallOutcome::from(result))
     }
 }
 
@@ -240,27 +236,42 @@ impl std::error::Error for DispatchError {}
 /// failure returns a `Failed` entry (no transport) so `/mcp list` can
 /// still surface the configured name.
 pub async fn build_server(name: &str, cfg: &McpServerConfig) -> McpServer {
+    // `type` is authoritative; resolution validates that the required
+    // fields (`command` for stdio, `url` for http) are present.
+    let kind = match cfg.resolve_transport() {
+        Ok(k) => k,
+        Err(reason) => {
+            tracing::warn!(
+                target: "jfc::mcp",
+                server = %name,
+                reason = %reason,
+                "invalid MCP server config — marking failed"
+            );
+            return McpServer {
+                name: name.to_owned(),
+                status: McpServerStatus::Failed,
+                tools: Vec::new(),
+                transport: None,
+                spawn_cfg: SpawnConfig {
+                    server_name: name.to_owned(),
+                    kind: TransportKind::Stdio,
+                    command: cfg.command.clone().unwrap_or_default(),
+                    args: cfg.args.clone(),
+                    env: cfg.env.clone(),
+                    url: cfg.url.clone(),
+                },
+            };
+        }
+    };
+
     let spawn_cfg = SpawnConfig {
         server_name: name.to_owned(),
+        kind,
         command: cfg.command.clone().unwrap_or_default(),
         args: cfg.args.clone(),
         env: cfg.env.clone(),
+        url: cfg.url.clone(),
     };
-
-    if spawn_cfg.command.is_empty() {
-        tracing::warn!(
-            target: "jfc::mcp",
-            server = %name,
-            "no command configured — marking failed"
-        );
-        return McpServer {
-            name: name.to_owned(),
-            status: McpServerStatus::Failed,
-            tools: Vec::new(),
-            transport: None,
-            spawn_cfg,
-        };
-    }
 
     let Some(transport) = Transport::spawn(spawn_cfg.clone()).await else {
         return McpServer {
@@ -289,45 +300,24 @@ pub async fn build_server(name: &str, cfg: &McpServerConfig) -> McpServer {
     }
 }
 
-/// Walk the cursor pagination on `tools/list`, returning every page
-/// concatenated. Most servers return everything in one page; we paginate
-/// out of paranoia so a server with hundreds of tools doesn't get
-/// truncated.
+/// Discover every tool the server exposes. `rmcp`'s `list_all_tools`
+/// walks `tools/list` cursor pagination internally, so a server with
+/// hundreds of tools across multiple pages isn't truncated. On error we
+/// return an empty list — a server that can't be enumerated shouldn't
+/// crash startup.
 async fn fetch_all_tools(transport: &Transport) -> Vec<McpTool> {
-    let mut all = Vec::new();
-    let mut cursor: Option<String> = None;
-    let timeout = std::time::Duration::from_secs(10);
-    for _ in 0..32 {
-        // Hard cap on pages to avoid infinite cursor bugs.
-        let mut params = serde_json::Map::new();
-        if let Some(c) = cursor.as_ref() {
-            params.insert("cursor".into(), Value::String(c.clone()));
-        }
-        let result = match transport
-            .request("tools/list", Value::Object(params), timeout)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(
-                    target: "jfc::mcp",
-                    server = %transport.server_name(),
-                    error = %e,
-                    "tools/list failed"
-                );
-                break;
-            }
-        };
-        all.extend(protocol::parse_tools_list_result(&result));
-        cursor = result
-            .get("nextCursor")
-            .and_then(|v| v.as_str())
-            .map(String::from);
-        if cursor.is_none() {
-            break;
+    match transport.list_tools().await {
+        Ok(tools) => tools.into_iter().map(McpTool::from).collect(),
+        Err(e) => {
+            tracing::warn!(
+                target: "jfc::mcp",
+                server = %transport.server_name(),
+                error = %e,
+                "tools/list failed"
+            );
+            Vec::new()
         }
     }
-    all
 }
 
 /// Spawn every `[mcp.<name>]` entry from a config and insert them into
@@ -364,13 +354,15 @@ pub async fn restart_server(registry: &McpRegistry, name: &str) -> Option<bool> 
     if let Some(t) = old.transport.as_ref() {
         t.shutdown().await;
     }
-    // Reconstruct McpServerConfig from cached spawn cfg.
+    // Reconstruct McpServerConfig from cached spawn cfg, preserving the
+    // resolved transport kind so a restart can't silently switch
+    // transports.
     let cfg = McpServerConfig {
-        server_type: Some("stdio".into()),
+        server_type: Some(old.spawn_cfg.kind.label().to_owned()),
         command: Some(old.spawn_cfg.command.clone()),
         args: old.spawn_cfg.args.clone(),
         env: old.spawn_cfg.env.clone(),
-        url: None,
+        url: old.spawn_cfg.url.clone(),
     };
     let new_server = build_server(name, &cfg).await;
     let connected = new_server.status == McpServerStatus::Connected;
@@ -391,9 +383,11 @@ mod tests {
             transport: None,
             spawn_cfg: SpawnConfig {
                 server_name: name.to_owned(),
+                kind: TransportKind::Stdio,
                 command: "fake".into(),
                 args: Vec::new(),
                 env: HashMap::new(),
+                url: None,
             },
         }
     }
