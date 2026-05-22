@@ -178,9 +178,14 @@ impl Widget for MessageView<'_> {
         // Frame-level diagnostics for chasing scroll/overflow drift —
         // e.g., a content row that visibly clips at the viewport's
         // bottom edge despite scroll math saying everything fits.
-        // `RUST_LOG=jfc::render::scroll=debug` lights these up.
-        // Cheap: one structured event per frame at debug level.
-        tracing::debug!(
+        // `RUST_LOG=jfc::render::scroll=trace` lights these up.
+        //
+        // At `trace`, not `debug`: the default filter is `debug`, and this
+        // fires twice per frame (begin/end) at up to 30 FPS while streaming.
+        // Each call formats ~10 fields and writes a line to disk, which
+        // showed up in profiling as a per-frame malloc/realloc + xfs write
+        // churn on the render hot path. Trace keeps it opt-in.
+        tracing::trace!(
             target: "jfc::render::scroll",
             n_items = items.len(),
             n_messages = self.app.messages.len(),
@@ -379,7 +384,9 @@ impl Widget for MessageView<'_> {
         // diagnose "I see line N but expected line M at the bottom"
         // class bugs without instrumenting every layer.
         let content_at_bottom = last_visible_line.map(|l| l >= total_h).unwrap_or(false);
-        tracing::debug!(
+        // `trace`, not `debug`: see the begin-log rationale above — this is
+        // the second of two per-frame events on the render hot path.
+        tracing::trace!(
             target: "jfc::render::scroll",
             first_visible_item = ?first_visible_item,
             last_visible_item = ?last_visible_item,
