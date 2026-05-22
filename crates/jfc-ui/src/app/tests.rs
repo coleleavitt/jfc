@@ -144,6 +144,27 @@ fn permission_mode_plan_decisions_normal() {
     ));
 }
 
+#[test]
+fn permission_mode_plan_allows_codegraph_mcp_tools_normal() {
+    let tool = make_tool(
+        ToolKind::Mcp("mcp__codegraph__codegraph_files".into()),
+        "cg1",
+    );
+    assert_eq!(
+        PermissionMode::Plan.auto_approves(&tool),
+        PermissionDecision::Approved
+    );
+}
+
+#[test]
+fn permission_mode_plan_denies_non_codegraph_mcp_tools_robust() {
+    let tool = make_tool(ToolKind::Mcp("mcp__filesystem__write_file".into()), "mcp1");
+    assert!(matches!(
+        PermissionMode::Plan.auto_approves(&tool),
+        PermissionDecision::Denied("Plan mode: write operations blocked")
+    ));
+}
+
 // Normal: AcceptEdits approves Write/Edit/ApplyPatch (plus reads), but
 // returns NeedsPrompt for Bash (still gated).
 #[test]

@@ -97,6 +97,9 @@ impl PermissionMode {
                 // the model surface a plan whenever it's ready —
                 // mirrors v132's `ExitPlanMode` contract.
                 | ToolKind::ExitPlanMode => PermissionDecision::Approved,
+                ToolKind::Mcp(ref name) if is_plan_safe_mcp_tool(name) => {
+                    PermissionDecision::Approved
+                }
                 ToolKind::Bash => {
                     let ToolInput::Bash { command, .. } = &tool.input else {
                         return PermissionDecision::Denied("Plan mode: malformed bash input");
@@ -162,6 +165,16 @@ pub enum PermissionDecision {
     Denied(&'static str),
     NeedsPrompt,
     NeedsClassifier,
+}
+
+fn is_plan_safe_mcp_tool(name: &str) -> bool {
+    let Some((server, tool)) = crate::mcp::protocol::split_advertised(name) else {
+        return false;
+    };
+    // CodeGraph tools are structural read/query operations backed by the
+    // pre-built project index. Keep this narrow: arbitrary MCP servers may
+    // expose write-capable tools with read-looking names.
+    server == "codegraph" && tool.starts_with("codegraph_")
 }
 
 #[derive(Clone, Copy, PartialEq)]

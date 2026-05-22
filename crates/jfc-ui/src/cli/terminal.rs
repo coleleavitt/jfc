@@ -27,12 +27,11 @@ pub(super) fn install_terminal_panic_hook() {
 /// (and Ctrl+J / Shift+Enter from one another). Returns true if flags were pushed
 /// and need to be popped on exit.
 pub(super) fn enable_keyboard_enhancement(stdout: &mut io::Stdout) -> bool {
-    if !matches!(
-        crossterm::terminal::supports_keyboard_enhancement(),
-        Ok(true)
-    ) {
-        return false;
-    }
+    // Do not call `crossterm::terminal::supports_keyboard_enhancement()` here:
+    // on Unix it sends a terminal query and waits up to 2000ms for a reply.
+    // That was directly in the startup path after entering raw mode, so
+    // terminals/PTYs that do not answer the kitty query showed a blank
+    // alt-screen for two seconds before the first frame.
     execute!(
         stdout,
         PushKeyboardEnhancementFlags(

@@ -68,6 +68,10 @@ fn user_text_requests_action(text: &str) -> bool {
         return false;
     }
 
+    if explicitly_requests_tool_use(trimmed) {
+        return true;
+    }
+
     let strong_action_terms = [
         "add",
         "apply",
@@ -178,6 +182,27 @@ fn user_text_requests_action(text: &str) -> bool {
     }
 
     true
+}
+
+fn explicitly_requests_tool_use(trimmed: &str) -> bool {
+    [
+        "use codegraph",
+        "use the codegraph",
+        "use mcp",
+        "use the mcp",
+        "use rg",
+        "use ripgrep",
+        "use grep",
+        "use bash",
+        "use shell",
+        "use terminal",
+        "use tool",
+        "use tools",
+        "use the tool",
+        "use the tools",
+    ]
+    .iter()
+    .any(|needle| trimmed.contains(needle))
 }
 
 fn anthropic_tool_choice_value(_choice: StreamToolChoice) -> serde_json::Value {
@@ -621,12 +646,21 @@ mod tests {
         assert!(user_text_requests_action(
             "why is this bug happening read this session"
         ));
+        assert!(user_text_requests_action(
+            "what do you think of this codebase use codegraph and stuff"
+        ));
+        assert!(user_text_requests_action(
+            "explain the architecture and use codegraph"
+        ));
     }
 
     #[test]
     fn action_intent_leaves_plain_questions_alone_robust() {
         assert!(!user_text_requests_action("what is ownership in rust?"));
         assert!(!user_text_requests_action("explain how borrowing works"));
+        assert!(!user_text_requests_action(
+            "what is the use of lifetimes in rust?"
+        ));
         assert!(!user_text_requests_action("this is pretty wild right"));
         assert!(!user_text_requests_action("/help"));
     }
