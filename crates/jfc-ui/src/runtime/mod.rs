@@ -21,9 +21,9 @@ pub use events::{
     ProviderEvent, StreamEvent, StreamRequestMetadata, StreamRequestOverrides, StreamToolChoice,
     TaskEvent, TeamEvent, ToolEvent, UiEvent, WorkflowProgressEvent, send_critical,
 };
+pub use execution::{ExecutionResult, ToolProvenance, ToolSource};
 #[cfg(test)]
 pub use execution::{DiagnosticLevel, ToolDiagnostic, ToolOutcome};
-pub use execution::{ExecutionResult, ToolProvenance, ToolSource};
 pub(crate) use factory::{factory_mode_enabled, maybe_continue_task_factory};
 pub(crate) use goal_loop::{dispatch_goal_evaluator_if_active, handle_goal_verdict};
 pub(crate) use network::record_network_recovery;
