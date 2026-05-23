@@ -10,7 +10,7 @@ futures = { workspace = true }
 jfc-core = { path = "../jfc-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["fs"] }
+tokio = { workspace = true, features = ["fs", "io-util"] }
 tracing = { workspace = true }
 
 [dev-dependencies]
