@@ -28,25 +28,6 @@ pub(crate) async fn handle_tick(
     app.spinner_frame = (app.spinner_frame + 1) % crate::app::SPINNER.len();
     app.check_stream_watchdog();
 
-    // Network EKG: per-tick byte delta drives an EMA-
-    // eased activity factor that scales the R-wave
-    // amplitude. Sources `network_bytes_in` rather than
-    // `streaming_response_bytes` so the trace tracks
-    // EVERY stream event (text, reasoning, tool input
-    // deltas, redacted thinking, server tool results,
-    // usage frames, response IDs) and isn't reset by
-    // per-turn clears. See `runtime::network_ekg`.
-    let now_bytes = app.network_bytes_in;
-    let delta = now_bytes.saturating_sub(app.network_last_sampled_bytes);
-    app.network_last_sampled_bytes = now_bytes;
-    crate::runtime::network_ekg::tick(
-        &mut app.network_samples,
-        &mut app.network_phase,
-        &mut app.network_activity,
-        &mut app.network_beat_remaining,
-        delta,
-    );
-
     // Detached background workers update their progress in
     // `daemon-state.json` (they're a different process — no
     // AppEvent channel back to the UI). Re-read once a
@@ -197,6 +178,17 @@ pub(crate) async fn handle_tick(
     }
 
     app.update_wants_animation_frame();
+    // When there's genuine on-screen motion (streaming, a live agent, a
+    // running task spinner, kinetic scroll, a visible toast), every tick
+    // must redraw — otherwise the animation only advances when an input
+    // event happens to force a draw, which is the "braille only moves
+    // when I type" jank. Idle (no motion) still skips the draw.
+    if app
+        .wants_animation_frame
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        needs_draw = true;
+    }
 
     // v132 OnHeartbeat — fire every ~30s so registered
     // handlers (telemetry batchers, MCP keep-alive, daemon

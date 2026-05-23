@@ -25,11 +25,9 @@ pub(crate) fn handle_chunk(app: &mut App, text: Option<String>, reasoning: Optio
     // spinner's chars/4 token estimate.
     if let Some(ref t) = text {
         app.streaming_response_bytes += t.len();
-        app.network_bytes_in = app.network_bytes_in.saturating_add(t.len() as u64);
     }
     if let Some(ref r) = reasoning {
         app.streaming_response_bytes += r.len();
-        app.network_bytes_in = app.network_bytes_in.saturating_add(r.len() as u64);
     }
     if let Some(chunk) = text {
         // First text byte after a thinking phase ⇒ thinking
@@ -143,25 +141,18 @@ pub(crate) fn handle_tool_input_delta(app: &mut App, byte_len: usize) {
     // stream (the JSON for a 4-KB prompt arrives over many seconds
     // with no other StreamChunk events between).
     app.streaming_response_bytes += byte_len;
-    app.network_bytes_in = app.network_bytes_in.saturating_add(byte_len as u64);
     app.streaming_last_token_at = Some(std::time::Instant::now());
     app.record_stream_activity();
 }
 
 pub(crate) fn handle_redacted_thinking(app: &mut App, data: String) {
     app.record_stream_activity();
-    app.network_bytes_in = app.network_bytes_in.saturating_add(data.len() as u64);
     if let Some(msg) = streaming_assistant_mut(app) {
         msg.parts.push(MessagePart::RedactedThinking(data));
     }
 }
 
 pub(crate) fn handle_response_id(app: &mut App, id: String) {
-    // Even a bare response-id frame is signal that the
-    // server is still alive — bump the EKG counter a
-    // small fixed amount so the heartbeat reflects
-    // server keepalives even when the model is silent.
     app.record_stream_activity();
-    app.network_bytes_in = app.network_bytes_in.saturating_add(id.len() as u64);
     app.last_response_id = Some(id);
 }

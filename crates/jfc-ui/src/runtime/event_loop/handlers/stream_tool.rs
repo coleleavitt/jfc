@@ -259,8 +259,6 @@ pub(crate) fn handle_server_tool_result(
     // `ToolOutput::ServerToolResult` for byte-faithful
     // round-trip on resend.
     app.record_stream_activity();
-    let result_bytes = content.to_string().len() as u64;
-    app.network_bytes_in = app.network_bytes_in.saturating_add(result_bytes);
     let mut applied = false;
     if let Some(idx) = app.streaming_assistant_idx
         && let Some(msg) = app.messages.get_mut(idx)

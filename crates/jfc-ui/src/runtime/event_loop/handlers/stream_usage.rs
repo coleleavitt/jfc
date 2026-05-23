@@ -13,13 +13,6 @@ pub(crate) fn handle_stream_usage(
     cache_write_tokens: u32,
 ) {
     app.record_stream_activity();
-    // Bump the EKG counter — usage events arrive a few
-    // times per turn (message_delta + message_stop) and
-    // confirm the server is making progress, so we want
-    // them visible on the trace even when the model is
-    // mid-reasoning (no text/reasoning bytes between
-    // usage frames).
-    app.network_bytes_in = app.network_bytes_in.saturating_add(64);
     // Anthropic sends *cumulative* token counts in every
     // `message_delta` event (sse.rs:212-218 — see also
     // anthropic-messaging spec). Naively calling `add_delta`

@@ -106,63 +106,6 @@ pub(super) fn info_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         ]));
     }
 
-    // Network EKG — synthetic PQRST trace whose R-wave amplitude
-    // scales with recent SSE byte arrivals. The sparkline scrolls
-    // right-to-left like btop/bottom: newest sample at the right
-    // edge, older samples flow left. Block-element scale `▁▂▃▄▅▆▇█`
-    // gives 8 vertical levels per cell.
-    //
-    // Two-tone treatment: leading edge (rightmost N cells covering
-    // the current beat) in the provider accent color so the user can
-    // see the "now" pulse; older samples in muted so the history reads
-    // as faded.
-    if bar_width > 4 {
-        const BARS: &[char] = &['·', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-        let samples_len = app.network_samples.len();
-        let mut chars: Vec<char> = std::iter::repeat_n(' ', bar_width).collect();
-        let to_take = samples_len.min(bar_width);
-        for (i, level) in app.network_samples.iter().rev().take(to_take).enumerate() {
-            let col = bar_width.saturating_sub(1 + i);
-            let idx = (*level as usize).min(BARS.len() - 1);
-            chars[col] = BARS[idx];
-        }
-        // Leading edge = one full beat width (PATTERN_LEN cells) so
-        // the user always sees the "freshest QRS" highlighted.
-        let lead_width = crate::runtime::network_ekg::PATTERN_LEN.min(bar_width);
-        let split_at = bar_width.saturating_sub(lead_width);
-        let older: String = chars[..split_at].iter().collect();
-        let leading: String = chars[split_at..].iter().collect();
-        // Color the leading edge red-ish to mimic a real heart-monitor
-        // trace (and to contrast with the green context bar above).
-        let beat_color = if app.network_activity > 0.5 {
-            Color::Rgb(255, 90, 90) // bright red — active heartbeat
-        } else {
-            Color::Rgb(200, 140, 140) // muted red — resting trace
-        };
-        lines.push(Line::from(vec![
-            Span::styled(older, Style::default().fg(t.text_muted)),
-            Span::styled(
-                leading,
-                Style::default().fg(beat_color).add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        // Status label below the trace. Reads the same beat-armed
-        // state the bullet uses so the three signals (EKG trace,
-        // bullet, label) all agree on "is the network actually
-        // doing anything right now".
-        let beat_alive = app.network_beat_remaining > 0;
-        let intensity_pct = (app.network_activity * 100.0).round() as u32;
-        let label = if beat_alive {
-            format!("  ♥ net · live · {intensity_pct}%")
-        } else {
-            "  ♡ net · idle".to_owned()
-        };
-        lines.push(Line::from(vec![Span::styled(
-            label,
-            Style::default().fg(t.text_muted),
-        )]));
-    }
-
     // The per-turn `last_usage_output` row used to render here was
     // flickering — Anthropic sends cumulative usage frames mid-turn,
     // then `streaming_response_bytes` gets cleared at message_stop, and
