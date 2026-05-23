@@ -7,7 +7,7 @@ use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::context::ReadDedupCache;
-use crate::runtime::{AppEvent, TaskEvent, TeamEvent, ToolEvent, send_critical};
+use crate::runtime::{AppEvent, TaskEvent, ToolEvent, send_critical};
 use crate::scheduler;
 use crate::types::{ToolCall, ToolInput};
 use jfc_provider::{ModelId, Provider};
@@ -75,177 +75,17 @@ pub(crate) fn dispatch_tools_batched(
         // When `name` + `team_name` are provided, spawn a persistent
         // teammate instead of a one-shot subagent. The teammate runs
         // in-process and communicates via the mailbox system.
-        if task_input.is_teammate_spawn() {
-            let tx_task = tx.clone();
-            let task_id = tc.id.as_str().to_owned();
-            let done = send_all_complete.clone();
-
-            let name = task_input.name.clone().unwrap_or_default();
-            let team_name = task_input.team_name.clone().unwrap_or_default();
-            let agent_id = crate::swarm::types::make_agent_id(&name, &team_name);
-            let color = crate::swarm::runner::assign_teammate_color();
-            let agent_def = task_input
-                .subagent_type
-                .as_deref()
-                .and_then(|t| agents.iter().find(|a| a.name.eq_ignore_ascii_case(t)));
-            let teammate_model = match crate::tools::selected_subagent_model(
-                &task_input,
-                agent_def,
-                model.clone(),
-                provider.name(),
-            ) {
-                Ok(model) => model,
-                Err(error) => {
-                    send_critical(
-                        &tx_task,
-                        AppEvent::Tool(ToolEvent::Result {
-                            tool_id: crate::ids::ToolId::from(task_id),
-                            result: crate::runtime::ExecutionResult::failure(error),
-                        }),
-                    );
-                    done();
-                    continue;
-                }
-            };
-            let teammate_model_name = teammate_model.as_str().to_string();
-
-            let config = crate::swarm::runner::TeammateRunnerConfig {
-                identity: crate::swarm::TeammateIdentity {
-                    agent_id: agent_id.clone(),
-                    agent_name: name.clone(),
-                    team_name: team_name.clone(),
-                    color: Some(color.clone()),
-                    plan_mode_required: task_input.mode.as_deref() == Some("plan"),
-                    parent_session_id: current_session_id.clone().unwrap_or_default(),
-                },
-                prompt: task_input.prompt.clone(),
-                description: task_input.description.clone(),
-                model: Some(teammate_model_name.clone()),
-                agent_type: task_input.subagent_type.clone(),
-                provider: provider.clone(),
-                model_id: teammate_model,
-                system_prompt: None,
-                task_store: Some(jfc_session::TaskStore::open_team(&team_name)),
-            };
-
-            let teammate_event_tx = teammate_event_tx.clone();
-            let (runner_task_id, abort_tx) =
-                crate::swarm::runner::start_teammate(config, teammate_event_tx);
-            let _ = runner_task_id;
-
-            // Persist the new member into the team file so the team
-            // roster on disk matches the runtime spawn list. Without
-            // this, `team_helpers::set_member_active` /
-            // `set_member_mode` (which look up by name) silently no-op
-            // because members are never actually added.
-            let member = crate::swarm::types::TeamMember {
-                agent_id: agent_id.clone(),
-                name: name.clone(),
-                agent_type: task_input.subagent_type.clone(),
-                model: Some(teammate_model_name.clone()),
-                color: Some(color.clone()),
-                plan_mode_required: Some(task_input.mode.as_deref() == Some("plan")),
-                joined_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis() as u64)
-                    .unwrap_or(0),
-                cwd: None,
-                worktree_path: None,
-                backend_type: Some(crate::swarm::types::BackendType::InProcess),
-                is_active: Some(true),
-                mode: task_input.mode.clone(),
-            };
-            {
-                let team_name = team_name.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = crate::swarm::team_helpers::add_member(&team_name, member).await
-                    {
-                        tracing::warn!(
-                            target: "jfc::swarm",
-                            error = %e,
-                            "failed to register spawned teammate in team file"
-                        );
-                    }
-                });
-            }
-
-            // Report spawn as a successful tool result
-            let result_json = serde_json::json!({
-                "status": "teammate_spawned",
-                "teammate_id": agent_id,
-                "name": name,
-                "team_name": team_name,
-                "color": color,
-                "message": format!("Spawned successfully.\nagent_id: {agent_id}\nname: {name}\nteam_name: {team_name}\nThe agent is now running and will receive instructions via mailbox.")
-            });
-
-            // Two task IDs in play here:
-            //   - `task_id` (= `tc.id`, e.g. "tooluse_xOqQ…") is the
-            //     wire id the API uses to match the tool_use request
-            //     with our tool_result reply. It MUST be on the
-            //     ToolResult.
-            //   - `runner_task_id` (= "teammate-name@team") is the id
-            //     the runner stamps onto every Progress / TextDelta /
-            //     Completed / Failed event.
-            // Register the BackgroundTask under the *runner* id so
-            // when those events arrive their lookups hit. Otherwise
-            // the task panel reads "No messages yet" forever even
-            // though the runner is streaming.
-            let runner_task_id = crate::swarm::runner::teammate_task_id(&agent_id);
-            // Notify the leader's main loop that a teammate exists so
-            // `app.team_context.team_name` and `app.team_context.teammates`
-            // get populated. Previously these stayed empty for the
-            // entire session, so the team-mode tree (`team-lead` leader,
-            // teammate rows) never activated and we fell through to
-            // the generic subagent tree even though we were in a team.
-            send_critical(
-                &tx_task,
-                AppEvent::Team(TeamEvent::Spawned {
-                    name: name.clone(),
-                    team_name: team_name.clone(),
-                    agent_id: agent_id.clone(),
-                    color: Some(color.clone()),
-                    agent_type: task_input.subagent_type.clone(),
-                    cwd: std::env::current_dir()
-                        .ok()
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
-                    // Hand the abort handle to the main loop. It moves into
-                    // app.team_context.teammates[agent_id].abort_tx where it
-                    // stays alive for the teammate's lifetime. Previously the
-                    // sender was named `_abort_tx` and dropped on the next
-                    // line, immediately closing the channel and forcing the
-                    // runner into an Aborted exit on its first stream poll.
-                    abort_tx: Some(abort_tx),
-                }),
-            );
-            send_critical(
-                &tx_task,
-                AppEvent::Task(TaskEvent::Started {
-                    task_id: crate::ids::TaskId::from(runner_task_id.clone()),
-                    description: format!("spawn teammate: {name}"),
-                    model_used: Some(teammate_model_name),
-                    max_input_tokens: agent_def.and_then(|a| a.max_input_tokens),
-                    // Teammates are in-process (the runner runs inside this
-                    // event loop) — DON'T let the UI's TaskStarted handler
-                    // register them as detached daemon workers. The daemon
-                    // reconciler would later mark them stale when the UI
-                    // exits, mis-labeling foreground teammates as Failed.
-                    is_detached: false,
-                    parent_task_id: task_input.parent_task_id.clone(),
-                }),
-            );
-
-            send_critical(
-                &tx_task,
-                AppEvent::Tool(ToolEvent::Result {
-                    tool_id: crate::ids::ToolId::from(task_id),
-                    result: crate::runtime::ExecutionResult::success(
-                        serde_json::to_string_pretty(&result_json).unwrap_or_default(),
-                    ),
-                }),
-            );
-            done();
+        if crate::swarm::dispatch::try_spawn_teammate(
+            &task_input,
+            tc.id.as_str(),
+            tx,
+            provider.clone(),
+            model.clone(),
+            &agents,
+            current_session_id.as_deref(),
+            teammate_event_tx.clone(),
+            send_all_complete.clone(),
+        ) {
             continue;
         }
 

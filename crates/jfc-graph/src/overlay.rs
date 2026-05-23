@@ -151,6 +151,69 @@ pub fn load_base_snapshot(path: &Path) -> Result<LoadedSnapshot, OverlayError> {
     })
 }
 
+/// Save a graph snapshot using bincode (much faster than JSON for large graphs).
+/// Used by the session cache to persist between jfc runs.
+pub fn save_snapshot_bincode(
+    path: &Path,
+    graph: &CodeGraph,
+    workspace_root: &Path,
+) -> Result<(), OverlayError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let nodes: Vec<NodeData> = graph
+        .all_node_ids()
+        .into_iter()
+        .filter_map(|id| graph.get_node(id).cloned())
+        .collect();
+    let mut edges: Vec<OverlayEdge> = Vec::new();
+    for id in graph.all_node_ids() {
+        for (target_id, edge_data) in graph.get_edges_from(id) {
+            edges.push(OverlayEdge {
+                from: id.clone(),
+                to: target_id.clone(),
+                data: edge_data.clone(),
+            });
+        }
+    }
+    let snap = OverlaySnapshot {
+        schema_version: OVERLAY_SCHEMA_VERSION,
+        workspace_root: workspace_root.to_path_buf(),
+        base_ref: None,
+        nodes,
+        edges,
+    };
+    let encoded = bincode::serde::encode_to_vec(&snap, bincode::config::standard())
+        .map_err(|e| OverlayError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+    fs::write(path, encoded)?;
+    Ok(())
+}
+
+/// Load a bincode-serialized graph snapshot.
+pub fn load_snapshot_bincode(path: &Path) -> Result<LoadedSnapshot, OverlayError> {
+    let raw = fs::read(path)?;
+    let (snap, _): (OverlaySnapshot, _) = bincode::serde::decode_from_slice(&raw, bincode::config::standard())
+        .map_err(|e| OverlayError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+    if snap.schema_version != OVERLAY_SCHEMA_VERSION {
+        return Err(OverlayError::SchemaMismatch {
+            expected: OVERLAY_SCHEMA_VERSION,
+            found: snap.schema_version,
+        });
+    }
+    let mut graph = CodeGraph::new();
+    for node in snap.nodes {
+        graph.add_node(node);
+    }
+    for OverlayEdge { from, to, data } in snap.edges {
+        let _ = graph.add_edge(&from, &to, data);
+    }
+    Ok(LoadedSnapshot {
+        workspace_root: snap.workspace_root,
+        base_ref: snap.base_ref,
+        graph,
+    })
+}
+
 /// The loaded snapshot, decomposed for caller convenience.
 pub struct LoadedSnapshot {
     pub workspace_root: PathBuf,

@@ -275,6 +275,68 @@ pub(super) fn execute_graph_explore(
     ExecutionResult::success(session.explore(&query, n))
 }
 
+pub(super) fn execute_graph_status(cwd: &Path) -> ExecutionResult {
+    let session = get_or_build_graph_session(cwd);
+    let graph = &session.graph;
+    let node_count = graph.node_count();
+    let edge_count = graph.edge_count();
+    let file_count: usize = {
+        let mut files = std::collections::HashSet::new();
+        for id in graph.all_node_ids() {
+            if let Some(node) = graph.get_node(id) {
+                files.insert(node.file_path.clone());
+            }
+        }
+        files.len()
+    };
+    ExecutionResult::success(format!(
+        "Graph status: {node_count} nodes, {edge_count} edges, {file_count} indexed files\n\
+         Root: {}\n\
+         Watcher: active",
+        cwd.display()
+    ))
+}
+
+pub(super) fn execute_graph_files(path_filter: Option<&str>, cwd: &Path) -> ExecutionResult {
+    let session = get_or_build_graph_session(cwd);
+    let graph = &session.graph;
+    let mut files = std::collections::BTreeSet::new();
+    for id in graph.all_node_ids() {
+        if let Some(node) = graph.get_node(id) {
+            let display = node
+                .file_path
+                .strip_prefix(cwd)
+                .unwrap_or(&node.file_path)
+                .display()
+                .to_string()
+                .replace('\\', "/");
+            files.insert(display);
+        }
+    }
+
+    let mut files: Vec<String> = files.into_iter().collect();
+    if let Some(filter) = path_filter {
+        let f = filter.to_ascii_lowercase();
+        files.retain(|p| p.to_ascii_lowercase().contains(&f));
+    }
+
+    let total = files.len();
+    let shown = total.min(200);
+    let mut out = format!("{shown}/{total} indexed files");
+    if let Some(filter) = path_filter {
+        out.push_str(&format!(" (filter: {filter})"));
+    }
+    out.push('\n');
+    for f in files.iter().take(200) {
+        out.push_str(f);
+        out.push('\n');
+    }
+    if total > shown {
+        out.push_str(&format!("... and {} more (narrow with `path` filter)\n", total - shown));
+    }
+    ExecutionResult::success(out)
+}
+
 /// Render a neighbour list (callers / callees / impact) as a versioned
 /// JSON envelope. Centralised so the three tools stay in sync on shape.
 fn json_neighbors(

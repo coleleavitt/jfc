@@ -284,7 +284,30 @@ fn strs(items: &[&str]) -> Vec<String> {
 
 /// Returns the built-in agent definitions that ship with jfc.
 pub fn built_in_agents() -> Vec<AgentDef> {
-    let read_only_tools = strs(&["Read", "Glob", "Grep", "Bash"]);
+    // Read-only catalogue shared by Explore / Plan / verification.
+    // Includes the native graph + code-index tools so subagents can use
+    // the pre-built code graph instead of grep-looping through the tree
+    // (without these, the subagent's tool filter in
+    // `jfc-ui/src/tools/subagent.rs::filter_tools_for_agent` drops the
+    // graph tools from the advertised catalogue and the model gets
+    // "unknown tool" if it tries to call them).
+    let read_only_tools = strs(&[
+        "Read",
+        "Glob",
+        "Grep",
+        "Bash",
+        "code_index",
+        "graph_query",
+        "graph_context",
+        "graph_search",
+        "graph_callers",
+        "graph_callees",
+        "graph_impact",
+        "graph_node",
+        "graph_explore",
+        "graph_status",
+        "graph_files",
+    ]);
     let no_write_tools = strs(&["Task", "Edit", "Write", "ApplyPatch"]);
     let no_write_only = strs(&["Edit", "Write", "ApplyPatch"]);
 
@@ -356,6 +379,17 @@ pub fn built_in_agents() -> Vec<AgentDef> {
                 "Glob",
                 "Grep",
                 "Bash",
+                "code_index",
+                "graph_query",
+                "graph_context",
+                "graph_search",
+                "graph_callers",
+                "graph_callees",
+                "graph_impact",
+                "graph_node",
+                "graph_explore",
+                "graph_status",
+                "graph_files",
                 "TaskList",
                 "TaskGet",
                 "TaskUpdate",
@@ -387,6 +421,17 @@ pub fn built_in_agents() -> Vec<AgentDef> {
                 "Glob",
                 "Grep",
                 "Bash",
+                "code_index",
+                "graph_query",
+                "graph_context",
+                "graph_search",
+                "graph_callers",
+                "graph_callees",
+                "graph_impact",
+                "graph_node",
+                "graph_explore",
+                "graph_status",
+                "graph_files",
                 "TaskCreate",
                 "TaskList",
                 "TaskGet",

@@ -305,6 +305,12 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::GraphExplore { query, .. } => SerializedToolInput::Generic {
             summary: format!("graph_explore: {query}"),
         },
+        ToolInput::GraphStatus {} => SerializedToolInput::Generic {
+            summary: "graph_status".into(),
+        },
+        ToolInput::GraphFiles { path, .. } => SerializedToolInput::Generic {
+            summary: format!("graph_files: {}", path.as_deref().unwrap_or(".")),
+        },
         ToolInput::PlanCreate { title, .. } => SerializedToolInput::Generic {
             summary: format!("plan_create: {title}"),
         },

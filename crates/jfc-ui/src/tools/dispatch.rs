@@ -402,6 +402,12 @@ pub async fn execute_tool(
                 max_files,
             },
         ) => dispatch_heavy::execute_graph_explore(query, max_files, &cwd),
+        (ToolKind::GraphStatus, ToolInput::GraphStatus {}) => {
+            dispatch_heavy::execute_graph_status(&cwd)
+        }
+        (ToolKind::GraphFiles, ToolInput::GraphFiles { path }) => {
+            dispatch_heavy::execute_graph_files(path.as_deref(), &cwd)
+        }
         (ToolKind::PlanCreate, ToolInput::PlanCreate { title, body }) => {
             crate::tools::plans::execute_plan_create(&title, body.as_deref())
         }

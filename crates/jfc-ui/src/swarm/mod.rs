@@ -27,6 +27,7 @@
 
 pub mod constants;
 pub mod coordinator;
+pub mod dispatch;
 pub mod executor;
 pub mod mailbox;
 pub mod permission_sync;

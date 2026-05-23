@@ -19,6 +19,7 @@ mod formatters;
 mod output_style;
 mod outputs;
 mod syntax;
+pub(crate) mod task_body;
 mod terminal_output;
 mod tests;
 mod tool_blocks;
@@ -34,6 +35,8 @@ pub use core::{
     MessageView, PrebuiltItems, RenderCtx, RenderItem, build_render_items_ctx,
     build_render_items_pub, message_view_total_lines, warm_tool_height_cache_for_messages,
 };
+#[allow(unused_imports)]
+pub use task_body::{TASK_VIEW_COLLAPSE_BYTES, TASK_VIEW_COLLAPSE_LINES, task_view_body_lines};
 pub use tool_height::{load_tool_height_cache, persist_tool_height_cache};
 #[allow(unused_imports)]
 pub use outputs::diff_lang;

@@ -229,6 +229,8 @@ macro_rules! for_each_regular_tool_input {
             GraphImpact => { symbol: req_str @ "symbol", depth: opt_u64_as_u8 @ "depth", format: opt_str @ "format" }
             GraphNode => { symbol: req_str @ "symbol", include_code: bool_field @ "include_code" }
             GraphExplore => { query: req_str @ "query", max_files: opt_u64_as_usize @ "max_files" }
+            GraphStatus => {}
+            GraphFiles => { path: opt_str @ "path" }
             RunCoverage => { lcov_path: opt_str @ "lcov_path", include_untested_list: bool_true @ "include_untested_list" }
             SymbolEdit => { handle: req_str @ "handle", new_content: req_str @ "new_content", validate: bool_field @ "validate", dispatch_cascade: bool_field @ "dispatch_cascade" }
             PlanCreate => { title: req_str @ "title", body: opt_str @ "body" }
@@ -556,6 +558,11 @@ pub enum ToolInput {
         #[serde(default)]
         max_files: Option<usize>,
     },
+    GraphStatus {},
+    GraphFiles {
+        #[serde(default)]
+        path: Option<String>,
+    },
     PostBounty {
         description: String,
         budget: u64,
@@ -809,6 +816,10 @@ impl ToolInput {
             Self::GraphImpact { symbol, .. } => format!("impact: {symbol}"),
             Self::GraphNode { symbol, .. } => format!("node: {symbol}"),
             Self::GraphExplore { query, .. } => format!("explore: {query}"),
+            Self::GraphStatus {} => "graph_status".into(),
+            Self::GraphFiles { path, .. } => {
+                format!("files({})", path.as_deref().unwrap_or("."))
+            }
             Self::RunCoverage { lcov_path, .. } => {
                 format!("coverage({})", lcov_path.as_deref().unwrap_or("auto"))
             }

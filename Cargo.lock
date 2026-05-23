@@ -2416,6 +2416,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "jfc-config"
+version = "0.1.0"
+dependencies = [
+ "dirs 5.0.1",
+ "jfc-mcp",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "jfc-core"
 version = "0.1.0"
 dependencies = [
@@ -2527,6 +2541,24 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "jfc-memory"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dirs 5.0.1",
+ "futures",
+ "jfc-provider",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
  "tokio",
  "tracing",
 ]
@@ -2652,11 +2684,13 @@ dependencies = [
  "jfc-learn",
  "jfc-markdown",
  "jfc-mcp",
+ "jfc-memory",
  "jfc-provider",
  "jfc-providers",
  "jfc-session",
  "jfc-theme",
  "jfc-tools",
+ "jfc-web",
  "libc",
  "notify",
  "notify-rust",
@@ -2692,6 +2726,18 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
+]
+
+[[package]]
+name = "jfc-web"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "tracing",
 ]
 
 [[package]]

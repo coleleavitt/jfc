@@ -522,6 +522,64 @@ fn highlight_code_inner(
     out
 }
 
+// ─── Persistent highlight line-count cache ──────────────────────────────────
+
+static HIGHLIGHT_LINE_COUNT_CACHE: LazyLock<Mutex<HashMap<(u64, usize, bool), usize>>> =
+    LazyLock::new(|| Mutex::new(HashMap::with_capacity(256)));
+
+fn record_line_count(code_hash: u64, wrap_w: usize, with_gutter: bool, count: usize) {
+    if let Ok(mut cache) = HIGHLIGHT_LINE_COUNT_CACHE.lock() {
+        cache.insert((code_hash, wrap_w, with_gutter), count);
+    }
+}
+
+/// Look up a previously-recorded line count. Returns `None` on miss.
+pub fn highlight_line_count_cached(code_hash: u64, wrap_w: usize, with_gutter: bool) -> Option<usize> {
+    HIGHLIGHT_LINE_COUNT_CACHE
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(&(code_hash, wrap_w, with_gutter)).copied())
+}
+
+/// Persist the line-count cache to a JSON file.
+pub fn persist_highlight_line_counts(path: &std::path::Path) {
+    let Ok(cache) = HIGHLIGHT_LINE_COUNT_CACHE.lock() else {
+        return;
+    };
+    let entries: Vec<(u64, usize, u8, usize)> = cache
+        .iter()
+        .map(|(&(hash, w, gutter), &count)| (hash, w, gutter as u8, count))
+        .collect();
+    drop(cache);
+    let Ok(json) = serde_json::to_vec(&entries) else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(path.parent().unwrap_or(std::path::Path::new(".")));
+    let _ = std::fs::write(path, json);
+}
+
+/// Load a previously-persisted line-count cache. Returns entries loaded.
+pub fn load_highlight_line_counts(path: &std::path::Path) -> usize {
+    let Ok(bytes) = std::fs::read(path) else {
+        return 0;
+    };
+    let Ok(entries): Result<Vec<(u64, usize, u8, usize)>, _> = serde_json::from_slice(&bytes)
+    else {
+        return 0;
+    };
+    let Ok(mut cache) = HIGHLIGHT_LINE_COUNT_CACHE.lock() else {
+        return 0;
+    };
+    let mut loaded = 0;
+    for (hash, w, gutter, count) in entries {
+        cache.entry((hash, w, gutter != 0)).or_insert_with(|| {
+            loaded += 1;
+            count
+        });
+    }
+    loaded
+}
+
 /// Returns true if `text` has an unclosed code fence at the end.
 ///
 /// Used during streaming to avoid rendering half-written code blocks as broken

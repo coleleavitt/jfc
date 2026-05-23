@@ -44,8 +44,8 @@ pub(crate) use agents::fleet_ordered_task_ids;
 pub(crate) use agents::format_subagent_counters;
 pub(crate) use agents::format_token_count;
 #[cfg(test)]
-pub(crate) use messages::task_view_body_lines;
-pub(crate) use messages::{TASK_VIEW_COLLAPSE_BYTES, TASK_VIEW_COLLAPSE_LINES};
+pub(crate) use crate::message_view::task_view_body_lines;
+pub(crate) use crate::message_view::{TASK_VIEW_COLLAPSE_BYTES, TASK_VIEW_COLLAPSE_LINES};
 pub(crate) use overlays::{current_slash_prefix, slash_matches};
 pub use session_sidebar::ordered_sidebar_sessions;
 pub(crate) use visual::{DiffStats, collect_diff_stats, pulse_color_pub, truncate_str};

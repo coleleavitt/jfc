@@ -86,6 +86,27 @@ impl GraphSession {
         }
     }
 
+    /// Construct a session from a pre-loaded snapshot graph.
+    /// Cheaper than `from_directory` — skips tree-sitter parsing entirely,
+    /// only builds the SymbolTable index on top of the existing graph.
+    pub fn from_snapshot(graph: CodeGraph, workspace_root: &Path) -> Self {
+        let symbols = SymbolTable::build_from_graph(&graph);
+        let worktree_mismatch = std::env::current_dir()
+            .ok()
+            .and_then(|cwd| worktree::detect_worktree_index_mismatch(&cwd, workspace_root));
+        Self {
+            graph,
+            symbols,
+            events: EventLog::new(),
+            capabilities: CapabilityTree::from_env(),
+            parse_errors: Vec::new(),
+            files_skipped: Vec::new(),
+            worktree_mismatch,
+            query_cache: QueryCache::new(),
+            adapter: RustAdapter::new(),
+        }
+    }
+
     /// Execute a DSL query and return token-budgeted formatted output.
     ///
     /// Delegates to [`dsl::run_query_expr`] (the extended-grammar entry

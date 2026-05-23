@@ -36,13 +36,109 @@ pub(super) fn graph_session_cache_key(cwd: &std::path::Path) -> std::path::PathB
 pub(super) fn build_graph_session_for_key(
     key: std::path::PathBuf,
 ) -> Arc<jfc_graph::session::GraphSession> {
-    std::thread::Builder::new()
+    // Try loading from persistent bincode cache.
+    let cache_path = jfc_graph::data_dir::resolve_data_dir(&key).join("index.bin");
+
+    if let Some(session) = try_load_cached_graph(&key, &cache_path) {
+        return Arc::new(session);
+    }
+
+    // Cache miss or stale — full build on 64MB-stack thread.
+    let key_clone = key.clone();
+    let session = std::thread::Builder::new()
         .name("graph-build".into())
-        .stack_size(64 * 1024 * 1024) // 64MB — handles 10K+ node graphs
-        .spawn(move || Arc::new(jfc_graph::session::GraphSession::from_directory(&key)))
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || jfc_graph::session::GraphSession::from_directory(&key_clone))
         .expect("failed to spawn graph-build thread")
         .join()
-        .expect("graph-build thread panicked")
+        .expect("graph-build thread panicked");
+
+    // Save to cache (non-blocking save would be nice but snapshot is
+    // cheap relative to the full parse we just did).
+    let _ = jfc_graph::overlay::save_snapshot_bincode(&cache_path, &session.graph, &key);
+    tracing::info!(
+        target: "jfc::graph",
+        path = %cache_path.display(),
+        "persisted graph snapshot to disk"
+    );
+
+    Arc::new(session)
+}
+
+/// Try to load a cached graph from disk. Returns None if:
+/// - Cache file doesn't exist
+/// - Cache is stale (any source file is newer than the cache)
+/// - Deserialization fails
+fn try_load_cached_graph(
+    workspace_root: &std::path::Path,
+    cache_path: &std::path::Path,
+) -> Option<jfc_graph::session::GraphSession> {
+    let cache_meta = std::fs::metadata(cache_path).ok()?;
+    let cache_mtime = cache_meta.modified().ok()?;
+
+    // Walk source files and find the newest mtime.
+    let newest_source = newest_source_mtime(workspace_root)?;
+
+    if newest_source > cache_mtime {
+        tracing::debug!(
+            target: "jfc::graph",
+            "graph cache stale — source files newer than index"
+        );
+        return None;
+    }
+
+    let start = std::time::Instant::now();
+    let loaded = jfc_graph::overlay::load_snapshot_bincode(cache_path).ok()?;
+    let session = jfc_graph::session::GraphSession::from_snapshot(loaded.graph, workspace_root);
+    let elapsed_ms = start.elapsed().as_millis();
+    tracing::info!(
+        target: "jfc::graph",
+        elapsed_ms,
+        nodes = session.graph.node_count(),
+        "loaded graph from persistent cache"
+    );
+    Some(session)
+}
+
+/// Walk workspace for source files and return the newest modification time.
+fn newest_source_mtime(workspace_root: &std::path::Path) -> Option<std::time::SystemTime> {
+    use std::time::SystemTime;
+
+    let extensions: &[&str] = &["rs"];
+    let mut newest = SystemTime::UNIX_EPOCH;
+
+    let walker = ignore::WalkBuilder::new(workspace_root)
+        .hidden(true)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .follow_links(false)
+        .max_depth(Some(32))
+        .build();
+
+    for entry in walker.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !extensions.contains(&ext) {
+            continue;
+        }
+        if let Ok(meta) = path.metadata() {
+            if let Ok(mtime) = meta.modified() {
+                if mtime > newest {
+                    newest = mtime;
+                }
+            }
+        }
+    }
+
+    if newest == SystemTime::UNIX_EPOCH {
+        None
+    } else {
+        Some(newest)
+    }
 }
 
 /// Mutate the cached graph session by taking sole ownership of the cached
