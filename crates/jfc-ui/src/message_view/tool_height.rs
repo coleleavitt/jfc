@@ -95,6 +95,63 @@ pub fn clear_tool_height_cache() {
     c.generation = 0;
 }
 
+// ─── Persistent cache ───────────────────────────────────────────────────────
+
+/// Serialize the current in-memory tool-height cache to a file. Called after
+/// session save so the next `--continue` can pre-seed the cache and skip
+/// the expensive warm loop (which runs full syntect highlighting on every
+/// tool just to count lines).
+pub fn persist_tool_height_cache(path: &std::path::Path) {
+    let cache = TOOL_HEIGHT_CACHE
+        .lock()
+        .expect("tool height cache poisoned");
+    // Serialize as a flat JSON map: { "fingerprint_u64": height_usize, ... }
+    let map: std::collections::HashMap<String, usize> = cache
+        .map
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.height))
+        .collect();
+    drop(cache);
+    let Ok(json) = serde_json::to_vec(&map) else {
+        return;
+    };
+    // Best-effort — never block on failure.
+    let _ = std::fs::create_dir_all(path.parent().unwrap_or(std::path::Path::new(".")));
+    let _ = std::fs::write(path, json);
+}
+
+/// Load a previously-persisted tool-height cache, seeding the in-memory
+/// map so `tool_block_height` gets cache hits immediately without running
+/// any highlighting. Called on `--continue` before `warm_tool_height_cache`.
+pub fn load_tool_height_cache(path: &std::path::Path) -> usize {
+    let Ok(bytes) = std::fs::read(path) else {
+        return 0;
+    };
+    let Ok(map): Result<std::collections::HashMap<String, usize>, _> =
+        serde_json::from_slice(&bytes)
+    else {
+        return 0;
+    };
+    let mut cache = TOOL_HEIGHT_CACHE
+        .lock()
+        .expect("tool height cache poisoned");
+    let mut loaded = 0usize;
+    let current_gen = cache.generation;
+    for (key_str, height) in map {
+        let Ok(key) = key_str.parse::<u64>() else {
+            continue;
+        };
+        cache.map.entry(key).or_insert_with(|| {
+            loaded += 1;
+            ToolHeightEntry {
+                height,
+                generation: current_gen,
+            }
+        });
+    }
+    loaded
+}
+
 fn tool_height_fingerprint(tool: &ToolCall, inner_w: usize) -> u64 {
     use std::hash::{DefaultHasher, Hash, Hasher};
     let mut h = DefaultHasher::new();

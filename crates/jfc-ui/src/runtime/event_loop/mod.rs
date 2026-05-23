@@ -201,10 +201,43 @@ pub(crate) async fn run(
                 // is unaffected and they get evicted by the LRU.
                 if let Ok((cols, _rows)) = crossterm::terminal::size() {
                     let inner_w = (cols as usize).saturating_sub(5);
+                    // Load persisted tool-height cache from the previous session.
+                    // On hit this pre-seeds the in-memory LRU so the warm loop
+                    // below is a no-op (every tool_block_height call hits the
+                    // cache immediately). Eliminates ~1s of syntect highlighting.
+                    let cache_path = std::env::current_dir()
+                        .unwrap_or_default()
+                        .join(".jfc/tool-height-cache.json");
+                    let loaded =
+                        crate::message_view::load_tool_height_cache(&cache_path);
+                    tracing::info!(
+                        target: "jfc::session",
+                        loaded,
+                        cache_entries_on_disk = loaded,
+                        "tool-height cache load attempted"
+                    );
+                    let warm_start = std::time::Instant::now();
                     crate::message_view::warm_tool_height_cache_for_messages(
                         &app.messages,
                         inner_w,
                     );
+                    let warm_ms = warm_start.elapsed().as_millis();
+                    if warm_ms > 50 {
+                        tracing::warn!(
+                            target: "jfc::session",
+                            warm_ms,
+                            "warm_tool_height_cache took too long (cache misses likely)"
+                        );
+                    } else {
+                        tracing::debug!(
+                            target: "jfc::session",
+                            warm_ms,
+                            "warm_tool_height_cache completed"
+                        );
+                    }
+                    // Persist updated cache immediately so the NEXT --continue
+                    // gets the benefit of any entries computed during this warm.
+                    crate::message_view::persist_tool_height_cache(&cache_path);
                 }
             }
         }
@@ -274,6 +307,18 @@ pub(crate) async fn run(
                 // first render frame doesn't hitch.
                 if let Ok((cols, _rows)) = crossterm::terminal::size() {
                     let inner_w = (cols as usize).saturating_sub(5);
+                    let cache_path = std::env::current_dir()
+                        .unwrap_or_default()
+                        .join(".jfc/tool-height-cache.json");
+                    let loaded =
+                        crate::message_view::load_tool_height_cache(&cache_path);
+                    if loaded > 0 {
+                        tracing::debug!(
+                            target: "jfc::session",
+                            loaded,
+                            "pre-seeded tool-height cache from disk (resume)"
+                        );
+                    }
                     crate::message_view::warm_tool_height_cache_for_messages(
                         &app.messages,
                         inner_w,

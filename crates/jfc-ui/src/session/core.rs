@@ -163,6 +163,14 @@ pub async fn save_session(
     } else {
         warn!(target: "jfc::session", session_id = session_id_str, "failed to serialize session");
     }
+
+    // Persist the tool-height cache alongside the session so the next
+    // `--continue` pre-seeds the in-memory LRU and skips expensive
+    // syntect highlighting on startup (~1s saved).
+    let height_cache_path = std::env::current_dir()
+        .unwrap_or_default()
+        .join(".jfc/tool-height-cache.json");
+    crate::message_view::persist_tool_height_cache(&height_cache_path);
 }
 
 pub async fn load_session(session_id: &SessionId) -> Option<Vec<ChatMessage>> {
