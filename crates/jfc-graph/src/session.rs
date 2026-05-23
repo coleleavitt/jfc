@@ -7,12 +7,15 @@ use tracing::warn;
 use crate::adapter::{AdapterError, rust::RustAdapter};
 use crate::builder::GraphBuilder;
 use crate::capabilities::{Capability, CapabilityTree};
+use crate::context::{self, ContextOptions, ContextResult};
 use crate::dsl::{self, QueryConfig, QueryError, QueryResult};
 use crate::formatting::{self, FormattedOutput};
 use crate::graph::CodeGraph;
 use crate::incremental::{QueryCache, QueryKey, ReadSet};
+use crate::nodes::NodeId;
 use crate::persistence::EventLog;
 use crate::symbols::SymbolTable;
+use crate::worktree::{self, WorktreeMismatch};
 
 /// Owns the graph, symbols, event log, and capabilities.
 /// Provides query execution and incremental file updates.
@@ -26,6 +29,11 @@ pub struct GraphSession {
     pub parse_errors: Vec<AdapterError>,
     /// Files skipped entirely (I/O failure or hard parse failure).
     pub files_skipped: Vec<PathBuf>,
+    /// Set when the index was resolved from a different git worktree
+    /// than the caller's path (codegraph PR #312). UI should surface
+    /// the message but never refuse the query — the symbols may still
+    /// be correct enough.
+    pub worktree_mismatch: Option<WorktreeMismatch>,
     /// Memoised DSL query results — invalidated per-node when files
     /// change. See [`crate::incremental`] for the cache model.
     query_cache: QueryCache<QueryResult>,
@@ -49,6 +57,22 @@ impl GraphSession {
             );
         }
 
+        // Worktree-mismatch warning is best-effort: the caller's
+        // current working directory is the closest signal we have to
+        // "where the query is being issued from". Soft-fails to None
+        // whenever git isn't available.
+        let worktree_mismatch = std::env::current_dir()
+            .ok()
+            .and_then(|cwd| worktree::detect_worktree_index_mismatch(&cwd, workspace_root));
+        if let Some(ref m) = worktree_mismatch {
+            warn!(
+                target: "jfc::graph::session",
+                caller_worktree = %m.caller_worktree.display(),
+                index_worktree = %m.index_worktree.display(),
+                "graph index belongs to a different git worktree"
+            );
+        }
+
         Self {
             graph: result.graph,
             symbols,
@@ -56,6 +80,7 @@ impl GraphSession {
             capabilities: CapabilityTree::from_env(),
             parse_errors: result.parse_errors,
             files_skipped: result.files_skipped,
+            worktree_mismatch,
             query_cache: QueryCache::new(),
             adapter,
         }
@@ -189,7 +214,12 @@ impl GraphSession {
             .unwrap_or_else(|| std::path::PathBuf::from("."));
 
         let commits = crate::co_change::fetch_git_history(&workspace_root, 500);
-        crate::co_change::co_changes_for_nodes(&self.graph, &commits, &[node_id.clone()], min_support)
+        crate::co_change::co_changes_for_nodes(
+            &self.graph,
+            &commits,
+            std::slice::from_ref(node_id),
+            min_support,
+        )
     }
 
     pub fn symbols(&self) -> &SymbolTable {
@@ -198,6 +228,119 @@ impl GraphSession {
 
     pub fn is_capable(&self, cap: Capability) -> bool {
         self.capabilities.is_enabled(cap)
+    }
+
+    /// Build an agent-friendly `context()` payload — entry points,
+    /// related symbols, optional source blocks, all rendered as
+    /// budget-bounded markdown with intent-aware reminders. Mirrors
+    /// codegraph's `codegraph_context` tool shape.
+    pub fn context(&self, task: &str, opts: ContextOptions) -> ContextResult {
+        context::build_context(&self.graph, Some(&self.symbols), task, opts)
+    }
+
+    /// Render a `## Search Results` markdown block for `query` — the
+    /// MCP-friendly counterpart to `find_by_name` lookup.
+    pub fn search(&self, query: &str, limit: usize) -> String {
+        let mut hits = context::resolve_symbol(&self.graph, query);
+        hits.truncate(limit);
+        let note = if hits.is_empty() {
+            None
+        } else if hits.len() == limit {
+            Some(format!("Capped at {limit}; broaden the query for more"))
+        } else {
+            None
+        };
+        context::render::render_search_results(&self.graph, Some(&self.symbols), query, &hits, note.as_deref())
+    }
+
+    /// Find callers of `symbol`, rendered as a `## Callers of …`
+    /// list (file-grouped, with signatures inline).
+    pub fn callers(&self, symbol: &str, limit: usize) -> String {
+        let (nodes, note) = context::callers_for(&self.graph, symbol, limit);
+        context::render::render_node_list(
+            &self.graph,
+            &format!("Callers of `{symbol}`"),
+            &nodes,
+            note.as_deref(),
+        )
+    }
+
+    /// Find callees of `symbol`, rendered as a `## Callees of …`
+    /// list.
+    pub fn callees(&self, symbol: &str, limit: usize) -> String {
+        let (nodes, note) = context::callees_for(&self.graph, symbol, limit);
+        context::render::render_node_list(
+            &self.graph,
+            &format!("Callees of `{symbol}`"),
+            &nodes,
+            note.as_deref(),
+        )
+    }
+
+    /// Compute a change-impact set rooted at `symbol`, walking incoming
+    /// edges out to `depth` hops. Rendered grouped-by-file.
+    pub fn impact(&self, symbol: &str, depth: u8) -> String {
+        let (nodes, note) = context::impact_for(&self.graph, symbol, depth);
+        context::render::render_impact(&self.graph, symbol, &nodes, note.as_deref())
+    }
+
+    /// Raw node-ID accessor for the resolver — exposed so MCP wrappers
+    /// can chain a search hit into a follow-up query without re-parsing
+    /// the rendered markdown.
+    pub fn resolve(&self, symbol: &str) -> Vec<NodeId> {
+        context::resolve_symbol(&self.graph, symbol)
+    }
+
+    /// Build a session by loading a pre-built base graph snapshot and
+    /// layering branch-local diffs on top.
+    ///
+    /// `base_snapshot_path` points at a snapshot produced by
+    /// [`crate::overlay::save_base_snapshot`] (typically built once by
+    /// CI for the team's default branch and downloaded to the per-
+    /// workspace data dir). `default_branch_ref` is the git ref we
+    /// diff `HEAD` against — usually `origin/main` or `origin/master`.
+    ///
+    /// When git is unavailable or the diff fails (detached HEAD, etc.),
+    /// returns the loaded base unchanged with `worktree_mismatch =
+    /// None` — better to query against a slightly stale base than to
+    /// fail outright.
+    pub fn open_overlay(
+        base_snapshot_path: &Path,
+        workspace_root: &Path,
+        default_branch_ref: &str,
+    ) -> Result<Self, crate::overlay::OverlayError> {
+        let loaded = crate::overlay::load_base_snapshot(base_snapshot_path)?;
+        let mut graph = loaded.graph;
+        let adapter = RustAdapter::new();
+        if let Ok(changed) = crate::overlay::diff_against_base(workspace_root, default_branch_ref) {
+            crate::overlay::apply_diff_to_graph(&mut graph, workspace_root, &changed, &adapter);
+        }
+        let symbols = SymbolTable::build_from_graph(&graph);
+        Ok(Self {
+            graph,
+            symbols,
+            events: EventLog::new(),
+            capabilities: CapabilityTree::from_env(),
+            parse_errors: Vec::new(),
+            files_skipped: Vec::new(),
+            worktree_mismatch: None,
+            query_cache: QueryCache::new(),
+            adapter,
+        })
+    }
+
+    /// Save the in-memory graph as a versioned snapshot at `path` —
+    /// typically called by CI for the default branch so contributors
+    /// can [`Self::open_overlay`] against it. Records the supplied
+    /// `base_ref` (commit SHA or branch name) in the snapshot for
+    /// debugging.
+    pub fn save_for_overlay(
+        &self,
+        path: &Path,
+        workspace_root: &Path,
+        base_ref: Option<&str>,
+    ) -> Result<(), crate::overlay::OverlayError> {
+        crate::overlay::save_base_snapshot(path, &self.graph, workspace_root, base_ref)
     }
 }
 
