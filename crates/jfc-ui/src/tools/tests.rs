@@ -3132,6 +3132,9 @@ fn graph_query_handles_footer_truncates_at_50_robust() {
             metadata: HashMap::new(),
             birth_revision: 0,
             last_modified_revision: 0,
+            complexity: None,
+            cfg: None,
+            dataflow: None,
         };
         node_ids.push(graph.add_node(data));
     }

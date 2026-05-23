@@ -1469,22 +1469,26 @@ mod helper_tests {
 
     #[serial_test::serial]
     #[test]
-    fn tool_title_width_cap_default_is_100_normal() {
-        // Without any env override, default is 100.
+    fn tool_title_width_cap_default_is_unbounded_normal() {
+        // Without any env override, the cap is `usize::MAX` — let the
+        // renderer use whatever the terminal width allows. The 100-col
+        // cap was a v126 default that lost out to "show the whole
+        // command on a wide terminal".
         unsafe {
             std::env::remove_var("JFC_TOOL_TITLE_WIDTH");
         }
-        assert_eq!(tool_title_width_cap(), 100);
+        assert_eq!(tool_title_width_cap(), usize::MAX);
     }
 
     #[serial_test::serial]
     #[test]
     fn tool_title_width_cap_rejects_too_small_robust() {
-        // Values < 20 are rejected by `.filter(|n| *n >= 20)` → fallback to 100.
+        // Values < 20 are rejected by `.filter(|n| *n >= 20)` → fallback
+        // to the unbounded default.
         unsafe {
             std::env::set_var("JFC_TOOL_TITLE_WIDTH", "5");
         }
-        assert_eq!(tool_title_width_cap(), 100);
+        assert_eq!(tool_title_width_cap(), usize::MAX);
         unsafe {
             std::env::remove_var("JFC_TOOL_TITLE_WIDTH");
         }
