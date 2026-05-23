@@ -293,7 +293,15 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
         };
         let local = tokio::task::LocalSet::new();
         local.block_on(&rt, async move {
-            run_script(&engine_body, engine_args, agent_tx, progress_tx, sub_wf_tx, token_budget).await
+            run_script(
+                &engine_body,
+                engine_args,
+                agent_tx,
+                progress_tx,
+                sub_wf_tx,
+                token_budget,
+            )
+            .await
         })
     });
 

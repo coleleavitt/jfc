@@ -16,7 +16,7 @@ pub(super) async fn handle_submit(
     tracing::info!(
         target: "jfc::input",
         text_len = text.len(),
-        text_preview = %&text[..text.len().min(80)],
+        text_preview = %text.chars().take(80).collect::<String>(),
         model = %app.model,
         message_count = app.messages.len(),
         editing_idx = ?app.editing_message_idx,

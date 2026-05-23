@@ -39,9 +39,9 @@ mod tests;
 pub use frame::frame;
 
 // Re-export utilities needed by other modules
+pub(crate) use agents::fleet_ordered_task_ids;
 #[cfg(test)]
 pub(crate) use agents::format_subagent_counters;
-pub(crate) use agents::fleet_ordered_task_ids;
 pub(crate) use agents::format_token_count;
 #[cfg(test)]
 pub(crate) use messages::task_view_body_lines;

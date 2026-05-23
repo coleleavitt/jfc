@@ -210,13 +210,13 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(subagent_footer_height), // 0: task tab strip (top)
-            Constraint::Min(3),                          // 1: messages
-            Constraint::Length(diag_row_height),         // 2
-            Constraint::Length(spinner_row_height),      // 3
-            Constraint::Length(tasks_pinned_height),     // 4
-            Constraint::Length(input_height),            // 5
-            Constraint::Length(agent_fan_height),        // 6
-            Constraint::Length(2),                       // 7: status
+            Constraint::Min(3),                         // 1: messages
+            Constraint::Length(diag_row_height),        // 2
+            Constraint::Length(spinner_row_height),     // 3
+            Constraint::Length(tasks_pinned_height),    // 4
+            Constraint::Length(input_height),           // 5
+            Constraint::Length(agent_fan_height),       // 6
+            Constraint::Length(2),                      // 7: status
         ])
         .split(f.area());
 

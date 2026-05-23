@@ -86,7 +86,11 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
             push1!(status.short_badge(), gold, 92);
         }
     } else if app.claude_status_error.is_some() {
-        push1!("status unreachable".to_owned(), Style::default().fg(t.error), 92);
+        push1!(
+            "status unreachable".to_owned(),
+            Style::default().fg(t.error),
+            92
+        );
     }
     let approval_count =
         app.approval_queue.len() + if app.pending_approval.is_some() { 1 } else { 0 };
@@ -129,7 +133,11 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     if let crate::app::PermissionMode::Default = app.permission_mode {
     } else {
         push1!(
-            format!("{} {}", app.permission_mode.symbol(), app.permission_mode.label()),
+            format!(
+                "{} {}",
+                app.permission_mode.symbol(),
+                app.permission_mode.label()
+            ),
             gold,
             85,
         );
@@ -150,7 +158,10 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         segs.push(StatusSeg {
             spans: vec![
                 Span::styled("Δ ", muted),
-                Span::styled(format!("+{}", diff.additions), Style::default().fg(t.success)),
+                Span::styled(
+                    format!("+{}", diff.additions),
+                    Style::default().fg(t.success),
+                ),
                 Span::styled(" ", muted),
                 Span::styled(format!("−{}", diff.deletions), Style::default().fg(t.error)),
             ],
@@ -183,20 +194,18 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     let right_w = super::cell_width(right);
     let avail = total_width.saturating_sub(right_w);
 
-    // Provider dot pulse — intensity tracks live network activity, so it
-    // glows only when bytes are actually arriving (not on a wall clock).
-    let beat_alive = app.network_beat_remaining > 0;
-    let dot_intensity = if beat_alive {
-        (0.4 + app.network_activity * 0.6).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    let dot_color = blend_color(t.border, provider_accent(app.provider.name()), dot_intensity);
+    // Static provider dot — the network EKG (which used to drive a pulse
+    // here) is gone; a steady provider-coloured dot just identifies the
+    // backend without faking "liveness".
+    let dot_color = provider_accent(app.provider.name());
 
     let prefix_w = 3 + super::cell_width(&provider_badge); // " ● <provider>"
     const SEP_W: usize = 3; // " · "
     let seg_w = |s: &StatusSeg| -> usize {
-        s.spans.iter().map(|sp| super::cell_width(&sp.content)).sum()
+        s.spans
+            .iter()
+            .map(|sp| super::cell_width(&sp.content))
+            .sum()
     };
 
     // Drop the lowest-priority segment until the line fits.
@@ -217,7 +226,10 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
 
     let mut spans: Vec<Span> = vec![
         Span::raw(" "),
-        Span::styled("●", Style::default().fg(dot_color).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "●",
+            Style::default().fg(dot_color).add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" "),
         Span::styled(
             provider_badge,
@@ -313,31 +325,6 @@ pub(super) fn provider_accent(provider: &str) -> Color {
         "anthropic" | "anthropic-oauth" | "bedrock" | "vertex" => Color::Rgb(204, 120, 50),
         "openwebui" => Color::Rgb(100, 180, 200),
         _ => Color::Gray,
-    }
-}
-
-/// Linear-RGB interpolation between two `Color`s. Used for the provider
-/// dot's pulse and the network EKG's leading-edge highlight. Colors
-/// that aren't `Rgb` fall back to a binary swap at `t > 0.5` because
-/// ratatui's palette colors don't carry component data.
-pub(super) fn blend_color(from: Color, to: Color, t: f32) -> Color {
-    let t = t.clamp(0.0, 1.0);
-    match (from, to) {
-        (Color::Rgb(r0, g0, b0), Color::Rgb(r1, g1, b1)) => {
-            let lerp = |a: u8, b: u8| -> u8 {
-                let af = a as f32;
-                let bf = b as f32;
-                (af + (bf - af) * t).round().clamp(0.0, 255.0) as u8
-            };
-            Color::Rgb(lerp(r0, r1), lerp(g0, g1), lerp(b0, b1))
-        }
-        _ => {
-            if t < 0.5 {
-                from
-            } else {
-                to
-            }
-        }
     }
 }
 

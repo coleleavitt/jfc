@@ -128,6 +128,84 @@ pub struct MemoryFrontmatter {
     pub scope: MemoryScope,
     #[serde(default)]
     pub created: Option<String>,
+
+    // ─── jfc-learn extended fields ──────────────────────────────────────
+    // All Option so existing files still parse without these fields.
+    /// Content-addressable hash for deduplication (SHA256 of normalized text).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normalized_hash: Option<String>,
+
+    /// Origin of this memory: "historian" | "agent" | "dreamer" | "user"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<String>,
+
+    /// Session that produced this memory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_session_id: Option<String>,
+
+    /// How many times this fact has been observed across sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seen_count: Option<u32>,
+
+    /// How many times this memory has been retrieved for context injection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retrieval_count: Option<u32>,
+
+    /// Unix timestamp (ms) when this fact was first observed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_seen_at: Option<u64>,
+
+    /// Unix timestamp (ms) of the most recent observation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seen_at: Option<u64>,
+
+    /// Unix timestamp (ms) of the most recent retrieval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_retrieved_at: Option<u64>,
+
+    /// Lifecycle status: "active" | "permanent" | "archived"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_status: Option<String>,
+
+    /// Unix timestamp (ms) when this memory expires (for TTL-based cleanup).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
+
+    /// Verification state: "unverified" | "verified" | "stale" | "flagged"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification_status: Option<String>,
+
+    /// Unix timestamp (ms) when last verified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<u64>,
+
+    /// Path/id of the memory that supersedes this one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub superseded_by: Option<String>,
+}
+
+impl MemoryFrontmatter {
+    /// Create a minimal frontmatter with only required fields; all extended fields default to None.
+    pub fn new(memory_type: MemoryType, scope: MemoryScope) -> Self {
+        Self {
+            memory_type,
+            scope,
+            created: None,
+            normalized_hash: None,
+            source_type: None,
+            source_session_id: None,
+            seen_count: None,
+            retrieval_count: None,
+            first_seen_at: None,
+            last_seen_at: None,
+            last_retrieved_at: None,
+            memory_status: None,
+            expires_at: None,
+            verification_status: None,
+            verified_at: None,
+            superseded_by: None,
+        }
+    }
 }
 
 /// A fully-loaded memory entry.
@@ -267,11 +345,7 @@ fn parse_frontmatter_and_body(content: &str) -> Result<(MemoryFrontmatter, Strin
     if !trimmed.starts_with("---") {
         // No frontmatter — treat as plain context memory
         return Ok((
-            MemoryFrontmatter {
-                memory_type: MemoryType::Context,
-                scope: MemoryScope::Private,
-                created: None,
-            },
+            MemoryFrontmatter::new(MemoryType::Context, MemoryScope::Private),
             content.to_string(),
         ));
     }
@@ -625,11 +699,7 @@ mod tests {
         let entries = vec![MemoryEntry {
             path: PathBuf::from("/home/user/.config/jfc/memory/test.md"),
             level: MemoryLevel::User,
-            frontmatter: MemoryFrontmatter {
-                memory_type: MemoryType::Preference,
-                scope: MemoryScope::Private,
-                created: None,
-            },
+            frontmatter: MemoryFrontmatter::new(MemoryType::Preference, MemoryScope::Private),
             body: "Prefer concise responses.".to_string(),
         }];
         let rendered = render_memories_section(&entries).unwrap();
@@ -644,11 +714,7 @@ mod tests {
         let entries = vec![MemoryEntry {
             path: PathBuf::from("/home/user/.config/jfc/memory/test.md"),
             level: MemoryLevel::User,
-            frontmatter: MemoryFrontmatter {
-                memory_type: MemoryType::Preference,
-                scope: MemoryScope::Private,
-                created: None,
-            },
+            frontmatter: MemoryFrontmatter::new(MemoryType::Preference, MemoryScope::Private),
             body: "Prefer concise responses.".to_string(),
         }];
         let rendered = render_memories_section(&entries).unwrap();
@@ -663,11 +729,7 @@ mod tests {
         let entries = vec![MemoryEntry {
             path: PathBuf::from(".jfc/memory/team/team-rule.md"),
             level: MemoryLevel::Team,
-            frontmatter: MemoryFrontmatter {
-                memory_type: MemoryType::Feedback,
-                scope: MemoryScope::Team,
-                created: None,
-            },
+            frontmatter: MemoryFrontmatter::new(MemoryType::Feedback, MemoryScope::Team),
             body: "All PRs require two reviewers.".to_string(),
         }];
         let rendered = render_memories_section(&entries).unwrap();
@@ -681,11 +743,7 @@ mod tests {
         let entries = vec![MemoryEntry {
             path: PathBuf::from("/u/.config/jfc/memory/u.md"),
             level: MemoryLevel::User,
-            frontmatter: MemoryFrontmatter {
-                memory_type: MemoryType::Preference,
-                scope: MemoryScope::Private,
-                created: None,
-            },
+            frontmatter: MemoryFrontmatter::new(MemoryType::Preference, MemoryScope::Private),
             body: "X".to_string(),
         }];
         let rendered = render_memories_section(&entries).unwrap();

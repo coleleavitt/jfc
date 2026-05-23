@@ -344,7 +344,10 @@ pub(crate) fn render_subagent_tree(f: &mut Frame, app: &App, area: Rect) {
         let pad = width.saturating_sub(gutters_w + cell_width(&name) + stall_w + right_w);
 
         let mut spans = vec![
-            Span::styled(ptr, Style::default().fg(t.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                ptr,
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(glyph, Style::default().fg(glyph_col)),
             Span::styled(name, name_style),
         ];

@@ -1888,6 +1888,275 @@ mod tests {
         );
     }
 
+    // ── Legacy function_call / function_calls support ─────────────────
+
+    // Normal: a legacy singular `function_call` field on the delta is
+    // normalized into the tool accumulator at index 0 and produces ToolDone.
+    #[test]
+    fn stateful_legacy_function_call_singular_normal() {
+        let mut state = OpenAiStreamState::default();
+
+        // First chunk: function_call with name.
+        evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    function_call: Some(ChunkFunctionCall {
+                        name: Some("read_file".to_owned()),
+                        arguments: Some("{\"path\":\"".to_owned()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+
+        // Second chunk: more arguments.
+        evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    function_call: Some(ChunkFunctionCall {
+                        arguments: Some("foo.rs\"}".to_owned()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+
+        // Finish with function_call reason.
+        let events = evs_stateful(
+            &mut state,
+            chunk(ChunkDelta::default(), Some("function_call")),
+        );
+        let tool_done = events.iter().find_map(|e| match e {
+            StreamEvent::ToolDone {
+                tool_name,
+                tool_use_id,
+                input_json,
+                ..
+            } => Some((tool_name.clone(), tool_use_id.clone(), input_json.clone())),
+            _ => None,
+        });
+        assert_eq!(
+            tool_done,
+            Some((
+                "read_file".to_owned(),
+                "call_0".to_owned(),
+                "{\"path\":\"foo.rs\"}".to_owned()
+            ))
+        );
+    }
+
+    // Normal: nonstandard plural `function_calls` array is normalized.
+    #[test]
+    fn stateful_function_calls_plural_normal() {
+        let mut state = OpenAiStreamState::default();
+
+        // Single chunk with two function_calls entries.
+        evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    function_calls: Some(vec![
+                        ChunkFunctionCall {
+                            index: Some(0),
+                            id: Some("call_a".to_owned()),
+                            function: Some(ChunkToolFn {
+                                name: Some("bash".to_owned()),
+                                arguments: Some("{\"cmd\":\"ls\"}".to_owned()),
+                            }),
+                            ..Default::default()
+                        },
+                        ChunkFunctionCall {
+                            index: Some(1),
+                            id: Some("call_b".to_owned()),
+                            name: Some("read".to_owned()),
+                            arguments: Some("{\"path\":\"x\"}".to_owned()),
+                            ..Default::default()
+                        },
+                    ]),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+
+        // Finish.
+        let events = evs_stateful(
+            &mut state,
+            chunk(ChunkDelta::default(), Some("function_calls")),
+        );
+        let tool_dones: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::ToolDone {
+                    tool_name,
+                    tool_use_id,
+                    ..
+                } => Some((tool_name.clone(), tool_use_id.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tool_dones.len(), 2);
+        assert_eq!(tool_dones[0], ("bash".to_owned(), "call_a".to_owned()));
+        assert_eq!(tool_dones[1], ("read".to_owned(), "call_b".to_owned()));
+    }
+
+    // Robust: a canonical tool_calls start chunk followed by a legacy
+    // function_call suffix still accumulates at index 0 and keeps the real id.
+    #[test]
+    fn stateful_tool_calls_then_function_call_suffix_keeps_real_id_robust() {
+        let mut state = OpenAiStreamState::default();
+
+        evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    tool_calls: Some(vec![fn_call(
+                        0,
+                        Some("real_call"),
+                        Some("write"),
+                        Some("{\"file_path\":\"x\",\"content\":\"hel"),
+                    )]),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+
+        evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    function_call: Some(ChunkFunctionCall {
+                        arguments: Some("lo\"}".to_owned()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+
+        let events = evs_stateful(
+            &mut state,
+            chunk(ChunkDelta::default(), Some("function_call")),
+        );
+        let tool_done = events.iter().find_map(|e| match e {
+            StreamEvent::ToolDone {
+                tool_name,
+                tool_use_id,
+                input_json,
+                ..
+            } => Some((tool_name.clone(), tool_use_id.clone(), input_json.clone())),
+            _ => None,
+        });
+        assert_eq!(
+            tool_done,
+            Some((
+                "write".to_owned(),
+                "real_call".to_owned(),
+                "{\"file_path\":\"x\",\"content\":\"hello\"}".to_owned()
+            ))
+        );
+    }
+
+    // Robust: if a gateway mirrors the same delta into both canonical
+    // tool_calls and a legacy alias, prefer the canonical field for that chunk.
+    #[test]
+    fn stateful_same_chunk_prefers_tool_calls_over_function_call_alias_robust() {
+        let mut state = OpenAiStreamState::default();
+
+        evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    tool_calls: Some(vec![fn_call(
+                        0,
+                        Some("tc_1"),
+                        Some("bash"),
+                        Some("{\"ok\":true}"),
+                    )]),
+                    function_call: Some(ChunkFunctionCall {
+                        name: Some("bash".to_owned()),
+                        arguments: Some("{\"dup\":true}".to_owned()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+
+        let events = evs_stateful(&mut state, chunk(ChunkDelta::default(), Some("tool_calls")));
+        let tool_done = events.iter().find_map(|e| match e {
+            StreamEvent::ToolDone {
+                tool_name,
+                tool_use_id,
+                input_json,
+                ..
+            } => Some((tool_name.clone(), tool_use_id.clone(), input_json.clone())),
+            _ => None,
+        });
+        assert_eq!(
+            tool_done,
+            Some((
+                "bash".to_owned(),
+                "tc_1".to_owned(),
+                "{\"ok\":true}".to_owned()
+            ))
+        );
+    }
+
+    // Robust: an empty canonical array is just noise; it should not hide a
+    // populated legacy function_call in the same chunk.
+    #[test]
+    fn stateful_empty_tool_calls_falls_back_to_function_call_robust() {
+        let mut state = OpenAiStreamState::default();
+
+        evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    tool_calls: Some(vec![]),
+                    function_call: Some(ChunkFunctionCall {
+                        name: Some("bash".to_owned()),
+                        arguments: Some("{\"cmd\":\"pwd\"}".to_owned()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+
+        let events = evs_stateful(
+            &mut state,
+            chunk(ChunkDelta::default(), Some("function_call")),
+        );
+        let tool_done = events.iter().find_map(|e| match e {
+            StreamEvent::ToolDone {
+                tool_name,
+                tool_use_id,
+                input_json,
+                ..
+            } => Some((tool_name.clone(), tool_use_id.clone(), input_json.clone())),
+            _ => None,
+        });
+        assert_eq!(
+            tool_done,
+            Some((
+                "bash".to_owned(),
+                "call_0".to_owned(),
+                "{\"cmd\":\"pwd\"}".to_owned()
+            ))
+        );
+    }
+
     // ── build_body when system prompt is set ─────────────────────────────
 
     // Normal: a system prompt is prepended as a `role:"system"` message at
@@ -2062,6 +2331,16 @@ struct ChunkDelta {
     reasoning_content: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<ChunkToolCall>>,
+    /// Legacy OpenAI `function_call` field — singular object with `name` and
+    /// `arguments`. Some gateways (older LiteLLM, vLLM) still emit this instead
+    /// of `tool_calls`. Normalized into the tool_calls accumulator at index 0.
+    #[serde(default)]
+    function_call: Option<ChunkFunctionCall>,
+    /// Nonstandard plural `function_calls` field emitted by some custom
+    /// gateways. Accept both flat legacy entries and nested tool-call-like
+    /// entries, then normalize them alongside structured tool_calls.
+    #[serde(default)]
+    function_calls: Option<Vec<ChunkFunctionCall>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -2084,6 +2363,44 @@ struct ChunkToolFn {
     name: Option<String>,
     #[serde(default)]
     arguments: Option<String>,
+}
+
+/// Compatibility shape for legacy/nonstandard function-call deltas. Accepts:
+/// `{ "name": "...", "arguments": "..." }`,
+/// `{ "index": 1, "name": "...", "arguments": "..." }`, and
+/// `{ "index": 1, "id": "call_x", "function": { ... } }`.
+#[derive(Debug, Deserialize, Clone, Default)]
+struct ChunkFunctionCall {
+    #[serde(default)]
+    index: Option<usize>,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    call_id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<String>,
+    #[serde(default)]
+    function: Option<ChunkToolFn>,
+}
+
+impl ChunkFunctionCall {
+    fn to_tool_call(&self, fallback_index: usize) -> ChunkToolCall {
+        let nested = self.function.as_ref();
+        ChunkToolCall {
+            index: Some(self.index.unwrap_or(fallback_index)),
+            id: self.id.clone().or_else(|| self.call_id.clone()),
+            function: Some(ChunkToolFn {
+                name: nested
+                    .and_then(|f| f.name.clone())
+                    .or_else(|| self.name.clone()),
+                arguments: nested
+                    .and_then(|f| f.arguments.clone())
+                    .or_else(|| self.arguments.clone()),
+            }),
+        }
+    }
 }
 
 /// Bedrock-on-OpenWebUI requires every text content block to contain at least
@@ -3185,7 +3502,31 @@ fn push_chunk_events_stateful(
         }));
     }
 
-    let tool_calls = choice.delta.tool_calls.clone().unwrap_or_default();
+    // Prefer canonical OpenAI-compatible `tool_calls` for a chunk. Legacy
+    // aliases are fallbacks for gateways that emit only those fields; treating
+    // same-chunk aliases as additional deltas would duplicate arguments.
+    let tool_calls = if let Some(tool_calls) = choice
+        .delta
+        .tool_calls
+        .as_ref()
+        .filter(|tool_calls| !tool_calls.is_empty())
+    {
+        tool_calls.clone()
+    } else if let Some(fcs) = choice
+        .delta
+        .function_calls
+        .as_ref()
+        .filter(|function_calls| !function_calls.is_empty())
+    {
+        fcs.iter()
+            .enumerate()
+            .map(|(fallback_index, fc)| fc.to_tool_call(fallback_index))
+            .collect()
+    } else if let Some(fc) = choice.delta.function_call.as_ref() {
+        vec![fc.to_tool_call(0)]
+    } else {
+        Vec::new()
+    };
     for tc in &tool_calls {
         let idx = tc.index.unwrap_or(0);
         let entry = state.tools.entry(idx).or_default();
@@ -3216,7 +3557,7 @@ fn push_chunk_events_stateful(
         drain_inline_tool_calls(&mut state.inline_buf, &mut state.inline_index, out, true);
 
         let mapped = match reason.as_str() {
-            "tool_calls" | "function_call" => StopReason::ToolUse,
+            "tool_calls" | "function_call" | "function_calls" => StopReason::ToolUse,
             "stop" => StopReason::EndTurn,
             "length" => StopReason::MaxTokens,
             other => StopReason::Other(other.to_owned()),
@@ -3230,7 +3571,7 @@ fn push_chunk_events_stateful(
         by_index.sort_by_key(|(idx, _)| *idx);
         for (idx, accum) in by_index {
             let name = accum.name.unwrap_or_default();
-            let id = accum.id.unwrap_or_default();
+            let id = accum.id.unwrap_or_else(|| format!("call_{idx}"));
             tracing::info!(
                 target: "jfc::provider::openwebui",
                 index = idx,

@@ -46,7 +46,10 @@ pub async fn read_file(
         out.push_str(&format!("{line_num}: {line}\n"));
     }
     if end < total {
-        out.push_str(&format!("\n(... {remaining} more lines)\n", remaining = total - end));
+        out.push_str(&format!(
+            "\n(... {remaining} more lines)\n",
+            remaining = total - end
+        ));
     }
     ExecutionResult::success(out)
 }
@@ -190,7 +193,10 @@ mod tests {
         let path = dir.path().join("lines.txt");
         let path_str = path.to_str().unwrap();
 
-        let content = (1..=10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let content = (1..=10)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         write_file(path_str, &content).await;
 
         let result = read_file(path_str, Some(3), Some(2)).await;

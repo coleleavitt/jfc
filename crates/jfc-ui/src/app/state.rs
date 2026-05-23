@@ -876,42 +876,6 @@ pub struct App {
     /// renders compactly and scrolls instead of overflowing the panel.
     /// Adjusted via Alt+Up / Alt+Down while the sidebar is visible.
     pub info_sidebar_scroll: u16,
-    /// Rolling samples of the EKG trace, rendered under the Context gauge.
-    /// Each value is a 0-8 amplitude that maps to one cell of the
-    /// `▁▂▃▄▅▆▇█` block-element scale. Driven by a synthetic PQRST
-    /// generator (see `network_phase`) whose R-wave amplitude scales with
-    /// recent SSE byte arrivals — the trace beats continuously like a
-    /// real heart monitor; activity makes the QRS spike taller.
-    pub network_samples: std::collections::VecDeque<u8>,
-    /// Last sampled value of `network_bytes_in`. Subtracted on each
-    /// tick to derive a delta level that drives the EKG's R-wave
-    /// amplitude. Distinct from `streaming_response_bytes` (which
-    /// resets every turn): this snapshot is itself monotonic so the
-    /// per-tick delta is always non-negative.
-    pub network_last_sampled_bytes: u64,
-    /// Monotonic byte counter for the EKG — bumped by EVERY incoming
-    /// stream event (text, reasoning, tool input delta, redacted
-    /// thinking, server tool results, usage, response IDs). Doesn't
-    /// reset between turns, so a quiet between-turn gap still shows
-    /// as flat-line baseline rather than a fake "burst" when the
-    /// next turn's bytes arrive against a freshly-cleared counter.
-    pub network_bytes_in: u64,
-    /// Phase index into the PQRST cycle. Bumps once per active-beat
-    /// tick; gets snapped back to 0 when a new burst arrives (so the
-    /// user always sees beats start from PR onset, not mid-T). See
-    /// `runtime/network_ekg.rs`.
-    pub network_phase: usize,
-    /// Phases remaining in the *currently active* beat. 0 = flat-line
-    /// (the trace draws baseline cells until the next byte triggers a
-    /// fresh beat). Re-armed to `PATTERN_LEN` on every non-zero
-    /// per-tick delta.
-    pub network_beat_remaining: usize,
-    /// Smoothed activity factor (0.0 idle → 1.0 fully active) that
-    /// scales the R-wave amplitude. EMA-eased toward the latest
-    /// per-tick byte-delta so a burst takes a few ticks to grow the
-    /// spike and a few ticks to relax back to baseline — gives the
-    /// trace the natural "fade out" of a real monitor.
-    pub network_activity: f32,
     pub mcp_servers: Vec<crate::types::McpServerInfo>,
     pub lsp_servers: Vec<crate::types::LspServerInfo>,
     pub usage_by_model: HashMap<String, crate::types::ModelUsage>,
@@ -1235,12 +1199,6 @@ impl App {
             background_tasks: IndexMap::new(),
             show_info_sidebar: true,
             info_sidebar_scroll: 0,
-            network_samples: std::collections::VecDeque::with_capacity(64),
-            network_last_sampled_bytes: 0,
-            network_bytes_in: 0,
-            network_phase: 0,
-            network_beat_remaining: 0,
-            network_activity: 0.0,
             mcp_servers: Vec::new(),
             lsp_servers: Vec::new(),
             usage_by_model: HashMap::new(),

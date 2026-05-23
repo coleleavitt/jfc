@@ -43,7 +43,9 @@ pub struct McpServerConfig {
 
 impl McpServerConfig {
     fn command_present(&self) -> bool {
-        self.command.as_deref().is_some_and(|c| !c.trim().is_empty())
+        self.command
+            .as_deref()
+            .is_some_and(|c| !c.trim().is_empty())
     }
 
     fn url_present(&self) -> bool {
@@ -160,7 +162,12 @@ mod tests {
 
     #[test]
     fn resolve_explicit_http_aliases_normal() {
-        for t in ["http", "streamable-http", "streamable_http", "STREAMABLEHTTP"] {
+        for t in [
+            "http",
+            "streamable-http",
+            "streamable_http",
+            "STREAMABLEHTTP",
+        ] {
             let c = cfg(Some(t), None, Some("https://example.com/mcp"));
             assert_eq!(c.resolve_transport(), Ok(TransportKind::Http), "type={t}");
         }
@@ -209,6 +216,10 @@ mod tests {
     fn resolve_empty_config_is_error_robust() {
         assert!(cfg(None, None, None).resolve_transport().is_err());
         // Whitespace-only fields don't count as present.
-        assert!(cfg(Some("stdio"), Some("   "), None).resolve_transport().is_err());
+        assert!(
+            cfg(Some("stdio"), Some("   "), None)
+                .resolve_transport()
+                .is_err()
+        );
     }
 }

@@ -100,21 +100,19 @@ pub(super) async fn cmd_workflow(
                         "Workflow `{name}` not found. List available workflows with `/workflow`."
                     )));
                 }
-                Some(wf) => {
-                    match crate::workflows::save_workflow(&cwd, scope, &name, &wf.script) {
-                        Ok(path) => {
-                            app.messages.push(ChatMessage::assistant(format!(
-                                "Saved workflow `{name}` to `{}`.",
-                                path.display()
-                            )));
-                        }
-                        Err(e) => {
-                            app.messages.push(ChatMessage::assistant(format!(
-                                "Failed to save workflow `{name}`: {e}"
-                            )));
-                        }
+                Some(wf) => match crate::workflows::save_workflow(&cwd, scope, &name, &wf.script) {
+                    Ok(path) => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Saved workflow `{name}` to `{}`.",
+                            path.display()
+                        )));
                     }
-                }
+                    Err(e) => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Failed to save workflow `{name}`: {e}"
+                        )));
+                    }
+                },
             }
         }
         "status" => {
@@ -137,8 +135,7 @@ pub(super) async fn cmd_workflow(
                         // Match on full task_id (bgwf_wf_...) or run_id (wf_...)
                         // by checking both forms.
                         let run_id_form = tid.strip_prefix("bgwf_").unwrap_or(tid);
-                        return tid == id_filter.as_str()
-                            || run_id_form == id_filter.as_str();
+                        return tid == id_filter.as_str() || run_id_form == id_filter.as_str();
                     }
                     // No filter: include running + terminal tasks.
                     matches!(
@@ -153,9 +150,8 @@ pub(super) async fn cmd_workflow(
                 .collect();
 
             if tasks.is_empty() {
-                app.messages.push(ChatMessage::assistant(
-                    "No active workflow tasks.".into(),
-                ));
+                app.messages
+                    .push(ChatMessage::assistant("No active workflow tasks.".into()));
                 return;
             }
 

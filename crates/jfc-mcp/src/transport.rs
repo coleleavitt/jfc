@@ -200,8 +200,9 @@ impl Transport {
             }
         };
 
-        let stderr_ring: StderrRing =
-            Arc::new(Mutex::new(VecDeque::with_capacity(DEFAULT_STDERR_RING_CAPACITY)));
+        let stderr_ring: StderrRing = Arc::new(Mutex::new(VecDeque::with_capacity(
+            DEFAULT_STDERR_RING_CAPACITY,
+        )));
         if let Some(stderr) = stderr {
             spawn_stderr_drain(cfg.server_name.clone(), stderr, Arc::clone(&stderr_ring));
         }
@@ -324,11 +325,7 @@ impl Transport {
 
 /// Drain a child's stderr line-by-line into `tracing` and a bounded ring
 /// buffer for `/mcp logs`.
-fn spawn_stderr_drain(
-    server_name: String,
-    stderr: tokio::process::ChildStderr,
-    ring: StderrRing,
-) {
+fn spawn_stderr_drain(server_name: String, stderr: tokio::process::ChildStderr, ring: StderrRing) {
     tokio::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {

@@ -755,11 +755,7 @@ mod tests {
         MemoryEntry {
             path: PathBuf::from(format!("/fake/memory/{filename}")),
             level: MemoryLevel::Project,
-            frontmatter: MemoryFrontmatter {
-                memory_type: MemoryType::Context,
-                scope: MemoryScope::Private,
-                created: None,
-            },
+            frontmatter: MemoryFrontmatter::new(MemoryType::Context, MemoryScope::Private),
             body: body.to_owned(),
         }
     }

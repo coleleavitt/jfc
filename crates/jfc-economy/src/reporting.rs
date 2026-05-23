@@ -249,11 +249,7 @@ pub trait AgentInvoker: Send + Sync {
     ///
     /// Default implementation returns `false` (conservative: flaw not proven)
     /// so existing test mocks don't break.
-    async fn adjudicate_test(
-        &self,
-        _test_code: &str,
-        _worktree: Option<&Path>,
-    ) -> bool {
+    async fn adjudicate_test(&self, _test_code: &str, _worktree: Option<&Path>) -> bool {
         false
     }
 }

@@ -442,11 +442,17 @@ pub(super) fn build_collapsed_header<'a>(
 /// visible in the expanded body. Tunable via `JFC_TOOL_TITLE_WIDTH` for
 /// users who want the full command on a wide screen.
 pub(super) fn tool_title_width_cap() -> usize {
+    // Default: no artificial cap — use the full terminal width so a long
+    // command (the first line of a `git commit -m "…"`, a wide `cargo`
+    // invocation) shows as much as physically fits instead of being
+    // chopped at 100 cols on a wide terminal, where the rest of line 1
+    // would otherwise be invisible (it lives only in the title; the body
+    // renders lines 2+). `JFC_TOOL_TITLE_WIDTH` can still pin a cap.
     std::env::var("JFC_TOOL_TITLE_WIDTH")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .filter(|n| *n >= 20)
-        .unwrap_or(100)
+        .unwrap_or(usize::MAX)
 }
 
 pub(super) fn build_title_spans<'a>(
@@ -528,14 +534,33 @@ pub(super) fn build_header_inner_spans<'a>(
 
     match &tool.input {
         ToolInput::Bash { command, .. } => {
-            let first_line = command.lines().next().unwrap_or(command);
-            let cmd = truncate_str(first_line, max_w.saturating_sub(8));
-            vec![
+            // Strip a leading `cd <dir> && ` (or `… ; `) boilerplate prefix
+            // — the agent almost always cd's into the repo first, and the
+            // long path wastes the whole title width, pushing the real
+            // command off the right edge ("…)"). Show what actually ran.
+            let first_line = command.lines().next().unwrap_or(command).trim();
+            let display = first_line
+                .strip_prefix("cd ")
+                .and_then(|rest| {
+                    rest.split_once(" && ")
+                        .or_else(|| rest.split_once("; "))
+                        .map(|(_, cmd)| cmd.trim())
+                })
+                .unwrap_or(first_line);
+            // If the command still has more lines (e.g. a multi-line commit
+            // message), mark it so the truncation reads as deliberate.
+            let multiline = command.lines().nth(1).is_some();
+            let cmd = truncate_str(display, max_w.saturating_sub(8));
+            let mut spans = vec![
                 Span::styled("Bash", kind_style),
                 Span::styled("(", Style::default().fg(t.text_muted)),
                 Span::styled(cmd, Style::default().fg(t.text_primary)),
-                Span::styled(")", Style::default().fg(t.text_muted)),
-            ]
+            ];
+            if multiline {
+                spans.push(Span::styled(" …", Style::default().fg(t.text_muted)));
+            }
+            spans.push(Span::styled(")", Style::default().fg(t.text_muted)));
+            spans
         }
         ToolInput::Edit { file_path, .. } => {
             let path = truncate_str(file_path, max_w.saturating_sub(8));
@@ -633,6 +658,11 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         ToolKind::ToolSearch | ToolKind::ToolSuggest => Color::Rgb(170, 210, 180),
         ToolKind::CodeIndex
         | ToolKind::GraphQuery
+        | ToolKind::GraphContext
+        | ToolKind::GraphSearch
+        | ToolKind::GraphCallers
+        | ToolKind::GraphCallees
+        | ToolKind::GraphImpact
         | ToolKind::SymbolEdit
         | ToolKind::RunCoverage => Color::Rgb(130, 200, 180), // sage
         ToolKind::PostBounty | ToolKind::RunBounty | ToolKind::MarketStatus => {

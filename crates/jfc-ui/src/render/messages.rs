@@ -359,11 +359,19 @@ fn workflow_agent_line(
     let pad = 44usize.saturating_sub(label.chars().count());
     let padded_label = format!("{}{}", label, " ".repeat(pad));
     Line::from(vec![
-        Span::styled(format!("  {} #{:<2} ", bullet, agent.index), Style::default().fg(t.text_muted)),
+        Span::styled(
+            format!("  {} #{:<2} ", bullet, agent.index),
+            Style::default().fg(t.text_muted),
+        ),
         Span::styled(padded_label, t.style_text_primary),
         Span::styled(status_str, Style::default().fg(status_color)),
         Span::raw(" "),
-        Span::styled(status_glyph, Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            status_glyph,
+            Style::default()
+                .fg(status_color)
+                .add_modifier(Modifier::BOLD),
+        ),
     ])
 }
 
@@ -383,7 +391,10 @@ fn render_workflow_detail(
 
     let frame = {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+        let ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
         (ms / 80) as usize
     };
 
@@ -406,14 +417,22 @@ fn render_workflow_detail(
 
     let mut lines: Vec<Line<'static>> = Vec::new();
     lines.push(Line::from(Span::styled(header, t.style_accent_bold)));
-    lines.push(Line::from(Span::styled(divider.clone(), Style::default().fg(t.border))));
+    lines.push(Line::from(Span::styled(
+        divider.clone(),
+        Style::default().fg(t.border),
+    )));
 
     // Phase header
     if let Some(ref phase_name) = wfp.current_phase {
         lines.push(Line::from(vec![
             Span::styled(" Phase: ", Style::default().fg(t.text_muted)),
             Span::styled(phase_name.clone(), t.style_text_primary_bold),
-            Span::styled("  (current)", Style::default().fg(t.text_muted).add_modifier(Modifier::ITALIC)),
+            Span::styled(
+                "  (current)",
+                Style::default()
+                    .fg(t.text_muted)
+                    .add_modifier(Modifier::ITALIC),
+            ),
         ]));
     }
 
@@ -423,8 +442,14 @@ fn render_workflow_detail(
         lines.push(workflow_agent_line(agent, in_current, frame, t));
     }
 
-    lines.push(Line::from(Span::styled(divider, Style::default().fg(t.border))));
-    lines.push(Line::from(Span::styled(" Logs:", Style::default().fg(t.text_muted))));
+    lines.push(Line::from(Span::styled(
+        divider,
+        Style::default().fg(t.border),
+    )));
+    lines.push(Line::from(Span::styled(
+        " Logs:",
+        Style::default().fg(t.text_muted),
+    )));
     for entry in &wfp.logs {
         lines.push(Line::from(vec![
             Span::raw("   "),
@@ -432,7 +457,10 @@ fn render_workflow_detail(
         ]));
     }
     if wfp.logs.is_empty() {
-        lines.push(Line::from(Span::styled("   (none)", Style::default().fg(t.text_muted))));
+        lines.push(Line::from(Span::styled(
+            "   (none)",
+            Style::default().fg(t.text_muted),
+        )));
     }
 
     let total = lines.len();
@@ -1506,7 +1534,13 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
     // else the first) gets an animated amber spinner + bright bold text
     // and its activeForm sub-line; the rest dim to text_secondary with a
     // static `◐`, so the eye lands on what's live right now.
-    let reduced = crate::spinner::reduced_motion();
+    // Only animate the focal spinner when there's REAL activity (a stream
+    // or a live agent) — that's exactly when the event loop redraws every
+    // tick, so the braille advances smoothly. With no live work the frame
+    // wouldn't redraw on its own, so a "spinning" glyph would freeze until
+    // the next keypress (the jank we're fixing); show a static `◐` then.
+    let any_alive_agent = app.background_tasks.values().any(|bt| bt.status.is_alive());
+    let animate = !crate::spinner::reduced_motion() && (app.is_streaming || any_alive_agent);
     let spin_frame = (app.launched_at.elapsed().as_millis() / 100) as usize;
     let spinner = crate::app::SPINNER[spin_frame % crate::app::SPINNER.len()];
     let mut focal_used = false;
@@ -1522,7 +1556,7 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
             focal_used = true;
         }
         let (glyph, glyph_style, name_style) = if is_focal {
-            let g = if reduced { "◐" } else { spinner };
+            let g = if animate { spinner } else { "◐" };
             (
                 g.to_string(),
                 Style::default().fg(t.warning).add_modifier(Modifier::BOLD),

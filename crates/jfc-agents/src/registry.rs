@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::state::{parse_agent, parse_skill, Skill};
+use crate::state::{Skill, parse_agent, parse_skill};
 pub use jfc_core::{AgentCost, AgentDef};
 
 // ─── Skill loading ────────────────────────────────────────────────────────────
@@ -290,10 +290,19 @@ pub fn built_in_agents() -> Vec<AgentDef> {
 
     vec![
         {
-            let mut a = builtin("general-purpose", include_str!("builtin_prompts/general_purpose.txt"));
+            let mut a = builtin(
+                "general-purpose",
+                include_str!("builtin_prompts/general_purpose.txt"),
+            );
             a.key_trigger = Some("ambiguous / multi-step user request → general-purpose handles when no specialist fits".into());
-            a.use_when = strs(&["request spans multiple unrelated concerns", "user prompt doesn't match a more specific agent's domain"]);
-            a.avoid_when = strs(&["the request is read-only exploration → fire Explore instead", "the request is plan-only design → fire Plan instead"]);
+            a.use_when = strs(&[
+                "request spans multiple unrelated concerns",
+                "user prompt doesn't match a more specific agent's domain",
+            ]);
+            a.avoid_when = strs(&[
+                "the request is read-only exploration → fire Explore instead",
+                "the request is plan-only design → fire Plan instead",
+            ]);
             a.cost = Some(AgentCost::Expensive);
             a
         },
@@ -321,19 +330,37 @@ pub fn built_in_agents() -> Vec<AgentDef> {
             let mut a = builtin("Plan", include_str!("builtin_prompts/plan.txt"));
             a.allowed_tools = read_only_tools.clone();
             a.disallowed_tools = no_write_tools.clone();
-            a.key_trigger = Some("multi-step / risky / cross-cutting change → fire Plan before any destructive edit".into());
+            a.key_trigger = Some(
+                "multi-step / risky / cross-cutting change → fire Plan before any destructive edit"
+                    .into(),
+            );
             a.use_when = strs(&[
                 "user asks 'how should I implement X', 'design Y', 'plan the Z refactor'",
                 "the change touches 3+ files / 2+ modules and you don't have a clear approach",
                 "the change is irreversible (schema migration, public API change, large refactor)",
             ]);
-            a.avoid_when = strs(&["the change is a one-liner with obvious scope", "the user already gave a step-by-step plan"]);
+            a.avoid_when = strs(&[
+                "the change is a one-liner with obvious scope",
+                "the user already gave a step-by-step plan",
+            ]);
             a.cost = Some(AgentCost::Expensive);
             a
         },
         {
-            let mut a = builtin("verification", include_str!("builtin_prompts/verification.txt"));
-            a.allowed_tools = strs(&["Read", "Glob", "Grep", "Bash", "TaskList", "TaskGet", "TaskUpdate", "TaskDone"]);
+            let mut a = builtin(
+                "verification",
+                include_str!("builtin_prompts/verification.txt"),
+            );
+            a.allowed_tools = strs(&[
+                "Read",
+                "Glob",
+                "Grep",
+                "Bash",
+                "TaskList",
+                "TaskGet",
+                "TaskUpdate",
+                "TaskDone",
+            ]);
             a.disallowed_tools = no_write_tools;
             a.background = Some(true);
             a.color = Some("red".into());
@@ -343,15 +370,32 @@ pub fn built_in_agents() -> Vec<AgentDef> {
                 "the change touches a runtime path (server / CLI / build pipeline)",
                 "tests exist and the user expects you to run them",
             ]);
-            a.avoid_when = strs(&["the change was a doc / comment edit only", "the user asked you NOT to run tests this turn"]);
+            a.avoid_when = strs(&[
+                "the change was a doc / comment edit only",
+                "the user asked you NOT to run tests this turn",
+            ]);
             a.cost = Some(AgentCost::Cheap);
             a
         },
         {
-            let mut a = builtin("orchestrator", include_str!("builtin_prompts/orchestrator.txt"));
+            let mut a = builtin(
+                "orchestrator",
+                include_str!("builtin_prompts/orchestrator.txt"),
+            );
             a.allowed_tools = strs(&[
-                "Read", "Glob", "Grep", "Bash", "TaskCreate", "TaskList", "TaskGet",
-                "TaskUpdate", "TaskDone", "TaskValidate", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
+                "Read",
+                "Glob",
+                "Grep",
+                "Bash",
+                "TaskCreate",
+                "TaskList",
+                "TaskGet",
+                "TaskUpdate",
+                "TaskDone",
+                "TaskValidate",
+                "AskUserQuestion",
+                "EnterPlanMode",
+                "ExitPlanMode",
             ]);
             a.disallowed_tools = no_write_only;
             a.color = Some("magenta".into());
@@ -376,7 +420,9 @@ pub fn built_in_agents() -> Vec<AgentDef> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lifecycle::{build_agent_system_prompt, render_dispatch_section, render_skills_section};
+    use crate::lifecycle::{
+        build_agent_system_prompt, render_dispatch_section, render_skills_section,
+    };
 
     fn make_agent(name: &str, system_prompt: &str, skills: Vec<String>) -> AgentDef {
         AgentDef {

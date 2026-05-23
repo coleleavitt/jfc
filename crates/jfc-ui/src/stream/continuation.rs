@@ -28,6 +28,16 @@ pub(crate) fn should_continue_loop(messages: &[ChatMessage]) -> bool {
         tracing::trace!(target: "jfc::stream", "should_continue_loop: last assistant has no tools");
         return false;
     }
+    if last.parts.iter().any(|p| match p {
+        MessagePart::Tool(tc) => is_incomplete_provider_tool_input(tc),
+        _ => false,
+    }) {
+        tracing::warn!(
+            target: "jfc::stream",
+            "should_continue_loop: not continuing after incomplete provider tool input"
+        );
+        return false;
+    }
     let all_done = last.parts.iter().all(|p| match p {
         MessagePart::Tool(tc) => {
             tc.status == ToolStatus::Completed || tc.status == ToolStatus::Failed
@@ -41,6 +51,16 @@ pub(crate) fn should_continue_loop(messages: &[ChatMessage]) -> bool {
         "should_continue_loop"
     );
     all_done
+}
+
+fn is_incomplete_provider_tool_input(tc: &ToolCall) -> bool {
+    if tc.status != ToolStatus::Failed {
+        return false;
+    }
+    let ToolOutput::Text(text) = &tc.output else {
+        return false;
+    };
+    text.contains("The provider stream finished before sending a complete `input` object")
 }
 
 /// Stage a fresh assistant message slot to stream the next sub-stream's
@@ -281,6 +301,22 @@ mod should_continue_loop_tests {
         })])
     }
 
+    fn assistant_with_failed_tool_output(output: ToolOutput) -> ChatMessage {
+        ChatMessage::assistant_parts(vec![MessagePart::Tool(ToolCall {
+            id: "toolu_x".into(),
+            kind: ToolKind::Write,
+            status: ToolStatus::Failed,
+            input: ToolInput::Generic {
+                summary: "{\"file_path\":\"/tmp/context.rs\"".into(),
+            },
+            output,
+            display: crate::types::ToolDisplayState::DEFAULT,
+            elapsed_ms: None,
+            started_at: None,
+            thought_signature: None,
+        })])
+    }
+
     // Normal: when the last assistant has all tools Complete, the loop
     // continues so the agent gets a chance to react to the tool results.
     #[test]
@@ -295,6 +331,20 @@ mod should_continue_loop_tests {
     fn continues_when_tool_failed_normal() {
         let msgs = vec![assistant_with_tool(ToolStatus::Failed)];
         assert!(should_continue_loop(&msgs));
+    }
+
+    // Robust: if the provider/gateway truncated a tool call before the JSON
+    // arguments finished, do not immediately continue the agentic loop. The
+    // retry tends to reproduce the same partial Write/Edit call and render a
+    // duplicate failed tool block.
+    #[test]
+    fn does_not_continue_after_incomplete_provider_input_robust() {
+        let msgs = vec![assistant_with_failed_tool_output(ToolOutput::Text(
+            "Tool input was not valid JSON (82 bytes received): EOF while parsing an object at line 1 column 82\n\n\
+             The provider stream finished before sending a complete `input` object. Retry the tool call with a properly-formed JSON input."
+                .into(),
+        ))];
+        assert!(!should_continue_loop(&msgs));
     }
 
     // Robust: a Pending tool means the user hasn't approved yet, so the loop

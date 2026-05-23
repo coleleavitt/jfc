@@ -348,9 +348,7 @@ impl MarketOrchestrator {
                                 .get(&solution.agent_id)
                                 .and_then(|s| s.worktree_path.as_deref());
                             let test_fails = if let Some(ref test_code) = outcome.test_code {
-                                invoker
-                                    .adjudicate_test(test_code, solver_worktree)
-                                    .await
+                                invoker.adjudicate_test(test_code, solver_worktree).await
                             } else {
                                 false
                             };

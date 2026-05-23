@@ -2339,7 +2339,12 @@ mod tests {
                 } else {
                     Color::Blue
                 };
-                assert_eq!(sp.style.fg, Some(want), "span {:?} lost its color", sp.content);
+                assert_eq!(
+                    sp.style.fg,
+                    Some(want),
+                    "span {:?} lost its color",
+                    sp.content
+                );
             }
         }
     }
