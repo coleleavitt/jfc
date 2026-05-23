@@ -625,6 +625,11 @@ fn build_node_data(
 
 // ─── Edge Extraction ────────────────────────────────────────────────────────
 
+// Legacy per-file call extractor. Superseded by the cross-file
+// `ReferenceResolver` (see `crate::resolver`). Kept private + suppressed
+// so a future bench can A/B against the new resolver without resurrecting
+// public API.
+#[allow(dead_code)]
 fn extract_call_edges(
     node: TsNode<'_>,
     source: &str,
@@ -747,6 +752,7 @@ fn extract_call_site_kind(
     }
 }
 
+#[allow(dead_code)]
 fn extract_callee_name(call_node: TsNode<'_>, source: &str) -> Option<String> {
     let func_child = call_node.child_by_field_name("function")?;
     match func_child.kind() {

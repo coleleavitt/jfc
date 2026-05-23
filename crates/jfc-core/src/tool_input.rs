@@ -229,6 +229,17 @@ macro_rules! for_each_regular_tool_input {
             GraphImpact => { symbol: req_str @ "symbol", depth: opt_u64_as_u8 @ "depth", format: opt_str @ "format" }
             RunCoverage => { lcov_path: opt_str @ "lcov_path", include_untested_list: bool_true @ "include_untested_list" }
             SymbolEdit => { handle: req_str @ "handle", new_content: req_str @ "new_content", validate: bool_field @ "validate", dispatch_cascade: bool_field @ "dispatch_cascade" }
+            PlanCreate => { title: req_str @ "title", body: opt_str @ "body" }
+            PlanList => { status: opt_str @ "status" }
+            PlanShow => { slug: req_str @ "slug" }
+            PlanAdvance => { slug: req_str @ "slug", summary: req_str @ "summary" }
+            PlanArchive => { slug: req_str @ "slug", reason: opt_str @ "reason" }
+            PlanMaterialize => { slug: req_str @ "slug" }
+            LearnStatus => {}
+            LearnHistorize => {}
+            LearnDream => {}
+            LearnKeyFilesList => {}
+            LearnUserProfileShow => {}
             PostBounty => { description: req_str @ "description", budget: u64_or_0 @ "budget", acceptance_criteria: req_str @ "acceptance_criteria", max_solvers: opt_u64_as_u8 @ "max_solvers", auto_dispatch: bool_field @ "auto_dispatch" }
             MarketStatus => { bounty_id: opt_str @ "bounty_id" }
             RunBounty => { bounty_id: req_str @ "bounty_id", max_solvers: opt_u64_as_u8 @ "max_solvers" }
@@ -564,6 +575,17 @@ pub enum ToolInput {
         #[serde(default, rename = "dispatch_cascade")]
         dispatch_cascade: bool,
     },
+    PlanCreate { title: String, #[serde(default)] body: Option<String> },
+    PlanList { #[serde(default)] status: Option<String> },
+    PlanShow { slug: String },
+    PlanAdvance { slug: String, summary: String },
+    PlanArchive { slug: String, #[serde(default)] reason: Option<String> },
+    PlanMaterialize { slug: String },
+    LearnStatus {},
+    LearnHistorize {},
+    LearnDream {},
+    LearnKeyFilesList {},
+    LearnUserProfileShow {},
     ExitPlanMode {
         plan: String,
     },
@@ -777,6 +799,17 @@ impl ToolInput {
                 format!("coverage({})", lcov_path.as_deref().unwrap_or("auto"))
             }
             Self::SymbolEdit { handle, .. } => format!("edit: {handle}"),
+            Self::PlanCreate { title, .. } => format!("plan_create: {title}"),
+            Self::PlanList { .. } => "plan_list".into(),
+            Self::PlanShow { slug, .. } => format!("plan_show: {slug}"),
+            Self::PlanAdvance { slug, summary } => format!("plan_advance: {slug} — {summary}"),
+            Self::PlanArchive { slug, .. } => format!("plan_archive: {slug}"),
+            Self::PlanMaterialize { slug } => format!("plan_materialize: {slug}"),
+            Self::LearnStatus { .. } => "learn_status".into(),
+            Self::LearnHistorize { .. } => "learn_historize".into(),
+            Self::LearnDream { .. } => "learn_dream".into(),
+            Self::LearnKeyFilesList { .. } => "learn_key_files_list".into(),
+            Self::LearnUserProfileShow { .. } => "learn_user_profile_show".into(),
             Self::PostBounty {
                 description,
                 budget,

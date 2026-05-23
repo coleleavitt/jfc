@@ -40,8 +40,11 @@ mod mentions;
 mod message_view;
 mod notifications;
 mod output_style;
+#[allow(dead_code)] // Public PlanStore surface — full integration pending streaming/recall wiring.
 mod plan;
+#[allow(dead_code)] // Wired by future dreamer-daemon task.
 mod plan_dreamer;
+#[allow(dead_code)] // Wired by future request-builder integration task.
 mod plan_recall;
 mod providers;
 mod push_notifications;

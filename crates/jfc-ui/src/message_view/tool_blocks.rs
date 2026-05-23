@@ -665,6 +665,17 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         | ToolKind::GraphImpact
         | ToolKind::SymbolEdit
         | ToolKind::RunCoverage => Color::Rgb(130, 200, 180), // sage
+        ToolKind::PlanCreate
+        | ToolKind::PlanList
+        | ToolKind::PlanShow
+        | ToolKind::PlanAdvance
+        | ToolKind::PlanArchive
+        | ToolKind::PlanMaterialize => Color::Rgb(180, 160, 220), // lavender
+        ToolKind::LearnStatus
+        | ToolKind::LearnHistorize
+        | ToolKind::LearnDream
+        | ToolKind::LearnKeyFilesList
+        | ToolKind::LearnUserProfileShow => Color::Rgb(220, 180, 130), // amber
         ToolKind::PostBounty | ToolKind::RunBounty | ToolKind::MarketStatus => {
             Color::Rgb(255, 215, 100)
         } // gold

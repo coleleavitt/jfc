@@ -379,6 +379,39 @@ pub async fn execute_tool(
                 format,
             },
         ) => dispatch_heavy::execute_graph_impact(symbol, depth, format.as_deref(), &cwd),
+        (ToolKind::PlanCreate, ToolInput::PlanCreate { title, body }) => {
+            crate::tools::plans::execute_plan_create(&title, body.as_deref())
+        }
+        (ToolKind::PlanList, ToolInput::PlanList { status }) => {
+            crate::tools::plans::execute_plan_list(status.as_deref())
+        }
+        (ToolKind::PlanShow, ToolInput::PlanShow { slug }) => {
+            crate::tools::plans::execute_plan_show(&slug)
+        }
+        (ToolKind::PlanAdvance, ToolInput::PlanAdvance { slug, summary }) => {
+            crate::tools::plans::execute_plan_advance(&slug, &summary)
+        }
+        (ToolKind::PlanArchive, ToolInput::PlanArchive { slug, reason }) => {
+            crate::tools::plans::execute_plan_archive(&slug, reason.as_deref())
+        }
+        (ToolKind::PlanMaterialize, ToolInput::PlanMaterialize { slug }) => {
+            crate::tools::plans::execute_plan_materialize(&slug)
+        }
+        (ToolKind::LearnStatus, ToolInput::LearnStatus {}) => {
+            crate::tools::learn::execute_learn_status()
+        }
+        (ToolKind::LearnHistorize, ToolInput::LearnHistorize {}) => {
+            crate::tools::learn::execute_learn_historize()
+        }
+        (ToolKind::LearnDream, ToolInput::LearnDream {}) => {
+            crate::tools::learn::execute_learn_dream()
+        }
+        (ToolKind::LearnKeyFilesList, ToolInput::LearnKeyFilesList {}) => {
+            crate::tools::learn::execute_learn_key_files_list(std::path::Path::new(&cwd))
+        }
+        (ToolKind::LearnUserProfileShow, ToolInput::LearnUserProfileShow {}) => {
+            crate::tools::learn::execute_learn_user_profile_show()
+        }
         (
             ToolKind::RunCoverage,
             ToolInput::RunCoverage {

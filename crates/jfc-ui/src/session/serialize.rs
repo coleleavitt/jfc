@@ -299,6 +299,39 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::GraphImpact { symbol, .. } => SerializedToolInput::Generic {
             summary: format!("graph_impact: {symbol}"),
         },
+        ToolInput::PlanCreate { title, .. } => SerializedToolInput::Generic {
+            summary: format!("plan_create: {title}"),
+        },
+        ToolInput::PlanList { .. } => SerializedToolInput::Generic {
+            summary: "plan_list".into(),
+        },
+        ToolInput::PlanShow { slug, .. } => SerializedToolInput::Generic {
+            summary: format!("plan_show: {slug}"),
+        },
+        ToolInput::PlanAdvance { slug, .. } => SerializedToolInput::Generic {
+            summary: format!("plan_advance: {slug}"),
+        },
+        ToolInput::PlanArchive { slug, .. } => SerializedToolInput::Generic {
+            summary: format!("plan_archive: {slug}"),
+        },
+        ToolInput::PlanMaterialize { slug } => SerializedToolInput::Generic {
+            summary: format!("plan_materialize: {slug}"),
+        },
+        ToolInput::LearnStatus { .. } => SerializedToolInput::Generic {
+            summary: "learn_status".into(),
+        },
+        ToolInput::LearnHistorize { .. } => SerializedToolInput::Generic {
+            summary: "learn_historize".into(),
+        },
+        ToolInput::LearnDream { .. } => SerializedToolInput::Generic {
+            summary: "learn_dream".into(),
+        },
+        ToolInput::LearnKeyFilesList { .. } => SerializedToolInput::Generic {
+            summary: "learn_key_files_list".into(),
+        },
+        ToolInput::LearnUserProfileShow { .. } => SerializedToolInput::Generic {
+            summary: "learn_user_profile_show".into(),
+        },
         ToolInput::RunCoverage {
             lcov_path,
             include_untested_list,

@@ -4,7 +4,7 @@
 //! plan operation, returning an `ExecutionResult`.
 
 use super::ExecutionResult;
-use crate::plan::{PlanPatch, PlanStatus, PlanStore};
+use crate::plan::{PlanStatus, PlanStore};
 
 /// Create a new plan.
 pub fn execute_plan_create(title: &str, body: Option<&str>) -> ExecutionResult {
