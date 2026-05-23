@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use tracing::warn;
 
 use crate::adapter::{AdapterError, LanguageAdapter};
+use crate::call_site::CallSite;
 use crate::graph::CodeGraph;
+use crate::resolver::ReferenceResolver;
 
 /// Result of a build pass — the graph plus diagnostics that the caller should
 /// surface (rather than silently swallow).
@@ -59,6 +61,10 @@ impl GraphBuilder {
         adapter: &dyn LanguageAdapter,
     ) -> BuildResult {
         let mut result = BuildResult::default();
+        // Buffer every captured call site across files; the resolver
+        // pass runs once at the end so cross-file calls (a call in
+        // `a.rs` to a fn in `b.rs`) actually bind.
+        let mut all_sites: Vec<CallSite> = Vec::new();
 
         for file_path in files {
             let content = match std::fs::read_to_string(file_path) {
@@ -105,6 +111,17 @@ impl GraphBuilder {
                     }
                 }
             }
+
+            all_sites.extend(adapter.extract_call_sites(&parsed, &nodes));
+        }
+
+        // Cross-file call resolution: every captured site is now scored
+        // against the fully-indexed graph and bound to its best-match
+        // target. Sites under the confidence floor become unresolved
+        // (no edge emitted) rather than wrong-target edges.
+        if !all_sites.is_empty() {
+            let mut resolver = ReferenceResolver::new(&mut result.graph);
+            resolver.resolve_all(&all_sites);
         }
 
         result

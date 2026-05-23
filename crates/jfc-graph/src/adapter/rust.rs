@@ -6,6 +6,7 @@ use tracing::warn;
 use tree_sitter::{Node as TsNode, Parser, Tree};
 
 use crate::adapter::{AdapterError, LanguageAdapter, ParseOutcome, ParsedFile, first_syntax_error};
+use crate::call_site::{CallSite, CallSiteKind};
 use crate::cfg::build_cfg;
 use crate::complexity::compute_complexity;
 use crate::dataflow::extract_dataflow;
@@ -125,6 +126,10 @@ impl LanguageAdapter for RustAdapter {
         parsed: &ParsedFile,
         nodes: &[NodeData],
     ) -> Vec<(NodeId, NodeId, EdgeData)> {
+        // Per-file structural edges only — Calls / UnresolvedCall are
+        // handled by the cross-file `ReferenceResolver` pass in the
+        // builder, so we don't lose calls whose target lives in another
+        // file.
         let mut edges = Vec::new();
 
         let mut name_to_node: HashMap<&str, &NodeData> = HashMap::new();
@@ -133,15 +138,6 @@ impl LanguageAdapter for RustAdapter {
         }
 
         let root = parsed.tree.root_node();
-
-        extract_call_edges(
-            root,
-            &parsed.source,
-            &parsed.path,
-            nodes,
-            &name_to_node,
-            &mut edges,
-        );
 
         extract_type_usage_edges(
             root,
@@ -161,6 +157,18 @@ impl LanguageAdapter for RustAdapter {
         );
 
         edges
+    }
+
+    fn extract_call_sites(&self, parsed: &ParsedFile, nodes: &[NodeData]) -> Vec<CallSite> {
+        let mut out = Vec::new();
+        walk_call_sites(
+            parsed.tree.root_node(),
+            &parsed.source,
+            &parsed.path,
+            nodes,
+            &mut out,
+        );
+        out
     }
 }
 
@@ -446,8 +454,8 @@ fn extract_trait(
                         birth_revision: 0,
                         last_modified_revision: 0,
                         complexity: None,
-            cfg: None,
-            dataflow: None,
+                        cfg: None,
+                        dataflow: None,
                     });
                 }
             }
@@ -523,8 +531,8 @@ fn extract_impl(
                         birth_revision: 0,
                         last_modified_revision: 0,
                         complexity: None,
-            cfg: None,
-            dataflow: None,
+                        cfg: None,
+                        dataflow: None,
                     });
                 }
             }
@@ -610,8 +618,8 @@ fn build_node_data(
         birth_revision: 0,
         last_modified_revision: 0,
         complexity: None,
-            cfg: None,
-            dataflow: None,
+        cfg: None,
+        dataflow: None,
     }
 }
 
@@ -664,6 +672,78 @@ fn extract_call_edges(
         } else {
             extract_call_edges(child, source, file_path, nodes, name_to_node, edges);
         }
+    }
+}
+
+/// Walk every `call_expression` in a tree-sitter tree and emit a
+/// [`CallSite`] for each one whose caller resolves to a node we
+/// extracted from this file. Path-qualified calls keep their qualifier
+/// segments so the resolver can re-rank cross-file candidates.
+fn walk_call_sites(
+    node: TsNode<'_>,
+    source: &str,
+    file_path: &Path,
+    nodes: &[NodeData],
+    out: &mut Vec<CallSite>,
+) {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if child.kind() == "call_expression" {
+            if let Some((name, path_segments, kind)) = extract_call_site_kind(child, source) {
+                if let Some(caller) = find_enclosing_function(child, source, file_path, nodes) {
+                    let line = (child.start_position().row + 1) as u32;
+                    out.push(CallSite {
+                        caller_id: caller.id.clone(),
+                        file_path: file_path.to_path_buf(),
+                        name,
+                        path_segments,
+                        line,
+                        kind,
+                    });
+                }
+            }
+            walk_call_sites(child, source, file_path, nodes, out);
+        } else {
+            walk_call_sites(child, source, file_path, nodes, out);
+        }
+    }
+}
+
+/// Pull the callee name, qualifier path segments, and call-site kind
+/// out of a tree-sitter `call_expression` node.
+///
+/// - `identifier` → `Bare("foo", [], Bare)`
+/// - `scoped_identifier` → `Qualified("foo", ["mod","sub"], Qualified)`
+///   for `mod::sub::foo()`
+/// - `field_expression` → `MethodCall("foo", [], MethodCall)` for
+///   `obj.foo()`; receivers aren't tracked yet
+fn extract_call_site_kind(
+    call_node: TsNode<'_>,
+    source: &str,
+) -> Option<(String, Vec<String>, CallSiteKind)> {
+    let func_child = call_node.child_by_field_name("function")?;
+    match func_child.kind() {
+        "identifier" => Some((node_text(func_child, source), Vec::new(), CallSiteKind::Bare)),
+        "field_expression" => {
+            let field = func_child.child_by_field_name("field")?;
+            Some((node_text(field, source), Vec::new(), CallSiteKind::MethodCall))
+        }
+        "scoped_identifier" => {
+            let leaf = func_child.child_by_field_name("name")?;
+            let leaf_text = node_text(leaf, source);
+            let full = node_text(func_child, source);
+            let mut segments: Vec<String> =
+                full.split("::").map(|s| s.to_string()).collect();
+            if let Some(last) = segments.last() {
+                if last == &leaf_text {
+                    segments.pop();
+                }
+            }
+            // Drop pseudo-roots that don't help disambiguation.
+            segments.retain(|s| !matches!(s.as_str(), "crate" | "super" | "self"));
+            Some((leaf_text, segments, CallSiteKind::Qualified))
+        }
+        _ => None,
     }
 }
 

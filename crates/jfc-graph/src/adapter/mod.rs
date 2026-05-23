@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::call_site::CallSite;
 use crate::edges::EdgeData;
 use crate::nodes::{NodeData, NodeId};
 
@@ -83,6 +84,20 @@ pub trait LanguageAdapter: Send + Sync {
         parsed: &ParsedFile,
         nodes: &[NodeData],
     ) -> Vec<(NodeId, NodeId, EdgeData)>;
+
+    /// Capture every call expression in `parsed` as an unresolved
+    /// [`CallSite`]. The default impl returns an empty vec so existing
+    /// adapters keep compiling; the Rust adapter overrides this and
+    /// feeds the cross-file [`crate::resolver::ReferenceResolver`].
+    ///
+    /// Adapters should **not** synthesise edges here — call resolution
+    /// runs as a separate post-pass once every file is indexed, so the
+    /// resolver can see callers and callees that live in different
+    /// files. Returning an edge from `extract_edges` for a call would
+    /// double-count.
+    fn extract_call_sites(&self, _parsed: &ParsedFile, _nodes: &[NodeData]) -> Vec<CallSite> {
+        Vec::new()
+    }
 }
 
 /// Adapter errors.
