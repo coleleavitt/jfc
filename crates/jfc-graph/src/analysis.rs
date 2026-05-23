@@ -1691,7 +1691,7 @@ impl CodeGraph {
 /// A function may match multiple kinds in principle (e.g. a `pub fn main`),
 /// but [`CodeGraph::classify_entrypoints`] reports a single canonical kind
 /// using the precedence: Test > Bench > FfiExport > Main > PublicApi.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum EntrypointKind {
     /// Function named `main` at module root.
     Main,
@@ -1705,8 +1705,9 @@ pub enum EntrypointKind {
     FfiExport,
 }
 
-/// Summary statistics for one entrypoint.
-#[derive(Debug, Clone)]
+/// Summary statistics for one entrypoint. Serializable for stable
+/// JSON exports — see [`crate::schema`] for the versioned envelope.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EntrypointSummary {
     pub node_id: NodeId,
     pub kind: EntrypointKind,

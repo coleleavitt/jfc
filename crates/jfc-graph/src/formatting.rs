@@ -9,7 +9,10 @@ use crate::nodes::NodeKind;
 use crate::symbols::SymbolTable;
 
 /// Formatted output from a query with token budget tracking.
-#[derive(Debug, Clone)]
+///
+/// Serializable — the schema layer wraps this directly in a versioned
+/// envelope (see [`crate::schema::wrap_formatted_output`]).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FormattedOutput {
     pub text: String,
     pub token_estimate: usize,

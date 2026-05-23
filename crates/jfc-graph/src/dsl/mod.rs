@@ -1450,7 +1450,10 @@ impl Default for QueryConfig {
 }
 
 /// Result of a query execution.
-#[derive(Debug, Clone, Default)]
+///
+/// Serializable for stable JSON exports — see [`crate::schema`] for the
+/// versioned envelope and JSON Schema definitions consumers can depend on.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct QueryResult {
     /// Nodes in the result set.
     pub nodes: Vec<NodeId>,
@@ -1947,8 +1950,7 @@ impl<'a> QueryEngine<'a> {
                         .and_then(|id| self.graph.get_node(id))
                         .and_then(|n| n.file_path.parent().map(|p| p.to_path_buf()))
                         .unwrap_or_else(|| std::path::PathBuf::from("."));
-                    let commits =
-                        crate::co_change::fetch_git_history(&workspace_root, 500);
+                    let commits = crate::co_change::fetch_git_history(&workspace_root, 500);
                     let result = crate::co_change::co_changes_for_nodes(
                         self.graph,
                         &commits,
@@ -2331,8 +2333,7 @@ impl<'a> QueryEngine<'a> {
                         .and_then(|id| self.graph.get_node(id))
                         .and_then(|n| n.file_path.parent().map(|p| p.to_path_buf()))
                         .unwrap_or_else(|| std::path::PathBuf::from("."));
-                    let commits =
-                        crate::co_change::fetch_git_history(&workspace_root, 500);
+                    let commits = crate::co_change::fetch_git_history(&workspace_root, 500);
                     let result = crate::co_change::co_changes_for_nodes(
                         self.graph,
                         &commits,
@@ -3324,9 +3325,9 @@ mod tests {
                 metadata: HashMap::new(),
                 birth_revision: 0,
                 last_modified_revision: 0,
-            complexity: None,
-            cfg: None,
-            dataflow: None,
+                complexity: None,
+                cfg: None,
+                dataflow: None,
             }
         }
 
@@ -3390,9 +3391,9 @@ mod tests {
                 metadata: HashMap::new(),
                 birth_revision: 0,
                 last_modified_revision: 0,
-            complexity: None,
-            cfg: None,
-            dataflow: None,
+                complexity: None,
+                cfg: None,
+                dataflow: None,
             }
         }
         let mut graph = CodeGraph::new();
@@ -3682,9 +3683,9 @@ mod tests {
                 metadata: HashMap::new(),
                 birth_revision: 0,
                 last_modified_revision: 0,
-            complexity: None,
-            cfg: None,
-            dataflow: None,
+                complexity: None,
+                cfg: None,
+                dataflow: None,
             }
         }
         let mut g = CodeGraph::new();
@@ -3893,9 +3894,9 @@ mod tests {
                 metadata: HashMap::new(),
                 birth_revision: 0,
                 last_modified_revision: 0,
-            complexity: None,
-            cfg: None,
-            dataflow: None,
+                complexity: None,
+                cfg: None,
+                dataflow: None,
             }
         }
 
