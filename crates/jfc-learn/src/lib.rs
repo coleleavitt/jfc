@@ -21,8 +21,11 @@ pub mod verifier;
 pub use auto_hints::{HintSource, RecallHint};
 pub use dreamer::{Dreamer, DreamerReport, DreamerTask};
 pub use error::LearnError;
-pub use historian::{CandidateFact, Historian, HistorianConfig, HistorianReport};
+pub use historian::{
+    CandidateFact, Historian, HistorianConfig, HistorianProvider, HistorianReport, MemoryLookup,
+    ProcessedFact,
+};
 pub use key_files::{KeyFileStore, PinnedFile, ReadEvent};
 pub use normalize_hash::normalize_and_hash;
 pub use user_memory::{UserMemoryPipeline, UserObservation, UserProfile, UserProfileEntry};
-pub use verifier::{PromotionVerifier, VerifierContract, VerifierVerdict};
+pub use verifier::{LlmVerifier, PromotionVerifier, VerifierContract, VerifierVerdict};
