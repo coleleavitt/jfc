@@ -660,6 +660,84 @@ pub fn fire_async(point: HookPoint, ctx: &HookContext) {
     }
 }
 
+// ─── Script-based hook runner (lifecycle events from .jfc/hooks/) ──────────
+//
+// This is a parallel surface to the in-process `HookRegistry` above. The
+// registry handles fast in-tree dispatch (Logger, CommentChecker, ...);
+// the `runner` submodule scans `.jfc/hooks/` for user-authored scripts
+// (e.g. `pre-tool-use.sh`) and runs them with the event payload on stdin.
+//
+// Both systems are intentionally separate: the registry is process-local
+// and zero-cost; the runner spawns subprocesses and is opt-in per event.
+
+#[allow(dead_code)]
+pub mod runner;
+
+/// Lifecycle events that script hooks subscribe to.
+///
+/// Distinct from `HookPoint` (the in-process registry's enum) because
+/// script hooks need the *payload* serialized to JSON, whereas registry
+/// hooks operate on a borrowed `HookContext`.
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum HookEvent {
+    PreToolUse {
+        tool_name: String,
+        tool_input: serde_json::Value,
+    },
+    PostToolUse {
+        tool_name: String,
+        tool_output: String,
+        is_error: bool,
+    },
+    UserPromptSubmit {
+        prompt: String,
+    },
+    SessionStart {
+        session_id: String,
+    },
+    FileChanged {
+        path: String,
+    },
+    CwdChanged {
+        old: String,
+        new: String,
+    },
+    Notification {
+        message: String,
+    },
+}
+
+impl HookEvent {
+    /// Script-name stem used for filesystem matching (without extension).
+    /// e.g. `pre-tool-use` → matches `.jfc/hooks/pre-tool-use.sh` (or `.json`).
+    #[allow(dead_code)]
+    pub fn script_name(&self) -> &'static str {
+        match self {
+            HookEvent::PreToolUse { .. } => "pre-tool-use",
+            HookEvent::PostToolUse { .. } => "post-tool-use",
+            HookEvent::UserPromptSubmit { .. } => "user-prompt-submit",
+            HookEvent::SessionStart { .. } => "session-start",
+            HookEvent::FileChanged { .. } => "file-changed",
+            HookEvent::CwdChanged { .. } => "cwd-changed",
+            HookEvent::Notification { .. } => "notification",
+        }
+    }
+}
+
+/// Decision returned by a script hook (parsed from script stdout).
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum HookDecision {
+    /// Continue with the original input.
+    Allow,
+    /// Block the operation with a human-readable reason.
+    Deny { reason: String },
+    /// Replace the tool input with the modified payload.
+    Modify { modified_input: serde_json::Value },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

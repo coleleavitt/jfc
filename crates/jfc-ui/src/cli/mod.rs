@@ -1,6 +1,7 @@
 #![allow(clippy::all)]
 
 use std::io;
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use crossterm::{
@@ -80,6 +81,92 @@ pub(crate) struct Cli {
     #[arg(long = "fork-session", value_name = "SESSION_OR_EXPORT_ID")]
     fork_session: Option<String>,
 
+    /// Maximum number of agentic-loop iterations per user turn. When
+    /// the count is hit, the loop stops even if the model wanted to
+    /// keep going. Mirrors Claude Code v2.1.144's `--max-turns`.
+    #[arg(long = "max-turns", value_name = "N")]
+    max_turns: Option<u32>,
+
+    /// Hard spend cap in USD across the session. The app refuses to
+    /// open a new stream once cumulative cost crosses this number.
+    #[arg(long = "max-budget-usd", value_name = "DOLLARS")]
+    max_budget_usd: Option<f64>,
+
+    /// Comma-separated allowlist of tool names. Anything outside this
+    /// list is rejected. Empty / unset = no allowlist (default jfc
+    /// behaviour). Example: `--allowed-tools "Read,Glob,Grep"`.
+    #[arg(long = "allowed-tools", value_name = "TOOLS")]
+    allowed_tools: Option<String>,
+
+    /// Comma-separated denylist of tool names. Names in this list are
+    /// rejected regardless of the allowlist.
+    #[arg(long = "disallowed-tools", value_name = "TOOLS")]
+    disallowed_tools: Option<String>,
+
+    /// Extra system-prompt text appended after the built-in prompt.
+    /// Use for project-specific style, persona, or constraint
+    /// reminders. Mutually overrideable with `--system-prompt-file`
+    /// (file wins if both are set).
+    #[arg(long = "system-prompt", value_name = "TEXT")]
+    system_prompt: Option<String>,
+
+    /// Read additional system-prompt text from the given file. Takes
+    /// precedence over `--system-prompt` when both are supplied.
+    #[arg(long = "system-prompt-file", value_name = "PATH")]
+    system_prompt_file: Option<PathBuf>,
+
+    /// Skip every permission check — every tool runs without prompting.
+    /// DANGEROUS: equivalent to permanently being in `bypass` permission
+    /// mode. Use only in sandboxed CI / single-shot scripts.
+    #[arg(long = "dangerously-skip-permissions")]
+    dangerously_skip_permissions: bool,
+
+    /// Enable debug-level logging. Equivalent to setting
+    /// `RUST_LOG=jfc=debug` before launch.
+    #[arg(long = "verbose")]
+    verbose: bool,
+
+    /// JSON output mode — emit structured events on stdout instead of
+    /// rich TUI rendering. Intended for CI / scripted callers.
+    #[arg(long = "json")]
+    json: bool,
+
+    /// Add an extra directory to the search-context allowlist.
+    /// Accepts multiple occurrences: `--add-dir /a --add-dir /b`.
+    #[arg(long = "add-dir", value_name = "PATH")]
+    add_dir: Vec<PathBuf>,
+
+    /// Maximum extended-thinking budget (tokens) per turn. Lower
+    /// values trade reasoning depth for latency / cost.
+    #[arg(long = "max-thinking-tokens", value_name = "N")]
+    max_thinking_tokens: Option<u32>,
+
+    /// Visibility of thinking output: `show`, `hide`, or `summarize`.
+    /// Maps onto `StreamOptions.thinking_display`.
+    #[arg(long = "thinking-display", value_name = "MODE")]
+    thinking_display: Option<String>,
+
+    /// Ephemeral session: don't persist any state to
+    /// `~/.config/jfc/sessions/`. Useful for transient probes / CI.
+    #[arg(long = "no-session-persistence")]
+    no_session_persistence: bool,
+
+    /// Token budget for a single task (beta `task-budgets-2026-03-13`).
+    /// Wires through `StreamOptions.task_budget_tokens`.
+    #[arg(long = "task-budget", value_name = "N")]
+    task_budget: Option<u64>,
+
+    /// Path to an MCP configuration file. Servers in this file are
+    /// merged into the registry at startup before any tool dispatch.
+    #[arg(long = "mcp-config", value_name = "PATH")]
+    mcp_config: Option<PathBuf>,
+
+    /// IDE pairing mode flag. When set, the UI advertises co-working
+    /// affordances (shared cursor, context handoff) to a connected
+    /// editor extension.
+    #[arg(long = "cowork")]
+    cowork: bool,
+
     /// Subcommand. When omitted, jfc launches the interactive TUI.
     #[command(subcommand)]
     command: Option<Command>,
@@ -140,6 +227,38 @@ pub(crate) fn parse_permission_mode(raw: Option<&str>) -> Option<crate::app::Per
     Some(mode)
 }
 
+/// Bag of CLI-flag-derived values transferred onto `App` after
+/// construction. Lives at module scope so `event_loop::run` can
+/// accept it without depending on the `Cli` type directly.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct CliRuntimeConfig {
+    pub max_turns: Option<u32>,
+    pub max_budget_usd: Option<f64>,
+    pub allowed_tools: Vec<String>,
+    pub disallowed_tools: Vec<String>,
+    pub system_prompt: Option<String>,
+    pub dangerously_skip_permissions: bool,
+    pub json_mode: bool,
+    pub extra_dirs: Vec<PathBuf>,
+    pub max_thinking_tokens: Option<u32>,
+    pub thinking_display: Option<String>,
+    pub no_session_persistence: bool,
+    pub task_budget: Option<u64>,
+    pub mcp_config_path: Option<PathBuf>,
+    pub cowork: bool,
+}
+
+/// Parse a comma-separated tool list (`"Read, Glob,Grep"` → `["Read",
+/// "Glob", "Grep"]`). Whitespace around each entry is trimmed; empty
+/// entries are dropped so `"Read,,Glob"` yields two names, not three.
+fn parse_tool_list(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Session to load at startup based on CLI args
 pub(crate) enum StartupSession {
     /// No session to load — start fresh
@@ -167,6 +286,18 @@ impl Cli {
 }
 
 pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
+    // `--verbose` must be honored *before* `init_tracing` reads the env,
+    // since the filter is captured into the global subscriber once and
+    // can't be changed later. We only set RUST_LOG if it wasn't already
+    // provided externally — explicit user override always wins.
+    if cli.verbose && std::env::var_os("RUST_LOG").is_none() {
+        // SAFETY: we're still single-threaded at this point in startup.
+        // No other thread can read RUST_LOG concurrently with this write.
+        unsafe {
+            std::env::set_var("RUST_LOG", "jfc=debug,reqwest=warn,hyper=warn,h2=warn");
+        }
+    }
+
     // Tracing → file under `~/.config/jfc/logs/`. Stderr writes corrupted the
     // TUI alt-screen, so we route to a rolling daily file via
     // `tracing-appender::non_blocking`. The `WorkerGuard` is held for the
@@ -224,6 +355,53 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
     let model = cli.model.map(ModelId::from).unwrap_or(init.model);
     let oauth_handle = init.oauth;
     let provider = providers[active_idx].clone();
+
+    // Collect all flag-derived runtime config in one place so we can
+    // thread it into `event_loop::run` without growing the signature
+    // every time a new flag lands. `--system-prompt-file` wins when
+    // both file and inline text are supplied (file is the more
+    // explicit choice). A read error on the file is logged + treated
+    // as "no extra prompt" — refusing to boot over a missing prompt
+    // file would be a hostile failure mode for the user.
+    let cli_system_prompt = match cli.system_prompt_file.as_ref() {
+        Some(path) => match std::fs::read_to_string(path) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::warn!(
+                    target: "jfc::cli",
+                    path = %path.display(),
+                    error = %e,
+                    "--system-prompt-file: read failed, ignoring"
+                );
+                cli.system_prompt.clone()
+            }
+        },
+        None => cli.system_prompt.clone(),
+    };
+    let runtime_config = CliRuntimeConfig {
+        max_turns: cli.max_turns,
+        max_budget_usd: cli.max_budget_usd,
+        allowed_tools: cli
+            .allowed_tools
+            .as_deref()
+            .map(parse_tool_list)
+            .unwrap_or_default(),
+        disallowed_tools: cli
+            .disallowed_tools
+            .as_deref()
+            .map(parse_tool_list)
+            .unwrap_or_default(),
+        system_prompt: cli_system_prompt,
+        dangerously_skip_permissions: cli.dangerously_skip_permissions,
+        json_mode: cli.json,
+        extra_dirs: cli.add_dir.clone(),
+        max_thinking_tokens: cli.max_thinking_tokens,
+        thinking_display: cli.thinking_display.clone(),
+        no_session_persistence: cli.no_session_persistence,
+        task_budget: cli.task_budget,
+        mcp_config_path: cli.mcp_config.clone(),
+        cowork: cli.cowork,
+    };
 
     // v132 `-p`/`--print` headless one-shot mode. Skips the TUI
     // entirely, streams the response to stdout, exits with the
@@ -303,6 +481,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
         startup_session,
         initial_prompt,
         initial_permission_mode,
+        runtime_config,
     )
     .await;
 

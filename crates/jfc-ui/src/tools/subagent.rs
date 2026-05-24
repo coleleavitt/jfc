@@ -196,6 +196,7 @@ mod tests {
             mode: None,
             isolation: None,
             parent_task_id: None,
+            schema: None,
         }
     }
 

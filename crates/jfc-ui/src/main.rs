@@ -8,6 +8,8 @@ mod attachments;
 mod auth;
 mod auto_mode;
 #[allow(dead_code)]
+mod auto_classifier;
+#[allow(dead_code)]
 mod autonomous_loop;
 mod bash_processes;
 #[allow(dead_code)]
@@ -29,8 +31,12 @@ mod effort;
 mod env_context;
 
 mod feature_gates;
+#[allow(dead_code)]
+mod file_checkpoint;
 mod file_watcher;
 mod git_context;
+#[allow(dead_code)]
+mod headless;
 mod github;
 mod goal;
 mod idle_prefetch;
@@ -121,7 +127,7 @@ pub(crate) fn is_sandbox_active() -> bool {
     false
 }
 
-pub(crate) use cli::{StartupSession, build_providers, provider_for_model};
+pub(crate) use cli::{CliRuntimeConfig, StartupSession, build_providers, provider_for_model};
 
 use clap::Parser;
 

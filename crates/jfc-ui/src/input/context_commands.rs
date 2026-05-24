@@ -1244,3 +1244,363 @@ pub(super) async fn cmd_oauth_login(
         }
     }
 }
+
+/// Run `sh -c <cmd>` synchronously and return its stdout (trimmed).
+/// Returns `Err(stderr-or-spawn-error)` on non-zero exit so the caller
+/// can surface a single hint instead of an empty PR list silently.
+fn run_capture(cmd: &str) -> Result<String, String> {
+    let out = std::process::Command::new("sh")
+        .args(["-c", cmd])
+        .output()
+        .map_err(|e| format!("spawn `{cmd}` failed: {e}"))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("`{cmd}` exited with {}", out.status)
+        } else {
+            stderr
+        });
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Build the PR-status summary block used by both `/babysit-prs` and
+/// `/morning-checkin`. Returns a markdown string highlighting PRs that
+/// need attention (review requested, CI failing, changes requested).
+fn pr_status_summary() -> String {
+    // `gh` is a hard requirement — surface a helpful message rather than
+    // a parse failure when the CLI is missing or the user isn't logged in.
+    let raw = match run_capture(
+        "gh pr list --json number,title,reviewDecision,statusCheckRollup --limit 10",
+    ) {
+        Ok(s) if !s.is_empty() => s,
+        Ok(_) => return "No open PRs found.".to_string(),
+        Err(e) => return format!("Unable to query PRs (is `gh` installed and logged in?): {e}"),
+    };
+
+    let prs: Vec<serde_json::Value> = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(e) => return format!("Could not parse `gh pr list` output: {e}"),
+    };
+
+    if prs.is_empty() {
+        return "No open PRs found.".to_string();
+    }
+
+    let mut needs_attention: Vec<String> = Vec::new();
+    let mut healthy: Vec<String> = Vec::new();
+
+    for pr in &prs {
+        let num = pr.get("number").and_then(|v| v.as_i64()).unwrap_or(0);
+        let title = pr
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("(no title)");
+        let review = pr
+            .get("reviewDecision")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // statusCheckRollup is an array of check objects with a
+        // `conclusion` field; "FAILURE"/"TIMED_OUT" mean CI is red.
+        let checks = pr
+            .get("statusCheckRollup")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let any_fail = checks.iter().any(|c| {
+            matches!(
+                c.get("conclusion").and_then(|v| v.as_str()),
+                Some("FAILURE") | Some("TIMED_OUT") | Some("CANCELLED")
+            )
+        });
+        let any_pending = checks.iter().any(|c| {
+            matches!(
+                c.get("status").and_then(|v| v.as_str()),
+                Some("IN_PROGRESS") | Some("QUEUED") | Some("PENDING")
+            )
+        });
+
+        let mut flags: Vec<&str> = Vec::new();
+        if review == "CHANGES_REQUESTED" {
+            flags.push("changes requested");
+        }
+        if review == "REVIEW_REQUIRED" || review.is_empty() {
+            flags.push("review requested");
+        }
+        if any_fail {
+            flags.push("CI failing");
+        } else if any_pending {
+            flags.push("CI pending");
+        }
+
+        let line = format!(
+            "  • #{num} {title}{}",
+            if flags.is_empty() {
+                String::new()
+            } else {
+                format!(" — _{}_", flags.join(", "))
+            }
+        );
+        if flags.iter().any(|f| *f != "CI pending") {
+            needs_attention.push(line);
+        } else {
+            healthy.push(line);
+        }
+    }
+
+    let mut body = String::new();
+    if !needs_attention.is_empty() {
+        body.push_str("**Needs attention:**\n");
+        body.push_str(&needs_attention.join("\n"));
+        body.push('\n');
+    }
+    if !healthy.is_empty() {
+        if !body.is_empty() {
+            body.push('\n');
+        }
+        body.push_str("**Looking good:**\n");
+        body.push_str(&healthy.join("\n"));
+        body.push('\n');
+    }
+    body
+}
+
+pub(super) async fn cmd_babysit_prs(
+    app: &mut App,
+    parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    app.messages.push(ChatMessage::user(
+        parts
+            .iter()
+            .copied()
+            .collect::<Vec<_>>()
+            .join(" "),
+    ));
+
+    let arg = parts.get(1).copied().unwrap_or("").trim();
+
+    // ── `/babysit-prs stop` cancels an active loop ────────────────────
+    if arg.eq_ignore_ascii_case("stop") {
+        match app.babysit_prs_cron_id.take() {
+            Some(id) => {
+                use crate::daemon::{Daemon, DaemonPaths};
+                let paths = DaemonPaths::default_user();
+                let removed = match Daemon::new(&paths.base_dir) {
+                    Ok(mut d) => d.remove_cron_job(&id),
+                    Err(e) => {
+                        app.messages.push(ChatMessage::assistant(format!(
+                            "Could not open daemon state to cancel `{id}`: {e}"
+                        )));
+                        return;
+                    }
+                };
+                let msg = if removed {
+                    format!("Cancelled PR-watch loop (`{id}`).")
+                } else {
+                    format!(
+                        "No cron job with id `{id}` was registered — it may have already \
+                         been removed."
+                    )
+                };
+                app.messages.push(ChatMessage::assistant(msg));
+            }
+            None => {
+                app.messages.push(ChatMessage::assistant(
+                    "No active PR-watch loop to stop.".to_string(),
+                ));
+            }
+        }
+        return;
+    }
+
+    // ── Build the current snapshot (`git log` + PR summary) ───────────
+    let mut report = String::from("**PR babysitter**\n\n");
+
+    match run_capture("git log --oneline origin/HEAD..HEAD") {
+        Ok(local) if !local.is_empty() => {
+            report.push_str("Local commits ahead of `origin/HEAD`:\n```\n");
+            report.push_str(&local);
+            report.push_str("\n```\n\n");
+        }
+        Ok(_) => {
+            report.push_str("_No local commits ahead of `origin/HEAD`._\n\n");
+        }
+        Err(e) => {
+            report.push_str(&format!("_Could not compare to `origin/HEAD`: {e}_\n\n"));
+        }
+    }
+
+    report.push_str(&pr_status_summary());
+
+    // ── Optional schedule arg registers a cron loop ───────────────────
+    if !arg.is_empty() {
+        // `parse_schedule` accepts crontab (`*/5 * * * *`), `@hourly`,
+        // and `@every <dur>` (e.g. `@every 5m`). When the user types a
+        // bare duration like `5m`, wrap it in `@every` so the daemon
+        // accepts it.
+        let normalized = if arg.starts_with('@') || arg.contains(' ') {
+            arg.to_string()
+        } else {
+            format!("@every {arg}")
+        };
+
+        use crate::daemon::{Daemon, DaemonPaths, parse_schedule};
+        match parse_schedule(&normalized) {
+            Ok(sched) => {
+                let paths = DaemonPaths::default_user();
+                match Daemon::new(&paths.base_dir) {
+                    Ok(mut daemon) => {
+                        // Replace any existing loop first so the user
+                        // never accumulates duplicate cron entries.
+                        if let Some(prev) = app.babysit_prs_cron_id.take() {
+                            daemon.remove_cron_job(&prev);
+                        }
+                        // The cron command is what runs on the daemon's
+                        // schedule. We can't dispatch a slash command
+                        // directly from cron, so the command writes a
+                        // markdown report to `.jfc/pr-status.md` — the
+                        // user (or a sister loop) can pick it up.
+                        let cmd = "sh -c 'mkdir -p .jfc && \
+                                   gh pr list --json number,title,reviewDecision,statusCheckRollup \
+                                   --limit 10 > .jfc/pr-status.json 2>&1'";
+                        let id = daemon.add_cron_job(
+                            sched,
+                            "jfc /babysit-prs PR status refresher",
+                            cmd,
+                        );
+                        app.babysit_prs_cron_id = Some(id.clone());
+                        report.push_str(&format!(
+                            "\n_Registered cron job `{id}` ({normalized}) — \
+                             use `/babysit-prs stop` to cancel._\n"
+                        ));
+                    }
+                    Err(e) => {
+                        report.push_str(&format!(
+                            "\n_Could not register cron loop: daemon state init failed: {e}_\n"
+                        ));
+                    }
+                }
+            }
+            Err(e) => {
+                report.push_str(&format!(
+                    "\n_Schedule `{arg}` is not valid (`{e}`). Try `5m`, `@hourly`, \
+                     or a crontab expression like `*/5 * * * *`._\n"
+                ));
+            }
+        }
+    }
+
+    app.messages.push(ChatMessage::assistant(report));
+}
+
+pub(super) async fn cmd_morning_checkin(
+    app: &mut App,
+    _parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    app.messages
+        .push(ChatMessage::user("/morning-checkin".to_string()));
+
+    let mut body = String::from("# Morning check-in\n\n");
+
+    // ── 1. PRs needing attention ──────────────────────────────────────
+    body.push_str("## PRs needing attention\n\n");
+    match run_capture(
+        "gh pr list --author @me \
+         --json number,title,reviewDecision,statusCheckRollup",
+    ) {
+        Ok(s) if !s.is_empty() => {
+            let prs: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
+            if prs.is_empty() {
+                body.push_str("_No open PRs authored by you._\n");
+            } else {
+                for pr in &prs {
+                    let num = pr.get("number").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let title = pr.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                    let review = pr
+                        .get("reviewDecision")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("PENDING");
+                    let checks = pr
+                        .get("statusCheckRollup")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let ci = if checks.iter().any(|c| {
+                        matches!(
+                            c.get("conclusion").and_then(|v| v.as_str()),
+                            Some("FAILURE") | Some("TIMED_OUT") | Some("CANCELLED")
+                        )
+                    }) {
+                        "CI ✗"
+                    } else if checks.iter().any(|c| {
+                        matches!(
+                            c.get("status").and_then(|v| v.as_str()),
+                            Some("IN_PROGRESS") | Some("QUEUED") | Some("PENDING")
+                        )
+                    }) {
+                        "CI …"
+                    } else {
+                        "CI ✓"
+                    };
+                    body.push_str(&format!(
+                        "- **#{num}** {title} — {review} · {ci}\n"
+                    ));
+                }
+            }
+        }
+        Ok(_) => body.push_str("_No open PRs authored by you._\n"),
+        Err(e) => body.push_str(&format!(
+            "_Could not query PRs (is `gh` installed and logged in?): {e}_\n"
+        )),
+    }
+    body.push('\n');
+
+    // ── 2. Assigned issues ────────────────────────────────────────────
+    body.push_str("## Assigned issues\n\n");
+    match run_capture("gh issue list --assignee @me --json number,title,state --limit 5") {
+        Ok(s) if !s.is_empty() => {
+            let issues: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
+            if issues.is_empty() {
+                body.push_str("_No assigned issues._\n");
+            } else {
+                for issue in &issues {
+                    let num = issue.get("number").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let title = issue.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                    let state = issue
+                        .get("state")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("OPEN");
+                    body.push_str(&format!("- **#{num}** ({state}) {title}\n"));
+                }
+            }
+        }
+        Ok(_) => body.push_str("_No assigned issues._\n"),
+        Err(e) => body.push_str(&format!("_Could not query issues: {e}_\n")),
+    }
+    body.push('\n');
+
+    // ── 3. Yesterday's work (commits) ─────────────────────────────────
+    body.push_str("## Yesterday's work\n\n");
+    let email = run_capture("git config user.email").unwrap_or_default();
+    let log_cmd = if email.is_empty() {
+        "git log --oneline --since=\"yesterday\"".to_string()
+    } else {
+        format!("git log --oneline --since=\"yesterday\" --author={email}")
+    };
+    match run_capture(&log_cmd) {
+        Ok(s) if !s.is_empty() => {
+            body.push_str("```\n");
+            body.push_str(&s);
+            body.push_str("\n```\n");
+        }
+        Ok(_) => body.push_str("_No commits since yesterday._\n"),
+        Err(e) => body.push_str(&format!("_Could not read git log: {e}_\n")),
+    }
+
+    app.messages.push(ChatMessage::assistant(body));
+}

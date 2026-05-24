@@ -1054,6 +1054,77 @@ pub struct App {
     /// post-compact `approx_tokens` estimate (system prompt + tool defs
     /// are invisible to the message-only local estimate).
     pub last_system_prompt_len: Option<usize>,
+
+    // ── CLI-injected configuration ────────────────────────────────────
+    // These fields are populated from the CLI flags parsed in `cli::run`
+    // and threaded into `App` before the first event-loop tick. The
+    // callers that *consume* these values (stream builder, permission
+    // gate, session save, …) are wired in follow-on work — marking
+    // `#[allow(dead_code)]` until then keeps the build clean.
+
+    /// `--max-turns`: ceiling on agentic-loop iterations per user turn.
+    #[allow(dead_code)]
+    pub max_turns: Option<u32>,
+
+    /// `--max-budget-usd`: hard session spend cap in USD.
+    #[allow(dead_code)]
+    pub max_budget_usd: Option<f64>,
+
+    /// `--allowed-tools`: parsed allowlist of tool names.
+    #[allow(dead_code)]
+    pub allowed_tools: Vec<String>,
+
+    /// `--disallowed-tools`: parsed denylist of tool names.
+    #[allow(dead_code)]
+    pub disallowed_tools: Vec<String>,
+
+    /// Additional system-prompt text injected via `--system-prompt` or
+    /// `--system-prompt-file`.
+    #[allow(dead_code)]
+    pub cli_system_prompt: Option<String>,
+
+    /// `--dangerously-skip-permissions`: bypass every permission gate.
+    #[allow(dead_code)]
+    pub dangerously_skip_permissions: bool,
+
+    /// `--json`: structured JSON output mode for CI.
+    #[allow(dead_code)]
+    pub json_mode: bool,
+
+    /// `--add-dir`: extra directories added to the search context.
+    #[allow(dead_code)]
+    pub extra_dirs: Vec<std::path::PathBuf>,
+
+    /// `--max-thinking-tokens`: per-turn thinking budget cap.
+    #[allow(dead_code)]
+    pub cli_max_thinking_tokens: Option<u32>,
+
+    /// `--thinking-display`: thinking visibility mode (`show`/`hide`/`summarize`).
+    #[allow(dead_code)]
+    pub cli_thinking_display: Option<String>,
+
+    /// `--no-session-persistence`: when true, skip all disk persistence.
+    #[allow(dead_code)]
+    pub no_session_persistence: bool,
+
+    /// `--task-budget`: token budget per task for the beta task-budgets API.
+    #[allow(dead_code)]
+    pub cli_task_budget: Option<u64>,
+
+    /// `--mcp-config`: path to an MCP configuration file.
+    #[allow(dead_code)]
+    pub mcp_config_path: Option<std::path::PathBuf>,
+
+    /// `--cowork`: IDE pairing mode flag.
+    #[allow(dead_code)]
+    pub cowork: bool,
+
+    /// ID of an active cron job created by `/babysit-prs <schedule>`.
+    /// `Some(id)` means a recurring PR-status check is registered with
+    /// the local daemon; `/babysit-prs stop` removes it. `None` when no
+    /// PR-watch loop is active. Stored in `App` so the stop command can
+    /// look the id up without round-tripping through user-visible state.
+    pub babysit_prs_cron_id: Option<String>,
 }
 
 impl App {
@@ -1276,6 +1347,24 @@ impl App {
             prefetch_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             git_root: None,
             last_system_prompt_len: None,
+            // CLI-injected configuration: defaults are off / empty; the
+            // `cli::run` entry point overwrites these after construction
+            // when the user passed the corresponding flags.
+            max_turns: None,
+            max_budget_usd: None,
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
+            cli_system_prompt: None,
+            dangerously_skip_permissions: false,
+            json_mode: false,
+            extra_dirs: Vec::new(),
+            cli_max_thinking_tokens: None,
+            cli_thinking_display: None,
+            no_session_persistence: false,
+            cli_task_budget: None,
+            mcp_config_path: None,
+            cowork: false,
+            babysit_prs_cron_id: None,
         };
         // Open the task store — prefer project-level persistence so tasks
         // survive across ALL sessions in the same repo. Falls back to

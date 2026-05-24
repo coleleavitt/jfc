@@ -28,6 +28,7 @@ pub(crate) async fn run(
     startup_session: crate::StartupSession,
     initial_prompt: Option<String>,
     initial_permission_mode: Option<crate::app::PermissionMode>,
+    cli_config: crate::CliRuntimeConfig,
 ) -> anyhow::Result<()> {
     let (tx, mut rx): (EventSender, EventReceiver) = mpsc::channel(APP_EVENT_BUFFER);
     // Make the channel reachable from non-Task code paths (bounty
@@ -38,6 +39,27 @@ pub(crate) async fn run(
     tracing::info!(target: "jfc::ui::events", "registered AppEvent sender for non-Task agent paths");
     let mut app = App::new(provider, model);
     app.providers = providers.clone();
+    // Transfer CLI-flag-derived runtime config onto the App. Done here
+    // (not inside `App::new`) so unit tests that build a bare `App` can
+    // skip the plumbing and so the flag → field mapping lives next to
+    // the flag parser instead of buried deep in app/state.rs. Wiring
+    // the *consumers* of these fields (stream builder, permission
+    // gate, MCP init, session save) is a separate change — the App
+    // fields are `#[allow(dead_code)]` until those land.
+    app.max_turns = cli_config.max_turns;
+    app.max_budget_usd = cli_config.max_budget_usd;
+    app.allowed_tools = cli_config.allowed_tools;
+    app.disallowed_tools = cli_config.disallowed_tools;
+    app.cli_system_prompt = cli_config.system_prompt;
+    app.dangerously_skip_permissions = cli_config.dangerously_skip_permissions;
+    app.json_mode = cli_config.json_mode;
+    app.extra_dirs = cli_config.extra_dirs;
+    app.cli_max_thinking_tokens = cli_config.max_thinking_tokens;
+    app.cli_thinking_display = cli_config.thinking_display;
+    app.no_session_persistence = cli_config.no_session_persistence;
+    app.cli_task_budget = cli_config.task_budget;
+    app.mcp_config_path = cli_config.mcp_config_path;
+    app.cowork = cli_config.cowork;
     crate::claude_status::spawn_status_poll(tx.clone());
     // v141 parity: when the caller passed `--permission-mode`, apply
     // it before any user prompt so the first turn already runs under
@@ -50,6 +72,17 @@ pub(crate) async fn run(
             "applying --permission-mode at startup"
         );
         app.permission_mode = mode;
+    }
+    // `--dangerously-skip-permissions` overrides any explicit
+    // `--permission-mode` (the user asked for "no prompts ever";
+    // bypass is the strongest mode and the closest match). Logged
+    // loud — this is the foot-gun flag.
+    if app.dangerously_skip_permissions {
+        tracing::warn!(
+            target: "jfc::ui",
+            "--dangerously-skip-permissions: forcing permission mode to BypassPermissions"
+        );
+        app.permission_mode = crate::app::PermissionMode::BypassPermissions;
     }
     // Apply the user's persisted theme choice from
     // ~/.config/jfc/config.toml. Unknown / missing names fall back

@@ -320,4 +320,6 @@ slash_commands! {
         "/permissions" [] "list/add permission allow/deny rules" => cmd_permissions,
         "/stuck" [] "run diagnostic checks (processes, memory, streams)" => cmd_stuck,
         "/teleport-export" [] "export current plan/context as importable JSON" => cmd_teleport_export,
+        "/babysit-prs" [] "watch open PRs (optional schedule arg, `/babysit-prs stop` to cancel)" => cmd_babysit_prs,
+        "/morning-checkin" [] "daily brief of PRs, issues, and recent commits" => cmd_morning_checkin,
 }

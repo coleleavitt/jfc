@@ -818,6 +818,7 @@ mod disk_io_tests {
             mode: Some("plan".into()),
             isolation: Some("worktree".into()),
             parent_task_id: Some("t20".into()),
+            schema: None,
         });
 
         let encoded = serialize_tool_input(&input);
