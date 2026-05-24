@@ -522,6 +522,15 @@ pub struct StreamOptions {
     /// tokens we'd like it to help manage. Maps to `context_hint.target_tokens_saved`
     /// in the request body (context-hint-2026-04-09 beta).
     pub context_hint_tokens_saved: Option<u64>,
+    /// When true, enables the `thinking-token-count-2026-05-13` beta which reports
+    /// per-message thinking token counts in the response metadata.
+    pub thinking_token_count: bool,
+    /// When true, enables `mid-conversation-system-2026-04-07` beta allowing system
+    /// messages to be injected mid-conversation (e.g. for context hints, reminders).
+    pub mid_conversation_system: bool,
+    /// When true, enables `cache-diagnosis-2026-04-07` beta which returns cache
+    /// hit/miss diagnostics in the response for prompt caching tuning.
+    pub cache_diagnosis: bool,
     /// Session ID for server-side request correlation (X-Claude-Code-Session-Id header).
     pub session_id: Option<String>,
 }
@@ -544,6 +553,9 @@ impl StreamOptions {
             task_budget_tokens: None,
             previous_message_id: None,
             context_hint_tokens_saved: None,
+            thinking_token_count: false,
+            mid_conversation_system: false,
+            cache_diagnosis: false,
             session_id: None,
         }
     }

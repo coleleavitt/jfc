@@ -510,6 +510,24 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::Generic { summary } => SerializedToolInput::Generic {
             summary: summary.clone(),
         },
+        ToolInput::SendUserMessage { message, .. } => SerializedToolInput::Generic {
+            summary: format!("SendUserMessage: {}", &message[..message.len().min(80)]),
+        },
+        ToolInput::SendUserFile { caption, .. } => SerializedToolInput::Generic {
+            summary: format!("SendUserFile: {}", caption.as_deref().unwrap_or("file(s)")),
+        },
+        ToolInput::StructuredOutput { .. } => SerializedToolInput::Generic {
+            summary: "StructuredOutput".into(),
+        },
+        ToolInput::WaitForMcpServers { .. } => SerializedToolInput::Generic {
+            summary: "WaitForMcpServers".into(),
+        },
+        ToolInput::Advisor {} => SerializedToolInput::Generic {
+            summary: "Advisor".into(),
+        },
+        ToolInput::ConnectGitHub {} => SerializedToolInput::Generic {
+            summary: "ConnectGitHub".into(),
+        },
     }
 }
 

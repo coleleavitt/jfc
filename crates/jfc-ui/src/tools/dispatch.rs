@@ -125,7 +125,17 @@ pub async fn execute_tool(
             },
         ) => execute_read(&file_path, offset, limit, dedup.as_ref()).await,
         (ToolKind::Write, ToolInput::Write { file_path, content }) => {
-            let result = execute_write(&file_path, &content).await;
+            // Speculation: route Write through overlay when speculating.
+            let target_path = match crate::speculation::overlay_path_for(Path::new(&file_path)) {
+                Some(overlay) => {
+                    if let Some(parent) = overlay.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    overlay.display().to_string()
+                }
+                None => file_path.clone(),
+            };
+            let result = execute_write(&target_path, &content).await;
             if !result.is_error() {
                 if let Some(cache) = &dedup {
                     cache.lock().await.invalidate(Path::new(&file_path));
@@ -787,6 +797,20 @@ pub async fn execute_tool(
             }
         }
         (ToolKind::ExitPlanMode, ToolInput::ExitPlanMode { plan }) => {
+            // Ultraplan: if there's an active ultraplan session, complete it
+            // and teleport the plan back to the parent rather than entering
+            // the standard plan-mode UI flow.
+            let active = crate::ultraplan::list_sessions();
+            if let Some(s) = active.iter().find(|s|
+                matches!(s.phase, crate::ultraplan::UltraplanPhase::Exploring)
+            ) {
+                crate::ultraplan::complete_session(&s.id, plan.clone());
+                return ExecutionResult::success(format!(
+                    "Ultraplan session `{}` complete. Plan ready ({} bytes).\n\n{plan}",
+                    s.id,
+                    plan.len()
+                ));
+            }
             // Hand the plan off to the UI thread so all permission-mode
             // mutations stay on a single task. The model's tool result
             // is the success acknowledgment — the actual mode flip
@@ -909,6 +933,202 @@ pub async fn execute_tool(
                 .unwrap_or_else(|e| {
                     ExecutionResult::failure(format!("scratchpad write task failed: {e}"))
                 })
+        }
+        // ─── New tools (Phase 2-7 port from Claude Code 2.1.150) ───
+        (ToolKind::SendUserMessage, ToolInput::SendUserMessage { message, summary, status, .. }) => {
+            let _label = summary.as_deref().unwrap_or("message");
+            let status_str = status.as_deref().unwrap_or("normal");
+            // In brief mode, this is the ONLY output the user sees.
+            // The tool result is marked with a special prefix so the renderer
+            // can distinguish it from normal tool output.
+            // Push notification for proactive messages when user may be away.
+            if status_str == "proactive" {
+                let push_text = summary.as_deref().unwrap_or(
+                    &message[..message.len().min(100)]
+                );
+                let _ = crate::tools::notifications::execute_push_notification(
+                    push_text, Some("jfc"),
+                );
+            }
+            // The message itself — rendered as markdown to the user.
+            ExecutionResult::success(message)
+        }
+        (ToolKind::SendUserFile, ToolInput::SendUserFile { files, caption, status }) => {
+            let status_str = status.as_deref().unwrap_or("normal");
+            let cap = caption.as_deref().unwrap_or("");
+            // Extract file path list from the value (accepts array of strings).
+            let paths: Vec<String> = match &files {
+                serde_json::Value::Array(arr) => arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect(),
+                serde_json::Value::String(s) => vec![s.clone()],
+                _ => Vec::new(),
+            };
+            if paths.is_empty() {
+                ExecutionResult::failure(
+                    "SendUserFile requires a non-empty `files` array of paths.".to_string(),
+                )
+            } else {
+                // Resolve + validate each file exists + collect size info.
+                let mut delivered = Vec::with_capacity(paths.len());
+                let mut errors = Vec::new();
+                for p in &paths {
+                    let path = std::path::Path::new(p);
+                    let abs = if path.is_absolute() {
+                        path.to_path_buf()
+                    } else {
+                        cwd.join(path)
+                    };
+                    match std::fs::metadata(&abs) {
+                        Ok(meta) if meta.is_file() => {
+                            delivered.push(format!("{} ({} bytes)", abs.display(), meta.len()));
+                        }
+                        Ok(_) => errors.push(format!("{}: not a regular file", abs.display())),
+                        Err(e) => errors.push(format!("{}: {e}", abs.display())),
+                    }
+                }
+                // Fire push notification when proactive + sandboxed/away.
+                if status_str == "proactive" && delivered.len() > 0 {
+                    let body = if cap.is_empty() {
+                        format!("{} file(s) delivered", delivered.len())
+                    } else {
+                        format!("{}: {} file(s)", cap, delivered.len())
+                    };
+                    let _ = crate::tools::notifications::execute_push_notification(
+                        &body, Some("jfc — files ready"),
+                    );
+                }
+                let mut out = format!(
+                    "[SendUserFile status={status_str}]"
+                );
+                if !cap.is_empty() {
+                    out.push_str(&format!(" {cap}"));
+                }
+                out.push('\n');
+                if !delivered.is_empty() {
+                    out.push_str(&format!("Delivered:\n  {}", delivered.join("\n  ")));
+                }
+                if !errors.is_empty() {
+                    if !delivered.is_empty() {
+                        out.push('\n');
+                    }
+                    out.push_str(&format!("Errors:\n  {}", errors.join("\n  ")));
+                }
+                if errors.is_empty() {
+                    ExecutionResult::success(out)
+                } else {
+                    ExecutionResult::failure(out)
+                }
+            }
+        }
+        (ToolKind::StructuredOutput, ToolInput::StructuredOutput { data }) => {
+            // Validate the output is a JSON object (not null/array/primitive).
+            // Full JSON Schema validation happens when a schema is provided via
+            // the subagent `schema` parameter (stored in thread-local state).
+            if !data.is_object() {
+                ExecutionResult::failure(
+                    "StructuredOutput must be a JSON object. Got a non-object value.".to_string(),
+                )
+            } else {
+                match crate::tools::structured_output::validate_output(&data) {
+                    Ok(()) => ExecutionResult::success(format!(
+                        "Structured output provided successfully.\n{}",
+                        serde_json::to_string_pretty(&data).unwrap_or_else(|_| data.to_string())
+                    )),
+                    Err(errors) => ExecutionResult::failure(format!(
+                        "Output does not match required schema:\n{errors}"
+                    )),
+                }
+            }
+        }
+        (ToolKind::WaitForMcpServers, ToolInput::WaitForMcpServers { timeout_ms }) => {
+            let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(30_000));
+            let registry = snapshot_mcp_registry();
+            match registry {
+                Some(r) => {
+                    let all_servers = r.list().await;
+                    if all_servers.is_empty() {
+                        return ExecutionResult::success(
+                            "No MCP servers configured.".to_string(),
+                        );
+                    }
+                    let total = all_servers.len();
+                    let all_names: Vec<String> =
+                        all_servers.iter().map(|s| s.name.clone()).collect();
+                    // Poll until all servers are active or timeout.
+                    let start = std::time::Instant::now();
+                    loop {
+                        let active = r.list_active().await;
+                        if active.len() >= total {
+                            let names: Vec<&str> =
+                                active.iter().map(|s| s.name.as_str()).collect();
+                            break ExecutionResult::success(format!(
+                                "All {} MCP servers ready: {}",
+                                total,
+                                names.join(", ")
+                            ));
+                        }
+                        if start.elapsed() >= timeout {
+                            let active_names: std::collections::HashSet<String> =
+                                active.iter().map(|s| s.name.clone()).collect();
+                            let timed_out: Vec<&str> = all_names
+                                .iter()
+                                .filter(|n| !active_names.contains(n.as_str()))
+                                .map(|n| n.as_str())
+                                .collect();
+                            let ready: Vec<&str> =
+                                active.iter().map(|s| s.name.as_str()).collect();
+                            break ExecutionResult::success(format!(
+                                "Timeout after {}ms. Ready: [{}]. Timed out: [{}]",
+                                timeout.as_millis(),
+                                ready.join(", "),
+                                timed_out.join(", ")
+                            ));
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    }
+                }
+                None => ExecutionResult::success(
+                    "No MCP registry available.".to_string(),
+                ),
+            }
+        }
+        (ToolKind::Advisor, ToolInput::Advisor {}) => {
+            // The Advisor tool auto-forwards the full conversation to a stronger
+            // reviewer model. We fire an event so the event loop (which holds
+            // `&mut App` with the provider + advisor session + transcript) can
+            // call `ask_advisor()` and append the reply as MessagePart::Advisor.
+            //
+            // The tool_use_id is empty here — the event-loop handler will use
+            // the most recent pending tool call on the assistant message.
+            if let Some(tx) = snapshot_event_sender() {
+                let _ = tx
+                    .send(crate::runtime::AppEvent::Ui(
+                        crate::runtime::UiEvent::AdvisorToolRequested {
+                            tool_use_id: String::new(),
+                        },
+                    ))
+                    .await;
+                ExecutionResult::success(
+                    "Advisor consulted. Your full conversation has been forwarded to \
+                     the advisor model. The guidance will appear as an advisor message."
+                        .to_string(),
+                )
+            } else {
+                ExecutionResult::failure(
+                    "Advisor tool requires an active session with an event sender. \
+                     Use /advisor <question> directly instead."
+                        .to_string(),
+                )
+            }
+        }
+        (ToolKind::ConnectGitHub, ToolInput::ConnectGitHub {}) => {
+            ExecutionResult::failure(
+                "ConnectGitHub is not supported in this environment. \
+                 Use `gh auth login` via the Bash tool instead."
+                    .to_string(),
+            )
         }
         (kind, input) => ExecutionResult::failure(format!(
             "tool input mismatch: {kind:?} was paired with an incompatible \

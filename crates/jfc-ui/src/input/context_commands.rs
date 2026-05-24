@@ -816,3 +816,89 @@ pub(super) async fn cmd_swarm_approve(
         }
     }
 }
+
+pub(super) async fn cmd_brief(
+    app: &mut App,
+    _parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    app.brief_mode = !app.brief_mode;
+    let msg = if app.brief_mode {
+        "Brief mode enabled. Use the SendUserMessage tool for all user-facing \
+         output — plain text outside it is hidden from the user's view."
+    } else {
+        "Brief mode disabled. The SendUserMessage tool is no longer required — \
+         reply with plain text."
+    };
+    app.messages.push(ChatMessage::assistant(msg.to_string()));
+}
+
+pub(super) async fn cmd_autoloop(
+    app: &mut App,
+    parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    use crate::autonomous_loop::{AutonomousLoopState, LoopPacing, read_loop_file};
+
+    // `/loop stop` kills an active loop.
+    if parts.get(1).copied() == Some("stop") {
+        if app.autonomous_loop.take().is_some() {
+            app.messages
+                .push(ChatMessage::assistant("Autonomous loop stopped.".into()));
+        } else {
+            app.messages
+                .push(ChatMessage::assistant("No active autonomous loop.".into()));
+        }
+        return;
+    }
+    // `/loop` with no args starts a new dynamic-pacing loop.
+    if app.autonomous_loop.is_some() {
+        app.messages.push(ChatMessage::assistant(
+            "Autonomous loop already active. Use `/loop stop` first.".into(),
+        ));
+        return;
+    }
+    let git_root = crate::context::discover_git_root();
+    let project_root = git_root
+        .as_deref()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let loop_content = read_loop_file(project_root);
+    let mut state = AutonomousLoopState::new(LoopPacing::Dynamic);
+    state.loop_file_content = loop_content.clone();
+    app.autonomous_loop = Some(state);
+    let hint = if let Some(ref content) = loop_content {
+        format!(
+            "Autonomous loop started (dynamic pacing). \
+             Loaded loop.md ({} bytes). First tick will fire on next ScheduleWakeup.",
+            content.len()
+        )
+    } else {
+        "Autonomous loop started (dynamic pacing). \
+         No loop.md found — the loop will use conversation context for task instructions."
+            .into()
+    };
+    app.messages.push(ChatMessage::assistant(hint));
+}
+
+pub(super) async fn cmd_sandbox(
+    app: &mut App,
+    _parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    app.bash_sandbox.enabled = !app.bash_sandbox.enabled;
+    let avail = crate::sandbox::is_bwrap_available();
+    let msg = if app.bash_sandbox.enabled {
+        if avail {
+            "Bash sandbox enabled — commands will be wrapped in bwrap with network isolation."
+        } else {
+            "Bash sandbox enabled (config) but bwrap is not available on this system. \
+             Install bubblewrap (`apt install bubblewrap`) for actual isolation."
+        }
+    } else {
+        "Bash sandbox disabled — commands run without network isolation."
+    };
+    app.messages.push(ChatMessage::assistant(msg.to_string()));
+}

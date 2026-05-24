@@ -704,6 +704,12 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         ToolKind::NotebookRead | ToolKind::NotebookEdit => Color::Rgb(255, 170, 100),
         ToolKind::ScratchpadRead | ToolKind::ScratchpadWrite => Color::Rgb(200, 200, 160), // warm grey
         ToolKind::Workflow => Color::Rgb(255, 170, 220), // rose (same family as Task)
+        ToolKind::SendUserMessage => Color::Rgb(100, 200, 255), // bright blue
+        ToolKind::SendUserFile => Color::Rgb(255, 200, 130), // amber
+        ToolKind::StructuredOutput => Color::Rgb(180, 230, 130), // lime
+        ToolKind::WaitForMcpServers => Color::Rgb(190, 170, 240), // purple (MCP family)
+        ToolKind::Advisor => Color::Rgb(255, 215, 100), // gold
+        ToolKind::ConnectGitHub => Color::Rgb(200, 200, 200), // grey
         ToolKind::Generic(_) => t.text_secondary,
         // Unknown tools render in a muted style — they're never
         // dispatched (permission layer denies them), so the row is

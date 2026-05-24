@@ -979,6 +979,24 @@ pub struct App {
     /// future config-toml field. When false, the slash command surfaces
     /// a hint message instead of running.
     pub advisor_enabled: bool,
+    /// Brief mode — when `true`, the renderer hides plain assistant text
+    /// from the main view; only `SendUserMessage` tool output and explicit
+    /// proactive messages are surfaced. Toggled via `/brief`. Mirrors
+    /// Claude Code v2.1.142+'s `tengu_brief_mode_enabled` setting.
+    pub brief_mode: bool,
+    /// Active autonomous loop state — set when `/loop` is started, cleared
+    /// when the loop stops. Tracks tick counts + loop.md content so the
+    /// renderer can show "loop active" and the wakeup handler can supply
+    /// the right preamble. See `crate::autonomous_loop`.
+    pub autonomous_loop: Option<crate::autonomous_loop::AutonomousLoopState>,
+    /// Active speculation session — set when prompt-suggestion speculation
+    /// is running, cleared on accept/discard. See `crate::speculation`.
+    pub active_speculation_id: Option<String>,
+    /// Per-session accumulated speculation stats (time saved, accept/discard counts).
+    pub speculation_stats: crate::speculation::SpeculationStats,
+    /// Bash sandbox configuration (bwrap network/filesystem isolation).
+    /// When `enabled = true` and bwrap is present, bash commands are wrapped.
+    pub bash_sandbox: crate::sandbox::BashSandboxConfig,
     /// v137 `/goal <condition>` — session-scoped stop condition. When
     /// `Some`, the agentic loop will not let the agent settle on
     /// `EndTurn` until the evaluator (see `crate::goal::evaluate`)
@@ -1226,6 +1244,11 @@ impl App {
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
+            brief_mode: false,
+            autonomous_loop: None,
+            active_speculation_id: None,
+            speculation_stats: crate::speculation::SpeculationStats::default(),
+            bash_sandbox: crate::sandbox::BashSandboxConfig::default(),
             goal: None,
             goal_evaluator_in_flight: false,
             wants_animation_frame: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),

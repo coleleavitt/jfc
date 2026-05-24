@@ -14,6 +14,7 @@ pub fn daemon_tool_defs() -> Vec<ToolDef> {
         scratchpad_read_def(),
         scratchpad_write_def(),
         workflow_def(),
+        wait_for_mcp_servers_def(),
     ]
 }
 
@@ -241,6 +242,28 @@ fn workflow_def() -> ToolDef {
                 "resumeFromRunId": {
                     "type": "string",
                     "description": "Run ID of a prior Workflow invocation to resume from. Completed agent() calls return cached results instantly."
+                }
+            }
+        }),
+    }
+}
+
+fn wait_for_mcp_servers_def() -> ToolDef {
+    ToolDef {
+        name: "WaitForMcpServers".into(),
+        description: "Block until all configured MCP servers report ready. \
+            Returns a list of connected servers and any that timed out. \
+            Use this at session start when you need MCP tools to be available \
+            before proceeding.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "timeout_ms": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 120000,
+                    "default": 30000,
+                    "description": "Maximum time to wait for servers in milliseconds (default 30s)"
                 }
             }
         }),

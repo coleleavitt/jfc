@@ -817,6 +817,9 @@ pub(crate) async fn run(
                 AppEvent::Ui(UiEvent::ExitPlanModeRequested { plan }) => {
                     handlers::ui_actions::handle_exit_plan_mode(&mut app, plan);
                 }
+                AppEvent::Ui(UiEvent::AdvisorToolRequested { tool_use_id }) => {
+                    handlers::ui_actions::handle_advisor_tool_requested(&mut app, tool_use_id).await;
+                }
 
                 // ── Task (subagent) events ──────────────────────────────
                 AppEvent::Task(TaskEvent::AgentChunk { task_id, text }) => {

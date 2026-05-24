@@ -15,6 +15,7 @@ mod registry;
 mod safe_tools;
 mod scratchpad;
 mod search;
+pub(crate) mod structured_output;
 mod subagent;
 mod swarm;
 mod tasks;

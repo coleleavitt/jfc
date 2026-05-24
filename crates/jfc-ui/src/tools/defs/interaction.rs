@@ -10,6 +10,8 @@ pub fn interaction_tool_defs() -> Vec<ToolDef> {
         enter_plan_mode_def(),
         enter_worktree_def(),
         exit_worktree_def(),
+        send_user_message_def(),
+        send_user_file_def(),
     ]
 }
 
@@ -31,7 +33,11 @@ fn ask_user_question_def() -> ToolDef {
                         "type": "object",
                         "properties": {
                             "label": { "type": "string" },
-                            "description": { "type": "string" }
+                            "description": { "type": "string" },
+                            "preview": {
+                                "type": "string",
+                                "description": "Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options."
+                            }
                         },
                         "required": ["label"]
                     },
@@ -187,6 +193,69 @@ fn exit_worktree_def() -> ToolDef {
             "type": "object",
             "properties": {},
             "required": []
+        }),
+    }
+}
+
+fn send_user_message_def() -> ToolDef {
+    ToolDef {
+        name: "SendUserMessage".into(),
+        description: "Send a message the user will read. Text outside this tool \
+            is visible in the detail view, but most won't open it — the answer \
+            lives here.\n\n\
+            `message` supports markdown. `attachments` accepts file path strings \
+            (absolute or cwd-relative). `status` labels intent: 'normal' when \
+            replying to what they just asked; 'proactive' when you're initiating — \
+            a scheduled task finished, a blocker surfaced during background work, \
+            you need input on something they haven't asked about.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "message": { "type": "string", "description": "Markdown message content" },
+                "summary": { "type": "string", "description": "A 5-10 word summary shown as a preview in the UI" },
+                "attachments": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "File paths to attach"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["normal", "proactive"],
+                    "description": "Intent label: 'normal' for replies, 'proactive' for initiated messages"
+                }
+            },
+            "required": ["message"]
+        }),
+    }
+}
+
+fn send_user_file_def() -> ToolDef {
+    ToolDef {
+        name: "SendUserFile".into(),
+        description: "Send one or more files to the user. Use this when the file \
+            *is* the deliverable — a generated diagram, a report, a screenshot, \
+            a built artifact — and you want it surfaced, not just mentioned. Paths \
+            can be absolute or relative to the current working directory.\n\n\
+            Add a `caption` when a one-liner of context helps. Skip it if the file \
+            speaks for itself.\n\n\
+            Set `status` on every call. Use `proactive` when you're initiating — \
+            the user is away. Use `normal` when replying.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "File paths to send (absolute or cwd-relative)"
+                },
+                "caption": { "type": "string", "description": "Optional one-liner of context" },
+                "status": {
+                    "type": "string",
+                    "enum": ["normal", "proactive"],
+                    "description": "Intent: 'normal' for replies, 'proactive' for initiated sends"
+                }
+            },
+            "required": ["files"]
         }),
     }
 }

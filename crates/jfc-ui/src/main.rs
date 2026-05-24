@@ -5,6 +5,7 @@ mod app;
 mod atomic_write;
 mod attachments;
 mod auto_mode;
+mod autonomous_loop;
 mod bash_processes;
 mod claude_status;
 mod cli;
@@ -58,6 +59,7 @@ mod sdk_bridge;
 mod session;
 mod session_naming;
 mod slate;
+mod speculation;
 mod spinner;
 mod sprint;
 mod stream;
@@ -67,6 +69,7 @@ mod theme;
 mod toast;
 mod tools;
 mod types;
+mod ultraplan;
 mod web_cache;
 mod web_search;
 mod workflows;
@@ -83,7 +86,9 @@ mod hooks;
 mod intent;
 #[cfg(feature = "permission-automation")]
 mod permissions;
-#[cfg(feature = "landlock-sandbox")]
+// Sandbox module: contains both landlock (feature-gated) and bwrap
+// (always-on) sandbox configuration. The BashSandboxConfig type is
+// referenced from app state regardless of platform/feature.
 mod sandbox;
 mod slop_guard;
 

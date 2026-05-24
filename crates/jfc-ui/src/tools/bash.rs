@@ -69,9 +69,25 @@ pub(super) async fn execute_bash_inner(
     let cmd_preview: String = command.chars().take(100).collect();
     info!(target: "jfc::tools", cmd = %cmd_preview, timeout_ms = timeout, cwd = %cwd.display(), "bash: executing");
 
-    let mut cmd = Command::new("bash");
-    cmd.arg("-c")
-        .arg(&command)
+    // Sandbox: when bwrap is configured + available, wrap the command.
+    let (executable, args) = match crate::sandbox::active_bash_sandbox_config() {
+        Some(ref cfg) if cfg.enabled => {
+            match crate::sandbox::build_bwrap_argv(cfg, cwd) {
+                Some(mut bwrap_argv) => {
+                    bwrap_argv.push("bash".into());
+                    bwrap_argv.push("-c".into());
+                    bwrap_argv.push(command.clone());
+                    let exe = bwrap_argv.remove(0);
+                    (exe, bwrap_argv)
+                }
+                None => ("bash".to_string(), vec!["-c".into(), command.clone()]),
+            }
+        }
+        _ => ("bash".to_string(), vec!["-c".into(), command.clone()]),
+    };
+
+    let mut cmd = Command::new(&executable);
+    cmd.args(&args)
         .current_dir(cwd)
         .env("CI", "true")
         .env("TERM", "dumb")

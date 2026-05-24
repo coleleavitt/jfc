@@ -229,5 +229,33 @@ pub fn agent_tool_defs() -> Vec<ToolDef> {
                 "required": ["member_name", "mode"]
             }),
         },
+        ToolDef {
+            name: "Advisor".into(),
+            description: "Consult a stronger reviewer model for guidance. Takes NO parameters — \
+                your entire conversation history is automatically forwarded. The advisor sees \
+                the task, every tool call you've made, every result you've seen.\n\n\
+                Call advisor BEFORE substantive work — before writing, before committing to an \
+                interpretation, before building on an assumption. Also call when stuck, when \
+                considering a change of approach, or when you believe the task is complete.\n\n\
+                Give the advice serious weight. If you follow a step and it fails empirically, \
+                adapt. Surface conflicts in another advisor call rather than silently switching.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+        ToolDef {
+            name: "StructuredOutput".into(),
+            description: "Provide structured output matching the required JSON schema. \
+                This tool is only available when the agent was spawned with a `schema` \
+                parameter. Call it with a JSON object that validates against the schema. \
+                On success, the result is returned to the parent agent as validated data.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "additionalProperties": true,
+                "description": "JSON object matching the schema specified by the parent agent"
+            }),
+        },
     ]
 }

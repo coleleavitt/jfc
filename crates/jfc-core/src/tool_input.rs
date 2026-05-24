@@ -727,6 +727,32 @@ pub enum ToolInput {
         args: Option<serde_json::Value>,
         resume_from_run_id: Option<String>,
     },
+    SendUserMessage {
+        message: String,
+        #[serde(default)]
+        summary: Option<String>,
+        #[serde(default)]
+        attachments: Option<serde_json::Value>,
+        #[serde(default)]
+        status: Option<String>,
+    },
+    SendUserFile {
+        files: serde_json::Value,
+        #[serde(default)]
+        caption: Option<String>,
+        #[serde(default)]
+        status: Option<String>,
+    },
+    StructuredOutput {
+        #[serde(flatten)]
+        data: serde_json::Value,
+    },
+    WaitForMcpServers {
+        #[serde(default)]
+        timeout_ms: Option<u64>,
+    },
+    Advisor {},
+    ConnectGitHub {},
     Generic {
         summary: String,
     },
@@ -964,6 +990,17 @@ impl ToolInput {
                 }
             }
             Self::Generic { summary } => summary.clone(),
+            Self::SendUserMessage { message, .. } => {
+                let preview = if message.len() > 60 { &message[..60] } else { message.as_str() };
+                format!("message: {preview}")
+            }
+            Self::SendUserFile { caption, .. } => {
+                caption.clone().unwrap_or_else(|| "file(s)".into())
+            }
+            Self::StructuredOutput { .. } => "structured output".into(),
+            Self::WaitForMcpServers { .. } => "waiting for MCP servers".into(),
+            Self::Advisor {} => "consulting advisor".into(),
+            Self::ConnectGitHub {} => "connecting GitHub".into(),
         }
     }
 
@@ -1170,6 +1207,33 @@ impl ToolInput {
             ToolKind::Generic(_) | ToolKind::UnknownTool { .. } => Self::Generic {
                 summary: value.to_string(),
             },
+            ToolKind::SendUserMessage => Self::SendUserMessage {
+                message: opt_str_field("message").ok_or_else(|| ToolInputError::MissingField {
+                    tool: tool(),
+                    field: "message",
+                })?,
+                summary: opt_str_field("summary"),
+                attachments: obj.and_then(|m| m.get("attachments")).cloned(),
+                status: opt_str_field("status"),
+            },
+            ToolKind::SendUserFile => Self::SendUserFile {
+                files: obj
+                    .and_then(|m| m.get("files"))
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Array(vec![])),
+                caption: opt_str_field("caption"),
+                status: opt_str_field("status"),
+            },
+            ToolKind::StructuredOutput => Self::StructuredOutput {
+                data: value.clone(),
+            },
+            ToolKind::WaitForMcpServers => Self::WaitForMcpServers {
+                timeout_ms: obj
+                    .and_then(|m| m.get("timeout_ms"))
+                    .and_then(|v| v.as_u64()),
+            },
+            ToolKind::Advisor => Self::Advisor {},
+            ToolKind::ConnectGitHub => Self::ConnectGitHub {},
             // ─── Regular kinds: parsed by the table-generated fn ───
             other => {
                 for_each_regular_tool_input!(gen_regular_from_value);
@@ -1220,6 +1284,21 @@ impl ToolInput {
                 Ok(serde_json::Value::Object(map)) => serde_json::Value::Object(map),
                 Ok(_) | Err(_) => json!({ "input": summary }),
             },
+            Self::SendUserMessage { message, summary, attachments, status } => json!({
+                "message": message,
+                "summary": summary,
+                "attachments": attachments,
+                "status": status,
+            }),
+            Self::SendUserFile { files, caption, status } => json!({
+                "files": files,
+                "caption": caption,
+                "status": status,
+            }),
+            Self::StructuredOutput { data } => data.clone(),
+            Self::WaitForMcpServers { timeout_ms } => json!({ "timeout_ms": timeout_ms }),
+            Self::Advisor {} => json!({}),
+            Self::ConnectGitHub {} => json!({}),
             // ─── Regular variants: serialized by the two table-generated fns ───
             // (split into two tables — main table is parse+serialize, the
             // supplementary table is serialize-only for variants whose

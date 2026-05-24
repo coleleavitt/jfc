@@ -110,6 +110,7 @@ jfc-web = { path = "../jfc-web" }
 dhat = { version = "0.3.3", optional = true }
 pprof = { version = "0.14", features = ["flamegraph", "criterion"], optional = true }
 console-subscriber = { version = "0.4", optional = true }
+jsonschema = { version = "0.46.5", default-features = false }
 
 [build-dependencies]
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-onig", "yaml-load", "dump-create", "dump-load"] }

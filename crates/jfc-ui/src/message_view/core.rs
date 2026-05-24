@@ -54,6 +54,10 @@ pub struct RenderCtx<'a> {
     pub launched_at: std::time::Instant,
     #[allow(dead_code)]
     pub diagnostics: &'a [crate::diagnostics::DiagnosticEntry],
+    /// Brief mode: when true, plain `MessagePart::Text` parts on assistant
+    /// messages are suppressed from rendering so only `SendUserMessage` tool
+    /// output reaches the user. Mirrors Claude Code v2.1.142+ `brief_mode`.
+    pub brief_mode: bool,
 }
 
 impl<'a> RenderCtx<'a> {
@@ -69,6 +73,7 @@ impl<'a> RenderCtx<'a> {
             theme: app.theme,
             launched_at: app.launched_at,
             diagnostics: &app.diagnostics,
+            brief_mode: app.brief_mode,
         }
     }
 
@@ -90,6 +95,7 @@ impl<'a> RenderCtx<'a> {
             theme: app.theme,
             launched_at: app.launched_at,
             diagnostics: EMPTY_DIAG,
+            brief_mode: false,
         }
     }
 }
@@ -747,6 +753,16 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
             }
             match part {
                 MessagePart::Text(text) => {
+                    // Brief mode: suppress plain assistant text — the user only
+                    // sees `SendUserMessage` tool output. User-role messages
+                    // (the prompts the user typed) stay visible regardless.
+                    if ctx.brief_mode
+                        && msg.role == crate::types::Role::Assistant
+                        && !text.is_empty()
+                    {
+                        p += 1;
+                        continue;
+                    }
                     let lines = if is_streaming_placeholder {
                         // Streaming fast path: recompute every frame without
                         // syntect. Cost is ~5µs/KB (pulldown-cmark only) vs

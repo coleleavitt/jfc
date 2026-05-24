@@ -1,6 +1,6 @@
 use super::ExecutionResult;
 
-pub(super) fn execute_push_notification(message: &str, title: Option<&str>) -> ExecutionResult {
+pub(crate) fn execute_push_notification(message: &str, title: Option<&str>) -> ExecutionResult {
     if message.is_empty() {
         return ExecutionResult::failure("push_notification: message is required");
     }

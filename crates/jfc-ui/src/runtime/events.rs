@@ -113,6 +113,13 @@ pub enum UiEvent {
     /// handler spawns that subprocess off-loop so a slow or locked git repo
     /// cannot stall redraw/input processing.
     WorktreeCountLoaded(usize),
+    /// The model called the `Advisor` tool. The event-loop handler runs
+    /// `ask_advisor()` with the current transcript and writes the reply
+    /// back as a `MessagePart::Advisor` on the main transcript. The tool
+    /// result ID is carried so we can correlate the reply with the tool_use.
+    AdvisorToolRequested {
+        tool_use_id: String,
+    },
 }
 
 // `StreamEvent::Tool(ToolCall)` is the dominant streaming payload (every

@@ -71,15 +71,45 @@ pub(super) fn execute_schedule_wakeup(
     if prompt.is_empty() {
         return ExecutionResult::failure("ScheduleWakeup: prompt must not be empty");
     }
+    // Autonomous loop sentinel handling: when the agent passes the special
+    // sentinel string, we expand it to the full loop preamble + loop.md content
+    // so the wakeup fires with proper instructions instead of the bare token.
+    let resolved_prompt = if crate::autonomous_loop::is_loop_sentinel(prompt) {
+        let pacing = if prompt == crate::autonomous_loop::LOOP_SENTINEL_DYNAMIC {
+            crate::autonomous_loop::LoopPacing::Dynamic
+        } else {
+            crate::autonomous_loop::LoopPacing::Cron
+        };
+        let mut expanded = crate::autonomous_loop::AUTONOMOUS_LOOP_PREAMBLE.to_string();
+        expanded.push_str("\n\n");
+        expanded.push_str(crate::autonomous_loop::loop_tick_preamble(pacing));
+        // Append loop.md if present.
+        let git_root = crate::context::discover_git_root();
+        let project = git_root
+            .as_deref()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        if let Some(loop_md) = crate::autonomous_loop::read_loop_file(project) {
+            expanded.push_str("\n\n## loop.md\n\n");
+            expanded.push_str(&loop_md);
+        }
+        expanded
+    } else {
+        prompt.to_string()
+    };
     let paths = DaemonPaths::default_user();
     let mut daemon = match Daemon::new(&paths.base_dir) {
         Ok(d) => d,
         Err(e) => return ExecutionResult::failure(format!("daemon state init failed: {e}")),
     };
     let delay = std::time::Duration::from_secs(u64::from(delay_seconds));
-    let id = daemon.schedule_wakeup(delay, prompt, reason);
+    let id = daemon.schedule_wakeup(delay, &resolved_prompt, reason);
+    let note = if crate::autonomous_loop::is_loop_sentinel(prompt) {
+        " (autonomous loop sentinel expanded)"
+    } else {
+        ""
+    };
     ExecutionResult::success(format!(
-        "Scheduled wakeup `{id}` in {delay_seconds}s: {reason}"
+        "Scheduled wakeup `{id}` in {delay_seconds}s: {reason}{note}"
     ))
 }
 

@@ -180,3 +180,60 @@ pub(crate) fn handle_exit_plan_mode(app: &mut App, plan: String) {
         );
     }
 }
+
+/// Handle `UiEvent::AdvisorToolRequested { tool_use_id }`.
+///
+/// The model called the `Advisor` tool. Snapshot the transcript, run
+/// `ask_advisor()` against the lazy session, and append the reply as
+/// a `MessagePart::Advisor` on the current assistant message so the
+/// user sees it inline and the model sees it on the next turn.
+pub(crate) async fn handle_advisor_tool_requested(app: &mut App, _tool_use_id: String) {
+    if !app.advisor_enabled {
+        app.messages
+            .push(crate::types::ChatMessage::assistant_parts(vec![
+                crate::types::MessagePart::Advisor(
+                    "Advisor mode is disabled. Set `JFC_ADVISOR_ENABLED=1` and \
+                     restart jfc to enable Advisor tool calls."
+                        .into(),
+                ),
+            ]));
+        return;
+    }
+    let session = app
+        .advisor_session
+        .get_or_insert_with(|| crate::advisor::AdvisorSession::new(app.model.clone()));
+    let snapshot = app.messages.clone();
+    let provider = std::sync::Arc::clone(&app.provider);
+    // The Advisor tool takes no parameters — the "query" is implicit:
+    // "look at this conversation and tell me what I'm missing."
+    let auto_query = "Review my conversation so far. Flag anything I'm missing, \
+                      any assumption I should verify, and any risk I'm overlooking. \
+                      Be specific and terse.";
+    match crate::advisor::ask_advisor(
+        provider.as_ref(),
+        session,
+        auto_query.to_string(),
+        &snapshot,
+    )
+    .await
+    {
+        Ok(reply) => {
+            let remaining = session.tokens_remaining();
+            let total_budget = session.token_budget;
+            app.messages
+                .push(crate::types::ChatMessage::assistant_parts(vec![
+                    crate::types::MessagePart::Advisor(format!(
+                        "{reply}\n\n_(advisor budget: {remaining} of {total_budget} tokens remaining)_"
+                    )),
+                ]));
+        }
+        Err(e) => {
+            app.messages
+                .push(crate::types::ChatMessage::assistant_parts(vec![
+                    crate::types::MessagePart::Advisor(format!(
+                        "Advisor error: {e}\n\nUse `/clear` to start a fresh session if the budget is exhausted."
+                    )),
+                ]));
+        }
+    }
+}
