@@ -64,6 +64,16 @@ pub enum GraphFlag {
     /// via UsesType / Implements / Calls edges. Function nodes carry
     /// `metadata["possible_input_types"]` and `metadata["possible_return_types"]`.
     PossibleTypesInferred,
+    /// Every function body has been lowered to the language-agnostic IR
+    /// in [`crate::ir`]. Downstream analyses (points-to, dataflow refinement)
+    /// can rely on `IrFunction` summaries being present.
+    IrLowered,
+    /// Andersen-style field-sensitive points-to analysis ([`crate::points_to`])
+    /// has run; per-function pts-tables are available.
+    PointsToComputed,
+    /// Generic monomorphization detection ([`crate::monomorphize`]) has run;
+    /// generic functions/structs carry `metadata["mono_instances"]`.
+    Monomorphized,
 }
 
 /// Set of flags currently true on the graph.
