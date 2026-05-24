@@ -284,7 +284,7 @@ impl CodeGraph {
                 EdgeKind::UnresolvedCall(_) => from_kind == NodeKind::Function,
                 EdgeKind::UsesType => from_kind == NodeKind::Function,
                 EdgeKind::References => true,
-                EdgeKind::Contains => true,
+                EdgeKind::Contains => matches!(from_kind, NodeKind::Module | NodeKind::Struct | NodeKind::Enum | NodeKind::Trait | NodeKind::Interface),
                 EdgeKind::Implements => {
                     matches!(from_kind, NodeKind::Struct | NodeKind::Enum)
                 }

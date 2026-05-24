@@ -41,7 +41,7 @@ impl EdgeKind {
     /// | `UnresolvedCall`  | Function                       | any (placeholder NodeId, not yet bound) |
     /// | `UsesType`        | Function                       | Struct \| Enum \| Trait                 |
     /// | `References`      | any                            | any (relaxed)                           |
-    /// | `Contains`        | Module \| Struct \| Enum \| Trait | Function \| Struct \| Enum \| Trait \| Module |
+    /// | `Contains`        | Module \| Struct \| Enum \| Trait \| Interface | any (child item)              |
     /// | `Implements`      | Struct \| Enum                 | Trait                                   |
     /// | `ExternalCall`    | Function                       | any (placeholder for external symbol)   |
     pub fn valid_for(&self, source: NodeKind, target: NodeKind) -> bool {
@@ -53,7 +53,7 @@ impl EdgeKind {
                     && matches!(target, NodeKind::Struct | NodeKind::Enum | NodeKind::Trait | NodeKind::Interface | NodeKind::TypeAlias)
             }
             EdgeKind::References => true,
-            EdgeKind::Contains => true, // relaxed: any container can contain any child
+            EdgeKind::Contains => matches!(source, NodeKind::Module | NodeKind::Struct | NodeKind::Enum | NodeKind::Trait | NodeKind::Interface),
             EdgeKind::Implements => {
                 matches!(source, NodeKind::Struct | NodeKind::Enum) && matches!(target, NodeKind::Trait | NodeKind::Interface)
             }
