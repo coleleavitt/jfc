@@ -304,6 +304,16 @@ fn extract_function(
         metadata.insert("async".into(), "true".into());
     }
 
+    // Detect generic type parameters.
+    if let Some(gp) = extract_type_params(node, source) {
+        metadata.insert("generic_params".into(), gp);
+    }
+
+    // Detect turbofish callsite type arguments in the body.
+    if let Some(cta) = extract_callee_type_args(node, source) {
+        metadata.insert("callee_type_args".into(), cta);
+    }
+
     let accessed = accessed_field_names(node, source);
     if !accessed.is_empty() {
         metadata.insert("accessed_fields".into(), accessed.join(","));
@@ -361,6 +371,11 @@ fn extract_struct(
     let name = get_node_name(node, "name", source)?;
 
     let mut metadata = HashMap::new();
+
+    // Detect generic type parameters on the struct.
+    if let Some(gp) = extract_type_params(node, source) {
+        metadata.insert("generic_params".into(), gp);
+    }
 
     if let Some(field_list) = node.child_by_field_name("body") {
         let mut fields = Vec::new();
@@ -435,6 +450,11 @@ fn extract_enum(
     let name = get_node_name(node, "name", source)?;
 
     let mut metadata = HashMap::new();
+
+    // Detect generic type parameters on the enum.
+    if let Some(gp) = extract_type_params(node, source) {
+        metadata.insert("generic_params".into(), gp);
+    }
 
     if let Some(variant_list) = node.child_by_field_name("body") {
         let mut variants = Vec::new();
@@ -661,6 +681,102 @@ fn extract_impl(
     }
 }
 
+// ─── Generic Params / Type-Arg Extraction ───────────────────────────────────
+
+/// Extract generic type parameter names from a `type_parameters` child.
+/// Returns a JSON array string like `["T", "U"]`, or `None` if no generics.
+fn extract_type_params(node: TsNode<'_>, source: &str) -> Option<String> {
+    let tp = find_child_by_kind(node, "type_parameters")?;
+    let mut params: Vec<String> = Vec::new();
+    let mut cursor = tp.walk();
+    for child in tp.named_children(&mut cursor) {
+        if child.kind() == "type_parameter" {
+            if let Some(ident) = find_child_by_kind(child, "type_identifier") {
+                params.push(node_text(ident, source));
+            }
+        }
+    }
+    if params.is_empty() {
+        return None;
+    }
+    Some(serde_json::to_string(&params).unwrap_or_default())
+}
+
+/// Walk a function body for turbofish calls (`foo::<Type>(...)`) and collect
+/// type arguments per callee. Returns a JSON object string like
+/// `{"foo": ["String", "i32"]}`, or `None` if no turbofished calls found.
+fn extract_callee_type_args(func_node: TsNode<'_>, source: &str) -> Option<String> {
+    let body = func_node.child_by_field_name("body")?;
+    let mut map: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    collect_turbofish_calls(body, source, &mut map);
+    if map.is_empty() {
+        return None;
+    }
+    Some(serde_json::to_string(&map).unwrap_or_default())
+}
+
+/// Recursively find `call_expression` nodes with a `generic_function` child
+/// and extract the callee name + type arguments.
+fn collect_turbofish_calls(
+    node: TsNode<'_>,
+    source: &str,
+    map: &mut std::collections::BTreeMap<String, Vec<String>>,
+) {
+    if node.kind() == "call_expression" {
+        if let Some(gf) = find_child_by_kind(node, "generic_function") {
+            if let Some((name, args)) = extract_generic_function_info(gf, source) {
+                if !args.is_empty() {
+                    map.entry(name).or_default().extend(args);
+                }
+            }
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        collect_turbofish_calls(child, source, map);
+    }
+}
+
+/// From a `generic_function` node, extract (callee_name, [type_arg_names]).
+fn extract_generic_function_info(node: TsNode<'_>, source: &str) -> Option<(String, Vec<String>)> {
+    // The generic_function has: identifier (or scoped_identifier), ::, type_arguments
+    let name = {
+        if let Some(ident) = find_child_by_kind(node, "identifier") {
+            node_text(ident, source)
+        } else if let Some(scoped) = find_child_by_kind(node, "scoped_identifier") {
+            scoped
+                .child_by_field_name("name")
+                .map(|n| node_text(n, source))
+                .unwrap_or_default()
+        } else {
+            return None;
+        }
+    };
+    let ta = find_child_by_kind(node, "type_arguments")?;
+    let args = collect_type_arg_names(ta, source);
+    Some((name, args))
+}
+
+/// Collect type names from a `type_arguments` node.
+fn collect_type_arg_names(ta_node: TsNode<'_>, source: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut cursor = ta_node.walk();
+    for child in ta_node.named_children(&mut cursor) {
+        // type_identifier, generic_type, scoped_type_identifier, etc.
+        let text = node_text(child, source);
+        if !text.is_empty() {
+            args.push(text);
+        }
+    }
+    args
+}
+
+/// Find the first direct child of `node` with the given kind.
+fn find_child_by_kind<'a>(node: TsNode<'a>, kind: &str) -> Option<TsNode<'a>> {
+    let mut cursor = node.walk();
+    node.children(&mut cursor).find(|c| c.kind() == kind)
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 fn get_node_name(node: TsNode<'_>, field: &str, source: &str) -> Option<String> {
@@ -855,22 +971,50 @@ fn extract_call_site_kind(
             Some((node_text(field, source), Vec::new(), CallSiteKind::MethodCall))
         }
         "scoped_identifier" => {
-            let leaf = func_child.child_by_field_name("name")?;
-            let leaf_text = node_text(leaf, source);
-            let full = node_text(func_child, source);
-            let mut segments: Vec<String> =
-                full.split("::").map(|s| s.to_string()).collect();
-            if let Some(last) = segments.last() {
-                if last == &leaf_text {
-                    segments.pop();
-                }
-            }
-            // Drop pseudo-roots that don't help disambiguation.
-            segments.retain(|s| !matches!(s.as_str(), "crate" | "super" | "self"));
-            Some((leaf_text, segments, CallSiteKind::Qualified))
+            extract_scoped_call_site(func_child, source)
+        }
+        "generic_function" => {
+            // Turbofish: `foo::<T>(...)` — unwrap the inner identifier/scoped_identifier.
+            extract_generic_function_call_site(func_child, source)
         }
         _ => None,
     }
+}
+
+/// Extract call site info from a `scoped_identifier` (e.g. `mod::foo()`).
+fn extract_scoped_call_site(
+    node: TsNode<'_>,
+    source: &str,
+) -> Option<(String, Vec<String>, CallSiteKind)> {
+    let leaf = node.child_by_field_name("name")?;
+    let leaf_text = node_text(leaf, source);
+    let full = node_text(node, source);
+    let mut segments: Vec<String> = full.split("::").map(|s| s.to_string()).collect();
+    if let Some(last) = segments.last() {
+        if last == &leaf_text {
+            segments.pop();
+        }
+    }
+    segments.retain(|s| !matches!(s.as_str(), "crate" | "super" | "self"));
+    Some((leaf_text, segments, CallSiteKind::Qualified))
+}
+
+/// Extract call site info from a `generic_function` (turbofish: `foo::<T>(...)`).
+fn extract_generic_function_call_site(
+    node: TsNode<'_>,
+    source: &str,
+) -> Option<(String, Vec<String>, CallSiteKind)> {
+    if let Some(ident) = find_child_by_kind(node, "identifier") {
+        return Some((node_text(ident, source), Vec::new(), CallSiteKind::Bare));
+    }
+    if let Some(scoped) = find_child_by_kind(node, "scoped_identifier") {
+        return extract_scoped_call_site(scoped, source);
+    }
+    if let Some(field_expr) = find_child_by_kind(node, "field_expression") {
+        let field = field_expr.child_by_field_name("field")?;
+        return Some((node_text(field, source), Vec::new(), CallSiteKind::MethodCall));
+    }
+    None
 }
 
 #[allow(dead_code)]
@@ -1598,5 +1742,65 @@ fn known() {}
         };
         assert!(outcome.error.is_none());
         assert_eq!(parsed.tree.root_node().kind(), "source_file");
+    }
+
+    #[test]
+    fn test_rust_generic_params_and_callee_type_args() {
+        let adapter = RustAdapter::new();
+        let path = PathBuf::from("generics.rs");
+        let src = r#"
+fn identity<T>(x: T) -> T { x }
+
+fn main() {
+    identity::<String>("hi");
+}
+
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+"#;
+        let parsed = adapter.parse_file(&path, src).expect("parse");
+        let nodes = adapter.extract_nodes(&parsed);
+
+        // identity should have generic_params = ["T"]
+        let identity_fn = nodes
+            .iter()
+            .find(|n| n.name == "identity" && n.kind == NodeKind::Function)
+            .expect("identity function");
+        let gp = identity_fn
+            .metadata
+            .get("generic_params")
+            .expect("missing generic_params on identity");
+        let params: Vec<String> = serde_json::from_str(gp).expect("parse generic_params");
+        assert_eq!(params, vec!["T"]);
+
+        // main should have callee_type_args = {"identity": ["String"]}
+        let main_fn = nodes
+            .iter()
+            .find(|n| n.name == "main" && n.kind == NodeKind::Function)
+            .expect("main function");
+        let cta = main_fn
+            .metadata
+            .get("callee_type_args")
+            .expect("missing callee_type_args on main");
+        let map: std::collections::BTreeMap<String, Vec<String>> =
+            serde_json::from_str(cta).expect("parse callee_type_args");
+        assert_eq!(
+            map.get("identity").expect("identity key"),
+            &vec!["String".to_string()]
+        );
+
+        // Pair struct should have generic_params = ["A", "B"]
+        let pair_struct = nodes
+            .iter()
+            .find(|n| n.name == "Pair" && n.kind == NodeKind::Struct)
+            .expect("Pair struct");
+        let gp2 = pair_struct
+            .metadata
+            .get("generic_params")
+            .expect("missing generic_params on Pair");
+        let params2: Vec<String> = serde_json::from_str(gp2).expect("parse generic_params");
+        assert_eq!(params2, vec!["A", "B"]);
     }
 }

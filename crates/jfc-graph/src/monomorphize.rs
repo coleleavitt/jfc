@@ -240,7 +240,7 @@ mod tests {
             r#"{"new": ["String"]}"#.into(),
         );
         g.add_node(make_node("main", NodeKind::Function, cm));
-        g.add_edge(&caller_id, &vec_new_id, edge(EdgeKind::Calls));
+        g.add_edge(&caller_id, &vec_new_id, edge(EdgeKind::Calls)).unwrap();
 
         let insts = find_instantiations(&g);
         assert_eq!(insts.len(), 1);
@@ -263,7 +263,7 @@ mod tests {
             r#"{"identity": ["i32"]}"#.into(),
         );
         g.add_node(make_node("user_code", NodeKind::Function, cm));
-        g.add_edge(&caller_id, &gfn_id, edge(EdgeKind::Calls));
+        g.add_edge(&caller_id, &gfn_id, edge(EdgeKind::Calls)).unwrap();
 
         let count = annotate(&mut g);
         assert_eq!(count, 1);
@@ -282,9 +282,54 @@ mod tests {
         g.add_node(make_node("identity", NodeKind::Function, gp));
         // Caller has NO callee_type_args.
         g.add_node(make_node("caller", NodeKind::Function, HashMap::new()));
-        g.add_edge(&caller_id, &gfn_id, edge(EdgeKind::Calls));
+        g.add_edge(&caller_id, &gfn_id, edge(EdgeKind::Calls)).unwrap();
 
         let insts = find_instantiations(&g);
         assert!(insts.is_empty());
+    }
+
+    /// Integration test: parse Rust source with turbofish, build the graph
+    /// via the adapter + resolver, then run `find_instantiations`.
+    #[test]
+    fn integration_rust_adapter_turbofish() {
+        use crate::adapter::rust::RustAdapter;
+        use crate::adapter::LanguageAdapter;
+        use crate::resolver::ReferenceResolver;
+        use std::path::PathBuf;
+
+        let adapter = RustAdapter::new();
+        let path = PathBuf::from("turbofish.rs");
+        let src = r#"
+fn identity<T>(x: T) -> T { x }
+
+fn caller() {
+    identity::<String>("hello");
+}
+"#;
+        let parsed = adapter.parse_file(&path, src).expect("parse");
+        let nodes = adapter.extract_nodes(&parsed);
+
+        let mut graph = CodeGraph::new();
+        for node in &nodes {
+            graph.add_node(node.clone());
+        }
+
+        // Resolve call edges the same way the builder does.
+        let sites = adapter.extract_call_sites(&parsed, &nodes);
+        if !sites.is_empty() {
+            let mut resolver = ReferenceResolver::new(&mut graph);
+            resolver.resolve_all(&sites);
+        }
+
+        let insts = find_instantiations(&graph);
+        assert_eq!(insts.len(), 1, "expected one instantiation, got: {insts:?}");
+        assert_eq!(insts[0].type_args, vec!["String"]);
+
+        // Also verify the generic_id points to the identity function.
+        let identity_node = nodes
+            .iter()
+            .find(|n| n.name == "identity")
+            .expect("identity");
+        assert_eq!(insts[0].generic_id, identity_node.id);
     }
 }

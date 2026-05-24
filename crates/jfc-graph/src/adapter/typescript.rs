@@ -115,14 +115,25 @@ fn walk_ts_node(
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name = text(name_node, source);
                 let qn = qualified(scope, &name);
-                out.push(build_fn_nd(&name, node, path, path_str, &qn, source));
+                let mut nd = build_fn_nd(&name, node, path, path_str, &qn, source);
+                if let Some(gp) = extract_ts_type_params(node, source) {
+                    nd.metadata.insert("generic_params".into(), gp);
+                }
+                if let Some(cta) = extract_ts_callee_type_args(node, source) {
+                    nd.metadata.insert("callee_type_args".into(), cta);
+                }
+                out.push(nd);
             }
         }
         "class_declaration" => {
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name = text(name_node, source);
                 let qn = qualified(scope, &name);
-                out.push(build_nd(&name, NodeKind::Struct, node, path, path_str, &qn));
+                let mut nd = build_nd(&name, NodeKind::Struct, node, path, path_str, &qn);
+                if let Some(gp) = extract_ts_type_params(node, source) {
+                    nd.metadata.insert("generic_params".into(), gp);
+                }
+                out.push(nd);
                 // Emit Field nodes for class fields before descending so
                 // methods picked up by the recursive walk don't shadow them.
                 extract_ts_class_fields(node, source, path, path_str, &qn, out);
@@ -174,7 +185,14 @@ fn walk_ts_node(
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name = text(name_node, source);
                 let qn = qualified(scope, &name);
-                out.push(build_fn_nd(&name, node, path, path_str, &qn, source));
+                let mut nd = build_fn_nd(&name, node, path, path_str, &qn, source);
+                if let Some(gp) = extract_ts_type_params(node, source) {
+                    nd.metadata.insert("generic_params".into(), gp);
+                }
+                if let Some(cta) = extract_ts_callee_type_args(node, source) {
+                    nd.metadata.insert("callee_type_args".into(), cta);
+                }
+                out.push(nd);
             }
         }
         "lexical_declaration" | "variable_declaration" => {
@@ -192,7 +210,15 @@ fn walk_ts_node(
                         let qn = qualified(scope, &name);
                         if let Some(value) = child.child_by_field_name("value") {
                             if matches!(value.kind(), "arrow_function" | "function") {
-                                out.push(build_fn_nd(&name, value, path, path_str, &qn, source));
+                                let mut nd =
+                                    build_fn_nd(&name, value, path, path_str, &qn, source);
+                                if let Some(gp) = extract_ts_type_params(value, source) {
+                                    nd.metadata.insert("generic_params".into(), gp);
+                                }
+                                if let Some(cta) = extract_ts_callee_type_args(value, source) {
+                                    nd.metadata.insert("callee_type_args".into(), cta);
+                                }
+                                out.push(nd);
                                 continue;
                             }
                         }
@@ -337,6 +363,96 @@ fn extract_ts_interface_fields(
 fn find_first_kind<'a>(node: TsNode<'a>, kind: &str) -> Option<TsNode<'a>> {
     let mut cursor = node.walk();
     node.named_children(&mut cursor).find(|c| c.kind() == kind)
+}
+
+// ─── Generic Params / Type-Arg Extraction ───────────────────────────────────
+
+/// Extract generic type parameter names from a `type_parameters` child.
+/// Returns a JSON array string like `["T", "U"]`, or `None` if no generics.
+fn extract_ts_type_params(node: TsNode<'_>, source: &str) -> Option<String> {
+    let tp = node
+        .children(&mut node.walk())
+        .find(|c| c.kind() == "type_parameters")?;
+    let mut params: Vec<String> = Vec::new();
+    let mut cursor = tp.walk();
+    for child in tp.named_children(&mut cursor) {
+        if child.kind() == "type_parameter" {
+            if let Some(ident) = child.child_by_field_name("name") {
+                params.push(text(ident, source));
+            } else {
+                // Fallback: first named child that's a type_identifier
+                let mut cc = child.walk();
+                if let Some(ti) = child
+                    .named_children(&mut cc)
+                    .find(|c| c.kind() == "type_identifier")
+                {
+                    params.push(text(ti, source));
+                }
+            }
+        }
+    }
+    if params.is_empty() {
+        return None;
+    }
+    Some(serde_json::to_string(&params).unwrap_or_default())
+}
+
+/// Walk a function body for calls with type arguments and collect them.
+/// Returns a JSON object string, or `None` if no type-arg calls found.
+fn extract_ts_callee_type_args(func_node: TsNode<'_>, source: &str) -> Option<String> {
+    // Look for a body/statement_block child
+    let body = func_node
+        .child_by_field_name("body")
+        .or_else(|| {
+            func_node
+                .children(&mut func_node.walk())
+                .find(|c| c.kind() == "statement_block")
+        })?;
+    let mut map: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    collect_ts_type_arg_calls(body, source, &mut map);
+    if map.is_empty() {
+        return None;
+    }
+    Some(serde_json::to_string(&map).unwrap_or_default())
+}
+
+/// Recursively find `call_expression` nodes with `type_arguments` children.
+fn collect_ts_type_arg_calls(
+    node: TsNode<'_>,
+    source: &str,
+    map: &mut std::collections::BTreeMap<String, Vec<String>>,
+) {
+    if node.kind() == "call_expression" {
+        // In TS, call_expression has: function (identifier), type_arguments, arguments
+        let func_node = node.child_by_field_name("function");
+        let ta_node = node
+            .children(&mut node.walk())
+            .find(|c| c.kind() == "type_arguments");
+        if let (Some(func), Some(ta)) = (func_node, ta_node) {
+            let callee_name = text(func, source);
+            let args = collect_ts_type_arg_names(ta, source);
+            if !args.is_empty() && !callee_name.is_empty() {
+                map.entry(callee_name).or_default().extend(args);
+            }
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        collect_ts_type_arg_calls(child, source, map);
+    }
+}
+
+/// Collect type names from a TypeScript `type_arguments` node.
+fn collect_ts_type_arg_names(ta_node: TsNode<'_>, source: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut cursor = ta_node.walk();
+    for child in ta_node.named_children(&mut cursor) {
+        let t = text(child, source);
+        if !t.is_empty() {
+            args.push(t);
+        }
+    }
+    args
 }
 
 fn extract_ts_edges(
@@ -667,6 +783,45 @@ function callee() {}
             nodes
                 .iter()
                 .any(|n| n.name == "App" && n.kind == NodeKind::Function)
+        );
+    }
+
+    #[test]
+    fn ts_adapter_generic_params_and_callee_type_args() {
+        let adapter = TypeScriptAdapter::new();
+        let path = Path::new("test.ts");
+        let src = r#"function identity<T>(x: T): T { return x; }
+function main() { identity<string>("hi"); }
+"#;
+        let parsed = adapter.parse_file(path, src).unwrap();
+        let nodes = adapter.extract_nodes(&parsed);
+
+        // identity should have generic_params = ["T"]
+        let identity_fn = nodes
+            .iter()
+            .find(|n| n.name == "identity" && n.kind == NodeKind::Function)
+            .expect("identity function");
+        let gp = identity_fn
+            .metadata
+            .get("generic_params")
+            .expect("missing generic_params on identity");
+        let params: Vec<String> = serde_json::from_str(gp).expect("parse generic_params");
+        assert_eq!(params, vec!["T"]);
+
+        // main should have callee_type_args = {"identity": ["string"]}
+        let main_fn = nodes
+            .iter()
+            .find(|n| n.name == "main" && n.kind == NodeKind::Function)
+            .expect("main function");
+        let cta = main_fn
+            .metadata
+            .get("callee_type_args")
+            .expect("missing callee_type_args on main");
+        let map: std::collections::BTreeMap<String, Vec<String>> =
+            serde_json::from_str(cta).expect("parse callee_type_args");
+        assert_eq!(
+            map.get("identity").expect("identity key"),
+            &vec!["string".to_string()]
         );
     }
 }
