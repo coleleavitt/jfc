@@ -1133,6 +1133,42 @@ mod tests {
         (adapter, parsed)
     }
 
+    /// Mirror the builder's pipeline for a single-file scenario so we
+    /// can assert on `Calls` edges in adapter-level tests. The Rust
+    /// adapter intentionally does NOT synthesise call edges from
+    /// `extract_edges` (that would double-count vs. the cross-file
+    /// `ReferenceResolver` pass — see [`LanguageAdapter::extract_call_sites`]).
+    /// Tests that want to see resolved `Calls` edges must therefore
+    /// drive the same two-step pipeline the builder uses:
+    /// `extract_nodes` → `extract_call_sites` → `ReferenceResolver`.
+    fn build_resolved_graph(
+        adapter: &RustAdapter,
+        parsed: &ParsedFile,
+    ) -> (crate::graph::CodeGraph, Vec<NodeData>) {
+        use crate::graph::CodeGraph;
+        use crate::resolver::ReferenceResolver;
+
+        let nodes = adapter.extract_nodes(parsed);
+        let mut graph = CodeGraph::new();
+        for node in &nodes {
+            graph.add_node(node.clone());
+        }
+        // Pull in the structural edges (UsesType / Implements / Contains)
+        // so an integration-style test sees the same edge set the builder
+        // would produce for a single file.
+        for (from, to, edge) in adapter.extract_edges(parsed, &nodes) {
+            if graph.contains_node(&from) && graph.contains_node(&to) {
+                let _ = graph.add_edge(&from, &to, edge);
+            }
+        }
+        let sites = adapter.extract_call_sites(parsed, &nodes);
+        if !sites.is_empty() {
+            let mut resolver = ReferenceResolver::new(&mut graph);
+            resolver.resolve_all(&sites);
+        }
+        (graph, nodes)
+    }
+
     #[test]
     fn rust_adapter_populates_typed_metadata_function() {
         let adapter = RustAdapter::new();
@@ -1336,13 +1372,7 @@ mod tests {
     #[test]
     fn test_rust_call_edges() {
         let (adapter, parsed) = parse_fixture();
-        let nodes = adapter.extract_nodes(&parsed);
-        let edges = adapter.extract_edges(&parsed, &nodes);
-
-        let call_edges: Vec<_> = edges
-            .iter()
-            .filter(|(_, _, e)| matches!(e.kind, EdgeKind::Calls))
-            .collect();
+        let (graph, nodes) = build_resolved_graph(&adapter, &parsed);
 
         let foo_node = nodes
             .iter()
@@ -1357,19 +1387,25 @@ mod tests {
             .find(|n| n.name == "baz" && n.qualified_name == "baz")
             .unwrap();
 
-        let foo_calls_bar = call_edges
+        let foo_edges = graph.get_edges_from(&foo_node.id);
+        let foo_calls_bar = foo_edges
             .iter()
-            .any(|(src, dst, _)| *src == foo_node.id && *dst == bar_node.id);
+            .any(|(dst, e)| *dst == &bar_node.id && matches!(e.kind, EdgeKind::Calls));
         assert!(foo_calls_bar, "expected foo → bar call edge");
 
-        let bar_calls_baz = call_edges
+        let bar_edges = graph.get_edges_from(&bar_node.id);
+        let bar_calls_baz = bar_edges
             .iter()
-            .any(|(src, dst, _)| *src == bar_node.id && *dst == baz_node.id);
+            .any(|(dst, e)| *dst == &baz_node.id && matches!(e.kind, EdgeKind::Calls));
         assert!(bar_calls_baz, "expected bar → baz call edge");
     }
 
     #[test]
     fn test_rust_unresolved_calls() {
+        // The Rust adapter captures call sites via `extract_call_sites`
+        // instead of emitting edges from `extract_edges`. Calls to
+        // functions not present in the file are captured as call sites
+        // that the cross-file resolver will leave unresolved.
         let adapter = RustAdapter::new();
         let source = r#"
 fn caller() {
@@ -1381,27 +1417,27 @@ fn known() {}
         let path = PathBuf::from("test_unresolved.rs");
         let parsed = adapter.parse_file(&path, source).unwrap();
         let nodes = adapter.extract_nodes(&parsed);
-        let edges = adapter.extract_edges(&parsed, &nodes);
+        let sites = adapter.extract_call_sites(&parsed, &nodes);
 
-        let unresolved: Vec<_> = edges
+        let caller_node = nodes.iter().find(|n| n.name == "caller").unwrap();
+
+        let caller_sites: Vec<_> = sites
             .iter()
-            .filter(|(_, _, e)| matches!(e.kind, EdgeKind::UnresolvedCall(_)))
+            .filter(|s| s.caller_id == caller_node.id)
             .collect();
 
-        let has_unknown = unresolved
+        let has_unknown = caller_sites
             .iter()
-            .any(|(_, _, e)| matches!(&e.kind, EdgeKind::UnresolvedCall(name) if name == "unknown_function"));
+            .any(|s| s.name == "unknown_function");
         assert!(
             has_unknown,
-            "expected unresolved call to 'unknown_function', got: {unresolved:?}"
+            "expected call site for 'unknown_function', got: {caller_sites:?}"
         );
 
-        let has_thing = unresolved
-            .iter()
-            .any(|(_, _, e)| matches!(&e.kind, EdgeKind::UnresolvedCall(name) if name == "thing"));
+        let has_thing = caller_sites.iter().any(|s| s.name == "thing");
         assert!(
             has_thing,
-            "expected unresolved call to 'thing', got: {unresolved:?}"
+            "expected call site for 'thing', got: {caller_sites:?}"
         );
     }
 
@@ -1482,25 +1518,21 @@ fn known() {}
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mutual_recursion.rs");
         let content = std::fs::read_to_string(&path).expect("read fixture");
         let parsed = adapter.parse_file(&path, &content).expect("parse");
-        let nodes = adapter.extract_nodes(&parsed);
-        let edges = adapter.extract_edges(&parsed, &nodes);
-
-        let call_edges: Vec<_> = edges
-            .iter()
-            .filter(|(_, _, e)| matches!(e.kind, EdgeKind::Calls))
-            .collect();
+        let (graph, nodes) = build_resolved_graph(&adapter, &parsed);
 
         let ping_node = nodes.iter().find(|n| n.name == "ping").unwrap();
         let pong_node = nodes.iter().find(|n| n.name == "pong").unwrap();
 
-        let ping_calls_pong = call_edges
+        let ping_edges = graph.get_edges_from(&ping_node.id);
+        let ping_calls_pong = ping_edges
             .iter()
-            .any(|(src, dst, _)| *src == ping_node.id && *dst == pong_node.id);
+            .any(|(dst, e)| *dst == &pong_node.id && matches!(e.kind, EdgeKind::Calls));
         assert!(ping_calls_pong, "expected ping → pong call edge");
 
-        let pong_calls_ping = call_edges
+        let pong_edges = graph.get_edges_from(&pong_node.id);
+        let pong_calls_ping = pong_edges
             .iter()
-            .any(|(src, dst, _)| *src == pong_node.id && *dst == ping_node.id);
+            .any(|(dst, e)| *dst == &ping_node.id && matches!(e.kind, EdgeKind::Calls));
         assert!(pong_calls_ping, "expected pong → ping call edge");
     }
 
