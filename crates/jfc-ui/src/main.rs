@@ -69,6 +69,7 @@ mod query;
 mod render;
 mod render_cache;
 mod runtime;
+mod scaffold_detector;
 mod scheduler;
 mod sdk_bridge;
 mod session;

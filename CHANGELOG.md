@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Weighted scaffold/stub detector** (`scaffold_detector.rs`): replaces the binary `STUB_PATTERNS` list with a regex-based, severity-weighted detector (Critical 100 → Info 15) and category tags (unimplemented/placeholder/scaffold/hedge/shim). Vocabulary + weights derived from an audit of the session corpus. Context-aware: code-vs-comment distinction, test-file downgrade, `shim` requires corroboration, and bare `let _ =` is no longer flagged. Task-completion gate now blocks only on a `Critical` finding or cumulative weight ≥ 160, and also scans untracked new files
 - **Slop guard**: 11 new quality checks from academic literature (duplication ratio, dead-code injection, churn detection, coherence scoring, complexity gates, test quality heuristics)
 - **Claude Code 2.1.150 parity**: port remaining features including bridge attestation, idle prefetch, web cache, inline tools for non-native providers
 - Wire all remaining dead-code modules into runtime triggers (dreamer scheduler, plan dreamer, speculation, coaching, session recap, sprint budgets)

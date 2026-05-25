@@ -337,27 +337,6 @@ pub fn auto_commit_sprint_progress(
 
 // ─── Evaluator / Reviewer Pass ───────────────────────────────────────────────
 
-/// Patterns that indicate incomplete/stub work. If any of these appear in
-/// recently-modified files, the evaluator rejects the task completion.
-const STUB_PATTERNS: &[&str] = &[
-    "unimplemented!()",
-    "todo!()",
-    "todo!(\"",
-    "// TODO",
-    "// FIXME",
-    "// STUB",
-    "// PLACEHOLDER",
-    "/* TODO",
-    "/* FIXME",
-    "panic!(\"not implemented",
-    "panic!(\"not yet implemented",
-    "// NOTE: Currently a no-op",
-    "// scaffold",
-    "// placeholder",
-    "// Placeholder",
-    "let _ = ", // unused variable suppression (common in stubs)
-];
-
 /// Result of evaluating a task's work output.
 #[derive(Debug, Clone)]
 pub struct EvaluationResult {
@@ -398,76 +377,96 @@ impl std::fmt::Display for EvaluationResult {
     }
 }
 
-/// Evaluate recently-modified files for stub patterns. Uses `git diff --name-only`
-/// against HEAD to find modified files, then scans them for stub indicators.
-///
-/// Returns `EvaluationResult` with pass/fail and specific issues found.
-pub fn evaluate_work_quality(git_root: &Path) -> EvaluationResult {
-    let modified_files = match std::process::Command::new("git")
-        .args(["diff", "--name-only", "HEAD"])
+/// True for source files we want the scaffold detector to scan.
+fn is_source_file(name: &str) -> bool {
+    name.ends_with(".rs")
+        || name.ends_with(".ts")
+        || name.ends_with(".tsx")
+        || name.ends_with(".py")
+        || name.ends_with(".go")
+        || name.ends_with(".js")
+        || name.ends_with(".jsx")
+}
+
+/// Run a `git` invocation in `git_root` and return its stdout lines mapped to
+/// absolute paths, filtered to source files. Returns `None` on failure.
+fn git_source_paths(git_root: &Path, args: &[&str]) -> Option<Vec<PathBuf>> {
+    let output = std::process::Command::new("git")
+        .args(args)
         .current_dir(git_root)
         .output()
-    {
-        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(
+        String::from_utf8_lossy(&output.stdout)
             .lines()
-            .filter(|l| {
-                l.ends_with(".rs")
-                    || l.ends_with(".ts")
-                    || l.ends_with(".py")
-                    || l.ends_with(".go")
-                    || l.ends_with(".js")
-            })
+            .filter(|l| is_source_file(l))
             .map(|l| git_root.join(l))
-            .collect::<Vec<_>>(),
-        _ => {
-            // Also check staged files
-            match std::process::Command::new("git")
-                .args(["diff", "--name-only", "--cached"])
-                .current_dir(git_root)
-                .output()
-            {
-                Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .filter(|l| {
-                        l.ends_with(".rs")
-                            || l.ends_with(".ts")
-                            || l.ends_with(".py")
-                            || l.ends_with(".go")
-                            || l.ends_with(".js")
-                    })
-                    .map(|l| git_root.join(l))
-                    .collect::<Vec<_>>(),
-                _ => {
-                    return EvaluationResult {
-                        passed: true,
-                        issues: vec![],
-                    };
-                }
-            }
-        }
-    };
+            .collect(),
+    )
+}
+
+/// Collect the set of source files to evaluate: unstaged-modified, staged, and
+/// newly-created untracked files (so a brand-new stub file is also caught).
+fn files_to_evaluate(git_root: &Path) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = Vec::new();
+    if let Some(p) = git_source_paths(git_root, &["diff", "--name-only", "HEAD"]) {
+        files.extend(p);
+    }
+    if let Some(p) = git_source_paths(git_root, &["diff", "--name-only", "--cached"]) {
+        files.extend(p);
+    }
+    // Untracked, not-ignored new files.
+    if let Some(p) = git_source_paths(git_root, &["ls-files", "--others", "--exclude-standard"]) {
+        files.extend(p);
+    }
+    files.sort();
+    files.dedup();
+    files
+}
+
+/// Evaluate recently-modified (and newly-created) source files for scaffold/
+/// stub patterns using the weighted [`crate::scaffold_detector`].
+///
+/// Files scanned: unstaged-modified, staged, and untracked-new source files.
+/// A finding set blocks completion when it contains any `Critical` indicator
+/// (e.g. `unimplemented!()`) or its cumulative weight crosses
+/// [`scaffold_detector::DEFAULT_BLOCK_THRESHOLD`]. Test/fixture files have
+/// their findings downgraded one tier.
+pub fn evaluate_work_quality(git_root: &Path) -> EvaluationResult {
+    use crate::scaffold_detector;
+
+    let files = files_to_evaluate(git_root);
 
     let mut issues = Vec::new();
-    for file in &modified_files {
-        let Ok(content) = std::fs::read_to_string(file) else {
-            continue;
-        };
-        for (line_num, line) in content.lines().enumerate() {
-            for pattern in STUB_PATTERNS {
-                if line.contains(pattern) {
-                    issues.push(EvaluationIssue {
-                        file: file.clone(),
-                        line: line_num + 1,
-                        pattern: pattern.to_string(),
-                        context: line.to_string(),
-                    });
-                }
-            }
+    let mut all_findings = Vec::new();
+    for file in &files {
+        let findings = scaffold_detector::scan_file(file);
+        for f in findings {
+            all_findings.push(f.clone());
+            issues.push(EvaluationIssue {
+                file: file.clone(),
+                line: f.line,
+                pattern: format!(
+                    "{} [{}/{}]",
+                    f.matched,
+                    f.severity.label(),
+                    f.category.label()
+                ),
+                context: f.context,
+            });
         }
     }
 
+    let blocked =
+        scaffold_detector::should_block(&all_findings, scaffold_detector::DEFAULT_BLOCK_THRESHOLD);
+
     EvaluationResult {
-        passed: issues.is_empty(),
+        // `passed` is the inverse of "should block". Low-weight findings are
+        // reported in `issues` for visibility but do not fail the gate.
+        passed: !blocked,
         issues,
     }
 }
