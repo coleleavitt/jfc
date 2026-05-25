@@ -1,0 +1,446 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+---
+
+## [Unreleased] — 2026-05-24
+
+### Added
+
+- **Slop guard**: 11 new quality checks from academic literature (duplication ratio, dead-code injection, churn detection, coherence scoring, complexity gates, test quality heuristics)
+- **Claude Code 2.1.150 parity**: port remaining features including bridge attestation, idle prefetch, web cache, inline tools for non-native providers
+- Wire all remaining dead-code modules into runtime triggers (dreamer scheduler, plan dreamer, speculation, coaching, session recap, sprint budgets)
+
+### Changed
+
+- README expanded to document all 18 crates, missing subsystems, and graph-discovered features
+
+---
+
+## [0.9.0] — 2026-05-23
+
+### Added
+
+- **Go IR lowering** + wire IR into GraphBuilder for cross-language analysis
+- **Interprocedural points-to analysis** with `PointsToOracle`
+- Generic params + callee type args emission from Rust/TS adapters
+- `graph_node` + `graph_explore` native tools for targeted symbol inspection
+- `graph_status` / `graph_files` tools for graph health introspection
+- Foundations for alias analysis, monomorphization tracking, and IR lowering (t269/t271/t273)
+
+### Fixed
+
+- Auto-wake idle leader + drain meta-prompts mid-stream
+- Reject `Function` as `Contains`-edge source in graph
+- 3 stale rust adapter call-edge tests
+
+### Performance
+
+- Skip `Paragraph::line_count` for short lines + persist highlight line counts
+- Persist tool-height cache to eliminate 1s `--continue` gap
+- Fast header-scan for `--continue` session lookup
+
+---
+
+## [0.8.0] — 2026-05-22
+
+### Added
+
+- **jfc-learn**: E2E 3-session learning test, ASG-SI verifier promotion gating, Historian wiring
+- **jfc-learn**: AutoSearchHints pre-turn recall injection
+- **jfc-plan**: plan↔task reverse linkage + PlanRecall request-pipeline gate
+- PlanDreamer + jfc-learn Dreamer scheduled from daemon
+- Expose `graph_context`/`search`/`callers`/`callees`/`impact` as MCP tools
+- **jfc-graph**: cross-file call resolver, codegraph-grade markdown context output, schema/worktree/data_dir/overlay modules, GraphSession API
+- **jfc-graph**: full codegraph feature parity — Kotlin + Swift language adapters
+- **jfc-audit** and **jfc-learn** crates added to workspace
+- Plan store + learn/recall tools
+- Slash command dispatch collapsed through macro registry
+- Wire plan + learn tools through dispatch — zero dead-code warnings
+
+### Fixed
+
+- Memory/threading bugs from profiling audit
+- Unstick stale `tool_title_width` tests + NodeData test fixture
+
+### Changed
+
+- rustfmt sweep across graph adapters, cfg, dataflow, complexity modules
+- Remove network EKG sparkline + dead tick handler
+
+---
+
+## [0.7.0] — 2026-05-21
+
+### Added
+
+- **Workflow system**: complete multi-agent orchestration scripts with `agent()`, `parallel()`, `pipeline()`, `phase()` primitives — CC 146 parity
+- **PHP language adapter** for jfc-graph
+- Teammates panel with agent navigation and background completion tracking
+- Enhancement plan for codegraph feature parity roadmap
+
+### Fixed
+
+- Stabilize context gauge, immediate keypress echo, and reliable bash output streaming
+- Correct mention popup chunk index, unicode-aware prompt width, needs_draw flags
+- Prevent AllComplete emission before dispatched tool finishes in approval queue
+- Security and correctness hardening across daemon, tools, providers
+- Plan-mode CodeGraph MCP approval, keyboard enhancement timeout, action-intent detection
+
+### Changed
+
+- Replace hand-rolled MCP protocol with the `rmcp` SDK
+- Harden event delivery and fix approval queue batching
+- Remove narration-retry mechanism in favor of prompt-level discipline
+- Extract jfc-agents, jfc-tools crates from jfc-ui monolith
+- Wire jfc-core ExecutionResult + DiffView into jfc-ui
+- Deduplicate notebook tool + shrink `built_in_agents()`
+
+---
+
+## [0.6.0] — 2026-05-20
+
+### Added
+
+- **Gemini provider**: proper `thought_signature` round-trip, model picker source labels, dynamic model listing, direct API key support
+- **Antigravity (Google) OAuth provider**: Claude-via-Antigravity streaming + model auto-dispatch, Gemini streaming via Code Assist API
+- **Inline tool XML interception** from LiteLLM/Bedrock for non-native providers
+- Agent fan and pinned-tasks panels with rounded block borders
+- Atomic mailbox reads, interruptible tool exec, prose-less success, billing propagation for swarm
+
+### Fixed
+
+- Harden agent market (agentic solvers, real adjudication, stable IDs, budget gate, charter enforcement)
+- Harden audit-identified bugs (locks, leaks, watchdog, compaction)
+- Gate subscription-locked betas per-account in Anthropic OAuth
+- Finish botched runner split — wire coordinator, kill duplication
+
+### Changed
+
+- **Major refactoring wave**: split god-functions and extract crates
+  - `render.rs` (5,615 lines) → `render/{frame,sidebar,visual,messages,agents,input_box,overlays,tests}.rs`
+  - `input.rs` (7,102 lines) → `input/{key_dispatch,submit,slash_commands,tests}.rs`
+  - `handle_key` (1,489 lines) → 198 lines
+  - `execute_tool` (1,326 lines) → 767 lines
+  - `permissions.rs` (1,391 lines) → 192 lines
+  - `tools/mod.rs` (2,335 lines) → `tools/{dispatch,registry,safe_tools,tests}.rs`
+  - `types/tool.rs` (2,529 lines) → `types/{tool_display,tool_call,tool_output}.rs`
+  - `session/serialization.rs` (2,284 lines) → `session/{serialization,serialize,deserialize,serialization_tests}.rs`
+  - `swarm/runner.rs` (2,022 lines) → `runner/executor/coordinator + runner_tests`
+  - `agents.rs` (1,485 lines) → `agents/{state,lifecycle,registry}.rs`
+  - `message_view/outputs.rs` (1,838 lines) → `message_view/{outputs,formatters,truncation}.rs`
+  - `slash_commands.rs` (2,493 lines) → `slash_commands/{core,ext,ext2}.rs`
+- Extract **jfc-markdown** crate from `markdown.rs` (2,611 lines)
+- Extract **jfc-theme** crate from `theme.rs` (1,162 lines)
+- Macro-ify ToolInput's exhaustive methods (drift-proof table)
+- Macro-driven slash-command registry
+
+---
+
+## [0.5.0] — 2026-05-19
+
+### Added
+
+- **jfc-daemon** crate extracted (cron, pid, state, logs, registry, reconcile, runtime, worker spawn)
+- **jfc-providers** crate extracted + move cost/content to jfc-provider
+- **jfc-mcp** crate extracted with zero warnings
+- Priority message queue + agent transcript + mid-loop drain + interrupt-on-submit
+- Dispatch safe tools mid-stream — eliminates batch barrier
+- CC 2.1.144 parity batch: task UI, plan mode, LSP, OWUI hooks, effort config
+- Narration-only EndTurn guardrail with tool_choice retry
+- Compaction: observation masking, file restoration, speculative compact, custom instructions
+- Temporal awareness: full time gap markers + evaluator stub patterns
+- Sidebar: token breakdown, pinned files, session age, temporal awareness
+- Dim queued user messages + `[queued]` tag for visual distinction
+- `/dream`, `/powerup`, `/voice`, `/deep-link`, idle-return, session header, 15s timeout
+
+### Fixed
+
+- Reset `cancel_token` on every new turn (fixes spurious "Interrupted by user")
+- 8 critical+medium bugs from streaming/tool/input audit
+- Per-file mutex prevents Edit/Write/MultiEdit race on same path
+- Merge consecutive Text parts to fix 156-fragment bug
+- Remove rejected Anthropic beta headers (mcp-servers, context-hint, ccr-byoc)
+- Persist permission mode on `/mode` + fix image chip UX
+- Remove false-positive budget warning from char-based estimate
+
+### Changed
+
+- Move AgentDef + PermissionMode + Effort to jfc-core
+- Remove blanket `#![allow(dead_code)]`
+- Split event_loop.rs into per-handler modules
+
+---
+
+## [0.4.0] — 2026-05-15 — 2026-05-18
+
+### Added
+
+- **Sprint system**: project-level task persistence + sprint boundaries + evaluator gate + per-turn budget injection
+- **Anthropic pause_turn resume** + multi-message turn guard
+- Redacted thinking + `previous_message_id` + new beta headers
+- Byte-faithful `server_tool` round-trip + warn on missing stop_reason
+- Crash-safe writes via temp + fsync + rename
+- Auto-commit, `context_hint`, cache diagnosis
+- **Intent classification**: auto-detect doc requests + plan-mode posture + `--permission-mode` flag
+- **Goal loop**: `/goal` as a real stop-condition with evaluator + iteration loop
+- **Slop guard**: implement full AI slop detection system
+- `/plan`, `/roadmap`, `/parity`, `/philosophy`, `/usage` with strict format contracts
+
+### Fixed
+
+- Char-boundary safe string truncation across 4 panic sites
+- Route mixed-mode `pause_turn` through resume builder after local tools complete
+- Serialize graph-cache test to stop parallel flake
+- Link delegated agents to queued tasks + reload TaskStore
+- Stop dispatching terminal/denied tool calls
+
+### Changed
+
+- Remove hallucination guard, improve prompt caching + request tracing
+- Dedupe substream setup + coalesce on save
+- Extract runtime contracts and module boundaries
+- Refactor event_loop into directory module + handler submodules
+
+---
+
+## [0.3.0] — 2026-05-13 — 2026-05-14
+
+### Added
+
+- **OpenWebUI full auth lifecycle**: JWT + OIDC + Duo MFA + auto-refresh + CLI (`jfc auth litellm`)
+- **Single-ESC instant kill** + synthetic `tool_result` injection for clean cancellation
+- **Enhanced planning**: TaskValidate, risk/kind/hierarchy, plan cache, unlimited agents
+- **Adaptive re-plan**: scratchpad, consolidation, plan verification (literature-gap implementation)
+- **Hallucination guard v2**: category mapping, three-state verdict, log-only mode
+- **Image support**: prompt-local `[Image #N]` model + resize + clipboard fallback
+- Task/subagent view now matches main chat view quality
+- Unified task/main view under single `RenderCtx` renderer
+
+### Fixed
+
+- Major memory bugs found via dhat profiling (eliminated)
+- Task-factory stall after detached completion + concurrency cap
+- Serialize TaskStatus to provider + inject completion reminder
+- Remove process-global attachment queue — per-message ownership
+- Stop dropping tools + guard against hallucinated 'done' claims
+- Teammate `abort_tx` leak + task store migration
+- Use `floor_char_boundary` for all user-facing string truncations
+- Unify token accounting + stop queued prompts from polluting the prompt
+- Lifecycle bug sweep across event/swarm/daemon/compaction paths
+- Suppress spurious config-updated toasts from sibling files
+
+### Performance
+
+- Cap TaskStatus, dedupe memories, overhead estimate, microcompact, budget logging
+- mtime-gate daemon-state polls + cap terminal agents
+- Cache agent config in OnceLock to avoid per-spawn disk I/O
+
+---
+
+## [0.2.0] — 2026-05-09 — 2026-05-12
+
+### Added
+
+- **LiteLLM proxy provider** with dynamic model fetching
+- **Codex OAuth foundation** with browser login, device flow, status, logout
+- **Claude Code 2.1.139 feature parity** batch (command and keybinding parity)
+- **jfc-graph overhaul**: CSR (compressed sparse row), push/pull BFS, Tarjan SCC, DSL optimizer, aggregation, incremental cache, typed metadata, multi-language adapters, HyperLogLog, stratification
+- **WebSearch**: arXiv + Semantic Scholar backends, `papers:` prefix for parallel dedup search
+- Coverage pass, possible-types propagation, DSL piping
+- Graph capabilities wiring and partial field metadata
+- Theme picker, streaming render cache, draw-coalescing fix
+- Inline color swatch rendering for hex and rgb literals
+- v137 features + critical `kill(-1)` fix
+- TaskGet tool
+- Adaptive tick rate, kinetic scroll, cached theme styles
+- Colorize git commit/push and diagnostic prefix output in message view
+- OpenAI reads key from `~/.config/jfc/credentials.toml` fallback
+
+### Fixed
+
+- Stream watchdog to prevent stuck 30fps animation loop
+- Spinner stuck after ExitPlanMode
+- Tighten model picker filter to exclude non-chat OpenAI models
+- Batch-drain all queued prompts in one turn (v137 parity)
+- Remove browser header + update version fallback in OAuth
+- Render color swatches in inline code (backtick) spans
+- Hydrate detached agent progress
+
+### Performance
+
+- Replace pulsing cursor glow with static tint
+- Reduce tokio worker threads from 24 to 4
+- Warm tool-height cache after session load
+- Eliminate redundant `build_render_items` + `getcwd` syscalls
+- Cache `message_view_total_lines` to eliminate per-frame O(n×m) scan
+
+### Changed
+
+- Expand jfc-graph engine and jfc-ui integration
+- Split app state into modules
+- Decompose message_view into modular subfiles
+- Expand daemon, SDK APIs, and swarm infrastructure
+
+---
+
+## [0.1.0] — 2026-05-07 — 2026-05-08
+
+### Added
+
+- **MCP support**: full Model Context Protocol with stdio/SSE transports, tool registry, dynamic dispatch (v132 parity)
+- **Daemon**: fleet daemon with session management, cron, wakeups, socket API, CLI commands
+- **GitHub integration**: deep integration via `gh` CLI for v2.1.132 parity
+- **Advisor**: parallel `/advisor` mode with snapshot context + budget
+- **Memory**: two-phase LLM-driven memory recall
+- **Speculation**: pre-run tools in fs overlay for zero-latency commit
+- **Slate**: dynamic per-turn model routing with `QueryClass` classifier
+- **Fleet view**: ratatui fleet dashboard
+- **Swarm**: team memory, fork, mirrors, teleport, turn classifier
+- 8 v2.1.132 model-callable tools (EnterWorktree, ExitWorktree, CronCreate, etc.)
+- Bedrock, Vertex, Console OAuth scaffolding
+- Streaming bash output with real-time line-by-line progress
+- Retry utility with exponential backoff + jitter
+- Per-session log files (replacing daily rolling)
+- System prompt expanded to match Claude Code's structure
+- Slash command dispatcher + reasoning effort control
+- Git session context module
+- tmux session integration for agent worktrees
+- Lifecycle hook system expanded to 31 points
+- Categories, per-agent permissions, prompt customization, reasoning effort, top_p, variant, MCP, experimental flags
+- v132 batch session work: PDF, plan-mode, system-reminder, output-style, retry, slash-cmds
+- Bash output highlighting for jq, sed, awk, curl, cargo
+- `StableGraph`, bridges, feedback-arc-set, dijkstra, dot-export, k-shortest-paths in graph
+
+### Fixed
+
+- Graph: spawn build on 64MB stack thread instead of tokio worker
+- Graph: add size guards to O(V²) algorithms to prevent stack overflow
+- Graph: prevent infinite recursion on symlink cycles in `walk_dir`
+- Graph: replace hand-rolled `walk_dir` with `ignore` crate
+- Render stall between stream phases + skip `research/` in graph walker
+- Raise max agent turns from 20/25 to 200
+
+### Performance
+
+- All session saves made non-blocking (4+ sites)
+- Non-blocking session save on submit + approval
+
+---
+
+## [0.0.2] — 2026-05-06
+
+### Added
+
+- **jfc-economy crate**: bounty marketplace with real LLM-driven solver/validator agents, worktree dispatch, adversarial adjudication, trust scoring, token ledger
+- **jfc-graph crate**: code graph with LSP client, `preconditions` DSL operator, path-condition extraction, disk-persist large tool results, auto-queue cascade, `/cascade`, `graph_query` + `symbol_edit` tools
+- **Orchestration**: argus review, ralph loop, tmux, comment check, handoff
+- **Background agent manager** + Landlock sandbox
+- **Lifecycle hook system** + intent classification
+- **Hashline content-anchored edits** + TOML permission automation
+- Feature flag scaffolding, test infra, config system
+- Per-subagent live tool + token counters in fan UI
+- Swarm auto-compaction ported from Claude Code v131
+- Full petgraph algorithm suite leveraged in graph
+
+### Fixed
+
+- Require mechanistic bounty verification
+- Wire up post→run dispatch, lift per-bounty budget cap
+- Stop spinner/counter after stream interrupt (ESC×2)
+- Cap subagent + teammate request bytes to prevent context-window blowups
+- Cell-aware wrap, table reflow, scroll math
+- Tool block height undercount bugs
+- Correct scroll math and refactor bottom-area UI
+
+### Testing
+
+- +155 tests for input.rs key handler (5% → 79% region coverage)
+- +103 tests for app/compact/context/scheduler/session (≥75% region coverage)
+- +125 tests for providers/* and stream.rs (≥70% region coverage)
+- +94 tests covering all swarm/* modules (0% → 92.88%)
+- +167 tests for render + message_view pure helpers
+- +197 tests across tools/notifications/theme/types
+- Full orchestration pipeline integration test (E2E)
+
+### Changed
+
+- Broad cleanup across economy, graph, and ui crates
+- Shared streaming HTTP client, async SwarmProvider, OAuth cleanup
+
+---
+
+## [0.0.1] — 2026-05-04 — 2026-05-05
+
+### Added
+
+- **Swarm multi-agent system**: memory persistence, notifications, major tool/rendering expansions
+- **Themes**: directory-based skills, teammate lifecycle
+- **Skills**: system-prompt injection, slash invocation (`/skill-name`), Skill tool model invocation, AgentDef.skills consumer
+- **Session management**: cwd-scoped `/continue`, `/rename`, display title fallback, per-message usage for token gauge restore
+- **Permission modes**: Default, Plan, AcceptEdits, Auto, Bypass (v126 parity)
+- **v126-style token tracking**: include tool input JSON in spinner estimate
+- **Model picker**: pricing/context columns from models.dev
+- **Agent frontmatter**: effort, maxTurns, memory, mcpServers, hooks
+- **LSP client** orchestration
+- **Image attachments**: data layer + arboard image-data feature
+- **Cost meter** pricing + sidebar total
+- **MCP sidebar** rendering
+- **Worktree slash commands** + session syntax/blink/history fixes
+- Click-to-expand tool blocks
+- Diff syntax highlighting inside +/- lines
+- Config.toml per-agent models
+- Configurable prompt animation modes
+- two-face: ~250 syntect grammars + 32 themes
+- Toasts, @mention autocomplete, diagnostics panel, cumulative usage
+- Task tool, LargeText collapsing, background tasks, MCP/LSP support
+- Subagent task view uses MessageView (markdown + xml-strip + collapse)
+- Compaction: visible spinner, retry, monotonic counter, live output tokens
+
+### Fixed
+
+- Context token counter reset on session continue
+- Tasks lost on session continue (use `TaskStore::open` instead of `in_memory`)
+- Compaction retry loop, session compat, cost log spam, render cache
+- Compaction suppress after permanent failure + thinking fallback
+- Edit tool line counts
+- Don't reset token counter mid-turn during agentic loop
+- Resolve assistant message prefill 400 errors on Opus 4.6+ and Bedrock/LiteLLM
+- Case-insensitive tool name normalization for cross-provider proxies
+- Bedrock prefill — strip trailing empty assistant
+
+### Changed
+
+- Upgrade ratatui 0.30, crossterm 0.29, fix lru vulnerability
+- Model-aware `max_output_tokens` + system-prompt sanitization
+
+---
+
+## [0.0.0] — 2026-05-03
+
+### Added
+
+- **Initial release**: jfc-ui binary with GPUI-based rendering
+- Port from GPUI to **ratatui TUI** (same day)
+- v126 baseline: agents, skills, tasks, CLAUDE.md hierarchy, tool-name normalization
+- Typed tool rendering harness
+- wgpui damage_buffer/opaque region support (pre-ratatui)
+
+---
+
+[Unreleased]: https://github.com/coleleavitt/jfc/compare/a99e10d...HEAD
+[0.9.0]: https://github.com/coleleavitt/jfc/compare/7586868...a99e10d
+[0.8.0]: https://github.com/coleleavitt/jfc/compare/8541a2e...7586868
+[0.7.0]: https://github.com/coleleavitt/jfc/compare/3ec14d2...8541a2e
+[0.6.0]: https://github.com/coleleavitt/jfc/compare/8d3d2fe...3ec14d2
+[0.5.0]: https://github.com/coleleavitt/jfc/compare/7d61396...8d3d2fe
+[0.4.0]: https://github.com/coleleavitt/jfc/compare/b8b2a9b...7d61396
+[0.3.0]: https://github.com/coleleavitt/jfc/compare/5b341c1...b8b2a9b
+[0.2.0]: https://github.com/coleleavitt/jfc/compare/3b3c326...5b341c1
+[0.1.0]: https://github.com/coleleavitt/jfc/compare/5dd9037...3b3c326
+[0.0.2]: https://github.com/coleleavitt/jfc/compare/0261ae5...5dd9037
+[0.0.1]: https://github.com/coleleavitt/jfc/compare/80ca947...0261ae5
+[0.0.0]: https://github.com/coleleavitt/jfc/compare/035b0ab...80ca947
