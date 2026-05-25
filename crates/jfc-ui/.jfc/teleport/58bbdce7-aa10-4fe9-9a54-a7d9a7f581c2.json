@@ -1,0 +1,12 @@
+{
+  "id": "58bbdce7-aa10-4fe9-9a54-a7d9a7f581c2",
+  "session_id": "ses_20260524_184707",
+  "model": "test-model",
+  "messages": [
+    {
+      "role": "user",
+      "content": "/teleport-export"
+    }
+  ],
+  "exported_at": "2026-05-24T18:47:07.911304506+00:00"
+}

@@ -999,7 +999,7 @@ impl ToolInput {
             }
             Self::Generic { summary } => summary.clone(),
             Self::SendUserMessage { message, .. } => {
-                let preview = if message.len() > 60 { &message[..60] } else { message.as_str() };
+                let preview = if message.len() > 60 { &message[..message.floor_char_boundary(60)] } else { message.as_str() };
                 format!("message: {preview}")
             }
             Self::SendUserFile { caption, .. } => {
@@ -1157,6 +1157,7 @@ impl ToolInput {
                 category: opt_str_field("category"),
                 run_in_background: bool_field("run_in_background"),
                 model: opt_str_field("model"),
+                effort: opt_str_field("effort"),
                 name: opt_str_field("name"),
                 team_name: opt_str_field("team_name"),
                 mode: opt_str_field("mode"),
@@ -1288,6 +1289,9 @@ impl ToolInput {
                 }
                 if let Some(model) = &task_input.model {
                     value["model"] = json!(model);
+                }
+                if let Some(effort) = &task_input.effort {
+                    value["effort"] = json!(effort);
                 }
                 if let Some(parent_task_id) = &task_input.parent_task_id {
                     value["parent_task_id"] = json!(parent_task_id);

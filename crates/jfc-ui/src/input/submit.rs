@@ -600,6 +600,7 @@ pub(super) async fn handle_submit(
     app.agentic_turn_count = 0;
     // Reset thinking-state for the new turn so the spinner doesn't carry
     app.pre_dispatched_tool_ids.clear();
+    app.in_flight_eager_dispatches = 0;
     // a stale `thought for Ns` from the previous turn.
     app.thinking_started_at = None;
     app.thinking_ended_at = None;

@@ -512,8 +512,44 @@ fn match_remaining_segment(command: &str, args: &[String]) -> Result<(), &'stati
             {
                 return Err(REASON_SED_EXEC);
             }
-            for a in args {
-                if sed_script_has_e_modifier(a) {
+            // Only inspect actual script expressions, not file paths.
+            // sed syntax: sed [flags] [-e script]... [script] [file...]
+            // If no -e was given, the first non-flag arg is the script.
+            let mut scripts: Vec<&str> = Vec::new();
+            let mut i = 0;
+            let mut explicit_script = false;
+            while i < args.len() {
+                let a = &args[i];
+                if a == "-e" || a == "-E" || a == "--expression" {
+                    explicit_script = true;
+                    if i + 1 < args.len() {
+                        scripts.push(&args[i + 1]);
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                } else if let Some(expr) = a.strip_prefix("--expression=") {
+                    explicit_script = true;
+                    scripts.push(expr);
+                    i += 1;
+                } else if a == "-n" || a == "--quiet" || a == "--silent" || a == "-l"
+                    || a.starts_with("-n") && a.len() <= 3
+                {
+                    i += 1;
+                } else if a.starts_with('-') {
+                    // Other flags (e.g. -E for extended regex)
+                    i += 1;
+                } else {
+                    // First non-flag arg: it's a script only if no -e was given
+                    if !explicit_script && scripts.is_empty() {
+                        scripts.push(a);
+                    }
+                    // Remaining args are file paths — don't inspect them
+                    break;
+                }
+            }
+            for s in &scripts {
+                if sed_script_has_e_modifier(s) {
                     return Err(REASON_SED_EXEC);
                 }
             }

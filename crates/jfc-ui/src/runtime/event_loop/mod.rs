@@ -723,8 +723,14 @@ pub(crate) async fn run(
             Some(e) => vec![e],
             None => break,
         };
-        while let Ok(extra) = rx.try_recv() {
-            events.push(extra);
+        // Cap burst draining to prevent starvation: at most 256 events per
+        // iteration so producers can't endlessly refill while we drain.
+        const BURST_CAP: usize = 256;
+        while events.len() < BURST_CAP {
+            match rx.try_recv() {
+                Ok(extra) => events.push(extra),
+                Err(_) => break,
+            }
         }
 
         // Track whether any event in this burst dirties the screen. Pure Tick

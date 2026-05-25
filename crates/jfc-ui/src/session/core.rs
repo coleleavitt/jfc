@@ -813,6 +813,7 @@ mod disk_io_tests {
             category: Some("code".into()),
             run_in_background: true,
             model: Some("anthropic/claude-sonnet-4-7".into()),
+            effort: None,
             name: Some("alice".into()),
             team_name: Some("core".into()),
             mode: Some("plan".into()),

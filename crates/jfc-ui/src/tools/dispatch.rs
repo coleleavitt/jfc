@@ -768,11 +768,14 @@ pub async fn execute_tool(
             } else {
                 body
             };
-            // Cap to 50 KB so the tool result doesn't blow context.
+            // Cap to ~50 KB so the tool result doesn't blow context.
             let truncated = if body.len() > 50_000 {
+                // Find a char boundary at or before 50_000 to avoid panicking
+                // on multi-byte UTF-8 sequences.
+                let end = body.floor_char_boundary(50_000);
                 format!(
                     "{}\n\n[...truncated, full {} bytes]",
-                    &body[..50_000],
+                    &body[..end],
                     body.len()
                 )
             } else {

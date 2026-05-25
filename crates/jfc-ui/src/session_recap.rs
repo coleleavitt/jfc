@@ -114,7 +114,7 @@ pub fn generate_recap(messages_since_last_interaction: &[RecapMessage]) -> Optio
     // Last assistant message snippet
     if let Some(snippet) = assistant_snippets.last() {
         let truncated = if snippet.len() > 120 {
-            format!("{}…", &snippet[..120])
+            format!("{}…", &snippet[..snippet.floor_char_boundary(120)])
         } else {
             snippet.clone()
         };

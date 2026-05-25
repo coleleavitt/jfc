@@ -149,6 +149,7 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             category: ti.category.clone(),
             run_in_background: ti.run_in_background,
             model: ti.model.clone(),
+            effort: ti.effort.clone(),
             name: ti.name.clone(),
             team_name: ti.team_name.clone(),
             mode: ti.mode.clone(),

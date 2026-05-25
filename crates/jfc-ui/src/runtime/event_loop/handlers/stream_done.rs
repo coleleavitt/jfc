@@ -2,7 +2,7 @@
 //! session save, continuation logic.
 
 use crate::app::{self, App};
-use crate::runtime::{EventSender, drain_queued_prompts};
+use crate::runtime::{AppEvent, EventSender, drain_queued_prompts};
 use crate::types::*;
 use crate::{config, session, stream, types};
 
@@ -389,30 +389,56 @@ pub(crate) async fn handle_stream_done(
             "stream_done holding turn open for in-flight auto-mode classifier verdicts"
         );
     } else if has_pending_tools {
-        let calls = std::mem::take(&mut app.pending_tool_calls);
-        tracing::info!(
-            target: "jfc::stream",
-            n = calls.len(),
-            ?stop_reason,
-            kinds = ?calls.iter().map(|t| t.kind.label()).collect::<Vec<_>>(),
-            pause_turn_latched = app.pending_pause_turn_resume,
-            "stream_done dispatching auto-routed batch"
-        );
-        crate::runtime::update_task_activities(app, &calls);
-        stream::dispatch_tools_batched(
-            calls,
-            tx,
-            std::sync::Arc::clone(&app.dedup_cache),
-            Some(std::sync::Arc::clone(&app.task_store)),
-            app.team_context.team_name.clone(),
-            app.current_session_id
-                .as_ref()
-                .map(|id| id.as_str().to_owned()),
-            std::sync::Arc::clone(&app.provider),
-            app.model.clone(),
-            app.teammate_event_tx.clone(),
-            app.cancel_token.clone(),
-        );
+        let all_calls = std::mem::take(&mut app.pending_tool_calls);
+        // Filter out tools that were already eagerly dispatched mid-stream.
+        let calls: Vec<_> = all_calls
+            .into_iter()
+            .filter(|t| !app.pre_dispatched_tool_ids.contains(t.id.as_str()))
+            .collect();
+        if calls.is_empty() {
+            // All pending tools were pre-dispatched; their AllComplete events
+            // drive the turn forward. We already cleared pending_tool_calls
+            // (via take), so when the next AllComplete arrives it will see
+            // turn_truly_complete = true. But if all AllComplete events
+            // already fired (tools finished before stream ended), we must
+            // emit a synthetic AllComplete now to unblock the turn.
+            tracing::info!(
+                target: "jfc::stream",
+                pre_dispatched = app.pre_dispatched_tool_ids.len(),
+                in_flight_eager = app.in_flight_eager_dispatches,
+                "stream_done: all pending tools already eagerly dispatched"
+            );
+            if app.in_flight_eager_dispatches == 0 {
+                crate::runtime::send_critical(
+                    tx,
+                    AppEvent::Tool(crate::runtime::ToolEvent::AllComplete),
+                );
+            }
+        } else {
+            tracing::info!(
+                target: "jfc::stream",
+                n = calls.len(),
+                ?stop_reason,
+                kinds = ?calls.iter().map(|t| t.kind.label()).collect::<Vec<_>>(),
+                pause_turn_latched = app.pending_pause_turn_resume,
+                "stream_done dispatching auto-routed batch"
+            );
+            crate::runtime::update_task_activities(app, &calls);
+            stream::dispatch_tools_batched(
+                calls,
+                tx,
+                std::sync::Arc::clone(&app.dedup_cache),
+                Some(std::sync::Arc::clone(&app.task_store)),
+                app.team_context.team_name.clone(),
+                app.current_session_id
+                    .as_ref()
+                    .map(|id| id.as_str().to_owned()),
+                std::sync::Arc::clone(&app.provider),
+                app.model.clone(),
+                app.teammate_event_tx.clone(),
+                app.cancel_token.clone(),
+            );
+        }
     } else if waiting_on_approval {
         tracing::info!(
             target: "jfc::stream",

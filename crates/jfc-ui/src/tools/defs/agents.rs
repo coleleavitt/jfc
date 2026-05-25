@@ -90,6 +90,10 @@ pub fn agent_tool_defs() -> Vec<ToolDef> {
                         "type": "string",
                         "description": "Optional model override in 'provider/model' format"
                     },
+                    "effort": {
+                        "type": "string",
+                        "description": "Optional reasoning effort override (low/medium/high/xhigh/max)"
+                    },
                     "name": {
                         "type": "string",
                         "description": "Name for the spawned agent. Makes it addressable via SendMessage({to: name}) while running."

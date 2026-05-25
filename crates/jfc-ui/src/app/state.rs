@@ -599,6 +599,11 @@ pub struct App {
     /// executing while the model was still generating). stream_done
     /// skips these to avoid double-dispatch.
     pub pre_dispatched_tool_ids: std::collections::HashSet<String>,
+    /// Count of eagerly-dispatched tool batches still in flight. Each eager
+    /// dispatch increments this; each AllComplete event decrements it. The
+    /// turn is only truly complete when this reaches 0 AND pending_tool_calls
+    /// is empty.
+    pub in_flight_eager_dispatches: usize,
     /// Metadata for the provider request currently streaming or most recently
     /// finished. Set by `StreamEvent::RequestMetadata` before the first byte
     /// arrives; cleared when the turn truly ends. Used to detect narration-only
@@ -1220,6 +1225,7 @@ impl App {
             pending_tool_calls: Vec::new(),
             pending_classifications: 0,
             pre_dispatched_tool_ids: std::collections::HashSet::new(),
+            in_flight_eager_dispatches: 0,
             current_stream_request: None,
             force_compact_pending: false,
             pending_pause_turn_resume: false,

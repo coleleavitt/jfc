@@ -191,6 +191,7 @@ mod tests {
             category: None,
             run_in_background: false,
             model: model.map(str::to_string),
+            effort: None,
             name: None,
             team_name: None,
             mode: None,
@@ -577,6 +578,21 @@ async fn execute_task_inner(
         let mut options = StreamOptions::new(model.clone()).tools(tools.clone());
         if let Some(sp) = &system_prompt {
             options = options.system(sp.clone());
+        }
+        // Apply reasoning effort: Task.effort > AgentDef.effort > global.
+        if let Some(effort_val) = task_input.effort.as_deref() {
+            options = options.reasoning_effort(effort_val);
+        } else if let Some(agent_effort) = agent_def.and_then(|a| a.effort.as_ref()) {
+            let val = match agent_effort {
+                jfc_core::Effort::Minimal => "low",
+                jfc_core::Effort::Low => "low",
+                jfc_core::Effort::Medium => "medium",
+                jfc_core::Effort::High => "high",
+                jfc_core::Effort::XHigh => "xhigh",
+            };
+            options = options.reasoning_effort(val);
+        } else if let Some(global) = crate::effort::active_global() {
+            options = options.reasoning_effort(global);
         }
 
         // Two-stage context safety, matching v131 Claude Code's

@@ -87,6 +87,7 @@ impl App {
             // context if processed later.
             self.pending_tool_calls.clear();
             self.pre_dispatched_tool_ids.clear();
+            self.in_flight_eager_dispatches = 0;
             if let Some(idx) = streaming_assistant_idx
                 && idx < self.messages.len()
             {

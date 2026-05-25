@@ -203,13 +203,9 @@ pub(crate) async fn continue_after_pause_turn(app: &mut App, tx: &mpsc::Sender<A
 }
 
 /// Maximum API round-trips per user turn before hard-stop.
-/// Matches CC 2.1.144's `maxTurns: 200` default. Configurable via
-/// `JFC_MAX_AGENTIC_TURNS` env var for testing.
-const MAX_AGENTIC_TURNS: u32 = {
-    // Can't read env at const time — use 200 as the compile-time default.
-    // Runtime override is checked in the function body.
-    200
-};
+/// Default: unlimited (u32::MAX). Configurable via `JFC_MAX_AGENTIC_TURNS`
+/// env var if a safety cap is desired.
+const MAX_AGENTIC_TURNS: u32 = u32::MAX;
 
 fn cap_main_continuation_history(provider_name: &str, messages: &mut Vec<ProviderMessage>) -> bool {
     if provider_name != "gemini" {

@@ -410,10 +410,15 @@ pub(crate) async fn handle_task_failed(
     // Adaptive re-planning: cascade failure to dependent tasks
     // and inject a system_reminder to prompt the model to re-plan.
     if !was_cancelled && factory_mode_enabled() {
-        let cascaded_ids = app.task_store.cascade_failure(task_id.as_str());
+        // Use the linked task id (the queued todo) for cascade/replan;
+        // fall back to the agent task id if no linkage exists.
+        let cascade_id = linked_task_id
+            .as_deref()
+            .unwrap_or(task_id.as_str());
+        let cascaded_ids = app.task_store.cascade_failure(cascade_id);
         let subject = app
             .task_store
-            .get(task_id.as_str())
+            .get(cascade_id)
             .map(|t| t.subject.clone())
             .unwrap_or_default();
         let cascaded_str = if cascaded_ids.is_empty() {
@@ -426,17 +431,17 @@ pub(crate) async fn handle_task_failed(
                 .join(", ")
         };
         let reminder = format!(
-            "Task {task_id} ({subject}) failed: {error}. Dependent tasks [{cascaded_str}] have been cancelled. \
+            "Task {cascade_id} ({subject}) failed: {error}. Dependent tasks [{cascaded_str}] have been cancelled. \
              Review the failure and either:\n\
              1. Fix the issue and re-create the failed task with TaskCreate\n\
              2. Revise the plan by creating replacement tasks\n\
              3. Mark the remaining work as not needed via TaskUpdate(status=deleted)"
         );
         // Auto-create a replan task so the factory can pick it up
-        if let Some(replan) = app.task_store.create_replan_task(task_id.as_str()) {
+        if let Some(replan) = app.task_store.create_replan_task(cascade_id) {
             tracing::info!(
                 target: "jfc::tasks::factory",
-                failed_id = %task_id,
+                failed_id = %cascade_id,
                 replan_id = %replan.id,
                 "auto-created replan task for failed task"
             );

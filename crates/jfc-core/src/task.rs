@@ -22,6 +22,9 @@ pub struct TaskInput {
     pub category: Option<String>,
     pub run_in_background: bool,
     pub model: Option<String>,
+    /// Reasoning effort override for this subagent (e.g. "low", "high", "max").
+    /// Precedence: Task.effort > AgentDef.effort > global effort.
+    pub effort: Option<String>,
     /// Name for the spawned agent — makes it addressable via SendMessage.
     /// When set along with `team_name`, spawns a persistent teammate instead
     /// of a one-shot subagent.
@@ -82,11 +85,13 @@ mod tests {
             category: None,
             run_in_background: false,
             model: None,
+            effort: None,
             name: None,
             team_name: None,
             mode: None,
             isolation: None,
             parent_task_id: None,
+            schema: None,
         }
     }
 

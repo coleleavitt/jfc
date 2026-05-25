@@ -82,6 +82,15 @@ impl PermissionMode {
                 | ToolKind::ToolSuggest
                 | ToolKind::CodeIndex
                 | ToolKind::GraphQuery
+                | ToolKind::GraphSearch
+                | ToolKind::GraphContext
+                | ToolKind::GraphNode
+                | ToolKind::GraphExplore
+                | ToolKind::GraphCallers
+                | ToolKind::GraphCallees
+                | ToolKind::GraphImpact
+                | ToolKind::GraphStatus
+                | ToolKind::GraphFiles
                 | ToolKind::RunCoverage
                 | ToolKind::MarketStatus
                 | ToolKind::CronList
@@ -138,6 +147,15 @@ impl PermissionMode {
                 | ToolKind::ToolSuggest
                 | ToolKind::CodeIndex
                 | ToolKind::GraphQuery
+                | ToolKind::GraphSearch
+                | ToolKind::GraphContext
+                | ToolKind::GraphNode
+                | ToolKind::GraphExplore
+                | ToolKind::GraphCallers
+                | ToolKind::GraphCallees
+                | ToolKind::GraphImpact
+                | ToolKind::GraphStatus
+                | ToolKind::GraphFiles
                 | ToolKind::RunCoverage
                 | ToolKind::MarketStatus
                 | ToolKind::CronList

@@ -482,12 +482,13 @@ async fn run_one_agent(
         category: None,
         run_in_background: false,
         model: req.model.clone(),
+        effort: None,
         name: None,
         team_name: None,
         mode: None,
         isolation: req.isolation.clone(),
         parent_task_id: None,
-            schema: None,
+        schema: None,
     };
 
     // Resolve an agent definition if a custom agentType was requested.

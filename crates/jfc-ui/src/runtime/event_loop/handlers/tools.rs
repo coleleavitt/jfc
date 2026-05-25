@@ -185,12 +185,15 @@ pub(crate) fn handle_tool_result(
 
 /// Handle `ToolEvent::AllComplete` — all tools in the current batch finished.
 pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
+    // Decrement the eager-dispatch counter if there are outstanding ones.
+    app.in_flight_eager_dispatches = app.in_flight_eager_dispatches.saturating_sub(1);
     tracing::info!(
         target: "jfc::stream",
         message_count = app.messages.len(),
         model = %app.model,
         pending_approvals = app.approval_queue.len() + usize::from(app.pending_approval.is_some()),
         pending_tool_calls = app.pending_tool_calls.len(),
+        in_flight_eager = app.in_flight_eager_dispatches,
         "ToolEvent::AllComplete"
     );
     // AllToolsComplete is *batch-local*: it fires when
@@ -211,7 +214,8 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
     // transcript.
     let turn_truly_complete = app.pending_approval.is_none()
         && app.approval_queue.is_empty()
-        && app.pending_tool_calls.is_empty();
+        && app.pending_tool_calls.is_empty()
+        && app.in_flight_eager_dispatches == 0;
     if !turn_truly_complete {
         tracing::debug!(
             target: "jfc::stream",

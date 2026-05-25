@@ -66,10 +66,33 @@ pub(crate) fn dispatch_tools_batched(
     let agents = crate::agents::load_agents(&cwd);
 
     for tc in task_calls {
-        let task_input = match tc.input.clone() {
+        let mut task_input = match tc.input.clone() {
             ToolInput::Task(ti) => ti,
             _ => unreachable!(),
         };
+
+        // Bug fix: if the model omitted parent_task_id but there's exactly
+        // one in-progress task in the store (the one the factory claimed),
+        // auto-link this delegation to it. This makes task auto-completion
+        // deterministic even when the model forgets to pass the field.
+        if task_input.parent_task_id.is_none() {
+            if let Some(ref store) = task_store {
+                let in_progress: Vec<_> = store
+                    .list_all()
+                    .into_iter()
+                    .filter(|t| t.status == jfc_session::TaskStatus::InProgress)
+                    .collect();
+                if in_progress.len() == 1 {
+                    let inferred_id = in_progress[0].id.clone();
+                    tracing::info!(
+                        target: "jfc::stream",
+                        inferred_parent = %inferred_id,
+                        "auto-linking Task delegation to sole in-progress task"
+                    );
+                    task_input.parent_task_id = Some(inferred_id.to_string());
+                }
+            }
+        }
 
         // ─── Teammate spawn path ─────────────────────────────────────────
         // When `name` + `team_name` are provided, spawn a persistent

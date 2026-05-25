@@ -13,6 +13,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Slop guard**: 11 new quality checks from academic literature (duplication ratio, dead-code injection, churn detection, coherence scoring, complexity gates, test quality heuristics)
 - **Claude Code 2.1.150 parity**: port remaining features including bridge attestation, idle prefetch, web cache, inline tools for non-native providers
 - Wire all remaining dead-code modules into runtime triggers (dreamer scheduler, plan dreamer, speculation, coaching, session recap, sprint budgets)
+- **Eager tool dispatch**: tools now execute immediately as they arrive mid-stream instead of waiting for StreamDone, eliminating perceived queuing latency
+- **Task effort field**: `effort` parameter on Task tool for per-subagent reasoning effort override (low/medium/high/xhigh/max)
+- Auto-link Task delegation to sole in-progress task when model omits `parent_task_id`
+- All graph tools (GraphSearch, GraphContext, GraphNode, GraphExplore, GraphCallers, GraphCallees, GraphImpact, GraphStatus, GraphFiles) now auto-approved in plan mode
+- Event loop burst-drain cap (256 events/iteration) to prevent producer starvation
+
+### Fixed
+
+- `sed` shell-safety parser now correctly distinguishes script arguments from file paths (no more false-positive rejections on `sed 's/foo/bar/' filename.rs`)
+- Char-boundary safe truncation in `SendUserMessage`, `session_recap`, and WebFetch tool result cap (prevents panics on multi-byte UTF-8)
+- Eager dispatch counter tracking: turn only completes when `in_flight_eager_dispatches` reaches 0
+- Task failure cascade now uses linked task id (the queued todo) instead of agent task id
+- Workflow runner: fix indentation of `schema` field in TaskInput construction
+- Remove agentic turn cap (was 200, now unlimited) — configurable via `JFC_MAX_AGENTIC_TURNS` if needed
 
 ### Changed
 

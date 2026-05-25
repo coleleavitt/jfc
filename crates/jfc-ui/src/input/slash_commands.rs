@@ -185,6 +185,7 @@ pub(super) async fn skill_fallthrough(
         app.agentic_turn_count = 0;
         app.thinking_started_at = None;
         app.pre_dispatched_tool_ids.clear();
+        app.in_flight_eager_dispatches = 0;
         app.thinking_ended_at = None;
         app.last_usage_output = 0;
         app.usage_apply_baseline = (0, 0, 0, 0);
