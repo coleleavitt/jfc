@@ -590,6 +590,60 @@ pub fn scan_file(path: &Path) -> Vec<ScaffoldFinding> {
     scan_text(&text, is_test_path(path))
 }
 
+/// Scan only the **added lines** of a unified diff (`git diff` output) for a
+/// single file. This is the diff-aware counterpart to [`scan_file`]: it flags
+/// stubs the current change *introduced*, not pre-existing patterns that
+/// happen to live in a file the change also touched — the false-positive class
+/// that otherwise blocks task completion whenever you edit a heavily-commented
+/// file.
+///
+/// `diff` is the unified-diff body for one file (with `+`/`-`/` ` line
+/// prefixes). `is_test` downgrades severity for test/fixture files. Lines
+/// removed (`-`) and context (` `) are ignored; only `+` additions (excluding
+/// the `+++` file header) are evaluated.
+pub fn scan_added_lines(diff: &str, is_test: bool) -> Vec<ScaffoldFinding> {
+    // Reconstruct the added-line text (without the leading `+`) so the same
+    // line-level scanner runs. `line` here is the diff line number, which is
+    // informational only — the gate cares about the finding set, not exact
+    // source line positions.
+    let mut findings = Vec::new();
+    for (idx, raw) in diff.lines().enumerate() {
+        // Added content lines start with a single '+', but the file header
+        // line is '+++ b/path' — skip it.
+        if !raw.starts_with('+') || raw.starts_with("+++") {
+            continue;
+        }
+        let added = &raw[1..];
+        if added.len() > 4000 {
+            continue;
+        }
+        let comment = is_comment_line(added);
+        for p in PATTERNS.iter() {
+            if p.code_only && comment {
+                continue;
+            }
+            if let Some(m) = p.re.find(added) {
+                if p.needs_corroboration && !CORROBORATING.is_match(added) {
+                    continue;
+                }
+                let severity = if is_test {
+                    downgrade(p.severity)
+                } else {
+                    p.severity
+                };
+                findings.push(ScaffoldFinding {
+                    line: idx + 1,
+                    matched: m.as_str().to_string(),
+                    severity,
+                    category: p.category,
+                    context: added.trim().chars().take(160).collect(),
+                });
+            }
+        }
+    }
+    findings
+}
+
 /// Cumulative weight of a finding set.
 pub fn total_weight(findings: &[ScaffoldFinding]) -> u32 {
     findings.iter().map(|f| f.severity.weight()).sum()
@@ -844,5 +898,41 @@ mod tests {
             false,
         );
         assert!(!f.is_empty());
+    }
+
+    // ─── Diff-aware scanning (scan_added_lines) ───────────────────────
+
+    #[test]
+    fn added_lines_flag_introduced_stub() {
+        let diff = "@@ -1,2 +1,3 @@\n fn foo() {}\n+fn bar() { unimplemented!() }\n context";
+        let f = scan_added_lines(diff, false);
+        assert!(
+            f.iter().any(|x| x.severity == Severity::Critical),
+            "added unimplemented!() should be flagged: {f:?}"
+        );
+    }
+
+    #[test]
+    fn context_and_removed_lines_are_ignored() {
+        // Pre-existing stub on a context (' ') or removed ('-') line must NOT
+        // be flagged — only '+' additions count. This is the false-positive
+        // class the diff-aware gate fixes.
+        let diff = " // placeholder implementation (pre-existing)\n-let x = todo!();\n+let y = 2;";
+        let f = scan_added_lines(diff, false);
+        assert!(f.is_empty(), "context/removed stubs must be ignored: {f:?}");
+    }
+
+    #[test]
+    fn diff_file_header_not_flagged() {
+        let diff = "+++ b/src/placeholder_thing.rs\n+let ok = 1;";
+        let f = scan_added_lines(diff, false);
+        assert!(f.is_empty(), "file header must not be scanned: {f:?}");
+    }
+
+    #[test]
+    fn added_doc_comment_stub_flagged() {
+        let diff = "@@ @@\n+    /// Stub: needs real impl\n+    fn x() {}";
+        let f = scan_added_lines(diff, false);
+        assert!(f.iter().any(|x| x.severity == Severity::High));
     }
 }

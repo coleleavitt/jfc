@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased] — 2026-05-24
 
+### Fixed
+
+- **Diff-aware stub evaluator (root-cause fix for false-positive `TaskDone` rejections)**: `evaluate_work_quality` previously scanned *whole files* via `scan_file`, so any pre-existing `placeholder`/`no-op`/`silently drop` doc comment in a file the change merely touched would block task completion. New `scaffold_detector::scan_added_lines()` evaluates only the `+` lines of `git diff HEAD` (per-file, `--unified=0`), so the gate flags stubs the change *introduced*, not patterns that were already there. Untracked new files (no diff base) are still scanned whole. +4 tests
+
 ### Added
 
 - **Self-continuation guard (the "factory" behavioral half)**: derived from analyzing 133 turns where the user had to type "continue" — ~41% ended with the assistant *asking permission for the next obvious step* ("Want me to …?", a trailing question, "shall I", "let me know"). New `assistant_text_stalls()` detects these conversational stalls (tail-window phrase + trailing-question match), and `stream_done`'s terminal EndTurn path now auto-drives the next step via `continue_agentic_loop` when (a) the model stalled or (b) queued tasks remain. Gated by `[continuation] auto_continue` / `JFC_AUTO_CONTINUE` (factory mode implies it), disabled in plan mode, and capped by `max_self_continuations` (default 25, reset on every real user submit) to prevent runaway loops. The injected nudge phrases the operating rule explicitly: finish the scope, only pause for genuine forks. +6 tests

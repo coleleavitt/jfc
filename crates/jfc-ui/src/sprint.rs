@@ -408,29 +408,69 @@ fn git_source_paths(git_root: &Path, args: &[&str]) -> Option<Vec<PathBuf>> {
     )
 }
 
-/// Collect the set of source files to evaluate: unstaged-modified, staged, and
-/// newly-created untracked files (so a brand-new stub file is also caught).
-fn files_to_evaluate(git_root: &Path) -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = Vec::new();
-    if let Some(p) = git_source_paths(git_root, &["diff", "--name-only", "HEAD"]) {
-        files.extend(p);
-    }
-    if let Some(p) = git_source_paths(git_root, &["diff", "--name-only", "--cached"]) {
-        files.extend(p);
-    }
-    // Untracked, not-ignored new files.
-    if let Some(p) = git_source_paths(git_root, &["ls-files", "--others", "--exclude-standard"]) {
-        files.extend(p);
-    }
-    files.sort();
-    files.dedup();
-    files
+/// Collect untracked, not-ignored new source files. These have no diff base,
+/// so they're scanned whole (every line is "added").
+fn untracked_source_files(git_root: &Path) -> Vec<PathBuf> {
+    git_source_paths(git_root, &["ls-files", "--others", "--exclude-standard"]).unwrap_or_default()
 }
 
-/// Evaluate recently-modified (and newly-created) source files for scaffold/
-/// stub patterns using the weighted [`crate::scaffold_detector`].
+/// Per-file unified diff against HEAD (staged + unstaged), source files only.
+/// Returns `(relative_path, diff_body)` pairs. Splitting on the `diff --git`
+/// header keeps each file's hunk text isolated so the scanner attributes
+/// findings to the right file.
+fn changed_file_diffs(git_root: &Path) -> Vec<(PathBuf, String)> {
+    let output = std::process::Command::new("git")
+        .args(["diff", "HEAD", "--unified=0"])
+        .current_dir(git_root)
+        .output();
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut out = Vec::new();
+    let mut current_path: Option<PathBuf> = None;
+    let mut current_body = String::new();
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            // Flush the previous file.
+            if let Some(p) = current_path.take()
+                && is_source_file(&p.to_string_lossy())
+            {
+                out.push((p, std::mem::take(&mut current_body)));
+            }
+            current_body.clear();
+            // `a/path b/path` → take the b/ side.
+            let b_path = rest
+                .split_whitespace()
+                .next_back()
+                .and_then(|s| s.strip_prefix("b/"))
+                .unwrap_or("");
+            current_path = (!b_path.is_empty()).then(|| git_root.join(b_path));
+        } else if current_path.is_some() {
+            current_body.push_str(line);
+            current_body.push('\n');
+        }
+    }
+    if let Some(p) = current_path
+        && is_source_file(&p.to_string_lossy())
+    {
+        out.push((p, current_body));
+    }
+    out
+}
+
+/// Evaluate the **current change** for scaffold/stub patterns using the
+/// weighted [`crate::scaffold_detector`].
 ///
-/// Files scanned: unstaged-modified, staged, and untracked-new source files.
+/// Diff-aware: only lines the change *added* are evaluated (via
+/// [`scaffold_detector::scan_added_lines`] over `git diff HEAD`), plus
+/// untracked new files scanned whole. This is the key correctness property —
+/// pre-existing patterns in a file the change merely touched do NOT block
+/// completion; only stubs the change introduced do.
+///
 /// A finding set blocks completion when it contains any `Critical` indicator
 /// (e.g. `unimplemented!()`) or its cumulative weight crosses
 /// [`scaffold_detector::DEFAULT_BLOCK_THRESHOLD`]. Test/fixture files have
@@ -438,16 +478,14 @@ fn files_to_evaluate(git_root: &Path) -> Vec<PathBuf> {
 pub fn evaluate_work_quality(git_root: &Path) -> EvaluationResult {
     use crate::scaffold_detector;
 
-    let files = files_to_evaluate(git_root);
-
     let mut issues = Vec::new();
     let mut all_findings = Vec::new();
-    for file in &files {
-        let findings = scaffold_detector::scan_file(file);
+
+    let mut record = |file: &Path, findings: Vec<scaffold_detector::ScaffoldFinding>| {
         for f in findings {
             all_findings.push(f.clone());
             issues.push(EvaluationIssue {
-                file: file.clone(),
+                file: file.to_path_buf(),
                 line: f.line,
                 pattern: format!(
                     "{} [{}/{}]",
@@ -458,6 +496,21 @@ pub fn evaluate_work_quality(git_root: &Path) -> EvaluationResult {
                 context: f.context,
             });
         }
+    };
+
+    // Added lines of tracked changes (diff-aware — ignores pre-existing code).
+    for (file, diff) in changed_file_diffs(git_root) {
+        if scaffold_detector::is_self_referential(&file) {
+            continue;
+        }
+        let findings =
+            scaffold_detector::scan_added_lines(&diff, scaffold_detector::is_test_path(&file));
+        record(&file, findings);
+    }
+
+    // Untracked new files have no diff base — scan whole (all lines are new).
+    for file in untracked_source_files(git_root) {
+        record(&file, scaffold_detector::scan_file(&file));
     }
 
     let blocked =
