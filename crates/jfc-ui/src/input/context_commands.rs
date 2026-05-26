@@ -1308,6 +1308,67 @@ pub(super) async fn cmd_remote_control(
     }
 }
 
+/// `/factory` — show factory throughput + quality telemetry (Morescient GAI,
+/// arXiv:2406.04710): success rate, rework ratio, retry/attempt counts.
+pub(super) async fn cmd_factory(
+    app: &mut App,
+    _parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    let m = app.task_store.factory_metrics();
+    let success = m
+        .success_rate()
+        .map(|r| format!("{:.0}%", r * 100.0))
+        .unwrap_or_else(|| "—".to_string());
+    let msg = format!(
+        "## Factory metrics\n\n\
+         | Metric | Value |\n\
+         | --- | --- |\n\
+         | Total tasks | {} |\n\
+         | Completed | {} |\n\
+         | In progress | {} |\n\
+         | Pending | {} |\n\
+         | Failed | {} |\n\
+         | **Success rate** | {} |\n\
+         | Rework ratio (replans/total) | {:.0}% |\n\
+         | Retried tasks | {} |\n\
+         | Multi-attempt tasks | {} |\n\
+         | Avg extra attempts/task | {:.2} |\n\n\
+         {}",
+        m.total(),
+        m.completed,
+        m.in_progress,
+        m.pending,
+        m.failed,
+        success,
+        m.rework_ratio() * 100.0,
+        m.retried_tasks,
+        m.multi_attempt_tasks,
+        m.avg_attempts(),
+        factory_health_note(&m),
+    );
+    app.messages.push(ChatMessage::assistant(msg));
+}
+
+/// One-line health interpretation of the factory metrics.
+fn factory_health_note(m: &jfc_session::FactoryMetrics) -> &'static str {
+    if m.total() == 0 {
+        return "_No tasks yet — the factory is idle._";
+    }
+    if m.rework_ratio() > 0.3 {
+        return "⚠️ High rework — the planner is under-decomposing; tasks keep needing revision.";
+    }
+    if m.multi_attempt_tasks > 0 {
+        return "⚠️ Some tasks needed multiple attempts — consider splitting the flaky ones.";
+    }
+    match m.success_rate() {
+        Some(r) if r >= 0.9 => "✅ Healthy — high success rate, low rework.",
+        Some(_) => "Steady — watch the failure rate.",
+        None => "_Tasks queued; nothing terminal yet._",
+    }
+}
+
 pub(super) async fn cmd_oauth_login(
     app: &mut App,
     _parts: &[&str],

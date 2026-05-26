@@ -29,8 +29,8 @@ pub use execution_result::{
 pub use ids::{AgentId, SessionId, TaskId, ToolId};
 pub use task::{TaskInput, TaskStatusPart};
 pub use task_store::{
-    Task, TaskCounts, TaskError, TaskKind, TaskPatch, TaskRisk, TaskStatus, TaskValidation,
-    TodoTaskId,
+    FactoryMetrics, Task, TaskCounts, TaskError, TaskKind, TaskPatch, TaskRisk, TaskStatus,
+    TaskValidation, TodoTaskId,
 };
 pub use tool_input::{ReplacementMode, ToolInput, ToolInputError};
 pub use tool_kind::ToolKind;

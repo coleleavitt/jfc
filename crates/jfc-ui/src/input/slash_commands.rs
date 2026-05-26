@@ -252,6 +252,7 @@ slash_commands! {
         "/coach" [] "show coaching tips based on this session's tool usage" => cmd_coach,
         "/remote" [] "spawn a remote CCR session (requires ANTHROPIC_API_KEY)" => cmd_remote,
         "/remote-control" ["/rc"] "toggle remote-control server (WS on port 4242)" => cmd_remote_control,
+        "/factory" [] "show factory throughput, success rate, rework, and attempt metrics" => cmd_factory,
         "/oauth-login" [] "start OAuth device-flow login (RFC 8628)" => cmd_oauth_login,
         "/config" [] "show parsed config (`/config path` for the file location)" => cmd_config,
         "/continue" ["/c"] "resume the most recent session (`/continue all` for any cwd)" => cmd_continue,

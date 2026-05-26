@@ -35,8 +35,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 pub use jfc_core::{
-    Task, TaskCounts, TaskError, TaskKind, TaskPatch, TaskRisk, TaskStatus, TaskValidation,
-    TodoTaskId as TaskId,
+    FactoryMetrics, Task, TaskCounts, TaskError, TaskKind, TaskPatch, TaskRisk, TaskStatus,
+    TaskValidation, TodoTaskId as TaskId,
 };
 
 pub fn task_stores_dir() -> PathBuf {
@@ -109,6 +109,85 @@ impl DeletedFilter {
     fn includes_deleted(self) -> bool {
         matches!(self, Self::Include)
     }
+}
+
+/// Milliseconds since the UNIX epoch.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Outcome of [`TaskStore::recover_from_failure`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FailureRecovery {
+    /// The failed task id wasn't found.
+    Unknown,
+    /// Transient failure under the attempt budget — task re-queued as Pending.
+    Retried {
+        task_id: TaskId,
+        attempt: u32,
+        max_attempts: u32,
+    },
+    /// Hard failure — task marked Failed, a replan task created, and the
+    /// listed dependents rerouted to block on the replan (preserved, not
+    /// destroyed).
+    Replanned {
+        failed_id: TaskId,
+        replan_id: TaskId,
+        rerouted: Vec<TaskId>,
+        attempts: u32,
+    },
+}
+
+/// Heuristic: does this failure look transient (worth a retry) rather than a
+/// deterministic logic error? Transient signals are network/timeout/lock/
+/// rate-limit/IO classes that commonly resolve on a fresh attempt. A genuine
+/// compile error or assertion failure is NOT transient — retrying just burns
+/// budget, so we fall straight through to replan.
+pub fn is_transient_failure(error: &str) -> bool {
+    let e = error.to_ascii_lowercase();
+    const TRANSIENT: &[&str] = &[
+        "timeout",
+        "timed out",
+        "connection",
+        "network",
+        "rate limit",
+        "rate-limit",
+        "429",
+        "503",
+        "502",
+        "504",
+        "temporarily",
+        "deadlock",
+        "lock",
+        "resource temporarily unavailable",
+        "broken pipe",
+        "reset by peer",
+        "try again",
+        "overloaded",
+        "stream error",
+        "interrupted",
+    ];
+    // Deterministic-failure signals override: if it looks like a real logic /
+    // build error, never treat it as transient.
+    const HARD: &[&str] = &[
+        "error[e", // rustc error code
+        "compile",
+        "assertion failed",
+        "assertion `",
+        "panicked at",
+        "type mismatch",
+        "cannot find",
+        "unresolved import",
+        "test failed",
+        "verification failed",
+    ];
+    if HARD.iter().any(|h| e.contains(h)) {
+        return false;
+    }
+    TRANSIENT.iter().any(|t| e.contains(t))
 }
 
 /// Persistent task store. Read-modify-write with a `Mutex` because all
@@ -485,6 +564,7 @@ impl TaskStore {
             kind: None,
             tags: Vec::new(),
             priority: None,
+            attempt_count: 0,
         };
         inner.tasks.insert(id, task.clone());
         self.persist(&inner);
@@ -710,6 +790,40 @@ impl TaskStore {
         self.list(DeletedFilter::Exclude)
     }
 
+    /// Compute factory throughput + quality metrics (Morescient GAI,
+    /// arXiv:2406.04710). Walks the task store once and aggregates counts
+    /// the scheduler and `/factory` view surface.
+    pub fn factory_metrics(&self) -> FactoryMetrics {
+        let inner = self.inner.lock().unwrap();
+        self.factory_metrics_inner(&inner)
+    }
+
+    /// Compute metrics from an already-held inner guard (avoids re-locking
+    /// from callers like `recover_from_failure` that hold the mutex).
+    fn factory_metrics_inner(&self, inner: &TaskStoreInner) -> FactoryMetrics {
+        let mut m = FactoryMetrics::default();
+        for t in inner.tasks.values() {
+            match t.status {
+                TaskStatus::Pending => m.pending += 1,
+                TaskStatus::InProgress => m.in_progress += 1,
+                TaskStatus::Completed => m.completed += 1,
+                TaskStatus::Failed => m.failed += 1,
+                TaskStatus::Deleted => continue,
+            }
+            if t.tags.contains(&"replan".to_string()) {
+                m.replan_tasks += 1;
+            }
+            if t.attempt_count > 0 {
+                m.retried_tasks += 1;
+                m.total_attempts += t.attempt_count;
+            }
+            if t.attempt_count > 1 {
+                m.multi_attempt_tasks += 1;
+            }
+        }
+        m
+    }
+
     /// Cascade failure: when a task fails, mark all tasks that depend on it
     /// (directly or transitively) as Failed. Returns the list of newly-failed
     /// task IDs. Persists after cascade.
@@ -796,6 +910,141 @@ impl TaskStore {
                 );
                 None
             }
+        }
+    }
+
+    /// Default attempt budget before a transient failure becomes a hard fail.
+    pub const DEFAULT_MAX_ATTEMPTS: u32 = 3;
+
+    /// Proactively recover from a task failure (Agentic Task Graph, arXiv:
+    /// 2605.11951): instead of blindly cascading the whole dependent subtree
+    /// to `Failed`, classify the failure and preserve recoverable work.
+    ///
+    /// - **Bounded retry**: increments `attempt_count`. If the failure looks
+    ///   transient (see [`is_transient_failure`]) and attempts are under
+    ///   `max_attempts`, the task is re-queued as `Pending` for another go —
+    ///   no dependents are touched.
+    /// - **Hard fail + non-destructive reroute**: once the budget is spent (or
+    ///   the failure is non-transient), the task is marked `Failed`, a replan
+    ///   task is created, and direct dependents are **rerouted** to block on
+    ///   the replan task (added to their `blocked_by`) rather than being
+    ///   destroyed. The subtree is preserved and unblocks automatically once
+    ///   the replan completes.
+    ///
+    /// Returns a [`FailureRecovery`] describing what happened so the caller
+    /// can craft the right system-reminder.
+    pub fn recover_from_failure(&self, failed_id: &str, error: &str) -> FailureRecovery {
+        let max_attempts = Self::DEFAULT_MAX_ATTEMPTS;
+        let mut inner = self.inner.lock().unwrap();
+
+        let Some(task) = inner.tasks.get_mut(failed_id) else {
+            return FailureRecovery::Unknown;
+        };
+        task.attempt_count += 1;
+        let attempts = task.attempt_count;
+        let transient = is_transient_failure(error);
+
+        // Retry path: transient + budget remaining → re-queue, touch nothing
+        // else. This is the proactive bit — most transient failures (flaky
+        // test, network blip, lock contention) resolve on a fresh attempt.
+        if transient && attempts < max_attempts {
+            task.status = TaskStatus::Pending;
+            task.owner = None;
+            let id = task.id.clone();
+            self.persist(&inner);
+            tracing::info!(
+                target: "jfc::tasks",
+                failed_id, attempts, max_attempts,
+                "recover_from_failure: transient failure, re-queued for retry"
+            );
+            return FailureRecovery::Retried {
+                task_id: id,
+                attempt: attempts,
+                max_attempts,
+            };
+        }
+
+        // Hard-fail path: mark the task Failed.
+        task.status = TaskStatus::Failed;
+        let subject = task.subject.clone();
+        let description = task.description.clone();
+        let failed_tid = task.id.clone();
+
+        // Find direct, recoverable dependents (blocked_by contains failed_id
+        // and not already terminal). These are REROUTED, not destroyed.
+        let dependents: Vec<TaskId> = inner
+            .tasks
+            .values()
+            .filter(|t| {
+                t.blocked_by.contains(&failed_tid)
+                    && !matches!(
+                        t.status,
+                        TaskStatus::Failed | TaskStatus::Deleted | TaskStatus::Completed
+                    )
+            })
+            .map(|t| t.id.clone())
+            .collect();
+
+        // Create the replan task inline (we hold the lock; build it directly).
+        // Compute factory metrics for the replan prompt context.
+        let fm = self.factory_metrics_inner(&inner);
+        let replan_id = TaskId::new(format!("{}-replan", failed_tid.as_str()));
+        let replan = Task {
+            id: replan_id.clone(),
+            subject: format!("Diagnose + replan: {subject}"),
+            description: format!(
+                "Task `{failed_tid}` ('{subject}') failed after {attempts} attempt(s): {error}\n\n\
+                 Investigate the root cause and create revised subtasks. {} dependent task(s) \
+                 are blocked on this replan and will unblock automatically when it completes.\n\n\
+                 Factory health: {}/{} completed, success rate {}, rework ratio {:.0}%.\n\n\
+                 Original description: {description}",
+                dependents.len(),
+                fm.completed,
+                fm.completed + fm.failed,
+                fm.success_rate()
+                    .map(|r| format!("{:.0}%", r * 100.0))
+                    .unwrap_or_else(|| "—".to_string()),
+                fm.rework_ratio() * 100.0,
+            ),
+            active_form: None,
+            status: TaskStatus::Pending,
+            owner: None,
+            blocks: dependents.iter().cloned().collect(),
+            blocked_by: BTreeSet::new(),
+            metadata: None,
+            created_at_ms: now_ms(),
+            acceptance_criteria: None,
+            verification_command: None,
+            risk: None,
+            parent_id: Some(failed_tid.clone()),
+            kind: Some(TaskKind::Decision),
+            tags: vec!["replan".to_string()],
+            priority: None,
+            attempt_count: 0,
+        };
+        inner.tasks.insert(replan_id.clone(), replan);
+
+        // Reroute: each recoverable dependent now blocks on the replan instead
+        // of (only) the failed task. It stays Pending — preserved, not failed.
+        for dep_id in &dependents {
+            if let Some(dep) = inner.tasks.get_mut(dep_id.as_str()) {
+                dep.blocked_by.insert(replan_id.clone());
+            }
+        }
+
+        self.persist(&inner);
+        tracing::info!(
+            target: "jfc::tasks",
+            failed_id, attempts,
+            rerouted = dependents.len(),
+            replan_id = %replan_id,
+            "recover_from_failure: hard fail, created replan + rerouted dependents"
+        );
+        FailureRecovery::Replanned {
+            failed_id: failed_tid,
+            replan_id,
+            rerouted: dependents,
+            attempts,
         }
     }
 
@@ -1313,5 +1562,188 @@ mod tests {
             .unwrap();
         // Must NOT collide with any of t1..t5
         assert_eq!(new_task.id, "t6");
+    }
+
+    // ─── Proactive failure recovery (Surface 1) ──────────────────────────
+
+    #[test]
+    fn transient_failure_classification() {
+        assert!(is_transient_failure("Stream idle timeout reached"));
+        assert!(is_transient_failure("connection reset by peer"));
+        assert!(is_transient_failure("HTTP 429 rate limit"));
+        assert!(is_transient_failure("deadlock detected, try again"));
+        // Hard/deterministic failures are NOT transient.
+        assert!(!is_transient_failure("error[E0308]: mismatched types"));
+        assert!(!is_transient_failure("assertion failed: x == y"));
+        assert!(!is_transient_failure("test failed: 3 passed; 1 failed"));
+        // A timeout phrase inside a compile error stays hard.
+        assert!(!is_transient_failure(
+            "compile error: function `timeout` not found"
+        ));
+    }
+
+    #[test]
+    fn transient_failure_retries_under_budget() {
+        let store = TaskStore::in_memory();
+        let t = store
+            .create("flaky".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        let r = store.recover_from_failure(t.id.as_str(), "connection timeout");
+        match r {
+            FailureRecovery::Retried { attempt, .. } => assert_eq!(attempt, 1),
+            other => panic!("expected Retried, got {other:?}"),
+        }
+        // Re-queued as Pending, attempt_count bumped.
+        let after = store.get(t.id.as_str()).unwrap();
+        assert_eq!(after.status, TaskStatus::Pending);
+        assert_eq!(after.attempt_count, 1);
+    }
+
+    #[test]
+    fn transient_failure_hard_fails_after_budget() {
+        let store = TaskStore::in_memory();
+        let t = store
+            .create("flaky".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        // Exhaust the budget (DEFAULT_MAX_ATTEMPTS = 3).
+        let _ = store.recover_from_failure(t.id.as_str(), "timeout");
+        let _ = store.recover_from_failure(t.id.as_str(), "timeout");
+        let r = store.recover_from_failure(t.id.as_str(), "timeout");
+        assert!(
+            matches!(r, FailureRecovery::Replanned { .. }),
+            "should hard-fail after budget, got {r:?}"
+        );
+        let after = store.get(t.id.as_str()).unwrap();
+        assert_eq!(after.status, TaskStatus::Failed);
+        assert_eq!(after.attempt_count, 3);
+    }
+
+    #[test]
+    fn hard_failure_reroutes_dependents_non_destructively() {
+        let store = TaskStore::in_memory();
+        let base = store
+            .create("base".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        // A dependent blocked by `base`.
+        let dep = store
+            .create("dependent".into(), "d".into(), None, vec![base.id.clone()])
+            .unwrap();
+
+        // Non-transient failure → immediate hard fail + reroute.
+        let r = store.recover_from_failure(base.id.as_str(), "error[E0308]: mismatched types");
+        let FailureRecovery::Replanned {
+            replan_id,
+            rerouted,
+            ..
+        } = r
+        else {
+            panic!("expected Replanned");
+        };
+
+        // The dependent is PRESERVED (still Pending), not Failed.
+        let dep_after = store.get(dep.id.as_str()).unwrap();
+        assert_eq!(
+            dep_after.status,
+            TaskStatus::Pending,
+            "dependent must be preserved, not destroyed"
+        );
+        // And it's now blocked on the replan task.
+        assert!(
+            dep_after.blocked_by.contains(&replan_id),
+            "dependent should be rerouted to block on the replan task"
+        );
+        assert!(rerouted.contains(&dep.id));
+
+        // The replan task exists and is Pending.
+        let replan = store.get(replan_id.as_str()).unwrap();
+        assert_eq!(replan.status, TaskStatus::Pending);
+        assert_eq!(replan.kind, Some(TaskKind::Decision));
+    }
+
+    #[test]
+    fn non_transient_failure_skips_retry() {
+        let store = TaskStore::in_memory();
+        let t = store
+            .create("logic".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        // First failure, but non-transient → straight to replan (no retry).
+        let r = store.recover_from_failure(t.id.as_str(), "assertion failed");
+        assert!(matches!(r, FailureRecovery::Replanned { attempts: 1, .. }));
+    }
+
+    #[test]
+    fn unknown_task_recovery_is_graceful() {
+        let store = TaskStore::in_memory();
+        assert_eq!(
+            store.recover_from_failure("nope", "x"),
+            FailureRecovery::Unknown
+        );
+    }
+
+    // ─── Factory metrics (Surface 2) ─────────────────────────────────────
+
+    #[test]
+    fn factory_metrics_empty_store() {
+        let store = TaskStore::in_memory();
+        let m = store.factory_metrics();
+        assert_eq!(m.total(), 0);
+        assert_eq!(m.success_rate(), None);
+        assert_eq!(m.rework_ratio(), 0.0);
+    }
+
+    #[test]
+    fn factory_metrics_success_rate_and_rework() {
+        let store = TaskStore::in_memory();
+        let a = store
+            .create("a".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        let b = store
+            .create("b".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        // a completes, b hard-fails (non-transient → replan created).
+        store
+            .update(
+                a.id.as_str(),
+                TaskPatch {
+                    status: Some(TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        store.recover_from_failure(b.id.as_str(), "assertion failed");
+
+        let m = store.factory_metrics();
+        assert_eq!(m.completed, 1);
+        assert_eq!(m.failed, 1);
+        // success = completed / (completed + failed) = 1/2.
+        assert_eq!(m.success_rate(), Some(0.5));
+        // One replan task was created → rework.
+        assert_eq!(m.replan_tasks, 1);
+        assert!(m.rework_ratio() > 0.0);
+    }
+
+    #[test]
+    fn factory_metrics_counts_retries() {
+        let store = TaskStore::in_memory();
+        let t = store
+            .create("flaky".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        // Two transient retries (attempt_count → 2), then completes.
+        store.recover_from_failure(t.id.as_str(), "timeout");
+        store.recover_from_failure(t.id.as_str(), "timeout");
+        store
+            .update(
+                t.id.as_str(),
+                TaskPatch {
+                    status: Some(TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let m = store.factory_metrics();
+        assert_eq!(m.retried_tasks, 1);
+        assert_eq!(m.total_attempts, 2);
+        assert_eq!(m.multi_attempt_tasks, 1); // attempt_count > 1
     }
 }

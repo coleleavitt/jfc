@@ -19,9 +19,9 @@ pub use catalog::{
     shorten_cwd,
 };
 pub use task_store::{
-    DeletedFilter, Task, TaskCounts, TaskError, TaskId, TaskKind, TaskPatch, TaskRisk, TaskStatus,
-    TaskStore, TaskValidation, task_store_path, task_stores_dir, team_task_store_path,
-    team_tasks_dir,
+    DeletedFilter, FactoryMetrics, FailureRecovery, Task, TaskCounts, TaskError, TaskId, TaskKind,
+    TaskPatch, TaskRisk, TaskStatus, TaskStore, TaskValidation, is_transient_failure,
+    task_store_path, task_stores_dir, team_task_store_path, team_tasks_dir,
 };
 
 pub fn sessions_dir() -> PathBuf {

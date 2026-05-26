@@ -167,6 +167,16 @@ pub struct Task {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<u8>,
+    /// How many times execution of this task has failed. Drives bounded
+    /// retry (transient failures re-queue until this hits `max_attempts`)
+    /// and the rework/attempts factory metrics. See
+    /// [`crate::task_store`] recovery logic.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub attempt_count: u32,
+}
+
+fn is_zero_u32(n: &u32) -> bool {
+    *n == 0
 }
 
 impl Task {
@@ -212,4 +222,62 @@ pub struct TaskCounts {
     pub pending: usize,
     pub in_progress: usize,
     pub completed: usize,
+}
+
+/// Factory throughput + quality telemetry (Morescient GAI, arXiv:2406.04710):
+/// measured feedback the scheduler and the user can read to reason about the
+/// production line — not just raw counts, but rates and rework.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct FactoryMetrics {
+    /// Tasks in each terminal/active state.
+    pub pending: usize,
+    pub in_progress: usize,
+    pub completed: usize,
+    pub failed: usize,
+    /// Replan tasks (tagged `replan`) — the rework backlog.
+    pub replan_tasks: usize,
+    /// Tasks that were retried at least once (`attempt_count > 0`).
+    pub retried_tasks: usize,
+    /// Sum of all `attempt_count`s across tasks — total wasted/extra runs.
+    pub total_attempts: u32,
+    /// Tasks that needed more than one attempt to complete (or are still
+    /// trying). A proxy for "hard" tasks the planner under-decomposed.
+    pub multi_attempt_tasks: usize,
+}
+
+impl FactoryMetrics {
+    /// Total tasks ever created (excluding deleted), = the denominator for
+    /// success/rework rates.
+    pub fn total(&self) -> usize {
+        self.pending + self.in_progress + self.completed + self.failed
+    }
+
+    /// Completed / (completed + failed). 1.0 when nothing has failed; `None`
+    /// when nothing has reached a terminal state yet.
+    pub fn success_rate(&self) -> Option<f64> {
+        let terminal = self.completed + self.failed;
+        (terminal > 0).then(|| self.completed as f64 / terminal as f64)
+    }
+
+    /// Rework ratio: replan tasks / total. High means the plan keeps needing
+    /// revision — a signal the planner should decompose more carefully.
+    pub fn rework_ratio(&self) -> f64 {
+        let total = self.total();
+        if total == 0 {
+            return 0.0;
+        }
+        self.replan_tasks as f64 / total as f64
+    }
+
+    /// Average attempts across all non-deleted tasks (≥1.0 once any task has
+    /// been worked). Rises with flakiness / under-decomposition.
+    pub fn avg_attempts(&self) -> f64 {
+        let total = self.total();
+        if total == 0 {
+            return 0.0;
+        }
+        // Each task is attempted at least conceptually once; attempt_count
+        // counts *extra* tries, so average extra retries per task.
+        self.total_attempts as f64 / total as f64
+    }
 }

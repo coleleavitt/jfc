@@ -407,43 +407,57 @@ pub(crate) async fn handle_task_failed(
         }
     }
 
-    // Adaptive re-planning: cascade failure to dependent tasks
-    // and inject a system_reminder to prompt the model to re-plan.
+    // Proactive failure recovery (Agentic Task Graph, arXiv:2605.11951):
+    // classify the failure, retry transient ones under budget, and on hard
+    // failure reroute recoverable dependents onto a replan task instead of
+    // destroying the subtree. Replaces the old destructive cascade.
     if !was_cancelled && factory_mode_enabled() {
-        // Use the linked task id (the queued todo) for cascade/replan;
-        // fall back to the agent task id if no linkage exists.
-        let cascade_id = linked_task_id.as_deref().unwrap_or(task_id.as_str());
-        let cascaded_ids = app.task_store.cascade_failure(cascade_id);
+        // Use the linked task id (the queued todo); fall back to the agent id.
+        let recover_id = linked_task_id.as_deref().unwrap_or(task_id.as_str());
         let subject = app
             .task_store
-            .get(cascade_id)
+            .get(recover_id)
             .map(|t| t.subject.clone())
             .unwrap_or_default();
-        let cascaded_str = if cascaded_ids.is_empty() {
-            "none".to_string()
-        } else {
-            cascaded_ids
-                .iter()
-                .map(|id| id.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
+
+        let recovery = app.task_store.recover_from_failure(recover_id, &error);
+        let reminder = match &recovery {
+            jfc_session::FailureRecovery::Retried {
+                task_id: rid,
+                attempt,
+                max_attempts,
+            } => format!(
+                "Task {rid} ({subject}) failed with a transient error (attempt {attempt}/{max_attempts}): {error}\n\
+                 It has been re-queued for another attempt. Continue and retry it — the failure \
+                 looked recoverable (timeout/network/lock class)."
+            ),
+            jfc_session::FailureRecovery::Replanned {
+                failed_id,
+                replan_id,
+                rerouted,
+                attempts,
+            } => {
+                let rerouted_str = if rerouted.is_empty() {
+                    "none".to_string()
+                } else {
+                    rerouted
+                        .iter()
+                        .map(|id| id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                format!(
+                    "Task {failed_id} ({subject}) hard-failed after {attempts} attempt(s): {error}\n\
+                     Created replan task {replan_id}; dependent task(s) [{rerouted_str}] are now \
+                     blocked on it (preserved, NOT cancelled) and will unblock when it completes.\n\
+                     Work the replan task: diagnose the root cause, then either fix + re-create the \
+                     failed task or revise its subtasks. The rerouted dependents resume automatically."
+                )
+            }
+            jfc_session::FailureRecovery::Unknown => format!(
+                "Task failed: {error}. (Task {recover_id} not found in the store for recovery.)"
+            ),
         };
-        let reminder = format!(
-            "Task {cascade_id} ({subject}) failed: {error}. Dependent tasks [{cascaded_str}] have been cancelled. \
-             Review the failure and either:\n\
-             1. Fix the issue and re-create the failed task with TaskCreate\n\
-             2. Revise the plan by creating replacement tasks\n\
-             3. Mark the remaining work as not needed via TaskUpdate(status=deleted)"
-        );
-        // Auto-create a replan task so the factory can pick it up
-        if let Some(replan) = app.task_store.create_replan_task(cascade_id) {
-            tracing::info!(
-                target: "jfc::tasks::factory",
-                failed_id = %cascade_id,
-                replan_id = %replan.id,
-                "auto-created replan task for failed task"
-            );
-        }
         crate::system_reminder::append_to_last_user(&mut app.messages, &reminder);
         maybe_continue_task_factory(app, tx).await;
     }
