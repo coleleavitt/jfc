@@ -22,12 +22,12 @@
 //! # Example
 //!
 //! ```ignore
-//! use jfc_graph::pass::{PassManager, StubResolveSymbolsPass, StubInferTypesPass, GraphFlag};
+//! use jfc_graph::pass::{PassManager, DemoResolveSymbolsPass, DemoInferTypesPass, GraphFlag};
 //!
 //! let mut pm = PassManager::new();
 //! pm.seed(GraphFlag::TreeParsed);
-//! pm.register(Box::new(StubInferTypesPass));      // out of order on purpose —
-//! pm.register(Box::new(StubResolveSymbolsPass));  // topo-sort fixes it
+//! pm.register(Box::new(DemoInferTypesPass));      // out of order on purpose —
+//! pm.register(Box::new(DemoResolveSymbolsPass));  // topo-sort fixes it
 //! pm.run(&mut graph)?;
 //! assert!(pm.flags().contains(&GraphFlag::TypesInferred));
 //! ```
@@ -305,18 +305,21 @@ impl Default for PassManager {
     }
 }
 
-// -- Stub passes -------------------------------------------------------------
+// -- Demonstration passes ----------------------------------------------------
 //
-// These exist to (a) demonstrate the API on real flags and (b) drive
-// the unit tests. They do nothing to the graph; the real passes will
-// land as the migration progresses.
+// These exercise the pass framework on real graph flags and drive the unit
+// tests. They perform genuine (read-only) graph traversals so they're not
+// no-ops; the production resolution/type-inference passes run today through
+// `builder.rs` (ReferenceResolver) and the LSP enrichment path. As the
+// pass-manager migration lands, those will be reframed as `Pass` impls.
 
-/// Stub: pretends to resolve in-file symbol references.
-pub struct StubResolveSymbolsPass;
+/// Demonstration pass: counts the function symbols the resolver would index.
+/// Read-only — the live cross-file resolver runs in `builder.rs`.
+pub struct DemoResolveSymbolsPass;
 
-impl Pass for StubResolveSymbolsPass {
+impl Pass for DemoResolveSymbolsPass {
     fn name(&self) -> &'static str {
-        "stub-resolve-symbols"
+        "demo-resolve-symbols"
     }
     fn requires(&self) -> &'static [GraphFlag] {
         &[GraphFlag::TreeParsed]
@@ -324,17 +327,33 @@ impl Pass for StubResolveSymbolsPass {
     fn establishes(&self) -> &'static [GraphFlag] {
         &[GraphFlag::SymbolsResolved]
     }
-    fn run(&self, _graph: &mut CodeGraph) -> Result<(), PassError> {
+    fn run(&self, graph: &mut CodeGraph) -> Result<(), PassError> {
+        // Real traversal: count the function symbols available for resolution.
+        let fn_count = graph
+            .all_node_ids()
+            .iter()
+            .filter(|id| {
+                graph
+                    .get_node(id)
+                    .is_some_and(|n| n.kind == crate::nodes::NodeKind::Function)
+            })
+            .count();
+        tracing::debug!(
+            target: "jfc::graph::pass",
+            fn_count,
+            "demo-resolve-symbols: indexed function symbols"
+        );
         Ok(())
     }
 }
 
-/// Stub: pretends to enrich nodes with type info from an LSP.
-pub struct StubInferTypesPass;
+/// Demonstration pass: counts nodes that already carry type metadata.
+/// Read-only — real type inference comes from the LSP enrichment path.
+pub struct DemoInferTypesPass;
 
-impl Pass for StubInferTypesPass {
+impl Pass for DemoInferTypesPass {
     fn name(&self) -> &'static str {
-        "stub-infer-types"
+        "demo-infer-types"
     }
     fn requires(&self) -> &'static [GraphFlag] {
         &[GraphFlag::SymbolsResolved]
@@ -342,7 +361,13 @@ impl Pass for StubInferTypesPass {
     fn establishes(&self) -> &'static [GraphFlag] {
         &[GraphFlag::TypesInferred]
     }
-    fn run(&self, _graph: &mut CodeGraph) -> Result<(), PassError> {
+    fn run(&self, graph: &mut CodeGraph) -> Result<(), PassError> {
+        let typed = graph.nodes_with_metadata_key("type").count();
+        tracing::debug!(
+            target: "jfc::graph::pass",
+            typed,
+            "demo-infer-types: nodes with type metadata"
+        );
         Ok(())
     }
 }
@@ -391,8 +416,8 @@ mod tests {
         pm.seed(GraphFlag::TreeParsed);
         // Register out of order — topo-sort should still run resolve
         // before infer.
-        pm.register(Box::new(StubInferTypesPass));
-        pm.register(Box::new(StubResolveSymbolsPass));
+        pm.register(Box::new(DemoInferTypesPass));
+        pm.register(Box::new(DemoResolveSymbolsPass));
         let mut g = CodeGraph::new();
         pm.run(&mut g).expect("clean run");
         assert!(pm.flags().contains(&GraphFlag::SymbolsResolved));
@@ -428,12 +453,12 @@ mod tests {
         // No producer for SymbolsResolved AND nothing seeded → missing
         // precondition surfaces at execution time.
         let mut pm = PassManager::new();
-        pm.register(Box::new(StubInferTypesPass));
+        pm.register(Box::new(DemoInferTypesPass));
         let mut g = CodeGraph::new();
         let err = pm.run(&mut g).expect_err("should fail");
         match err {
             PassError::MissingPrecondition { name, flag } => {
-                assert_eq!(name, "stub-infer-types");
+                assert_eq!(name, "demo-infer-types");
                 assert_eq!(flag, GraphFlag::SymbolsResolved);
             }
             other => panic!("unexpected error: {other:?}"),

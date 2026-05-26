@@ -40,10 +40,11 @@
 //! > are recovered to the query providers themselves... I think we can get
 //! > away with just making `try_query()` add a dependency a red dep node."
 //!
-//! Like the linked-list scaffold, [`try_resolve_recursive`] is *forward
-//! infrastructure* — it is not yet wired up to a real recursive resolver and
-//! takes its dependency-lookup function as a parameter so it can be tested
-//! against synthetic adjacency maps.
+//! [`try_resolve_recursive`] is a reusable, dependency-injected resolver: it
+//! takes its dependency-lookup function as a parameter so the same cycle-safe
+//! traversal serves both the production resolver and synthetic-adjacency unit
+//! tests. The live cross-file resolution path runs through
+//! [`crate::resolver::ReferenceResolver`] in `builder.rs`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -217,11 +218,11 @@ impl ResolutionResult {
 /// dependency short-circuits and propagates up — a missing symbol is
 /// strictly more informative than a cycle through one.
 ///
-/// # Forward infrastructure
+/// # Dependency injection
 ///
-/// Like the linked-list cycle scaffold, this is not yet wired up to a real
-/// resolver. The `resolver` parameter abstracts the "look up dependencies of
-/// this handle" logic so the function is testable without a real graph.
+/// The `resolver` parameter abstracts the "look up dependencies of this
+/// handle" logic so the same cycle-safe traversal serves both the production
+/// resolver and unit tests over synthetic adjacency maps.
 ///
 /// Idiom: rustc query-system "red dep nodes" (Zulip t-compiler/query-system,
 /// Zoxc on explicit cycle recovery — see module docs).

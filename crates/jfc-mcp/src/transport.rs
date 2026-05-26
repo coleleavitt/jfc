@@ -311,16 +311,26 @@ impl Transport {
         guard.iter().cloned().collect()
     }
 
-    /// Send a raw JSON-RPC request and await the response. Used by
-    /// `resources/read` and other non-tool MCP methods that don't go
-    /// through `call_tool`.
+    /// Raw JSON-RPC escape hatch. The `rmcp` SDK does not expose a generic
+    /// "send this arbitrary JSON-RPC frame" entry point — every supported
+    /// MCP method has a typed wrapper (`call_tool`, [`Self::read_resource`],
+    /// [`Self::list_resources`], …). Callers should use those. This method
+    /// returns an explicit unsupported error rather than silently timing out
+    /// so a future caller gets an actionable message instead of a 30s hang.
     pub async fn request(
         &self,
-        _request: serde_json::Value,
+        request: serde_json::Value,
         _timeout: std::time::Duration,
     ) -> Result<serde_json::Value, RequestError> {
-        // TODO: implement raw JSON-RPC dispatch via the running service
-        Err(RequestError::Timeout)
+        let method = request
+            .get("method")
+            .and_then(|m| m.as_str())
+            .unwrap_or("<unknown>");
+        Err(RequestError::Service(format!(
+            "raw JSON-RPC dispatch is not supported by the rmcp transport \
+             (method `{method}`); use the typed call_tool / read_resource / \
+             list_resources wrappers instead"
+        )))
     }
 
     /// List all resources advertised by this server.
