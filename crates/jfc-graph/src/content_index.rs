@@ -81,6 +81,21 @@ impl ContentIndex {
         Some(lines)
     }
 
+    /// Cached lines `start..=end` (1-indexed, inclusive) of `file`, returned
+    /// as owned strings. Used by the body-rendering read paths (`graph_node`,
+    /// `graph_search include_code`, `graph_explore`) so they share the same
+    /// mtime-validated cache as `graph_grep` instead of re-reading from disk.
+    /// Returns `None` if the file is unreadable or the range is degenerate.
+    pub fn span_lines(&self, file: &Path, start: u32, end: u32) -> Option<Vec<String>> {
+        let lines = self.lines(file)?;
+        let lo = start.saturating_sub(1) as usize;
+        let hi = (end as usize).min(lines.len());
+        if lo >= hi {
+            return None;
+        }
+        Some(lines[lo..hi].to_vec())
+    }
+
     /// Innermost enclosing Function/Struct symbol at `line` in `file`, using
     /// a cached, start-sorted span list (binary search). `graph` is consulted
     /// only on a cache miss or when the graph revision advanced.

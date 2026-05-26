@@ -396,23 +396,12 @@ impl GraphSession {
         let kind_str = format!("{:?}", node.kind);
         let vis_str = format!("{:?}", node.visibility);
 
-        // Try to read the file and extract lines.
-        let source_lines = std::fs::read_to_string(&node.file_path)
-            .ok()
-            .and_then(|content| {
-                let lines: Vec<&str> = content.lines().collect();
-                let start = node.span.start_line.saturating_sub(1) as usize;
-                let end = (node.span.end_line as usize).min(lines.len());
-                if start >= end {
-                    return None;
-                }
-                Some(
-                    lines[start..end]
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>(),
-                )
-            });
+        // Cached, mtime-validated line read (shared with graph_grep).
+        let source_lines = self.content_index.span_lines(
+            &node.file_path,
+            node.span.start_line,
+            node.span.end_line,
+        );
 
         let signature = source_lines
             .as_ref()
@@ -536,11 +525,11 @@ impl GraphSession {
                 break;
             }
 
-            let content = match std::fs::read_to_string(file_path) {
-                Ok(c) => c,
-                Err(_) => continue,
+            // Cached, mtime-validated lines (shared with graph_grep).
+            let Some(cached) = self.content_index.lines(file_path) else {
+                continue;
             };
-            let lines: Vec<&str> = content.lines().collect();
+            let lines: Vec<&str> = cached.iter().map(String::as_str).collect();
 
             // Collect spans from nodes in this file.
             let mut ranges: Vec<(u32, u32)> = Vec::new();
@@ -633,13 +622,30 @@ impl GraphSession {
                     | crate::nodes::NodeKind::Trait
                     | crate::nodes::NodeKind::Module
             );
-            if !is_container && let Some(body) = read_span_source(node) {
+            if !is_container && let Some(body) = self.render_span_source(node) {
                 let lang = lang_for(&node.file_path);
                 out.push_str(&format!("\n```{lang}\n{body}\n```\n"));
             }
             out.push('\n');
         }
         out
+    }
+
+    /// Render a node's source body with line-number gutters, reading through
+    /// the mtime-validated content cache (shared with `graph_grep`). Returns
+    /// `None` when the file is unreadable or the span is degenerate.
+    fn render_span_source(&self, node: &crate::nodes::NodeData) -> Option<String> {
+        let lines = self.content_index.span_lines(
+            &node.file_path,
+            node.span.start_line,
+            node.span.end_line,
+        )?;
+        let start = node.span.start_line.saturating_sub(1) as usize;
+        let mut out = String::new();
+        for (offset, line) in lines.iter().enumerate() {
+            out.push_str(&format!("{:>4} | {}\n", start + offset + 1, line));
+        }
+        Some(out.trim_end().to_string())
     }
 
     /// Structural outline of a single file: every indexed symbol with its
@@ -813,23 +819,6 @@ impl GraphSession {
     ) -> Result<(), crate::overlay::OverlayError> {
         crate::overlay::save_base_snapshot(path, &self.graph, workspace_root, base_ref)
     }
-}
-
-/// Read the source lines spanned by a node, with line-number gutters.
-/// Returns `None` when the file is unreadable or the span is degenerate.
-fn read_span_source(node: &crate::nodes::NodeData) -> Option<String> {
-    let content = std::fs::read_to_string(&node.file_path).ok()?;
-    let lines: Vec<&str> = content.lines().collect();
-    let start = node.span.start_line.saturating_sub(1) as usize;
-    let end = (node.span.end_line as usize).min(lines.len());
-    if start >= end {
-        return None;
-    }
-    let mut out = String::new();
-    for (offset, line) in lines[start..end].iter().enumerate() {
-        out.push_str(&format!("{:>4} | {}\n", start + offset + 1, line));
-    }
-    Some(out.trim_end().to_string())
 }
 
 /// Markdown code-fence language tag from a file extension.
