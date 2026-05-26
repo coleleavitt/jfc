@@ -148,6 +148,15 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     if app.effort_state.current.is_some() {
         push1!(effort_status_badge(app), muted, 50);
     }
+    if let Some(ref rc) = app.remote_host {
+        let clients = rc.client_count.load(std::sync::atomic::Ordering::Relaxed);
+        let label = if clients > 0 {
+            format!("📡 RC ({clients})")
+        } else {
+            "📡 RC".to_owned()
+        };
+        push1!(label, gold, 55);
+    }
 
     // Repo zone: branch · diff (green/red) · cwd.
     if let Some(branch) = app.git_branch.as_deref().filter(|b| !b.is_empty()) {

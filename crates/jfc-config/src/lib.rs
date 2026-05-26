@@ -61,6 +61,36 @@ pub struct Config {
     pub compact_instructions: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hooks: Option<ShellHooksConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_control: Option<RemoteControlConfig>,
+}
+
+/// `[remote_control]` section in config.toml.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct RemoteControlConfig {
+    /// Automatically start the remote-control WS server when jfc launches.
+    pub auto_start: bool,
+    /// TCP port for the WebSocket server (default 4242).
+    pub port: u16,
+    /// When true, the `disable_remote_control` managed-settings flag is
+    /// honored — `/remote-control` refuses to start.
+    pub disabled: bool,
+}
+
+/// Default remote-control WebSocket port. Mirrors
+/// `jfc_remote::protocol::DEFAULT_PORT` (kept inline to avoid coupling the
+/// config crate to the transport crate).
+pub const DEFAULT_REMOTE_CONTROL_PORT: u16 = 4242;
+
+impl Default for RemoteControlConfig {
+    fn default() -> Self {
+        Self {
+            auto_start: false,
+            port: DEFAULT_REMOTE_CONTROL_PORT,
+            disabled: false,
+        }
+    }
 }
 
 fn default_memory_recall_enabled() -> bool {
@@ -100,6 +130,7 @@ impl Default for Config {
             auto_compact_window: None,
             compact_instructions: None,
             hooks: None,
+            remote_control: None,
         }
     }
 }

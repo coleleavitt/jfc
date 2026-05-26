@@ -1251,7 +1251,20 @@ pub(super) async fn cmd_remote_control(
         return;
     }
 
-    // Already active → don't double-start.
+    // Check config-level disable.
+    if crate::config::load()
+        .remote_control
+        .as_ref()
+        .is_some_and(|rc| rc.disabled)
+    {
+        app.messages.push(ChatMessage::assistant(
+            "Remote control is disabled by configuration (`remote_control.disabled = true`)."
+                .into(),
+        ));
+        return;
+    }
+
+    // Already active — show status instead of double-starting.
     if app.remote_host.is_some() {
         app.messages.push(ChatMessage::assistant(
             "Remote control is already active. Use `/rc status` or `/rc off`.".into(),

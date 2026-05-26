@@ -60,6 +60,39 @@ pub(crate) async fn run(
     app.cli_task_budget = cli_config.task_budget;
     app.mcp_config_path = cli_config.mcp_config_path;
     app.cowork = cli_config.cowork;
+
+    // Remote-control auto-start: from --remote-control flag or config.
+    let rc_wanted = cli_config.remote_control
+        || config::load()
+            .remote_control
+            .as_ref()
+            .is_some_and(|rc| rc.auto_start);
+    if rc_wanted {
+        let rc_port = config::load()
+            .remote_control
+            .as_ref()
+            .map(|rc| rc.port)
+            .unwrap_or(jfc_remote::protocol::DEFAULT_PORT);
+        match crate::remote_host::RemoteHost::start(rc_port, tx.clone()).await {
+            Ok(host) => {
+                tracing::info!(
+                    target: "jfc::remote",
+                    addr = %host.addr(),
+                    token = %host.token,
+                    "remote-control auto-started at launch"
+                );
+                app.remote_host = Some(host);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "jfc::remote",
+                    error = %e,
+                    "failed to auto-start remote-control"
+                );
+            }
+        }
+    }
+
     crate::claude_status::spawn_status_poll(tx.clone());
     // v141 parity: when the caller passed `--permission-mode`, apply
     // it before any user prompt so the first turn already runs under

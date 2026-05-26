@@ -133,6 +133,13 @@ pub(crate) struct Cli {
     #[arg(long = "json")]
     json: bool,
 
+    /// Start the remote-control WebSocket server at launch (alias `--rc`).
+    /// Equivalent to running `/remote-control` once the TUI is up — prints
+    /// the pairing token + connection URL. Connect from another device with
+    /// `jfc rc connect ws://HOST:4242 --token <TOKEN>`.
+    #[arg(long = "remote-control", visible_alias = "rc")]
+    remote_control: bool,
+
     /// Add an extra directory to the search-context allowlist.
     /// Accepts multiple occurrences: `--add-dir /a --add-dir /b`.
     #[arg(long = "add-dir", value_name = "PATH")]
@@ -253,6 +260,9 @@ pub(crate) struct CliRuntimeConfig {
     pub task_budget: Option<u64>,
     pub mcp_config_path: Option<PathBuf>,
     pub cowork: bool,
+    /// Start the remote-control server at launch (from `--remote-control`
+    /// or the `[remote_control] auto_start = true` config).
+    pub remote_control: bool,
 }
 
 /// Parse a comma-separated tool list (`"Read, Glob,Grep"` → `["Read",
@@ -408,6 +418,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
         task_budget: cli.task_budget,
         mcp_config_path: cli.mcp_config.clone(),
         cowork: cli.cowork,
+        remote_control: cli.remote_control,
     };
 
     // v132 `-p`/`--print` headless one-shot mode. Skips the TUI
