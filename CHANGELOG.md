@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased] — 2026-05-24
 
+### Added
+
+- **Task-state-drift reminder (auto-nudge to keep the task list in sync)**: the auto-update mechanisms only covered *delegated* work (`parent_task_id` transitions a linked todo) and timestamp bookkeeping — when the model worked *directly* on the plan it had to remember to call `TaskUpdate`/`TaskDone` itself, and often didn't, forcing the user to nudge "update the tasks". `task_drift_reminder()` now detects drift (mutating work happened while tasks are pending-but-none-in-progress, or a task sits in_progress across turns) and injects a `<system-reminder>` on the next turn. Per SWE-agent's Agent-Computer-Interface principle (arXiv:2405.15793), it *surfaces state back to the agent* rather than silently mutating task semantics the model owns. The autonomous self-continuation path already carries an equivalent task-aware nudge. +3 tests
+
 ### Fixed
 
 - **Diff-aware stub evaluator (root-cause fix for false-positive `TaskDone` rejections)**: `evaluate_work_quality` previously scanned *whole files* via `scan_file`, so any pre-existing `placeholder`/`no-op`/`silently drop` doc comment in a file the change merely touched would block task completion. New `scaffold_detector::scan_added_lines()` evaluates only the `+` lines of `git diff HEAD` (per-file, `--unified=0`), so the gate flags stubs the change *introduced*, not patterns that were already there. Untracked new files (no diff base) are still scanned whole. +4 tests

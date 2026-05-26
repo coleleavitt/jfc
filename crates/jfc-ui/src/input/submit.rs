@@ -473,6 +473,19 @@ pub(super) async fn handle_submit(
         crate::system_reminder::append_to_last_user(&mut app.messages, &body);
     }
 
+    // Task-state-drift nudge: if the previous turn did mutating work while a
+    // plan was live but task state wasn't reconciled, remind the model to keep
+    // the task list in sync — instead of the user having to ask "update the
+    // tasks". Surfaces state back to the agent (SWE-agent ACI principle)
+    // rather than silently mutating task semantics the model owns.
+    if let Some(body) = crate::runtime::task_drift_reminder(app) {
+        crate::system_reminder::append_to_last_user(&mut app.messages, &body);
+        tracing::info!(
+            target: "jfc::tasks",
+            "injected task-state-drift reminder into user turn"
+        );
+    }
+
     // Auto graph-context injection: when the prompt smells like an
     // impact-analysis / refactor-risk / dependency-trace / entrypoint
     // question, run a cheap structural query against the workspace

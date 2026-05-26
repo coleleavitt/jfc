@@ -28,7 +28,7 @@ pub(crate) use goal_loop::{dispatch_goal_evaluator_if_active, handle_goal_verdic
 pub(crate) use network::record_network_recovery;
 pub(crate) use queue::drain_queued_prompts;
 pub(crate) use stream_control::restart_stream_in_place;
-pub(crate) use task_activity::update_task_activities;
+pub(crate) use task_activity::{task_drift_reminder, update_task_activities};
 pub(crate) use terminal::{draw_synchronized, read_git_branch_from_root, set_terminal_title};
 pub(crate) use yank::{
     copy_to_clipboard, full_transcript_text, last_assistant_text, tail_transcript_text,
