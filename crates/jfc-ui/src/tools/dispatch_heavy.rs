@@ -316,8 +316,10 @@ pub(super) fn execute_graph_status(cwd: &Path) -> ExecutionResult {
         }
         files.len()
     };
+    let warm = session.content_cache_warm_files();
     ExecutionResult::success(format!(
         "Graph status: {node_count} nodes, {edge_count} edges, {file_count} indexed files\n\
+         Content cache: {warm} files warm (graph_grep)\n\
          Root: {}\n\
          Watcher: active",
         cwd.display()

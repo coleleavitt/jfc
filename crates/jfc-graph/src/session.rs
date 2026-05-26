@@ -37,6 +37,10 @@ pub struct GraphSession {
     /// Memoised DSL query results — invalidated per-node when files
     /// change. See [`crate::incremental`] for the cache model.
     query_cache: QueryCache<QueryResult>,
+    /// Persistent content index backing `graph_grep`: mtime-validated file
+    /// lines + a revision-gated symbol-span index for fast enclosing-symbol
+    /// lookup. See [`crate::content_index`].
+    content_index: crate::content_index::ContentIndex,
     adapter: RustAdapter,
 }
 
@@ -82,6 +86,7 @@ impl GraphSession {
             files_skipped: result.files_skipped,
             worktree_mismatch,
             query_cache: QueryCache::new(),
+            content_index: crate::content_index::ContentIndex::new(),
             adapter,
         }
     }
@@ -103,6 +108,7 @@ impl GraphSession {
             files_skipped: Vec::new(),
             worktree_mismatch,
             query_cache: QueryCache::new(),
+            content_index: crate::content_index::ContentIndex::new(),
             adapter: RustAdapter::new(),
         }
     }
@@ -201,6 +207,11 @@ impl GraphSession {
             self.events.append(event, None);
         }
         self.symbols.update_from_graph(&self.graph, path);
+        // Drop cached lines + spans for the changed file so the next
+        // `graph_grep` re-reads it. (The span cache is also revision-gated,
+        // but the line cache is mtime-based and benefits from the explicit
+        // drop in case mtime resolution is coarse.)
+        self.content_index.invalidate(path);
     }
 
     /// Clear the entire query result cache. Use when in doubt about
@@ -357,6 +368,12 @@ impl GraphSession {
     /// the rendered markdown.
     pub fn resolve(&self, symbol: &str) -> Vec<NodeId> {
         context::resolve_symbol(&self.graph, symbol)
+    }
+
+    /// Number of files whose lines are currently warm in the content-index
+    /// cache (diagnostics — surfaced by `graph_status`).
+    pub fn content_cache_warm_files(&self) -> usize {
+        self.content_index.cached_file_count()
     }
 
     /// Get detailed info about ONE symbol — location, signature, visibility,
@@ -705,10 +722,11 @@ impl GraphSession {
             {
                 continue;
             }
-            let Ok(content) = std::fs::read_to_string(file) else {
+            // Cached, mtime-validated lines — no per-call disk re-read.
+            let Some(lines) = self.content_index.lines(file) else {
                 continue;
             };
-            for (i, line) in content.lines().enumerate() {
+            for (i, line) in lines.iter().enumerate() {
                 if total >= limit {
                     break;
                 }
@@ -716,8 +734,11 @@ impl GraphSession {
                     continue;
                 }
                 let lineno = (i + 1) as u32;
-                let enclosing = self.enclosing_symbol(file, lineno);
-                let ctx = enclosing
+                // Binary-search the cached span index instead of scanning
+                // every graph node per match.
+                let ctx = self
+                    .content_index
+                    .enclosing_symbol(&self.graph, file, lineno)
                     .map(|name| format!(" — in `{name}`"))
                     .unwrap_or_default();
                 out.push_str(&format!(
@@ -738,26 +759,6 @@ impl GraphSession {
             ));
         }
         out
-    }
-
-    /// Find the innermost indexed symbol containing `line` in `file`.
-    fn enclosing_symbol(&self, file: &Path, line: u32) -> Option<String> {
-        self.graph
-            .all_node_ids()
-            .iter()
-            .filter_map(|id| self.graph.get_node(id))
-            .filter(|n| {
-                n.file_path == file
-                    && n.span.start_line <= line
-                    && n.span.end_line >= line
-                    && matches!(
-                        n.kind,
-                        crate::nodes::NodeKind::Function | crate::nodes::NodeKind::Struct
-                    )
-            })
-            // Innermost = smallest span.
-            .min_by_key(|n| n.span.end_line.saturating_sub(n.span.start_line))
-            .map(|n| n.name.clone())
     }
 
     /// Build a session by loading a pre-built base graph snapshot and
@@ -794,6 +795,7 @@ impl GraphSession {
             files_skipped: Vec::new(),
             worktree_mismatch: None,
             query_cache: QueryCache::new(),
+            content_index: crate::content_index::ContentIndex::new(),
             adapter,
         })
     }

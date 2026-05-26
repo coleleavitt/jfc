@@ -25,6 +25,7 @@ pub mod co_change;
 pub mod communities;
 pub mod complexity;
 pub mod complexity_rules;
+pub mod content_index;
 pub mod context;
 pub mod coverage;
 pub mod csr;
