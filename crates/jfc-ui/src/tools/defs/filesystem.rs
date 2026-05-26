@@ -26,7 +26,7 @@ pub fn filesystem_tool_defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "Read".into(),
-            description: "Read a file or directory from the local filesystem. Returns file contents with line numbers prefixed. For reading MULTIPLE related symbols at once, prefer `graph_explore` (one call replaces 5+ Read calls). For checking a symbol's signature/location without reading the whole file, use `graph_node`.".into(),
+            description: "Read a file or directory from the local filesystem. Returns file contents with line numbers prefixed. For source code, prefer the graph: `graph_search include_code=true` or `graph_node` returns a symbol's body directly, and `graph_outline` maps a file without reading it all — use Read mainly for files you're about to edit or non-source files. When you do read a large source file for one region, pass `offset`/`limit` (use the `:start-end` range from graph_search/graph_outline) instead of reading the whole file. For MULTIPLE related symbols at once, prefer `graph_explore` (one call replaces 5+ Read calls).".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
