@@ -71,6 +71,10 @@ pub enum Category {
     Hedge,
     /// Compatibility shims and dropped/simplified handling.
     Shim,
+    /// Leftover debug output — dbg!(), console.log, eprintln debugging.
+    Debug,
+    /// Work the model explicitly punted — "out of scope", "revisit later".
+    Punted,
 }
 
 impl Category {
@@ -81,6 +85,8 @@ impl Category {
             Category::Scaffold => "scaffold",
             Category::Hedge => "hedge",
             Category::Shim => "shim",
+            Category::Debug => "debug",
+            Category::Punted => "punted",
         }
     }
 }
@@ -155,6 +161,21 @@ static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
             code_only: true,
             needs_corroboration: false,
         },
+        Pattern {
+            re: rx(r"\braise NotImplementedError\b"),
+            severity: Severity::Critical,
+            category: Category::Unimplemented,
+            code_only: true,
+            needs_corroboration: false,
+        },
+        Pattern {
+            // JS/TS: throw new Error("not implemented")
+            re: rx(r#"(?i)throw new Error\(\s*["'][^"']*(not impl|unimplement|todo)"#),
+            severity: Severity::Critical,
+            category: Category::Unimplemented,
+            code_only: true,
+            needs_corroboration: false,
+        },
         // ─── High (80): placeholder / fake / hardcoded ─────────────────────
         Pattern {
             re: rx(r"(?i)\bplaceholder\b"),
@@ -212,6 +233,41 @@ static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
             code_only: false,
             needs_corroboration: false,
         },
+        Pattern {
+            re: rx(r"\bWIP\b"),
+            severity: Severity::High,
+            category: Category::Scaffold,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            re: rx(r"(?i)work in progress\b"),
+            severity: Severity::High,
+            category: Category::Scaffold,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            re: rx(r"(?i)\bdoes nothing\b"),
+            severity: Severity::High,
+            category: Category::Placeholder,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            re: rx(r"(?i)\bsilently (drop|ignor|discard|swallow)"),
+            severity: Severity::High,
+            category: Category::Placeholder,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            re: rx(r"(?i)\bnot (yet )?supported\b"),
+            severity: Severity::High,
+            category: Category::Unimplemented,
+            code_only: false,
+            needs_corroboration: false,
+        },
         // ─── Medium (60): scaffold / skeleton / no-op / deferred ───────────
         Pattern {
             re: rx(r"(?i)\bscaffold(ed|ing)?\b"),
@@ -260,6 +316,80 @@ static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
             severity: Severity::Medium,
             category: Category::Scaffold,
             code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            re: rx(r"(?i)\bunfinished\b"),
+            severity: Severity::Medium,
+            category: Category::Scaffold,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            re: rx(r"(?i)\bmissing (implementation|impl)\b"),
+            severity: Severity::Medium,
+            category: Category::Scaffold,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            re: rx(r"(?i)\bneeds? (implementation|impl)\b"),
+            severity: Severity::Medium,
+            category: Category::Scaffold,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            re: rx(r"(?i)\bstill needs\b"),
+            severity: Severity::Medium,
+            category: Category::Scaffold,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            // unreachable!() is medium — often intentional but can indicate
+            // branches the model didn't bother implementing.
+            re: rx(r"\bunreachable!\s*\("),
+            severity: Severity::Medium,
+            category: Category::Unimplemented,
+            code_only: true,
+            needs_corroboration: false,
+        },
+        // ─── Medium (60): punted work ─────────────────────────────────────
+        Pattern {
+            re: rx(r"(?i)\bout of scope\b"),
+            severity: Severity::Medium,
+            category: Category::Punted,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            re: rx(r"(?i)\brevisit.{0,10}later\b"),
+            severity: Severity::Medium,
+            category: Category::Punted,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            re: rx(r"(?i)\bleft as.{0,10}(exercise|future|reader)"),
+            severity: Severity::Medium,
+            category: Category::Punted,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        // ─── Low (35): debug / leftover diagnostic output ─────────────────
+        Pattern {
+            re: rx(r"\bdbg!\s*\("),
+            severity: Severity::Low,
+            category: Category::Debug,
+            code_only: true,
+            needs_corroboration: false,
+        },
+        Pattern {
+            re: rx(r"\bconsole\.log\s*\("),
+            severity: Severity::Low,
+            category: Category::Debug,
+            code_only: true,
             needs_corroboration: false,
         },
         // ─── Low (35): fallback / minimal / temporary / for now ────────────
@@ -394,8 +524,23 @@ pub fn is_test_path(path: &Path) -> bool {
         || s.ends_with("/tests.rs")
 }
 
-/// Scan a file on disk. Returns empty if unreadable or not a source file.
+/// Quality/detection tooling files that legitimately *contain* the scaffold
+/// vocabulary as data (pattern lists, test fixtures). A linter must not flag
+/// its own rule definitions, or every edit to these files would self-trip.
+pub fn is_self_referential(path: &Path) -> bool {
+    let s = path.to_string_lossy();
+    s.ends_with("scaffold_detector.rs")
+        || s.ends_with("slop_guard.rs")
+        || s.ends_with("sprint.rs")
+        || s.ends_with("keywords.rs")
+}
+
+/// Scan a file on disk. Returns empty if unreadable, not a source file, or a
+/// self-referential quality-tooling file.
 pub fn scan_file(path: &Path) -> Vec<ScaffoldFinding> {
+    if is_self_referential(path) {
+        return Vec::new();
+    }
     let Ok(text) = std::fs::read_to_string(path) else {
         return Vec::new();
     };
@@ -521,5 +666,93 @@ mod tests {
         assert!(is_test_path(Path::new("src/foo_test.rs")));
         assert!(is_test_path(Path::new("src/app.spec.ts")));
         assert!(!is_test_path(Path::new("src/app/state.rs")));
+    }
+
+    // ─── Deep-scan vocabulary additions ───────────────────────────────────
+
+    #[test]
+    fn python_not_implemented_error_is_critical() {
+        let f = scan_text("    raise NotImplementedError", false);
+        assert!(f.iter().any(|x| x.severity == Severity::Critical));
+    }
+
+    #[test]
+    fn js_throw_not_implemented_is_critical() {
+        let f = scan_text(r#"  throw new Error("not implemented yet");"#, false);
+        assert!(f.iter().any(|x| x.severity == Severity::Critical));
+    }
+
+    #[test]
+    fn wip_marker_is_high() {
+        let f = scan_text("// WIP: still hooking this up", false);
+        assert!(f.iter().any(|x| x.severity == Severity::High));
+    }
+
+    #[test]
+    fn not_supported_yet_is_high() {
+        let f = scan_text("// this branch is not yet supported", false);
+        assert!(f.iter().any(|x| x.severity == Severity::High));
+    }
+
+    #[test]
+    fn silently_drops_is_high() {
+        let f = scan_text("// silently drops events when the queue is full", false);
+        assert!(f.iter().any(|x| x.severity == Severity::High));
+    }
+
+    #[test]
+    fn out_of_scope_is_punted() {
+        let f = scan_text("// handling retries is out of scope for this pass", false);
+        assert!(f.iter().any(|x| x.category == Category::Punted));
+    }
+
+    #[test]
+    fn dbg_macro_is_debug_low() {
+        let f = scan_text("    dbg!(&state);", false);
+        assert!(
+            f.iter()
+                .any(|x| x.category == Category::Debug && x.severity == Severity::Low)
+        );
+    }
+
+    #[test]
+    fn console_log_is_debug() {
+        let f = scan_text("  console.log('got here', x)", false);
+        assert!(f.iter().any(|x| x.category == Category::Debug));
+    }
+
+    #[test]
+    fn unreachable_macro_is_medium() {
+        let f = scan_text("        _ => unreachable!(),", false);
+        assert!(
+            f.iter()
+                .any(|x| x.category == Category::Unimplemented && x.severity == Severity::Medium)
+        );
+    }
+
+    #[test]
+    fn dbg_in_comment_is_not_flagged() {
+        // dbg! is code_only — discussing it in prose shouldn't trip.
+        let f = scan_text("// remember to remove the dbg!() call", false);
+        assert!(!f.iter().any(|x| x.category == Category::Debug));
+    }
+
+    #[test]
+    fn missing_implementation_is_medium() {
+        let f = scan_text("// missing implementation for the error path", false);
+        assert!(f.iter().any(|x| x.severity == Severity::Medium));
+    }
+
+    #[test]
+    fn self_referential_files_are_excluded() {
+        assert!(is_self_referential(Path::new(
+            "crates/jfc-ui/src/scaffold_detector.rs"
+        )));
+        assert!(is_self_referential(Path::new(
+            "crates/jfc-ui/src/slop_guard.rs"
+        )));
+        assert!(!is_self_referential(Path::new(
+            "crates/jfc-ui/src/app/state.rs"
+        )));
     }
 }
