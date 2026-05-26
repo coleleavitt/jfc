@@ -19,6 +19,7 @@ mod daemon;
 mod headless;
 mod logging;
 mod provider_bootstrap;
+mod rc;
 mod terminal;
 
 pub(crate) use provider_bootstrap::{build_providers, provider_for_model};
@@ -28,6 +29,7 @@ use daemon::{DaemonSubcommand, compact_terminal_agents_on_startup, run_daemon_su
 use headless::{run_print_mode, run_remote_session};
 use jfc_provider::ModelId;
 use logging::init_tracing;
+use rc::{RcSubcommand, run_rc_subcommand};
 use terminal::{enable_keyboard_enhancement, install_terminal_panic_hook};
 
 /// JFC - A TUI assistant for code exploration and development
@@ -186,6 +188,11 @@ enum Command {
     Auth {
         #[command(subcommand)]
         sub: AuthSubcommand,
+    },
+    /// Remote control — connect to or probe a running session.
+    Rc {
+        #[command(subcommand)]
+        sub: RcSubcommand,
     },
 }
 
@@ -505,6 +512,7 @@ async fn run_subcommand(cmd: Command) -> anyhow::Result<()> {
     match cmd {
         Command::Daemon { sub } => run_daemon_subcommand(sub).await,
         Command::Auth { sub } => run_auth_subcommand(sub).await,
+        Command::Rc { sub } => run_rc_subcommand(sub).await,
     }
 }
 

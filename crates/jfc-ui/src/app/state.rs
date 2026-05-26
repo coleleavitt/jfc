@@ -966,6 +966,10 @@ pub struct App {
         Option<tokio::sync::mpsc::UnboundedReceiver<crate::swarm::runner::TeammateEvent>>,
     /// Sender side — cloned into each spawned teammate's runner.
     pub teammate_event_tx: tokio::sync::mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
+    /// Remote-control host. `Some` when `/remote-control` is active or RC was
+    /// started at launch. Events are mirrored to connected clients; client
+    /// input is injected into the main event bus. See `crate::remote_host`.
+    pub remote_host: Option<std::sync::Arc<crate::remote_host::RemoteHost>>,
     /// Slate dynamic model router. `None` when `slate_enabled = false` in the
     /// loaded config (the common case). When `Some`, callers consult it on
     /// every user submission to pick a per-turn model — see
@@ -1320,6 +1324,7 @@ impl App {
             team_context: crate::swarm::TeamContext::default(),
             teammate_event_rx: Some(teammate_rx),
             teammate_event_tx: teammate_tx,
+            remote_host: None,
             // Slate is populated *after* `App::new` from the config (see
             // `main.rs::run_app`). Constructor default = None so the unit
             // tests that build a bare `App` don't need to plumb a router.

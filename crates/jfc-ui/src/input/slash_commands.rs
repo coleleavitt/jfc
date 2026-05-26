@@ -251,6 +251,7 @@ slash_commands! {
         "/team-onboarding" [] "generate a team onboarding guide from project state" => cmd_team_onboarding,
         "/coach" [] "show coaching tips based on this session's tool usage" => cmd_coach,
         "/remote" [] "spawn a remote CCR session (requires ANTHROPIC_API_KEY)" => cmd_remote,
+        "/remote-control" ["/rc"] "toggle remote-control server (WS on port 4242)" => cmd_remote_control,
         "/oauth-login" [] "start OAuth device-flow login (RFC 8628)" => cmd_oauth_login,
         "/config" [] "show parsed config (`/config path` for the file location)" => cmd_config,
         "/continue" ["/c"] "resume the most recent session (`/continue all` for any cwd)" => cmd_continue,

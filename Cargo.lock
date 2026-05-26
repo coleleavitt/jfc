@@ -2817,6 +2817,7 @@ dependencies = [
  "jfc-memory",
  "jfc-provider",
  "jfc-providers",
+ "jfc-remote",
  "jfc-session",
  "jfc-theme",
  "jfc-tools",

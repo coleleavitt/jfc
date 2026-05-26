@@ -105,6 +105,7 @@ jfc-daemon = { path = "../jfc-daemon" }
 jfc-learn = { path = "../jfc-learn" }
 jfc-memory = { path = "../jfc-memory" }
 jfc-web = { path = "../jfc-web" }
+jfc-remote = { path = "../jfc-remote" }
 
 # Optional profiling deps (enable via --features dhat-heap or --features profiling)
 dhat = { version = "0.3.3", optional = true }

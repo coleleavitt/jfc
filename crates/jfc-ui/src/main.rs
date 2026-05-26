@@ -66,6 +66,7 @@ mod plan_recall;
 mod providers;
 mod push_notifications;
 mod query;
+mod remote_host;
 mod render;
 mod render_cache;
 mod runtime;

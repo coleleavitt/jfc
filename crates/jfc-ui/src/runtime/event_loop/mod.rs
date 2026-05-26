@@ -738,6 +738,14 @@ pub(crate) async fn run(
         let mut force_draw = false;
 
         for ev in events {
+            // Mirror to remote-control clients. Non-blocking; returns early
+            // when remote control is inactive.
+            if let Some(ref rc) = app.remote_host {
+                if let Some(envelope) = crate::remote_host::mirror_event(&ev) {
+                    rc.mirror(envelope);
+                }
+            }
+
             // Tick alone doesn't dirty the screen; everything else does. The
             // streaming-animation guard below re-enables Tick-driven redraws
             // when there's actually motion to show.

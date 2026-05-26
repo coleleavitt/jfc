@@ -1206,6 +1206,95 @@ pub(super) async fn cmd_remote(
     }
 }
 
+/// `/remote-control` (alias `/rc`) — toggle the remote-control WebSocket
+/// server on the current session. When enabling, prints the pairing token +
+/// connection URL. When already active, prints status; `/rc off` disables it.
+pub(super) async fn cmd_remote_control(
+    app: &mut App,
+    parts: &[&str],
+    _text: &str,
+    tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    let arg = parts.get(1).copied().unwrap_or("");
+
+    // Disable path.
+    if arg.eq_ignore_ascii_case("off") || arg.eq_ignore_ascii_case("stop") {
+        match app.remote_host.take() {
+            Some(host) => {
+                host.shutdown();
+                app.messages
+                    .push(ChatMessage::assistant("Remote control disabled.".into()));
+            }
+            None => {
+                app.messages.push(ChatMessage::assistant(
+                    "Remote control is not active.".into(),
+                ));
+            }
+        }
+        return;
+    }
+
+    // Status path.
+    if arg.eq_ignore_ascii_case("status") {
+        let msg = match &app.remote_host {
+            Some(host) => format!(
+                "Remote control **active** on `ws://{}`\n\
+                 Connected clients: {}\n\
+                 Token: `{}`",
+                host.addr(),
+                host.client_count.load(std::sync::atomic::Ordering::Relaxed),
+                host.token
+            ),
+            None => "Remote control is **off**. Run `/remote-control` to enable.".to_string(),
+        };
+        app.messages.push(ChatMessage::assistant(msg));
+        return;
+    }
+
+    // Already active → don't double-start.
+    if app.remote_host.is_some() {
+        app.messages.push(ChatMessage::assistant(
+            "Remote control is already active. Use `/rc status` or `/rc off`.".into(),
+        ));
+        return;
+    }
+
+    // Enable path. Needs the event-loop tx to inject client input.
+    let Some(tx) = tx else {
+        app.messages.push(ChatMessage::assistant(
+            "Cannot enable remote control without an event channel (internal error).".into(),
+        ));
+        return;
+    };
+
+    let port = jfc_remote::protocol::DEFAULT_PORT;
+    match crate::remote_host::RemoteHost::start(port, tx.clone()).await {
+        Ok(host) => {
+            let addr = host.addr();
+            let token = host.token.clone();
+            app.remote_host = Some(host);
+            app.messages.push(ChatMessage::assistant(format!(
+                "## Remote control enabled\n\n\
+                 The session is now mirrored over WebSocket. Connect another \
+                 device with:\n\n\
+                 ```\n\
+                 jfc rc connect ws://{addr} --token {token}\n\
+                 ```\n\n\
+                 The server is bound to `127.0.0.1` — expose it remotely via:\n\
+                 - **Tailscale**: `tailscale serve https+insecure://localhost:{port}`\n\
+                 - **SSH tunnel**: `ssh -L {port}:localhost:{port} user@host`\n\
+                 - **cloudflared**: `cloudflared tunnel --url http://localhost:{port}`\n\n\
+                 Disable anytime with `/rc off`."
+            )));
+        }
+        Err(e) => {
+            app.messages.push(ChatMessage::assistant(format!(
+                "Failed to start remote control on port {port}: {e}"
+            )));
+        }
+    }
+}
+
 pub(super) async fn cmd_oauth_login(
     app: &mut App,
     _parts: &[&str],
