@@ -8,6 +8,7 @@ description = "Graph-based context engine for semantic code analysis"
 
 [dependencies]
 petgraph = { version = "0.8", features = ["serde-1"] }
+regex = "1"
 # Pinned: tree-sitter grammars depend on AST shape; floating minor risks graph divergence across builds.
 tree-sitter = "=0.25.10"
 tree-sitter-rust = "0.24"

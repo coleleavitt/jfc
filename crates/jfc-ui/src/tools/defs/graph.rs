@@ -11,6 +11,8 @@ pub fn graph_tool_defs() -> Vec<ToolDef> {
         graph_impact_def(),
         graph_node_def(),
         graph_explore_def(),
+        graph_outline_def(),
+        graph_grep_def(),
         graph_status_def(),
         graph_files_def(),
         run_coverage_def(),
@@ -153,9 +155,11 @@ fn graph_search_def() -> ToolDef {
         description: "Find symbols by name with qualified-name support. Accepts simple names \
             (`foo`), `::`-qualified (`stage_apply::run`), `.`-qualified (`Session.request`), \
             and `/`-qualified (`stage_apply/run`) lookups. Rust prefixes `crate::`, `super::`, \
-            `self::` are stripped automatically. Returns kind, location, signature, visibility, \
-            and a chainable handle for each match. Use this when you want the symbol's *shape* \
-            — for code structure use graph_context."
+            `self::` are stripped automatically. Returns kind, location (with full `:start-end` \
+            line range), signature, visibility, and a chainable handle for each match. Set \
+            `include_code=true` to get each hit's full source body inline — this replaces the \
+            `graph_search` → `sed -n 'start,end p'` round-trip with a single call. Use this when \
+            you want the symbol's *shape* or *body*; for code structure use graph_context."
             .into(),
         input_schema: serde_json::json!({
             "type": "object",
@@ -168,6 +172,10 @@ fn graph_search_def() -> ToolDef {
                     "type": "number",
                     "description": "Maximum results (default 10, capped at 100)."
                 },
+                "include_code": {
+                    "type": "boolean",
+                    "description": "When true, render each function/method hit's full source body inline (line-numbered). Avoids a follow-up sed/Read. Default false."
+                },
                 "format": {
                     "type": "string",
                     "description": "Output format: `markdown` (default) or `json` (schema-versioned envelope with NodeId list).",
@@ -175,6 +183,60 @@ fn graph_search_def() -> ToolDef {
                 }
             },
             "required": ["query"]
+        }),
+    }
+}
+
+fn graph_outline_def() -> ToolDef {
+    ToolDef {
+        name: "graph_outline".into(),
+        description: "Structural outline of ONE file: every indexed symbol (functions, structs, \
+            enums, fields, …) with its kind and `:start-end` line range, ordered by position. \
+            This is the graph-native replacement for `nl -ba file` / `sed -n` line-number hunting \
+            — call it once to get a stable map of where everything lives, then `graph_node` or \
+            `graph_search include_code=true` to read a specific symbol's body. Accepts a \
+            repo-relative path or a bare filename."
+            .into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "file": {
+                    "type": "string",
+                    "description": "File path (repo-relative, e.g. `crates/jfc-ui/src/app/state.rs`) or bare filename."
+                }
+            },
+            "required": ["file"]
+        }),
+    }
+}
+
+fn graph_grep_def() -> ToolDef {
+    ToolDef {
+        name: "graph_grep".into(),
+        description: "Regex CONTENT search across indexed files, with each match enriched by its \
+            enclosing symbol (which function/struct the line lives in). Use this for the searches \
+            the symbol index can't answer: log messages, error strings, `tracing::` targets, \
+            config keys, magic constants, comment text. This is graph-aware grep — prefer it over \
+            a raw Bash `rg` when you want to know *where in the code structure* a string lives. \
+            For finding symbols by name use graph_search; for callers/callees use those tools."
+            .into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "Rust-regex pattern matched against each line (e.g. `Stream idle timeout`, `tracing::warn!`, `0x[0-9a-f]+`)."
+                },
+                "glob": {
+                    "type": "string",
+                    "description": "Optional path substring filter (e.g. `providers/`, `.ts`). Only files whose path contains this are searched."
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Maximum matches (default 50, capped at 500)."
+                }
+            },
+            "required": ["pattern"]
         }),
     }
 }

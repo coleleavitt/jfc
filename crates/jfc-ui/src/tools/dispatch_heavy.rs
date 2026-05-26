@@ -176,6 +176,7 @@ pub(super) fn execute_graph_context(
 pub(super) fn execute_graph_search(
     query: String,
     limit: Option<usize>,
+    include_code: bool,
     format: Option<&str>,
     cwd: &Path,
 ) -> ExecutionResult {
@@ -196,7 +197,33 @@ pub(super) fn execute_graph_search(
             Err(e) => ExecutionResult::failure(format!("JSON serialization error: {e}")),
         };
     }
+    // include_code collapses the search→sed loop: each hit renders with its
+    // full source body in one call.
+    if include_code {
+        return ExecutionResult::success(session.search_with_code(&query, n));
+    }
     ExecutionResult::success(session.search(&query, n))
+}
+
+/// `graph_outline` tool — structural map of one file (every symbol + line
+/// range), replacing the `nl -ba file` line-number lookup pattern.
+pub(super) fn execute_graph_outline(file: String, cwd: &Path) -> ExecutionResult {
+    let session = get_or_build_graph_session(cwd);
+    ExecutionResult::success(session.outline(&file))
+}
+
+/// `graph_grep` tool — regex content search over indexed files, each match
+/// enriched with its enclosing symbol. Serves log/error/string-literal
+/// searches the symbol index can't answer.
+pub(super) fn execute_graph_grep(
+    pattern: String,
+    glob: Option<&str>,
+    limit: Option<usize>,
+    cwd: &Path,
+) -> ExecutionResult {
+    let session = get_or_build_graph_session(cwd);
+    let n = limit.unwrap_or(50).clamp(1, 500);
+    ExecutionResult::success(session.grep(&pattern, glob, n))
 }
 
 /// `graph_callers` tool — find every function that calls `symbol`,

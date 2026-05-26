@@ -260,12 +260,14 @@ macro_rules! for_each_regular_tool_input {
             CodeIndex => { path: opt_str @ "path", query: opt_str @ "query", kind: opt_str @ "kind", max_entries: opt_u64_as_usize @ "max_entries" }
             GraphQuery => { query: req_str @ "query", max_tokens: opt_u64_as_usize @ "max_tokens", include_handles: raw_bool_opt @ "include_handles", format: opt_str @ "format" }
             GraphContext => { task: req_str @ "task", max_nodes: opt_u64_as_usize @ "max_nodes", include_code: raw_bool_opt @ "include_code", format: opt_str @ "format" }
-            GraphSearch => { query: req_str @ "query", limit: opt_u64_as_usize @ "limit", format: opt_str @ "format" }
+            GraphSearch => { query: req_str @ "query", limit: opt_u64_as_usize @ "limit", include_code: bool_field @ "include_code", format: opt_str @ "format" }
             GraphCallers => { symbol: req_str @ "symbol", limit: opt_u64_as_usize @ "limit", format: opt_str @ "format" }
             GraphCallees => { symbol: req_str @ "symbol", limit: opt_u64_as_usize @ "limit", format: opt_str @ "format" }
             GraphImpact => { symbol: req_str @ "symbol", depth: opt_u64_as_u8 @ "depth", format: opt_str @ "format" }
             GraphNode => { symbol: req_str @ "symbol", include_code: bool_field @ "include_code" }
             GraphExplore => { query: req_str @ "query", max_files: opt_u64_as_usize @ "max_files" }
+            GraphOutline => { file: req_str @ "file" }
+            GraphGrep => { pattern: req_str @ "pattern", glob: opt_str @ "glob", limit: opt_u64_as_usize @ "limit" }
             GraphStatus => {}
             GraphFiles => { path: opt_str @ "path" }
             RunCoverage => { lcov_path: opt_str @ "lcov_path", include_untested_list: bool_true @ "include_untested_list" }
@@ -567,6 +569,8 @@ pub enum ToolInput {
         #[serde(default)]
         limit: Option<usize>,
         #[serde(default)]
+        include_code: bool,
+        #[serde(default)]
         format: Option<String>,
     },
     GraphCallers {
@@ -599,6 +603,16 @@ pub enum ToolInput {
         query: String,
         #[serde(default)]
         max_files: Option<usize>,
+    },
+    GraphOutline {
+        file: String,
+    },
+    GraphGrep {
+        pattern: String,
+        #[serde(default)]
+        glob: Option<String>,
+        #[serde(default)]
+        limit: Option<usize>,
     },
     GraphStatus {},
     GraphFiles {
@@ -910,6 +924,8 @@ impl ToolInput {
             Self::GraphImpact { symbol, .. } => format!("impact: {symbol}"),
             Self::GraphNode { symbol, .. } => format!("node: {symbol}"),
             Self::GraphExplore { query, .. } => format!("explore: {query}"),
+            Self::GraphOutline { file } => format!("outline: {file}"),
+            Self::GraphGrep { pattern, .. } => format!("grep: {pattern}"),
             Self::GraphStatus {} => "graph_status".into(),
             Self::GraphFiles { path, .. } => {
                 format!("files({})", path.as_deref().unwrap_or("."))

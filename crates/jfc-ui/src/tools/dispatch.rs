@@ -381,9 +381,16 @@ pub async fn execute_tool(
             ToolInput::GraphSearch {
                 query,
                 limit,
+                include_code,
                 format,
             },
-        ) => dispatch_heavy::execute_graph_search(query, limit, format.as_deref(), &cwd),
+        ) => dispatch_heavy::execute_graph_search(
+            query,
+            limit,
+            include_code,
+            format.as_deref(),
+            &cwd,
+        ),
         (
             ToolKind::GraphCallers,
             ToolInput::GraphCallers {
@@ -418,6 +425,17 @@ pub async fn execute_tool(
         (ToolKind::GraphExplore, ToolInput::GraphExplore { query, max_files }) => {
             dispatch_heavy::execute_graph_explore(query, max_files, &cwd)
         }
+        (ToolKind::GraphOutline, ToolInput::GraphOutline { file }) => {
+            dispatch_heavy::execute_graph_outline(file, &cwd)
+        }
+        (
+            ToolKind::GraphGrep,
+            ToolInput::GraphGrep {
+                pattern,
+                glob,
+                limit,
+            },
+        ) => dispatch_heavy::execute_graph_grep(pattern, glob.as_deref(), limit, &cwd),
         (ToolKind::GraphStatus, ToolInput::GraphStatus {}) => {
             dispatch_heavy::execute_graph_status(&cwd)
         }

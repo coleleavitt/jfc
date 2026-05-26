@@ -30,15 +30,21 @@ pub fn render_search_results(
         out.push_str(&format!("No results for `{query}`.\n"));
         return out;
     }
+    let mut any_function = false;
     for id in nodes {
         let Some(node) = graph.get_node(id) else {
             continue;
         };
+        if node.kind == NodeKind::Function {
+            any_function = true;
+        }
         out.push_str(&format!("### {} ({})\n", node.name, kind_label(node.kind)));
+        // Full line range (`:start-end`) so the caller can Read offset=start
+        // limit=(end-start) or symbol_edit precisely without a follow-up sed.
         out.push_str(&format!(
             "{}{}\n",
             node.file_path.display(),
-            line_suffix(node)
+            line_range(node)
         ));
         let sig = signature_for(node);
         if !sig.is_empty() {
@@ -55,6 +61,14 @@ pub fn render_search_results(
     }
     if let Some(n) = note {
         out.push_str(&format!("\n> **Note:** {n}\n"));
+    }
+    // Relationship-query nudge: the model habitually greps for call sites
+    // instead of asking the graph. A one-line hint shifts that reflex.
+    if any_function {
+        out.push_str(
+            "\n> 💡 For usage: `graph_callers(\"name\")` / `graph_callees(\"name\")`; \
+             for full source: `graph_search` with `include_code=true` or `graph_node`.\n",
+        );
     }
     out
 }
@@ -382,6 +396,20 @@ fn line_suffix(node: &NodeData) -> String {
         format!(":{}", node.span.start_line)
     } else {
         String::new()
+    }
+}
+
+/// Full line range (`:start-end`) for a node, so callers can `Read offset` or
+/// `symbol_edit` precisely without a follow-up `sed`/`nl`. Falls back to the
+/// single start line when the span is degenerate.
+pub(crate) fn line_range(node: &NodeData) -> String {
+    if node.span.start_line == 0 {
+        return String::new();
+    }
+    if node.span.end_line > node.span.start_line {
+        format!(":{}-{}", node.span.start_line, node.span.end_line)
+    } else {
+        format!(":{}", node.span.start_line)
     }
 }
 

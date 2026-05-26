@@ -580,6 +580,186 @@ impl GraphSession {
         out
     }
 
+    /// Like [`search`](Self::search) but appends each function/method hit's
+    /// full source body inline. This collapses the dominant navigation loop —
+    /// `graph_search foo` → `sed -n 'start,end p' file` — into one call.
+    /// Container types (struct/enum/trait) still render the shape (signature
+    /// + range) without dumping every line.
+    pub fn search_with_code(&self, query: &str, limit: usize) -> String {
+        let mut hits = context::resolve_symbol(&self.graph, query);
+        hits.truncate(limit);
+        if hits.is_empty() {
+            // Reuse the standard renderer for the fuzzy-fallback / empty path.
+            return self.search(query, limit);
+        }
+
+        let mut out = format!("## Search Results with code ({} found)\n\n", hits.len());
+        for id in &hits {
+            let Some(node) = self.graph.get_node(id) else {
+                continue;
+            };
+            out.push_str(&format!(
+                "### {} ({:?})\n{}{}\n",
+                node.name,
+                node.kind,
+                node.file_path.display(),
+                context::render::line_range(node)
+            ));
+            if let Some(handle) = self.symbols.handle_for_node(id) {
+                out.push_str(&format!("handle: `{handle}`\n"));
+            }
+            // Body for code-bearing kinds; shape-only for containers.
+            let is_container = matches!(
+                node.kind,
+                crate::nodes::NodeKind::Struct
+                    | crate::nodes::NodeKind::Enum
+                    | crate::nodes::NodeKind::Trait
+                    | crate::nodes::NodeKind::Module
+            );
+            if !is_container && let Some(body) = read_span_source(node) {
+                let lang = lang_for(&node.file_path);
+                out.push_str(&format!("\n```{lang}\n{body}\n```\n"));
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    /// Structural outline of a single file: every indexed symbol with its
+    /// kind and line range, ordered by position. Replaces the `nl -ba file`
+    /// pattern and gives the model a stable map without re-reading the file.
+    pub fn outline(&self, file: &str) -> String {
+        // Match nodes whose file_path ends with the requested path (so callers
+        // can pass a repo-relative path or a bare filename).
+        let needle = file.trim_start_matches("./");
+        let mut nodes: Vec<&crate::nodes::NodeData> = self
+            .graph
+            .all_node_ids()
+            .iter()
+            .filter_map(|id| self.graph.get_node(id))
+            .filter(|n| {
+                let p = n.file_path.to_string_lossy();
+                p == needle || p.ends_with(needle)
+            })
+            .collect();
+
+        if nodes.is_empty() {
+            return format!(
+                "No indexed symbols in `{file}`. Check the path, or the file's \
+                 language may not have a graph adapter."
+            );
+        }
+
+        nodes.sort_by_key(|n| n.span.start_line);
+        let shown_path = nodes[0].file_path.display().to_string();
+        let mut out = format!("## Outline: {shown_path} ({} symbols)\n\n", nodes.len());
+        for n in &nodes {
+            let indent = match n.kind {
+                crate::nodes::NodeKind::Field | crate::nodes::NodeKind::EnumVariant => "  ",
+                _ => "",
+            };
+            out.push_str(&format!(
+                "{indent}- `{}` ({:?}){}\n",
+                n.name,
+                n.kind,
+                context::render::line_range(n)
+            ));
+        }
+        out.push_str(
+            "\n> Read a symbol's body with `graph_node(\"name\", include_code=true)` \
+             or `graph_search` with `include_code=true`.\n",
+        );
+        out
+    }
+
+    /// Content (string-literal / regex) search across indexed files, enriched
+    /// with the enclosing symbol from the graph. Serves the large class of
+    /// greps for log messages, error strings, and `tracing` targets that the
+    /// symbol index can't answer. `glob` optionally restricts to a path
+    /// substring (e.g. `providers/` or `.ts`).
+    pub fn grep(&self, pattern: &str, glob: Option<&str>, limit: usize) -> String {
+        let re = match regex::Regex::new(pattern) {
+            Ok(r) => r,
+            Err(e) => return format!("Invalid regex `{pattern}`: {e}"),
+        };
+
+        // Collect the set of indexed files (optionally path-filtered).
+        let mut files: Vec<PathBuf> = self
+            .graph
+            .all_node_ids()
+            .iter()
+            .filter_map(|id| self.graph.get_node(id))
+            .map(|n| n.file_path.clone())
+            .collect();
+        files.sort();
+        files.dedup();
+
+        let mut out = format!("## Content search: `{pattern}`\n\n");
+        let mut total = 0;
+        for file in &files {
+            if total >= limit {
+                break;
+            }
+            if let Some(g) = glob
+                && !file.to_string_lossy().contains(g)
+            {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(file) else {
+                continue;
+            };
+            for (i, line) in content.lines().enumerate() {
+                if total >= limit {
+                    break;
+                }
+                if !re.is_match(line) {
+                    continue;
+                }
+                let lineno = (i + 1) as u32;
+                let enclosing = self.enclosing_symbol(file, lineno);
+                let ctx = enclosing
+                    .map(|name| format!(" — in `{name}`"))
+                    .unwrap_or_default();
+                out.push_str(&format!(
+                    "- {}:{}{}\n    {}\n",
+                    file.display(),
+                    lineno,
+                    ctx,
+                    line.trim()
+                ));
+                total += 1;
+            }
+        }
+        if total == 0 {
+            out.push_str("No matches.\n");
+        } else if total >= limit {
+            out.push_str(&format!(
+                "\n> Capped at {limit} matches; narrow with `glob`.\n"
+            ));
+        }
+        out
+    }
+
+    /// Find the innermost indexed symbol containing `line` in `file`.
+    fn enclosing_symbol(&self, file: &Path, line: u32) -> Option<String> {
+        self.graph
+            .all_node_ids()
+            .iter()
+            .filter_map(|id| self.graph.get_node(id))
+            .filter(|n| {
+                n.file_path == file
+                    && n.span.start_line <= line
+                    && n.span.end_line >= line
+                    && matches!(
+                        n.kind,
+                        crate::nodes::NodeKind::Function | crate::nodes::NodeKind::Struct
+                    )
+            })
+            // Innermost = smallest span.
+            .min_by_key(|n| n.span.end_line.saturating_sub(n.span.start_line))
+            .map(|n| n.name.clone())
+    }
+
     /// Build a session by loading a pre-built base graph snapshot and
     /// layering branch-local diffs on top.
     ///
@@ -633,6 +813,44 @@ impl GraphSession {
     }
 }
 
+/// Read the source lines spanned by a node, with line-number gutters.
+/// Returns `None` when the file is unreadable or the span is degenerate.
+fn read_span_source(node: &crate::nodes::NodeData) -> Option<String> {
+    let content = std::fs::read_to_string(&node.file_path).ok()?;
+    let lines: Vec<&str> = content.lines().collect();
+    let start = node.span.start_line.saturating_sub(1) as usize;
+    let end = (node.span.end_line as usize).min(lines.len());
+    if start >= end {
+        return None;
+    }
+    let mut out = String::new();
+    for (offset, line) in lines[start..end].iter().enumerate() {
+        out.push_str(&format!("{:>4} | {}\n", start + offset + 1, line));
+    }
+    Some(out.trim_end().to_string())
+}
+
+/// Markdown code-fence language tag from a file extension.
+fn lang_for(path: &Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("rs") => "rust",
+        Some("ts") | Some("tsx") => "typescript",
+        Some("js") | Some("jsx") => "javascript",
+        Some("py") => "python",
+        Some("go") => "go",
+        Some("c") | Some("h") => "c",
+        Some("cpp") | Some("cc") | Some("hpp") => "cpp",
+        Some("rb") => "ruby",
+        Some("java") => "java",
+        Some("kt") => "kotlin",
+        Some("swift") => "swift",
+        Some("php") => "php",
+        Some("cs") => "csharp",
+        Some("svelte") => "svelte",
+        _ => "",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -664,6 +882,66 @@ mod tests {
             .expect("query should succeed");
         assert!(output.nodes_shown > 0, "query should return nodes");
         assert!(!output.text.is_empty(), "formatted output should have text");
+    }
+
+    #[test]
+    fn search_with_code_includes_body() {
+        let session = GraphSession::from_directory(fixtures_dir());
+        let out = session.search_with_code("foo", 5);
+        assert!(out.contains("foo"), "should find foo");
+        // A fenced code block proves the body was inlined.
+        assert!(
+            out.contains("```"),
+            "search_with_code should inline a body: {out}"
+        );
+    }
+
+    #[test]
+    fn search_results_show_line_range() {
+        let session = GraphSession::from_directory(fixtures_dir());
+        let out = session.search("foo", 5);
+        // Range form `:start-end` (or at least `:start`) must be present.
+        assert!(
+            out.contains(':'),
+            "search result should carry a line locator"
+        );
+    }
+
+    #[test]
+    fn outline_lists_symbols_with_ranges() {
+        let session = GraphSession::from_directory(fixtures_dir());
+        let out = session.outline("sample.rs");
+        assert!(
+            out.contains("Outline:"),
+            "should render an outline header: {out}"
+        );
+        assert!(out.contains("foo"), "sample.rs outline should include foo");
+    }
+
+    #[test]
+    fn outline_missing_file_is_graceful() {
+        let session = GraphSession::from_directory(fixtures_dir());
+        let out = session.outline("does_not_exist.rs");
+        assert!(out.contains("No indexed symbols"));
+    }
+
+    #[test]
+    fn grep_finds_content_with_enclosing_symbol() {
+        let session = GraphSession::from_directory(fixtures_dir());
+        // `fn ` appears in every Rust fixture; assert we get matches + headers.
+        let out = session.grep(r"fn ", None, 10);
+        assert!(out.contains("Content search:"), "grep header: {out}");
+        assert!(
+            out.contains(".rs:"),
+            "grep should report file:line matches: {out}"
+        );
+    }
+
+    #[test]
+    fn grep_invalid_regex_is_reported() {
+        let session = GraphSession::from_directory(fixtures_dir());
+        let out = session.grep("(unclosed", None, 10);
+        assert!(out.contains("Invalid regex"));
     }
 
     #[test]

@@ -308,6 +308,12 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::GraphNode { symbol, .. } => SerializedToolInput::Generic {
             summary: format!("graph_node: {symbol}"),
         },
+        ToolInput::GraphOutline { file } => SerializedToolInput::Generic {
+            summary: format!("outline: {file}"),
+        },
+        ToolInput::GraphGrep { pattern, .. } => SerializedToolInput::Generic {
+            summary: format!("grep: {pattern}"),
+        },
         ToolInput::GraphExplore { query, .. } => SerializedToolInput::Generic {
             summary: format!("graph_explore: {query}"),
         },

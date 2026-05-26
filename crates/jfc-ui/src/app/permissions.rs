@@ -89,6 +89,8 @@ impl PermissionMode {
                 | ToolKind::GraphCallers
                 | ToolKind::GraphCallees
                 | ToolKind::GraphImpact
+                | ToolKind::GraphOutline
+                | ToolKind::GraphGrep
                 | ToolKind::GraphStatus
                 | ToolKind::GraphFiles
                 | ToolKind::RunCoverage
@@ -154,6 +156,8 @@ impl PermissionMode {
                 | ToolKind::GraphCallers
                 | ToolKind::GraphCallees
                 | ToolKind::GraphImpact
+                | ToolKind::GraphOutline
+                | ToolKind::GraphGrep
                 | ToolKind::GraphStatus
                 | ToolKind::GraphFiles
                 | ToolKind::RunCoverage

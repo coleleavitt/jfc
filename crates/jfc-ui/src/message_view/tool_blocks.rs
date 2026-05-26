@@ -665,6 +665,8 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         | ToolKind::GraphImpact
         | ToolKind::GraphNode
         | ToolKind::GraphExplore
+        | ToolKind::GraphOutline
+        | ToolKind::GraphGrep
         | ToolKind::GraphStatus
         | ToolKind::GraphFiles
         | ToolKind::SymbolEdit

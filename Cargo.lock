@@ -2591,6 +2591,7 @@ dependencies = [
  "ignore",
  "petgraph",
  "rayon",
+ "regex",
  "roaring",
  "serde",
  "serde_json",
