@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Remote control** (`jfc-remote` crate + `jfc-ui` integration): drive a jfc session from another device over WebSocket. Wire protocol (`RemoteEnvelope`, 13 variants) with HMAC-SHA256 frame attestation, monotonic sequence replay rejection, and bearer-token pairing. `WsServer` binds `127.0.0.1:4242`; expose via Tailscale/SSH tunnel/cloudflared. Host mirrors all streaming events (assistant deltas, tool calls, results, toasts, plan approvals); client input (prompts, interrupts, approval responses) is injected into the main event bus. CLI: `jfc rc connect <url> --token <tok>` and `jfc rc status`. Slash: `/remote-control` (`/rc`) to toggle, `/rc off` to disable, `/rc status` for diagnostics. See `docs/remote-control.md`
 - **Weighted scaffold/stub detector** (`scaffold_detector.rs`): replaces the binary `STUB_PATTERNS` list with a regex-based, severity-weighted detector (Critical 100 → Info 15) and category tags (unimplemented/placeholder/scaffold/hedge/shim). Vocabulary + weights derived from an audit of the session corpus. Context-aware: code-vs-comment distinction, test-file downgrade, `shim` requires corroboration, and bare `let _ =` is no longer flagged. Task-completion gate now blocks only on a `Critical` finding or cumulative weight ≥ 160, and also scans untracked new files
 - **Slop guard**: 11 new quality checks from academic literature (duplication ratio, dead-code injection, churn detection, coherence scoring, complexity gates, test quality heuristics)
 - **Claude Code 2.1.150 parity**: port remaining features including bridge attestation, idle prefetch, web cache, inline tools for non-native providers
@@ -31,7 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- README expanded to document all 20 crates (added `jfc-session`, `jfc-tools`), missing subsystems, and graph-discovered features
+- README expanded to document all 21 crates (added `jfc-session`, `jfc-tools`, `jfc-remote`), missing subsystems, and graph-discovered features
 - **License**: fix `Cargo.toml` workspace license from `MIT` to `AGPL-3.0` to match `LICENSE` file
 - **Cargo.toml**: add `repository`, `homepage`, `keywords`, `categories` metadata
 - **Crate docs**: add `//!` crate-level doc comments to jfc-economy, jfc-graph, jfc-markdown, jfc-memory, jfc-provider, jfc-providers, jfc-theme
