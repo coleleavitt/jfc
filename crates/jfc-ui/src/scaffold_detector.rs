@@ -326,6 +326,49 @@ static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
             needs_corroboration: false,
         },
         Pattern {
+            // Doc-comment "Stub:" / "Stub —" prefix. This codebase uses it
+            // heavily to mark functions that pretend to do work (e.g.
+            // plan_dreamer.rs, pass.rs). High signal — it's an explicit
+            // self-label, not incidental prose.
+            re: rx(r"///?\s*Stub[:\s—-]"),
+            severity: Severity::High,
+            category: Category::Placeholder,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            // "intentionally stubbed" / "stubbed for now" — explicit stub.
+            re: rx(r"(?i)\b(intentionally |currently )?stubbed\b"),
+            severity: Severity::Medium,
+            category: Category::Placeholder,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            // "not yet wired (stub)" style markers used by learn.rs etc.
+            re: rx(r"(?i)\bnot yet wired\b"),
+            severity: Severity::High,
+            category: Category::Unimplemented,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            // "tech debt" / "technical debt" — explicit debt self-label.
+            re: rx(r"(?i)\btech(nical)? debt\b"),
+            severity: Severity::Low,
+            category: Category::Hedge,
+            code_only: false,
+            needs_corroboration: false,
+        },
+        Pattern {
+            // "first pass" / "initial pass" — work the model expects to redo.
+            re: rx(r"(?i)\b(first|initial) pass\b"),
+            severity: Severity::Low,
+            category: Category::Hedge,
+            code_only: false,
+            needs_corroboration: true,
+        },
+        Pattern {
             re: rx(r"(?i)\bmissing (implementation|impl)\b"),
             severity: Severity::Medium,
             category: Category::Scaffold,
@@ -754,5 +797,52 @@ mod tests {
         assert!(!is_self_referential(Path::new(
             "crates/jfc-ui/src/app/state.rs"
         )));
+    }
+
+    // ─── Third-pass patterns ──────────────────────────────────────────
+
+    #[test]
+    fn doc_comment_stub_prefix_is_high() {
+        let f = scan_text("    /// Stub: would verify plan progress.", false);
+        assert!(
+            f.iter().any(|x| x.severity == Severity::High),
+            "doc-comment 'Stub:' should be High, got {f:?}"
+        );
+    }
+
+    #[test]
+    fn not_yet_wired_is_high() {
+        let f = scan_text("    success(\"not yet wired (stub)\")", false);
+        assert!(f.iter().any(|x| x.severity >= Severity::High));
+    }
+
+    #[test]
+    fn intentionally_stubbed_is_medium() {
+        let f = scan_text("// The streaming path is intentionally stubbed", false);
+        assert!(f.iter().any(|x| x.severity == Severity::Medium));
+    }
+
+    #[test]
+    fn tech_debt_is_low() {
+        let f = scan_text("// Known tech debt: consolidate error paths", false);
+        assert!(
+            f.iter()
+                .any(|x| x.severity == Severity::Low && x.category == Category::Hedge)
+        );
+    }
+
+    #[test]
+    fn first_pass_alone_not_flagged() {
+        let f = scan_text("// Completed the first pass over the algorithm", false);
+        assert!(f.is_empty(), "'first pass' without stub context: {f:?}");
+    }
+
+    #[test]
+    fn first_pass_with_corroboration_flagged() {
+        let f = scan_text(
+            "// first pass — temporary stub until the real resolver lands",
+            false,
+        );
+        assert!(!f.is_empty());
     }
 }
