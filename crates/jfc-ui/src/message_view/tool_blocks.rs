@@ -3,43 +3,166 @@ use super::bash::{BashCmdKind, classify_bash_cmd};
 use super::core::diagnostics_for_path;
 use super::detection::looks_like_git_diff_output;
 use super::formatters::{
-    produce_cat_markdown_output_lines, produce_cat_output_lines, produce_command_output_lines,
-    produce_compiler_output_lines, produce_file_list_lines, produce_git_diff_output_lines,
-    produce_git_log_output_lines, produce_grep_output_lines, produce_hex_dump_output_lines,
-    produce_path_list_output_lines, produce_tabular_list_output_lines,
+    produce_cat_markdown_output_line_count, produce_cat_markdown_output_lines,
+    produce_cat_output_line_count, produce_cat_output_lines, produce_command_output_line_count,
+    produce_command_output_lines, produce_compiler_output_line_count,
+    produce_compiler_output_lines, produce_file_list_line_count, produce_file_list_lines,
+    produce_git_diff_output_line_count, produce_git_diff_output_lines,
+    produce_git_log_output_line_count, produce_git_log_output_lines,
+    produce_grep_output_line_count, produce_grep_output_lines, produce_hex_dump_output_line_count,
+    produce_hex_dump_output_lines, produce_path_list_output_line_count,
+    produce_path_list_output_lines, produce_tabular_list_output_line_count,
+    produce_tabular_list_output_lines,
 };
 use super::output_style::{
     colorize_diagnostic_prefix, colorize_git_commit_line, colorize_git_diff_line,
     colorize_git_log_line, colorize_git_push_line, colorize_git_status_line,
 };
-use super::outputs::render_diff_skip;
+use super::outputs::{diff_view_line_count, render_diff_skip};
 use super::syntax::{
     infer_lang_from_bash, infer_lang_from_tool, looks_like_markdown,
-    produce_highlighted_block_lines, produce_highlighted_with_line_numbers_lines,
+    produce_highlighted_block_line_count, produce_highlighted_block_lines,
+    produce_highlighted_with_line_numbers_line_count, produce_highlighted_with_line_numbers_lines,
 };
 use super::tool_height::tool_block_height;
 use super::*;
 
-/// Produce the exact `Vec<Line>` the body of `tool` will render.
-/// Called from both `tool_content_height_with_tool` (for row count)
-/// and the renderer (delegating to `Paragraph::new(...)`). Width
-/// matches what the renderer's body area gets.
-///
-/// Returns an empty Vec for the `Diff` arm — diff has its own paint
-/// path that walks the `DiffView` directly (it needs per-row bg
-/// tints). Use `diff_row_count` for height in that arm.
-pub(super) fn tool_body_lines(tool: &ToolCall, content_w: usize) -> Vec<Line<'static>> {
-    // Theme is only used for span styling, which doesn't affect row
-    // count — pass `dark()` as a dummy. The renderer path uses
-    // `tool_body_lines_themed` with the real theme.
-    tool_body_lines_themed(tool, content_w, crate::theme::Theme::dark(), None)
+/// Count the rows produced by `tool_body_lines_themed` without constructing
+/// the styled line Vecs used for painting.
+pub(super) fn tool_body_line_count(tool: &ToolCall, content_w: usize) -> usize {
+    let t = crate::theme::Theme::dark();
+    let expanded = tool.display.is_expanded();
+    match &tool.output {
+        ToolOutput::Empty => 0,
+        ToolOutput::Text(s) => {
+            if let Some(lang) = infer_lang_from_tool(tool) {
+                produce_highlighted_with_line_numbers_line_count(
+                    &lang,
+                    s,
+                    content_w,
+                    t,
+                    expanded,
+                    &std::collections::HashMap::new(),
+                )
+            } else if looks_like_git_diff_output(s) {
+                produce_git_diff_output_line_count(s, "", Some(0), content_w, expanded)
+            } else if matches!(tool.kind, ToolKind::Task) {
+                produce_markdown_block_line_count(s, content_w, t)
+            } else {
+                produce_text_block_line_count(s, content_w, t.text_secondary, expanded)
+            }
+        }
+        ToolOutput::LargeText(lt) => {
+            let huge = lt.line_count > LargeText::COLLAPSE_LINES
+                || lt.content.len() > LargeText::COLLAPSE_BYTES;
+            if huge && !expanded {
+                1
+            } else if looks_like_git_diff_output(&lt.content) {
+                produce_git_diff_output_line_count(&lt.content, "", Some(0), content_w, expanded)
+            } else {
+                produce_text_block_line_count(&lt.content, content_w, t.text_secondary, expanded)
+            }
+        }
+        ToolOutput::Command {
+            stdout,
+            stderr,
+            exit_code,
+        } => {
+            let cmd_str = match &tool.input {
+                ToolInput::Bash { command, .. } => command.as_str(),
+                _ => "",
+            };
+            let success = !stdout.is_empty() && exit_code.unwrap_or(-1) == 0;
+            let cmd_kind = classify_bash_cmd(cmd_str);
+            let grep_success = matches!(cmd_kind, BashCmdKind::Grep)
+                && !stdout.is_empty()
+                && exit_code.unwrap_or(-1) <= 1;
+            let gitdiff_success = matches!(cmd_kind, BashCmdKind::GitDiff)
+                && !stdout.is_empty()
+                && exit_code.unwrap_or(-1) <= 1;
+            match cmd_kind {
+                BashCmdKind::Grep if grep_success => {
+                    produce_grep_output_line_count(stdout, stderr, *exit_code, expanded, cmd_str)
+                }
+                BashCmdKind::PathList if success => {
+                    produce_path_list_output_line_count(stdout, stderr, *exit_code, expanded)
+                }
+                BashCmdKind::GitDiff if gitdiff_success => produce_git_diff_output_line_count(
+                    stdout, stderr, *exit_code, content_w, expanded,
+                ),
+                BashCmdKind::GitLog if success => {
+                    produce_git_log_output_line_count(stdout, stderr, *exit_code, expanded)
+                }
+                BashCmdKind::HexDump if success => {
+                    produce_hex_dump_output_line_count(stdout, stderr, *exit_code, expanded)
+                }
+                BashCmdKind::TabularList if success => {
+                    produce_tabular_list_output_line_count(stdout, stderr, *exit_code, expanded)
+                }
+                BashCmdKind::CompilerOutput
+                    if !stdout.is_empty()
+                        && exit_code
+                            .map(|c| c == 0 || c == 101 || c == 1)
+                            .unwrap_or(true) =>
+                {
+                    produce_compiler_output_line_count(stdout, stderr, *exit_code, expanded)
+                }
+                _ => {
+                    if looks_like_git_diff_output(stdout) {
+                        return produce_git_diff_output_line_count(
+                            stdout, stderr, *exit_code, content_w, expanded,
+                        );
+                    }
+                    let lang_hint = infer_lang_from_tool(tool);
+                    let lang_lc = lang_hint.as_deref().map(|l| l.to_ascii_lowercase());
+                    let is_markdown_lang = lang_lc
+                        .as_deref()
+                        .map(|l| matches!(l, "md" | "markdown" | "mdx" | "mkd" | "mdown"))
+                        .unwrap_or(false);
+                    let content_is_md = !is_markdown_lang && looks_like_markdown(stdout);
+                    if success && (is_markdown_lang || content_is_md) {
+                        produce_cat_markdown_output_line_count(
+                            stdout, stderr, *exit_code, content_w, t,
+                        )
+                    } else if let Some(lang) = lang_hint.as_deref().filter(|_| success) {
+                        produce_cat_output_line_count(
+                            lang, stdout, stderr, *exit_code, content_w, t, expanded,
+                        )
+                    } else {
+                        produce_command_output_line_count(
+                            stdout, stderr, *exit_code, content_w, t, expanded,
+                        )
+                    }
+                }
+            }
+        }
+        ToolOutput::FileContent {
+            content, language, ..
+        } => {
+            if looks_like_git_diff_output(content) {
+                produce_git_diff_output_line_count(content, "", Some(0), content_w, expanded)
+            } else {
+                let hl_lang = if language.is_empty() {
+                    "rs"
+                } else {
+                    language.as_str()
+                };
+                produce_highlighted_block_line_count(hl_lang, content, content_w, t, expanded)
+            }
+        }
+        ToolOutput::Diff(diff) => diff_view_line_count(diff, expanded, content_w),
+        ToolOutput::FileList(files) => produce_file_list_line_count(files),
+        ToolOutput::ServerToolResult { tool_kind, content } => {
+            let rendered = crate::types::format_server_tool_result_text_public(tool_kind, content);
+            produce_text_block_line_count(&rendered, content_w, t.text_secondary, expanded)
+        }
+    }
 }
 
-/// Theme-aware variant. The renderer calls this with the actual
-/// theme so the styled spans match what gets painted; the height
-/// path uses `tool_body_lines` (which passes a default theme) since
-/// only the row count matters there. `app` is needed only for the
-/// Read-tool diagnostics gutter; height callers can pass `None`.
+/// Theme-aware variant. The renderer calls this with the actual theme so the
+/// styled spans match what gets painted. The height path mirrors this dispatch
+/// in `tool_body_line_count`; `app` is needed only for the Read-tool
+/// diagnostics gutter.
 pub(super) fn tool_body_lines_themed(
     tool: &ToolCall,
     content_w: usize,
@@ -239,13 +362,10 @@ pub(super) fn tool_body_lines_themed(
             }
         }
         ToolOutput::Diff(_) => {
-            // Diff renders directly to buffer with per-row bg tinting
-            // that doesn't fit `Paragraph`'s model — `tool_content_height_with_tool`
-            // routes the diff arm through `diff_row_count` instead of
-            // counting `tool_body_lines`. Returning empty here means
-            // any path that bypasses `tool_content_height_with_tool`
-            // and tries to count `tool_body_lines` for a diff fails
-            // loudly (zero rows) rather than silently miscounting.
+            // Diff renders directly to buffer with per-row bg tinting that
+            // doesn't fit `Paragraph`'s model. Returning empty here keeps the
+            // line producer honest: height goes through `tool_body_line_count`,
+            // not this Vec path.
             Vec::new()
         }
         ToolOutput::FileContent {
@@ -994,6 +1114,12 @@ fn produce_markdown_block_lines(text: &str, width: usize, t: Theme) -> Vec<Line<
     lines
 }
 
+fn produce_markdown_block_line_count(text: &str, width: usize, t: Theme) -> usize {
+    const MAX_LINES: usize = 200;
+    let total = markdown::to_lines(text, &t, width.max(1)).len();
+    total.min(MAX_LINES) + usize::from(total > MAX_LINES)
+}
+
 pub(super) fn produce_text_block_lines(
     text: &str,
     width: usize,
@@ -1053,4 +1179,27 @@ pub(super) fn produce_text_block_lines(
         }
     }
     lines
+}
+
+fn produce_text_block_line_count(
+    text: &str,
+    width: usize,
+    _text_style: Color,
+    expanded: bool,
+) -> usize {
+    let max_lines = if expanded { 500usize } else { 80usize };
+    let mut count = 0usize;
+
+    'outer: for raw in text.lines() {
+        let clean_raw = sanitize_terminal_text(raw);
+        for _ in markdown::hard_wrap_str(&clean_raw, width.max(1)) {
+            if count >= max_lines {
+                count += 1;
+                break 'outer;
+            }
+            count += 1;
+        }
+    }
+
+    count
 }

@@ -80,6 +80,20 @@ pub enum FeatureGate {
     /// announcement (maintenance window, feature rollout) that surfaces
     /// as a high-priority toast.
     PorchBell,
+    /// v152 streaming tool execution: begin executing auto-approved tools
+    /// as soon as their content_block_stop arrives, without waiting for the
+    /// model's full response to finish (message_stop). Safe because tool_use
+    /// blocks are complete at content_block_stop — name, ID, and input JSON
+    /// are all finalized.
+    StreamingToolExec,
+    /// v152 destructive command warning: show ⚠ DESTRUCTIVE label in the
+    /// permission prompt when the bash command matches a known-dangerous
+    /// pattern (rm -rf, git push --force, dd, sudo, etc.).
+    DestructiveWarn,
+    /// Show one-time notice that auto is the default permission mode.
+    /// When enabled, on session start check if `~/.config/jfc/auto_nudge_seen`
+    /// exists. If not, display a notice and create the marker file.
+    AutoDefaultNudge,
 }
 
 impl FeatureGate {
@@ -99,6 +113,9 @@ impl FeatureGate {
         FeatureGate::VelvetCascade,
         FeatureGate::BasaltSpur,
         FeatureGate::PorchBell,
+        FeatureGate::StreamingToolExec,
+        FeatureGate::DestructiveWarn,
+        FeatureGate::AutoDefaultNudge,
     ];
 
     pub fn codename(self) -> &'static str {
@@ -118,6 +135,9 @@ impl FeatureGate {
             Self::VelvetCascade => "velvet-cascade",
             Self::BasaltSpur => "basalt-spur",
             Self::PorchBell => "porch-bell",
+            Self::StreamingToolExec => "streaming-tool-exec",
+            Self::DestructiveWarn => "destructive-warn",
+            Self::AutoDefaultNudge => "auto-default-nudge",
         }
     }
 
@@ -144,6 +164,9 @@ impl FeatureGate {
             Self::VelvetCascade => false,
             Self::BasaltSpur => false,
             Self::PorchBell => false,
+            Self::StreamingToolExec => false,
+            Self::DestructiveWarn => true,
+            Self::AutoDefaultNudge => false,
         }
     }
 
@@ -165,6 +188,9 @@ impl FeatureGate {
             Self::VelvetCascade => "Simple system prompt for select models",
             Self::BasaltSpur => "Extra pre-compact checks for background sessions",
             Self::PorchBell => "Dynamic server notification banner",
+            Self::StreamingToolExec => "Begin tool execution before model finishes streaming",
+            Self::DestructiveWarn => "Show ⚠ DESTRUCTIVE warning before dangerous commands",
+            Self::AutoDefaultNudge => "Show one-time notice that auto is the default permission mode",
         }
     }
 }

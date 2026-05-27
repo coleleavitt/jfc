@@ -349,11 +349,17 @@ Do not use a colon before tool calls.";
     // overrides. Each layer is appended with its origin labeled so the model
     // can tell which rule came from which file. We load on every stream call
     // so live edits to CLAUDE.md take effect on the next turn (matching CC).
+    let mut overrides = overrides;
     if let Ok(cwd_path) = std::env::current_dir() {
         let hierarchy = crate::context::ClaudeMdHierarchy::load(&cwd_path);
         if let Some(layered) = hierarchy.render() {
             system_prompt.push_str("\n\n");
             system_prompt.push_str(&layered);
+        }
+        // Extract disallowed-tools from frontmatter and merge with CLI ones.
+        let fm_disallowed = hierarchy.collect_disallowed_tools();
+        if !fm_disallowed.is_empty() {
+            overrides.disallowed_tools.extend(fm_disallowed);
         }
 
         let memories = crate::memory::load_all_memories(&cwd_path);
@@ -607,6 +613,34 @@ Do not use a colon before tool calls.";
             ));
         }
         let _ = before;
+    }
+
+    // Filter out tools disallowed by CLI flags and/or CLAUDE.md frontmatter.
+    if !overrides.disallowed_tools.is_empty() {
+        let before = advertised_tools.len();
+        let disallowed_lower: Vec<String> = overrides
+            .disallowed_tools
+            .iter()
+            .map(|t| t.to_lowercase())
+            .collect();
+        let mut suppressed: Vec<String> = Vec::new();
+        advertised_tools.retain(|t| {
+            if disallowed_lower.contains(&t.name.to_lowercase()) {
+                suppressed.push(t.name.clone());
+                false
+            } else {
+                true
+            }
+        });
+        if !suppressed.is_empty() {
+            tracing::info!(
+                target: "jfc::stream::tools",
+                removed = suppressed.len(),
+                total_before = before,
+                tools = ?suppressed,
+                "removed disallowed tools from catalog"
+            );
+        }
     }
 
     // A post-tool continuation re-sends the conversation with the trailing

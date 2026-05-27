@@ -184,6 +184,54 @@ pub(super) fn produce_diff_view_lines(
     lines
 }
 
+pub(super) fn diff_view_line_count(diff: &DiffView, expanded: bool, width: usize) -> usize {
+    let mut rows = 0usize;
+
+    if diff.additions > 0 || diff.deletions > 0 {
+        let mut parts: Vec<String> = Vec::new();
+        if diff.additions > 0 {
+            parts.push(format!(
+                "Added {} {}",
+                diff.additions,
+                if diff.additions == 1 { "line" } else { "lines" }
+            ));
+        }
+        if diff.deletions > 0 {
+            parts.push(format!(
+                "removed {} {}",
+                diff.deletions,
+                if diff.deletions == 1 { "line" } else { "lines" }
+            ));
+        }
+        let summary = format!("□ {}", parts.join(", "));
+        rows += terminal_output::wrapped_text_row_count(&summary, width);
+    }
+
+    for hunk in &diff.hunks {
+        rows +=
+            terminal_output::wrapped_text_row_count(&sanitize_terminal_text(&hunk.header), width);
+
+        let hunk_cap = if expanded { 500 } else { 50 };
+        let max_dl = hunk.lines.len().min(hunk_cap);
+        let content_w = width.saturating_sub(8).max(1);
+        for dl in hunk.lines.iter().take(max_dl) {
+            rows += terminal_output::wrapped_text_row_count(
+                &sanitize_terminal_text(&dl.content),
+                content_w,
+            );
+        }
+
+        if hunk.lines.len() > hunk_cap {
+            rows += terminal_output::wrapped_text_row_count(
+                &format!("… {} more lines", hunk.lines.len() - hunk_cap),
+                width,
+            );
+        }
+    }
+
+    rows
+}
+
 pub(super) fn render_diff_skip(
     diff: &DiffView,
     area: Rect,

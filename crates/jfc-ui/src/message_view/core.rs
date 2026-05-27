@@ -114,27 +114,6 @@ pub fn build_render_items_pub<'a>(ctx: &'a RenderCtx<'a>, inner_w: usize) -> Vec
     build_render_items_inner(ctx, inner_w)
 }
 
-/// Pre-populate the tool-height cache by walking every terminal-state tool in
-/// `messages` and computing its height at the given inner width. Called after
-/// `--continue` / `--resume` loads a long conversation so the *first* render
-/// frame doesn't visibly spike on cold caches — the cost is amortized into
-/// the brief delay between session load and the first paint.
-///
-/// Safe to call from any thread (the underlying caches use `Mutex`).
-/// `inner_w` should match what `render::messages` will pass — terminal-width
-/// minus borders/padding/scrollbar (5). Mismatched widths just produce a few
-/// extra cache entries; correctness is unaffected.
-pub fn warm_tool_height_cache_for_messages(messages: &[crate::types::ChatMessage], inner_w: usize) {
-    use crate::types::MessagePart;
-    for msg in messages {
-        for part in &msg.parts {
-            if let MessagePart::Tool(ref tool) = *part {
-                let _ = tool_block_height(tool, inner_w);
-            }
-        }
-    }
-}
-
 /// Total visual rows the message view will draw at this width.
 ///
 /// **One producer, one truth.** This used to be a parallel

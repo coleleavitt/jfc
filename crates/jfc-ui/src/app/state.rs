@@ -1091,6 +1091,10 @@ pub struct App {
     #[allow(dead_code)]
     pub disallowed_tools: Vec<String>,
 
+    /// Tools disallowed by CLAUDE.md frontmatter (`disallowed-tools` key).
+    /// Refreshed each time the hierarchy is loaded (every turn).
+    pub claudemd_disallowed_tools: Vec<String>,
+
     /// Additional system-prompt text injected via `--system-prompt` or
     /// `--system-prompt-file`.
     #[allow(dead_code)]
@@ -1370,6 +1374,7 @@ impl App {
             max_budget_usd: None,
             allowed_tools: Vec::new(),
             disallowed_tools: Vec::new(),
+            claudemd_disallowed_tools: Vec::new(),
             cli_system_prompt: None,
             dangerously_skip_permissions: false,
             json_mode: false,
@@ -1431,5 +1436,16 @@ impl App {
     /// queue is empty until the next FS event arrives.
     pub fn take_background_reminders(&mut self) -> Vec<String> {
         std::mem::take(&mut self.pending_background_reminders)
+    }
+
+    /// Return the merged list of disallowed tools from CLI flags and
+    /// CLAUDE.md frontmatter. Deduplicated with case-insensitive matching.
+    pub fn effective_disallowed_tools(&self) -> Vec<String> {
+        let mut tools: Vec<String> = self.disallowed_tools.clone();
+        tools.extend(self.claudemd_disallowed_tools.clone());
+        // Deduplicate (case-insensitive)
+        let mut seen = std::collections::HashSet::new();
+        tools.retain(|t| seen.insert(t.to_lowercase()));
+        tools
     }
 }

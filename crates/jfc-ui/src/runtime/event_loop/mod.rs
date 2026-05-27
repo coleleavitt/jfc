@@ -165,6 +165,31 @@ pub(crate) async fn run(
         }
     }
 
+    // AutoDefaultNudge: show a one-time notice that auto is the default
+    // permission mode. Only fires when the gate is enabled AND the
+    // marker file `~/.config/jfc/auto_nudge_seen` does not exist.
+    if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::AutoDefaultNudge) {
+        let marker = dirs::config_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("jfc")
+            .join("auto_nudge_seen");
+        if !marker.exists() {
+            app.messages.push(crate::types::ChatMessage::assistant(
+                "\u{2139}\u{fe0f} Auto mode is now the default permission mode. Use /permissions to change.".to_string(),
+            ));
+            // Create the marker file so the nudge doesn't repeat.
+            if let Some(parent) = marker.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(&marker, "seen");
+            tracing::info!(
+                target: "jfc::auto_nudge",
+                marker = %marker.display(),
+                "auto-default-nudge shown and marker created"
+            );
+        }
+    }
+
     // Wire the Slate router from config. Default OFF — `slate_enabled = false`
     // in `~/.config/jfc/config.toml` means `app.slate = None` and every turn
     // uses the pinned `app.model` (legacy behavior). When ON, each user
@@ -254,63 +279,16 @@ pub(crate) async fn run(
                     app.model = model_id.into();
                 }
                 app.recompute_token_estimate();
-                // Warm the tool-height cache so the first render frame
-                // doesn't visibly spike — without this the first paint
-                // computes heights for every terminal-state tool from
-                // scratch (each height = one full `tool_body_lines`
-                // build), and on a 100-tool conversation that's a
-                // noticeable hitch right after the UI appears. We use
-                // the current terminal width as the best-guess inner
-                // width; render::messages may use a slightly different
-                // value (sidebars open/closed) but mismatched widths
-                // just produce a few extra cache entries — correctness
-                // is unaffected and they get evicted by the LRU.
-                if let Ok((cols, _rows)) = crossterm::terminal::size() {
-                    let inner_w = (cols as usize).saturating_sub(5);
-                    // Load persisted tool-height cache from the previous session.
-                    // On hit this pre-seeds the in-memory LRU so the warm loop
-                    // below is a no-op (every tool_block_height call hits the
-                    // cache immediately). Eliminates ~1s of syntect highlighting.
-                    let cache_path = std::env::current_dir()
-                        .unwrap_or_default()
-                        .join(".jfc/tool-height-cache.json");
-                    let loaded = crate::message_view::load_tool_height_cache(&cache_path);
-
-                    // Also load the highlight line-count cache so syntect
-                    // doesn't need to run for known code blocks.
-                    let hl_cache_path = std::env::current_dir()
-                        .unwrap_or_default()
-                        .join(".jfc/highlight-heights.json");
-                    let hl_loaded = jfc_markdown::load_highlight_line_counts(&hl_cache_path);
-
-                    tracing::info!(
+                let hl_cache_path = std::env::current_dir()
+                    .unwrap_or_default()
+                    .join(".jfc/highlight-heights.json");
+                let hl_loaded = jfc_markdown::load_highlight_line_counts(&hl_cache_path);
+                if hl_loaded > 0 {
+                    tracing::debug!(
                         target: "jfc::session",
-                        loaded,
                         hl_loaded,
-                        "tool-height cache load attempted"
+                        "pre-seeded highlight line-count cache"
                     );
-                    let warm_start = std::time::Instant::now();
-                    crate::message_view::warm_tool_height_cache_for_messages(
-                        &app.messages,
-                        inner_w,
-                    );
-                    let warm_ms = warm_start.elapsed().as_millis();
-                    if warm_ms > 50 {
-                        tracing::warn!(
-                            target: "jfc::session",
-                            warm_ms,
-                            "warm_tool_height_cache took too long (cache misses likely)"
-                        );
-                    } else {
-                        tracing::debug!(
-                            target: "jfc::session",
-                            warm_ms,
-                            "warm_tool_height_cache completed"
-                        );
-                    }
-                    // Persist updated cache immediately so the NEXT --continue
-                    // gets the benefit of any entries computed during this warm.
-                    crate::message_view::persist_tool_height_cache(&cache_path);
                 }
             }
         }
@@ -375,30 +353,15 @@ pub(crate) async fn run(
                     app.model = model_id.into();
                 }
                 app.recompute_token_estimate();
-                // Same cache warm-up as the --continue branch — see comment
-                // there. Pre-paying the height computation here means the
-                // first render frame doesn't hitch.
-                if let Ok((cols, _rows)) = crossterm::terminal::size() {
-                    let inner_w = (cols as usize).saturating_sub(5);
-                    let cache_path = std::env::current_dir()
-                        .unwrap_or_default()
-                        .join(".jfc/tool-height-cache.json");
-                    let loaded = crate::message_view::load_tool_height_cache(&cache_path);
-                    let hl_cache_path = std::env::current_dir()
-                        .unwrap_or_default()
-                        .join(".jfc/highlight-heights.json");
-                    let hl_loaded = jfc_markdown::load_highlight_line_counts(&hl_cache_path);
-                    if loaded > 0 || hl_loaded > 0 {
-                        tracing::debug!(
-                            target: "jfc::session",
-                            loaded,
-                            hl_loaded,
-                            "pre-seeded tool-height cache from disk (resume)"
-                        );
-                    }
-                    crate::message_view::warm_tool_height_cache_for_messages(
-                        &app.messages,
-                        inner_w,
+                let hl_cache_path = std::env::current_dir()
+                    .unwrap_or_default()
+                    .join(".jfc/highlight-heights.json");
+                let hl_loaded = jfc_markdown::load_highlight_line_counts(&hl_cache_path);
+                if hl_loaded > 0 {
+                    tracing::debug!(
+                        target: "jfc::session",
+                        hl_loaded,
+                        "pre-seeded highlight line-count cache from disk (resume)"
                     );
                 }
             } else {
@@ -694,8 +657,14 @@ pub(crate) async fn run(
         app.cancel_token = tokio_util::sync::CancellationToken::new();
         let cancel = app.cancel_token.clone();
         let prev_msg_id = app.last_response_id.take();
+        // Refresh CLAUDE.md frontmatter disallowed tools before each turn.
+        if let Ok(cwd_path) = std::env::current_dir() {
+            let hierarchy = crate::context::ClaudeMdHierarchy::load(&cwd_path);
+            app.claudemd_disallowed_tools = hierarchy.collect_disallowed_tools();
+        }
         let overrides = StreamRequestOverrides {
             background_reminders: app.take_background_reminders(),
+            disallowed_tools: app.effective_disallowed_tools(),
             ..Default::default()
         };
         let tx_guard = tx.clone();

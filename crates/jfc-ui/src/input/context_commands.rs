@@ -211,6 +211,40 @@ pub(super) async fn cmd_verbose(
     }
 }
 
+pub(super) async fn cmd_model(
+    app: &mut App,
+    parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    // `/model <name>` immediately switches the active model for
+    // subsequent turns without restarting the session or clearing history.
+    let arg = parts.get(1).copied().unwrap_or("").trim();
+    app.messages.push(ChatMessage::user(text.to_owned()));
+    if arg.is_empty() {
+        app.messages.push(ChatMessage::assistant(format!(
+            "Current model: `{}`\n\nUsage: `/model <name>` to switch.\n\
+             Or press Ctrl+M to open the model picker.",
+            app.model.as_str()
+        )));
+        return;
+    }
+    let new_model = arg.to_string();
+    let old_model = app.model.clone();
+    app.model = jfc_provider::ModelId::new(new_model.clone());
+    crate::app::push_recent_model(&mut app.recent_models, &new_model);
+    app.sync_selected_context_window();
+    tracing::info!(
+        target: "jfc::input",
+        old_model = %old_model,
+        new_model = %new_model,
+        "model switch via /model command"
+    );
+    app.messages.push(ChatMessage::assistant(format!(
+        "Model switched to: {new_model}"
+    )));
+}
+
 pub(super) async fn cmd_fast(
     app: &mut App,
     _parts: &[&str],

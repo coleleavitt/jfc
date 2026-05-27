@@ -522,8 +522,8 @@ fn highlight_code_inner(
         );
     }
 
-    // Record the line count in the secondary (theme-independent) cache
-    // so the tool-height persister can save counts without full styled lines.
+    // Record the line count in the secondary (theme-independent) cache so
+    // height queries can avoid rebuilding full styled lines.
     record_line_count(hash_code(code), wrap_w, with_gutter, out.len());
 
     out
@@ -550,6 +550,40 @@ pub fn highlight_line_count_cached(
         .lock()
         .ok()
         .and_then(|cache| cache.get(&(code_hash, wrap_w, with_gutter)).copied())
+}
+
+/// Count the rows `highlight_code_raw` / `highlight_code` would produce —
+/// without rebuilding the styled Vec<Line> when a count is already cached.
+///
+/// Why: row counting in the UI height path called the full highlighter
+/// and then `.len()`'d the result. With the styled-lines cache populated
+/// the second visit was cheap, but the *first* visit (and any visit that
+/// hashed differently because of theme/wrap drift) still ran the entire
+/// syntect/Oniguruma pipeline. The count cache is theme-independent
+/// (row count depends only on code+wrap+gutter), so it hits even after
+/// `/theme` switches that invalidate the styled cache.
+///
+/// Returns the count via the count-only cache on hit. On miss, runs the
+/// full highlighter once — which populates both caches — and returns
+/// `out.len()`. Wrap-width derivation mirrors `highlight_code_inner`
+/// so producer and counter never alias on different keys.
+pub fn highlight_code_line_count(
+    lang: &str,
+    code: &str,
+    inner_width: usize,
+    theme: &jfc_theme::Theme,
+    with_gutter: bool,
+) -> usize {
+    let wrap_w = if inner_width == 0 {
+        0
+    } else {
+        inner_width.max(20)
+    };
+    let code_hash = hash_code(code);
+    if let Some(cached) = highlight_line_count_cached(code_hash, wrap_w, with_gutter) {
+        return cached;
+    }
+    highlight_code_inner(lang, code, inner_width, theme, with_gutter).len()
 }
 
 /// Persist the line-count cache to a JSON file.

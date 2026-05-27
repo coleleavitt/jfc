@@ -272,6 +272,7 @@ slash_commands! {
         "/export" [] "save the transcript as markdown" => cmd_export,
         "/verbose" [] "toggle expanded-by-default tool blocks" => cmd_verbose,
         "/fast" ["/f"] "toggle low-latency fast-mode inference" => cmd_fast,
+        "/model" [] "switch model immediately (`/model <name>`)" => cmd_model,
         "/pin" [] "pin a message so compaction can't drop it" => cmd_pin,
         "/unpin" [] "remove a message pin" => cmd_unpin,
         "/timeline" [] "tool-call timeline for the last assistant turn" => cmd_timeline,

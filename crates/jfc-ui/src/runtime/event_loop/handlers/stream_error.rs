@@ -1,6 +1,8 @@
 //! `StreamEvent::Error(e)` handler — error handling, retries, network
 //! recovery.
 
+use jfc_provider::FallbackReason;
+
 use crate::app::{App, NetworkRecoveryProvider};
 use crate::runtime::{
     AppEvent, EventSender, UiEvent, drain_queued_prompts, record_network_recovery,
@@ -276,21 +278,24 @@ pub(crate) fn handle_fallback_triggered(
     app: &mut App,
     original_model: &str,
     fallback_model: &str,
-    reason: &str,
+    reason: &FallbackReason,
 ) {
     tracing::info!(
         target: "jfc::stream",
         original_model,
         fallback_model,
-        reason,
+        %reason,
         "model fallback triggered"
     );
+    let message = match reason {
+        FallbackReason::ModelRefusal => {
+            format!("⚠ Model refused request, falling back to {fallback_model}")
+        }
+        _ => format!("Model fallback: using {fallback_model} (from {original_model})"),
+    };
     toast::push_with_cap(
         &mut app.toasts,
-        toast::Toast::new(
-            toast::ToastKind::Warning,
-            format!("Model fallback: using {fallback_model} (from {original_model})"),
-        ),
+        toast::Toast::new(toast::ToastKind::Warning, message),
     );
 }
 

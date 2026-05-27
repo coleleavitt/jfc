@@ -60,6 +60,41 @@ fn push_grep_body_spans(
     }
 }
 
+fn capped_stdout_row_count(pre_rows: usize, stdout_rows: usize, max_lines: usize) -> usize {
+    pre_rows
+        + stdout_rows.min(max_lines.saturating_sub(pre_rows))
+        + usize::from(stdout_rows > max_lines)
+}
+
+fn stderr_suffix_row_count(rows_so_far: usize, stderr: &str) -> usize {
+    if stderr.is_empty() {
+        0
+    } else {
+        usize::from(rows_so_far > 0) + stderr.lines().count()
+    }
+}
+
+fn wrapped_ansi_text_row_count(raw: &str, width: usize, _fallback_style: Style) -> usize {
+    use ansi_to_tui::IntoText;
+
+    if raw.is_empty() {
+        return 0;
+    }
+
+    let w = width.max(1);
+    match raw.into_text() {
+        Ok(text) => text
+            .lines
+            .iter()
+            .map(|line| terminal_output::styled_line_row_count(line, w))
+            .sum(),
+        Err(_) => raw
+            .lines()
+            .map(|line| terminal_output::wrapped_text_row_count(&sanitize_terminal_text(line), w))
+            .sum(),
+    }
+}
+
 /// Render `grep -rn` / `rg` / `ack` output. Handles all the
 /// formats those tools emit (verified against ripgrep's
 /// `crates/printer/src/standard.rs` and GNU grep's `print_sep`):
@@ -240,6 +275,29 @@ pub(super) fn produce_grep_output_lines(
     lines
 }
 
+pub(super) fn produce_grep_output_line_count(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    expanded: bool,
+    cmd: &str,
+) -> usize {
+    let max_lines = if expanded { 500usize } else { 80usize };
+    let mut rows = usize::from(exit_code.is_some_and(|code| code > 1));
+
+    let first_data = stdout.lines().find(|l| !l.is_empty());
+    let pathless = first_data
+        .map(|l| matches!(parse_grep_line(l), Some(GrepLine::Match { path: "", .. })))
+        .unwrap_or(false);
+    if pathless && grep_target_file(cmd).is_some() {
+        rows += 1;
+    }
+
+    let total = stdout.lines().count();
+    rows = capped_stdout_row_count(rows, total, max_lines);
+    rows + stderr_suffix_row_count(rows, stderr)
+}
+
 /// Render `find` / `ls` / `tree` / `fd` output as a list of paths
 /// colored by file extension. Multi-column `ls` output (no flags)
 /// is split on whitespace and each entry gets its own colored
@@ -345,6 +403,19 @@ pub(super) fn produce_path_list_output_lines(
         }
     }
     lines
+}
+
+pub(super) fn produce_path_list_output_line_count(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    expanded: bool,
+) -> usize {
+    let max_lines = if expanded { 500usize } else { 80usize };
+    let pre_rows = usize::from(exit_code.is_some_and(|code| code != 0));
+    let total = stdout.lines().count();
+    let rows = capped_stdout_row_count(pre_rows, total, max_lines);
+    rows + stderr_suffix_row_count(rows, stderr)
 }
 
 /// Produce `git diff` / `git show` output as colored unified diff
@@ -597,6 +668,26 @@ pub(super) fn produce_git_diff_output_lines(
     lines
 }
 
+pub(super) fn produce_git_diff_output_line_count(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    content_w: usize,
+    expanded: bool,
+) -> usize {
+    if looks_like_difftastic_output(stdout) {
+        return produce_difftastic_output_line_count(
+            stdout, stderr, exit_code, content_w, expanded,
+        );
+    }
+
+    let max_lines = if expanded { 1000usize } else { 200usize };
+    let pre_rows = usize::from(exit_code.is_some_and(|code| code > 1));
+    let total = stdout.lines().count();
+    let rows = capped_stdout_row_count(pre_rows, total, max_lines);
+    rows + stderr_suffix_row_count(rows, stderr)
+}
+
 fn produce_difftastic_output_lines(
     cleaned_stdout: &[String],
     stderr: &str,
@@ -642,6 +733,39 @@ fn produce_difftastic_output_lines(
         }
     }
     lines
+}
+
+fn produce_difftastic_output_line_count(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    content_w: usize,
+    expanded: bool,
+) -> usize {
+    let max_lines = if expanded { 1000usize } else { 200usize };
+    let mut rows = usize::from(exit_code.is_some_and(|code| code > 1));
+
+    let body_rows: usize = stdout
+        .lines()
+        .map(|line| {
+            terminal_output::wrapped_text_row_count(&sanitize_terminal_text(line), content_w)
+        })
+        .sum();
+    rows += terminal_output::truncate_lines_middle_row_count(body_rows, max_lines);
+
+    if !stderr.is_empty() {
+        if rows > 0 {
+            rows += 1;
+        }
+        rows += stderr
+            .lines()
+            .map(|line| {
+                terminal_output::wrapped_text_row_count(&sanitize_terminal_text(line), content_w)
+            })
+            .sum::<usize>();
+    }
+
+    rows
 }
 
 fn style_difftastic_line(line: &str, t: Theme) -> Line<'static> {
@@ -793,6 +917,19 @@ pub(super) fn produce_git_log_output_lines(
     lines
 }
 
+pub(super) fn produce_git_log_output_line_count(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    expanded: bool,
+) -> usize {
+    let max_lines = if expanded { 500usize } else { 100usize };
+    let pre_rows = usize::from(exit_code.is_some_and(|code| code != 0));
+    let total = stdout.lines().count();
+    let rows = capped_stdout_row_count(pre_rows, total, max_lines);
+    rows + stderr_suffix_row_count(rows, stderr)
+}
+
 /// Render `cat <markdown-file>` output as actual rendered markdown
 /// (formatted headers, tables, code fences) instead of syntax-
 /// highlighted source. The user expects `cat README.md` to show
@@ -849,6 +986,23 @@ pub(super) fn produce_cat_markdown_output_lines(
     }
 
     lines
+}
+
+pub(super) fn produce_cat_markdown_output_line_count(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    content_w: usize,
+    t: Theme,
+) -> usize {
+    const MAX_LINES: usize = 500;
+    let inner_w = content_w.saturating_sub(2);
+    let pre_rows = usize::from(exit_code.is_some_and(|code| code != 0));
+    let body_rows = markdown::to_lines(stdout, &t, inner_w.max(1)).len();
+    let rendered_rows = pre_rows + body_rows;
+    let mut rows = rendered_rows.min(MAX_LINES) + usize::from(rendered_rows > MAX_LINES);
+    rows += stderr_suffix_row_count(rows, stderr);
+    rows
 }
 
 /// Render `xxd` / `hexyl` / `od` hex-dump output. Each input line
@@ -947,6 +1101,19 @@ pub(super) fn produce_hex_dump_output_lines(
     lines
 }
 
+pub(super) fn produce_hex_dump_output_line_count(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    expanded: bool,
+) -> usize {
+    let max_lines = if expanded { 1000usize } else { 200usize };
+    let pre_rows = usize::from(exit_code.is_some_and(|code| code != 0));
+    let total = stdout.lines().count();
+    let rows = capped_stdout_row_count(pre_rows, total, max_lines);
+    rows + stderr_suffix_row_count(rows, stderr)
+}
+
 /// Render `docker ps` / `docker images` / `kubectl get …` and
 /// similar fixed-width tables. The first non-empty stdout line is
 /// the column header (uppercase column names) — bold it and use the
@@ -1025,6 +1192,19 @@ pub(super) fn produce_tabular_list_output_lines(
         }
     }
     lines
+}
+
+pub(super) fn produce_tabular_list_output_line_count(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    expanded: bool,
+) -> usize {
+    let max_lines = if expanded { 500usize } else { 100usize };
+    let pre_rows = usize::from(exit_code.is_some_and(|code| code != 0));
+    let total = stdout.lines().count();
+    let rows = capped_stdout_row_count(pre_rows, total, max_lines);
+    rows + stderr_suffix_row_count(rows, stderr)
 }
 
 /// Render `cargo build` / `cargo test` / `cargo check` / `make` /
@@ -1293,6 +1473,18 @@ pub(super) fn produce_compiler_output_lines(
     lines
 }
 
+pub(super) fn produce_compiler_output_line_count(
+    stdout: &str,
+    stderr: &str,
+    exit_code: Option<i32>,
+    expanded: bool,
+) -> usize {
+    let max_lines = if expanded { 1500usize } else { 300usize };
+    let pre_rows = usize::from(exit_code.is_some_and(|code| code != 0));
+    let total = stderr.lines().count() + stdout.lines().count();
+    capped_stdout_row_count(pre_rows, total, max_lines)
+}
+
 /// Produce Bash output lines where stdout is the contents of a single
 /// file (cat / head / tail). Top row is the exit-code badge, then
 /// stdout flows through syntect highlighting (no line numbers — the
@@ -1349,6 +1541,28 @@ pub(super) fn produce_cat_output_lines(
         }
     }
     lines
+}
+
+pub(super) fn produce_cat_output_line_count(
+    lang: &str,
+    stdout: &str,
+    stderr: &str,
+    _exit_code: Option<i32>,
+    content_w: usize,
+    t: Theme,
+    expanded: bool,
+) -> usize {
+    let max_lines = if expanded { 500usize } else { 80usize };
+    let highlighted = markdown::highlight_code_line_count(lang, stdout, content_w, &t, false);
+    let body = highlighted.min(max_lines) + usize::from(highlighted > max_lines);
+
+    let stderr_rows = if stderr.is_empty() {
+        0
+    } else {
+        1 + stderr.lines().take(40).count()
+    };
+
+    1 + body + stderr_rows
 }
 
 pub(super) fn produce_command_output_lines(
@@ -1413,6 +1627,25 @@ pub(super) fn produce_command_output_lines(
     lines
 }
 
+pub(super) fn produce_command_output_line_count(
+    stdout: &str,
+    stderr: &str,
+    _exit_code: Option<i32>,
+    content_w: usize,
+    t: Theme,
+    expanded: bool,
+) -> usize {
+    let max_lines = if expanded { 500usize } else { 80usize };
+    let mut body_rows =
+        wrapped_ansi_text_row_count(stdout, content_w, Style::default().fg(t.text_secondary));
+    if !stdout.is_empty() && !stderr.is_empty() {
+        body_rows += 1;
+    }
+    body_rows += wrapped_ansi_text_row_count(stderr, content_w, Style::default().fg(t.error));
+
+    1 + terminal_output::truncate_lines_middle_row_count(body_rows, max_lines)
+}
+
 pub(super) fn produce_file_list_lines(files: &[String], t: Theme) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     for f in files.iter().take(20) {
@@ -1428,4 +1661,8 @@ pub(super) fn produce_file_list_lines(files: &[String], t: Theme) -> Vec<Line<'s
         )));
     }
     lines
+}
+
+pub(super) fn produce_file_list_line_count(files: &[String]) -> usize {
+    files.len().min(20) + usize::from(files.len() > 20)
 }

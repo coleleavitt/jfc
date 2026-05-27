@@ -55,6 +55,44 @@ pub(super) fn wrap_styled_line(line: &Line<'static>, width: usize) -> Vec<Line<'
     out
 }
 
+/// Count rows `wrap_styled_line` would produce without allocating wrapped
+/// `Line`s. Keep this logic in lockstep with `wrap_styled_line`: a zero-width
+/// line still occupies one row, and a wide character at column zero is allowed
+/// to overflow that row instead of creating an empty row first.
+pub(super) fn styled_line_row_count(line: &Line<'static>, width: usize) -> usize {
+    if width == 0 {
+        return 1;
+    }
+
+    let mut rows = 1usize;
+    let mut current_w = 0usize;
+    let mut saw_char = false;
+
+    for ch in line.spans.iter().flat_map(|s| s.content.chars()) {
+        saw_char = true;
+        let ch_w = char_width(ch);
+        if current_w > 0 && current_w + ch_w > width {
+            rows += 1;
+            current_w = 0;
+        }
+        current_w += ch_w;
+    }
+
+    if saw_char { rows } else { 1 }
+}
+
+pub(super) fn wrapped_text_row_count(text: &str, width: usize) -> usize {
+    styled_line_row_count(&Line::from(Span::raw(text.to_owned())), width)
+}
+
+pub(super) fn truncate_lines_middle_row_count(line_count: usize, max_lines: usize) -> usize {
+    if max_lines == 0 || line_count <= max_lines {
+        line_count
+    } else {
+        max_lines
+    }
+}
+
 /// Keep the head and tail of already-wrapped terminal output, inserting a
 /// visible omission marker in the middle. This preserves the final error lines
 /// that are usually more useful than the middle of a long log.

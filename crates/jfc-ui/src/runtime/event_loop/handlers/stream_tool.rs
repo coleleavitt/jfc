@@ -167,42 +167,59 @@ pub(crate) async fn handle_stream_tool(app: &mut App, tx: &EventSender, tool: To
     } else {
         // Sandbox auto-approval toast (first time only per session).
         maybe_show_sandbox_toast(app);
-        tracing::info!(
-            target: "jfc::ui::tool",
-            tool_kind = tool.kind.label(),
-            tool_id = %tool.id,
-            pending_total = app.pending_tool_calls.len() + 1,
-            "route=auto_dispatch (no approval needed)"
-        );
         if let Some(msg) = streaming_assistant_mut(app) {
             msg.parts.push(MessagePart::Tool(tool.clone()));
         }
-        // Eager dispatch: start executing this tool immediately instead of
-        // waiting for StreamDone. This eliminates the perceived "queuing"
-        // where tools only run after the model finishes its entire response.
-        // Track the id in pre_dispatched_tool_ids so stream_done doesn't
-        // re-dispatch it; still push to pending_tool_calls so the turn-
-        // complete logic knows there are outstanding tools.
-        app.pre_dispatched_tool_ids
-            .insert(tool.id.as_str().to_owned());
-        app.pending_tool_calls.push(tool.clone());
-        app.in_flight_eager_dispatches += 1;
-        let calls = vec![tool];
-        crate::runtime::update_task_activities(app, &calls);
-        crate::stream::dispatch_tools_batched(
-            calls,
-            tx,
-            Arc::clone(&app.dedup_cache),
-            Some(Arc::clone(&app.task_store)),
-            app.team_context.team_name.clone(),
-            app.current_session_id
-                .as_ref()
-                .map(|id| id.as_str().to_owned()),
-            Arc::clone(&app.provider),
-            app.model.clone(),
-            app.teammate_event_tx.clone(),
-            app.cancel_token.clone(),
-        );
+        // Streaming tool execution v2 (gate: streaming-tool-exec):
+        // Start executing this tool immediately instead of waiting for
+        // StreamDone. This eliminates the perceived "queuing" where tools
+        // only run after the model finishes its entire response. Safe
+        // because tool_use blocks are complete at content_block_stop —
+        // name, ID, and input JSON are all finalized.
+        //
+        // When the gate is off, tools accumulate in pending_tool_calls and
+        // are dispatched as a batch when StreamDone arrives.
+        if crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::StreamingToolExec) {
+            tracing::info!(
+                target: "jfc::ui::tool",
+                tool_kind = tool.kind.label(),
+                tool_id = %tool.id,
+                pending_total = app.pending_tool_calls.len() + 1,
+                "route=eager_dispatch (streaming-tool-exec ON, no approval needed)"
+            );
+            // Track the id in pre_dispatched_tool_ids so stream_done doesn't
+            // re-dispatch it; still push to pending_tool_calls so the turn-
+            // complete logic knows there are outstanding tools.
+            app.pre_dispatched_tool_ids
+                .insert(tool.id.as_str().to_owned());
+            app.pending_tool_calls.push(tool.clone());
+            app.in_flight_eager_dispatches += 1;
+            let calls = vec![tool];
+            crate::runtime::update_task_activities(app, &calls);
+            crate::stream::dispatch_tools_batched(
+                calls,
+                tx,
+                Arc::clone(&app.dedup_cache),
+                Some(Arc::clone(&app.task_store)),
+                app.team_context.team_name.clone(),
+                app.current_session_id
+                    .as_ref()
+                    .map(|id| id.as_str().to_owned()),
+                Arc::clone(&app.provider),
+                app.model.clone(),
+                app.teammate_event_tx.clone(),
+                app.cancel_token.clone(),
+            );
+        } else {
+            tracing::info!(
+                target: "jfc::ui::tool",
+                tool_kind = tool.kind.label(),
+                tool_id = %tool.id,
+                pending_total = app.pending_tool_calls.len() + 1,
+                "route=deferred_dispatch (streaming-tool-exec OFF, no approval needed)"
+            );
+            app.pending_tool_calls.push(tool);
+        }
     }
 }
 

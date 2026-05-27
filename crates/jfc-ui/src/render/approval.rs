@@ -52,6 +52,10 @@ pub(super) fn approval(f: &mut Frame, app: &App) {
     } else {
         " Allow tool use? ".to_string()
     };
+
+    // Check if the command is destructive and the gate is enabled.
+    let is_destructive = is_tool_destructive(&pending.tool);
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(t.warning))
@@ -65,11 +69,13 @@ pub(super) fn approval(f: &mut Frame, app: &App) {
     f.render_widget(block, dialog_area);
 
     if has_preview {
-        // Three rows: summary header (2), choice list (5-6), diff preview (rest).
+        // Three rows: summary header (2+), choice list (5-6), diff preview (rest).
+        // If destructive, we add an extra warning line above the choices.
+        let header_height = if is_destructive { 4 } else { 2 };
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(2),
+                Constraint::Length(header_height),
                 Constraint::Length(ApprovalChoice::ALL.len() as u16),
                 Constraint::Min(3),
             ])
@@ -80,20 +86,22 @@ pub(super) fn approval(f: &mut Frame, app: &App) {
         // identity colored without bleeding into the args.
         let arg_cap = (rows[0].width as usize).saturating_sub(tool_label.chars().count() + 3);
         let arg_truncated: String = tool_input_summary.chars().take(arg_cap).collect();
-        f.render_widget(
-            Paragraph::new(vec![
-                Line::from(vec![
-                    Span::styled(
-                        tool_label.to_string(),
-                        Style::default().fg(kind_color).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw(" "),
-                    Span::styled(arg_truncated, Style::default().fg(t.text_primary)),
-                ]),
-                Line::from(""),
+        let mut header_lines = vec![
+            Line::from(vec![
+                Span::styled(
+                    tool_label.to_string(),
+                    Style::default().fg(kind_color).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+                Span::styled(arg_truncated, Style::default().fg(t.text_primary)),
             ]),
-            rows[0],
-        );
+            Line::from(""),
+        ];
+        if is_destructive {
+            header_lines.push(destructive_warning_line(&t));
+            header_lines.push(Line::from(""));
+        }
+        f.render_widget(Paragraph::new(header_lines), rows[0]);
 
         render_choice_list(f, pending, rows[1], &t);
 
@@ -109,26 +117,29 @@ pub(super) fn approval(f: &mut Frame, app: &App) {
             inner_preview,
         );
     } else {
+        let header_height = if is_destructive { 4 } else { 2 };
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(2), Constraint::Min(1)])
+            .constraints([Constraint::Length(header_height), Constraint::Min(1)])
             .split(inner);
         let arg_cap = (width as usize).saturating_sub(tool_label.chars().count() + 5);
         let arg_truncated: String = tool_input_summary.chars().take(arg_cap).collect();
-        f.render_widget(
-            Paragraph::new(vec![
-                Line::from(vec![
-                    Span::styled(
-                        tool_label.to_string(),
-                        Style::default().fg(kind_color).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw(" "),
-                    Span::styled(arg_truncated, Style::default().fg(t.text_primary)),
-                ]),
-                Line::from(""),
+        let mut header_lines = vec![
+            Line::from(vec![
+                Span::styled(
+                    tool_label.to_string(),
+                    Style::default().fg(kind_color).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+                Span::styled(arg_truncated, Style::default().fg(t.text_primary)),
             ]),
-            chunks[0],
-        );
+            Line::from(""),
+        ];
+        if is_destructive {
+            header_lines.push(destructive_warning_line(&t));
+            header_lines.push(Line::from(""));
+        }
+        f.render_widget(Paragraph::new(header_lines), chunks[0]);
         render_choice_list(f, pending, chunks[1], &t);
     }
 }
@@ -240,4 +251,32 @@ fn render_choice_list(f: &mut Frame, pending: &PendingApproval, area: Rect, t: &
         })
         .collect();
     f.render_widget(List::new(items).style(Style::default().bg(t.surface)), area);
+}
+
+/// Check whether a tool call represents a destructive bash command AND the
+/// `DestructiveWarn` feature gate is enabled.
+fn is_tool_destructive(tool: &ToolCall) -> bool {
+    if !crate::feature_gates::is_enabled(crate::feature_gates::FeatureGate::DestructiveWarn) {
+        return false;
+    }
+    let ToolInput::Bash { command, .. } = &tool.input else {
+        return false;
+    };
+    crate::auto_classifier::is_destructive_bash(command)
+}
+
+/// Render the `[⚠ DESTRUCTIVE]` warning line with explanation.
+fn destructive_warning_line(t: &Theme) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            "[⚠ DESTRUCTIVE]",
+            Style::default()
+                .fg(t.warning)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " This command may cause irreversible changes",
+            Style::default().fg(t.warning),
+        ),
+    ])
 }

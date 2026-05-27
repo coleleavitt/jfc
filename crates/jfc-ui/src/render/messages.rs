@@ -47,13 +47,13 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     // `build_render_items` walk) and the widget then ran `build_render_items`
     // again — gdb sampling showed the second walk's `Vec<Line<'static>>::to_vec`
     // out of `RenderCache` was the dominant remaining hot spot once syntect/onig
-    // and the tool-height path were memoized. Sharing one items vec halves the
-    // per-frame deep-clone work.
+    // and the highlighted tool-height path stopped building styled line Vecs.
+    // Sharing one items vec halves the per-frame deep-clone work.
     //
     // The earlier `app.total_lines` cache that gated `message_view_total_lines`
     // is no longer needed — items are required for paint anyway, and
-    // `tool_block_height` now memoizes the integer height per terminal-state
-    // tool, so the per-item .sum() is a string of hash lookups.
+    // `tool_block_height` is now a deterministic row-count query instead of a
+    // second renderer.
     let render_ctx = crate::message_view::RenderCtx::from_app(app);
     let items = crate::message_view::build_render_items_pub(&render_ctx, inner_width);
     let total_lines: usize = items.iter().map(|i| i.height(inner_width)).sum();

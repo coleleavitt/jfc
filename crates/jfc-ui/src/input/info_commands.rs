@@ -520,18 +520,27 @@ pub(super) async fn cmd_skills(
     let skills =
         crate::agents::load_skills(&std::env::current_dir().unwrap_or_else(|_| ".".into()));
     let body = if skills.is_empty() {
-        "No skills found. Create `.claude/skills/<name>.md` files with \
-                 optional YAML frontmatter (`name:`, `description:`) and a markdown \
-                 body that becomes the system-prompt fragment."
-            .to_owned()
+        "No skills defined. Add .claude/skills/<name>.md files.".to_owned()
     } else {
-        let mut s = format!("**{} skill(s) loaded:**\n\n", skills.len());
+        // Compute column width for alignment
+        let max_name_len = skills.iter().map(|s| s.name.len()).max().unwrap_or(10);
+        let pad = max_name_len + 2;
+        let mut s = String::from("Available Skills:\n");
+        s.push_str(&"\u{2500}".repeat(pad + 40));
+        s.push('\n');
         for sk in &skills {
+            let desc = sk
+                .description
+                .as_deref()
+                .unwrap_or("(no description)");
+            // Truncate long descriptions for readability
+            let desc_trunc: String = desc.chars().take(60).collect();
+            let suffix = if desc.chars().count() > 60 { "\u{2026}" } else { "" };
             s.push_str(&format!(
-                "- **{}** — {}\n  source: `{}`\n",
+                "{:<width$}\u{2014} {}{suffix}\n",
                 sk.name,
-                sk.description.as_deref().unwrap_or("(no description)"),
-                sk.source.display()
+                desc_trunc,
+                width = pad,
             ));
         }
         s

@@ -10,9 +10,9 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, RwLock};
 
 use jfc_provider::{
-    CompletionResponse, EventStream, FallbackTriggered, ModelId, ModelInfo, Provider,
-    ProviderContent, ProviderMessage, ProviderRole, StreamConvention, StreamEvent, StreamOptions,
-    TokenUsage,
+    CompletionResponse, EventStream, FallbackReason, FallbackTriggered, ModelId, ModelInfo,
+    Provider, ProviderContent, ProviderMessage, ProviderRole, StreamConvention, StreamEvent,
+    StreamOptions, TokenUsage,
 };
 
 use super::sse;
@@ -291,6 +291,40 @@ pub(crate) fn parse_model_not_found(body: &str) -> Option<String> {
         return None;
     }
     Some(id.to_owned())
+}
+
+/// Detect content-policy refusal in an Anthropic API error body.
+///
+/// Returns `true` when the error JSON has:
+///  - `error.type == "invalid_request_error"` with a message containing
+///    "content policy" (case-insensitive), OR
+///  - the body mentions "content_filter" (a content block type indicating
+///    the request was filtered).
+///
+/// This is used to trigger model-refusal fallback (CC v2.1.152 behaviour).
+pub(crate) fn is_content_policy_refusal(body: &str) -> bool {
+    let lower = body.to_ascii_lowercase();
+    // Quick heuristic: look for content_filter block type anywhere.
+    if lower.contains("content_filter") {
+        return true;
+    }
+    // Structured check: {"error": {"type": "invalid_request_error", "message": "...content policy..."}}
+    let Ok(v) = serde_json::from_str::<Value>(body) else {
+        return false;
+    };
+    let Some(err) = v.get("error") else {
+        return false;
+    };
+    let Some(kind) = err.get("type").and_then(|t| t.as_str()) else {
+        return false;
+    };
+    if kind != "invalid_request_error" {
+        return false;
+    }
+    let Some(msg) = err.get("message").and_then(|m| m.as_str()) else {
+        return false;
+    };
+    msg.to_ascii_lowercase().contains("content policy")
 }
 
 fn now_ms() -> u64 {
@@ -1354,6 +1388,8 @@ impl Provider for AnthropicOAuthProvider {
         let total_wait_started = std::time::Instant::now();
         let mut last_err: Option<anyhow::Error> = None;
         let mut model_in_use = options.model.as_str().to_owned();
+        // Track why the fallback was triggered (if it was).
+        let mut fallback_reason = FallbackReason::Overloaded;
         // Attested body for the request actually being sent. Starts as the
         // user-selected model; swapped to the fallback-model body after the
         // 529 threshold is crossed.
@@ -1484,7 +1520,7 @@ impl Provider for AnthropicOAuthProvider {
                                 StreamEvent::FallbackTriggered(FallbackTriggered {
                                     original_model: ModelId::new(options.model.as_str()),
                                     fallback_model: ModelId::new(&model_in_use),
-                                    reason: "overloaded (529 threshold crossed)".to_owned(),
+                                    reason: fallback_reason.clone(),
                                 });
                             let prefix =
                                 futures::stream::once(futures::future::ready(Ok(fallback_event)));
@@ -1546,6 +1582,7 @@ impl Provider for AnthropicOAuthProvider {
                                     "529 threshold crossed — switching to fallback model"
                                 );
                                 model_in_use = DEFAULT_OVERLOAD_FALLBACK_MODEL.to_owned();
+                                fallback_reason = FallbackReason::Overloaded;
                                 // The original messages were consumed building
                                 // `body_str`. Patch the `model` field on the
                                 // serialized body and re-attest rather than
@@ -1626,6 +1663,44 @@ impl Provider for AnthropicOAuthProvider {
                                 "{model} is not enabled on your Anthropic account. \
                                  Pin a model you have access to (Ctrl+M)."
                             );
+                        }
+                        // Detect content policy refusal: the API returns a 400
+                        // with error.type "invalid_request_error" and a message
+                        // mentioning "content policy", or a content_filter block.
+                        // In that case, fall back to the alternate model which
+                        // may have different content policy thresholds.
+                        if is_content_policy_refusal(&body)
+                            && !model_in_use
+                                .eq_ignore_ascii_case(DEFAULT_OVERLOAD_FALLBACK_MODEL)
+                        {
+                            tracing::warn!(
+                                target: "jfc::provider::anthropic_oauth::rotation",
+                                account = %account.name,
+                                from_model = %model_in_use,
+                                to_model = %DEFAULT_OVERLOAD_FALLBACK_MODEL,
+                                "content policy refusal — switching to fallback model"
+                            );
+                            model_in_use = DEFAULT_OVERLOAD_FALLBACK_MODEL.to_owned();
+                            fallback_reason = FallbackReason::ModelRefusal;
+                            let mut patched: Value = serde_json::from_str(&body_str)?;
+                            patched["model"] =
+                                Value::String(DEFAULT_OVERLOAD_FALLBACK_MODEL.to_owned());
+                            let patched_str = serde_json::to_string(&patched)?;
+                            effective_body = {
+                                #[cfg(feature = "anthropic-oauth-sensitive")]
+                                {
+                                    compute_body_attestation(&patched_str)
+                                }
+                                #[cfg(not(feature = "anthropic-oauth-sensitive"))]
+                                {
+                                    patched_str.clone()
+                                }
+                            };
+                            last_err = Some(anyhow::anyhow!(
+                                "Anthropic content policy refusal on account '{}': {body}",
+                                account.name,
+                            ));
+                            continue;
                         }
                         let friendly =
                             jfc_provider::retry::friendly_error_message(status.as_u16(), &body);

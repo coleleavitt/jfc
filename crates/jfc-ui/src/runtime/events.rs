@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 
 use super::ExecutionResult;
 use crate::types::{ChatMessage, ToolCall};
-use jfc_provider::{ModelInfo, ProviderId, ServerToolResultKind, StopReason};
+use jfc_provider::{FallbackReason, ModelInfo, ProviderId, ServerToolResultKind, StopReason};
 
 /// Bounded channel capacity for the main runtime event loop. 1024 accommodates
 /// typical streaming bursts (50-200 chunks) with headroom for concurrent tool
@@ -65,6 +65,10 @@ pub struct StreamRequestOverrides {
     /// they land in the next outbound request's system prompt exactly
     /// once, without mutating `app.messages` per FS event.
     pub background_reminders: Vec<String>,
+    /// Combined disallowed tools from CLI `--disallowed-tools` and
+    /// CLAUDE.md frontmatter. These tools are removed from the
+    /// advertised tool catalog before sending to the model.
+    pub disallowed_tools: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -163,7 +167,7 @@ pub enum StreamEvent {
     FallbackTriggered {
         original_model: String,
         fallback_model: String,
-        reason: String,
+        reason: FallbackReason,
     },
     Usage {
         input_tokens: u32,

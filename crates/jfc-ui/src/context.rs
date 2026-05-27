@@ -4,6 +4,126 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
+/// Parsed YAML frontmatter from a CLAUDE.md file.
+#[derive(Debug, Clone, Default)]
+pub struct ClaudeMdFrontmatter {
+    /// Tools disallowed by this file's frontmatter.
+    pub disallowed_tools: Vec<String>,
+}
+
+/// Represents the raw YAML frontmatter value for `disallowed-tools`.
+/// Supports both a comma-separated string and a YAML list of strings.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum DisallowedToolsValue {
+    Csv(String),
+    List(Vec<String>),
+}
+
+/// Raw deserialization target for CLAUDE.md YAML frontmatter.
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+struct RawFrontmatter {
+    #[serde(alias = "disallowedTools", alias = "disallowed-tools")]
+    disallowed_tools: Option<DisallowedToolsValue>,
+}
+
+/// Parse YAML frontmatter delimited by `---` at the top of a CLAUDE.md file.
+/// Returns the parsed frontmatter and the body content (everything after the
+/// closing `---`). If no frontmatter is present, returns default frontmatter
+/// and the full content unchanged.
+pub fn parse_claudemd_frontmatter(content: &str) -> (ClaudeMdFrontmatter, &str) {
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with("---") {
+        return (ClaudeMdFrontmatter::default(), content);
+    }
+    // Find the closing `---` delimiter (must be on its own line after the opening).
+    let after_opening = &trimmed[3..];
+    // Skip optional trailing whitespace/newline on the opening `---` line
+    let after_opening = after_opening.strip_prefix('\n').unwrap_or(
+        after_opening
+            .strip_prefix("\r\n")
+            .unwrap_or(after_opening),
+    );
+
+    // Find the closing `---` on its own line
+    let closing_pos = find_closing_frontmatter(after_opening);
+    let Some(closing_pos) = closing_pos else {
+        return (ClaudeMdFrontmatter::default(), content);
+    };
+
+    let yaml_block = &after_opening[..closing_pos];
+    let body_start = &after_opening[closing_pos..];
+    // Skip the closing `---` line itself
+    let body = body_start
+        .strip_prefix("---")
+        .unwrap_or(body_start)
+        .strip_prefix('\n')
+        .unwrap_or(
+            body_start
+                .strip_prefix("---")
+                .unwrap_or(body_start)
+                .strip_prefix("\r\n")
+                .unwrap_or(
+                    body_start
+                        .strip_prefix("---")
+                        .unwrap_or(body_start),
+                ),
+        );
+
+    let raw: RawFrontmatter = match serde_yaml::from_str(yaml_block) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(
+                target: "jfc::context",
+                error = %e,
+                "failed to parse CLAUDE.md frontmatter YAML"
+            );
+            return (ClaudeMdFrontmatter::default(), content);
+        }
+    };
+
+    let disallowed_tools = match raw.disallowed_tools {
+        Some(DisallowedToolsValue::Csv(csv)) => csv
+            .split(',')
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        Some(DisallowedToolsValue::List(list)) => {
+            list.into_iter().filter(|s| !s.is_empty()).collect()
+        }
+        None => Vec::new(),
+    };
+
+    let fm = ClaudeMdFrontmatter { disallowed_tools };
+    (fm, body)
+}
+
+/// Find the position of the closing `---` delimiter. It must appear at the
+/// start of a line.
+fn find_closing_frontmatter(s: &str) -> Option<usize> {
+    // Check if it starts right at position 0
+    if s.starts_with("---") && (s.len() == 3 || s.as_bytes().get(3) == Some(&b'\n') || s.as_bytes().get(3) == Some(&b'\r')) {
+        return Some(0);
+    }
+    // Search for `\n---` pattern
+    let mut search_from = 0;
+    while let Some(pos) = s[search_from..].find('\n') {
+        let abs_pos = search_from + pos + 1; // position after the newline
+        let rest = &s[abs_pos..];
+        if rest.starts_with("---")
+            && (rest.len() == 3
+                || rest.as_bytes().get(3) == Some(&b'\n')
+                || rest.as_bytes().get(3) == Some(&b'\r')
+                || rest.as_bytes().get(3) == Some(&b' '))
+        {
+            return Some(abs_pos);
+        }
+        search_from = abs_pos;
+    }
+    None
+}
+
 /// Tracks file mtime+size so re-reads of unchanged files return a short
 /// "file unchanged" stub instead of full content, saving tokens.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -171,20 +291,27 @@ impl ClaudeMdHierarchy {
 
     /// Concatenate all layers into a single system-prompt-ready string with
     /// labeled section headers so the model can tell where each rule came
-    /// from. Returns `None` when nothing was found.
+    /// from. Returns `None` when nothing was found. Frontmatter is stripped
+    /// from the rendered output (it's metadata, not prompt content).
     pub fn render(&self) -> Option<String> {
         let mut out = String::new();
         let mut push = |label: &str, layer: &Option<(PathBuf, String)>| {
             if let Some((path, content)) = layer
                 && !content.trim().is_empty()
             {
+                // Strip frontmatter before rendering into prompt
+                let (_fm, body) = parse_claudemd_frontmatter(content);
+                let body = body.trim();
+                if body.is_empty() {
+                    return;
+                }
                 if !out.is_empty() {
                     out.push_str("\n\n");
                 }
                 out.push_str(&format!(
                     "# {label} ({})\n\n{}",
                     path.display(),
-                    content.trim()
+                    body
                 ));
             }
         };
@@ -200,6 +327,38 @@ impl ClaudeMdHierarchy {
             "rendered CLAUDE.md hierarchy"
         );
         result
+    }
+
+    /// Collect all `disallowed-tools` entries from every layer's frontmatter.
+    /// Returns a deduplicated list of tool names that should be removed from
+    /// the model's available tools.
+    pub fn collect_disallowed_tools(&self) -> Vec<String> {
+        let mut tools = Vec::new();
+        let layers: [&Option<(PathBuf, String)>; 5] = [
+            &self.managed,
+            &self.user,
+            &self.project,
+            &self.project_dot,
+            &self.local,
+        ];
+        for layer in layers {
+            if let Some((_path, content)) = layer {
+                let (fm, _body) = parse_claudemd_frontmatter(content);
+                tools.extend(fm.disallowed_tools);
+            }
+        }
+        // Deduplicate while preserving order
+        let mut seen = std::collections::HashSet::new();
+        tools.retain(|t| seen.insert(t.clone()));
+        if !tools.is_empty() {
+            tracing::info!(
+                target: "jfc::context",
+                count = tools.len(),
+                tools = ?tools,
+                "collected disallowed-tools from CLAUDE.md frontmatter"
+            );
+        }
+        tools
     }
 
     /// True if any layer was loaded.
@@ -465,6 +624,107 @@ mod tests {
         assert!(build_system_prompt(None).is_none());
         assert!(build_system_prompt(Some("")).is_none());
         assert!(build_system_prompt(Some("    ")).is_none());
+    }
+
+    // ─── Frontmatter parsing tests ───────────────────────────────────────
+
+    // Normal: no frontmatter returns empty disallowed_tools and full content.
+    #[test]
+    fn frontmatter_no_delimiters_returns_default() {
+        let content = "# Rules\nDo stuff.";
+        let (fm, body) = parse_claudemd_frontmatter(content);
+        assert!(fm.disallowed_tools.is_empty());
+        assert_eq!(body, content);
+    }
+
+    // Normal: CSV format for disallowed-tools.
+    #[test]
+    fn frontmatter_csv_disallowed_tools() {
+        let content = "---\ndisallowed-tools: Bash,Write,Edit\n---\n# Rules\nDo stuff.";
+        let (fm, body) = parse_claudemd_frontmatter(content);
+        assert_eq!(fm.disallowed_tools, vec!["Bash", "Write", "Edit"]);
+        assert_eq!(body, "# Rules\nDo stuff.");
+    }
+
+    // Normal: YAML list format for disallowed-tools.
+    #[test]
+    fn frontmatter_list_disallowed_tools() {
+        let content = "---\ndisallowed-tools:\n  - Bash\n  - Write\n---\n# Rules";
+        let (fm, body) = parse_claudemd_frontmatter(content);
+        assert_eq!(fm.disallowed_tools, vec!["Bash", "Write"]);
+        assert_eq!(body, "# Rules");
+    }
+
+    // Normal: camelCase alias `disallowedTools` works.
+    #[test]
+    fn frontmatter_camel_case_alias() {
+        let content = "---\ndisallowedTools: Read,Glob\n---\nBody text.";
+        let (fm, body) = parse_claudemd_frontmatter(content);
+        assert_eq!(fm.disallowed_tools, vec!["Read", "Glob"]);
+        assert_eq!(body, "Body text.");
+    }
+
+    // Robust: empty frontmatter (no keys) returns default.
+    #[test]
+    fn frontmatter_empty_yaml_block() {
+        let content = "---\n---\n# Body";
+        let (fm, body) = parse_claudemd_frontmatter(content);
+        assert!(fm.disallowed_tools.is_empty());
+        assert_eq!(body, "# Body");
+    }
+
+    // Robust: invalid YAML returns full content unchanged.
+    #[test]
+    fn frontmatter_invalid_yaml_returns_full_content() {
+        let content = "---\n[invalid yaml: {{{\n---\n# Body";
+        let (fm, body) = parse_claudemd_frontmatter(content);
+        assert!(fm.disallowed_tools.is_empty());
+        assert_eq!(body, content);
+    }
+
+    // Normal: render strips frontmatter from output.
+    #[test]
+    fn hierarchy_render_strips_frontmatter() {
+        let h = ClaudeMdHierarchy {
+            project: Some((
+                PathBuf::from("/proj/CLAUDE.md"),
+                "---\ndisallowed-tools: Bash\n---\n# Rules\nNo bash.".into(),
+            )),
+            ..Default::default()
+        };
+        let rendered = h.render().expect("non-empty");
+        assert!(rendered.contains("# Rules"));
+        assert!(rendered.contains("No bash."));
+        // Frontmatter should NOT appear in rendered prompt
+        assert!(!rendered.contains("disallowed-tools"));
+        assert!(!rendered.contains("---"));
+    }
+
+    // Normal: collect_disallowed_tools merges from multiple layers.
+    #[test]
+    fn hierarchy_collect_disallowed_tools_merges_layers() {
+        let h = ClaudeMdHierarchy {
+            project: Some((
+                PathBuf::from("/proj/CLAUDE.md"),
+                "---\ndisallowed-tools: Bash,Write\n---\n# Rules".into(),
+            )),
+            local: Some((
+                PathBuf::from("/proj/CLAUDE.local.md"),
+                "---\ndisallowed-tools:\n  - Edit\n  - Bash\n---\n# Local".into(),
+            )),
+            ..Default::default()
+        };
+        let tools = h.collect_disallowed_tools();
+        // Bash appears in both but should be deduplicated
+        assert_eq!(tools, vec!["Bash", "Write", "Edit"]);
+    }
+
+    // Robust: CSV with extra whitespace is trimmed.
+    #[test]
+    fn frontmatter_csv_whitespace_trimmed() {
+        let content = "---\ndisallowed-tools:  Bash , Write , Edit \n---\nBody";
+        let (fm, _body) = parse_claudemd_frontmatter(content);
+        assert_eq!(fm.disallowed_tools, vec!["Bash", "Write", "Edit"]);
     }
 }
 

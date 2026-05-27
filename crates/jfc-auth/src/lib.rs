@@ -2,3 +2,4 @@
 
 pub mod credential_vault;
 pub mod oauth_core;
+pub mod workload_identity;

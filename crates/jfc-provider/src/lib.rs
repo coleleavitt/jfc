@@ -347,13 +347,34 @@ pub enum StreamEvent {
     FallbackTriggered(FallbackTriggered),
 }
 
+/// Why a model fallback was triggered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FallbackReason {
+    /// The requested model was not found / not enabled on the account.
+    ModelNotFound,
+    /// The model endpoint returned 529 (overloaded).
+    Overloaded,
+    /// The model refused the request (content policy, refusal stop_reason, etc.).
+    ModelRefusal,
+}
+
+impl fmt::Display for FallbackReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ModelNotFound => f.write_str("model not found"),
+            Self::Overloaded => f.write_str("overloaded (529 threshold crossed)"),
+            Self::ModelRefusal => f.write_str("model refused request"),
+        }
+    }
+}
+
 /// Emitted when a model fallback occurs — the requested model was unavailable
 /// and a fallback was used instead.
 #[derive(Debug, Clone)]
 pub struct FallbackTriggered {
     pub original_model: ModelId,
     pub fallback_model: ModelId,
-    pub reason: String,
+    pub reason: FallbackReason,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

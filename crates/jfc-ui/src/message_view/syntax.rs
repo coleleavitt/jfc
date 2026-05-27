@@ -87,6 +87,34 @@ pub(super) fn produce_highlighted_with_line_numbers_lines(
     lines
 }
 
+pub(super) fn produce_highlighted_with_line_numbers_line_count(
+    lang: &str,
+    text: &str,
+    content_w: usize,
+    t: Theme,
+    expanded: bool,
+    diag_lines: &std::collections::HashMap<usize, crate::diagnostics::Severity>,
+) -> usize {
+    let (line_numbers, code) = split_line_numbers(text);
+    let code_ref = code.as_deref().unwrap_or(text);
+
+    let gutter_width = line_numbers
+        .as_ref()
+        .map(|nums| nums.iter().map(|n| n.len()).max().unwrap_or(0))
+        .unwrap_or(0);
+    let glyph_w = if diag_lines.is_empty() { 0 } else { 2 };
+    let gutter_cols = if gutter_width > 0 {
+        gutter_width + 3 + glyph_w
+    } else {
+        2
+    };
+    let code_w = content_w.saturating_sub(gutter_cols).max(10);
+
+    let max_lines = if expanded { 500usize } else { 80usize };
+    let total = markdown::highlight_code_line_count(lang, code_ref, code_w, &t, false);
+    total.min(max_lines) + usize::from(total > max_lines)
+}
+
 pub(super) fn split_line_numbers(text: &str) -> (Option<Vec<String>>, Option<String>) {
     let lines: Vec<&str> = text.lines().collect();
     if lines.is_empty() {
@@ -396,4 +424,17 @@ pub(super) fn produce_highlighted_block_lines(
         )));
     }
     lines
+}
+
+pub(super) fn produce_highlighted_block_line_count(
+    lang: &str,
+    code: &str,
+    content_w: usize,
+    t: Theme,
+    expanded: bool,
+) -> usize {
+    let inner_w = content_w.saturating_sub(2);
+    let max_lines = if expanded { 500usize } else { 80usize };
+    let total = markdown::highlight_code_line_count(lang, code, inner_w, &t, true);
+    total.min(max_lines) + usize::from(total > max_lines)
 }

@@ -166,8 +166,14 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
     app.cancel_token = tokio_util::sync::CancellationToken::new();
     let cancel = app.cancel_token.clone();
     let tx_guard = tx.clone();
+    // Refresh CLAUDE.md frontmatter disallowed tools before each turn.
+    if let Ok(cwd_path) = std::env::current_dir() {
+        let hierarchy = crate::context::ClaudeMdHierarchy::load(&cwd_path);
+        app.claudemd_disallowed_tools = hierarchy.collect_disallowed_tools();
+    }
     let overrides = StreamRequestOverrides {
         background_reminders: app.take_background_reminders(),
+        disallowed_tools: app.effective_disallowed_tools(),
         ..Default::default()
     };
     // Park the *inner* task's abort handle on App so the watchdog can

@@ -33,7 +33,7 @@ pub use assistant_parts::pretty_model_badge;
 #[allow(unused_imports)]
 pub use core::{
     MessageView, PrebuiltItems, RenderCtx, RenderItem, build_render_items_ctx,
-    build_render_items_pub, message_view_total_lines, warm_tool_height_cache_for_messages,
+    build_render_items_pub, message_view_total_lines,
 };
 #[allow(unused_imports)]
 pub use outputs::diff_lang;
@@ -41,4 +41,3 @@ pub use outputs::diff_lang;
 pub use task_body::{TASK_VIEW_COLLAPSE_BYTES, TASK_VIEW_COLLAPSE_LINES, task_view_body_lines};
 #[allow(unused_imports)]
 pub use tool_blocks::{tool_kind_color, tool_status_icon_animated};
-pub use tool_height::{load_tool_height_cache, persist_tool_height_cache};

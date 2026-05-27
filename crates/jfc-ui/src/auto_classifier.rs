@@ -121,6 +121,20 @@ const DESTRUCTIVE_BASH_PATTERNS: &[&str] = &[
     "> /dev/sda",
 ];
 
+/// Returns `true` if a bash command matches a known-destructive pattern
+/// (rm -rf, git push --force, dd, sudo, etc.). Used by the destructive
+/// command warning UI (`DestructiveWarn` feature gate) to surface a
+/// ⚠ DESTRUCTIVE label in the approval prompt.
+pub fn is_destructive_bash(command: &str) -> bool {
+    let normalized = command.trim().to_lowercase();
+    if normalized.is_empty() {
+        return false;
+    }
+    DESTRUCTIVE_BASH_PATTERNS
+        .iter()
+        .any(|pat| normalized.contains(pat))
+}
+
 /// Top-level entry: classify one tool call.
 pub fn classify_tool_use(
     kind: &ToolKind,

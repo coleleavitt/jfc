@@ -1066,9 +1066,8 @@ mod helper_tests {
             stderr: String::new(),
             exit_code: Some(0),
         };
-        // 1 (exit row) + 2 (stdout "ok" via ansi_to_tui IntoText) = 3.
-        // ansi_to_tui parses into Text which produces a trailing empty line.
-        assert_eq!(tool_content_height_with(&out, 80, false), 3);
+        // 1 (exit row) + 1 (stdout "ok") = 2.
+        assert_eq!(tool_content_height_with(&out, 80, false), 2);
     }
 
     #[test]
@@ -2674,5 +2673,47 @@ fatal: external diff died, stopping at crates/jfc-ui/src/agents.rs\n";
                 );
             }
         }
+    }
+
+    #[test]
+    fn tool_block_height_running_tool_tracks_output_changes() {
+        let app = stub_app();
+
+        let make_tool = |body: String| ToolCall {
+            id: "tb-running".into(),
+            kind: ToolKind::Read,
+            status: ToolStatus::Running,
+            input: ToolInput::Read {
+                file_path: "src/lib.rs".into(),
+                offset: None,
+                limit: None,
+            },
+            output: ToolOutput::FileContent {
+                path: "src/lib.rs".into(),
+                content: body,
+                language: "rs".into(),
+            },
+            display: crate::types::ToolDisplayState::DEFAULT,
+            elapsed_ms: None,
+            started_at: None,
+            thought_signature: None,
+        };
+
+        let short = make_tool("fn short() {}\n".into());
+        let mut long_body = String::new();
+        for n in 0..110 {
+            long_body.push_str(&format!("fn line_{n}() {{ let value = {n}; }}\n"));
+        }
+        let long = make_tool(long_body);
+
+        let short_h = tool_block_height(&short, 80);
+        let long_h = tool_block_height(&long, 80);
+
+        assert!(
+            long_h > short_h,
+            "running output changes must change the computed height"
+        );
+        assert_eq!(short_h, rendered_tool_rows(&app, &short, 80));
+        assert_eq!(long_h, rendered_tool_rows(&app, &long, 80));
     }
 }

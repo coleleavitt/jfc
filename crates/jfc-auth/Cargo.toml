@@ -11,6 +11,8 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt"] }
 toml = "0.8"
 
 [dev-dependencies]
