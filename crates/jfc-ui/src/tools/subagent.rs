@@ -39,10 +39,17 @@ pub(super) async fn execute_skill_in(
         }
         None => {
             // Surface the available skills in the error so the model
-            // can self-correct without having to ask the user. The
-            // previous bare "Unknown skill: do-178b" gave it nothing
-            // to recover with.
-            let available: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+            // can self-correct without having to ask the user, but keep the
+            // list short and omit internal/superpower skills. Dumping every
+            // global skill back into the chat caused OpenWebUI-routed models
+            // to chase unrelated "superpowers:*" names instead of recovering.
+            const MAX_UNKNOWN_SKILL_SUGGESTIONS: usize = 20;
+            let mut available: Vec<&str> = skills
+                .iter()
+                .map(|s| s.name.as_str())
+                .filter(|name| !name.starts_with("superpowers:"))
+                .collect();
+            available.truncate(MAX_UNKNOWN_SKILL_SUGGESTIONS);
             let suffix = if available.is_empty() {
                 String::from(" (no skills installed)")
             } else {

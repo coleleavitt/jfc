@@ -608,6 +608,27 @@ mod tests {
     }
 
     #[test]
+    fn render_skills_section_hides_internal_superpower_skills_robust() {
+        let skills = vec![
+            skill("vuln-researcher", Some("JS and vuln research")),
+            skill(
+                "superpowers:verification-before-completion",
+                Some("internal"),
+            ),
+            Skill {
+                name: "openai-docs".to_owned(),
+                source: PathBuf::from("/home/me/.codex/skills/.system/openai-docs/SKILL.md"),
+                description: Some("system skill".to_owned()),
+                body: String::new(),
+            },
+        ];
+        let out = render_skills_section(&skills);
+        assert!(out.contains("vuln-researcher"));
+        assert!(!out.contains("superpowers:"));
+        assert!(!out.contains("openai-docs"));
+    }
+
+    #[test]
     fn render_dispatch_section_empty_when_no_triggers_normal() {
         let agents = vec![make_agent("plain", "system", vec![])];
         let out = render_dispatch_section(&agents);

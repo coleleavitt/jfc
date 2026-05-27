@@ -165,8 +165,7 @@ fn walk_cpp(
             let name = extract_function_name(node, source);
             if !name.is_empty() {
                 let qn = qualify(scope, &name);
-                let display_name = name.clone();
-                let mut nd = build_nd(&display_name, NodeKind::Function, node, path, path_str, &qn);
+                let mut nd = build_nd(&name, NodeKind::Function, node, path, path_str, &qn);
                 nd.complexity = compute_complexity(node, source.as_bytes(), "cpp");
                 out.push(nd);
             }
@@ -354,7 +353,7 @@ fn extract_declarator_name(node: TsNode<'_>, source: &str) -> String {
         "destructor_name" => {
             // ~ClassName
             let full = text(node, source);
-            full.to_string()
+            full
         }
         "template_function" => {
             // template<...> name — get the name part.

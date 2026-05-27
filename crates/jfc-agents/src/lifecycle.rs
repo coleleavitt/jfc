@@ -17,12 +17,16 @@ use jfc_core::AgentDef;
 /// Returns `""` when `skills` is empty so callers can unconditionally
 /// `push_str` the result.
 pub fn render_skills_section(skills: &[Skill]) -> String {
-    if skills.is_empty() {
+    let visible: Vec<&Skill> = skills
+        .iter()
+        .filter(|skill| prompt_visible_skill(skill))
+        .collect();
+    if visible.is_empty() {
         return String::new();
     }
     const MAX_DESC_CHARS: usize = 200;
     let mut out = String::from("\n\n## Available skills\n\n");
-    for skill in skills {
+    for skill in visible {
         match &skill.description {
             Some(desc) if !desc.is_empty() => {
                 let trimmed: String = if desc.chars().count() > MAX_DESC_CHARS {
@@ -40,6 +44,15 @@ pub fn render_skills_section(skills: &[Skill]) -> String {
         }
     }
     out
+}
+
+fn prompt_visible_skill(skill: &Skill) -> bool {
+    let name = skill.name.trim();
+    if name.is_empty() || name.starts_with("superpowers:") {
+        return false;
+    }
+    let source = skill.source.to_string_lossy();
+    !source.contains("/.codex/skills/.system/")
 }
 
 /// Build the effective system prompt for an agent: its own `system_prompt`

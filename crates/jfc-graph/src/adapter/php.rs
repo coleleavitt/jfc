@@ -120,7 +120,7 @@ fn walk_php(
 
                 // Recurse into namespace body
                 if let Some(body) = node.child_by_field_name("body") {
-                    let binding = name.clone();
+                    let binding = name;
                     let mut child_scope: Vec<&str> = scope.to_vec();
                     child_scope.push(&binding);
                     walk_php(body, source, path, path_str, &child_scope, None, out);
@@ -136,7 +136,7 @@ fn walk_php(
 
                 // Extract methods inside the class body
                 if let Some(body) = node.child_by_field_name("body") {
-                    let binding = name.clone();
+                    let binding = name;
                     let mut child_scope: Vec<&str> = scope.to_vec();
                     child_scope.push(&binding);
                     walk_php(
@@ -160,7 +160,7 @@ fn walk_php(
 
                 // Extract method signatures inside interface body
                 if let Some(body) = node.child_by_field_name("body") {
-                    let binding = name.clone();
+                    let binding = name;
                     let mut child_scope: Vec<&str> = scope.to_vec();
                     child_scope.push(&binding);
                     walk_php(

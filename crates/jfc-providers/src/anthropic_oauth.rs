@@ -1670,8 +1670,7 @@ impl Provider for AnthropicOAuthProvider {
                         // In that case, fall back to the alternate model which
                         // may have different content policy thresholds.
                         if is_content_policy_refusal(&body)
-                            && !model_in_use
-                                .eq_ignore_ascii_case(DEFAULT_OVERLOAD_FALLBACK_MODEL)
+                            && !model_in_use.eq_ignore_ascii_case(DEFAULT_OVERLOAD_FALLBACK_MODEL)
                         {
                             tracing::warn!(
                                 target: "jfc::provider::anthropic_oauth::rotation",

@@ -109,7 +109,7 @@ fn walk_ruby(
                 out.push(build_nd(&name, NodeKind::Module, node, path, path_str, &qn));
                 // Descend into module body with updated scope.
                 if let Some(body) = node.child_by_field_name("body") {
-                    let binding = name.clone();
+                    let binding = name;
                     let mut child_scope: Vec<&str> = scope.to_vec();
                     child_scope.push(&binding);
                     walk_ruby(body, source, path, path_str, &child_scope, out);
@@ -124,7 +124,7 @@ fn walk_ruby(
                 out.push(build_nd(&name, NodeKind::Struct, node, path, path_str, &qn));
                 // Descend into class body with class name in scope.
                 if let Some(body) = node.child_by_field_name("body") {
-                    let binding = name.clone();
+                    let binding = name;
                     let mut child_scope: Vec<&str> = scope.to_vec();
                     child_scope.push(&binding);
                     walk_ruby(body, source, path, path_str, &child_scope, out);

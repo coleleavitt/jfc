@@ -170,18 +170,24 @@ pub fn load_profile_config(profile: Option<&str>) -> Result<AuthConfig> {
     let text = std::fs::read_to_string(&config_path)
         .map_err(|_| WorkloadIdentityError::ConfigNotFound(config_path.clone()))?;
 
-    let mut config: AuthConfig =
-        serde_json::from_str(&text).map_err(|e| WorkloadIdentityError::InvalidConfig(e.to_string()))?;
+    let mut config: AuthConfig = serde_json::from_str(&text)
+        .map_err(|e| WorkloadIdentityError::InvalidConfig(e.to_string()))?;
 
     // Overlay env vars
     if config.org_id.is_none() {
-        config.org_id = std::env::var("ANTHROPIC_ORGANIZATION_ID").ok().filter(|s| !s.is_empty());
+        config.org_id = std::env::var("ANTHROPIC_ORGANIZATION_ID")
+            .ok()
+            .filter(|s| !s.is_empty());
     }
     if config.workspace_id.is_none() {
-        config.workspace_id = std::env::var("ANTHROPIC_WORKSPACE_ID").ok().filter(|s| !s.is_empty());
+        config.workspace_id = std::env::var("ANTHROPIC_WORKSPACE_ID")
+            .ok()
+            .filter(|s| !s.is_empty());
     }
     if config.base_url.is_none() {
-        config.base_url = std::env::var("ANTHROPIC_BASE_URL").ok().filter(|s| !s.is_empty());
+        config.base_url = std::env::var("ANTHROPIC_BASE_URL")
+            .ok()
+            .filter(|s| !s.is_empty());
     }
     if config.scopes.is_none() {
         if let Ok(scope) = std::env::var("ANTHROPIC_SCOPE") {
@@ -194,8 +200,9 @@ pub fn load_profile_config(profile: Option<&str>) -> Result<AuthConfig> {
     // Overlay OIDC-specific env vars
     if let AuthenticationType::OidcFederation(ref mut oidc) = config.authentication {
         if oidc.identity_token_file.is_none() {
-            oidc.identity_token_file =
-                std::env::var("ANTHROPIC_IDENTITY_TOKEN_FILE").ok().filter(|s| !s.is_empty());
+            oidc.identity_token_file = std::env::var("ANTHROPIC_IDENTITY_TOKEN_FILE")
+                .ok()
+                .filter(|s| !s.is_empty());
         }
         if let Ok(rule_id) = std::env::var("ANTHROPIC_FEDERATION_RULE_ID") {
             if !rule_id.is_empty() {
@@ -203,8 +210,9 @@ pub fn load_profile_config(profile: Option<&str>) -> Result<AuthConfig> {
             }
         }
         if oidc.service_account_id.is_none() {
-            oidc.service_account_id =
-                std::env::var("ANTHROPIC_SERVICE_ACCOUNT_ID").ok().filter(|s| !s.is_empty());
+            oidc.service_account_id = std::env::var("ANTHROPIC_SERVICE_ACCOUNT_ID")
+                .ok()
+                .filter(|s| !s.is_empty());
         }
     }
 
@@ -224,12 +232,8 @@ pub async fn resolve_credentials(
     config: &AuthConfig,
 ) -> Result<ResolvedToken> {
     match &config.authentication {
-        AuthenticationType::OidcFederation(oidc) => {
-            exchange_oidc_token(client, config, oidc).await
-        }
-        AuthenticationType::UserOauth(oauth) => {
-            resolve_user_oauth(client, config, oauth).await
-        }
+        AuthenticationType::OidcFederation(oidc) => exchange_oidc_token(client, config, oidc).await,
+        AuthenticationType::UserOauth(oauth) => resolve_user_oauth(client, config, oauth).await,
     }
 }
 
@@ -247,7 +251,10 @@ impl ResolvedToken {
         Self {
             access_token: resp.access_token.clone(),
             expires_at: now + resp.expires_in,
-            token_type: resp.token_type.clone().unwrap_or_else(|| "bearer".to_owned()),
+            token_type: resp
+                .token_type
+                .clone()
+                .unwrap_or_else(|| "bearer".to_owned()),
         }
     }
 
@@ -362,9 +369,7 @@ async fn resolve_user_oauth(
     // Persist updated credentials
     let updated = StoredCredentials {
         access_token: resolved.access_token.clone(),
-        refresh_token: token_resp
-            .refresh_token
-            .unwrap_or(creds.refresh_token),
+        refresh_token: token_resp.refresh_token.unwrap_or(creds.refresh_token),
         expires_at: resolved.expires_at,
         token_type: Some(resolved.token_type.clone()),
         scope: creds.scope,

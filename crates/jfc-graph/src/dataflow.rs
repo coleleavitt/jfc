@@ -283,11 +283,6 @@ fn collect_returns(
         });
     }
 
-    // Don't recurse into nested function definitions.
-    if node.kind().contains("function") && node != node {
-        return;
-    }
-
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         // Skip nested functions.

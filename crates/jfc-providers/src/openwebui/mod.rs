@@ -518,16 +518,7 @@ mod tests {
     fn owui_stream_post_build_strip_removes_reasoning_effort_regression() {
         let mut opts = StreamOptions::new("m");
         opts.reasoning_effort = Some("high".to_string());
-        let mut body = build_body(vec![user_msg("hi")], &opts);
-
-        // Inline the strip logic from OpenWebUIProvider::stream so the
-        // test catches drift if someone refactors one but not the other.
-        let in_provider_options = opts.provider_options.contains_key("reasoning_effort");
-        if let Some(obj) = body.as_object_mut() {
-            if !in_provider_options {
-                obj.remove("reasoning_effort");
-            }
-        }
+        let body = build_openwebui_chat_body(vec![user_msg("hi")], &opts);
         assert!(
             body.get("reasoning_effort").is_none(),
             "post-build strip failed: {body}"
@@ -543,17 +534,78 @@ mod tests {
         opts.reasoning_effort = Some("high".to_string());
         opts.provider_options
             .insert("reasoning_effort".to_string(), Value::from("medium"));
-        let mut body = build_body(vec![user_msg("hi")], &opts);
-
-        let in_provider_options = opts.provider_options.contains_key("reasoning_effort");
-        if let Some(obj) = body.as_object_mut() {
-            if !in_provider_options {
-                obj.remove("reasoning_effort");
-            }
-        }
+        let body = build_openwebui_chat_body(vec![user_msg("hi")], &opts);
         // provider_options wrote "medium" over "high" in build_body; strip
         // is bypassed because provider_options registered the key.
         assert_eq!(body["reasoning_effort"], "medium");
+    }
+
+    // Regression: OWUI 0.9.x changed `/api/chat/completions` to the web-chat
+    // route. That path calls `chat_id.startswith(...)`; a bare OpenAI payload
+    // leaves chat_id as None and returns the screenshot's NoneType error.
+    #[test]
+    fn owui_chat_route_compat_injects_local_chat_id_robust() {
+        let mut body = build_body(vec![user_msg("hi")], &StreamOptions::new("m"));
+        assert!(
+            body.get("chat_id").is_none(),
+            "shared build_body must stay OpenAI-compatible: {body}"
+        );
+
+        let mut opts = StreamOptions::new("m");
+        opts.session_id = Some("jfc-test".to_string());
+        apply_openwebui_chat_route_compat(&mut body, &opts);
+
+        assert_eq!(body["chat_id"], "local:jfc-test");
+        assert!(
+            body.get("session_id").is_none(),
+            "session_id would switch OWUI into background task mode: {body}"
+        );
+        assert!(
+            body.get("id").is_none(),
+            "id would create OWUI message/task metadata JFC does not consume: {body}"
+        );
+    }
+
+    #[test]
+    fn owui_chat_route_compat_preserves_explicit_chat_id_normal() {
+        let mut opts = StreamOptions::new("m");
+        opts.provider_options
+            .insert("chat_id".to_string(), Value::from("local:user-supplied"));
+        let mut body = build_body(vec![user_msg("hi")], &opts);
+
+        apply_openwebui_chat_route_compat(&mut body, &StreamOptions::new("m"));
+
+        assert_eq!(body["chat_id"], "local:user-supplied");
+    }
+
+    #[test]
+    fn build_openwebui_chat_body_applies_route_compat_normal() {
+        let mut opts = StreamOptions::new("m");
+        opts.session_id = Some("ses_123".to_string());
+        let body = build_openwebui_chat_body(vec![user_msg("hi")], &opts);
+
+        assert_eq!(body["chat_id"], "local:ses_123");
+        assert!(
+            body.get("session_id").is_none(),
+            "session_id would switch OWUI into background task mode: {body}"
+        );
+        assert!(
+            body.get("id").is_none(),
+            "id would create OWUI message/task metadata JFC does not consume: {body}"
+        );
+    }
+
+    #[test]
+    fn local_openwebui_chat_id_prefixes_plain_session_normal() {
+        assert_eq!(
+            local_openwebui_chat_id(Some("ses_123")).as_str(),
+            "local:ses_123"
+        );
+        assert_eq!(
+            local_openwebui_chat_id(Some("local:abc")).as_str(),
+            "local:abc"
+        );
+        assert!(local_openwebui_chat_id(None).starts_with("local:jfc-"));
     }
 
     // Normal: assistant tool_use blocks from prior turns serialize into the
@@ -593,6 +645,11 @@ mod tests {
             .iter()
             .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("assistant"))
             .expect("assistant turn");
+        assert_eq!(
+            asst.get("content").and_then(|v| v.as_str()),
+            Some(BEDROCK_BLANK_TEXT_PLACEHOLDER),
+            "assistant tool-call turns must carry non-null content for OpenWebUI compatibility"
+        );
         let calls = asst
             .get("tool_calls")
             .and_then(|v| v.as_array())
@@ -963,6 +1020,97 @@ mod tests {
         );
     }
 
+    // Robust: some OpenWebUI/LiteLLM routes emit a tool call as the entire
+    // assistant text content instead of structured `tool_calls` or XML tags.
+    // The screenshot symptom was the raw JSON rendering in the transcript.
+    #[test]
+    fn bare_json_tool_call_content_becomes_tool_done_robust() {
+        let mut state = OpenAiStreamState::default();
+        let first = evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    content: Some(
+                        r#"{
+                          "name": "Skill",
+                          "arguments": {
+                            "name": "vuln-researcher",
+                            "args": "JS asset mining and deobfuscation workflow"
+                          }
+                        }"#
+                        .into(),
+                    ),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+        assert!(
+            first.is_empty(),
+            "bare JSON tool call should be held until finish: {first:?}"
+        );
+
+        let second = evs_stateful(&mut state, chunk(ChunkDelta::default(), Some("stop")));
+        let done = second
+            .iter()
+            .find_map(|e| match e {
+                StreamEvent::ToolDone {
+                    tool_name,
+                    input_json,
+                    ..
+                } => Some((tool_name.clone(), input_json.clone())),
+                _ => None,
+            })
+            .expect("ToolDone synthesized from bare JSON");
+        assert_eq!(done.0, "Skill");
+        let input: serde_json::Value = serde_json::from_str(&done.1).expect("tool input json");
+        assert_eq!(input["name"], "vuln-researcher");
+        assert_eq!(input["args"], "JS asset mining and deobfuscation workflow");
+        assert!(
+            !second.iter().any(
+                |e| matches!(e, StreamEvent::TextDelta { delta, .. } if delta.contains("\"name\": \"Skill\""))
+            ),
+            "raw JSON tool call leaked into text: {second:?}"
+        );
+    }
+
+    // Robust: only known jfc tool names are consumed as bare JSON. This keeps
+    // normal JSON answers from being treated as executable tool requests.
+    #[test]
+    fn bare_json_unknown_tool_remains_text_robust() {
+        let mut state = OpenAiStreamState::default();
+        let first = evs_stateful(
+            &mut state,
+            chunk(
+                ChunkDelta {
+                    content: Some(r#"{"name":"not_a_real_tool","arguments":{"x":1}}"#.into()),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+        assert!(first.is_empty(), "candidate JSON should be held: {first:?}");
+
+        let second = evs_stateful(&mut state, chunk(ChunkDelta::default(), Some("stop")));
+        assert!(
+            !second
+                .iter()
+                .any(|e| matches!(e, StreamEvent::ToolDone { .. })),
+            "unknown tool JSON must not execute: {second:?}"
+        );
+        let text: String = second
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::TextDelta { delta, .. } => Some(delta.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            text.contains("not_a_real_tool"),
+            "unknown tool JSON should render as text: {text:?}"
+        );
+    }
+
     // Normal: Bedrock Claude emits Anthropic-style `<tool_use>` tags (args as
     // an object). They must intercept exactly like `<tool_call>`, and an inline
     // `<tool_result>` (model-fabricated) must be suppressed, not leaked.
@@ -1319,16 +1467,16 @@ mod tests {
         assert_eq!(msgs[0]["content"], json!("hello"));
     }
 
-    // Robust: assistant turn with content=null (tool-call-only) is left alone.
+    // Robust: assistant turn with content=null (tool-call-only) is normalized.
     #[test]
-    fn bedrock_null_content_assistant_turn_left_alone_robust() {
+    fn bedrock_null_content_assistant_turn_replaced_robust() {
         let mut msgs = vec![json!({
             "role": "assistant",
             "content": null,
             "tool_calls": [{"id": "x"}],
         })];
         bedrock_sanitize_messages(&mut msgs);
-        assert_eq!(msgs[0]["content"], json!(null));
+        assert_eq!(msgs[0]["content"], json!(BEDROCK_BLANK_TEXT_PLACEHOLDER));
     }
 
     // ── Bedrock tool_choice scrubbing ──────────────────────────────────────
@@ -2419,6 +2567,9 @@ fn bedrock_sanitize_messages(messages: &mut Vec<Value>) {
             continue;
         };
         match obj.get("content") {
+            Some(Value::Null) => {
+                obj.insert("content".into(), json!(BEDROCK_BLANK_TEXT_PLACEHOLDER));
+            }
             Some(Value::String(s)) if s.trim().is_empty() => {
                 obj.insert("content".into(), json!(BEDROCK_BLANK_TEXT_PLACEHOLDER));
             }
@@ -2550,6 +2701,13 @@ pub(crate) fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -
                     id, name, input, ..
                 } => Some(json!({
                     "role": "assistant",
+                    // OpenAI allows assistant tool-call messages to omit
+                    // content or set it null, but OpenWebUI/LiteLLM/Bedrock
+                    // compatibility paths have hit `NoneType.startswith`
+                    // and blank-content validator failures on that shape.
+                    // Keep the key present; the Bedrock sanitizer below
+                    // turns it into a non-empty placeholder.
+                    "content": "",
                     "tool_calls": [{
                         "id": id,
                         "type": "function",
@@ -2705,6 +2863,83 @@ pub(crate) fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -
     body
 }
 
+fn build_openwebui_chat_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> Value {
+    let mut body = build_body(messages, opts);
+    apply_openwebui_chat_route_compat(&mut body, opts);
+    strip_openwebui_unsupported_fields(&mut body, opts);
+    body
+}
+
+fn local_openwebui_chat_id(seed: Option<&str>) -> String {
+    let seed = seed.map(str::trim).filter(|s| !s.is_empty());
+    match seed {
+        Some(id) if id.starts_with("local:") || id.starts_with("channel:") => id.to_owned(),
+        Some(id) => format!("local:{id}"),
+        None => format!("local:jfc-{}", uuid::Uuid::new_v4().simple()),
+    }
+}
+
+fn apply_openwebui_chat_route_compat(body: &mut Value, opts: &StreamOptions) {
+    let Some(obj) = body.as_object_mut() else {
+        return;
+    };
+
+    let has_chat_id = obj
+        .get("chat_id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| !id.trim().is_empty());
+    if !has_chat_id {
+        // OWUI 0.9.x promoted `/api/chat/completions` to the same backend path
+        // its Svelte chat UI uses. That route now assumes chat metadata is a
+        // string in several `startswith` checks. Mark JFC traffic as a local
+        // chat so OWUI skips DB persistence and does not see `chat_id = None`.
+        //
+        // Deliberately do not synthesize `session_id` or `id`: setting both
+        // moves OWUI into WebSocket/background-task mode and it returns task
+        // metadata instead of the SSE stream JFC consumes.
+        obj.insert(
+            "chat_id".into(),
+            json!(local_openwebui_chat_id(opts.session_id.as_deref())),
+        );
+    }
+}
+
+fn strip_openwebui_unsupported_fields(body: &mut Value, opts: &StreamOptions) {
+    let Some(obj) = body.as_object_mut() else {
+        return;
+    };
+
+    // OpenWebUI forwards unknown OpenAI-style params verbatim to whatever
+    // backend model is selected (Bedrock-Anthropic, Bedrock-Cohere, Ollama,
+    // Azure, etc.). We've seen Bedrock-Claude routes 500 on reasoning_effort,
+    // while LiteLLM understands it. Keep it in shared build_body, strip it only
+    // for direct OWUI, and let provider_options opt back in explicitly.
+    if !opts.provider_options.contains_key("reasoning_effort") {
+        obj.remove("reasoning_effort");
+    }
+}
+
+fn chat_completions_url(base_url: &str) -> String {
+    format!("{}/api/chat/completions", base_url.trim_end_matches('/'))
+}
+
+fn chat_completions_request<'a>(
+    client: &'a reqwest::Client,
+    url: &'a str,
+    token: &'a str,
+    body: &'a Value,
+) -> reqwest::RequestBuilder {
+    client
+        .post(url)
+        .header("authorization", format!("Bearer {token}"))
+        .header("accept", "application/json")
+        .header("content-type", "application/json")
+        .header("connection", "keep-alive")
+        .header("x-litellm-stream-timeout", "600")
+        .header("x-litellm-timeout", "600")
+        .json(body)
+}
+
 impl jfc_provider::seal::Sealed for OpenWebUIProvider {}
 
 #[async_trait]
@@ -2790,37 +3025,15 @@ impl Provider for OpenWebUIProvider {
     ) -> anyhow::Result<EventStream> {
         let account = self.acquire_account_with_refresh().await?;
 
-        let base_url = account.base_url.trim_end_matches('/');
-        let url = format!("{}/api/chat/completions", base_url);
-        let mut body = build_body(messages, options);
-        // OpenWebUI-specific strip: OWUI forwards `reasoning_effort` to
-        // whatever upstream backend it's fronting (Bedrock-Anthropic,
-        // Bedrock-Cohere, OpenAI-Azure, Ollama, …) and any backend that
-        // doesn't accept the param returns 500. We've seen it empirically
-        // on chat.ai2s.org's bedrock-claude-* routes. Users who *know*
-        // their OWUI upstream supports it can set it via
-        // `[agents."<m>"].provider_options.reasoning_effort` —
-        // `provider_options` are stamped onto the body in build_body
-        // *after* the reasoning_effort field is set, so they win.
-        //
-        // Note: this strip runs on the OWUI direct path only. LiteLLM
-        // (which shares build_body) keeps reasoning_effort because
-        // LiteLLM knows how to map it to provider-specific shapes
-        // (Anthropic output_config + effort-2025-11-24 beta header etc).
-        if let Some(obj) = body.as_object_mut() {
-            // Only strip if provider_options didn't re-add it as the
-            // intentional escape hatch.
-            let in_provider_options = options.provider_options.contains_key("reasoning_effort");
-            if !in_provider_options {
-                obj.remove("reasoning_effort");
-            }
-        }
+        let url = chat_completions_url(&account.base_url);
+        let body = build_openwebui_chat_body(messages, options);
         tracing::debug!(
             target: "jfc::provider::openwebui",
             url = %url,
             tools = body.get("tools").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
             tool_choice = ?body.get("tool_choice"),
             messages = body.get("messages").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+            chat_id = ?body.get("chat_id").and_then(|v| v.as_str()),
             "POST chat/completions"
         );
 
@@ -2830,16 +3043,7 @@ impl Provider for OpenWebUIProvider {
         // tool-call streams can exceed LiteLLM's default of 60s.
         let send_started = std::time::Instant::now();
         let resp = match jfc_provider::http::send_with_retry("openwebui.chat/completions", || {
-            self.client
-                .post(&url)
-                .header("authorization", format!("Bearer {}", account.token))
-                .header("accept", "application/json")
-                .header("content-type", "application/json")
-                .header("connection", "keep-alive")
-                .header("x-litellm-stream-timeout", "600")
-                .header("x-litellm-timeout", "600")
-                .json(&body)
-                .send()
+            chat_completions_request(&self.client, &url, &account.token, &body).send()
         })
         .await
         {
@@ -2892,18 +3096,10 @@ impl Provider for OpenWebUIProvider {
                     "auth rejected — attempting OIDC re-login then retry once"
                 );
                 if let Ok(refreshed) = self.refresh_active_account().await {
-                    let retry_resp = self
-                        .client
-                        .post(&url)
-                        .header("authorization", format!("Bearer {}", refreshed.token))
-                        .header("accept", "application/json")
-                        .header("content-type", "application/json")
-                        .header("connection", "keep-alive")
-                        .header("x-litellm-stream-timeout", "600")
-                        .header("x-litellm-timeout", "600")
-                        .json(&body)
-                        .send()
-                        .await;
+                    let retry_resp =
+                        chat_completions_request(&self.client, &url, &refreshed.token, &body)
+                            .send()
+                            .await;
                     if let Ok(r) = retry_resp
                         && r.status().is_success()
                     {
@@ -3282,6 +3478,10 @@ fn normalize_tool_args(raw: &str) -> String {
 /// JSON-encoded string (some gateways double-encode).
 fn parse_json_tool_call(body: &str) -> Option<(String, String)> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    parse_json_tool_call_value(&v)
+}
+
+fn parse_json_tool_call_value(v: &serde_json::Value) -> Option<(String, String)> {
     let name = v.get("name")?.as_str()?.to_owned();
     let input_json = match v.get("arguments") {
         Some(serde_json::Value::String(s)) => {
@@ -3296,6 +3496,75 @@ fn parse_json_tool_call(body: &str) -> Option<(String, String)> {
         None => "{}".to_owned(),
     };
     Some((name, input_json))
+}
+
+fn is_known_inline_tool_name(name: &str) -> bool {
+    !matches!(
+        jfc_core::ToolKind::from_name(name),
+        jfc_core::ToolKind::UnknownTool { .. }
+    )
+}
+
+/// Some OpenAI-compatible gateways/models emit a complete tool call as plain
+/// assistant JSON instead of `delta.tool_calls` or tagged XML:
+/// `{"name":"Bash","arguments":{"command":"pwd"}}`. Only consume the content
+/// when the whole buffered message is one or more known jfc tool calls.
+fn parse_bare_json_tool_calls(body: &str) -> Option<Vec<(String, String)>> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let value: serde_json::Value = serde_json::from_str(trimmed).ok()?;
+    match value {
+        serde_json::Value::Object(_) => {
+            let call = parse_json_tool_call_value(&value)?;
+            is_known_inline_tool_name(&call.0).then_some(vec![call])
+        }
+        serde_json::Value::Array(items) => {
+            let mut calls = Vec::with_capacity(items.len());
+            for item in &items {
+                let call = parse_json_tool_call_value(item)?;
+                if !is_known_inline_tool_name(&call.0) {
+                    return None;
+                }
+                calls.push(call);
+            }
+            (!calls.is_empty()).then_some(calls)
+        }
+        _ => None,
+    }
+}
+
+fn should_hold_bare_json_tool_candidate(buf: &str) -> bool {
+    let trimmed = buf.trim_start();
+    trimmed.starts_with('{') || trimmed.starts_with('[')
+}
+
+fn push_synthesized_inline_tool_events(
+    calls: Vec<(String, String)>,
+    inline_index: &mut usize,
+    out: &mut Vec<anyhow::Result<StreamEvent>>,
+    source: &str,
+) {
+    for (name, input_json) in calls {
+        let idx = INLINE_TOOL_INDEX_BASE + *inline_index;
+        *inline_index += 1;
+        tracing::info!(
+            target: "jfc::provider::openai_compatible",
+            index = idx,
+            tool_name = %name,
+            source,
+            "synthesized tool_done from inline tool content"
+        );
+        out.push(Ok(StreamEvent::ToolDone {
+            index: idx,
+            tool_name: name,
+            tool_use_id: format!("toolu_{}", uuid::Uuid::new_v4().simple()),
+            input_json,
+            thought_signature: None,
+        }));
+    }
 }
 
 /// Parse the body of an inline tool block into zero or more
@@ -3369,6 +3638,14 @@ fn drain_inline_tool_calls(
             .min_by_key(|&(at, ..)| at);
 
         let Some((open_at, open, close, is_call)) = earliest else {
+            if flush && let Some(calls) = parse_bare_json_tool_calls(buf) {
+                buf.clear();
+                push_synthesized_inline_tool_events(calls, inline_index, out, "bare_json");
+                break;
+            }
+            if !flush && should_hold_bare_json_tool_candidate(buf) {
+                break;
+            }
             // No complete open tag. Hold back a partial open-tag suffix
             // (e.g. a chunk ending in "<tool_u") unless we're flushing.
             let hold = if flush {
@@ -3426,24 +3703,7 @@ fn drain_inline_tool_calls(
                         delta: format!("{open}{body}{close}"),
                     }));
                 } else {
-                    for (name, input_json) in calls {
-                        let idx = INLINE_TOOL_INDEX_BASE + *inline_index;
-                        *inline_index += 1;
-                        tracing::info!(
-                            target: "jfc::provider::openai_compatible",
-                            index = idx,
-                            tool_name = %name,
-                            tag = open,
-                            "synthesized tool_done from inline tool XML"
-                        );
-                        out.push(Ok(StreamEvent::ToolDone {
-                            index: idx,
-                            tool_name: name,
-                            tool_use_id: format!("toolu_{}", uuid::Uuid::new_v4().simple()),
-                            input_json,
-                            thought_signature: None,
-                        }));
-                    }
+                    push_synthesized_inline_tool_events(calls, inline_index, out, open);
                 }
                 continue;
             }

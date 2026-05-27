@@ -133,6 +133,28 @@ async fn execute_skill_unknown_returns_failure_robust() {
 }
 
 #[tokio::test]
+async fn execute_skill_unknown_omits_superpower_suggestions_robust() {
+    let Some(root) = skill_tempdir_or_skip() else {
+        return;
+    };
+    let super_dir = root.join(".codex/plugins/superpowers/skills");
+    std::fs::create_dir_all(&super_dir).expect("create superpowers skills dir");
+    std::fs::write(
+        super_dir.join("verification.md"),
+        "---\nname: verification\n---\nInternal verification guidance.",
+    )
+    .expect("write superpower skill");
+
+    let result = execute_skill_in(&root, "definitely-not-a-real-skill-xyz-9832", None).await;
+    assert!(result.is_error(), "unknown skill must report failure");
+    assert!(
+        !result.output.contains("superpowers:"),
+        "internal superpower skills should not be suggested: {}",
+        result.output
+    );
+}
+
+#[tokio::test]
 async fn execute_skill_known_returns_body_normal() {
     let Some(root) = skill_tempdir_or_skip() else {
         return;

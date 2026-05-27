@@ -292,7 +292,7 @@ fn extract_c_calls(
                     .find(|n| n.name == callee_name && n.kind == NodeKind::Function)
                 {
                     edges.push((
-                        caller_id.clone(),
+                        caller_id,
                         callee.id.clone(),
                         EdgeData {
                             kind: EdgeKind::Calls,
@@ -303,7 +303,7 @@ fn extract_c_calls(
                 } else {
                     // Unresolved call (e.g. library function like printf).
                     edges.push((
-                        caller_id.clone(),
+                        caller_id,
                         // Use a synthetic node id for unresolved targets.
                         NodeId::new("", &callee_name, NodeKind::Function),
                         EdgeData {
