@@ -102,14 +102,25 @@ pub(super) fn coalesce_consecutive_same_role(messages: &[ChatMessage]) -> Vec<Ch
     out
 }
 
+/// An assistant message is a discardable placeholder when it carries **no
+/// renderable or sendable content** — every part is blank text and there are
+/// no attachments. Metadata fields (`usage`, `model_name`, `cost_tier`,
+/// `elapsed`, `agent_name`) are deliberately NOT part of this test: they are
+/// pure bookkeeping, not content.
+///
+/// This matters for the `stop_reason=refusal` shape. When a model refuses and
+/// emits zero content but the API still bills a `message_delta`, the runtime
+/// stamps `usage` onto an otherwise-empty assistant slot (one `Text("")`
+/// part). The earlier predicate required `usage.is_none()`, so this slot
+/// survived into the persisted transcript — sandwiched between two user turns
+/// (the original prompt's continuation reminders), it tripped
+/// `validate_turn_invariants` (`EmptyMessage` / `ConsecutiveUser`) on every
+/// subsequent save, spamming the session-save invariant warnings. Stripping it
+/// regardless of metadata lets `coalesce_consecutive_same_role` merge the two
+/// neighbouring user turns into one valid alternating turn.
 pub(super) fn is_empty_assistant_placeholder(msg: &ChatMessage) -> bool {
     msg.role == Role::Assistant
         && !msg.queued
-        && msg.agent_name.is_none()
-        && msg.model_name.is_none()
-        && msg.cost_tier.is_none()
-        && msg.elapsed.is_none()
-        && msg.usage.is_none()
         && msg.attachments.is_empty()
         && msg
             .parts
@@ -305,6 +316,123 @@ mod coalesce_tests {
         assert!(
             out[2].is_compact_boundary(),
             "boundary must survive on its own message"
+        );
+    }
+}
+
+#[cfg(test)]
+mod placeholder_tests {
+    //! Regression tests for `is_empty_assistant_placeholder` and the
+    //! `persistent_session_messages` save pipeline. These pin the fix for
+    //! the `stop_reason=refusal` artefact reproduced in
+    //! `ses_20260528_200646.json` (message index 77): a usage-stamped,
+    //! content-empty assistant that broke `validate_turn_invariants`.
+    use super::{is_empty_assistant_placeholder, persistent_session_messages};
+    use crate::types::{ChatMessage, MessagePart, ModelUsage, Role, validate_turn_invariants};
+
+    fn user_text(s: &str) -> ChatMessage {
+        ChatMessage::user(s.to_owned())
+    }
+
+    fn usage_only_refusal() -> ChatMessage {
+        // Mirrors the on-disk shape: parts=[Text("")], usage populated,
+        // every other metadata field None.
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.usage = Some(ModelUsage {
+            input_tokens: 6,
+            output_tokens: 2,
+            cache_read_tokens: 22107,
+            cache_write_tokens: 90833,
+            cost_usd: None,
+        });
+        msg
+    }
+
+    // Normal: the refusal-shaped assistant is recognized as a placeholder
+    // even though `usage` is populated. Pre-fix this returned false.
+    #[test]
+    fn refusal_shape_is_placeholder_normal() {
+        let msg = usage_only_refusal();
+        assert!(
+            is_empty_assistant_placeholder(&msg),
+            "usage-only empty assistant must be treated as a placeholder so it's stripped on save"
+        );
+    }
+
+    // Normal: a non-empty assistant is never a placeholder, even if its
+    // metadata happens to match.
+    #[test]
+    fn non_empty_assistant_is_not_placeholder_normal() {
+        let mut msg = ChatMessage::assistant("hello".into());
+        msg.usage = Some(ModelUsage {
+            input_tokens: 1,
+            output_tokens: 1,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            cost_usd: None,
+        });
+        assert!(!is_empty_assistant_placeholder(&msg));
+    }
+
+    // Robust: the exact ses_20260528_200646.json shape — user (76) →
+    // refusal-shape assistant (77) → user (78) — survives the save
+    // pipeline with the placeholder dropped, the two neighbouring user
+    // turns coalesced into one, and `validate_turn_invariants` happy.
+    #[test]
+    fn refusal_artefact_survives_save_pipeline_robust() {
+        let input = vec![
+            user_text("first continuation reminder"),
+            usage_only_refusal(),
+            user_text("second continuation reminder"),
+        ];
+        let out = persistent_session_messages(&input);
+        assert_eq!(
+            out.len(),
+            1,
+            "the two user turns must coalesce after the placeholder is stripped"
+        );
+        assert_eq!(out[0].role, Role::User);
+        // Both prompts survive merged into the single coalesced user turn.
+        let text: String = out[0]
+            .parts
+            .iter()
+            .map(|p| match p {
+                MessagePart::Text(t) => t.as_str(),
+                _ => "",
+            })
+            .collect();
+        assert!(text.contains("first continuation reminder"));
+        assert!(text.contains("second continuation reminder"));
+        validate_turn_invariants(&out)
+            .expect("post-save transcript must satisfy alternating-role invariants");
+    }
+
+    // Robust: a queued user message is never mistaken for a placeholder
+    // even if its text is empty. The `!msg.queued` guard remains.
+    #[test]
+    fn queued_assistant_never_placeholder_robust() {
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.queued = true;
+        assert!(
+            !is_empty_assistant_placeholder(&msg),
+            "queued messages must never be filtered as placeholders"
+        );
+    }
+
+    // Robust: an assistant with attachments is real content even if its
+    // text parts are blank — must NOT be stripped.
+    #[test]
+    fn assistant_with_attachments_is_not_placeholder_robust() {
+        use jfc_core::{Attachment, AttachmentKind};
+        let mut msg = ChatMessage::assistant(String::new());
+        msg.attachments = vec![Attachment {
+            id: 1,
+            kind: AttachmentKind::ImagePng,
+            bytes: vec![0u8; 4],
+        }];
+        assert!(
+            !is_empty_assistant_placeholder(&msg),
+            "assistant with attachments carries content and must survive save"
         );
     }
 }
