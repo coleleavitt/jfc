@@ -1,5 +1,5 @@
 #[cfg(test)]
-use super::{ToolInput, ToolKind};
+use super::ToolKind;
 
 #[cfg(test)]
 mod tests {

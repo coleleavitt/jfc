@@ -248,15 +248,12 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
     } else if let Some(tool_id) = hit {
         const DOUBLE_CLICK_MS: u128 = 350;
         let now = std::time::Instant::now();
-        let is_double_click = match &app.last_tool_click {
+        let is_double_click = matches!(
+            &app.last_tool_click,
             Some((prev_id, prev_at))
                 if prev_id == &tool_id
-                    && now.duration_since(*prev_at).as_millis() < DOUBLE_CLICK_MS =>
-            {
-                true
-            }
-            _ => false,
-        };
+                    && now.duration_since(*prev_at).as_millis() < DOUBLE_CLICK_MS
+        );
         for msg in &mut app.messages {
             for part in &mut msg.parts {
                 if let MessagePart::Tool(tc) = part

@@ -415,10 +415,10 @@ fn estimate_confidence(messages: &[MessageSummary]) -> f32 {
     }
 
     // Recent tool usage → more predictable follow-ups
-    if let Some(last) = messages.last() {
-        if !last.tools_used.is_empty() {
-            confidence += 0.2;
-        }
+    if let Some(last) = messages.last()
+        && !last.tools_used.is_empty()
+    {
+        confidence += 0.2;
     }
 
     // Pattern of short user messages → likely another short one

@@ -725,17 +725,16 @@ mod tests {
                 .unwrap_or_default();
             self.calls.lock().unwrap().push(last);
 
-            if let Some(needle) = &self.err_on {
-                if self
+            if let Some(needle) = &self.err_on
+                && self
                     .calls
                     .lock()
                     .unwrap()
                     .last()
                     .map(|s| s.contains(needle))
                     .unwrap_or(false)
-                {
-                    anyhow::bail!("mock forced error on '{needle}'");
-                }
+            {
+                anyhow::bail!("mock forced error on '{needle}'");
             }
 
             let mut q = self.responses.lock().unwrap();

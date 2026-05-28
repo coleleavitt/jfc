@@ -21,7 +21,7 @@ pub use events::{
     TaskEvent, TeamEvent, ToolEvent, UiEvent, WorkflowProgressEvent, send_critical,
 };
 #[cfg(test)]
-pub use execution::{DiagnosticLevel, ToolDiagnostic, ToolOutcome};
+pub use execution::{DiagnosticLevel, ToolOutcome};
 pub use execution::{ExecutionResult, ToolProvenance, ToolSource};
 pub(crate) use factory::{factory_mode_enabled, maybe_continue_task_factory};
 pub(crate) use goal_loop::{dispatch_goal_evaluator_if_active, handle_goal_verdict};

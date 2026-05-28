@@ -192,7 +192,7 @@ mod truncate_tests {
 
     #[test]
     fn truncate_output_is_valid_utf8_robust() {
-        let s: String = std::iter::repeat("héllo 🌟 ").take(5000).collect();
+        let s: String = std::iter::repeat_n("héllo 🌟 ", 5000).collect();
         let out = truncate_tool_result(&s);
         let _ = out.chars().count();
     }

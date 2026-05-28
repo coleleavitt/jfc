@@ -426,7 +426,7 @@ fn signature_for(node: &NodeData) -> String {
         NodeKind::Enum => format!("enum {}", node.name),
         NodeKind::Trait => format!("trait {}", node.name),
         NodeKind::Module => format!("mod {}", node.name),
-        _ => format!("{} ({})", node.name, format!("{:?}", node.kind)),
+        _ => format!("{} ({:?})", node.name, node.kind),
     }
 }
 

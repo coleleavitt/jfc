@@ -97,7 +97,7 @@ impl Dreamer {
     pub fn run_cycle(
         &self,
         tasks: &[DreamerTask],
-        memories: &mut Vec<MemoryRecord>,
+        memories: &mut [MemoryRecord],
     ) -> Result<DreamerReport, LearnError> {
         let mut results = Vec::new();
         let mut consecutive_failures = 0;
@@ -149,8 +149,9 @@ impl Dreamer {
     }
 
     /// Consolidate: find duplicate memories by normalized_hash within same category, archive dupes.
-    fn consolidate(&self, memories: &mut Vec<MemoryRecord>) -> Result<usize, LearnError> {
+    fn consolidate(&self, memories: &mut [MemoryRecord]) -> Result<usize, LearnError> {
         use std::collections::HashMap;
+        use std::collections::hash_map::Entry;
 
         // Group by (category, normalized_hash)
         let mut seen: HashMap<(String, String), usize> = HashMap::new();
@@ -159,10 +160,10 @@ impl Dreamer {
         for (idx, mem) in memories.iter().enumerate() {
             if let (Some(cat), Some(hash)) = (&mem.category, &mem.normalized_hash) {
                 let key = (cat.clone(), hash.clone());
-                if seen.contains_key(&key) {
-                    to_archive.push(idx);
+                if let Entry::Vacant(e) = seen.entry(key) {
+                    e.insert(idx);
                 } else {
-                    seen.insert(key, idx);
+                    to_archive.push(idx);
                 }
             }
         }
@@ -176,19 +177,18 @@ impl Dreamer {
     }
 
     /// Archive stale: memories with last_seen_at > 120 days ago.
-    fn archive_stale(&self, memories: &mut Vec<MemoryRecord>) -> Result<usize, LearnError> {
+    fn archive_stale(&self, memories: &mut [MemoryRecord]) -> Result<usize, LearnError> {
         let now = now_ms();
         let threshold = 120 * 24 * 60 * 60 * 1000; // 120 days in ms
         let mut actions = 0;
 
         for mem in memories.iter_mut() {
-            if let Some(last_seen) = mem.last_seen_at {
-                if now - last_seen > threshold {
-                    if mem.memory_status.as_deref() != Some("archived") {
-                        mem.memory_status = Some("archived".to_string());
-                        actions += 1;
-                    }
-                }
+            if let Some(last_seen) = mem.last_seen_at
+                && now - last_seen > threshold
+                && mem.memory_status.as_deref() != Some("archived")
+            {
+                mem.memory_status = Some("archived".to_string());
+                actions += 1;
             }
         }
 
@@ -325,15 +325,15 @@ pub fn acquire_lease(lease_path: &Path) -> Result<DreamerLease, LearnError> {
     // Check if an existing lease is still valid
     if lease_path.exists() {
         let content = fs::read_to_string(lease_path)?;
-        if let Ok(existing) = serde_json::from_str::<DreamerLease>(&content) {
-            if existing.expiry_ms > now_ms() {
-                return Err(LearnError::LeaseConflict {
-                    message: format!(
-                        "Lease held by {} until {}",
-                        existing.holder_id, existing.expiry_ms
-                    ),
-                });
-            }
+        if let Ok(existing) = serde_json::from_str::<DreamerLease>(&content)
+            && existing.expiry_ms > now_ms()
+        {
+            return Err(LearnError::LeaseConflict {
+                message: format!(
+                    "Lease held by {} until {}",
+                    existing.holder_id, existing.expiry_ms
+                ),
+            });
         }
     }
 

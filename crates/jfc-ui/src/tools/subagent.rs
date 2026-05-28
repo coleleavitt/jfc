@@ -175,236 +175,6 @@ pub(crate) fn selected_subagent_model(
     Ok(spec.into_model())
 }
 
-#[cfg(test)]
-mod tests {
-    use std::{
-        collections::{HashMap, VecDeque},
-        path::PathBuf,
-        sync::{
-            Mutex,
-            atomic::{AtomicUsize, Ordering},
-        },
-    };
-
-    use super::*;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    fn task_input(model: Option<&str>) -> crate::types::TaskInput {
-        crate::types::TaskInput {
-            description: "inspect".to_string(),
-            prompt: "inspect".to_string(),
-            subagent_type: Some("explore".to_string()),
-            category: None,
-            run_in_background: false,
-            model: model.map(str::to_string),
-            effort: None,
-            name: None,
-            team_name: None,
-            mode: None,
-            isolation: None,
-            parent_task_id: None,
-            schema: None,
-        }
-    }
-
-    fn agent_model(model: Option<&str>) -> crate::agents::AgentDef {
-        crate::agents::AgentDef {
-            name: "Explore".to_string(),
-            source: PathBuf::from("builtin"),
-            model: model.map(str::to_string),
-            isolation: None,
-            skills: Vec::new(),
-            allowed_tools: Vec::new(),
-            disallowed_tools: Vec::new(),
-            permission_mode: None,
-            forks_parent_context: None,
-            background: None,
-            color: None,
-            effort: None,
-            max_turns: None,
-            max_input_tokens: None,
-            memory: None,
-            mcp_servers: Vec::new(),
-            hooks: HashMap::new(),
-            key_trigger: None,
-            use_when: Vec::new(),
-            avoid_when: Vec::new(),
-            cost: None,
-            system_prompt: String::new(),
-        }
-    }
-
-    #[test]
-    fn selected_subagent_model_uses_agent_model_before_parent() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
-
-        let model = selected_subagent_model(
-            &task_input(None),
-            Some(&agent_model(Some("haiku"))),
-            jfc_provider::ModelId::new("claude-opus-4-6"),
-            "openwebui",
-        )
-        .unwrap();
-
-        assert_eq!(model.as_str(), "bedrock-claude-4-5-haiku");
-    }
-
-    #[test]
-    fn selected_subagent_model_env_overrides_task_model() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { std::env::set_var("CLAUDE_CODE_SUBAGENT_MODEL", "haiku") };
-
-        let model = selected_subagent_model(
-            &task_input(Some("opus")),
-            Some(&agent_model(Some("sonnet"))),
-            jfc_provider::ModelId::new("claude-opus-4-6"),
-            "openwebui",
-        )
-        .unwrap();
-
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
-        assert_eq!(model.as_str(), "bedrock-claude-4-5-haiku");
-    }
-
-    #[test]
-    fn selected_subagent_model_maps_builtin_tiers_for_openai() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
-
-        let model = selected_subagent_model(
-            &task_input(None),
-            Some(&agent_model(Some("haiku"))),
-            jfc_provider::ModelId::new("gpt-5.5"),
-            "openai",
-        )
-        .unwrap();
-
-        assert_eq!(model.as_str(), "gpt-5-mini");
-    }
-
-    #[test]
-    fn selected_subagent_model_maps_builtin_tiers_for_anthropic_oauth() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
-
-        let model = selected_subagent_model(
-            &task_input(Some("haiku")),
-            None,
-            jfc_provider::ModelId::new("claude-opus-4-7"),
-            "anthropic-oauth",
-        )
-        .unwrap();
-
-        assert_eq!(
-            model.as_str(),
-            crate::providers::anthropic_models::ALIAS_HAIKU
-        );
-    }
-
-    #[test]
-    fn selected_subagent_model_rejects_cross_provider_models() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
-
-        let error = selected_subagent_model(
-            &task_input(Some("anthropic/claude-haiku-4-5")),
-            None,
-            jfc_provider::ModelId::new("bedrock-claude-4-6-opus"),
-            "openwebui",
-        )
-        .unwrap_err();
-
-        assert!(error.contains("provider switching for subagents is not wired yet"));
-    }
-
-    struct ScriptedProvider {
-        scripts: Mutex<VecDeque<Vec<jfc_provider::StreamEvent>>>,
-        calls: AtomicUsize,
-    }
-
-    impl ScriptedProvider {
-        fn new(scripts: Vec<Vec<jfc_provider::StreamEvent>>) -> Self {
-            Self {
-                scripts: Mutex::new(scripts.into()),
-                calls: AtomicUsize::new(0),
-            }
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl jfc_provider::Provider for ScriptedProvider {
-        fn name(&self) -> &str {
-            "anthropic"
-        }
-
-        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
-            vec![]
-        }
-
-        async fn stream(
-            &self,
-            _messages: Vec<jfc_provider::ProviderMessage>,
-            _options: &jfc_provider::StreamOptions,
-        ) -> anyhow::Result<jfc_provider::EventStream> {
-            use futures::stream;
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            let events = self
-                .scripts
-                .lock()
-                .unwrap()
-                .pop_front()
-                .ok_or_else(|| anyhow::anyhow!("scripts exhausted"))?;
-            Ok(Box::pin(stream::iter(events.into_iter().map(Ok))))
-        }
-    }
-
-    impl jfc_provider::seal::Sealed for ScriptedProvider {}
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn execute_task_retries_retryable_stream_error_normal() {
-        let provider = ScriptedProvider::new(vec![
-            vec![jfc_provider::StreamEvent::Error {
-                message: format!(
-                    "{}Anthropic transient API error 529: overloaded",
-                    crate::providers::anthropic::AUTO_RETRY_SENTINEL
-                ),
-            }],
-            vec![
-                jfc_provider::StreamEvent::TextDelta {
-                    index: 0,
-                    delta: "recovered".into(),
-                },
-                jfc_provider::StreamEvent::Done {
-                    stop_reason: jfc_provider::StopReason::EndTurn,
-                },
-            ],
-        ]);
-
-        let result = execute_task(
-            &task_input(None),
-            &provider,
-            jfc_provider::ModelId::new("claude-opus-4-7"),
-            None,
-            None,
-            Some(&agent_model(None)),
-            None,
-            None,
-            None,
-        )
-        .await;
-
-        assert!(
-            !result.is_error(),
-            "subagent should recover: {}",
-            result.output
-        );
-        assert_eq!(result.output, "recovered");
-        assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
-    }
-}
-
 /// Run a subagent. The agent gets its own system prompt, tool catalogue
 /// (filtered by the agent's allow/disallow lists), an optional cwd
 /// override (used for worktree isolation), and a turn cap from
@@ -428,10 +198,10 @@ pub async fn execute_task(
 ) -> ExecutionResult {
     // StructuredOutput schema: when the parent provides a schema, install
     // it so the subagent's StructuredOutput tool call validates against it.
-    if let Some(ref schema) = task_input.schema {
-        if let Err(e) = crate::tools::structured_output::set_active_schema(Some(schema)) {
-            return ExecutionResult::failure(format!("Task: invalid schema rejected: {e}"));
-        }
+    if let Some(ref schema) = task_input.schema
+        && let Err(e) = crate::tools::structured_output::set_active_schema(Some(schema))
+    {
+        return ExecutionResult::failure(format!("Task: invalid schema rejected: {e}"));
     }
     let result = execute_task_inner(
         task_input,
@@ -1000,5 +770,235 @@ async fn execute_task_inner(
         ExecutionResult::success(summary)
     } else {
         ExecutionResult::success(final_text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::{HashMap, VecDeque},
+        path::PathBuf,
+        sync::{
+            Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    use super::*;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn task_input(model: Option<&str>) -> crate::types::TaskInput {
+        crate::types::TaskInput {
+            description: "inspect".to_string(),
+            prompt: "inspect".to_string(),
+            subagent_type: Some("explore".to_string()),
+            category: None,
+            run_in_background: false,
+            model: model.map(str::to_string),
+            effort: None,
+            name: None,
+            team_name: None,
+            mode: None,
+            isolation: None,
+            parent_task_id: None,
+            schema: None,
+        }
+    }
+
+    fn agent_model(model: Option<&str>) -> crate::agents::AgentDef {
+        crate::agents::AgentDef {
+            name: "Explore".to_string(),
+            source: PathBuf::from("builtin"),
+            model: model.map(str::to_string),
+            isolation: None,
+            skills: Vec::new(),
+            allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
+            permission_mode: None,
+            forks_parent_context: None,
+            background: None,
+            color: None,
+            effort: None,
+            max_turns: None,
+            max_input_tokens: None,
+            memory: None,
+            mcp_servers: Vec::new(),
+            hooks: HashMap::new(),
+            key_trigger: None,
+            use_when: Vec::new(),
+            avoid_when: Vec::new(),
+            cost: None,
+            system_prompt: String::new(),
+        }
+    }
+
+    #[test]
+    fn selected_subagent_model_uses_agent_model_before_parent() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let model = selected_subagent_model(
+            &task_input(None),
+            Some(&agent_model(Some("haiku"))),
+            jfc_provider::ModelId::new("claude-opus-4-6"),
+            "openwebui",
+        )
+        .unwrap();
+
+        assert_eq!(model.as_str(), "bedrock-claude-4-5-haiku");
+    }
+
+    #[test]
+    fn selected_subagent_model_env_overrides_task_model() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("CLAUDE_CODE_SUBAGENT_MODEL", "haiku") };
+
+        let model = selected_subagent_model(
+            &task_input(Some("opus")),
+            Some(&agent_model(Some("sonnet"))),
+            jfc_provider::ModelId::new("claude-opus-4-6"),
+            "openwebui",
+        )
+        .unwrap();
+
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+        assert_eq!(model.as_str(), "bedrock-claude-4-5-haiku");
+    }
+
+    #[test]
+    fn selected_subagent_model_maps_builtin_tiers_for_openai() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let model = selected_subagent_model(
+            &task_input(None),
+            Some(&agent_model(Some("haiku"))),
+            jfc_provider::ModelId::new("gpt-5.5"),
+            "openai",
+        )
+        .unwrap();
+
+        assert_eq!(model.as_str(), "gpt-5-mini");
+    }
+
+    #[test]
+    fn selected_subagent_model_maps_builtin_tiers_for_anthropic_oauth() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let model = selected_subagent_model(
+            &task_input(Some("haiku")),
+            None,
+            jfc_provider::ModelId::new("claude-opus-4-7"),
+            "anthropic-oauth",
+        )
+        .unwrap();
+
+        assert_eq!(
+            model.as_str(),
+            crate::providers::anthropic_models::ALIAS_HAIKU
+        );
+    }
+
+    #[test]
+    fn selected_subagent_model_rejects_cross_provider_models() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CLAUDE_CODE_SUBAGENT_MODEL") };
+
+        let error = selected_subagent_model(
+            &task_input(Some("anthropic/claude-haiku-4-5")),
+            None,
+            jfc_provider::ModelId::new("bedrock-claude-4-6-opus"),
+            "openwebui",
+        )
+        .unwrap_err();
+
+        assert!(error.contains("provider switching for subagents is not wired yet"));
+    }
+
+    struct ScriptedProvider {
+        scripts: Mutex<VecDeque<Vec<jfc_provider::StreamEvent>>>,
+        calls: AtomicUsize,
+    }
+
+    impl ScriptedProvider {
+        fn new(scripts: Vec<Vec<jfc_provider::StreamEvent>>) -> Self {
+            Self {
+                scripts: Mutex::new(scripts.into()),
+                calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl jfc_provider::Provider for ScriptedProvider {
+        fn name(&self) -> &str {
+            "anthropic"
+        }
+
+        fn available_models(&self) -> Vec<jfc_provider::ModelInfo> {
+            vec![]
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<jfc_provider::ProviderMessage>,
+            _options: &jfc_provider::StreamOptions,
+        ) -> anyhow::Result<jfc_provider::EventStream> {
+            use futures::stream;
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let events = self
+                .scripts
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| anyhow::anyhow!("scripts exhausted"))?;
+            Ok(Box::pin(stream::iter(events.into_iter().map(Ok))))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for ScriptedProvider {}
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn execute_task_retries_retryable_stream_error_normal() {
+        let provider = ScriptedProvider::new(vec![
+            vec![jfc_provider::StreamEvent::Error {
+                message: format!(
+                    "{}Anthropic transient API error 529: overloaded",
+                    crate::providers::anthropic::AUTO_RETRY_SENTINEL
+                ),
+            }],
+            vec![
+                jfc_provider::StreamEvent::TextDelta {
+                    index: 0,
+                    delta: "recovered".into(),
+                },
+                jfc_provider::StreamEvent::Done {
+                    stop_reason: jfc_provider::StopReason::EndTurn,
+                },
+            ],
+        ]);
+
+        let result = execute_task(
+            &task_input(None),
+            &provider,
+            jfc_provider::ModelId::new("claude-opus-4-7"),
+            None,
+            None,
+            Some(&agent_model(None)),
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(
+            !result.is_error(),
+            "subagent should recover: {}",
+            result.output
+        );
+        assert_eq!(result.output, "recovered");
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
     }
 }

@@ -16,7 +16,7 @@
 //! - `anthropic-ratelimit-unified-reset`         — unix seconds (representative claim)
 //! - `anthropic-ratelimit-unified-fallback`      — `"available"` ⇒ sonnet fallback is offered
 //! - `anthropic-ratelimit-unified-representative-claim`
-//!     — `five_hour | seven_day | seven_day_opus | seven_day_sonnet | overage`
+//!   — `five_hour | seven_day | seven_day_opus | seven_day_sonnet | overage`
 //! - `anthropic-ratelimit-unified-overage-status`
 //! - `anthropic-ratelimit-unified-overage-reset`
 //! - `anthropic-ratelimit-unified-overage-disabled-reason`

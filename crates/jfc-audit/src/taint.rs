@@ -53,21 +53,11 @@ pub struct Sanitizer {
 }
 
 /// Complete taint specification.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaintSpecs {
     pub sources: Vec<TaintSource>,
     pub sinks: Vec<TaintSink>,
     pub sanitizers: Vec<Sanitizer>,
-}
-
-impl Default for TaintSpecs {
-    fn default() -> Self {
-        Self {
-            sources: vec![],
-            sinks: vec![],
-            sanitizers: vec![],
-        }
-    }
 }
 
 /// A traced taint chain from source to sink.

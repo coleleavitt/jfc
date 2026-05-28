@@ -81,19 +81,19 @@ impl DreamerLease {
     /// Try to acquire the lease. Returns Ok(()) if acquired, Err if held.
     fn acquire(&self, ttl: Duration) -> Result<()> {
         // Check existing lease
-        if let Ok(content) = std::fs::read_to_string(&self.path) {
-            if let Ok(claim) = serde_json::from_str::<LeaseClaim>(&content) {
-                let now_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                if claim.expiry_ms > now_ms {
-                    bail!(
-                        "lease held by {} until {}",
-                        claim.holder_id,
-                        claim.expiry_ms
-                    );
-                }
+        if let Ok(content) = std::fs::read_to_string(&self.path)
+            && let Ok(claim) = serde_json::from_str::<LeaseClaim>(&content)
+        {
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            if claim.expiry_ms > now_ms {
+                bail!(
+                    "lease held by {} until {}",
+                    claim.holder_id,
+                    claim.expiry_ms
+                );
             }
         }
 
@@ -239,7 +239,7 @@ impl PlanDreamer {
             by_title.entry(key).or_default().push(plan);
         }
 
-        for (_title, group) in &by_title {
+        for group in by_title.values() {
             if group.len() <= 1 {
                 continue;
             }
@@ -426,9 +426,8 @@ mod tests {
         // Manually write a stale last_advanced date
         let plan = store.get("stale-plan").unwrap();
         let old_date = "2020-01-01T00:00:00+00:00";
-        let content = std::fs::read_to_string(&plan.path).unwrap();
-        let content = content.replace(
-            &format!("last_advanced: null"),
+        let _ = std::fs::read_to_string(&plan.path).unwrap().replace(
+            "last_advanced: null",
             &format!("last_advanced: '{old_date}'"),
         );
         // Just rewrite with the date in the frontmatter
@@ -507,9 +506,8 @@ mod tests {
         store.create("My Plan", "First body").unwrap();
         // We can't create with same slug, so manually write a second one
         let plans_dir = store.root();
-        let second_content = format!(
-            "---\nslug: my-plan-2\ntitle: my plan\nstatus: active\ncreated: '2020-01-01T00:00:00+00:00'\nlinked_task_ids: []\ntags: []\n---\nSecond body"
-        );
+        let second_content =
+            "---\nslug: my-plan-2\ntitle: my plan\nstatus: active\ncreated: '2020-01-01T00:00:00+00:00'\nlinked_task_ids: []\ntags: []\n---\nSecond body".to_string();
         std::fs::write(plans_dir.join("my-plan-2.md"), &second_content).unwrap();
         store.reload_if_changed();
 

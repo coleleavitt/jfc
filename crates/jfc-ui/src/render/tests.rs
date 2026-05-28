@@ -156,6 +156,7 @@ mod render_helpers_tests {
     use super::*;
     use crate::theme::Theme;
 
+    #[allow(dead_code)]
     fn t() -> Theme {
         Theme::dark()
     }
@@ -384,8 +385,8 @@ mod pure_helper_tests {
         }
         async fn stream(
             &self,
-            #[allow(dead_code)] messages: Vec<ProviderMessage>,
-            #[allow(dead_code)] options: &StreamOptions,
+            #[allow(dead_code)] _messages: Vec<ProviderMessage>,
+            #[allow(dead_code)] _options: &StreamOptions,
         ) -> anyhow::Result<EventStream> {
             Ok(Box::pin(futures::stream::empty()))
         }

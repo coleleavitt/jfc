@@ -303,9 +303,7 @@ pub fn record_background_agent_progress_at_epoch_with_paths(
                 return None;
             }
         };
-        let Some(agent) = state.background_agents.get_mut(id) else {
-            return None;
-        };
+        let agent = state.background_agents.get_mut(id)?;
         if !worker_epoch_matches(agent, worker_epoch) {
             return None;
         }
@@ -382,9 +380,7 @@ pub fn record_background_agent_finished_at_epoch_with_paths(
             }
         };
         let now = SystemTime::now();
-        let Some(agent) = state.background_agents.get_mut(id) else {
-            return None;
-        };
+        let agent = state.background_agents.get_mut(id)?;
         if !worker_epoch_matches(agent, worker_epoch) {
             return None;
         }

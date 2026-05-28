@@ -119,10 +119,11 @@ impl LspClient {
     /// Cleanup of the `pending` map entry is owned by a `PendingGuard`
     /// RAII handle so it runs exactly once regardless of which exit path
     /// fires:
-    ///   - send-failure return,
-    ///   - response received,
-    ///   - timeout,
-    ///   - future cancelled by the caller's runtime.
+    /// - send-failure return,
+    /// - response received,
+    /// - timeout,
+    /// - future cancelled by the caller's runtime.
+    ///
     /// This eliminates the previous race where a response arriving
     /// *after* timeout and a reader-task removal could either double-
     /// process or leave a stale `oneshot::Sender` sitting in the map.
@@ -166,10 +167,7 @@ impl LspClient {
         // silently fails on the closed oneshot, which is the desired
         // outcome.
         tokio::select! {
-            recv = rx => match recv {
-                Ok(val) => Some(val),
-                Err(_) => None, // sender dropped (server exited / reader dropped tx)
-            },
+            recv = rx => recv.ok(),
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(5)) => None,
         }
     }

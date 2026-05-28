@@ -23,7 +23,7 @@ pub(crate) fn on_session_start(cwd: &str) {
     let entries: Vec<_> = match std::fs::read_dir(&pending_dir) {
         Ok(rd) => rd
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "json"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
             .collect(),
         Err(_) => return,
     };

@@ -511,15 +511,12 @@ fn parse_arxiv_entries(xml: &str) -> Vec<ArxivEntry> {
     let mut entries = Vec::new();
     let mut search_from = 0;
 
-    loop {
-        let start = match xml[search_from..].find("<entry>") {
-            Some(pos) => search_from + pos,
-            None => break,
+    while let Some(rel_start) = xml[search_from..].find("<entry>") {
+        let start = search_from + rel_start;
+        let Some(rel_end) = xml[start..].find("</entry>") else {
+            break;
         };
-        let end = match xml[start..].find("</entry>") {
-            Some(pos) => start + pos + "</entry>".len(),
-            None => break,
-        };
+        let end = start + rel_end + "</entry>".len();
         let entry_xml = &xml[start..end];
         search_from = end;
 

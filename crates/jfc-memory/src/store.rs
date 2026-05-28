@@ -2,8 +2,8 @@
 //! and project context across sessions.
 //!
 //! Storage layout (mirroring Claude Code v126):
-//! - User-level:    `~/.config/jfc/memory/` — personal preferences that follow
-//!                  the user across all projects.
+//! - User-level: `~/.config/jfc/memory/` — personal preferences that follow
+//!   the user across all projects.
 //! - Project-level: `<project>/.jfc/memory/` — shared project knowledge.
 //!
 //! Each memory is a single `.md` file with YAML frontmatter:

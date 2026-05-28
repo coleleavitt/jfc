@@ -1,5 +1,5 @@
 #[cfg(test)]
-use super::{ReplacementMode, TaskInput, ToolInput, ToolInputError, ToolKind};
+use super::{ReplacementMode, TaskInput, ToolInput, ToolInputError};
 
 #[cfg(test)]
 mod tests {

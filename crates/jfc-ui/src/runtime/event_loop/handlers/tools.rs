@@ -52,115 +52,6 @@ pub(crate) fn handle_output_chunk(app: &mut App, tool_id: crate::ids::ToolId, ch
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::{sync::Arc, time::Instant};
-
-    use super::*;
-    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
-
-    struct TestProvider;
-
-    #[async_trait::async_trait]
-    impl Provider for TestProvider {
-        fn name(&self) -> &str {
-            "test"
-        }
-
-        fn available_models(&self) -> Vec<ModelInfo> {
-            Vec::new()
-        }
-
-        async fn stream(
-            &self,
-            #[allow(dead_code)] _messages: Vec<ProviderMessage>,
-            #[allow(dead_code)] _options: &StreamOptions,
-        ) -> anyhow::Result<EventStream> {
-            Ok(Box::pin(futures::stream::empty()))
-        }
-    }
-
-    impl jfc_provider::seal::Sealed for TestProvider {}
-
-    fn test_app_with_tool(status: ToolStatus) -> (App, crate::ids::ToolId) {
-        let tool_id = crate::ids::ToolId::from("tool-1");
-        let mut tool = ToolCall::new_pending(
-            tool_id.clone(),
-            ToolKind::Bash,
-            ToolInput::Generic {
-                summary: String::new(),
-            },
-        );
-        tool.status = status;
-
-        let mut app = App::new(Arc::new(TestProvider), "test-model");
-        app.task_store = jfc_session::TaskStore::in_memory();
-        app.messages.push(ChatMessage::user("run tool".into()));
-        app.messages
-            .push(ChatMessage::assistant_parts(vec![MessagePart::Tool(tool)]));
-        app.turn_started_at = Some(Instant::now());
-        app.is_streaming = false;
-        (app, tool_id)
-    }
-
-    #[tokio::test]
-    async fn all_complete_waits_for_out_of_order_tool_result() {
-        let (mut app, _tool_id) = test_app_with_tool(ToolStatus::Pending);
-        app.in_flight_tool_batches = 1;
-        let (tx, _rx) = tokio::sync::mpsc::channel(8);
-
-        handle_all_complete(&mut app, &tx).await;
-
-        assert_eq!(app.in_flight_tool_batches, 0);
-        assert!(app.turn_started_at.is_some());
-        assert!(!should_recheck_completion_after_tool_result(&app));
-    }
-
-    #[test]
-    fn late_tool_result_rechecks_completion_after_batch_signal_race() {
-        let (mut app, tool_id) = test_app_with_tool(ToolStatus::Pending);
-        let (tx, _rx) = tokio::sync::mpsc::channel(8);
-
-        handle_tool_result(
-            &mut app,
-            &tx,
-            tool_id,
-            crate::runtime::ExecutionResult::success("ok"),
-        );
-
-        assert!(should_recheck_completion_after_tool_result(&app));
-    }
-
-    #[test]
-    fn set_in_progress_tool_use_ids_updates_state_normal() {
-        let (mut app, _tool_id) = test_app_with_tool(ToolStatus::Pending);
-        handle_deferred_tool_use(
-            &mut app,
-            "tool-1".into(),
-            "Bash".into(),
-            "ls".into(),
-            "awaiting_approval".into(),
-        );
-        assert_eq!(app.deferred_tool_uses.len(), 1);
-
-        handle_set_in_progress_tool_use_ids(&mut app, "add".into(), vec!["tool-1".into()]);
-        assert!(app.in_progress_tool_use_ids.contains("tool-1"));
-        assert!(app.deferred_tool_uses.is_empty());
-
-        handle_set_in_progress_tool_use_ids(&mut app, "remove".into(), vec!["tool-1".into()]);
-        assert!(!app.in_progress_tool_use_ids.contains("tool-1"));
-    }
-
-    #[test]
-    fn completed_tool_batch_summary_single_tool_normal() {
-        let (app, _tool_id) = test_app_with_tool(ToolStatus::Completed);
-        let (summary, ids) =
-            completed_tool_batch_summary(&app).expect("completed tool should summarize");
-        assert!(summary.starts_with("Ran"), "{summary}");
-        assert_eq!(ids, vec!["tool-1"]);
-    }
-}
-
 /// Handle `ToolEvent::Result { tool_id, result }`.
 pub(crate) fn handle_tool_result(
     app: &mut App,
@@ -918,5 +809,114 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
             drain_queued_prompts(app, tx).await;
             maybe_continue_task_factory(app, tx).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{sync::Arc, time::Instant};
+
+    use super::*;
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            #[allow(dead_code)] _messages: Vec<ProviderMessage>,
+            #[allow(dead_code)] _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    fn test_app_with_tool(status: ToolStatus) -> (App, crate::ids::ToolId) {
+        let tool_id = crate::ids::ToolId::from("tool-1");
+        let mut tool = ToolCall::new_pending(
+            tool_id.clone(),
+            ToolKind::Bash,
+            ToolInput::Generic {
+                summary: String::new(),
+            },
+        );
+        tool.status = status;
+
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.task_store = jfc_session::TaskStore::in_memory();
+        app.messages.push(ChatMessage::user("run tool".into()));
+        app.messages
+            .push(ChatMessage::assistant_parts(vec![MessagePart::Tool(tool)]));
+        app.turn_started_at = Some(Instant::now());
+        app.is_streaming = false;
+        (app, tool_id)
+    }
+
+    #[tokio::test]
+    async fn all_complete_waits_for_out_of_order_tool_result() {
+        let (mut app, _tool_id) = test_app_with_tool(ToolStatus::Pending);
+        app.in_flight_tool_batches = 1;
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_all_complete(&mut app, &tx).await;
+
+        assert_eq!(app.in_flight_tool_batches, 0);
+        assert!(app.turn_started_at.is_some());
+        assert!(!should_recheck_completion_after_tool_result(&app));
+    }
+
+    #[test]
+    fn late_tool_result_rechecks_completion_after_batch_signal_race() {
+        let (mut app, tool_id) = test_app_with_tool(ToolStatus::Pending);
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_tool_result(
+            &mut app,
+            &tx,
+            tool_id,
+            crate::runtime::ExecutionResult::success("ok"),
+        );
+
+        assert!(should_recheck_completion_after_tool_result(&app));
+    }
+
+    #[test]
+    fn set_in_progress_tool_use_ids_updates_state_normal() {
+        let (mut app, _tool_id) = test_app_with_tool(ToolStatus::Pending);
+        handle_deferred_tool_use(
+            &mut app,
+            "tool-1".into(),
+            "Bash".into(),
+            "ls".into(),
+            "awaiting_approval".into(),
+        );
+        assert_eq!(app.deferred_tool_uses.len(), 1);
+
+        handle_set_in_progress_tool_use_ids(&mut app, "add".into(), vec!["tool-1".into()]);
+        assert!(app.in_progress_tool_use_ids.contains("tool-1"));
+        assert!(app.deferred_tool_uses.is_empty());
+
+        handle_set_in_progress_tool_use_ids(&mut app, "remove".into(), vec!["tool-1".into()]);
+        assert!(!app.in_progress_tool_use_ids.contains("tool-1"));
+    }
+
+    #[test]
+    fn completed_tool_batch_summary_single_tool_normal() {
+        let (app, _tool_id) = test_app_with_tool(ToolStatus::Completed);
+        let (summary, ids) =
+            completed_tool_batch_summary(&app).expect("completed tool should summarize");
+        assert!(summary.starts_with("Ran"), "{summary}");
+        assert_eq!(ids, vec!["tool-1"]);
     }
 }

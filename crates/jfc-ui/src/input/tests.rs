@@ -24,8 +24,8 @@ impl Provider for TestProvider {
 
     async fn stream(
         &self,
-        #[allow(dead_code)] messages: Vec<ProviderMessage>,
-        #[allow(dead_code)] options: &StreamOptions,
+        #[allow(dead_code)] _messages: Vec<ProviderMessage>,
+        #[allow(dead_code)] _options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
         Ok(Box::pin(futures::stream::empty()))
     }
@@ -46,8 +46,8 @@ impl Provider for StaticModelProvider {
 
     async fn stream(
         &self,
-        #[allow(dead_code)] messages: Vec<ProviderMessage>,
-        #[allow(dead_code)] options: &StreamOptions,
+        #[allow(dead_code)] _messages: Vec<ProviderMessage>,
+        #[allow(dead_code)] _options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
         Ok(Box::pin(futures::stream::empty()))
     }
@@ -912,8 +912,10 @@ async fn search_backspace_shrinks_query_normal() {
 async fn search_enter_commits_robust() {
     let mut app = test_app();
     app.messages.push(ChatMessage::user("foo".into()));
-    let mut s = crate::app::TranscriptSearch::default();
-    s.matches = vec![0];
+    let s = crate::app::TranscriptSearch {
+        matches: vec![0],
+        ..Default::default()
+    };
     app.transcript_search = Some(s);
     let (tx, _rx) = channel();
     handle_key(&mut app, key(KeyCode::Enter), &tx)
@@ -936,8 +938,10 @@ async fn search_arrows_cycle_matches_normal() {
     let mut app = test_app();
     app.messages.push(ChatMessage::user("a".into()));
     app.messages.push(ChatMessage::user("a".into()));
-    let mut s = crate::app::TranscriptSearch::default();
-    s.matches = vec![0, 1];
+    let s = crate::app::TranscriptSearch {
+        matches: vec![0, 1],
+        ..Default::default()
+    };
     app.transcript_search = Some(s);
     let (tx, _rx) = channel();
     handle_key(&mut app, key(KeyCode::Down), &tx).await.unwrap();

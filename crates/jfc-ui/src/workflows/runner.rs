@@ -22,7 +22,7 @@ use jfc_provider::{ModelId, Provider};
 /// Max concurrent agent() calls = min(16, cpus - 2), floor 2.
 pub fn max_concurrency() -> usize {
     let cpus = num_cpus::get();
-    std::cmp::min(16, std::cmp::max(2, cpus.saturating_sub(2)))
+    cpus.saturating_sub(2).clamp(2, 16)
 }
 
 /// Hard cap on total agents per workflow lifetime (CC 146: 1000).
@@ -138,13 +138,13 @@ impl Orchestrator {
     /// otherwise spawn a semaphore-gated dispatch.
     fn dispatch(&mut self, req: AgentRequest) {
         // Enforce token budget before the agent cap.
-        if let Some(budget) = self.token_budget {
-            if self.tokens_spent.load(Ordering::Relaxed) >= budget {
-                let _ = req
-                    .reply
-                    .send(Err("workflow token budget exhausted".to_owned()));
-                return;
-            }
+        if let Some(budget) = self.token_budget
+            && self.tokens_spent.load(Ordering::Relaxed) >= budget
+        {
+            let _ = req
+                .reply
+                .send(Err("workflow token budget exhausted".to_owned()));
+            return;
         }
 
         if self.dispatched.load(Ordering::Relaxed) >= MAX_AGENTS {
@@ -577,8 +577,7 @@ async fn run_one_agent(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::VecDeque;
-    use std::sync::Mutex;
+
     use std::sync::atomic::AtomicUsize;
 
     #[test]

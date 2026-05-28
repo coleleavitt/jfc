@@ -806,8 +806,8 @@ mod pause_turn_end_to_end_tests {
     use super::*;
     use crate::ids::ToolId;
     use crate::types::{
-        ChatMessage, MessagePart, Role, ToolCall, ToolDisplayState, ToolInput, ToolKind,
-        ToolOutput, ToolStatus,
+        ChatMessage, MessagePart, ToolCall, ToolDisplayState, ToolInput, ToolKind, ToolOutput,
+        ToolStatus,
     };
     use jfc_provider::{ProviderContent, ProviderRole, ServerToolResultKind};
     use std::sync::Arc;

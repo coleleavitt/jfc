@@ -100,10 +100,10 @@ fn apply_agent_done(app: &mut App, task_id: &str, index: u32) {
     let Some(bt) = app.background_tasks.get_mut(task_id) else {
         return;
     };
-    if let Some(ref mut wfp) = bt.workflow_progress {
-        if let Some(agent) = wfp.agents.iter_mut().find(|a| a.index == index) {
-            agent.status = AgentStatus::Done;
-        }
+    if let Some(ref mut wfp) = bt.workflow_progress
+        && let Some(agent) = wfp.agents.iter_mut().find(|a| a.index == index)
+    {
+        agent.status = AgentStatus::Done;
     }
 }
 

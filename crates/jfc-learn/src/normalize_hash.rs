@@ -38,12 +38,10 @@ pub fn normalize(text: &str) -> String {
     let trimmed = result.trim().to_string();
 
     // Strip leading and trailing punctuation
-    let trimmed = trimmed
+    trimmed
         .trim_start_matches(|c: char| c.is_ascii_punctuation())
         .trim_end_matches(|c: char| c.is_ascii_punctuation())
-        .to_string();
-
-    trimmed
+        .to_string()
 }
 
 fn hex_encode(bytes: &[u8]) -> String {

@@ -292,12 +292,12 @@ impl<P: HistorianProvider, M: MemoryLookup> Historian<P, M> {
         }
 
         // Try extracting JSON from markdown code blocks
-        if let Some(json_start) = raw.find('{') {
-            if let Some(json_end) = raw.rfind('}') {
-                let json_slice = &raw[json_start..=json_end];
-                if let Ok(call) = serde_json::from_str::<ExtractFactsCall>(json_slice) {
-                    return Ok(call.facts);
-                }
+        if let Some(json_start) = raw.find('{')
+            && let Some(json_end) = raw.rfind('}')
+        {
+            let json_slice = &raw[json_start..=json_end];
+            if let Ok(call) = serde_json::from_str::<ExtractFactsCall>(json_slice) {
+                return Ok(call.facts);
             }
         }
 

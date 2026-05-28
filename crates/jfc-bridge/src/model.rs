@@ -3,34 +3,24 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkerStatus {
+    #[default]
     Idle,
     Busy,
     Draining,
     Offline,
 }
 
-impl Default for WorkerStatus {
-    fn default() -> Self {
-        Self::Idle
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionStatus {
     Running,
+    #[default]
     Idle,
     Archived,
     Terminated,
-}
-
-impl Default for SessionStatus {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

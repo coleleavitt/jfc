@@ -98,10 +98,10 @@ pub fn is_bwrap_available() -> bool {
 
 /// Path to the bwrap binary, checking standard locations.
 pub fn find_bwrap() -> Option<String> {
-    if let Ok(output) = std::process::Command::new("which").arg("bwrap").output() {
-        if output.status.success() {
-            return Some(String::from_utf8_lossy(&output.stdout).trim().to_string());
-        }
+    if let Ok(output) = std::process::Command::new("which").arg("bwrap").output()
+        && output.status.success()
+    {
+        return Some(String::from_utf8_lossy(&output.stdout).trim().to_string());
     }
     None
 }

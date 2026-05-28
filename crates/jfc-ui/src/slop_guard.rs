@@ -554,20 +554,19 @@ pub fn check_silent_failure(file_content: &str, file_path: &Path) -> Vec<SlopFin
         }
 
         // `Err(_) => {}` or `Err(_e) => {}`
-        if (t.starts_with("Err(_") && t.ends_with("=> {},"))
-            || (t.starts_with("Err(_") && t.ends_with("=> {}"))
+        if ((t.starts_with("Err(_") && t.ends_with("=> {},"))
+            || (t.starts_with("Err(_") && t.ends_with("=> {}")))
+            && !t.contains("// intentional")
         {
-            if !t.contains("// intentional") {
-                findings.push(SlopFinding {
-                    rule: "silent_failure".into(),
-                    message: format!(
-                        "Line {}: swallowed Err variant — at minimum log the error",
-                        i + 1
-                    ),
-                    file: Some(file_path.display().to_string()),
-                    line: Some(i + 1),
-                });
-            }
+            findings.push(SlopFinding {
+                rule: "silent_failure".into(),
+                message: format!(
+                    "Line {}: swallowed Err variant — at minimum log the error",
+                    i + 1
+                ),
+                file: Some(file_path.display().to_string()),
+                line: Some(i + 1),
+            });
         }
     }
 
@@ -766,11 +765,12 @@ pub fn check_conditional_tests(file_content: &str) -> Vec<SlopFinding> {
             depth = 0;
             continue;
         }
-        if in_test_fn && depth == 0 {
-            if let Some(m) = fn_re.captures(line) {
-                fn_name = m.get(1).map(|m| m.as_str().to_owned()).unwrap_or_default();
-                fn_start = i + 1;
-            }
+        if in_test_fn
+            && depth == 0
+            && let Some(m) = fn_re.captures(line)
+        {
+            fn_name = m.get(1).map(|m| m.as_str().to_owned()).unwrap_or_default();
+            fn_start = i + 1;
         }
         if in_test_fn {
             for ch in line.chars() {
@@ -847,9 +847,9 @@ pub fn check_naming_quality(file_content: &str) -> Vec<SlopFinding> {
 
     let is_test_region = |pos: usize| -> bool {
         file_content[..pos].rfind("#[cfg(test)]").is_some()
-            && file_content[..pos].rfind("\nmod ").map_or(false, |m| {
-                m > file_content[..pos].rfind("#[cfg(test)]").unwrap_or(0)
-            })
+            && file_content[..pos]
+                .rfind("\nmod ")
+                .is_some_and(|m| m > file_content[..pos].rfind("#[cfg(test)]").unwrap_or(0))
     };
 
     let mut vague_count = 0;
@@ -862,31 +862,32 @@ pub fn check_naming_quality(file_content: &str) -> Vec<SlopFinding> {
         }
 
         // Check for vague function/variable names
-        if let Some(caps) = binding_re.captures(t) {
-            if let Some(name) = caps.get(2) {
-                let n = name.as_str();
+        if let Some(caps) = binding_re.captures(t)
+            && let Some(name) = caps.get(2)
+        {
+            let n = name.as_str();
 
-                // Skip test code (test names can be descriptive-verbose)
-                let line_start = file_content
-                    .lines()
-                    .take(i)
-                    .map(|l| l.len() + 1)
-                    .sum::<usize>();
-                if is_test_region(line_start) {
-                    continue;
+            // Skip test code (test names can be descriptive-verbose)
+            let line_start = file_content
+                .lines()
+                .take(i)
+                .map(|l| l.len() + 1)
+                .sum::<usize>();
+            if is_test_region(line_start) {
+                continue;
+            }
+
+            // Vague names
+            if vague_names.contains(&n) {
+                vague_count += 1;
+                if first_vague_line.is_none() {
+                    first_vague_line = Some(i + 1);
                 }
+            }
 
-                // Vague names
-                if vague_names.contains(&n) {
-                    vague_count += 1;
-                    if first_vague_line.is_none() {
-                        first_vague_line = Some(i + 1);
-                    }
-                }
-
-                // Overly long identifiers (>50 chars)
-                if n.len() > 50 {
-                    findings.push(SlopFinding {
+            // Overly long identifiers (>50 chars)
+            if n.len() > 50 {
+                findings.push(SlopFinding {
                         rule: "naming_quality".into(),
                         message: format!(
                             "Line {}: identifier `{}...` is {} chars — consider a shorter, clearer name",
@@ -897,7 +898,6 @@ pub fn check_naming_quality(file_content: &str) -> Vec<SlopFinding> {
                         file: None,
                         line: Some(i + 1),
                     });
-                }
             }
         }
     }
@@ -1090,17 +1090,17 @@ pub fn check_premature_abstraction(file_content: &str) -> Vec<SlopFinding> {
         if t.starts_with("//") || t.starts_with("*") {
             continue;
         }
-        if let Some(caps) = trait_re.captures(t) {
-            if let Some(name) = caps.get(1) {
-                // Skip well-known patterns
-                let n = name.as_str();
-                if ![
-                    "Debug", "Clone", "Default", "Display", "Error", "From", "Into", "Iterator",
-                ]
-                .contains(&n)
-                {
-                    traits.push((n.to_string(), i + 1));
-                }
+        if let Some(caps) = trait_re.captures(t)
+            && let Some(name) = caps.get(1)
+        {
+            // Skip well-known patterns
+            let n = name.as_str();
+            if ![
+                "Debug", "Clone", "Default", "Display", "Error", "From", "Into", "Iterator",
+            ]
+            .contains(&n)
+            {
+                traits.push((n.to_string(), i + 1));
             }
         }
     }
@@ -1390,7 +1390,6 @@ pub fn format_report(report: &SlopReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn complexity_flags_long_function_normal() {

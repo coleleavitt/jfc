@@ -1043,8 +1043,10 @@ model = "claude-opus-4-7"
 
     #[test]
     fn theme_field_roundtrips_normal() {
-        let mut cfg = Config::default();
-        cfg.theme = Some("monokai".into());
+        let cfg = Config {
+            theme: Some("monokai".into()),
+            ..Config::default()
+        };
         let s = toml::to_string(&cfg).expect("serialize");
         assert!(s.contains("theme"));
         let back: Config = toml::from_str(&s).expect("parse");

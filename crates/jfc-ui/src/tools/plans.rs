@@ -160,6 +160,7 @@ mod tests {
     use tempfile::TempDir;
 
     /// Override the current directory to a temp dir for testing.
+    #[allow(dead_code)]
     fn with_temp_project<F: FnOnce(&std::path::Path)>(f: F) {
         let dir = TempDir::new().unwrap();
         let plans_dir = dir.path().join(".jfc").join("plans");

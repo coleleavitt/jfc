@@ -203,10 +203,10 @@ impl PlanStore {
         if let Ok(entries) = std::fs::read_dir(&self.root) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) == Some("md") {
-                    if let Ok(plan) = Self::load_plan_file(&path) {
-                        plans.push(plan);
-                    }
+                if path.extension().and_then(|e| e.to_str()) == Some("md")
+                    && let Ok(plan) = Self::load_plan_file(&path)
+                {
+                    plans.push(plan);
                 }
             }
         }

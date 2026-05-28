@@ -107,7 +107,7 @@ impl Daemon {
         model: Option<String>,
         _working_dir: &Path,
     ) -> SessionId {
-        let id = format!("session-{}", uuid_short());
+        let id = SessionId::new(format!("session-{}", uuid_short()));
         let log_path = self.paths.log_dir.join(format!("{id}.log"));
 
         let info = SessionInfo {

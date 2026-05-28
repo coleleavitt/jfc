@@ -357,17 +357,17 @@ pub async fn most_recent_session_for_cwd(cwd: Option<&str>) -> Option<SessionId>
 
         // Fast extraction: find `"cwd":` then grab the string value.
         // Format in the JSON is: `"cwd": "/path/to/project"`
-        if let Some(cwd_value) = extract_cwd_from_header(header) {
-            if cwd_value == target_cwd {
-                let id = filename.strip_suffix(".json").unwrap_or(filename);
-                debug!(
-                    target: "jfc::session",
-                    ?cwd,
-                    session_id = id,
-                    "fast cwd match (header scan)"
-                );
-                return Some(SessionId::new(id));
-            }
+        if let Some(cwd_value) = extract_cwd_from_header(header)
+            && cwd_value == target_cwd
+        {
+            let id = filename.strip_suffix(".json").unwrap_or(filename);
+            debug!(
+                target: "jfc::session",
+                ?cwd,
+                session_id = id,
+                "fast cwd match (header scan)"
+            );
+            return Some(SessionId::new(id));
         }
         // If cwd field is missing (legacy session) or doesn't match, skip.
     }

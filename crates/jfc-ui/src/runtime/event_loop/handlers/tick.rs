@@ -138,9 +138,9 @@ pub(crate) async fn handle_tick(
         .anthropic_snapshot_refreshed_at
         .map(|t| t.elapsed().as_secs() >= 10)
         .unwrap_or(true);
-    if needs_refresh && oauth_for_snapshot.is_some() {
+    if needs_refresh && let Some(oauth) = oauth_for_snapshot {
         app.anthropic_snapshot_refreshed_at = Some(std::time::Instant::now());
-        let oauth = oauth_for_snapshot.unwrap().clone();
+        let oauth = oauth.clone();
         let tx = tx.clone();
         tokio::spawn(async move {
             if let Ok(mgr) = oauth.account_manager().await {

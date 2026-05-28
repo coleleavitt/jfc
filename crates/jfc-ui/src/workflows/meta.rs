@@ -158,7 +158,7 @@ fn js_object_to_json(input: &str) -> String {
                     // Check if followed by `:` (it's a key) or not
                     let rest_trimmed: String =
                         chars.clone().take_while(|c| c.is_whitespace()).collect();
-                    let after_ws = chars.clone().skip(rest_trimmed.len()).next();
+                    let after_ws = chars.clone().nth(rest_trimmed.len());
                     if after_ws == Some(':') {
                         out.push('"');
                         out.push_str(&key);
@@ -171,7 +171,7 @@ fn js_object_to_json(input: &str) -> String {
                 // Strip trailing commas before } or ]
                 ',' => {
                     let rest: String = chars.clone().take_while(|c| c.is_whitespace()).collect();
-                    let after = chars.clone().skip(rest.len()).next();
+                    let after = chars.clone().nth(rest.len());
                     if after == Some('}') || after == Some(']') {
                         // trailing comma — skip
                     } else {

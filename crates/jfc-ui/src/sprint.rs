@@ -181,7 +181,7 @@ impl HandoffSummary {
             .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
             .collect();
         // Sort by filename (which contains timestamp) descending.
-        entries.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
         let latest = entries.first()?;
         std::fs::read_to_string(latest.path()).ok()
     }

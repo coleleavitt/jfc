@@ -6,11 +6,6 @@ pub(crate) use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph},
 };
 
-#[cfg(test)]
-pub(crate) use ratatui::Terminal;
-#[cfg(test)]
-pub(crate) use ratatui::backend::TestBackend;
-
 pub(crate) use crate::app::App;
 pub(crate) use crate::theme::Theme;
 pub(crate) use crate::types::*;

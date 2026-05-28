@@ -567,11 +567,7 @@ fn stream_watchdog_timeout_secs() -> Option<u64> {
         return None;
     }
     match std::env::var("JFC_STREAM_WATCHDOG_TIMEOUT_SECS") {
-        Ok(raw) => raw
-            .trim()
-            .parse::<u64>()
-            .ok()
-            .and_then(|secs| if secs == 0 { None } else { Some(secs) }),
+        Ok(raw) => raw.trim().parse::<u64>().ok().filter(|&secs| secs != 0),
         Err(_) => Some(STREAM_WATCHDOG_TIMEOUT_SECS),
     }
 }

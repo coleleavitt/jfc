@@ -171,20 +171,21 @@ pub(super) fn diagnostic_row(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(line).style(Style::default().bg(t.bg)), area);
 }
 
-/// Modal diagnostic-expansion panel (`Ctrl+O` from the summary row,
-/// `Esc` to close). Mirrors v126 cli.js:338043-338053:
-///
-/// ```text
-///   <relative path bold>  (file://)
-///     ✘ [Line 12:5] unresolved import [E0432] (cargo)
-///     ⚠ [Line 1:1]  unused variable
-///   ...
-/// ```
-///
-/// Diagnostics are grouped by file (first occurrence preserves cargo's
-/// emission order) and listed underneath. We don't render the URI scheme
-/// suffix v126 does (`(file://)`) — paths are already cwd-relative so
-/// it's noise.
+// Modal diagnostic-expansion panel (`Ctrl+O` from the summary row,
+// `Esc` to close). Mirrors v126 cli.js:338043-338053:
+//
+// ```text
+//   <relative path bold>  (file://)
+//     ✘ [Line 12:5] unresolved import [E0432] (cargo)
+//     ⚠ [Line 1:1]  unused variable
+//   ...
+// ```
+//
+// Diagnostics are grouped by file (first occurrence preserves cargo's
+// emission order) and listed underneath. We don't render the URI scheme
+// suffix v126 does (`(file://)`) — paths are already cwd-relative so
+// it's noise.
+//
 // The autocomplete popup's command list is NOT defined here — it is the
 // macro-generated `SLASH_COMMANDS` table from the `slash_commands!` registry
 // (the single source of truth for dispatch + metadata), imported at the top

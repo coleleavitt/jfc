@@ -199,7 +199,7 @@ fn directory_proximity(a: &std::path::Path, b: &std::path::Path) -> i32 {
             break;
         }
     }
-    (shared as i32 * 15).min(80)
+    (shared * 15).min(80)
 }
 
 /// For a qualified call `mod::sub::foo()`, +50 for every qualifier
@@ -221,7 +221,7 @@ fn qualifier_match_bonus(site: &CallSite, cand: &NodeData) -> i32 {
             hits += 1;
         }
     }
-    hits as i32 * 50
+    hits * 50
 }
 
 /// Whether a `Calls` edge from `from` to `to` already exists. Avoids

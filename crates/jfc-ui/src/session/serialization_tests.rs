@@ -2,12 +2,11 @@
 mod tests {
     use crate::ids::SessionId;
     use crate::session::deserialize::*;
-    use crate::session::serialization::*;
+
     use crate::session::serialize::*;
     use crate::types::{
-        ChatMessage, DiffHunk, DiffLine, DiffLineKind, DiffView, LargeText, MessagePart,
-        ReplacementMode, Role, TaskInput, TaskLifecycle, TaskStatusPart, ToolCall, ToolInput,
-        ToolKind, ToolOutput, ToolStatus,
+        DiffHunk, DiffLine, DiffLineKind, DiffView, MessagePart, ReplacementMode, TaskLifecycle,
+        TaskStatusPart, ToolInput, ToolOutput,
     };
     use jfc_session::{
         SessionMetadata, cwd_mismatch_message, group_by_cwd, relative_time, shorten_cwd,
@@ -303,7 +302,7 @@ mod cwd_filter_tests {
     use crate::session::deserialize::*;
     use crate::session::serialization::*;
     use crate::session::serialize::*;
-    use crate::types::*;
+
     use jfc_session::SessionMetadata;
 
     fn meta(

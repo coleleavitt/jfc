@@ -406,28 +406,27 @@ pub(crate) async fn run(
                 let export_path =
                     std::path::Path::new(".jfc/teleport").join(format!("{source_id}.json"));
                 if export_path.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&export_path) {
-                        if let Ok(export) = serde_json::from_str::<serde_json::Value>(&content) {
-                            let new_id =
-                                crate::ids::SessionId::new(uuid::Uuid::new_v4().to_string());
-                            // Load messages from the export
-                            if let Some(msgs) = export.get("messages").and_then(|m| m.as_array()) {
-                                for msg in msgs {
-                                    let role =
-                                        msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
-                                    let content =
-                                        msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                                    let chat_msg = if role == "assistant" {
-                                        crate::types::ChatMessage::assistant(content.to_owned())
-                                    } else {
-                                        crate::types::ChatMessage::user(content.to_owned())
-                                    };
-                                    app.messages.push(chat_msg);
-                                }
+                    if let Ok(content) = std::fs::read_to_string(&export_path)
+                        && let Ok(export) = serde_json::from_str::<serde_json::Value>(&content)
+                    {
+                        let new_id = crate::ids::SessionId::new(uuid::Uuid::new_v4().to_string());
+                        // Load messages from the export
+                        if let Some(msgs) = export.get("messages").and_then(|m| m.as_array()) {
+                            for msg in msgs {
+                                let role =
+                                    msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
+                                let content =
+                                    msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                                let chat_msg = if role == "assistant" {
+                                    crate::types::ChatMessage::assistant(content.to_owned())
+                                } else {
+                                    crate::types::ChatMessage::user(content.to_owned())
+                                };
+                                app.messages.push(chat_msg);
                             }
-                            app.current_session_id = Some(new_id);
-                            app.recompute_token_estimate();
                         }
+                        app.current_session_id = Some(new_id);
+                        app.recompute_token_estimate();
                     }
                 } else {
                     tracing::warn!(
@@ -761,10 +760,10 @@ pub(crate) async fn run(
         for ev in events {
             // Mirror to remote-control clients. Non-blocking; returns early
             // when remote control is inactive.
-            if let Some(ref rc) = app.remote_host {
-                if let Some(envelope) = crate::remote_host::mirror_event(&ev) {
-                    rc.mirror(envelope);
-                }
+            if let Some(ref rc) = app.remote_host
+                && let Some(envelope) = crate::remote_host::mirror_event(&ev)
+            {
+                rc.mirror(envelope);
             }
 
             // Tick alone doesn't dirty the screen; everything else does. The
@@ -1061,7 +1060,7 @@ pub(crate) async fn run(
             if let Some(ref approval) = app.pending_approval {
                 let diff = crate::remote_host::tool_diff_preview(&approval.tool);
                 rc.mirror_pending_approval(
-                    &approval.tool.id.to_string(),
+                    approval.tool.id.as_ref(),
                     approval.tool.kind.label(),
                     approval.tool.input.summary(),
                     diff,

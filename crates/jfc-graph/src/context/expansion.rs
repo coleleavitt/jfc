@@ -343,7 +343,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = expand_type_hierarchy(&g, &[a_id.clone()], 10);
+        let result = expand_type_hierarchy(&g, std::slice::from_ref(&a_id), 10);
         // From struct A: finds trait, then back-edge to sibling B.
         assert!(result.nodes.contains(&trait_id));
         assert!(result.nodes.contains(&b_id));

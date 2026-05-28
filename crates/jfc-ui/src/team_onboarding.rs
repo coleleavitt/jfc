@@ -35,13 +35,12 @@ pub fn generate_onboarding_guide(project_root: &Path) -> String {
     ];
     let mut mcp_servers: Vec<String> = Vec::new();
     for path in &mcp_config_paths {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(mcp) = val.get("mcpServers").and_then(|m| m.as_object()) {
-                    for name in mcp.keys() {
-                        mcp_servers.push(name.clone());
-                    }
-                }
+        if let Ok(content) = std::fs::read_to_string(path)
+            && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
+            && let Some(mcp) = val.get("mcpServers").and_then(|m| m.as_object())
+        {
+            for name in mcp.keys() {
+                mcp_servers.push(name.clone());
             }
         }
     }

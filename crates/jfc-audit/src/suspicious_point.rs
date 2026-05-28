@@ -79,10 +79,10 @@ impl SuspiciousPointFinder {
             let line_num = (line_idx + 1) as u32;
 
             // Update function context
-            if let Some(caps) = fn_regex.captures(line) {
-                if let Some(name) = caps.get(4) {
-                    current_fn = name.as_str().to_string();
-                }
+            if let Some(caps) = fn_regex.captures(line)
+                && let Some(name) = caps.get(4)
+            {
+                current_fn = name.as_str().to_string();
             }
 
             // Check each pattern

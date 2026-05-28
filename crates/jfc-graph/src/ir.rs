@@ -670,6 +670,7 @@ impl PythonIrLowering {
         }
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn lower_expr(
         node: Node,
         source: &str,
@@ -926,6 +927,7 @@ impl TypeScriptIrLowering {
         }
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn lower_expr(
         node: Node,
         source: &str,

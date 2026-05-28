@@ -28,24 +28,19 @@ where
     };
     let mut reader = BufReader::new(pipe).lines();
     let mut buf = String::new();
-    loop {
-        match reader.next_line().await {
-            Ok(Some(line)) => {
-                let safe = terminal_safe_text(&line);
-                buf.push_str(&safe);
-                buf.push('\n');
-                if let Some((tool_id, tx)) = &progress {
-                    let _ = tx
-                        .send(crate::runtime::AppEvent::Tool(
-                            crate::runtime::ToolEvent::OutputChunk {
-                                tool_id: crate::ids::ToolId::from(tool_id.clone()),
-                                chunk: safe,
-                            },
-                        ))
-                        .await;
-                }
-            }
-            Ok(None) | Err(_) => break,
+    while let Ok(Some(line)) = reader.next_line().await {
+        let safe = terminal_safe_text(&line);
+        buf.push_str(&safe);
+        buf.push('\n');
+        if let Some((tool_id, tx)) = &progress {
+            let _ = tx
+                .send(crate::runtime::AppEvent::Tool(
+                    crate::runtime::ToolEvent::OutputChunk {
+                        tool_id: crate::ids::ToolId::from(tool_id.clone()),
+                        chunk: safe,
+                    },
+                ))
+                .await;
         }
     }
     buf

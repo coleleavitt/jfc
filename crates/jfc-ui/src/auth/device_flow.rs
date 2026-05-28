@@ -143,10 +143,10 @@ pub async fn poll_for_token(
         let body_bytes = resp.bytes().await?;
         let body = String::from_utf8_lossy(&body_bytes);
 
-        if status.is_success() {
-            if let Ok(token) = serde_json::from_str::<TokenResponse>(&body) {
-                return Ok(token);
-            }
+        if status.is_success()
+            && let Ok(token) = serde_json::from_str::<TokenResponse>(&body)
+        {
+            return Ok(token);
         }
 
         // Check for expected polling errors
@@ -172,8 +172,7 @@ pub fn store_token(token: &TokenResponse) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(token)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let json = serde_json::to_string_pretty(token).map_err(std::io::Error::other)?;
     std::fs::write(&path, json)?;
     // Restrict permissions on Unix
     #[cfg(unix)]

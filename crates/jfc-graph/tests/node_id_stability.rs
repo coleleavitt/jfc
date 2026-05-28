@@ -18,7 +18,6 @@
 //!    a *different* logical entity inheriting the same slot is correctly
 //!    distinguished.
 
-use jfc_graph::complexity::ComplexityMetrics;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

@@ -441,8 +441,7 @@ fn extract_calls_and_mutations(
             // Extract arg flows.
             if let Some(args_node) = node.child_by_field_name(rules.call_args_field) {
                 let mut cursor = args_node.walk();
-                let mut arg_pos: u32 = 0;
-                for arg in args_node.named_children(&mut cursor) {
+                for (arg_pos, arg) in (0_u32..).zip(args_node.named_children(&mut cursor)) {
                     let arg_text = node_text(arg, source);
                     let source_param = if arg.kind() == rules.identifier_node
                         && param_names.contains(&arg_text.as_str())
@@ -460,7 +459,7 @@ fn extract_calls_and_mutations(
                                     format!(
                                         "{}.{}",
                                         receiver.as_deref().unwrap_or("?"),
-                                        &callee_name
+                                        callee_name
                                     )
                                 } else {
                                     callee_name.clone()
@@ -471,7 +470,6 @@ fn extract_calls_and_mutations(
                             });
                         }
                     }
-                    arg_pos += 1;
                 }
             }
         }
@@ -496,12 +494,8 @@ fn node_text(node: TsNode<'_>, source: &[u8]) -> String {
 
 fn find_child_by_kind<'a>(node: TsNode<'a>, kind: &str) -> Option<TsNode<'a>> {
     let mut cursor = node.walk();
-    for child in node.named_children(&mut cursor) {
-        if child.kind() == kind {
-            return Some(child);
-        }
-    }
-    None
+    node.named_children(&mut cursor)
+        .find(|&child| child.kind() == kind)
 }
 
 fn truncate_expr(s: &str, max_len: usize) -> String {

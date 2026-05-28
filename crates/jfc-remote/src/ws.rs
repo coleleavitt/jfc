@@ -150,7 +150,7 @@ async fn handle_connection(
                 Ok(j) => j,
                 Err(_) => continue,
             };
-            if ws_tx.send(Message::Text(json.into())).await.is_err() {
+            if ws_tx.send(Message::Text(json)).await.is_err() {
                 break;
             }
         }
@@ -235,7 +235,7 @@ pub async fn connect(
                 Ok(j) => j,
                 Err(_) => continue,
             };
-            if ws_tx.send(Message::Text(json.into())).await.is_err() {
+            if ws_tx.send(Message::Text(json)).await.is_err() {
                 break;
             }
         }
@@ -279,7 +279,7 @@ fn extract_host(url: &str) -> String {
 mod tests {
     use super::*;
     use crate::auth;
-    use crate::protocol::{PROTOCOL_VERSION, RemoteEnvelope};
+    use crate::protocol::RemoteEnvelope;
 
     #[tokio::test]
     async fn ws_server_client_roundtrip() {

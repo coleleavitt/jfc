@@ -326,7 +326,7 @@ fn extract_c_uses_type(
     node: TsNode<'_>,
     source: &str,
     path: &Path,
-    path_str: &str,
+    _path_str: &str,
     nodes: &[NodeData],
     edges: &mut Vec<(NodeId, NodeId, EdgeData)>,
 ) {
@@ -365,7 +365,7 @@ fn extract_c_uses_type(
     }
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
-        extract_c_uses_type(child, source, path, path_str, nodes, edges);
+        extract_c_uses_type(child, source, path, _path_str, nodes, edges);
     }
 }
 

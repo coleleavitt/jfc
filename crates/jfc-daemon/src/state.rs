@@ -14,9 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use super::cron::CronJob;
-
-/// Unique session identifier.
-pub type SessionId = String;
+pub use jfc_core::SessionId;
 
 /// Daemon state — persisted to disk for crash recovery.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,7 +69,7 @@ pub(super) fn epoch() -> SystemTime {
     UNIX_EPOCH
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DaemonRuntimeInfo {
     #[serde(default)]
     pub worker_exe: Option<PathBuf>,
@@ -129,20 +127,6 @@ pub enum WorkerControlStatus {
     Running,
     Completed,
     Failed,
-}
-
-impl Default for DaemonRuntimeInfo {
-    fn default() -> Self {
-        Self {
-            worker_exe: None,
-            worker_exe_mtime: None,
-            spare_ready: false,
-            spare_checked_at: None,
-            restart_requested: false,
-            restart_reason: None,
-            low_memory_retire_count: 0,
-        }
-    }
 }
 
 /// Information about a managed session.

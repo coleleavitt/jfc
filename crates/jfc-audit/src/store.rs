@@ -160,25 +160,25 @@ impl FindingStore {
         self.index
             .values()
             .filter(|f| {
-                if let Some(kind) = &filter.kind {
-                    if f.kind != *kind {
-                        return false;
-                    }
+                if let Some(kind) = &filter.kind
+                    && f.kind != *kind
+                {
+                    return false;
                 }
-                if let Some(floor) = &filter.severity_floor {
-                    if f.severity < *floor {
-                        return false;
-                    }
+                if let Some(floor) = &filter.severity_floor
+                    && f.severity < *floor
+                {
+                    return false;
                 }
-                if let Some(suppressed) = filter.suppressed {
-                    if suppressed != f.suppressed.is_some() {
-                        return false;
-                    }
+                if let Some(suppressed) = filter.suppressed
+                    && suppressed != f.suppressed.is_some()
+                {
+                    return false;
                 }
-                if let Some(prefix) = &filter.file_prefix {
-                    if !f.location.file.starts_with(prefix.as_str()) {
-                        return false;
-                    }
+                if let Some(prefix) = &filter.file_prefix
+                    && !f.location.file.starts_with(prefix.as_str())
+                {
+                    return false;
                 }
                 true
             })

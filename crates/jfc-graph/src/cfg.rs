@@ -167,6 +167,7 @@ pub fn build_cfg(
 /// Walk a block node (compound statement / function body) and return the ID
 /// of the last block that was active when the block ended, or None if all
 /// paths ended with a jump (return/break/continue).
+#[allow(clippy::only_used_in_recursion)]
 fn walk_block(
     builder: &mut CfgBuilder,
     block_node: TsNode<'_>,

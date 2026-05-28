@@ -433,32 +433,32 @@ Do not use a colon before tool calls.";
         // via env var / runtime override / persisted config.
         let plan_recall_enabled =
             crate::plan_recall::is_enabled(crate::config::load().plan_recall_enabled);
-        if plan_recall_enabled {
-            if let Ok(plan_store) = crate::plan::PlanStore::open_project(Some(&cwd_path)) {
-                let plans = plan_store.list(None);
-                if !plans.is_empty() {
-                    let last_user_query = last_user_text(messages);
-                    if let Some(query) = last_user_query {
-                        let trimmed = query.trim();
-                        if !trimmed.is_empty() && !trimmed.starts_with('/') {
-                            // `run_plan_recall` handles its own caching via
-                            // `plan_recall::cache_recall` — repeated turns with
-                            // the same query reuse the prior synthesis.
-                            if let Some(block) = crate::plan_recall::run_plan_recall(
-                                trimmed,
-                                &plans,
-                                provider.clone(),
-                                model.clone(),
-                            )
-                            .await
-                            {
-                                tracing::debug!(
-                                    target: "jfc::stream",
-                                    plan_recall_block_len = block.len(),
-                                    "appending plan recall block"
-                                );
-                                system_prompt.push_str(&block);
-                            }
+        if plan_recall_enabled
+            && let Ok(plan_store) = crate::plan::PlanStore::open_project(Some(&cwd_path))
+        {
+            let plans = plan_store.list(None);
+            if !plans.is_empty() {
+                let last_user_query = last_user_text(messages);
+                if let Some(query) = last_user_query {
+                    let trimmed = query.trim();
+                    if !trimmed.is_empty() && !trimmed.starts_with('/') {
+                        // `run_plan_recall` handles its own caching via
+                        // `plan_recall::cache_recall` — repeated turns with
+                        // the same query reuse the prior synthesis.
+                        if let Some(block) = crate::plan_recall::run_plan_recall(
+                            trimmed,
+                            &plans,
+                            provider.clone(),
+                            model.clone(),
+                        )
+                        .await
+                        {
+                            tracing::debug!(
+                                target: "jfc::stream",
+                                plan_recall_block_len = block.len(),
+                                "appending plan recall block"
+                            );
+                            system_prompt.push_str(&block);
                         }
                     }
                 }
@@ -471,18 +471,18 @@ Do not use a colon before tool calls.";
         // but is local (no LLM call) and always cheap to run.
         if let Some(last_user_query) = last_user_text(messages) {
             let trimmed = last_user_query.trim();
-            if !trimmed.is_empty() && !trimmed.starts_with('/') {
-                if let Some(hint_block) =
+            if !trimmed.is_empty()
+                && !trimmed.starts_with('/')
+                && let Some(hint_block) =
                     jfc_learn::auto_hints::run_pre_turn_hint(trimmed, &cwd_path)
-                {
-                    tracing::debug!(
-                        target: "jfc::stream",
-                        hint_block_len = hint_block.len(),
-                        "injecting auto-hint recall block"
-                    );
-                    system_prompt.push_str("\n\n");
-                    system_prompt.push_str(&hint_block);
-                }
+            {
+                tracing::debug!(
+                    target: "jfc::stream",
+                    hint_block_len = hint_block.len(),
+                    "injecting auto-hint recall block"
+                );
+                system_prompt.push_str("\n\n");
+                system_prompt.push_str(&hint_block);
             }
         }
 

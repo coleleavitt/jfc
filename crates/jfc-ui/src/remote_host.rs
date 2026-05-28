@@ -257,11 +257,11 @@ async fn client_inbound_loop(rx: &mut TransportReceiver, event_tx: &EventSender,
             warn!(target: "jfc::remote", seq = frame.seq, "sequence replay rejected");
             continue;
         }
-        if let Some(app_event) = translate_inbound(&frame.payload) {
-            if event_tx.send(app_event).await.is_err() {
-                debug!(target: "jfc::remote", "event bus closed — stopping inbound loop");
-                break;
-            }
+        if let Some(app_event) = translate_inbound(&frame.payload)
+            && event_tx.send(app_event).await.is_err()
+        {
+            debug!(target: "jfc::remote", "event bus closed — stopping inbound loop");
+            break;
         }
     }
 }

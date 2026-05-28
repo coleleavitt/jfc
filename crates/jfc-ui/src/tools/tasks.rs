@@ -6,6 +6,7 @@ use super::ExecutionResult;
 use super::subagent::execute_skill_in;
 use jfc_session::{DeletedFilter, TaskKind, TaskPatch, TaskRisk, TaskStatus, TaskStore};
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn execute_task_create(
     store: Option<Arc<TaskStore>>,
     subject: String,
@@ -86,6 +87,7 @@ fn is_placeholder_task_input(subject: &str, description: &str) -> bool {
     subject.trim().eq_ignore_ascii_case("subj") && description.trim().eq_ignore_ascii_case("desc")
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn execute_task_update(
     store: Option<Arc<TaskStore>>,
     task_id: &str,

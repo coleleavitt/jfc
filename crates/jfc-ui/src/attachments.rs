@@ -119,10 +119,10 @@ pub async fn pdf_page_count(path: &std::path::Path) -> usize {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
-                if let Some(rest) = line.strip_prefix("Pages:") {
-                    if let Ok(n) = rest.trim().parse::<usize>() {
-                        return n;
-                    }
+                if let Some(rest) = line.strip_prefix("Pages:")
+                    && let Ok(n) = rest.trim().parse::<usize>()
+                {
+                    return n;
                 }
             }
             // pdfinfo ran but no Pages line — estimate from size.
@@ -135,9 +135,7 @@ pub async fn pdf_page_count(path: &std::path::Path) -> usize {
 /// Estimate page count from file size. Rounds up.
 fn estimate_pdf_pages(path: &std::path::Path) -> usize {
     std::fs::metadata(path)
-        .map(|m| {
-            ((m.len() + BYTES_PER_PAGE_ESTIMATE - 1) / BYTES_PER_PAGE_ESTIMATE).max(1) as usize
-        })
+        .map(|m| m.len().div_ceil(BYTES_PER_PAGE_ESTIMATE).max(1) as usize)
         .unwrap_or(1)
 }
 
@@ -486,7 +484,6 @@ pub async fn to_anthropic_content_block_async(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine as _;
 
     // ---------- detect_kind: positive cases ----------
 
@@ -783,6 +780,7 @@ mod tests {
     // we documented in the read_clipboard_image rationale — pin it so
     // a careless raise doesn't slip past code review.
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn max_image_bytes_is_conservative_anthropic_cap_normal() {
         assert!(MAX_IMAGE_BYTES <= 3_750_000); // raw bytes for 5MB base64
         assert!(MAX_IMAGE_BYTES >= 1_000_000); // big enough for typical screenshots

@@ -12,8 +12,7 @@ async fn loopback_full_cycle() {
     let ((host_tx, mut host_rx), (client_tx, mut client_rx)) = loopback();
 
     // Host emits a sequence of outbound events.
-    let mut host_seq = 1;
-    for env in [
+    let envs = [
         RemoteEnvelope::AssistantDelta {
             text: Some("Working on it".into()),
             reasoning: None,
@@ -29,9 +28,9 @@ async fn loopback_full_cycle() {
             summary: "ls -la".into(),
             diff: None,
         },
-    ] {
+    ];
+    for (host_seq, env) in (1_u64..).zip(envs) {
         let frame = auth::build_signed_frame(&token, host_seq, env);
-        host_seq += 1;
         host_tx.send(frame).await.unwrap();
     }
 

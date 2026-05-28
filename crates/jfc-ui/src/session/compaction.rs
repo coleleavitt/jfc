@@ -146,10 +146,7 @@ mod coalesce_tests {
     //! assistant message on save so the file is human-readable and the
     //! resume path doesn't get 50+ assistant rows for a single user
     //! turn (the original `ses_20260515_175208.json` symptom).
-    use super::{
-        coalesce_consecutive_same_role, is_empty_assistant_placeholder,
-        persistent_session_messages, repair_loaded_messages,
-    };
+    use super::coalesce_consecutive_same_role;
     use crate::ids::ToolId;
     use crate::types::{
         ChatMessage, MessagePart, ModelUsage, Role, ToolCall, ToolDisplayState, ToolInput,

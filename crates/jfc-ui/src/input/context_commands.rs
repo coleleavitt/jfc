@@ -42,11 +42,9 @@ pub(super) async fn cmd_compact(
     // sidebar reports as 90%-full.
     let est = app.tool_ctx.approx_tokens;
     let level = crate::compact::compact_level(est, app.max_context_tokens);
-    let pct = if app.max_context_tokens > 0 {
-        (est * 100 / app.max_context_tokens).min(999)
-    } else {
-        0
-    };
+    let pct = (est * 100)
+        .checked_div(app.max_context_tokens)
+        .map_or(0, |p| p.min(999));
     tracing::info!(
         target: "jfc::compact",
         est, max_context_tokens = app.max_context_tokens,
@@ -1765,9 +1763,8 @@ pub(super) async fn cmd_babysit_prs(
     _text: &str,
     _tx: Option<&mpsc::Sender<AppEvent>>,
 ) {
-    app.messages.push(ChatMessage::user(
-        parts.iter().copied().collect::<Vec<_>>().join(" "),
-    ));
+    app.messages
+        .push(ChatMessage::user(parts.to_vec().join(" ")));
 
     let arg = parts.get(1).copied().unwrap_or("").trim();
 

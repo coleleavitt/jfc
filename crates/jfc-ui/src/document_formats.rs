@@ -56,7 +56,7 @@
 //! file path with LOC, captured command output, or a docs reference).
 //! No evidence → leave it unchecked.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// One supported project doc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,7 +178,7 @@ commands + expected output over prose. No checkbox contracts."
     /// command fires. The model is told to inspect the project, then
     /// write the file at `target` using `Write`/`Edit`, honouring the
     /// format rules in [`Self::rules_summary`].
-    pub fn prompt_body(self, target: &PathBuf, exists: bool) -> String {
+    pub fn prompt_body(self, target: &Path, exists: bool) -> String {
         let verb_phrase = if exists { "update" } else { "create" };
         let rules = self.rules_summary();
         let starter = if exists {

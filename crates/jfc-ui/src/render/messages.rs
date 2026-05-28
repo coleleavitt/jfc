@@ -65,9 +65,7 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     // them. The new value is also passed into `PrebuiltItems` so the widget
     // sees it during paint instead of the (still-old) `app.scroll_offset`.
     let scroll_before = app.scroll_offset;
-    let new_scroll_offset = if app.follow_bottom {
-        total_lines.saturating_sub(visible)
-    } else if app.scroll_offset + visible > total_lines {
+    let new_scroll_offset = if app.follow_bottom || app.scroll_offset + visible > total_lines {
         total_lines.saturating_sub(visible)
     } else {
         app.scroll_offset
@@ -501,9 +499,7 @@ pub(super) fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_
                 .map(|i| i.height(inner_width))
                 .sum::<usize>()
         };
-        let new_scroll = if app.follow_bottom {
-            total_lines_est.saturating_sub(visible)
-        } else if app.scroll_offset + visible > total_lines_est {
+        let new_scroll = if app.follow_bottom || app.scroll_offset + visible > total_lines_est {
             total_lines_est.saturating_sub(visible)
         } else {
             app.scroll_offset
@@ -607,9 +603,7 @@ pub(super) fn messages_task_view(f: &mut Frame, app: &mut App, area: Rect, task_
             })
             .sum();
 
-        if app.follow_bottom {
-            app.scroll_offset = total_lines.saturating_sub(visible);
-        } else if app.scroll_offset + visible > total_lines {
+        if app.follow_bottom || app.scroll_offset + visible > total_lines {
             app.scroll_offset = total_lines.saturating_sub(visible);
         }
         app.total_lines = total_lines;
@@ -782,12 +776,12 @@ pub(super) fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
     if lo > 0 {
         spans.push(Span::styled("‹ ", Style::default().fg(t.text_muted)));
     }
-    for i in lo..=hi {
+    for (i, tab) in tabs.iter().enumerate().take(hi + 1).skip(lo) {
         if i > lo {
             spans.push(Span::styled(" · ", Style::default().fg(t.border)));
         }
         let sel = i == selected;
-        let glyph_style = Style::default().fg(tabs[i].color);
+        let glyph_style = Style::default().fg(tab.color);
         let title_style = if sel {
             Style::default()
                 .fg(t.text_primary)
@@ -797,14 +791,14 @@ pub(super) fn subagent_footer(f: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(t.text_muted)
         };
         spans.push(Span::styled(
-            format!("{} ", tabs[i].glyph),
+            format!("{} ", tab.glyph),
             if sel {
                 glyph_style.bg(t.surface_raised)
             } else {
                 glyph_style
             },
         ));
-        spans.push(Span::styled(tabs[i].title.clone(), title_style));
+        spans.push(Span::styled(tab.title.clone(), title_style));
     }
     if hi + 1 < n {
         spans.push(Span::styled(" ›", Style::default().fg(t.text_muted)));
@@ -865,135 +859,6 @@ fn pick_next_open_task(tasks: &[jfc_session::Task]) -> Option<&jfc_session::Task
                 .iter()
                 .find(|t| matches!(t.status, TaskStatus::Pending))
         })
-}
-
-#[cfg(test)]
-mod next_task_tests {
-    use super::*;
-    use jfc_session::{DeletedFilter, TaskStore};
-
-    #[test]
-    fn empty_store_returns_none_normal() {
-        let store = TaskStore::in_memory();
-        let tasks = store.list(DeletedFilter::Exclude);
-        assert!(pick_next_open_task(&tasks).is_none());
-    }
-
-    #[test]
-    fn single_pending_task_picked_normal() {
-        let store = TaskStore::in_memory();
-        store
-            .create(
-                "Wire spinner".into(),
-                String::new(),
-                None,
-                Vec::<String>::new(),
-            )
-            .unwrap();
-        let tasks = store.list(DeletedFilter::Exclude);
-        let picked = pick_next_open_task(&tasks).expect("should pick the pending task");
-        assert_eq!(picked.subject, "Wire spinner");
-    }
-
-    #[test]
-    fn in_progress_wins_over_pending_normal() {
-        // v126's `Next: ${m.subject}` shows the *active* task, not the
-        // queued one — what's running matters more than what's queued.
-        let store = TaskStore::in_memory();
-        let pending = store
-            .create(
-                "First (pending)".into(),
-                String::new(),
-                None,
-                Vec::<String>::new(),
-            )
-            .unwrap();
-        let active = store
-            .create(
-                "Second (will be in-progress)".into(),
-                String::new(),
-                None,
-                Vec::<String>::new(),
-            )
-            .unwrap();
-        store
-            .update(
-                active.id.as_str(),
-                jfc_session::TaskPatch {
-                    status: Some(jfc_session::TaskStatus::InProgress),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-        let tasks = store.list(DeletedFilter::Exclude);
-        let picked = pick_next_open_task(&tasks).expect("in-progress should win");
-        assert_eq!(picked.subject, "Second (will be in-progress)");
-        // Sanity: the pending task IS in the list, just not picked.
-        assert!(
-            tasks.iter().any(|t| t.id.as_str() == pending.id.as_str()),
-            "pending task should still be in the list"
-        );
-    }
-
-    #[test]
-    fn only_completed_returns_none_robust() {
-        let store = TaskStore::in_memory();
-        let t = store
-            .create(
-                "Done thing".into(),
-                String::new(),
-                None,
-                Vec::<String>::new(),
-            )
-            .unwrap();
-        store
-            .update(
-                t.id.as_str(),
-                jfc_session::TaskPatch {
-                    status: Some(jfc_session::TaskStatus::Completed),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-        let tasks = store.list(DeletedFilter::Exclude);
-        assert!(
-            pick_next_open_task(&tasks).is_none(),
-            "completed-only store should yield no open task"
-        );
-    }
-
-    #[test]
-    fn skips_completed_when_pending_exists_robust() {
-        let store = TaskStore::in_memory();
-        let done = store
-            .create(
-                "Already done".into(),
-                String::new(),
-                None,
-                Vec::<String>::new(),
-            )
-            .unwrap();
-        store
-            .update(
-                done.id.as_str(),
-                jfc_session::TaskPatch {
-                    status: Some(jfc_session::TaskStatus::Completed),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-        store
-            .create(
-                "Still queued".into(),
-                String::new(),
-                None,
-                Vec::<String>::new(),
-            )
-            .unwrap();
-        let tasks = store.list(DeletedFilter::Exclude);
-        let picked = pick_next_open_task(&tasks).expect("pending should be picked");
-        assert_eq!(picked.subject, "Still queued");
-    }
 }
 
 /// Single- or double-row spinner widget rendered between the message
@@ -1402,7 +1267,7 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
 
     // Header: a glanceable progress bar instead of "(99 done, 12 in
     // progress)" arithmetic. `tasks ███████░ 89% · 99/111`.
-    let pct = if total > 0 { done * 100 / total } else { 0 };
+    let pct = (done * 100).checked_div(total).unwrap_or(0);
     const BAR_W: usize = 10;
     let filled = (pct * BAR_W / 100).min(BAR_W);
     let bar: String = "█".repeat(filled);
@@ -1617,5 +1482,134 @@ pub(super) fn agent_fan_below_input(f: &mut Frame, app: &App, area: Rect) {
         render_teammate_tree(f, app, inner);
     } else {
         render_subagent_tree(f, app, inner);
+    }
+}
+
+#[cfg(test)]
+mod next_task_tests {
+    use super::*;
+    use jfc_session::{DeletedFilter, TaskStore};
+
+    #[test]
+    fn empty_store_returns_none_normal() {
+        let store = TaskStore::in_memory();
+        let tasks = store.list(DeletedFilter::Exclude);
+        assert!(pick_next_open_task(&tasks).is_none());
+    }
+
+    #[test]
+    fn single_pending_task_picked_normal() {
+        let store = TaskStore::in_memory();
+        store
+            .create(
+                "Wire spinner".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        let tasks = store.list(DeletedFilter::Exclude);
+        let picked = pick_next_open_task(&tasks).expect("should pick the pending task");
+        assert_eq!(picked.subject, "Wire spinner");
+    }
+
+    #[test]
+    fn in_progress_wins_over_pending_normal() {
+        // v126's `Next: ${m.subject}` shows the *active* task, not the
+        // queued one — what's running matters more than what's queued.
+        let store = TaskStore::in_memory();
+        let pending = store
+            .create(
+                "First (pending)".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        let active = store
+            .create(
+                "Second (will be in-progress)".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        store
+            .update(
+                active.id.as_str(),
+                jfc_session::TaskPatch {
+                    status: Some(jfc_session::TaskStatus::InProgress),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let tasks = store.list(DeletedFilter::Exclude);
+        let picked = pick_next_open_task(&tasks).expect("in-progress should win");
+        assert_eq!(picked.subject, "Second (will be in-progress)");
+        // Sanity: the pending task IS in the list, just not picked.
+        assert!(
+            tasks.iter().any(|t| t.id.as_str() == pending.id.as_str()),
+            "pending task should still be in the list"
+        );
+    }
+
+    #[test]
+    fn only_completed_returns_none_robust() {
+        let store = TaskStore::in_memory();
+        let t = store
+            .create(
+                "Done thing".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        store
+            .update(
+                t.id.as_str(),
+                jfc_session::TaskPatch {
+                    status: Some(jfc_session::TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let tasks = store.list(DeletedFilter::Exclude);
+        assert!(
+            pick_next_open_task(&tasks).is_none(),
+            "completed-only store should yield no open task"
+        );
+    }
+
+    #[test]
+    fn skips_completed_when_pending_exists_robust() {
+        let store = TaskStore::in_memory();
+        let done = store
+            .create(
+                "Already done".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        store
+            .update(
+                done.id.as_str(),
+                jfc_session::TaskPatch {
+                    status: Some(jfc_session::TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        store
+            .create(
+                "Still queued".into(),
+                String::new(),
+                None,
+                Vec::<String>::new(),
+            )
+            .unwrap();
+        let tasks = store.list(DeletedFilter::Exclude);
+        let picked = pick_next_open_task(&tasks).expect("pending should be picked");
+        assert_eq!(picked.subject, "Still queued");
     }
 }

@@ -432,10 +432,9 @@ pub async fn run_plan_recall(
         .cloned()
         .collect();
 
-    let block = match synthesize_plan_context(query, &selected, provider, model).await {
-        Ok(b) => b,
-        Err(_) => None,
-    };
+    let block: Option<String> = synthesize_plan_context(query, &selected, provider, model)
+        .await
+        .unwrap_or_default();
 
     cache_recall(query, block.clone());
     block

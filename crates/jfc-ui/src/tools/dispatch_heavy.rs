@@ -141,8 +141,8 @@ pub(super) fn execute_graph_query(
 }
 
 /// `graph_context` tool — build a codegraph_context-style markdown
-/// payload from a free-form task description. Composes search + BFS
-/// + type-hierarchy expansion + per-file diversity cap into one
+/// payload from a free-form task description. Composes search + BFS +
+/// type-hierarchy expansion + per-file diversity cap into one
 /// agent-friendly answer with feature/bug/exploration intent
 /// reminders. Use this FIRST for "how does X work" / architecture
 /// questions instead of chaining graph_search + graph_query.

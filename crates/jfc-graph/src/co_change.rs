@@ -234,7 +234,7 @@ pub fn fetch_git_history(workspace_root: &Path, max_commits: usize) -> Vec<Commi
         .args([
             "log",
             "--name-only",
-            &format!("--format=%H"),
+            "--format=%H",
             &format!("-n{}", max_commits),
         ])
         .current_dir(workspace_root)
@@ -482,7 +482,7 @@ src/baz.rs
         ];
 
         // Only ask for co-changes relative to foo.
-        let result = co_changes_for_nodes(&graph, &commits, &[id_foo.clone()], 1);
+        let result = co_changes_for_nodes(&graph, &commits, std::slice::from_ref(&id_foo), 1);
         // Every returned pair must include foo.
         for pair in &result.pairs {
             assert!(

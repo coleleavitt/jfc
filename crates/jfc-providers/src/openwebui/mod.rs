@@ -35,7 +35,7 @@ pub use self::verify::{fetch_instance_config, normalize_base_url, verify_token};
 /// Backwards-compat shim so the existing test-suite that calls `load_account(path)`
 /// continues to compile against the new modular store.
 #[cfg(test)]
-fn load_account(path: &PathBuf) -> anyhow::Result<Account> {
+fn load_account(path: &std::path::Path) -> anyhow::Result<Account> {
     let store = load_store(path);
     get_current(&store).ok_or_else(|| anyhow::anyhow!("no enabled OpenWebUI accounts in store"))
 }
@@ -267,12 +267,11 @@ pub fn infer_context_window_from_model_name(id: &str, name: Option<&str>) -> usi
     };
 
     if has("claude")
-        && (has("mythos") || (has("opus") && (has_version("4", "7") || has_version("4", "6"))))
+        && (has("mythos")
+            || (has("opus") && (has_version("4", "7") || has_version("4", "6")))
+            || (has("sonnet") && has_version("4", "6"))
+            || (has("opus") && has_version("4", "5")))
     {
-        1_000_000
-    } else if has("claude") && has("sonnet") && has_version("4", "6") {
-        1_000_000
-    } else if has("claude") && has("opus") && has_version("4", "5") {
         1_000_000
     } else if has("claude") {
         200_000
@@ -2633,7 +2632,7 @@ const BEDROCK_BLANK_TEXT_PLACEHOLDER: &str = ".";
 
 /// Replace any empty `content` strings on messages with the Bedrock placeholder.
 /// Mirrors `sanitizeMessageContent` in opencode's plugin/fetch.ts.
-fn bedrock_sanitize_messages(messages: &mut Vec<Value>) {
+fn bedrock_sanitize_messages(messages: &mut [Value]) {
     for msg in messages.iter_mut() {
         let Some(obj) = msg.as_object_mut() else {
             continue;
@@ -3570,7 +3569,7 @@ fn partial_prefix_suffix_len(buf: &str, needle: &str) -> usize {
     let max = needle.len().saturating_sub(1).min(buf.len());
     for k in (1..=max).rev() {
         let start = buf.len() - k;
-        if buf.is_char_boundary(start) && &buf[start..] == &needle[..k] {
+        if buf.is_char_boundary(start) && buf[start..] == needle[..k] {
             return k;
         }
     }

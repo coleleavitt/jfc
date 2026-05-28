@@ -1021,7 +1021,7 @@ pub async fn execute_tool(
                     }
                 }
                 // Fire push notification when proactive + sandboxed/away.
-                if status_str == "proactive" && delivered.len() > 0 {
+                if status_str == "proactive" && !delivered.is_empty() {
                     let body = if cap.is_empty() {
                         format!("{} file(s) delivered", delivered.len())
                     } else {
@@ -1126,10 +1126,10 @@ pub async fn execute_tool(
             let servers = registry.list().await;
             let mut result = String::new();
             for s in &servers {
-                if let Some(ref filter) = server {
-                    if s.name != *filter {
-                        continue;
-                    }
+                if let Some(ref filter) = server
+                    && s.name != *filter
+                {
+                    continue;
                 }
                 result.push_str(&format!("## {}\n", s.name));
                 for res in &s.resources {

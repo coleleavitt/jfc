@@ -20,7 +20,7 @@
 //! effort and shouldn't block the TUI.
 
 use notify::{RecursiveMode, Watcher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -203,7 +203,7 @@ fn spawn_watcher() -> Result<(), String> {
 ///
 /// `keybindings_path_option` is always `Some(...)` — we always want to watch
 /// it. It's separated from config_paths so the closure can identify it.
-fn candidate_paths(keybindings_path: &PathBuf) -> (Vec<PathBuf>, Option<PathBuf>) {
+fn candidate_paths(keybindings_path: &Path) -> (Vec<PathBuf>, Option<PathBuf>) {
     let mut out: Vec<PathBuf> = Vec::new();
     let cwd = std::env::current_dir().ok();
     if let Some(ref c) = cwd {
@@ -235,7 +235,7 @@ fn candidate_paths(keybindings_path: &PathBuf) -> (Vec<PathBuf>, Option<PathBuf>
             out.push(user_settings);
         }
     }
-    (out, Some(keybindings_path.clone()))
+    (out, Some(keybindings_path.to_path_buf()))
 }
 
 #[cfg(test)]

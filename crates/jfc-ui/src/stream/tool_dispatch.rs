@@ -32,6 +32,7 @@ impl LocalAdvisorDispatchContext {
 }
 
 #[tracing::instrument(target = "jfc::stream", skip(tx, dedup, task_store, provider, model, teammate_event_tx, local_advisor), fields(n = tool_calls.len()))]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn dispatch_tools_batched(
     tool_calls: Vec<ToolCall>,
     tx: &mpsc::Sender<AppEvent>,
@@ -131,22 +132,22 @@ pub(crate) fn dispatch_tools_batched(
         // one in-progress task in the store (the one the factory claimed),
         // auto-link this delegation to it. This makes task auto-completion
         // deterministic even when the model forgets to pass the field.
-        if task_input.parent_task_id.is_none() {
-            if let Some(ref store) = task_store {
-                let in_progress: Vec<_> = store
-                    .list_all()
-                    .into_iter()
-                    .filter(|t| t.status == jfc_session::TaskStatus::InProgress)
-                    .collect();
-                if in_progress.len() == 1 {
-                    let inferred_id = in_progress[0].id.clone();
-                    tracing::info!(
-                        target: "jfc::stream",
-                        inferred_parent = %inferred_id,
-                        "auto-linking Task delegation to sole in-progress task"
-                    );
-                    task_input.parent_task_id = Some(inferred_id.to_string());
-                }
+        if task_input.parent_task_id.is_none()
+            && let Some(ref store) = task_store
+        {
+            let in_progress: Vec<_> = store
+                .list_all()
+                .into_iter()
+                .filter(|t| t.status == jfc_session::TaskStatus::InProgress)
+                .collect();
+            if in_progress.len() == 1 {
+                let inferred_id = in_progress[0].id.clone();
+                tracing::info!(
+                    target: "jfc::stream",
+                    inferred_parent = %inferred_id,
+                    "auto-linking Task delegation to sole in-progress task"
+                );
+                task_input.parent_task_id = Some(inferred_id.to_string());
             }
         }
 
@@ -630,23 +631,22 @@ fn spawn_workflow(
 
         // ── named-workflow permission gate ──────────────────────────────
         let config = crate::config::load();
-        match crate::workflows::permissions::decide(&config, name.as_deref()) {
-            crate::workflows::permissions::WorkflowPermission::Deny => {
-                send_workflow_result(
-                    &tx,
-                    &tool_id,
-                    crate::runtime::ExecutionResult::failure(format!(
-                        "Workflow '{}' is denied by permission rules",
-                        meta.name
-                    )),
-                );
-                done();
-                return;
-            }
-            // Allow and Ask both proceed here — the upstream opt-in
-            // (ultrawork / explicit request) is the gate for Ask; a future
-            // interactive dialog can refine this.
-            _ => {}
+        // Allow and Ask both proceed here — the upstream opt-in
+        // (ultrawork / explicit request) is the gate for Ask; a future
+        // interactive dialog can refine this.
+        if crate::workflows::permissions::decide(&config, name.as_deref())
+            == crate::workflows::permissions::WorkflowPermission::Deny
+        {
+            send_workflow_result(
+                &tx,
+                &tool_id,
+                crate::runtime::ExecutionResult::failure(format!(
+                    "Workflow '{}' is denied by permission rules",
+                    meta.name
+                )),
+            );
+            done();
+            return;
         }
 
         // ── runId + session dir + persist inline script ─────────────────

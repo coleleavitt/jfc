@@ -335,11 +335,9 @@ impl ClaudeMdHierarchy {
             &self.project_dot,
             &self.local,
         ];
-        for layer in layers {
-            if let Some((_path, content)) = layer {
-                let (fm, _body) = parse_claudemd_frontmatter(content);
-                tools.extend(fm.disallowed_tools);
-            }
+        for (_path, content) in layers.into_iter().flatten() {
+            let (fm, _body) = parse_claudemd_frontmatter(content);
+            tools.extend(fm.disallowed_tools);
         }
         // Deduplicate while preserving order
         let mut seen = std::collections::HashSet::new();
@@ -389,6 +387,21 @@ pub fn build_system_prompt(claude_md: Option<&str>) -> Option<String> {
         "build_system_prompt"
     );
     Some(result)
+}
+
+/// Walk up from CWD to find the nearest `.git` directory and return its parent.
+/// Used at startup to anchor the project-level task store before the app's
+/// lazy-resolved `git_root` is available.
+pub fn discover_git_root() -> Option<PathBuf> {
+    let mut dir = std::env::current_dir().ok()?;
+    loop {
+        if dir.join(".git").exists() {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -719,20 +732,5 @@ mod tests {
         let content = "---\ndisallowed-tools:  Bash , Write , Edit \n---\nBody";
         let (fm, _body) = parse_claudemd_frontmatter(content);
         assert_eq!(fm.disallowed_tools, vec!["Bash", "Write", "Edit"]);
-    }
-}
-
-/// Walk up from CWD to find the nearest `.git` directory and return its parent.
-/// Used at startup to anchor the project-level task store before the app's
-/// lazy-resolved `git_root` is available.
-pub fn discover_git_root() -> Option<PathBuf> {
-    let mut dir = std::env::current_dir().ok()?;
-    loop {
-        if dir.join(".git").exists() {
-            return Some(dir);
-        }
-        if !dir.pop() {
-            return None;
-        }
     }
 }

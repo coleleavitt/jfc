@@ -42,24 +42,24 @@ pub fn register_session(prompt: String) -> String {
 
 /// Mark a session's plan as ready (called when subagent invokes ExitPlanMode).
 pub fn complete_session(id: &str, plan: String) -> bool {
-    if let Ok(mut g) = ACTIVE_SESSIONS.lock() {
-        if let Some(s) = g.iter_mut().find(|s| s.id == id) {
-            s.phase = UltraplanPhase::PlanReady;
-            s.plan = Some(plan);
-            return true;
-        }
+    if let Ok(mut g) = ACTIVE_SESSIONS.lock()
+        && let Some(s) = g.iter_mut().find(|s| s.id == id)
+    {
+        s.phase = UltraplanPhase::PlanReady;
+        s.plan = Some(plan);
+        return true;
     }
     false
 }
 
 /// Teleport a session — its plan becomes available to the parent. Returns the plan.
 pub fn teleport(id: &str) -> Option<String> {
-    if let Ok(mut g) = ACTIVE_SESSIONS.lock() {
-        if let Some(idx) = g.iter().position(|s| s.id == id) {
-            let mut s = g.remove(idx);
-            s.phase = UltraplanPhase::Teleported;
-            return s.plan;
-        }
+    if let Ok(mut g) = ACTIVE_SESSIONS.lock()
+        && let Some(idx) = g.iter().position(|s| s.id == id)
+    {
+        let mut s = g.remove(idx);
+        s.phase = UltraplanPhase::Teleported;
+        return s.plan;
     }
     None
 }

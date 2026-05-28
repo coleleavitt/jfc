@@ -315,6 +315,7 @@ impl<'de> Deserialize<'de> for ContentBlock {
 }
 
 #[derive(Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum Delta {
     TextDelta { text: String },
     ThinkingDelta { thinking: String },
@@ -2083,7 +2084,7 @@ mod tests {
             &mut blocks,
             &mut sr,
         );
-        if let Some(Some(BlockState::ServerToolUse { input, .. })) = blocks.get(0) {
+        if let Some(Some(BlockState::ServerToolUse { input, .. })) = blocks.first() {
             assert!(input.is_empty(), "null input should become empty string");
         } else {
             panic!("expected ServerToolUse block state");

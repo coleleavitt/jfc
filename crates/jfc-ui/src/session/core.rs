@@ -300,12 +300,11 @@ mod disk_io_tests {
         deserialize_part, deserialize_tool_input, deserialize_tool_input_for_kind,
     };
     use super::super::serialization::{SerializedPart, SerializedToolInput, SerializedToolOutput};
-    use super::super::serialize::{serialize_part, serialize_tool_input, serialize_tool_output};
+    use super::super::serialize::serialize_tool_input;
     use super::*;
     use crate::ids::SessionId;
     use crate::types::{
         ChatMessage, TaskInput, ToolCall, ToolInput, ToolKind, ToolOutput, ToolStatus,
-        validate_turn_invariants,
     };
     use jfc_session::{
         list_sessions, list_sessions_filtered, load_session_metadata, most_recent_session,

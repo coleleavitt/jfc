@@ -189,12 +189,11 @@ pub fn load_profile_config(profile: Option<&str>) -> Result<AuthConfig> {
             .ok()
             .filter(|s| !s.is_empty());
     }
-    if config.scopes.is_none() {
-        if let Ok(scope) = std::env::var("ANTHROPIC_SCOPE") {
-            if !scope.is_empty() {
-                config.scopes = Some(scope.split(',').map(|s| s.trim().to_owned()).collect());
-            }
-        }
+    if config.scopes.is_none()
+        && let Ok(scope) = std::env::var("ANTHROPIC_SCOPE")
+        && !scope.is_empty()
+    {
+        config.scopes = Some(scope.split(',').map(|s| s.trim().to_owned()).collect());
     }
 
     // Overlay OIDC-specific env vars
@@ -204,10 +203,10 @@ pub fn load_profile_config(profile: Option<&str>) -> Result<AuthConfig> {
                 .ok()
                 .filter(|s| !s.is_empty());
         }
-        if let Ok(rule_id) = std::env::var("ANTHROPIC_FEDERATION_RULE_ID") {
-            if !rule_id.is_empty() {
-                oidc.federation_rule_id = rule_id;
-            }
+        if let Ok(rule_id) = std::env::var("ANTHROPIC_FEDERATION_RULE_ID")
+            && !rule_id.is_empty()
+        {
+            oidc.federation_rule_id = rule_id;
         }
         if oidc.service_account_id.is_none() {
             oidc.service_account_id = std::env::var("ANTHROPIC_SERVICE_ACCOUNT_ID")
@@ -272,12 +271,11 @@ impl ResolvedToken {
 /// Read the identity token for OIDC federation.
 fn read_identity_token(oidc: &OidcFederationAuth) -> Result<String> {
     // Try env var first (identity_token_env), then file
-    if let Some(ref env_var) = oidc.identity_token_env {
-        if let Ok(token) = std::env::var(env_var) {
-            if !token.is_empty() {
-                return Ok(token.trim().to_owned());
-            }
-        }
+    if let Some(ref env_var) = oidc.identity_token_env
+        && let Ok(token) = std::env::var(env_var)
+        && !token.is_empty()
+    {
+        return Ok(token.trim().to_owned());
     }
 
     if let Some(ref file_path) = oidc.identity_token_file {

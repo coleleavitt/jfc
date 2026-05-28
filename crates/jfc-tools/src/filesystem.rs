@@ -62,12 +62,12 @@ pub async fn write_file(file_path: &str, content: &str) -> ExecutionResult {
             "write: path must be absolute (got '{file_path}')"
         ));
     }
-    if let Some(parent) = path.parent() {
-        if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            return ExecutionResult::failure(format!(
-                "write: cannot create parent dirs for {file_path}: {e}"
-            ));
-        }
+    if let Some(parent) = path.parent()
+        && let Err(e) = tokio::fs::create_dir_all(parent).await
+    {
+        return ExecutionResult::failure(format!(
+            "write: cannot create parent dirs for {file_path}: {e}"
+        ));
     }
     match tokio::fs::write(path, content).await {
         Ok(_) => ExecutionResult::success(format!(

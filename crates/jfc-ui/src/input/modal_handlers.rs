@@ -89,11 +89,9 @@ fn handle_teammates_panel_key(app: &mut App, key: event::KeyEvent) -> bool {
         KeyCode::Up | KeyCode::Char('k') => {
             move_agent_selection(app, -1);
         }
-        KeyCode::Enter => {
-            if app.viewing_task_id.is_some() {
-                app.expanded_view = ExpandedView::None;
-                app.scroll_to_bottom();
-            }
+        KeyCode::Enter if app.viewing_task_id.is_some() => {
+            app.expanded_view = ExpandedView::None;
+            app.scroll_to_bottom();
         }
         _ => {}
     }

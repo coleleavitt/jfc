@@ -837,7 +837,7 @@ fn fire_cron_advances_last_run_normal() {
 fn cleanup_old_sessions_normal() {
     let (mut daemon, _tmp) = test_daemon();
     let id = daemon.start_session("old", None, Path::new("/tmp"));
-    daemon.update_session_status(&id, SessionStatus::Completed);
+    daemon.update_session_status(id.as_str(), SessionStatus::Completed);
     daemon.cleanup_old_sessions(Duration::from_secs(0));
     assert!(daemon.state.sessions.is_empty());
 }

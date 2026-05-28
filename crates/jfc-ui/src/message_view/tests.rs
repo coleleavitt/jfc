@@ -633,7 +633,6 @@ mod grep_pattern_extraction_tests {
 mod grep_body_highlight_tests {
     use super::*;
     use crate::theme::Theme;
-    use ratatui::style::Style;
 
     #[test]
     fn produce_grep_output_highlights_pattern_match_normal() {

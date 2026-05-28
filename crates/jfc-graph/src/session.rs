@@ -506,7 +506,7 @@ impl GraphSession {
 
         // Sort files by number of matched symbols descending, take up to max_files.
         let mut file_list: Vec<_> = file_nodes.into_iter().collect();
-        file_list.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+        file_list.sort_by_key(|b| std::cmp::Reverse(b.1.len()));
         file_list.truncate(max_files);
 
         let mut out = String::new();

@@ -155,7 +155,7 @@ pub fn list_checkpoints() -> io::Result<Vec<CheckpointEntry>> {
         };
         entries.push(parsed);
     }
-    entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    entries.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
     Ok(entries)
 }
 

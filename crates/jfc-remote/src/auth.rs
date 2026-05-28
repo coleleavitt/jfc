@@ -132,7 +132,7 @@ impl SeqTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{PROTOCOL_VERSION, RemoteEnvelope};
+    use crate::protocol::RemoteEnvelope;
 
     #[test]
     fn token_generation_is_44_chars() {

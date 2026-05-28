@@ -93,9 +93,9 @@ pub fn perimeter_cells(area: Rect) -> Vec<(u16, u16)> {
     // idle/streaming where geometry is fixed. Invalidate on Rect change
     // (resize, layout shift); LRU-of-1 is enough since paint_border_comets
     // is the only non-test caller.
+    type CometCache = std::cell::RefCell<Option<(Rect, Vec<(u16, u16)>)>>;
     thread_local! {
-        static LAST: std::cell::RefCell<Option<(Rect, Vec<(u16, u16)>)>> =
-            const { std::cell::RefCell::new(None) };
+        static LAST: CometCache = const { std::cell::RefCell::new(None) };
     }
     LAST.with(|slot| {
         let mut slot = slot.borrow_mut();

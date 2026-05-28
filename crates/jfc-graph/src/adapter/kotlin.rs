@@ -104,7 +104,7 @@ fn walk_kotlin(
             if let Some(name) = find_name(&node, source) {
                 // Check if it's an interface or enum class
                 let first_child_kind = node.child(0).map(|c| text(&c, source));
-                if first_child_kind.as_deref() == Some("interface") {
+                if first_child_kind == Some("interface") {
                     out.push(build_nd(
                         &name,
                         NodeKind::Trait,
@@ -116,7 +116,7 @@ fn walk_kotlin(
                     walk_children(node, source, file_path, path_str, out, Some(&name));
                     return;
                 }
-                if first_child_kind.as_deref() == Some("enum") {
+                if first_child_kind == Some("enum") {
                     out.push(build_nd(
                         &name,
                         NodeKind::Enum,
@@ -264,7 +264,7 @@ fn extract_inheritance(
         if let Some(name) = find_name(&node, source) {
             // Determine source kind based on first keyword
             let first_kw = node.child(0).map(|c| text(&c, source));
-            let kind = match first_kw.as_deref() {
+            let kind = match first_kw {
                 Some("interface") => NodeKind::Trait,
                 _ => NodeKind::Struct,
             };

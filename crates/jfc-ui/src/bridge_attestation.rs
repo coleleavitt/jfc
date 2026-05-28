@@ -103,7 +103,7 @@ fn verify_ed25519_signature(public_key: &PublicKey, message: &[u8], signature: &
     // Compute the challenge hash H(R || A || M) per RFC 8032 §5.1.7
     let mut hasher = Sha512::new();
     hasher.update(&signature.0[..32]); // R (first 32 bytes of signature)
-    hasher.update(&public_key.0); // A (public key)
+    hasher.update(public_key.0); // A (public key)
     hasher.update(message); // M (message)
     let _h = hasher.finalize();
 

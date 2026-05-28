@@ -41,20 +41,17 @@ pub use safe_tools::all_tool_defs_with_mcp;
 pub(crate) use economy::market_report_string;
 // Used by the test suite (tools/tests.rs is #[path]-included into the test
 // module below), not by the non-test build — hence the cfg guard.
-#[cfg(test)]
-pub(crate) use economy::{EconomyAgentInvoker, EconomySwarmProvider, apply_winning_solution};
 
 // subagent
 pub(crate) use subagent::{execute_task, selected_subagent_model};
 
 // tasks / skills
-#[cfg(test)]
-pub(crate) use tasks::execute_skill;
 
 // swarm
 pub(crate) use swarm::CURRENT_AGENT_NAME;
 
 // registry
+#[allow(unused_imports)]
 pub(crate) use registry::get_or_build_graph_session;
 #[cfg(test)]
 pub(crate) use registry::invalidate_graph_session_cache;

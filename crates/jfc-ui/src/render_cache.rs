@@ -25,9 +25,9 @@ const MAX_ENTRIES: usize = 512;
 struct CacheEntry {
     lines: Vec<Line<'static>>,
     /// Total number of *visual* rows after word-wrapping at the entry's
-    /// stored `width`. Computing this requires instantiating a `Paragraph`
-    /// + `WordWrapper` per line which is itself the second-largest hot
-    /// spot in the renderer (see `crates/jfc-ui/src/message_view.rs:64-74`
+    /// stored `width`. Computing this requires instantiating a `Paragraph` +
+    /// `WordWrapper` per line which is itself the second-largest hot spot
+    /// in the renderer (see `crates/jfc-ui/src/message_view.rs:64-74`
     /// pre-cache). Caching it here turns an O(lines × graphemes) per-frame
     /// computation into a single hash lookup.
     #[allow(dead_code)]

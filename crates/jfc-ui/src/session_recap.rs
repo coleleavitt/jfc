@@ -137,7 +137,7 @@ fn group_tool_calls(calls: &[String]) -> Vec<(String, usize)> {
         }
     }
     // Sort by count descending
-    counts.sort_by(|a, b| b.1.cmp(&a.1));
+    counts.sort_by_key(|b| std::cmp::Reverse(b.1));
     counts
 }
 

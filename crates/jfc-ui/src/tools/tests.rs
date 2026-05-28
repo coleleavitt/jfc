@@ -734,11 +734,13 @@ async fn post_bounty_default_returns_actionable_message_normal() {
 
 // ─── agent economy cycle (real LLM-driven path) ───────────────────
 
-/// Stub AgentInvoker for cycle tests — returns canned solutions
-/// + validator outcomes without hitting any network. Each call
+/// Stub AgentInvoker for cycle tests — returns canned solutions +
+/// validator outcomes without hitting any network. Each call
 /// records the prompt for assertion.
 struct StubInvoker {
+    #[allow(dead_code)]
     solutions: std::sync::Mutex<Vec<jfc_economy::types::Solution>>,
+    #[allow(dead_code)]
     validator_outcomes: std::sync::Mutex<Vec<jfc_economy::reporting::ValidatorOutcome>>,
     solver_calls: std::sync::Mutex<usize>,
     validator_calls: std::sync::Mutex<usize>,
@@ -776,7 +778,7 @@ impl jfc_economy::reporting::AgentInvoker for StubInvoker {
     }
     async fn invoke_validator(
         &self,
-        #[allow(dead_code)] prompt: jfc_economy::reporting::ValidatorPrompt,
+        #[allow(dead_code)] _prompt: jfc_economy::reporting::ValidatorPrompt,
     ) -> Result<jfc_economy::reporting::ValidatorOutcome, String> {
         *self.validator_calls.lock().unwrap() += 1;
         Ok(jfc_economy::reporting::ValidatorOutcome {

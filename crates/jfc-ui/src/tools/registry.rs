@@ -125,12 +125,11 @@ fn newest_source_mtime(workspace_root: &std::path::Path) -> Option<std::time::Sy
         if !extensions.contains(&ext) {
             continue;
         }
-        if let Ok(meta) = path.metadata() {
-            if let Ok(mtime) = meta.modified() {
-                if mtime > newest {
-                    newest = mtime;
-                }
-            }
+        if let Ok(meta) = path.metadata()
+            && let Ok(mtime) = meta.modified()
+            && mtime > newest
+        {
+            newest = mtime;
         }
     }
 
@@ -246,6 +245,7 @@ pub fn invalidate_graph_session_cache(cwd: Option<&std::path::Path>) {
     }
     // Keep the auto-context cache (intent.rs) in sync — it holds its own
     // Arc<GraphSession> which would otherwise serve stale data.
+    #[cfg(feature = "intent-gate")]
     crate::intent::clear_auto_context_cache();
 }
 
@@ -298,11 +298,10 @@ pub(super) fn collusion_detector()
 /// needs to spin up sub-LLM calls without changing every signature
 /// of `execute_tool`. RwLock so future model swaps can update it
 /// without restarting the process.
-fn active_provider_handle()
--> &'static std::sync::RwLock<Option<(Arc<dyn jfc_provider::Provider>, jfc_provider::ModelId)>> {
-    static H: OnceLock<
-        std::sync::RwLock<Option<(Arc<dyn jfc_provider::Provider>, jfc_provider::ModelId)>>,
-    > = OnceLock::new();
+type ActiveProvider = Option<(Arc<dyn jfc_provider::Provider>, jfc_provider::ModelId)>;
+
+fn active_provider_handle() -> &'static std::sync::RwLock<ActiveProvider> {
+    static H: OnceLock<std::sync::RwLock<ActiveProvider>> = OnceLock::new();
     H.get_or_init(|| std::sync::RwLock::new(None))
 }
 
