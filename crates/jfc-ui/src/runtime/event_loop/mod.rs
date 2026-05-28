@@ -1133,6 +1133,10 @@ pub(crate) async fn run(
 /// Walk the config to pick the right `reasoning_effort` for `model`.
 ///
 /// Precedence (first hit wins):
+///   0. ANY layer's `ultracode = true` → force `"xhigh"` (matches CC 2.1.154's
+///      `e$7` which returns "xhigh" whenever `settings.ultracode === true`
+///      regardless of `effortLevel`). Checked in narrow-to-wide order so an
+///      agent-level `ultracode = false` can opt out of a `[default]` ultracode.
 ///   1. `[agents.<exact-model-id>]` — direct match on the full model id
 ///   2. `[agents.<bare-model-id>]` — match the model id without provider prefix
 ///   3. `[default]` — fallback effort if no agent block matches
@@ -1140,6 +1144,27 @@ pub(crate) async fn run(
 /// Returns `None` when none of those layers define an effort, so we leave
 /// the runtime at "server default" instead of forcing medium.
 fn resolve_effort_for_model(cfg: &crate::config::Config, model: &str) -> Option<String> {
+    let bare = model.rsplit('/').next().unwrap_or(model);
+    // 0: ultracode override — first explicit boolean wins (narrow → wide).
+    // `Some(true)` forces xhigh; `Some(false)` opts out for that layer and
+    // also short-circuits broader layers (mirrors the way explicit settings
+    // override defaults in CC's settings merge).
+    let ultracode_override = [
+        cfg.agents.get(model).and_then(|a| a.ultracode),
+        (bare != model)
+            .then(|| cfg.agents.get(bare).and_then(|a| a.ultracode))
+            .flatten(),
+        cfg.default.ultracode,
+    ]
+    .into_iter()
+    .find_map(|layer| layer);
+    if let Some(ultracode) = ultracode_override {
+        return if ultracode {
+            Some("xhigh".to_owned())
+        } else {
+            None
+        };
+    }
     // 1: exact model id (e.g. "anthropic/claude-opus-4-7")
     if let Some(agent) = cfg.agents.get(model)
         && let Some(ref e) = agent.reasoning_effort
@@ -1147,7 +1172,6 @@ fn resolve_effort_for_model(cfg: &crate::config::Config, model: &str) -> Option<
         return Some(e.clone());
     }
     // 2: bare id after the provider slash (e.g. "claude-opus-4-7")
-    let bare = model.rsplit('/').next().unwrap_or(model);
     if bare != model
         && let Some(agent) = cfg.agents.get(bare)
         && let Some(ref e) = agent.reasoning_effort
@@ -1211,6 +1235,72 @@ mod effort_resolve_tests {
         assert_eq!(
             resolve_effort_for_model(&cfg, "anthropic/claude-opus-4-7"),
             None
+        );
+    }
+
+    // ── ultracode override (CC 2.1.154 e$7 parity) ─────────────────────────
+
+    // Normal: [default] ultracode = true overrides every effort layer.
+    #[test]
+    fn ultracode_default_forces_xhigh_normal() {
+        let mut cfg = cfg_with(Some("low"), &[("claude-opus-4-7", "medium")]);
+        cfg.default.ultracode = Some(true);
+        assert_eq!(
+            resolve_effort_for_model(&cfg, "anthropic/claude-opus-4-7"),
+            Some("xhigh".to_string()),
+            "ultracode must force xhigh"
+        );
+    }
+
+    // Normal: [agents.<id>] ultracode = true forces xhigh for that model
+    // even when [default] has a different effort.
+    #[test]
+    fn ultracode_agent_forces_xhigh_normal() {
+        let mut cfg = cfg_with(Some("low"), &[]);
+        cfg.agents.insert(
+            "claude-opus-4-7".into(),
+            AgentConfig {
+                ultracode: Some(true),
+                reasoning_effort: Some("medium".into()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            resolve_effort_for_model(&cfg, "anthropic/claude-opus-4-7"),
+            Some("xhigh".to_string())
+        );
+    }
+
+    // Robust: agent ultracode = false opts out of [default] ultracode and
+    // also short-circuits effort fall-through (matches "explicit narrow
+    // wins over broad default" semantics).
+    #[test]
+    fn ultracode_agent_false_opts_out_of_default_robust() {
+        let mut cfg = cfg_with(Some("low"), &[]);
+        cfg.default.ultracode = Some(true);
+        cfg.agents.insert(
+            "claude-opus-4-7".into(),
+            AgentConfig {
+                ultracode: Some(false),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            resolve_effort_for_model(&cfg, "anthropic/claude-opus-4-7"),
+            None,
+            "explicit agent ultracode=false must opt out of [default] ultracode"
+        );
+    }
+
+    // Robust: ultracode = None at every layer is invisible — the normal
+    // effort precedence applies unchanged. Pins backwards-compat with
+    // existing configs.
+    #[test]
+    fn ultracode_unset_uses_normal_effort_precedence_robust() {
+        let cfg = cfg_with(Some("high"), &[]);
+        assert_eq!(
+            resolve_effort_for_model(&cfg, "anthropic/claude-opus-4-7"),
+            Some("high".to_string())
         );
     }
 }

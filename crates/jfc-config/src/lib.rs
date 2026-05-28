@@ -389,6 +389,15 @@ pub struct AgentConfig {
     pub ultrawork_model: Option<String>,
     #[serde(default)]
     pub text_verbosity: Option<String>,
+    /// When true, force xhigh effort regardless of `reasoning_effort`.
+    /// Mirrors Claude Code 2.1.154's `ultracode` settings key — CC's `e$7`
+    /// returns "xhigh" whenever `settings.ultracode === true`, ignoring the
+    /// otherwise-resolved effort level. Session-scoped in CC (provided via
+    /// `--settings` / `apply_flag_settings`, not persisted by interactive
+    /// toggles); in jfc the same flag at `[default]` or `[agents.<id>]` does
+    /// the same job through `resolve_effort_for_model`.
+    #[serde(default)]
+    pub ultracode: Option<bool>,
 }
 
 /// A fallback model entry.

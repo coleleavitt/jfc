@@ -94,7 +94,7 @@ Default bias: **port what affects parity with users on `latest`**, document ever
 
 ### Recommend documenting (don't port yet)
 
-4. **`ultracode` setting** — semantically big (xhigh + dynamic-workflow orchestration). We have effort levels and workflows, but the orchestration semantics differ. Wants a design pass.
+4. ~~**`ultracode` setting**~~ — **ported** in follow-up. The "force xhigh effort" half maps cleanly to `[default]` / `[agents.*]` toml; CC's `e$7` "ultracode wins over effortLevel" semantics mirrored in `resolve_effort_for_model` (precedence 0). The "standing dynamic-workflow orchestration" half is jfc-orthogonal — our workflow runner is its own thing.
 5. **Bare browser tools / `browser_batch`** — these are MCP-side schemas, not core runtime. If we want browser automation we should consume the `claude-in-chrome` MCP via the existing MCP plumbing, not bake schemas into jfc.
 6. **`claude-code-docs` skill** — built-in skill for self-documentation. Out of scope for jfc; users have their own docs.
 7. **`tengu_birch_kettle` / `tengu_basalt_meadow` / `tengu_cobalt_thicket`** — Anthropic-internal LaunchDarkly flags. No-op for us.
