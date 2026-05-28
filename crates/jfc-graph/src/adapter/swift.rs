@@ -8,7 +8,6 @@
 //! - Enums → `NodeKind::Enum`
 //! - Call edges, inheritance/conformance edges.
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use tree_sitter::{Node as TsNode, Parser};
@@ -16,7 +15,7 @@ use tree_sitter::{Node as TsNode, Parser};
 use crate::adapter::{AdapterError, LanguageAdapter, ParsedFile};
 use crate::complexity::compute_complexity;
 use crate::edges::{EdgeData, EdgeKind};
-use crate::nodes::{NodeData, NodeId, NodeKind, Span, Visibility};
+use crate::nodes::{NodeData, NodeId, NodeKind};
 
 pub struct SwiftAdapter;
 
@@ -356,41 +355,8 @@ fn text<'a>(node: &TsNode, source: &'a str) -> &'a str {
     &source[node.byte_range()]
 }
 
-fn span_from(node: TsNode, file_path: &Path) -> Span {
-    Span {
-        file: file_path.to_path_buf(),
-        start_line: node.start_position().row as u32 + 1,
-        start_col: node.start_position().column as u32,
-        end_line: node.end_position().row as u32 + 1,
-        end_col: node.end_position().column as u32,
-        byte_range: node.byte_range(),
-    }
-}
+use super::{build_nd, build_span as span_from};
 
-fn build_nd(
-    name: &str,
-    kind: NodeKind,
-    node: TsNode,
-    file_path: &Path,
-    path_str: &str,
-    qualified_name: &str,
-) -> NodeData {
-    NodeData {
-        id: NodeId::new(path_str, qualified_name, kind),
-        name: name.to_string(),
-        qualified_name: qualified_name.to_string(),
-        kind,
-        file_path: file_path.to_path_buf(),
-        span: span_from(node, file_path),
-        visibility: Visibility::Public,
-        complexity: None,
-        cfg: None,
-        dataflow: None,
-        metadata: HashMap::new(),
-        birth_revision: 0,
-        last_modified_revision: 0,
-    }
-}
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 

@@ -20,9 +20,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use tree_sitter::Node as TsNode;
+
 use crate::call_site::CallSite;
 use crate::edges::EdgeData;
-use crate::nodes::{NodeData, NodeId};
+use crate::nodes::{NodeData, NodeId, NodeKind, Span, Visibility};
 
 /// Parsed file representation — holds tree-sitter Tree + source.
 pub struct ParsedFile {
@@ -206,10 +208,57 @@ pub fn first_syntax_error(
     None
 }
 
+// ─── Shared adapter helpers ──────────────────────────────────────────────────
+//
+// These are used by every language adapter. They live here to avoid duplicating
+// the same ~30 lines of boilerplate in every adapter file.
+
+/// Extract the source text spanned by `node`, returning an owned `String`.
+pub(super) fn node_text(node: TsNode<'_>, source: &str) -> String {
+    source[node.byte_range()].to_string()
+}
+
+/// Build a [`Span`] from a tree-sitter node and the file path it came from.
+pub(super) fn build_span(node: TsNode<'_>, path: &Path) -> Span {
+    Span {
+        file: path.to_path_buf(),
+        start_line: node.start_position().row as u32 + 1,
+        start_col: node.start_position().column as u32,
+        end_line: node.end_position().row as u32 + 1,
+        end_col: node.end_position().column as u32,
+        byte_range: node.byte_range(),
+    }
+}
+
+/// Build a [`NodeData`] with public visibility and no metadata or analysis
+/// fields. Used by adapters that do their own visibility resolution later, or
+/// that default to public (most non-Rust adapters).
+pub(super) fn build_nd(
+    name: &str,
+    kind: NodeKind,
+    node: TsNode<'_>,
+    path: &Path,
+    path_str: &str,
+    qn: &str,
+) -> NodeData {
+    NodeData {
+        id: NodeId::new(path_str, qn, kind),
+        kind,
+        name: name.to_string(),
+        qualified_name: qn.to_string(),
+        file_path: path.to_path_buf(),
+        span: build_span(node, path),
+        visibility: Visibility::Public,
+        metadata: HashMap::new(),
+        birth_revision: 0,
+        last_modified_revision: 0,
+        complexity: None,
+        cfg: None,
+        dataflow: None,
+    }
+}
+
 /// Registry that maps file extensions to language adapters.
-///
-/// Stores adapters by `language_id` and maintains a separate extension → language_id
-/// lookup table, allowing one adapter to serve multiple file extensions.
 pub struct AdapterRegistry {
     adapters: HashMap<String, Arc<dyn LanguageAdapter>>,
     extension_map: HashMap<String, String>,

@@ -360,7 +360,7 @@ mod tests {
         let big = g.add_node(node_with_span("Big", NodeKind::Struct, 1, 600));
         let small = g.add_node(node_with_span("small", NodeKind::Function, 100, 110));
         let roots = HashSet::new();
-        let ranges = build_ranges(&g, &[big.clone(), small.clone()], &roots, 1000);
+        let ranges = build_ranges(&g, &[big, small], &roots, 1000);
         // Big struct covers 600/1000 → dropped.
         assert_eq!(ranges.len(), 1);
         assert_eq!(ranges[0].name, "small");

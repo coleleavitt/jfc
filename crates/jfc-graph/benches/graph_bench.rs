@@ -43,6 +43,9 @@ fn mk(name: &str) -> NodeData {
         metadata: HashMap::new(),
         birth_revision: 0,
         last_modified_revision: 0,
+        complexity: None,
+        cfg: None,
+        dataflow: None,
     }
 }
 
@@ -62,7 +65,7 @@ fn chain_graph(n: usize) -> (CodeGraph, Vec<NodeId>) {
         ids.push(g.add_node(mk(&format!("n{i}"))));
     }
     for i in 0..n.saturating_sub(1) {
-        let _ = g.add_edge(&ids[i], &ids[i + 1], ed());
+        g.add_edge(&ids[i], &ids[i + 1], ed()).ok();
     }
     (g, ids)
 }
@@ -74,8 +77,8 @@ fn fan_graph(n: usize) -> (CodeGraph, NodeId) {
     let sink = g.add_node(mk("sink"));
     for i in 0..n {
         let leaf = g.add_node(mk(&format!("leaf{i}")));
-        let _ = g.add_edge(&root, &leaf, ed());
-        let _ = g.add_edge(&leaf, &sink, ed());
+        g.add_edge(&root, &leaf, ed()).ok();
+        g.add_edge(&leaf, &sink, ed()).ok();
     }
     (g, root)
 }

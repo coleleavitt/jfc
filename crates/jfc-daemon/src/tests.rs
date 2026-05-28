@@ -43,6 +43,8 @@ fn test_task_input() -> jfc_core::TaskInput {
         mode: None,
         isolation: None,
         parent_task_id: None,
+        effort: None,
+        schema: None,
     }
 }
 

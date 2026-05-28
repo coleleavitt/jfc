@@ -20,7 +20,7 @@ use tree_sitter::{Language, Node as TsNode, Parser};
 use crate::adapter::{AdapterError, LanguageAdapter, ParsedFile};
 use crate::complexity::compute_complexity;
 use crate::edges::{EdgeData, EdgeKind};
-use crate::nodes::{NodeData, NodeId, NodeKind, Span, Visibility};
+use crate::nodes::{NodeData, NodeId, NodeKind, Visibility};
 
 pub struct PhpAdapter {
     language: Language,
@@ -536,9 +536,7 @@ fn is_php_primitive(name: &str) -> bool {
     )
 }
 
-fn text(node: TsNode<'_>, source: &str) -> String {
-    source[node.byte_range()].to_string()
-}
+use super::{build_nd, build_span, node_text as text};
 
 fn qualified(scope: &[&str], name: &str) -> String {
     if scope.is_empty() {
@@ -548,41 +546,6 @@ fn qualified(scope: &[&str], name: &str) -> String {
     }
 }
 
-fn build_nd(
-    name: &str,
-    kind: NodeKind,
-    node: TsNode<'_>,
-    path: &Path,
-    path_str: &str,
-    qn: &str,
-) -> NodeData {
-    NodeData {
-        id: NodeId::new(path_str, qn, kind),
-        kind,
-        name: name.to_string(),
-        qualified_name: qn.to_string(),
-        file_path: path.to_path_buf(),
-        span: build_span(node, path),
-        visibility: Visibility::Public,
-        metadata: HashMap::new(),
-        birth_revision: 0,
-        last_modified_revision: 0,
-        complexity: None,
-        cfg: None,
-        dataflow: None,
-    }
-}
-
-fn build_span(node: TsNode<'_>, path: &Path) -> Span {
-    Span {
-        file: path.to_path_buf(),
-        start_line: node.start_position().row as u32 + 1,
-        start_col: node.start_position().column as u32,
-        end_line: node.end_position().row as u32 + 1,
-        end_col: node.end_position().column as u32,
-        byte_range: node.byte_range(),
-    }
-}
 
 #[cfg(test)]
 mod tests {

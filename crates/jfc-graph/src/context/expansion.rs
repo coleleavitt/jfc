@@ -390,7 +390,7 @@ mod tests {
         let roots: HashSet<NodeId> = vec![s_id.clone()].into_iter().collect();
         let kept = enforce_file_diversity(
             &g,
-            vec![s_id.clone(), f1.clone(), f2.clone(), f3.clone()],
+            vec![s_id.clone(), f1, f2, f3],
             &roots,
             2,
         );
@@ -408,7 +408,7 @@ mod tests {
         let t3 = g.add_node(n("t3", NodeKind::Function, "src/tests/c.rs"));
         let kept = cap_test_files(
             &g,
-            vec![prod.clone(), t1.clone(), t2.clone(), t3.clone()],
+            vec![prod.clone(), t1, t2, t3],
             1,
         );
         assert_eq!(kept.len(), 2);

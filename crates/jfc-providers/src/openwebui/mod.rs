@@ -739,6 +739,78 @@ mod tests {
         assert_eq!(names, vec!["bash", "read", "applypatch"]);
     }
 
+    // Regression: parallel tool_use blocks from one assistant turn must remain
+    // in one OpenAI assistant.tool_calls array. Splitting them into consecutive
+    // assistant messages makes LiteLLM/Bedrock convert the first tool_use into
+    // an Anthropic message whose next message is another assistant, not the
+    // required tool_result user turn.
+    #[test]
+    fn build_body_groups_parallel_tool_uses_before_results_regression() {
+        let history = vec![
+            user_msg("run these in parallel"),
+            ProviderMessage {
+                role: ProviderRole::Assistant,
+                content: vec![
+                    ProviderContent::ToolUse {
+                        id: "call_a".into(),
+                        name: "Bash".into(),
+                        input: serde_json::json!({"command": "pwd"}),
+                        thought_signature: None,
+                    },
+                    ProviderContent::ToolUse {
+                        id: "call_b".into(),
+                        name: "Read".into(),
+                        input: serde_json::json!({"file_path": "Cargo.toml"}),
+                        thought_signature: None,
+                    },
+                ],
+            },
+            ProviderMessage {
+                role: ProviderRole::User,
+                content: vec![
+                    ProviderContent::ToolResult {
+                        tool_use_id: "call_a".into(),
+                        content: "/tmp/repo".into(),
+                        is_error: false,
+                    },
+                    ProviderContent::ToolResult {
+                        tool_use_id: "call_b".into(),
+                        content: "[package]".into(),
+                        is_error: false,
+                    },
+                ],
+            },
+        ];
+
+        let body = build_body(history, &opts_with_bash_tool());
+        let msgs = body["messages"].as_array().expect("messages");
+        let assistant_tool_turns: Vec<&Value> = msgs
+            .iter()
+            .filter(|m| m.get("tool_calls").and_then(|v| v.as_array()).is_some())
+            .collect();
+        assert_eq!(
+            assistant_tool_turns.len(),
+            1,
+            "parallel tool calls must not be split into adjacent assistant messages: {msgs:?}"
+        );
+
+        let assistant_idx = msgs
+            .iter()
+            .position(|m| m.get("tool_calls").and_then(|v| v.as_array()).is_some())
+            .expect("assistant tool turn");
+        let calls = msgs[assistant_idx]["tool_calls"]
+            .as_array()
+            .expect("tool_calls");
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0]["id"], "call_a");
+        assert_eq!(calls[1]["id"], "call_b");
+
+        assert_eq!(msgs[assistant_idx + 1]["role"], "tool");
+        assert_eq!(msgs[assistant_idx + 1]["tool_call_id"], "call_a");
+        assert_eq!(msgs[assistant_idx + 2]["role"], "tool");
+        assert_eq!(msgs[assistant_idx + 2]["tool_call_id"], "call_b");
+    }
+
     // Normal: tool results from prior turns become role:"tool" messages with
     // the matching tool_call_id — required so the model can resolve which
     // call each result answers.
@@ -2686,60 +2758,105 @@ fn bedrock_scrub_tool_fields(body: &mut Value) {
 }
 
 pub(crate) fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> Value {
-    let msgs: Vec<Value> = messages
-        .iter()
-        .flat_map(|m| {
-            m.content.iter().filter_map(|c| match c {
-                ProviderContent::Text(t) if !t.is_empty() => Some(json!({
-                    "role": match m.role {
-                        ProviderRole::User => "user",
-                        ProviderRole::Assistant => "assistant",
-                    },
-                    "content": t,
-                })),
-                ProviderContent::ToolUse {
-                    id, name, input, ..
-                } => Some(json!({
-                    "role": "assistant",
-                    // OpenAI allows assistant tool-call messages to omit
-                    // content or set it null, but OpenWebUI/LiteLLM/Bedrock
-                    // compatibility paths have hit `NoneType.startswith`
-                    // and blank-content validator failures on that shape.
-                    // Keep the key present; the Bedrock sanitizer below
-                    // turns it into a non-empty placeholder.
-                    "content": "",
-                    "tool_calls": [{
-                        "id": id,
-                        "type": "function",
-                        "function": {
-                            // Lowercase historical tool names too — when the
-                            // user switched from anthropic-oauth (PascalCase
-                            // "Bash") to OWUI mid-conversation, the prior
-                            // tool_use blocks would arrive at LiteLLM with
-                            // PascalCase while new calls go out lowercase.
-                            // LiteLLM matches names case-sensitively against
-                            // the `tools` array so the mismatched history
-                            // got silently dropped, breaking the agentic
-                            // continuation. Normalize on the way out so the
-                            // whole conversation reads consistent.
-                            "name": name.to_lowercase(),
-                            "arguments": serde_json::to_string(input).unwrap_or_default(),
-                        },
-                    }],
-                })),
-                ProviderContent::ToolResult {
-                    tool_use_id,
-                    content,
-                    ..
-                } => Some(json!({
-                    "role": "tool",
-                    "tool_call_id": tool_use_id,
-                    "content": content,
-                })),
-                _ => None,
-            })
-        })
-        .collect();
+    let mut msgs: Vec<Value> = Vec::new();
+    for m in &messages {
+        match m.role {
+            ProviderRole::User => {
+                for c in &m.content {
+                    match c {
+                        ProviderContent::Text(t) if !t.is_empty() => {
+                            msgs.push(json!({
+                                "role": "user",
+                                "content": t,
+                            }));
+                        }
+                        ProviderContent::ToolResult {
+                            tool_use_id,
+                            content,
+                            ..
+                        } => {
+                            msgs.push(json!({
+                                "role": "tool",
+                                "tool_call_id": tool_use_id,
+                                "content": content,
+                            }));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            ProviderRole::Assistant => {
+                let mut text = String::new();
+                let mut tool_calls = Vec::new();
+                let mut trailing_tool_results = Vec::new();
+                for c in &m.content {
+                    match c {
+                        ProviderContent::Text(t) if !t.is_empty() => {
+                            if !text.is_empty() {
+                                text.push('\n');
+                            }
+                            text.push_str(t);
+                        }
+                        ProviderContent::ToolUse {
+                            id, name, input, ..
+                        } => {
+                            tool_calls.push(json!({
+                                "id": id,
+                                "type": "function",
+                                "function": {
+                                    // Lowercase historical tool names too — when the
+                                    // user switched from anthropic-oauth (PascalCase
+                                    // "Bash") to OWUI mid-conversation, the prior
+                                    // tool_use blocks would arrive at LiteLLM with
+                                    // PascalCase while new calls go out lowercase.
+                                    // LiteLLM matches names case-sensitively against
+                                    // the `tools` array so the mismatched history
+                                    // got silently dropped, breaking the agentic
+                                    // continuation. Normalize on the way out so the
+                                    // whole conversation reads consistent.
+                                    "name": name.to_lowercase(),
+                                    "arguments": serde_json::to_string(input).unwrap_or_default(),
+                                },
+                            }));
+                        }
+                        ProviderContent::ToolResult {
+                            tool_use_id,
+                            content,
+                            ..
+                        } => {
+                            trailing_tool_results.push(json!({
+                                "role": "tool",
+                                "tool_call_id": tool_use_id,
+                                "content": content,
+                            }));
+                        }
+                        _ => {}
+                    }
+                }
+
+                if !tool_calls.is_empty() {
+                    msgs.push(json!({
+                        "role": "assistant",
+                        // OpenAI allows assistant tool-call messages to omit
+                        // content or set it null, but OpenWebUI/LiteLLM/Bedrock
+                        // compatibility paths have hit `NoneType.startswith`
+                        // and blank-content validator failures on that shape.
+                        // Keep the key present; the Bedrock sanitizer below
+                        // turns it into a non-empty placeholder when no text
+                        // accompanied the tool calls.
+                        "content": text,
+                        "tool_calls": tool_calls,
+                    }));
+                } else if !text.is_empty() {
+                    msgs.push(json!({
+                        "role": "assistant",
+                        "content": text,
+                    }));
+                }
+                msgs.extend(trailing_tool_results);
+            }
+        }
+    }
 
     let mut body = json!({
         "model": opts.model,
