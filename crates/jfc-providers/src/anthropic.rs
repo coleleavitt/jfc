@@ -10,6 +10,8 @@ use super::sse;
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const ANTHROPIC_BETA: &str = "interleaved-thinking-2025-05-14";
+// `mid-conversation-system-2026-04-07` is gated per-model via
+// `super::anthropic_oauth::mid_conversation_system_enabled` (mirrors CC's `XH8`).
 
 pub const AUTO_RETRY_SENTINEL: &str = jfc_provider::retry::ANTHROPIC_AUTO_RETRY_SENTINEL;
 
@@ -240,6 +242,9 @@ impl Provider for AnthropicProvider {
 
         // Build beta header: append fast-mode and/or task-budgets betas as needed.
         let mut betas = ANTHROPIC_BETA.to_owned();
+        if super::anthropic_oauth::mid_conversation_system_enabled(&options.model) {
+            betas.push_str(",mid-conversation-system-2026-04-07");
+        }
         if options.fast_mode {
             betas.push_str(",fast-mode-2026-02-01");
         }
@@ -256,6 +261,7 @@ impl Provider for AnthropicProvider {
             betas.push_str(",structured-outputs-2025-12-15");
         }
         append_custom_betas(&mut betas, &options.custom_betas);
+        super::anthropic_oauth::append_env_betas(&mut betas);
         let beta_header = betas;
 
         let send_started = std::time::Instant::now();

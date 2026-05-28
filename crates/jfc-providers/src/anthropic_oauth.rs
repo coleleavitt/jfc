@@ -49,7 +49,48 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 /// (`context-1m`, `afk-mode`, `fast-mode`, `task-budgets`) are appended
 /// conditionally in `build_beta_header` based on per-account capabilities so
 /// we don't 400 accounts that lack a given feature.
-const ANTHROPIC_BETA: &str = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,prompt-caching-scope-2026-01-05,extended-cache-ttl-2025-04-11,output-128k-2025-02-19,context-management-2025-06-27,web-search-2025-03-05,structured-outputs-2025-12-15,advanced-tool-use-2025-11-20,tool-search-tool-2025-10-19,mid-conversation-system-2026-04-07,redact-thinking-2026-02-12,files-api-2025-04-14,cache-diagnosis-2026-04-07,effort-2025-11-24,environments-2025-11-01";
+// `mid-conversation-system-2026-04-07` is NOT here — CC 2.1.154's `XH8`
+// function gates it per-model (only opus-4-8 in 154's whitelist). Sending it
+// unconditionally to older models risks the API responding with
+// "unexpected value" beta errors that flip our cap-strip-and-retry path on
+// for no reason. Appended conditionally in `build_beta_header` below.
+const ANTHROPIC_BETA: &str = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,prompt-caching-scope-2026-01-05,extended-cache-ttl-2025-04-11,output-128k-2025-02-19,context-management-2025-06-27,web-search-2025-03-05,structured-outputs-2025-12-15,advanced-tool-use-2025-11-20,tool-search-tool-2025-10-19,redact-thinking-2026-02-12,files-api-2025-04-14,cache-diagnosis-2026-04-07,effort-2025-11-24,environments-2025-11-01";
+
+/// Whether `mid-conversation-system-2026-04-07` should be appended for `model`.
+///
+/// Mirrors Claude Code 2.1.154's `XH8(H)` gating function in cli.js: every
+/// older opus / sonnet / haiku id explicitly returns `false`; only opus-4-8
+/// (and any future model that opts in via the same whitelist) gets the beta.
+/// CC also honours `CLAUDE_CODE_FORCE_MID_CONVERSATION_SYSTEM` as a force-on
+/// override for testing — we match that for parity with CC's debug flows.
+pub(crate) fn mid_conversation_system_enabled(model: &str) -> bool {
+    if std::env::var("CLAUDE_CODE_FORCE_MID_CONVERSATION_SYSTEM")
+        .ok()
+        .is_some_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
+    {
+        return true;
+    }
+    let id = model.to_ascii_lowercase();
+    id.contains("opus-4-8") || id.contains("mythos")
+}
+
+/// Append `ANTHROPIC_BETAS` env var values to `header`. CC 2.1.154's `G36`
+/// function reads this env, splits on `,`, trims, drops empties, and appends.
+/// Same shape — useful as an escape hatch for users debugging brand-new betas
+/// before the canonical const catches up.
+pub(crate) fn append_env_betas(header: &mut String) {
+    let Ok(env) = std::env::var("ANTHROPIC_BETAS") else {
+        return;
+    };
+    for beta in env.split(',') {
+        let beta = beta.trim();
+        if beta.is_empty() {
+            continue;
+        }
+        header.push(',');
+        header.push_str(beta);
+    }
+}
 
 /// Subscription-gated beta tokens, paired with the capability flag that
 /// gates them. A capability of `Some(false)` (confirmed unsupported) strips
@@ -88,8 +129,12 @@ fn build_beta_header(
     eager_input_streaming: bool,
     strict_tool_schemas: bool,
     custom_betas: &[String],
+    model: &str,
 ) -> String {
     let mut header = ANTHROPIC_BETA.to_owned();
+    if mid_conversation_system_enabled(model) {
+        header.push_str(",mid-conversation-system-2026-04-07");
+    }
     for (token, cap) in GATED_BETAS {
         if !cap.is_disabled(caps) {
             header.push(',');
@@ -119,6 +164,7 @@ fn build_beta_header(
         header.push(',');
         header.push_str(beta);
     }
+    append_env_betas(&mut header);
     header
 }
 
@@ -1491,6 +1537,7 @@ impl Provider for AnthropicOAuthProvider {
                     want_eager_input_streaming,
                     want_strict_tool_schemas,
                     &custom_betas,
+                    &options.model,
                 );
                 let resp =
                     match jfc_provider::http::send_with_retry("anthropic_oauth.stream", || {
@@ -1923,6 +1970,7 @@ impl Provider for AnthropicOAuthProvider {
                     want_eager_input_streaming,
                     want_strict_tool_schemas,
                     &custom_betas,
+                    &options.model,
                 );
                 let resp =
                     match jfc_provider::http::send_with_retry("anthropic_oauth.complete", || {
@@ -2469,7 +2517,16 @@ mod tests {
     #[test]
     fn build_beta_header_includes_gated_when_capability_unknown() {
         let caps = super::super::anthropic_accounts::AccountCapabilities::default();
-        let header = build_beta_header(&caps, false, false, false, false, false, &[]);
+        let header = build_beta_header(
+            &caps,
+            false,
+            false,
+            false,
+            false,
+            false,
+            &[],
+            "claude-opus-4-7",
+        );
         assert!(header.contains("context-1m-2025-08-07"));
         assert!(header.contains("afk-mode-2026-01-31"));
         assert!(!header.contains("fast-mode"));
@@ -2483,7 +2540,16 @@ mod tests {
             context1m: Some(false),
             ..Default::default()
         };
-        let header = build_beta_header(&caps, true, true, false, false, false, &[]);
+        let header = build_beta_header(
+            &caps,
+            true,
+            true,
+            false,
+            false,
+            false,
+            &[],
+            "claude-opus-4-7",
+        );
         assert!(!header.contains("context-1m"));
         assert!(header.contains("afk-mode-2026-01-31"));
         assert!(header.contains("fast-mode-2026-02-01"));
@@ -2496,7 +2562,16 @@ mod tests {
             fast_mode: Some(false),
             ..Default::default()
         };
-        let header = build_beta_header(&caps, true, false, false, false, false, &[]);
+        let header = build_beta_header(
+            &caps,
+            true,
+            false,
+            false,
+            false,
+            false,
+            &[],
+            "claude-opus-4-7",
+        );
         assert!(!header.contains("fast-mode"));
     }
 
@@ -2504,12 +2579,30 @@ mod tests {
     fn build_beta_header_advisor_is_conditional() {
         let caps = super::super::anthropic_accounts::AccountCapabilities::default();
         assert!(
-            !build_beta_header(&caps, false, false, false, false, false, &[])
-                .contains("advisor-tool")
+            !build_beta_header(
+                &caps,
+                false,
+                false,
+                false,
+                false,
+                false,
+                &[],
+                "claude-opus-4-7"
+            )
+            .contains("advisor-tool")
         );
         assert!(
-            build_beta_header(&caps, false, false, true, false, false, &[])
-                .contains("advisor-tool-2026-03-01")
+            build_beta_header(
+                &caps,
+                false,
+                false,
+                true,
+                false,
+                false,
+                &[],
+                "claude-opus-4-7"
+            )
+            .contains("advisor-tool-2026-03-01")
         );
     }
 
@@ -2524,10 +2617,119 @@ mod tests {
             true,
             true,
             &["custom-beta-2099-01-01".to_owned()],
+            "claude-opus-4-7",
         );
         assert!(header.contains("fine-grained-tool-streaming-2025-05-14"));
         assert!(header.contains("structured-outputs-2025-12-15"));
         assert!(header.contains("custom-beta-2099-01-01"));
+    }
+
+    // ── mid_conversation_system gating ─────────────────────────────────────
+
+    // Normal: opus-4-8 opts into the beta (matches CC 2.1.154 XH8 whitelist).
+    #[test]
+    fn mid_conversation_system_enabled_for_opus_4_8_normal() {
+        assert!(mid_conversation_system_enabled("claude-opus-4-8"));
+        assert!(mid_conversation_system_enabled("claude-mythos-preview"));
+    }
+
+    // Normal: every pre-4.8 model is excluded so we don't send the beta to
+    // ids the API doesn't recognize.
+    #[test]
+    fn mid_conversation_system_excluded_for_older_models_normal() {
+        for id in [
+            "claude-opus-4-7",
+            "claude-opus-4-6",
+            "claude-opus-4-5",
+            "claude-sonnet-4-6",
+            "claude-sonnet-4-5",
+            "claude-haiku-4-5",
+            "claude-3-7-sonnet-20250219",
+        ] {
+            assert!(
+                !mid_conversation_system_enabled(id),
+                "{id} must NOT enable mid-conversation-system"
+            );
+        }
+    }
+
+    // Robust: header for opus-4-8 includes the beta exactly once.
+    #[test]
+    fn build_beta_header_appends_mid_conv_for_opus_4_8_robust() {
+        let caps = super::super::anthropic_accounts::AccountCapabilities::default();
+        let header = build_beta_header(
+            &caps,
+            false,
+            false,
+            false,
+            false,
+            false,
+            &[],
+            "claude-opus-4-8",
+        );
+        let count = header.matches("mid-conversation-system-2026-04-07").count();
+        assert_eq!(count, 1, "expected exactly one mid-conv beta in {header}");
+    }
+
+    // Robust: pre-4.8 models do NOT get the beta — protects older subscriptions
+    // from "unexpected value" 400s that would trip cap-strip-and-retry.
+    #[test]
+    fn build_beta_header_omits_mid_conv_for_older_models_robust() {
+        let caps = super::super::anthropic_accounts::AccountCapabilities::default();
+        let header = build_beta_header(
+            &caps,
+            false,
+            false,
+            false,
+            false,
+            false,
+            &[],
+            "claude-opus-4-7",
+        );
+        assert!(
+            !header.contains("mid-conversation-system"),
+            "header for opus-4-7 must not include mid-conv beta: {header}"
+        );
+    }
+
+    // ── ANTHROPIC_BETAS env passthrough ────────────────────────────────────
+
+    // Normal: env values append after custom_betas. Mirrors CC's G36 behaviour.
+    #[test]
+    fn append_env_betas_appends_each_token_normal() {
+        // SAFETY: process-wide env mutation is fine in tests when serialized.
+        // This test owns the var key; no other test in this module reads it.
+        unsafe {
+            std::env::set_var("ANTHROPIC_BETAS", "alpha-2099-01-01,beta-2099-02-02");
+        }
+        let mut header = String::from("base-beta");
+        append_env_betas(&mut header);
+        unsafe { std::env::remove_var("ANTHROPIC_BETAS") };
+        assert!(header.contains("alpha-2099-01-01"));
+        assert!(header.contains("beta-2099-02-02"));
+    }
+
+    // Robust: whitespace and empty entries are dropped, not appended as bare commas.
+    #[test]
+    fn append_env_betas_trims_and_drops_empties_robust() {
+        unsafe {
+            std::env::set_var("ANTHROPIC_BETAS", " , gamma-2099-03-03 , ,");
+        }
+        let mut header = String::from("base");
+        append_env_betas(&mut header);
+        unsafe { std::env::remove_var("ANTHROPIC_BETAS") };
+        assert!(header.contains("gamma-2099-03-03"));
+        assert!(!header.contains(",,"), "double-comma in {header}");
+        assert!(!header.ends_with(','), "trailing comma in {header}");
+    }
+
+    // Robust: missing env var is a no-op (header unchanged).
+    #[test]
+    fn append_env_betas_noop_when_env_unset_robust() {
+        unsafe { std::env::remove_var("ANTHROPIC_BETAS") };
+        let mut header = String::from("base");
+        append_env_betas(&mut header);
+        assert_eq!(header, "base");
     }
 
     #[test]
