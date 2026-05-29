@@ -301,6 +301,23 @@ impl LspClient {
             let mut reader = BufReader::new(stdout);
             let mut buf: Vec<u8> = Vec::with_capacity(8 * 1024);
             let mut chunk = [0u8; 4096];
+            // Per-file diagnostics accumulator. LSP `publishDiagnostics` is
+            // *per-file* — each notification carries the complete (and
+            // authoritative) set for ONE uri, and an EMPTY array is the
+            // server's signal that that file is now clean. But the
+            // `DiagnosticsUpdated` event contract is a *full snapshot* that
+            // replaces `app.diagnostics` wholesale (events.rs). Without this
+            // map, each per-file push clobbered every other file's
+            // diagnostics, so: opening a 2nd file erased the 1st file's
+            // errors, and fixing one file (empty array) either wiped the
+            // whole panel or left other files' stale entries frozen. Keep the
+            // latest set per uri here and emit their union so the wholesale
+            // replace receives a correct cross-file snapshot. Owned by the
+            // single reader task → no lock needed.
+            let mut diagnostics_by_uri: std::collections::HashMap<
+                String,
+                Vec<crate::diagnostics::DiagnosticEntry>,
+            > = std::collections::HashMap::new();
             loop {
                 let n = match reader.read(&mut chunk).await {
                     Ok(0) => {
@@ -328,6 +345,7 @@ impl LspClient {
                                 &app_tx_for_reader,
                                 &init_done_tx,
                                 &pending_for_reader,
+                                &mut diagnostics_by_uri,
                             )
                             .await;
                         }
@@ -447,6 +465,10 @@ async fn handle_inbound(
     app_tx: &mpsc::Sender<AppEvent>,
     init_done_tx: &Arc<tokio::sync::Mutex<Option<oneshot::Sender<()>>>>,
     pending: &PendingRequests,
+    diagnostics_by_uri: &mut std::collections::HashMap<
+        String,
+        Vec<crate::diagnostics::DiagnosticEntry>,
+    >,
 ) {
     // Response to a request (has `id`, no `method`).
     if msg.get("id").is_some() && msg.get("method").is_none() {
@@ -480,15 +502,42 @@ async fn handle_inbound(
         let Some(params) = msg.get("params") else {
             return;
         };
-        let Some((_uri, entries)) = lsp_rpc::parse_publish_diagnostics(params) else {
+        let Some((uri, entries)) = lsp_rpc::parse_publish_diagnostics(params) else {
             return;
         };
+        let merged = apply_publish_diagnostics(diagnostics_by_uri, uri, entries);
         let _ = app_tx
             .send(AppEvent::Provider(ProviderEvent::DiagnosticsUpdated {
-                entries,
+                entries: merged,
             }))
             .await;
     }
+}
+
+/// Fold one file's `publishDiagnostics` into the per-file accumulator and
+/// return the cross-file union to ship as the full-snapshot
+/// `DiagnosticsUpdated` payload.
+///
+/// LSP semantics: each notification is the complete, authoritative set for
+/// ONE `uri`; an empty array means that file is now clean. So an empty array
+/// drops the key (the file stops contributing to the union — this is what
+/// makes "fix the issue → it disappears" work), and a non-empty array
+/// replaces whatever we held for that file. The union is what the consumer
+/// needs because `DiagnosticsUpdated` replaces `app.diagnostics` wholesale.
+fn apply_publish_diagnostics(
+    diagnostics_by_uri: &mut std::collections::HashMap<
+        String,
+        Vec<crate::diagnostics::DiagnosticEntry>,
+    >,
+    uri: String,
+    entries: Vec<crate::diagnostics::DiagnosticEntry>,
+) -> Vec<crate::diagnostics::DiagnosticEntry> {
+    if entries.is_empty() {
+        diagnostics_by_uri.remove(&uri);
+    } else {
+        diagnostics_by_uri.insert(uri, entries);
+    }
+    diagnostics_by_uri.values().flatten().cloned().collect()
 }
 
 /// Parse a single Location from an LSP definition/declaration response.
@@ -949,6 +998,108 @@ mod tests {
         assert!(
             pending.lock().unwrap().is_empty(),
             "all 50 entries must be cleaned up"
+        );
+    }
+
+    // ── per-file diagnostics merge (stale-diagnostics fix) ─────────────────
+
+    use crate::diagnostics::{DiagnosticEntry, Severity};
+
+    fn diag(file: &str, message: &str) -> DiagnosticEntry {
+        DiagnosticEntry {
+            file: file.to_owned(),
+            line: 1,
+            col: 1,
+            message: message.to_owned(),
+            code: None,
+            source: Some("rust-analyzer".to_owned()),
+            severity: Severity::Error,
+        }
+    }
+
+    // Normal: two files each publish diagnostics. The union carries BOTH —
+    // the second file's push must not erase the first file's entries
+    // (the original wholesale-replace bug).
+    #[test]
+    fn publish_two_files_unions_both_normal() {
+        let mut acc = std::collections::HashMap::new();
+        let merged_a = apply_publish_diagnostics(
+            &mut acc,
+            "file:///a.rs".to_owned(),
+            vec![diag("/a.rs", "err A1")],
+        );
+        assert_eq!(merged_a.len(), 1);
+
+        let merged_b = apply_publish_diagnostics(
+            &mut acc,
+            "file:///b.rs".to_owned(),
+            vec![diag("/b.rs", "err B1"), diag("/b.rs", "err B2")],
+        );
+        // Union: A's 1 + B's 2 = 3. Pre-fix this would have been just B's 2.
+        assert_eq!(
+            merged_b.len(),
+            3,
+            "union must keep file A after B publishes"
+        );
+        assert!(merged_b.iter().any(|d| d.message == "err A1"));
+        assert!(merged_b.iter().any(|d| d.message == "err B2"));
+    }
+
+    // Normal — REGRESSION (the reported bug): a file is fixed and the server
+    // re-publishes an EMPTY array for it. That file's diagnostics must
+    // disappear from the union, while OTHER files' diagnostics survive.
+    #[test]
+    fn empty_publish_clears_only_that_file_normal_regression() {
+        let mut acc = std::collections::HashMap::new();
+        apply_publish_diagnostics(
+            &mut acc,
+            "file:///a.rs".to_owned(),
+            vec![diag("/a.rs", "err A1")],
+        );
+        apply_publish_diagnostics(
+            &mut acc,
+            "file:///b.rs".to_owned(),
+            vec![diag("/b.rs", "err B1")],
+        );
+        // Fix file A → server sends empty array for a.rs.
+        let merged = apply_publish_diagnostics(&mut acc, "file:///a.rs".to_owned(), vec![]);
+        assert_eq!(merged.len(), 1, "only B should remain");
+        assert_eq!(merged[0].message, "err B1");
+    }
+
+    // Robust: re-publishing a file REPLACES its prior set rather than
+    // appending — the server's latest set for a uri is authoritative.
+    #[test]
+    fn republish_replaces_prior_set_for_same_file_robust() {
+        let mut acc = std::collections::HashMap::new();
+        apply_publish_diagnostics(
+            &mut acc,
+            "file:///a.rs".to_owned(),
+            vec![diag("/a.rs", "old1"), diag("/a.rs", "old2")],
+        );
+        let merged = apply_publish_diagnostics(
+            &mut acc,
+            "file:///a.rs".to_owned(),
+            vec![diag("/a.rs", "new1")],
+        );
+        assert_eq!(merged.len(), 1, "re-publish replaces, not appends");
+        assert_eq!(merged[0].message, "new1");
+    }
+
+    // Robust: fixing the last file (empty array, nothing else tracked)
+    // yields an empty snapshot — the panel goes fully clean.
+    #[test]
+    fn empty_publish_on_last_file_yields_empty_snapshot_robust() {
+        let mut acc = std::collections::HashMap::new();
+        apply_publish_diagnostics(
+            &mut acc,
+            "file:///a.rs".to_owned(),
+            vec![diag("/a.rs", "err")],
+        );
+        let merged = apply_publish_diagnostics(&mut acc, "file:///a.rs".to_owned(), vec![]);
+        assert!(
+            merged.is_empty(),
+            "clearing the only file empties the panel"
         );
     }
 }
