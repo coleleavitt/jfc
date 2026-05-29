@@ -273,6 +273,9 @@ pub(crate) async fn handle_task_completed(
     use types::TaskLifecycle;
     let mut linked_task_id: Option<String> = None;
     if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
+        // A real terminal transition observed in this process — unblocks the
+        // Case-2 auto-wake (restored prior-session agents never reach here).
+        app.observed_bg_terminal_transition_this_process = true;
         bt.status = TaskLifecycle::Completed;
         bt.completed_at = Some(std::time::Instant::now());
         bt.summary = Some(summary.clone());
@@ -345,6 +348,7 @@ pub(crate) async fn handle_task_failed(
         .starts_with("cancelled:");
     let mut linked_task_id: Option<String> = None;
     if let Some(bt) = app.background_tasks.get_mut(task_id.as_str()) {
+        app.observed_bg_terminal_transition_this_process = true;
         bt.status = if was_cancelled {
             TaskLifecycle::Cancelled
         } else {
@@ -530,6 +534,24 @@ pub(crate) async fn maybe_resume_after_background(app: &mut App, tx: &EventSende
     // main agent automatically summarizes the work for the user — no manual
     // nudge required.
     //
+    // GUARD: only auto-wake when a background agent actually transitioned to
+    // terminal *during this process*. On `jfc --continue`,
+    // `restore_persistent_background_agents` seeds already-terminal agents
+    // from a prior session — `all_bg_done` is trivially true and
+    // `turn_started_at` is None, which previously fired an unsolicited
+    // (billed) summary turn at startup before the user typed anything. The
+    // restored agents never hit a live transition site, so this flag stays
+    // false until a real completion happens this process.
+    if !app.observed_bg_terminal_transition_this_process {
+        tracing::debug!(
+            target: "jfc::task::autowake",
+            bg_count = app.background_tasks.len(),
+            "skipping auto-wake: no background-agent terminal transition observed \
+             this process (likely restored-from-continue agents)"
+        );
+        return;
+    }
+
     // Skip if we have nothing to report (e.g. all bg slots were cancelled
     // before producing a summary), if a stream is already active, or if a
     // compaction is in flight. Any pending approval / pending tool also
@@ -586,4 +608,118 @@ pub(crate) async fn maybe_resume_after_background(app: &mut App, tx: &EventSende
     app.agentic_turn_count = 0;
     app.turn_started_at = Some(std::time::Instant::now());
     stream::continue_agentic_loop(app, tx).await;
+}
+
+#[cfg(test)]
+mod autowake_tests {
+    use std::sync::Arc;
+
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+    use tokio::sync::mpsc;
+
+    use super::*;
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    fn test_app() -> App {
+        App::new(Arc::new(TestProvider), "test-model")
+    }
+
+    fn terminal_bg(id: &str, summary: &str) -> app::BackgroundTask {
+        app::BackgroundTask {
+            task_id: id.into(),
+            description: format!("desc-{id}"),
+            status: TaskLifecycle::Completed,
+            started_at: std::time::Instant::now(),
+            completed_at: Some(std::time::Instant::now()),
+            summary: Some(summary.to_owned()),
+            error: None,
+            last_tool: None,
+            messages: Vec::new(),
+            chat_messages: Vec::new(),
+            tool_use_count: 0,
+            latest_input_tokens: 0,
+            latest_cache_read_tokens: 0,
+            latest_cache_write_tokens: 0,
+            cumulative_output_tokens: 0,
+            model_used: None,
+            agent_messages: Vec::new(),
+            max_input_tokens: None,
+            budget_killed: false,
+            parent_task_id: None,
+            workflow_progress: None,
+            last_activity_at: std::time::Instant::now(),
+        }
+    }
+
+    // Normal — REGRESSION (the `--continue` startup auto-wake bug): a session
+    // restored with already-terminal background agents (and an idle leader,
+    // turn_started_at=None) must NOT auto-wake a summary turn. The restored
+    // agents never hit a live transition site, so
+    // observed_bg_terminal_transition_this_process stays false.
+    #[tokio::test]
+    async fn continue_with_restored_terminal_agents_does_not_autowake_regression() {
+        let mut app = test_app();
+        app.background_tasks
+            .insert("a".into(), terminal_bg("a", "did a thing"));
+        app.background_tasks
+            .insert("b".into(), terminal_bg("b", "did another"));
+        // Mirror the `--continue` startup state: idle leader, no live
+        // transition observed, restored agents already terminal.
+        app.turn_started_at = None;
+        app.observed_bg_terminal_transition_this_process = false;
+        let msgs_before = app.messages.len();
+        let (tx, _rx) = mpsc::channel(8);
+
+        maybe_resume_after_background(&mut app, &tx).await;
+
+        // No synthetic system-reminder turn was opened.
+        assert_eq!(
+            app.messages.len(),
+            msgs_before,
+            "restored terminal agents must not trigger an unsolicited summary turn"
+        );
+        assert!(
+            app.turn_started_at.is_none(),
+            "no turn should have been started"
+        );
+    }
+
+    // Normal: once a real terminal transition is observed this process
+    // (flag true), the idle-leader auto-wake fires and opens a summary turn.
+    #[tokio::test]
+    async fn live_terminal_transition_does_autowake_normal() {
+        let mut app = test_app();
+        app.background_tasks
+            .insert("a".into(), terminal_bg("a", "did a thing"));
+        app.turn_started_at = None;
+        app.observed_bg_terminal_transition_this_process = true;
+        let (tx, _rx) = mpsc::channel(8);
+
+        maybe_resume_after_background(&mut app, &tx).await;
+
+        // Auto-wake injected the summary reminder and opened a turn.
+        assert!(
+            app.turn_started_at.is_some(),
+            "a real completion this process must auto-wake the leader"
+        );
+    }
 }

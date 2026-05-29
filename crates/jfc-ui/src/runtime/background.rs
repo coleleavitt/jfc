@@ -76,6 +76,11 @@ fn sync_detached_background_tasks_from_daemon_with_paths(
             entry.status = new_status;
             if !was_terminal && new_status.is_terminal() {
                 app.background_tasks_completed_since_last_turn += 1;
+                // Real terminal transition observed this process — unblocks
+                // the Case-2 auto-wake. (Restored prior-session agents arrive
+                // already-terminal and skip this branch, so `--continue` won't
+                // fire an unsolicited summary turn at startup.)
+                app.observed_bg_terminal_transition_this_process = true;
             }
             changed = true;
         }

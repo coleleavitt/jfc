@@ -982,6 +982,20 @@ pub struct App {
     /// surfaced as a system_reminder in `handle_submit` so the parent
     /// model knows agent results are available in the transcript.
     pub background_tasks_completed_since_last_turn: u32,
+    /// Whether a background agent has transitioned to a *terminal* state
+    /// (Completed / Failed / Cancelled) **during this process** — set at the
+    /// three real transition sites (live `TaskCompleted` / `TaskFailed`
+    /// handlers and the daemon-sync poll). Crucially NOT set by
+    /// `restore_persistent_background_agents`, which seeds already-terminal
+    /// agents from a *prior* session on `--continue`.
+    ///
+    /// Gates the Case-2 auto-wake in `maybe_resume_after_background`: without
+    /// it, launching `jfc --continue` on a session that had completed
+    /// background agents fired an unsolicited (billed) summary turn at startup
+    /// before the user typed anything — the restored terminal agents tripped
+    /// `all_bg_done` while `turn_started_at` was None. Auto-wake should only
+    /// fire for agents that actually finished *while the user was here*.
+    pub observed_bg_terminal_transition_this_process: bool,
     /// Per-frame map of `(tool_id, screen_rect)` populated by the message
     /// renderer as each `ToolBlock` paints. The mouse handler reads this to
     /// translate a left-click into the tool whose body should expand —
@@ -1397,6 +1411,7 @@ impl App {
             pasted_images: Vec::new(),
             image_counter: 0,
             background_tasks_completed_since_last_turn: 0,
+            observed_bg_terminal_transition_this_process: false,
             tool_hit_regions: RefCell::new(Vec::new()),
             render_cache: RefCell::new(RenderCache::new()),
             diff_stats_cache: RefCell::new(None),
