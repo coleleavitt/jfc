@@ -4,9 +4,30 @@ use ratatui_textarea::{CursorMove, TextArea};
 use crate::app::App;
 
 pub(super) fn reset_input(app: &mut App) {
+    let before = textarea_char_len(app);
     app.textarea = TextArea::default();
     app.textarea.set_cursor_line_style(Style::default());
     app.textarea.set_placeholder_text("send a message…");
+    tracing::debug!(
+        target: "jfc::input::recall",
+        cleared_chars = before,
+        "reset_input: textarea cleared"
+    );
+}
+
+/// Total character count across all textarea lines (joined by `\n`). Cheap
+/// scalar used by the input-flow tracing to spot append-instead-of-replace
+/// bugs (the prompt-doubling regression): if a recall/submit logs
+/// `before > 0` where it expected an empty buffer, the textarea wasn't
+/// cleared first.
+pub(super) fn textarea_char_len(app: &App) -> usize {
+    app.textarea
+        .lines()
+        .iter()
+        .map(|l| l.chars().count())
+        .sum::<usize>()
+        // account for the `\n` joiners so the number matches submit's text.len()
+        + app.textarea.lines().len().saturating_sub(1)
 }
 
 fn input_line_char_len(app: &App, line: usize) -> usize {

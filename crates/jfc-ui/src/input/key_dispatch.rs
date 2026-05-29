@@ -1095,6 +1095,22 @@ async fn handle_enter_submit(
         let text = app.textarea.lines().join("\n");
         let text = text.trim().to_string();
         if !text.is_empty() {
+            // Enter-submit entry trace. `submitted_chars` is the source of
+            // truth for the prompt-doubling bug: if it arrives already-doubled
+            // here, the corruption happened upstream in a recall/insert path
+            // (see jfc::input::recall), not in persistence/coalesce.
+            tracing::debug!(
+                target: "jfc::input::submit",
+                submitted_chars = text.chars().count(),
+                line_count = app.textarea.lines().len(),
+                is_streaming = app.is_streaming,
+                streaming_response_bytes = app.streaming_response_bytes,
+                editing_idx = ?app.editing_message_idx,
+                history_cursor = ?app.history_cursor,
+                queued_depth = app.queued_prompts.len(),
+                preview = %text.chars().take(48).collect::<String>(),
+                "enter_submit: textarea content captured"
+            );
             reset_input(app);
             // v126 input queueing: when the model is mid-stream OR the
             // approval pipeline is non-empty, queue the prompt instead of
@@ -1275,11 +1291,21 @@ fn handle_arrow_history_keys(app: &mut App, key: event::KeyEvent) -> Option<anyh
             if !input_has_text(app)
                 && let Some(prompt) = recall_previous_prompt(app)
             {
+                let before_chars = textarea_char_len(app);
                 app.textarea =
                     TextArea::from(prompt.lines().map(str::to_string).collect::<Vec<_>>());
                 app.textarea.set_cursor_line_style(Style::default());
                 app.textarea.set_placeholder_text("send a message…");
                 app.textarea.move_cursor(CursorMove::End);
+                tracing::debug!(
+                    target: "jfc::input::recall",
+                    path = "arrow_history_prev",
+                    before_chars,
+                    recalled_chars = prompt.chars().count(),
+                    after_chars = textarea_char_len(app),
+                    history_cursor = ?app.history_cursor,
+                    "recall previous prompt (TextArea::from replace)"
+                );
                 return Some(Ok(false));
             }
             move_input_cursor_visual_up(app);
@@ -1291,11 +1317,21 @@ fn handle_arrow_history_keys(app: &mut App, key: event::KeyEvent) -> Option<anyh
             // None or at the live edit, falls through to cursor move.
             if app.history_cursor.is_some() {
                 if let Some(prompt) = recall_next_prompt(app) {
+                    let before_chars = textarea_char_len(app);
                     app.textarea =
                         TextArea::from(prompt.lines().map(str::to_string).collect::<Vec<_>>());
                     app.textarea.set_cursor_line_style(Style::default());
                     app.textarea.set_placeholder_text("send a message…");
                     app.textarea.move_cursor(CursorMove::End);
+                    tracing::debug!(
+                        target: "jfc::input::recall",
+                        path = "arrow_history_next",
+                        before_chars,
+                        recalled_chars = prompt.chars().count(),
+                        after_chars = textarea_char_len(app),
+                        history_cursor = ?app.history_cursor,
+                        "recall next prompt (TextArea::from replace)"
+                    );
                     return Some(Ok(false));
                 } else {
                     // Cycled past the most recent — return to empty input.
@@ -1498,7 +1534,15 @@ fn handle_up_recall_keys(app: &mut App, key: event::KeyEvent) -> Option<anyhow::
                 break;
             }
         }
-        // Recall into the textarea.
+        // Recall into the textarea. CLEAR FIRST: the entry guard only checks
+        // that every *line* is empty, which a single blank line satisfies —
+        // but `insert_str` writes at the cursor, so any residual content (or
+        // a prior un-submitted recall) would be APPENDED to, doubling the
+        // text. This was the prompt-doubling regression: recall → recall →
+        // submit produced `phasesalright…` (two copies, no separator) and
+        // compounded each cycle (56 → 112 → 224 chars). Replace, don't append.
+        let before_chars = textarea_char_len(app);
+        reset_input(app);
         for line in qp.text.split('\n') {
             app.textarea.insert_str(line);
             app.textarea.insert_newline();
@@ -1507,11 +1551,25 @@ fn handle_up_recall_keys(app: &mut App, key: event::KeyEvent) -> Option<anyhow::
         // tui-textarea's `delete_line_by_end` after a final newline
         // removes the empty trailing line cleanly.
         app.textarea.delete_line_by_end();
-        tracing::info!(
-            target: "jfc::ui::queue",
-            remaining = app.queued_prompts.len(),
-            "recall_queued_prompt"
+        let after_chars = textarea_char_len(app);
+        tracing::debug!(
+            target: "jfc::input::recall",
+            path = "up_recall_queued",
+            before_chars,
+            recalled_chars = qp.text.chars().count(),
+            after_chars,
+            queued_remaining = app.queued_prompts.len(),
+            is_meta = qp.is_meta,
+            "recall queued prompt into textarea (cleared before insert)"
         );
+        if before_chars > 0 {
+            tracing::warn!(
+                target: "jfc::input::recall",
+                before_chars,
+                "up_recall fired with a non-empty textarea — guard let residual text through; \
+                 reset prevented a double-insert"
+            );
+        }
         return Some(Ok(false));
     }
     None

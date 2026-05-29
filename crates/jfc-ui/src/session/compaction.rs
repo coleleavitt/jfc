@@ -67,6 +67,18 @@ pub(super) fn coalesce_consecutive_same_role(messages: &[ChatMessage]) -> Vec<Ch
                 && !msg.queued
         });
         if can_merge {
+            // Merging two consecutive USER turns is suspicious: it means an
+            // assistant turn between them was filtered out (empty-but-billed
+            // placeholder), and the two user prompts will be concatenated into
+            // one — the save-side face of the prompt-doubling report. Flag it
+            // so the log shows when history got structurally rewritten.
+            if msg.role == crate::types::Role::User {
+                tracing::warn!(
+                    target: "jfc::session",
+                    "coalesce merging two consecutive USER turns — an assistant turn was \
+                     stripped between them; their text will be concatenated"
+                );
+            }
             let prev = out.last_mut().expect("can_merge guarantees a tail");
             // Extend parts in order — preserves the per-sub-stream
             // interleaving (text from sub-stream 1, tool from sub-stream

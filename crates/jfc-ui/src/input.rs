@@ -35,7 +35,7 @@ mod tests;
 use automation_commands::{handle_dream_command, handle_loop_command, handle_schedule_command};
 use editing::{
     input_has_text, move_input_cursor_visual_down, move_input_cursor_visual_up, reset_input,
-    step_reasoning_effort,
+    step_reasoning_effort, textarea_char_len,
 };
 use github_commands::{
     handle_install_github_app, handle_pr_autofix, handle_pr_view, handle_setup_github_actions,

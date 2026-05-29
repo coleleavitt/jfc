@@ -84,17 +84,38 @@ pub(super) fn init_tracing(
     // append `jfc=debug` so our targets stay visible. When the user
     // explicitly set a `jfc=…` directive, leave it alone — their
     // override wins.
+    // Default filter: `info` baseline (keeps the log readable across a long
+    // session) plus `debug` on the high-signal flows we actively debug —
+    // input/recall/submit (prompt-doubling), the stream lifecycle
+    // (empty-but-billed turns, cancel races), session save/continue, and the
+    // agent/tool dispatcher. `jfc=info` alone hid the per-keystroke and
+    // per-chunk events that pin lifecycle bugs; `jfc=debug` globally drowned
+    // them in graph/render chatter. This split is the middle ground.
+    //
+    // Targets bumped to debug (everything else stays at info):
+    //   jfc::input* — keystroke/recall/submit (prompt doubling)
+    //   jfc::stream* — chunk/usage/done/error lifecycle
+    //   jfc::session* — save/continue/coalesce
+    //   jfc::agents, jfc::scheduler, jfc::tools — dispatch flow
+    const DEFAULT_FILTER: &str = "info,\
+        jfc::input=debug,\
+        jfc::stream=debug,\
+        jfc::session=debug,\
+        jfc::agents=debug,\
+        jfc::scheduler=debug,\
+        jfc::tools=debug,\
+        reqwest=warn,hyper=warn,h2=warn,rustls=warn";
     let env_rust_log = std::env::var("RUST_LOG").unwrap_or_default();
     let filter = if env_rust_log.is_empty() {
-        EnvFilter::new("debug,reqwest=warn,hyper=warn,h2=warn")
+        EnvFilter::new(DEFAULT_FILTER)
     } else if env_rust_log.split(',').any(|d| d.trim().starts_with("jfc")) {
-        EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new("debug,reqwest=warn,hyper=warn,h2=warn"))
+        // User set an explicit jfc directive — their override wins verbatim.
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER))
     } else {
-        // Append our default so jfc events survive an unrelated RUST_LOG.
-        let combined = format!("{env_rust_log},jfc=debug");
-        EnvFilter::try_new(&combined)
-            .unwrap_or_else(|_| EnvFilter::new("debug,reqwest=warn,hyper=warn,h2=warn"))
+        // RUST_LOG is set but says nothing about jfc (e.g. a compositor baked
+        // in `niri=debug`). Append our full default so jfc events survive.
+        let combined = format!("{env_rust_log},{DEFAULT_FILTER}");
+        EnvFilter::try_new(&combined).unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER))
     };
 
     if let Err(e) = tracing_subscriber::fmt()

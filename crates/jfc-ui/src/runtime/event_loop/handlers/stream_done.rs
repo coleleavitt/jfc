@@ -23,6 +23,64 @@ pub(crate) async fn handle_stream_done(
         approval_queue = app.approval_queue.len(),
         "StreamEvent::Done received"
     );
+
+    // Bug A telemetry — the "$-charged blank turn". Detect an assistant turn
+    // that finished with NO renderable content (no text, no tool calls) yet
+    // carries usage (the model billed for it). This is the empty-assistant /
+    // stop_reason=refusal artefact that renders as a blank `assistant
+    // (Brewed 34s / $3.84)` bubble. Logged here so it's visible in the live
+    // log the moment it happens, not just inferred from the saved transcript.
+    if let Some(idx) = app.streaming_assistant_idx
+        && let Some(msg) = app.messages.get(idx)
+    {
+        let text_chars: usize = msg
+            .parts
+            .iter()
+            .filter_map(|p| match p {
+                crate::types::MessagePart::Text(t) => Some(t.chars().count()),
+                _ => None,
+            })
+            .sum();
+        let tool_parts = msg
+            .parts
+            .iter()
+            .filter(|p| matches!(p, crate::types::MessagePart::Tool(_)))
+            .count();
+        let reasoning_chars: usize = msg
+            .parts
+            .iter()
+            .filter_map(|p| match p {
+                crate::types::MessagePart::Reasoning(t) => Some(t.chars().count()),
+                _ => None,
+            })
+            .sum();
+        let out_tokens = msg.usage.as_ref().map(|u| u.output_tokens).unwrap_or(0);
+        let content_empty = text_chars == 0 && tool_parts == 0;
+        tracing::debug!(
+            target: "jfc::stream::lifecycle",
+            assistant_idx = idx,
+            ?stop_reason,
+            text_chars,
+            reasoning_chars,
+            tool_parts,
+            out_tokens,
+            streaming_response_bytes = app.streaming_response_bytes,
+            "stream turn finalized"
+        );
+        if content_empty && out_tokens > 0 {
+            tracing::warn!(
+                target: "jfc::stream::lifecycle",
+                assistant_idx = idx,
+                ?stop_reason,
+                out_tokens,
+                reasoning_chars,
+                "EMPTY-BUT-BILLED assistant turn: no text and no tools, but usage \
+                 was recorded (renders as a blank 'assistant (Brewed …)' bubble). \
+                 Likely stop_reason=refusal or a dropped/abandoned content stream."
+            );
+        }
+    }
+
     app.is_streaming = false;
     app.last_stream_event_at = None;
     app.render_cache.borrow_mut().clear_streaming();

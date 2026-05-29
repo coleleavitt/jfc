@@ -17,6 +17,11 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
     tracing::error!(
         target: "jfc::stream",
         error = %e,
+        is_streaming = app.is_streaming,
+        cancelled = app.cancel_token.is_cancelled(),
+        interrupt_flag = app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst),
+        streaming_response_bytes = app.streaming_response_bytes,
+        streaming_assistant_idx = ?app.streaming_assistant_idx,
         "StreamEvent::Error — resetting stream state"
     );
     if e == "Interrupted by user"

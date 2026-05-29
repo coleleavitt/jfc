@@ -11,6 +11,19 @@ pub(crate) fn handle_chunk(app: &mut App, text: Option<String>, reasoning: Optio
     app.record_stream_activity();
     app.network_recovery_status = None;
     app.network_recovery_attempts = 0;
+    // First-byte trace: log exactly once per turn, when the very first
+    // text/reasoning delta lands. This is the "connection opened, model is
+    // producing output" signal — the boundary the interrupt-on-submit and
+    // superseded-cancel logic keys off. One line per turn (gated on
+    // `streaming_response_bytes == 0`), so it's cheap even on long streams.
+    if app.streaming_response_bytes == 0 {
+        tracing::debug!(
+            target: "jfc::stream::lifecycle",
+            assistant_idx = ?app.streaming_assistant_idx,
+            first_kind = if text.is_some() { "text" } else { "reasoning" },
+            "first stream byte — connection producing output"
+        );
+    }
     // Reset the stall clock on every chunk so the spinner's
     // sub-status (`warming up` / `thinking` / `almost done`)
     // reflects time-since-last-byte, not time-since-stream-start.

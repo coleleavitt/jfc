@@ -1102,6 +1102,39 @@ async fn up_recalls_queued_prompt_robust() {
     assert!(app.queued_prompts.is_empty());
 }
 
+// REGRESSION (prompt-doubling): up-recall must REPLACE the textarea, not
+// append into it. The entry guard only checks that every line is empty,
+// which a single residual line can satisfy mid-edit; pre-fix `insert_str`
+// then appended a second copy, producing the `phasesalright…` doubling that
+// compounded each recall→submit cycle. Seed the textarea with the same text
+// the queued prompt holds and assert recall yields ONE copy, not two.
+#[tokio::test]
+async fn up_recall_replaces_textarea_no_double_insert_regression() {
+    let mut app = test_app();
+    app.queued_prompts.push(crate::app::QueuedPrompt {
+        text: "alpha".into(),
+        priority: crate::app::QueuePriority::Later,
+        is_meta: false,
+        attachments: Vec::new(),
+    });
+    app.messages.push(ChatMessage::user("⏳ alpha".into()));
+    // Residual content already in the textarea (a prior un-submitted recall).
+    app.textarea = TextArea::from(vec!["alpha".to_string()]);
+    let (tx, _rx) = channel();
+    handle_key(&mut app, key(KeyCode::Up), &tx).await.unwrap();
+    let txt = app.textarea.lines().join("\n");
+    // Exactly one "alpha", never "alphaalpha".
+    assert_eq!(
+        txt.matches("alpha").count(),
+        1,
+        "recall must replace, not append (got {txt:?})"
+    );
+    assert!(
+        !txt.contains("alphaalpha"),
+        "double-insert regression: {txt:?}"
+    );
+}
+
 #[tokio::test]
 async fn down_after_recall_advances_normal() {
     let mut app = test_app();
