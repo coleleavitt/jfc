@@ -39,14 +39,30 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
     // dropped — otherwise it resets the brand-new turn. A *genuine* watchdog
     // timeout differs: check_stream_watchdog sets is_streaming=false before
     // its task's error lands here, so it falls through and surfaces normally.
-    if e.starts_with("Stream timed out")
+    //
+    // The same supersession can fire *before the connection even opens*:
+    // when the interrupted stream was still inside
+    // `open_stream_with_cancel_and_timeout`, cancelling its token makes that
+    // select! bail with "Stream cancelled before connection opened" (or
+    // "Stream open timed out…" if the open-timeout arm wins the race). Those
+    // strings don't start with "Stream timed out", so without listing them
+    // here the superseded pre-connection error lands as a hard `**Error:**`
+    // on the brand-new turn (the reported "Stream cancelled before connection
+    // opened" bug). Gate on the identical is_streaming && !cancelled &&
+    // !interrupt condition so a *genuine* ESC (sets interrupt_flag) and a
+    // *genuine* watchdog (clears is_streaming) both still surface.
+    let is_superseded_stream_lifecycle_error = e.starts_with("Stream timed out")
+        || e.starts_with("Stream cancelled before connection opened")
+        || e.starts_with("Stream open timed out");
+    if is_superseded_stream_lifecycle_error
         && app.is_streaming
         && !app.cancel_token.is_cancelled()
         && !app.interrupt_flag.load(std::sync::atomic::Ordering::SeqCst)
     {
         tracing::info!(
             target: "jfc::stream",
-            "dropping stale watchdog-timeout from superseded stream (a fresh turn is already streaming)"
+            error = %e,
+            "dropping stale lifecycle error from superseded stream (a fresh turn is already streaming)"
         );
         return;
     }
@@ -356,5 +372,101 @@ mod tests {
         assert!(app.is_streaming);
         assert_eq!(app.streaming_assistant_idx, Some(1));
         assert_eq!(app.messages.len(), 2);
+    }
+
+    // Normal — REGRESSION (the "Stream cancelled before connection opened"
+    // bug): interrupt-on-submit cancels an in-flight stream that was still
+    // opening its connection, then spawns a fresh turn. The superseded
+    // stream's pre-open bail must be dropped, NOT pushed as a hard error on
+    // the new turn. Distinguishing state: a fresh turn is live
+    // (is_streaming = true), the *current* cancel token is healthy
+    // (uncancelled), and interrupt_flag is clear (the user submitted, didn't
+    // ESC). This mirrors the live conditions handle_submit leaves behind.
+    #[tokio::test]
+    async fn superseded_pre_open_cancel_is_dropped_normal() {
+        let mut app = test_app();
+        app.messages.push(ChatMessage::user("new prompt".into()));
+        app.messages.push(ChatMessage::assistant(String::new()));
+        app.is_streaming = true;
+        app.streaming_assistant_idx = Some(1);
+        // Fresh turn's token is healthy; interrupt flag clear (submit, not ESC).
+        app.cancel_token = tokio_util::sync::CancellationToken::new();
+        app.interrupt_flag
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let (tx, _rx) = mpsc::channel(8);
+
+        handle_stream_error(
+            &mut app,
+            &tx,
+            "Stream cancelled before connection opened".to_owned(),
+        )
+        .await;
+
+        // The new turn must be untouched: still streaming, same slot, no
+        // **Error:** message appended.
+        assert!(app.is_streaming, "fresh turn must keep streaming");
+        assert_eq!(app.streaming_assistant_idx, Some(1));
+        assert_eq!(app.messages.len(), 2, "no error message appended");
+    }
+
+    // Robust: the open-timeout sibling string ("Stream open timed out…")
+    // takes the same superseded path — it also doesn't start with "Stream
+    // timed out", so it would otherwise slip through to the hard-error push.
+    #[tokio::test]
+    async fn superseded_open_timeout_is_dropped_robust() {
+        let mut app = test_app();
+        app.messages.push(ChatMessage::user("new prompt".into()));
+        app.messages.push(ChatMessage::assistant(String::new()));
+        app.is_streaming = true;
+        app.streaming_assistant_idx = Some(1);
+        let (tx, _rx) = mpsc::channel(8);
+
+        handle_stream_error(
+            &mut app,
+            &tx,
+            "Stream open timed out after 45s before first provider response".to_owned(),
+        )
+        .await;
+
+        assert!(app.is_streaming);
+        assert_eq!(app.messages.len(), 2);
+    }
+
+    // Robust: a GENUINE pre-open cancel (no fresh turn took over —
+    // is_streaming already false because the lifecycle path reset it) must
+    // still surface as a hard error so the user can Ctrl+R. The supersession
+    // guard must not swallow it.
+    #[tokio::test]
+    async fn genuine_pre_open_cancel_surfaces_robust() {
+        let mut app = test_app();
+        app.messages.push(ChatMessage::user("only prompt".into()));
+        app.messages.push(ChatMessage::assistant(String::new()));
+        // No fresh turn: is_streaming was already cleared by the lifecycle.
+        app.is_streaming = false;
+        app.streaming_assistant_idx = Some(1);
+        let (tx, _rx) = mpsc::channel(8);
+
+        handle_stream_error(
+            &mut app,
+            &tx,
+            "Stream cancelled before connection opened".to_owned(),
+        )
+        .await;
+
+        // Hard-error path ran: an **Error:** assistant message was appended.
+        assert_eq!(app.messages.len(), 3, "error message must be appended");
+        let last = app.messages.last().expect("appended message");
+        let text: String = last
+            .parts
+            .iter()
+            .map(|p| match p {
+                MessagePart::Text(t) => t.as_str(),
+                _ => "",
+            })
+            .collect();
+        assert!(
+            text.contains("**Error:**"),
+            "genuine pre-open cancel must surface a hard error, got: {text}"
+        );
     }
 }
