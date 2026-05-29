@@ -151,7 +151,15 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
     }
     {
         let mut oc = serde_json::Map::new();
-        if let Some(effort) = opts.reasoning_effort.as_deref() {
+        // Gate `effort` by model — see anthropic_oauth.rs build_body for the
+        // rationale (CC 2.1.156 A2/NLz parity). Drops on unsupported models
+        // (haiku/sonnet-4-5/opus<4.6/claude-3) and clamps max/xhigh→high on
+        // effort-capable-but-Sonnet tiers, preventing the 400 a subagent hit
+        // when it inherited the global effort=max and ran on haiku.
+        if let Some(requested) = opts.reasoning_effort.as_deref()
+            && let Some(effort) =
+                super::anthropic_models::effort_for_model(opts.model.as_str(), requested)
+        {
             oc.insert("effort".into(), json!(effort));
         }
         if let Some(tb) = opts.task_budget_tokens {
@@ -654,9 +662,23 @@ mod tests {
     fn build_body_reasoning_effort_uses_output_config_normal() {
         let body = build_body(
             vec![make_user_msg("hi")],
-            &opts("m").reasoning_effort("xhigh"),
+            &opts("claude-opus-4-8").reasoning_effort("xhigh"),
         );
         assert_eq!(body["output_config"]["effort"], "xhigh");
+    }
+
+    // Normal — REGRESSION (the haiku 400): effort is dropped for a model that
+    // doesn't support the parameter (CC 2.1.156 A2/NLz parity).
+    #[test]
+    fn build_body_drops_effort_on_haiku_regression() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("claude-haiku-4-5").reasoning_effort("max"),
+        );
+        assert!(
+            body.get("output_config").is_none() || body["output_config"].get("effort").is_none(),
+            "haiku must not receive an effort param"
+        );
     }
 
     // Normal: build_body preserves message order — user/assistant alternation
@@ -758,7 +780,9 @@ mod tests {
     fn build_body_effort_and_task_budget_coexist_in_output_config_normal() {
         let body = build_body(
             vec![make_user_msg("hi")],
-            &opts("m").reasoning_effort("high").task_budget(30_000),
+            &opts("claude-opus-4-8")
+                .reasoning_effort("high")
+                .task_budget(30_000),
         );
         assert_eq!(body["output_config"]["effort"], "high");
         assert_eq!(body["output_config"]["task_budget"]["type"], "tokens");

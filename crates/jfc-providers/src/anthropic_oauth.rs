@@ -1336,7 +1336,17 @@ fn build_body(
     }
     {
         let mut oc = serde_json::Map::new();
-        if let Some(effort) = opts.reasoning_effort.as_deref() {
+        // Gate `effort` by model: sending it to a model that doesn't support
+        // the parameter (haiku, sonnet-4-5, opus pre-4.6, claude-3-*) returns
+        // 400 "This model does not support the effort parameter." A subagent
+        // dispatched to haiku that inherited the session's global effort=max
+        // hit exactly that. `effort_for_model` drops the param on unsupported
+        // models and clamps max/xhigh→high on effort-capable-but-Sonnet tiers
+        // (mirrors CC 2.1.156's A2/NLz gate).
+        if let Some(requested) = opts.reasoning_effort.as_deref()
+            && let Some(effort) =
+                super::anthropic_models::effort_for_model(opts.model.as_str(), requested)
+        {
             oc.insert("effort".into(), json!(effort));
         }
         if let Some(tb) = opts.task_budget_tokens {
@@ -2330,9 +2340,34 @@ mod tests {
 
     #[test]
     fn build_body_reasoning_effort_uses_output_config_normal() {
-        let o = opts("m").reasoning_effort("max");
+        // Effort-capable model keeps the requested value.
+        let o = opts("claude-opus-4-8").reasoning_effort("max");
         let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
         assert_eq!(body["output_config"]["effort"], "max");
+    }
+
+    // Normal — REGRESSION (the haiku 400): a subagent inheriting the session's
+    // global effort=max and dispatched to haiku must NOT send `effort` —
+    // sending it returns 400 "This model does not support the effort
+    // parameter." The param is dropped entirely (CC 2.1.156 A2/NLz parity).
+    #[test]
+    fn build_body_drops_effort_on_haiku_regression() {
+        let o = opts("claude-haiku-4-5").reasoning_effort("max");
+        let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
+        assert!(
+            body.get("output_config").is_none() || body["output_config"].get("effort").is_none(),
+            "haiku must not receive an effort param, got: {}",
+            body["output_config"]
+        );
+    }
+
+    // Robust: Sonnet 4.6 supports effort but not the Opus-only max/xhigh
+    // tiers — max clamps to high rather than 400ing.
+    #[test]
+    fn build_body_clamps_max_to_high_on_sonnet_robust() {
+        let o = opts("claude-sonnet-4-6").reasoning_effort("max");
+        let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
+        assert_eq!(body["output_config"]["effort"], "high");
     }
 
     // strip_block removes the entire `<env>...</env>` span and leaves

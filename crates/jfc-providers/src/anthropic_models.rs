@@ -264,9 +264,147 @@ pub fn supports_adaptive_thinking(model_id: &str) -> bool {
         || id.contains("mythos")
 }
 
+/// Whether `output_config.effort` may be sent to `model_id`.
+///
+/// Mirrors Claude Code 2.1.156's `A2(model)` gate (cli.js:180153): an
+/// explicit allowlist of effort-capable models, with everything older
+/// denied. Sending `effort` to a model that doesn't support it returns
+/// `400 invalid_request_error: "This model does not support the effort
+/// parameter."` — exactly the failure seen when a subagent inherited the
+/// session's global `effort=max` and was dispatched to haiku.
+///
+/// CC's `A2` semantics, reproduced:
+///   - explicit DENY: `claude-3-*`, `opus-4-0`, `opus-4-1`, `sonnet-4-0`,
+///     `sonnet-4-5`, `haiku-4-5` (and haiku generally) → false
+///   - explicit ALLOW: `opus-4-6`, `opus-4-7`, `opus-4-8`, `sonnet-4-6`,
+///     plus `opus-4-5` (the skill doc lists it; the live `oR` fallback
+///     covers it) and `mythos` (our preview) → true
+///   - `CLAUDE_CODE_ALWAYS_ENABLE_EFFORT` env force-on → true
+///   - unknown models → false (deny by default; an unknown model that
+///     can't take `effort` would 400, and the cost of a missing `effort`
+///     on a model that *could* take it is just default depth)
+pub fn model_supports_effort(model_id: &str) -> bool {
+    if std::env::var("CLAUDE_CODE_ALWAYS_ENABLE_EFFORT")
+        .ok()
+        .is_some_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
+    {
+        return true;
+    }
+    let id = model_id.to_ascii_lowercase();
+    // Explicit deny — pre-effort families (mirrors CC's A2 deny list).
+    if id.contains("claude-3-")
+        || id.contains("opus-4-0")
+        || id.contains("opus-4-1")
+        || id.contains("sonnet-4-0")
+        || id.contains("sonnet-4-5")
+        || id.contains("haiku")
+    {
+        return false;
+    }
+    // Explicit allow — effort-capable families.
+    id.contains("opus-4-5")
+        || id.contains("opus-4-6")
+        || id.contains("opus-4-7")
+        || id.contains("opus-4-8")
+        || id.contains("sonnet-4-6")
+        || id.contains("mythos")
+}
+
+/// Whether the `"max"` / `"xhigh"` effort tiers are valid for `model_id`.
+/// Both are Opus-tier only (Opus 4.6+ for `max`; Opus 4.7+ added `xhigh`).
+/// Sonnet 4.6 supports effort but caps at `high` — sending `max`/`xhigh`
+/// there 400s. This lets callers clamp rather than drop. Mirrors the skill
+/// doc: "`max` is Opus-tier only … will error on Sonnet/Haiku".
+pub fn model_supports_high_effort_tier(model_id: &str) -> bool {
+    let id = model_id.to_ascii_lowercase();
+    id.contains("opus-4-5")
+        || id.contains("opus-4-6")
+        || id.contains("opus-4-7")
+        || id.contains("opus-4-8")
+        || id.contains("mythos")
+}
+
+/// Resolve the effort value actually safe to send for `model_id`, given the
+/// caller's `requested` effort. Returns `None` when effort must be omitted
+/// entirely (model doesn't support the parameter — CC's `delete $.effort`),
+/// or `Some(clamped)` where `max`/`xhigh` are clamped to `high` on
+/// effort-capable-but-not-Opus models (e.g. Sonnet 4.6).
+pub fn effort_for_model<'a>(model_id: &str, requested: &'a str) -> Option<&'a str> {
+    if !model_supports_effort(model_id) {
+        return None;
+    }
+    if matches!(requested, "max" | "xhigh") && !model_supports_high_effort_tier(model_id) {
+        // Effort-capable but Sonnet-tier: clamp the Opus-only tiers to high.
+        return Some("high");
+    }
+    Some(requested)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── effort gating (CC 2.1.156 A2/NLz parity) ────────────────────────────
+
+    // Normal: effort-capable models are allowed; pre-effort families denied.
+    #[test]
+    fn model_supports_effort_allowlist_normal() {
+        for ok in [
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+            "claude-opus-4-6",
+            "claude-opus-4-5",
+            "claude-sonnet-4-6",
+            "claude-mythos-preview",
+        ] {
+            assert!(model_supports_effort(ok), "{ok} should support effort");
+        }
+        for deny in [
+            "claude-haiku-4-5",
+            "claude-haiku-4-5-20251001",
+            "claude-sonnet-4-5",
+            "claude-sonnet-4-0",
+            "claude-opus-4-1",
+            "claude-opus-4-0",
+            "claude-3-7-sonnet-20250219",
+            "some-unknown-model",
+        ] {
+            assert!(
+                !model_supports_effort(deny),
+                "{deny} must NOT support effort"
+            );
+        }
+    }
+
+    // Normal — REGRESSION (the haiku 400): effort_for_model returns None for
+    // haiku so the param is dropped entirely.
+    #[test]
+    fn effort_dropped_on_haiku_regression() {
+        assert_eq!(effort_for_model("claude-haiku-4-5", "max"), None);
+        assert_eq!(effort_for_model("claude-haiku-4-5", "high"), None);
+    }
+
+    // Normal: effort-capable Opus keeps the requested value verbatim,
+    // including the Opus-only max/xhigh tiers.
+    #[test]
+    fn effort_passthrough_on_opus_normal() {
+        assert_eq!(effort_for_model("claude-opus-4-8", "max"), Some("max"));
+        assert_eq!(effort_for_model("claude-opus-4-7", "xhigh"), Some("xhigh"));
+        assert_eq!(effort_for_model("claude-opus-4-6", "high"), Some("high"));
+    }
+
+    // Robust: Sonnet 4.6 supports effort but not the Opus-only max/xhigh
+    // tiers — those clamp to high; low/medium/high pass through.
+    #[test]
+    fn effort_clamped_on_sonnet_robust() {
+        assert_eq!(effort_for_model("claude-sonnet-4-6", "max"), Some("high"));
+        assert_eq!(effort_for_model("claude-sonnet-4-6", "xhigh"), Some("high"));
+        assert_eq!(effort_for_model("claude-sonnet-4-6", "low"), Some("low"));
+        assert_eq!(
+            effort_for_model("claude-sonnet-4-6", "medium"),
+            Some("medium")
+        );
+    }
 
     // Normal: every entry has a non-empty id, display, and the requested provider tag.
     #[test]
