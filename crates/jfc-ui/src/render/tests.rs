@@ -1142,7 +1142,10 @@ mod pure_helper_tests {
 
     #[test]
     fn collect_diff_stats_dedupes_by_path_robust() {
-        // Two diffs for the same file → last entry wins (not summed).
+        // Two diffs for the same file → file count dedups to 1, but the
+        // line counts SUM across edits (CC 2.1.154 parity, cli.js:266415).
+        // Each DiffView is a per-edit-local delta, so the footer reports
+        // total lines churned this session, not just the last edit.
         let mut app = fake_app();
         for (i, (a, d)) in [(5, 1), (10, 3)].into_iter().enumerate() {
             let tool = ToolCall {
@@ -1179,10 +1182,58 @@ mod pure_helper_tests {
             });
         }
         let stats = collect_diff_stats(&app);
-        // De-duped to 1 file, last edit wins → +10/-3.
+        // De-duped to 1 file; line counts SUM: +5/-1 then +10/-3 → +15/-4.
         assert_eq!(stats.total_files, 1);
-        assert_eq!(stats.additions, 10);
-        assert_eq!(stats.deletions, 3);
+        assert_eq!(stats.additions, 15);
+        assert_eq!(stats.deletions, 4);
+    }
+
+    // Robust: two *different* files each edited once still sum into the
+    // totals and report total_files=2 (the cross-file union, not last-wins).
+    #[test]
+    fn collect_diff_stats_sums_across_distinct_files_robust() {
+        let mut app = fake_app();
+        for (i, (path, a, d)) in [("src/a.rs", 7, 2), ("src/b.rs", 4, 9)]
+            .into_iter()
+            .enumerate()
+        {
+            let tool = ToolCall {
+                id: crate::ids::ToolId::from(format!("t{i}")),
+                kind: ToolKind::Edit,
+                status: ToolStatus::Completed,
+                input: ToolInput::Edit {
+                    file_path: path.into(),
+                    old_string: "".into(),
+                    new_string: "".into(),
+                    replacement: ReplacementMode::FirstOnly,
+                },
+                output: ToolOutput::Diff(DiffView {
+                    file_path: path.into(),
+                    hunks: Vec::new(),
+                    additions: a,
+                    deletions: d,
+                }),
+                display: crate::types::ToolDisplayState::DEFAULT,
+                elapsed_ms: None,
+                started_at: None,
+                thought_signature: None,
+            };
+            app.messages.push(ChatMessage {
+                role: Role::Assistant,
+                parts: vec![MessagePart::Tool(tool)],
+                agent_name: None,
+                model_name: None,
+                cost_tier: None,
+                elapsed: None,
+                usage: None,
+                queued: false,
+                attachments: Vec::new(),
+            });
+        }
+        let stats = collect_diff_stats(&app);
+        assert_eq!(stats.total_files, 2);
+        assert_eq!(stats.additions, 11); // 7 + 4
+        assert_eq!(stats.deletions, 11); // 2 + 9
     }
 
     // --- current_slash_prefix / slash_matches ------------------------

@@ -480,12 +480,15 @@ pub fn fmt_number(n: u64) -> String {
 }
 
 /// Aggregate edit/write diff stats across the whole conversation for the
-/// sidebar "Changes" section. Walks every Tool message part, picks up
-/// `ToolOutput::Diff(_)` payloads (Edit/Write tools convert their result
-/// into a unified diff at parse time — see `types.rs::ToolOutput::Diff`),
-/// and de-duplicates files by their last-seen entry so the most recent
-/// edit wins. Files appear in *most-recent-first* order to match how the
-/// chat scrolls.
+/// sidebar "Changes" section and the footer `+N/−M` indicator. Walks every
+/// Tool message part, picks up `ToolOutput::Diff(_)` payloads (Edit/Write
+/// tools convert their result into a unified diff at parse time — see
+/// `types.rs::ToolOutput::Diff`), and **sums** every edit's additions /
+/// deletions per file. Each `DiffView` is a per-edit-local delta, so the
+/// total is a session activity counter (lines churned this session) — CC
+/// 2.1.154 parity (cli.js:266415 `linesAdded += z`). `total_files` still
+/// dedups by path. Files appear in *most-recent-first* order to match how
+/// the chat scrolls.
 #[derive(Clone)]
 pub struct DiffStats {
     pub total_files: usize,
@@ -532,8 +535,17 @@ pub fn compute_diff_stats(app: &App) -> DiffStats {
             if let MessagePart::Tool(call) = part
                 && let ToolOutput::Diff(view) = &call.output
             {
+                // Sum every edit's lines per file (CC 2.1.154 parity —
+                // cli.js:266415 `linesAdded += z`). Each `DiffView` is
+                // computed locally against the file's state right before
+                // *that* edit (filesystem.rs build_edit_diff_view), so the
+                // footer is a session ACTIVITY counter: total lines churned.
+                // The previous `*entry = (...)` kept only the last edit per
+                // file, silently hiding every earlier edit's lines on any
+                // file touched more than once.
                 let entry = by_file.entry(view.file_path.clone()).or_insert((0, 0));
-                *entry = (view.additions, view.deletions);
+                entry.0 += view.additions;
+                entry.1 += view.deletions;
                 if !order.contains(&view.file_path) {
                     order.push(view.file_path.clone());
                 }
