@@ -1068,9 +1068,14 @@ pub async fn execute_tool(
                     }
                     out.push_str(&format!("Errors:\n  {}", errors.join("\n  ")));
                 }
-                if errors.is_empty() {
+                // Return success if at least one file was delivered, even if some failed
+                if !delivered.is_empty() {
+                    ExecutionResult::success(out)
+                } else if errors.is_empty() {
+                    // No files delivered and no errors = caller provided empty paths
                     ExecutionResult::success(out)
                 } else {
+                    // No files delivered but errors occurred = all files failed
                     ExecutionResult::failure(out)
                 }
             }

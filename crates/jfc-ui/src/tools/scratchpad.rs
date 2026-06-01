@@ -1,9 +1,14 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use crate::runtime::ExecutionResult;
 
 type ScratchpadMap = BTreeMap<String, String>;
+
+const LOCK_TIMEOUT: Duration = Duration::from_secs(5);
+const LOCK_RETRY_DELAY: Duration = Duration::from_millis(10);
+const LOCK_MAX_DELAY: Duration = Duration::from_millis(500);
 
 fn scratchpad_path() -> PathBuf {
     crate::daemon::DaemonPaths::default_user()
@@ -18,19 +23,40 @@ fn lock_scratchpad(lock_path: &Path) -> std::io::Result<std::fs::File> {
     if let Some(parent) = lock_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .read(true)
-        .open(lock_path)?;
-    // SAFETY: flock operates on a valid file descriptor and the kernel
-    // releases the lock when `file` is dropped.
-    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
-    if rc != 0 {
-        return Err(std::io::Error::last_os_error());
+    
+    let start = Instant::now();
+    let mut delay = LOCK_RETRY_DELAY;
+    
+    loop {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .read(true)
+            .open(lock_path)?;
+        
+        // SAFETY: flock operates on a valid file descriptor and the kernel
+        // releases the lock when `file` is dropped.
+        // Use LOCK_NB (non-blocking) + LOCK_EX (exclusive)
+        let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        
+        if rc == 0 {
+            // Lock acquired successfully
+            return Ok(file);
+        }
+        
+        // Check if we've exceeded timeout
+        if start.elapsed() >= LOCK_TIMEOUT {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "Scratchpad lock timeout (5s): another agent may hold the lock",
+            ));
+        }
+        
+        // Wait before retrying, with exponential backoff
+        std::thread::sleep(delay);
+        delay = (delay * 2).min(LOCK_MAX_DELAY);
     }
-    Ok(file)
 }
 
 #[cfg(not(unix))]
@@ -38,12 +64,36 @@ fn lock_scratchpad(lock_path: &Path) -> std::io::Result<std::fs::File> {
     if let Some(parent) = lock_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .read(true)
-        .open(lock_path)
+    
+    // On Windows, try with retry loop (no native flock with timeout)
+    let start = Instant::now();
+    let mut delay = LOCK_RETRY_DELAY;
+    
+    loop {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .read(true)
+            .open(lock_path)
+        {
+            Ok(file) => return Ok(file),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && start.elapsed() < LOCK_TIMEOUT => {
+                // File is locked by another process, retry with backoff
+                std::thread::sleep(delay);
+                delay = (delay * 2).min(LOCK_MAX_DELAY);
+            }
+            Err(e) => {
+                if start.elapsed() >= LOCK_TIMEOUT {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "Scratchpad lock timeout (5s): another agent may hold the lock",
+                    ));
+                }
+                return Err(e);
+            }
+        }
+    }
 }
 
 fn load(path: &Path) -> ScratchpadMap {

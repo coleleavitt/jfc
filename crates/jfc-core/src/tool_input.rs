@@ -76,6 +76,12 @@ macro_rules! ti_parse {
             .and_then(|v| v.as_u64())
             .map(|n| n.min(255) as u8)
     };
+    ($obj:ident, $tool:ident, opt_u64_loose, $k:literal) => {
+        $obj.and_then(|m| m.get($k)).and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.trim().parse::<u64>().ok()))
+        })
+    };
     ($obj:ident, $tool:ident, u64_or_0, $k:literal) => {
         $obj.and_then(|m| m.get($k))
             .and_then(|v| v.as_u64())
@@ -181,6 +187,11 @@ macro_rules! ti_ser {
             $v[$k] = serde_json::json!(x);
         }
     };
+    ($v:ident, $field:ident, opt_u64_loose, $k:literal) => {
+        if let Some(x) = $field {
+            $v[$k] = serde_json::json!(x);
+        }
+    };
     ($v:ident, $field:ident, raw_opt, $k:literal) => {
         if let Some(x) = $field {
             $v[$k] = x.clone();
@@ -241,12 +252,11 @@ macro_rules! for_each_regular_tool_input {
         $cb! {
             Edit => { file_path: req_str @ "file_path", old_string: req_str @ "old_string", new_string: req_str @ "new_string", replacement: replacement @ "replace_all" }
             Write => { file_path: req_str @ "file_path", content: req_str @ "content" }
-            Read => { file_path: req_str @ "file_path", offset: opt_u64 @ "offset", limit: opt_u64 @ "limit" }
+            Read => { file_path: req_str @ "file_path", offset: opt_u64_loose @ "offset", limit: opt_u64_loose @ "limit" }
             Glob => { pattern: req_str @ "pattern", path: opt_str @ "path" }
             Grep => { pattern: req_str @ "pattern", path: opt_str @ "path", glob: opt_str @ "glob", output_mode: opt_str @ "output_mode" }
             Search => { query: req_str @ "query", path: opt_str @ "path" }
             ApplyPatch => { patch: req_str @ "patch" }
-            TaskUpdate => { task_id: req_str @ "task_id", status: opt_str @ "status", subject: opt_str @ "subject", description: opt_str @ "description", owner: opt_str @ "owner", acceptance_criteria: opt_str @ "acceptance_criteria", verification_command: opt_str @ "verification_command", risk: opt_str @ "risk", parent_id: opt_str @ "parent_id", kind: opt_str @ "kind", blocked_by: str_vec @ "blocked_by", tags: str_vec @ "tags", priority: opt_u8 @ "priority", effort: opt_str @ "effort", model: opt_str @ "model" }
             TaskList => { status_filter: opt_str @ "status_filter", owner_filter: opt_str @ "owner_filter" }
             TaskDone => { task_id: req_str @ "task_id" }
             TaskStop => { task_id: req_str @ "task_id" }
@@ -1367,6 +1377,48 @@ impl ToolInput {
             },
             ToolKind::Advisor => Self::Advisor {},
             ToolKind::ConnectGitHub => Self::ConnectGitHub {},
+            ToolKind::TaskUpdate => {
+                // depends_on is an alias for blocked_by
+                let blocked_by = obj
+                    .and_then(|map| map.get("blocked_by").or_else(|| map.get("depends_on")))
+                    .and_then(|value| value.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|value| value.as_str().map(str::to_owned))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let tags = obj
+                    .and_then(|map| map.get("tags"))
+                    .and_then(|value| value.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|value| value.as_str().map(str::to_owned))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let priority = obj
+                    .and_then(|map| map.get("priority"))
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v.min(9) as u8);
+                Self::TaskUpdate {
+                    task_id: req_str("task_id")?,
+                    status: opt_str_field("status"),
+                    subject: opt_str_field("subject"),
+                    description: opt_str_field("description"),
+                    owner: opt_str_field("owner"),
+                    acceptance_criteria: opt_str_field("acceptance_criteria"),
+                    verification_command: opt_str_field("verification_command"),
+                    risk: opt_str_field("risk"),
+                    parent_id: opt_str_field("parent_id"),
+                    kind: opt_str_field("kind"),
+                    blocked_by,
+                    tags,
+                    priority,
+                    effort: opt_str_field("effort"),
+                    model: opt_str_field("model"),
+                }
+            }
             // ─── Regular kinds: parsed by the table-generated fn ───
             other => {
                 for_each_regular_tool_input!(gen_regular_from_value);
@@ -1446,6 +1498,70 @@ impl ToolInput {
             Self::ReadMcpResource { server, uri } => json!({ "server": server, "uri": uri }),
             Self::Advisor {} => json!({}),
             Self::ConnectGitHub {} => json!({}),
+            Self::TaskUpdate {
+                task_id,
+                status,
+                subject,
+                description,
+                owner,
+                acceptance_criteria,
+                verification_command,
+                risk,
+                parent_id,
+                kind,
+                blocked_by,
+                tags,
+                priority,
+                effort,
+                model,
+            } => {
+                let mut value = json!({
+                    "task_id": task_id,
+                });
+                if let Some(s) = status {
+                    value["status"] = json!(s);
+                }
+                if let Some(s) = subject {
+                    value["subject"] = json!(s);
+                }
+                if let Some(s) = description {
+                    value["description"] = json!(s);
+                }
+                if let Some(s) = owner {
+                    value["owner"] = json!(s);
+                }
+                if let Some(s) = acceptance_criteria {
+                    value["acceptance_criteria"] = json!(s);
+                }
+                if let Some(s) = verification_command {
+                    value["verification_command"] = json!(s);
+                }
+                if let Some(s) = risk {
+                    value["risk"] = json!(s);
+                }
+                if let Some(s) = parent_id {
+                    value["parent_id"] = json!(s);
+                }
+                if let Some(s) = kind {
+                    value["kind"] = json!(s);
+                }
+                if !blocked_by.is_empty() {
+                    value["blocked_by"] = json!(blocked_by);
+                }
+                if !tags.is_empty() {
+                    value["tags"] = json!(tags);
+                }
+                if let Some(p) = priority {
+                    value["priority"] = json!(p);
+                }
+                if let Some(s) = effort {
+                    value["effort"] = json!(s);
+                }
+                if let Some(s) = model {
+                    value["model"] = json!(s);
+                }
+                value
+            }
             // ─── Regular variants: serialized by the two table-generated fns ───
             // (split into two tables — main table is parse+serialize, the
             // supplementary table is serialize-only for variants whose
@@ -1658,6 +1774,48 @@ mod macro_equivalence_tests {
         assert!(matches!(
             ToolInput::from_value("TaskStop", json!({"bash_id":"bash-1"})).unwrap(),
             ToolInput::TaskStop { task_id } if task_id == "bash-1"
+        ));
+    }
+
+    #[test]
+    fn task_update_depends_on_alias() {
+        // Test that TaskUpdate accepts depends_on as alias for blocked_by
+        assert!(matches!(
+            ToolInput::from_value(
+                "TaskUpdate",
+                json!({"task_id":"t1","depends_on":["t2","t3"]})
+            ).unwrap(),
+            ToolInput::TaskUpdate { 
+                task_id, 
+                blocked_by,
+                ..
+            } if task_id == "t1" && blocked_by == vec!["t2".to_string(), "t3".to_string()]
+        ));
+
+        // Test that blocked_by still works (explicit primary field)
+        assert!(matches!(
+            ToolInput::from_value(
+                "TaskUpdate",
+                json!({"task_id":"t1","blocked_by":["t4","t5"]})
+            ).unwrap(),
+            ToolInput::TaskUpdate { 
+                task_id, 
+                blocked_by,
+                ..
+            } if task_id == "t1" && blocked_by == vec!["t4".to_string(), "t5".to_string()]
+        ));
+
+        // Test that blocked_by takes precedence if both provided
+        assert!(matches!(
+            ToolInput::from_value(
+                "TaskUpdate",
+                json!({"task_id":"t1","blocked_by":["t6"],"depends_on":["t7"]})
+            ).unwrap(),
+            ToolInput::TaskUpdate { 
+                task_id, 
+                blocked_by,
+                ..
+            } if task_id == "t1" && blocked_by == vec!["t6".to_string()]
         ));
     }
 }
