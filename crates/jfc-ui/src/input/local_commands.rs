@@ -587,6 +587,8 @@ pub(super) fn handle_status_command(app: &mut App) {
         .count();
     let mcp_count = app.mcp_servers.len();
     let effort_label = app.effort_state.status();
+    let temperature_label = app.temperature_state.status();
+    let exploration_label = app.exploration_state.status();
 
     let lines = vec![
         format!("**Version:** jfc v{}", env!("CARGO_PKG_VERSION")),
@@ -604,6 +606,8 @@ pub(super) fn handle_status_command(app: &mut App) {
             if app.fast_mode { "ON" } else { "OFF" }
         ),
         format!("**Effort:** {effort_label}"),
+        format!("**Temperature:** {temperature_label}"),
+        format!("**Exploration:** {exploration_label}"),
     ];
     app.messages
         .push(crate::types::ChatMessage::user("/status".into()));

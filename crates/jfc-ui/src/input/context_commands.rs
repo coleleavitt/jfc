@@ -572,6 +572,78 @@ pub(super) async fn cmd_effort(
     }
 }
 
+pub(super) async fn cmd_temp(
+    app: &mut App,
+    parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    app.messages.push(ChatMessage::user(text.to_owned()));
+    let arg = parts.get(1).copied().unwrap_or("").trim();
+    if arg.is_empty() {
+        app.messages
+            .push(ChatMessage::assistant(app.temperature_state.status()));
+    } else if matches!(arg, "clear" | "default" | "auto" | "off") {
+        let msg = app.temperature_state.clear();
+        app.messages.push(ChatMessage::assistant(msg));
+    } else {
+        match crate::exploration::parse_temperature(arg) {
+            Ok(value) => {
+                let msg = app.temperature_state.set(value);
+                app.messages.push(ChatMessage::assistant(msg));
+            }
+            Err(reason) => {
+                app.messages.push(ChatMessage::assistant(format!(
+                    "{reason} Use `/temp <0..2>` or `/temp clear`."
+                )));
+            }
+        }
+    }
+}
+
+pub(super) async fn cmd_explore(
+    app: &mut App,
+    parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    app.messages.push(ChatMessage::user(text.to_owned()));
+    let arg = parts.get(1).copied().unwrap_or("").trim();
+    let msg = match arg {
+        "" | "up" | "+1" | "more" => app.exploration_state.adjust_sticky(1),
+        "status" => app.exploration_state.status(),
+        "clear" | "default" | "auto" => app.exploration_state.clear_adjustments(),
+        "max" | "ultra" => {
+            app.exploration_state
+                .force_next(crate::exploration::ExplorationLevel::MAX);
+            "Next turn exploration forced to level 4.".to_owned()
+        }
+        other => format!(
+            "Unknown exploration argument `{other}`. Use `/explore`, `/explore status`, or `/explore clear`."
+        ),
+    };
+    app.messages.push(ChatMessage::assistant(msg));
+}
+
+pub(super) async fn cmd_focus(
+    app: &mut App,
+    parts: &[&str],
+    text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    app.messages.push(ChatMessage::user(text.to_owned()));
+    let arg = parts.get(1).copied().unwrap_or("").trim();
+    let msg = match arg {
+        "" | "down" | "-1" | "less" => app.exploration_state.adjust_sticky(-1),
+        "status" => app.exploration_state.status(),
+        "clear" | "default" | "auto" => app.exploration_state.clear_adjustments(),
+        other => format!(
+            "Unknown focus argument `{other}`. Use `/focus`, `/focus status`, or `/focus clear`."
+        ),
+    };
+    app.messages.push(ChatMessage::assistant(msg));
+}
+
 pub(super) async fn cmd_feature(
     app: &mut App,
     parts: &[&str],

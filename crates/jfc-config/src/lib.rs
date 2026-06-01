@@ -84,6 +84,8 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continuation: Option<ContinuationConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exploration: Option<ExplorationConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub managed_settings: Option<ManagedSettingsConfig>,
 }
 
@@ -214,7 +216,37 @@ impl Default for Config {
             hooks: None,
             remote_control: None,
             continuation: None,
+            exploration: None,
             managed_settings: None,
+        }
+    }
+}
+
+/// `[exploration]` section in config.toml — controls the adaptive
+/// effort/temperature controller. Category-specific baselines continue to live
+/// in `[categories.<query-class>]` via `temperature` / `reasoning_effort`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ExplorationConfig {
+    /// `adaptive` lets jfc choose effort/temperature from query class and
+    /// stall/retry signals. `fixed` preserves only explicit `/effort` or
+    /// `/temp` pins plus provider defaults.
+    pub policy: Option<String>,
+    /// Lower bound for adaptive levels, inclusive (`0..=4`).
+    pub min_level: Option<u8>,
+    /// Upper bound for adaptive levels, inclusive (`0..=4`).
+    pub max_level: Option<u8>,
+    /// How many adaptive bump rungs decay after a clean completed turn.
+    pub decay: Option<u8>,
+}
+
+impl Default for ExplorationConfig {
+    fn default() -> Self {
+        Self {
+            policy: None,
+            min_level: None,
+            max_level: None,
+            decay: Some(1),
         }
     }
 }

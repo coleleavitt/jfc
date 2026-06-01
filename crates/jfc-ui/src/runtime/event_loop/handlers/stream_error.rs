@@ -243,6 +243,8 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
     app.cancel_token = tokio_util::sync::CancellationToken::new();
     let mut auto_retry_restarted = false;
     if auto_retry_signal {
+        app.exploration_state
+            .bump_for_signal(crate::exploration::ExplorationSignal::StreamRetry);
         if let Some(idx) = retry_assistant_idx {
             restart_stream_in_place(app, tx, idx, retry_turn_started_at);
             auto_retry_restarted = true;

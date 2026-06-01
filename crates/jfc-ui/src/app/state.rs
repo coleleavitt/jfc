@@ -865,6 +865,13 @@ pub struct App {
     /// the `reasoning_effort` field of `StreamOptions` if the active model
     /// supports it.
     pub effort_state: crate::effort::EffortState,
+    /// Sampling-temperature pin for this session. `/temp <0..2>` flips it;
+    /// `prepare_stream_request` only forwards it when the selected provider /
+    /// model request shape can legally carry temperature.
+    pub temperature_state: crate::exploration::TemperatureState,
+    /// Adaptive exploration controller. It fills in effort or temperature
+    /// only when neither `/effort` nor `/temp` has pinned a knob.
+    pub exploration_state: crate::exploration::ExplorationState,
     /// Last time we fired the OnHeartbeat hook. Tick handler checks this
     /// every 80ms and fires the hook at most once every 30s when idle.
     pub last_heartbeat_at: Option<std::time::Instant>,
@@ -1385,6 +1392,8 @@ impl App {
             delivered_diagnostics: std::collections::HashSet::new(),
             usage_apply_baseline: (0, 0, 0, 0),
             effort_state: crate::effort::EffortState::new(),
+            temperature_state: crate::exploration::TemperatureState::new(),
+            exploration_state: crate::exploration::ExplorationState::new(),
             last_heartbeat_at: None,
             last_mcp_refresh_seen: 0,
             last_file_watcher_seen: 0,

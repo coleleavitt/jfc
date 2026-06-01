@@ -19,6 +19,10 @@ pub struct KeywordScanResult {
     pub text: String,
     /// Whether the "ultrawork" keyword was detected.
     pub ultrawork: bool,
+    /// Whether the "ultrathink" keyword was detected.
+    pub ultrathink: bool,
+    /// Whether the explicit per-turn exploration marker `//explore` was detected.
+    pub explore: bool,
 }
 
 /// Case-insensitive whole-word match for "ultrawork".
@@ -27,12 +31,28 @@ fn ultrawork_regex() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"(?i)\bultrawork\b").expect("ultrawork regex is valid"))
 }
 
+/// Case-insensitive whole-word match for "ultrathink".
+fn ultrathink_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?i)\bultrathink\b").expect("ultrathink regex is valid"))
+}
+
+/// Explicit exploration marker. We intentionally do NOT reserve the plain word
+/// "explore" because it is normal user prose; `//explore` is a command-like
+/// marker that can be stripped safely.
+fn explore_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?i)(^|\s)//explore\b").expect("explore regex is valid"))
+}
+
 /// Scan `input` for recognised magic keywords. Returns the cleaned text
 /// (keywords removed, surrounding whitespace collapsed) and flags
 /// indicating which keywords were found.
 pub fn scan_and_strip(input: &str) -> KeywordScanResult {
     let mut text = input.to_owned();
     let mut ultrawork = false;
+    let mut ultrathink = false;
+    let mut explore = false;
 
     if let Some(m) = ultrawork_regex().find(&text) {
         ultrawork = true;
@@ -44,12 +64,39 @@ pub fn scan_and_strip(input: &str) -> KeywordScanResult {
         text = text.trim().to_owned();
     }
 
-    KeywordScanResult { text, ultrawork }
+    if let Some(m) = ultrathink_regex().find(&text) {
+        ultrathink = true;
+        text = format!("{}{}", &text[..m.start()], &text[m.end()..]);
+        text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        text = text.trim().to_owned();
+    }
+
+    if let Some(m) = explore_regex().find(&text) {
+        explore = true;
+        let prefix = &text[..m.start()];
+        let suffix = &text[m.end()..];
+        text = format!("{prefix}{suffix}");
+        text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        text = text.trim().to_owned();
+    }
+
+    KeywordScanResult {
+        text,
+        ultrawork,
+        ultrathink,
+        explore,
+    }
 }
 
 /// The system-reminder body injected when "ultrawork" is detected.
 pub const ULTRAWORK_REMINDER: &str = "The user included the keyword \"ultrawork\", which means you should \
      use the Workflow tool to fulfill their request.";
+
+/// The system-reminder body injected when "ultrathink" is detected.
+pub const ULTRATHINK_REMINDER: &str = "The user included the keyword \"ultrathink\", requesting deeper reasoning on this turn. Reason as thoroughly as the task warrants.";
+
+/// The system-reminder body injected when `//explore` is detected.
+pub const EXPLORE_REMINDER: &str = "The user included the `//explore` marker, requesting broader exploration on this turn before narrowing to an answer or edit.";
 
 #[cfg(test)]
 mod tests {
@@ -60,6 +107,7 @@ mod tests {
     fn detects_and_strips_ultrawork_normal() {
         let result = scan_and_strip("ultrawork fix the login bug");
         assert!(result.ultrawork);
+        assert!(!result.ultrathink);
         assert_eq!(result.text, "fix the login bug");
     }
 
@@ -109,6 +157,7 @@ mod tests {
     fn empty_input_robust() {
         let result = scan_and_strip("");
         assert!(!result.ultrawork);
+        assert!(!result.ultrathink);
         assert_eq!(result.text, "");
     }
 
@@ -118,5 +167,26 @@ mod tests {
         let result = scan_and_strip("ultrawork");
         assert!(result.ultrawork);
         assert_eq!(result.text, "");
+    }
+
+    #[test]
+    fn detects_and_strips_ultrathink_normal() {
+        let result = scan_and_strip("ultrathink debug the queue");
+        assert!(result.ultrathink);
+        assert_eq!(result.text, "debug the queue");
+    }
+
+    #[test]
+    fn detects_and_strips_explicit_explore_marker_normal() {
+        let result = scan_and_strip("please //explore scheduler.rs");
+        assert!(result.explore);
+        assert_eq!(result.text, "please scheduler.rs");
+    }
+
+    #[test]
+    fn plain_explore_is_not_magic_robust() {
+        let result = scan_and_strip("please explore scheduler.rs");
+        assert!(!result.explore);
+        assert_eq!(result.text, "please explore scheduler.rs");
     }
 }

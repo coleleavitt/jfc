@@ -612,6 +612,18 @@ pub(crate) async fn handle_stream_done(
     // type "continue". This is the behavioral half of the "factory": the
     // stopping condition is *scope exhausted*, not *finished a sub-step*.
     if should_self_continue_after_stop_reason(&stop_reason) {
+        if turn_genuinely_done {
+            let stalled = stream::assistant_text_stalls(&app.messages);
+            if stalled {
+                app.exploration_state
+                    .bump_for_signal(crate::exploration::ExplorationSignal::AssistantStall);
+            } else {
+                let counts = app.task_store.counts();
+                if counts.pending == 0 && counts.in_progress == 0 {
+                    app.exploration_state.decay_after_progress();
+                }
+            }
+        }
         maybe_self_continue(app, tx).await;
     }
     if needs_dynamic_loop_keepalive && !app.is_streaming {

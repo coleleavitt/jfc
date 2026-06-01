@@ -517,6 +517,19 @@ pub(crate) async fn run(
             );
             app.effort_state.set(level);
         }
+        if let Some(temperature) = crate::exploration::temperature_from_env()
+            .or_else(|| crate::exploration::resolve_temperature_for_model(&cfg, &app.model))
+        {
+            tracing::info!(
+                target: "jfc::exploration",
+                temperature,
+                model = %app.model,
+                "applied persisted/session temperature (post-session-restore)"
+            );
+            let _ = app.temperature_state.set(temperature);
+        }
+        app.exploration_state
+            .configure(crate::exploration::ExplorationSettings::from_config(&cfg));
     }
 
     // Handle --prompt flag: queue an initial prompt to submit after startup
@@ -714,6 +727,8 @@ pub(crate) async fn run(
         } else {
             app.model.clone()
         };
+        let cfg = crate::config::load();
+        app.exploration_state.begin_turn(&prompt, &cfg);
         let tx_clone = tx.clone();
         let interrupt = app.interrupt_flag.clone();
         // wg-async: --prompt startup spawns a stream that holds critical

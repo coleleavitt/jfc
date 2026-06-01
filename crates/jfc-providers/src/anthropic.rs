@@ -107,7 +107,8 @@ fn build_body(messages: Vec<ProviderMessage>, opts: &StreamOptions) -> serde_jso
         body["system"] = system_blocks(sys);
     }
 
-    if let Some(temp) = opts.temperature {
+    let has_thinking = opts.adaptive_thinking || opts.thinking_budget.is_some();
+    if !has_thinking && let Some(temp) = opts.temperature {
         body["temperature"] = serde_json::Value::from(temp);
     }
     if let Some(top_p) = opts.top_p {
@@ -676,6 +677,21 @@ mod tests {
     fn build_body_thinking_absent_when_unset_robust() {
         let body = build_body(vec![make_user_msg("hi")], &opts("m"));
         assert!(body.get("thinking").is_none());
+    }
+
+    #[test]
+    fn build_body_includes_temperature_when_thinking_off_normal() {
+        let body = build_body(vec![make_user_msg("hi")], &opts("m").temperature(0.7));
+        assert_eq!(body["temperature"], 0.7);
+    }
+
+    #[test]
+    fn build_body_omits_temperature_when_thinking_enabled_regression() {
+        let body = build_body(
+            vec![make_user_msg("hi")],
+            &opts("m").temperature(0.7).adaptive(),
+        );
+        assert!(body.get("temperature").is_none());
     }
 
     #[test]

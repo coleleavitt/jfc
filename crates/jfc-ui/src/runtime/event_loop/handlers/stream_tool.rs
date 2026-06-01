@@ -351,6 +351,7 @@ pub(crate) async fn handle_stream_tool(app: &mut App, tx: &EventSender, tool: To
         streaming_idx = ?app.streaming_assistant_idx,
         "StreamTool received"
     );
+    app.exploration_state.record_tool_call(&tool);
     // Guard 1: a tool that arrived already terminal (the stream
     // layer builds `ToolCall::new_failed` for malformed provider
     // input — bad JSON or schema mismatch) must NOT be dispatched.

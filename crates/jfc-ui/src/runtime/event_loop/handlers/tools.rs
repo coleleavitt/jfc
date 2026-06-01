@@ -66,6 +66,7 @@ pub(crate) fn handle_tool_result(
         output_len = result.output.len(),
         "tool_result received"
     );
+    app.exploration_state.record_tool_result(result.is_error());
     let _ = tx.try_send(AppEvent::Tool(
         crate::runtime::ToolEvent::SetInProgressToolUseIds {
             action: "remove".to_owned(),

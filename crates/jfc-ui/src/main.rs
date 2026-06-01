@@ -29,6 +29,7 @@ mod diagnostics_producer;
 mod document_formats;
 mod effort;
 mod env_context;
+mod exploration;
 
 mod feature_gates;
 #[allow(dead_code)]

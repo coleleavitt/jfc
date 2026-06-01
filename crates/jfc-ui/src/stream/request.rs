@@ -814,9 +814,6 @@ Do not use a colon before tool calls.";
             anthropic_tool_choice_value(overrides.tool_choice),
         );
     }
-    if let Some(effort) = crate::effort::active_global() {
-        base = base.reasoning_effort(effort);
-    }
     if let Some(advisor_model) = server_advisor_model {
         base = base.advisor_model(advisor_model);
     }
@@ -849,6 +846,11 @@ Do not use a colon before tool calls.";
     }
 
     let mut opts = thinking_mode.apply_to(base);
+    opts = crate::exploration::apply_to_stream_options(
+        opts,
+        provider.name(),
+        provider.stream_convention(),
+    );
     if let Some(max) = overrides.max_thinking_tokens
         && let Some(budget) = opts.thinking_budget.as_mut()
     {
@@ -989,8 +991,59 @@ fn memory_value_to_text(value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{conversation_is_mid_tool_loop, user_text_requests_action};
-    use jfc_provider::{ProviderContent, ProviderMessage, ProviderRole};
+    use std::sync::Arc;
+
+    use super::{conversation_is_mid_tool_loop, prepare_stream_request, user_text_requests_action};
+    use jfc_provider::{
+        EventStream, ModelId, ModelInfo, Provider, ProviderContent, ProviderMessage, ProviderRole,
+        StreamConvention, StreamOptions,
+    };
+
+    struct TestProvider {
+        name: &'static str,
+        convention: StreamConvention,
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        fn stream_convention(&self) -> StreamConvention {
+            self.convention
+        }
+
+        async fn stream(
+            &self,
+            #[allow(dead_code)] _messages: Vec<ProviderMessage>,
+            #[allow(dead_code)] _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    struct TemperatureGlobalGuard;
+
+    impl TemperatureGlobalGuard {
+        fn set(value: f64) -> Self {
+            crate::exploration::set_temperature_global(Some(value));
+            Self
+        }
+    }
+
+    impl Drop for TemperatureGlobalGuard {
+        fn drop(&mut self) {
+            crate::exploration::set_temperature_global(None);
+            crate::exploration::set_exploration_level_global(None);
+        }
+    }
 
     fn user_text(s: &str) -> ProviderMessage {
         ProviderMessage {
@@ -1060,5 +1113,44 @@ mod tests {
         ));
         assert!(!user_text_requests_action("this is pretty wild right"));
         assert!(!user_text_requests_action("/help"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn prepare_applies_temperature_when_thinking_absent_normal() {
+        let _guard = TemperatureGlobalGuard::set(0.8);
+        let provider = Arc::new(TestProvider {
+            name: "openai-test",
+            convention: StreamConvention::OpenAiNative,
+        });
+        let request = prepare_stream_request(
+            provider,
+            &[user_text("write a small function")],
+            &ModelId::new("test-model"),
+            Default::default(),
+        )
+        .await;
+
+        assert_eq!(request.opts.temperature, Some(0.8));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn prepare_skips_temperature_for_anthropic_thinking_regression() {
+        let _guard = TemperatureGlobalGuard::set(0.8);
+        let provider = Arc::new(TestProvider {
+            name: "anthropic",
+            convention: StreamConvention::AnthropicNative,
+        });
+        let request = prepare_stream_request(
+            provider,
+            &[user_text("write a small function")],
+            &ModelId::new("claude-opus-4-8"),
+            Default::default(),
+        )
+        .await;
+
+        assert!(request.opts.adaptive_thinking);
+        assert_eq!(request.opts.temperature, None);
     }
 }

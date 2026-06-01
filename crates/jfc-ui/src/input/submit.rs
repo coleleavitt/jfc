@@ -408,16 +408,19 @@ pub(super) async fn handle_submit(
     // text is what gets stored in the conversation; the keyword's effect
     // is delivered via a system-reminder injected after the message push.
     let keyword_result = crate::keywords::scan_and_strip(&text);
-    let display_text = if keyword_result.ultrawork {
-        tracing::info!(
-            target: "jfc::keywords",
-            keyword = "ultrawork",
-            "detected ultrawork keyword — stripping and injecting reminder"
-        );
-        keyword_result.text.clone()
-    } else {
-        text.clone()
-    };
+    let display_text =
+        if keyword_result.ultrawork || keyword_result.ultrathink || keyword_result.explore {
+            tracing::info!(
+                target: "jfc::keywords",
+                ultrawork = keyword_result.ultrawork,
+                ultrathink = keyword_result.ultrathink,
+                explore = keyword_result.explore,
+                "detected turn keyword — stripping and injecting reminder"
+            );
+            keyword_result.text.clone()
+        } else {
+            text.clone()
+        };
 
     let assistant_idx = app.messages.len() + 1;
     let mut user_msg = ChatMessage::user(display_text.clone());
@@ -434,6 +437,22 @@ pub(super) async fn handle_submit(
         crate::system_reminder::append_to_last_user(
             &mut app.messages,
             crate::keywords::ULTRAWORK_REMINDER,
+        );
+    }
+    if keyword_result.ultrathink {
+        app.exploration_state
+            .force_next(crate::exploration::ExplorationLevel::MAX);
+        crate::system_reminder::append_to_last_user(
+            &mut app.messages,
+            crate::keywords::ULTRATHINK_REMINDER,
+        );
+    }
+    if keyword_result.explore {
+        app.exploration_state
+            .force_next(crate::exploration::ExplorationLevel::new(3));
+        crate::system_reminder::append_to_last_user(
+            &mut app.messages,
+            crate::keywords::EXPLORE_REMINDER,
         );
     }
 
@@ -668,6 +687,8 @@ pub(super) async fn handle_submit(
     } else {
         app.model.clone()
     };
+    let cfg = crate::config::load();
+    app.exploration_state.begin_turn(&display_text, &cfg);
     let tx = tx.clone();
     let interrupt = app.interrupt_flag.clone();
     // Fresh user submission resets any prior interrupt state — the user

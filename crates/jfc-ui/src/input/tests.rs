@@ -77,6 +77,15 @@ fn channel() -> (
     tokio::sync::mpsc::channel(1024)
 }
 
+struct TemperatureGlobalGuard;
+
+impl Drop for TemperatureGlobalGuard {
+    fn drop(&mut self) {
+        crate::exploration::set_temperature_global(None);
+        crate::exploration::set_exploration_level_global(None);
+    }
+}
+
 /// Build a minimal `ToolCall` of the requested kind. The status defaults
 /// to `Pending` so tests can drive it through the approval lifecycle
 /// without preseeding extra state.
@@ -2240,6 +2249,98 @@ async fn slash_mode_status_only_robust() {
     run_slash_command(&mut app, "/mode").await;
     // Just ensure no panic & assistant message added.
     assert!(!app.messages.is_empty());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn slash_temp_sets_temperature_normal() {
+    let _guard = TemperatureGlobalGuard;
+    let mut app = test_app();
+
+    run_slash_command(&mut app, "/temp 0.7").await;
+
+    assert_eq!(app.temperature_state.current, Some(0.7));
+    assert_eq!(crate::exploration::active_temperature(), Some(0.7));
+    let last_text = app
+        .messages
+        .last()
+        .and_then(|m| m.parts.first())
+        .map(MessagePart::text_only)
+        .unwrap_or_default();
+    assert!(last_text.contains("Temperature set to: 0.7"));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn slash_temp_clear_removes_temperature_normal() {
+    let _guard = TemperatureGlobalGuard;
+    let mut app = test_app();
+    app.temperature_state.set(1.1);
+
+    run_slash_command(&mut app, "/temperature clear").await;
+
+    assert_eq!(app.temperature_state.current, None);
+    assert_eq!(crate::exploration::active_temperature(), None);
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn slash_temp_rejects_out_of_range_robust() {
+    let _guard = TemperatureGlobalGuard;
+    let mut app = test_app();
+
+    run_slash_command(&mut app, "/temp 3").await;
+
+    assert_eq!(app.temperature_state.current, None);
+    assert_eq!(crate::exploration::active_temperature(), None);
+    let last_text = app
+        .messages
+        .last()
+        .and_then(|m| m.parts.first())
+        .map(MessagePart::text_only)
+        .unwrap_or_default();
+    assert!(last_text.contains("between 0.0 and 2.0"));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn slash_explore_raises_sticky_level_normal() {
+    let _guard = TemperatureGlobalGuard;
+    let mut app = test_app();
+
+    run_slash_command(&mut app, "/explore").await;
+
+    assert_eq!(app.exploration_state.sticky_delta, 1);
+    assert_eq!(
+        crate::exploration::active_exploration_level(),
+        Some(app.exploration_state.current)
+    );
+    let last_text = app
+        .messages
+        .last()
+        .and_then(|m| m.parts.first())
+        .map(MessagePart::text_only)
+        .unwrap_or_default();
+    assert!(last_text.contains("Exploration raised"));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn slash_focus_lowers_sticky_level_normal() {
+    let _guard = TemperatureGlobalGuard;
+    let mut app = test_app();
+    app.exploration_state.adjust_sticky(1);
+
+    run_slash_command(&mut app, "/focus").await;
+
+    assert_eq!(app.exploration_state.sticky_delta, 0);
+    let last_text = app
+        .messages
+        .last()
+        .and_then(|m| m.parts.first())
+        .map(MessagePart::text_only)
+        .unwrap_or_default();
+    assert!(last_text.contains("Exploration lowered"));
 }
 
 #[tokio::test]
