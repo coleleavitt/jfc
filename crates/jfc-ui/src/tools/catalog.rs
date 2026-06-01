@@ -57,11 +57,14 @@ pub(crate) fn progressive_tool_defs(
         selected.insert(normalize_tool_name(&name));
     }
 
+    let mut discovered_added = 0usize;
     for name in discovered_tool_names(messages) {
-        if selected.len() >= STARTER_TOOL_NAMES.len() + MAX_DISCOVERED_MATCHES {
+        if discovered_added >= MAX_DISCOVERED_MATCHES {
             break;
         }
-        selected.insert(normalize_tool_name(&name));
+        if selected.insert(normalize_tool_name(&name)) {
+            discovered_added += 1;
+        }
     }
 
     if let Some(intent) = user_intent {
@@ -330,6 +333,33 @@ mod tests {
             "historical tool_use names must stay advertised on replay"
         );
         assert!(!names.contains(&"run_coverage"));
+    }
+
+    #[test]
+    fn historical_tool_count_does_not_starve_discovered_tools_regression() {
+        let mut all = vec![
+            tool("Read", "read files"),
+            tool("ToolSearch", "search tools"),
+            tool("run_coverage", "coverage reports"),
+        ];
+        let mut messages = vec![
+            assistant_tool_use("toolu_search", "ToolSearch"),
+            user_tool_result(
+                "toolu_search",
+                "Matches for `coverage`:\n- tool `run_coverage`: Run cargo llvm-cov",
+            ),
+        ];
+
+        for idx in 0..32 {
+            let name = format!("Historical{idx}");
+            all.push(tool(&name, "already used in replayed history"));
+            messages.push(assistant_tool_use(&format!("toolu_hist_{idx}"), &name));
+        }
+
+        let selected = progressive_tool_defs(all, &messages, Some("continue"));
+        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
+
+        assert!(names.contains(&"run_coverage"));
     }
 
     #[test]
