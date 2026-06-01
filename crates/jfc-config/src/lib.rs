@@ -87,6 +87,28 @@ pub struct Config {
     pub exploration: Option<ExplorationConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub managed_settings: Option<ManagedSettingsConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isolation: Option<IsolationConfig>,
+}
+
+/// Controls what happens when an agent requested worktree isolation but the
+/// worktree could not be created. Borrowing Dolt's "agents work on an isolated
+/// branch, production stays untouched" promise: a mutating agent must NOT
+/// silently fall back to the main checkout.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct IsolationConfig {
+    /// When true (the default), an agent that requested `isolation:"worktree"`
+    /// and failed to get one is NOT silently run in the main checkout — the
+    /// dispatch fails closed. Set false to restore the legacy permissive
+    /// fall-back-to-cwd behaviour.
+    pub fail_closed: bool,
+}
+
+impl Default for IsolationConfig {
+    fn default() -> Self {
+        Self { fail_closed: true }
+    }
 }
 
 /// Admin/managed settings. These may be embedded in `config.toml` or loaded
@@ -218,6 +240,7 @@ impl Default for Config {
             continuation: None,
             exploration: None,
             managed_settings: None,
+            isolation: None,
         }
     }
 }

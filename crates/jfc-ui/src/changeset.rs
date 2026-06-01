@@ -24,6 +24,50 @@ pub(crate) struct ChangeOrigin {
     pub session_id: Option<String>,
 }
 
+/// What a dispatch should do when an agent asked for worktree isolation but
+/// the worktree could not be created.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum IsolationFallback {
+    /// Fail the dispatch — do NOT run the agent in the main checkout.
+    FailClosed,
+    /// Permissively run in the parent cwd (legacy behaviour).
+    AllowCwd,
+}
+
+/// Decide the fallback policy from the env override and config. Default is
+/// fail-closed so a mutating agent can never silently touch production when its
+/// isolation request fails. `JFC_ISOLATION_FAIL_CLOSED=0` (or config
+/// `[isolation] fail_closed = false`) restores the permissive fall-back.
+///
+/// Pure in its single `fail_closed` input so the policy is unit-testable; the
+/// env/config resolution lives in [`isolation_fallback`].
+pub(crate) fn isolation_fallback_for(fail_closed: bool) -> IsolationFallback {
+    if fail_closed {
+        IsolationFallback::FailClosed
+    } else {
+        IsolationFallback::AllowCwd
+    }
+}
+
+/// Resolve the effective isolation fallback policy: env override wins, then
+/// `[isolation] fail_closed` config, else the fail-closed default.
+pub(crate) fn isolation_fallback() -> IsolationFallback {
+    if let Ok(v) = std::env::var("JFC_ISOLATION_FAIL_CLOSED") {
+        let v = v.trim().to_ascii_lowercase();
+        if matches!(v.as_str(), "0" | "false" | "no" | "off") {
+            return IsolationFallback::AllowCwd;
+        }
+        if matches!(v.as_str(), "1" | "true" | "yes" | "on") {
+            return IsolationFallback::FailClosed;
+        }
+    }
+    let fail_closed = crate::config::load()
+        .isolation
+        .map(|i| i.fail_closed)
+        .unwrap_or(true);
+    isolation_fallback_for(fail_closed)
+}
+
 /// Current unix-epoch milliseconds (the timestamp unit the store uses).
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
@@ -215,6 +259,23 @@ pub(crate) async fn finalize_for_worktree(repo_root: &Path, change_id: &str, wor
 mod tests {
     use super::*;
     use jfc_changeset::ChangeState;
+
+    // Normal: the default policy (fail_closed = true) refuses the cwd fallback.
+    #[test]
+    fn isolation_fail_closed_default_refuses_cwd_normal() {
+        assert_eq!(
+            isolation_fallback_for(true),
+            IsolationFallback::FailClosed,
+            "fail_closed=true must refuse the main-checkout fallback"
+        );
+    }
+
+    // Robust: explicitly opting out (fail_closed = false) restores the legacy
+    // permissive fall-back to cwd.
+    #[test]
+    fn isolation_fail_open_allows_cwd_robust() {
+        assert_eq!(isolation_fallback_for(false), IsolationFallback::AllowCwd);
+    }
 
     async fn git(args: &[&str], dir: &Path) {
         let ok = tokio::process::Command::new("git")

@@ -354,13 +354,52 @@ pub(crate) fn dispatch_tools_batched(
                         Some((info, repo_root, change_id))
                     }
                     Err(e) => {
-                        tracing::warn!(
-                            target: "jfc::stream",
-                            repo_root = %repo_root.display(),
-                            error = %e,
-                            "task tool: failed to create worktree, running in cwd"
-                        );
-                        None
+                        // Isolation was requested but couldn't be created.
+                        // Default fail-closed: do NOT silently run a
+                        // (potentially mutating) agent against the main
+                        // checkout — that breaks the "production stays
+                        // untouched" guarantee. Abort the dispatch instead.
+                        match crate::changeset::isolation_fallback() {
+                            crate::changeset::IsolationFallback::FailClosed => {
+                                let msg = format!(
+                                    "Refusing to run isolated agent in the main checkout: \
+                                     worktree creation failed ({e}). Isolation is fail-closed \
+                                     (set [isolation] fail_closed = false or \
+                                     JFC_ISOLATION_FAIL_CLOSED=0 to allow the cwd fallback)."
+                                );
+                                tracing::warn!(
+                                    target: "jfc::stream",
+                                    repo_root = %repo_root.display(),
+                                    error = %e,
+                                    "task tool: worktree creation failed — failing closed"
+                                );
+                                let _ = tx_task
+                                    .send(AppEvent::Task(TaskEvent::Failed {
+                                        task_id: crate::ids::TaskId::from(task_id.clone()),
+                                        error: msg.clone(),
+                                    }))
+                                    .await;
+                                if !task_input.run_in_background {
+                                    let _ = tx_task
+                                        .send(AppEvent::Tool(ToolEvent::Result {
+                                            tool_id: crate::ids::ToolId::from(task_id.clone()),
+                                            result: crate::runtime::ExecutionResult::failure(msg),
+                                        }))
+                                        .await;
+                                }
+                                done();
+                                return;
+                            }
+                            crate::changeset::IsolationFallback::AllowCwd => {
+                                tracing::warn!(
+                                    target: "jfc::stream",
+                                    repo_root = %repo_root.display(),
+                                    error = %e,
+                                    "task tool: failed to create worktree, running in cwd (fail-open)"
+                                );
+                                None
+                            }
+                        }
                     }
                 }
             } else {

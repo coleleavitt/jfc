@@ -154,7 +154,15 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
         }
     });
 
-    let (worktree_info, cwd_override) = prepare_background_worktree(&launch).await;
+    let (worktree_info, cwd_override) = match prepare_background_worktree(&launch).await {
+        BackgroundIsolation::Proceed(wt, cwd) => (wt, cwd),
+        BackgroundIsolation::FailClosed(msg) => {
+            // Isolation requested, creation failed, fail-closed policy: record
+            // the spawn failure and exit rather than mutate the main checkout.
+            mark_background_agent_spawn_failed(&paths, &launch.task_id, &msg)?;
+            return Ok(());
+        }
+    };
     if let Some(path) = &cwd_override {
         record_background_agent_started_at(
             &paths,
@@ -284,11 +292,19 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
 
 type BackgroundWorktree = (crate::worktrees::WorktreeInfo, PathBuf, Option<String>);
 
-async fn prepare_background_worktree(
-    launch: &BackgroundAgentLaunch,
-) -> (Option<BackgroundWorktree>, Option<PathBuf>) {
+/// Outcome of attempting worktree isolation for a background agent.
+enum BackgroundIsolation {
+    /// No isolation requested, or isolation failed but the policy allows the
+    /// cwd fall-back. Carries the optional worktree handle + cwd override.
+    Proceed(Option<BackgroundWorktree>, Option<PathBuf>),
+    /// Isolation was requested, creation failed, and the policy is
+    /// fail-closed: the worker must NOT run in the main checkout.
+    FailClosed(String),
+}
+
+async fn prepare_background_worktree(launch: &BackgroundAgentLaunch) -> BackgroundIsolation {
     if launch.task_input.isolation.as_deref() != Some("worktree") {
-        return (None, None);
+        return BackgroundIsolation::Proceed(None, None);
     }
 
     let name = format!(
@@ -334,15 +350,25 @@ async fn prepare_background_worktree(
             let change_id =
                 crate::changeset::open_for_worktree(&repo_root, &info.path, &info.branch, &origin)
                     .await;
-            (Some((info, repo_root, change_id)), Some(path))
+            BackgroundIsolation::Proceed(Some((info, repo_root, change_id)), Some(path))
         }
-        Err(e) => {
-            record_background_agent_log(
-                &launch.task_id,
-                &format!("[worktree] failed to create worktree: {e}; using cwd"),
-            );
-            (None, None)
-        }
+        Err(e) => match crate::changeset::isolation_fallback() {
+            crate::changeset::IsolationFallback::FailClosed => {
+                let msg = format!(
+                    "[worktree] creation failed ({e}); isolation is fail-closed — \
+                     refusing to run in the main checkout"
+                );
+                record_background_agent_log(&launch.task_id, &msg);
+                BackgroundIsolation::FailClosed(msg)
+            }
+            crate::changeset::IsolationFallback::AllowCwd => {
+                record_background_agent_log(
+                    &launch.task_id,
+                    &format!("[worktree] failed to create worktree: {e}; using cwd (fail-open)"),
+                );
+                BackgroundIsolation::Proceed(None, None)
+            }
+        },
     }
 }
 
