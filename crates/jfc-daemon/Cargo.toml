@@ -7,6 +7,7 @@ edition.workspace = true
 jfc-core = { path = "../jfc-core" }
 jfc-provider = { path = "../jfc-provider" }
 
+async-trait = { workspace = true }
 chrono = { workspace = true }
 dirs = "6"
 libc = "0.2"

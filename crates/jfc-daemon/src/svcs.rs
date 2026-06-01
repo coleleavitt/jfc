@@ -106,74 +106,226 @@ impl Controller {
     }
 }
 
-// ── Concrete service adapters ──────────────────────────────────────────────
+// ── Real daemon services ───────────────────────────────────────────────────
 //
-// These wrap the daemon's discrete tick responsibilities as `Service`s,
-// demonstrating the migration from the monolithic tick loop. Each holds a
-// counter so the controller's behaviour is observable; the real wiring swaps
-// the body of `tick` for the existing `Daemon::tick_cron` /
-// `drain_due_wakeups` / `reconcile_background_agents` calls.
+// The generic sync `Service`/`Controller` above is the lifecycle primitive.
+// The daemon's actual per-tick work is async (cron shells out, reconcile reads
+// state files), so it runs through the async `DaemonService` trait below, each
+// operating on the live `&mut Daemon`. `DaemonServices` is the ordered roster
+// that `run_daemon` drives in place of the old monolithic tick body.
 
-/// Service that drives cron firing each tick.
-#[derive(Default)]
-pub struct CronService {
-    started: bool,
-    ticks: u64,
+use std::time::SystemTime;
+
+use crate::runtime::Daemon;
+
+/// What a service's tick wants the daemon loop to do next.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TickOutcome {
+    /// Nothing special — keep looping.
+    Continue,
+    /// The daemon should stop the loop and respawn a replacement (used by the
+    /// runtime-resilience / binary-upgrade check).
+    Restart,
+    /// The daemon should stop the loop and exit (idle timeout).
+    IdleExit,
 }
 
-impl CronService {
-    /// Whether `init` has run (the controller started this service).
-    pub fn is_started(&self) -> bool {
-        self.started
-    }
-    pub fn tick_count(&self) -> u64 {
-        self.ticks
-    }
+/// One ordered unit of the daemon's per-tick work, operating on the live
+/// daemon. Symmetric to the sync [`Service`] but async, since the real work
+/// awaits (subprocess spawn, fs reads).
+#[async_trait::async_trait]
+pub trait DaemonService: Send {
+    /// Stable name for logs.
+    fn name(&self) -> &str;
+
+    /// Run this service's slice of one daemon tick. `now` is the shared wall
+    /// clock for the tick so cron/wakeup fire consistently. Returning a
+    /// non-`Continue` outcome short-circuits the rest of the tick.
+    async fn tick(&mut self, daemon: &mut Daemon, now: SystemTime) -> TickOutcome;
 }
 
-impl Service for CronService {
-    fn name(&self) -> &str {
-        "cron"
-    }
-    fn init(&mut self) -> Result<(), String> {
-        self.started = true;
-        Ok(())
-    }
-    fn tick(&mut self) -> Result<(), String> {
-        self.ticks += 1;
-        Ok(())
-    }
-}
+/// Reconcile the persisted background-agent roster into daemon state.
+pub struct ReconcileService;
 
-/// Service that drains due scheduled wakeups each tick.
-#[derive(Default)]
-pub struct WakeupService {
-    ticks: u64,
-}
-
-impl Service for WakeupService {
-    fn name(&self) -> &str {
-        "wakeup"
-    }
-    fn tick(&mut self) -> Result<(), String> {
-        self.ticks += 1;
-        Ok(())
-    }
-}
-
-/// Service that reconciles the background-agent roster each tick.
-#[derive(Default)]
-pub struct ReconcileService {
-    ticks: u64,
-}
-
-impl Service for ReconcileService {
+#[async_trait::async_trait]
+impl DaemonService for ReconcileService {
     fn name(&self) -> &str {
         "reconcile"
     }
-    fn tick(&mut self) -> Result<(), String> {
-        self.ticks += 1;
-        Ok(())
+    async fn tick(&mut self, daemon: &mut Daemon, _now: SystemTime) -> TickOutcome {
+        if let Ok(reconciled) = crate::reconcile::reconcile_background_agents(&daemon.paths) {
+            daemon.state.background_agents = reconciled.background_agents;
+        }
+        TickOutcome::Continue
+    }
+}
+
+/// Refresh runtime resilience info (worker binary mtime, spare readiness).
+/// Requests a restart when the worker binary changed under us.
+pub struct RuntimeInfoService;
+
+#[async_trait::async_trait]
+impl DaemonService for RuntimeInfoService {
+    fn name(&self) -> &str {
+        "runtime_info"
+    }
+    async fn tick(&mut self, daemon: &mut Daemon, _now: SystemTime) -> TickOutcome {
+        if crate::runtime::refresh_runtime_info(daemon).unwrap_or(false) {
+            tracing::warn!(
+                target: "jfc::daemon",
+                reason = ?daemon.state.runtime.restart_reason,
+                "daemon restart requested by runtime resilience check"
+            );
+            return TickOutcome::Restart;
+        }
+        TickOutcome::Continue
+    }
+}
+
+/// Retire a worker when free memory drops below the configured threshold.
+pub struct MemoryService;
+
+#[async_trait::async_trait]
+impl DaemonService for MemoryService {
+    fn name(&self) -> &str {
+        "memory"
+    }
+    async fn tick(&mut self, daemon: &mut Daemon, _now: SystemTime) -> TickOutcome {
+        if crate::runtime::maybe_retire_low_memory_worker(&daemon.paths.clone(), daemon)
+            .unwrap_or(false)
+        {
+            daemon.touch_activity();
+        }
+        TickOutcome::Continue
+    }
+}
+
+/// Apply queued worker control requests (pause/resume/kill).
+pub struct ControlService;
+
+#[async_trait::async_trait]
+impl DaemonService for ControlService {
+    fn name(&self) -> &str {
+        "control"
+    }
+    async fn tick(&mut self, daemon: &mut Daemon, _now: SystemTime) -> TickOutcome {
+        let paths = daemon.paths.clone();
+        if crate::control::apply_worker_control_requests(&paths, &mut daemon.state) {
+            daemon.touch_activity();
+        }
+        TickOutcome::Continue
+    }
+}
+
+/// Sync the in-memory worker roster from persisted background-agent state.
+pub struct WorkerSyncService;
+
+#[async_trait::async_trait]
+impl DaemonService for WorkerSyncService {
+    fn name(&self) -> &str {
+        "worker_sync"
+    }
+    async fn tick(&mut self, daemon: &mut Daemon, _now: SystemTime) -> TickOutcome {
+        let state = daemon.state.clone();
+        crate::runtime::sync_workers_from_state(daemon, &state);
+        TickOutcome::Continue
+    }
+}
+
+/// Fire due cron jobs (shells out per fired job).
+pub struct CronService;
+
+#[async_trait::async_trait]
+impl DaemonService for CronService {
+    fn name(&self) -> &str {
+        "cron"
+    }
+    async fn tick(&mut self, daemon: &mut Daemon, now: SystemTime) -> TickOutcome {
+        let fired = daemon.tick_cron(now);
+        for id in &fired {
+            if let Some(job) = daemon.cron_by_id(id).cloned() {
+                tracing::info!(target: "jfc::daemon", cron_id = %job.id, cmd = %job.command, "cron firing");
+                let _ = crate::cron::run_cron_command(&job).await;
+            }
+        }
+        if !fired.is_empty() {
+            daemon.touch_activity();
+        }
+        TickOutcome::Continue
+    }
+}
+
+/// Drain and emit due scheduled wakeups.
+pub struct WakeupService;
+
+#[async_trait::async_trait]
+impl DaemonService for WakeupService {
+    fn name(&self) -> &str {
+        "wakeup"
+    }
+    async fn tick(&mut self, daemon: &mut Daemon, now: SystemTime) -> TickOutcome {
+        let wakes = daemon.drain_due_wakeups(now);
+        if !wakes.is_empty() {
+            daemon.touch_activity();
+        }
+        for w in wakes {
+            tracing::info!(target: "jfc::daemon", wakeup_id = %w.id, reason = %w.reason, "wakeup firing");
+            println!("[wakeup {}] {} :: {}", w.id, w.reason, w.prompt);
+        }
+        TickOutcome::Continue
+    }
+}
+
+/// The ordered roster of real daemon services. `run_daemon` builds this once
+/// and calls [`DaemonServices::run_tick`] every interval, replacing the old
+/// inline tick body. Order matches the historical loop exactly:
+/// reconcile → runtime-info → memory → control → worker-sync → cron → wakeup,
+/// with an idle-exit check appended after the roster.
+pub struct DaemonServices {
+    services: Vec<Box<dyn DaemonService>>,
+}
+
+impl Default for DaemonServices {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DaemonServices {
+    /// Build the standard daemon service roster in tick order.
+    pub fn new() -> Self {
+        Self {
+            services: vec![
+                Box::new(ReconcileService),
+                Box::new(RuntimeInfoService),
+                Box::new(MemoryService),
+                Box::new(ControlService),
+                Box::new(WorkerSyncService),
+                Box::new(CronService),
+                Box::new(WakeupService),
+            ],
+        }
+    }
+
+    /// Service names in tick order (for logging / tests).
+    pub fn service_names(&self) -> Vec<&str> {
+        self.services.iter().map(|s| s.name()).collect()
+    }
+
+    /// Run one full daemon tick: every service in order, short-circuiting on
+    /// the first Restart/IdleExit. After the roster runs cleanly, the idle
+    /// check decides whether to exit. `now` is the shared tick clock.
+    pub async fn run_tick(&mut self, daemon: &mut Daemon, now: SystemTime) -> TickOutcome {
+        for svc in self.services.iter_mut() {
+            match svc.tick(daemon, now).await {
+                TickOutcome::Continue => {}
+                other => return other,
+            }
+        }
+        if daemon.should_idle_exit() {
+            return TickOutcome::IdleExit;
+        }
+        TickOutcome::Continue
     }
 }
 
@@ -182,32 +334,101 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
-    // Integration: the daemon's three discrete responsibilities register as
-    // services and run through the controller with deterministic ordering.
-    // (Named `service_controller_*` so `cargo test service_controller` hits it.)
-    #[test]
-    fn service_controller_runs_daemon_services_in_order_normal() {
-        // Verify CronService's own lifecycle accessors before boxing it.
-        let mut cron = CronService::default();
-        assert!(!cron.is_started());
-        cron.init().unwrap();
-        assert!(cron.is_started());
-        cron.tick().unwrap();
-        assert_eq!(cron.tick_count(), 1);
+    // Integration: the REAL daemon service roster runs against a live Daemon
+    // in tick order. (Named `service_controller_*` so the acceptance command
+    // `cargo test -p jfc-daemon service_controller` hits it.)
+    #[tokio::test]
+    async fn service_controller_runs_daemon_services_in_order_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut daemon = Daemon::new(dir.path()).expect("daemon");
+        let mut services = DaemonServices::new();
 
-        let mut c = Controller::new();
-        c.register(Box::new(ReconcileService::default()));
-        c.register(Box::new(CronService::default()));
-        c.register(Box::new(WakeupService::default()));
+        // The roster matches the historical inline tick order exactly.
+        assert_eq!(
+            services.service_names(),
+            vec![
+                "reconcile",
+                "runtime_info",
+                "memory",
+                "control",
+                "worker_sync",
+                "cron",
+                "wakeup",
+            ]
+        );
 
-        assert_eq!(c.service_names(), vec!["reconcile", "cron", "wakeup"]);
-        c.start().expect("services init");
+        // A clean tick (no cron, no wakeups, fresh activity) keeps looping —
+        // it neither restarts nor idle-exits.
+        let now = SystemTime::now();
+        let outcome = services.run_tick(&mut daemon, now).await;
+        assert_eq!(outcome, TickOutcome::Continue);
+    }
 
-        // Three ticks, no per-service errors.
-        for _ in 0..3 {
-            assert!(c.tick_all().is_empty(), "ticks must not error");
+    // Normal: a due wakeup fires through the WakeupService and is drained from
+    // daemon state — proving the real service does the real work.
+    #[tokio::test]
+    async fn wakeup_service_fires_due_wakeup_normal() {
+        use crate::state::ScheduledWakeup;
+        let dir = tempfile::tempdir().unwrap();
+        let mut daemon = Daemon::new(dir.path()).expect("daemon");
+        daemon.state.wakeups.push(ScheduledWakeup {
+            id: "w1".into(),
+            fire_at: SystemTime::UNIX_EPOCH, // already due
+            created_at: SystemTime::UNIX_EPOCH,
+            reason: "test".into(),
+            prompt: "go".into(),
+        });
+
+        let mut wakeup = WakeupService;
+        let outcome = wakeup.tick(&mut daemon, SystemTime::now()).await;
+        assert_eq!(outcome, TickOutcome::Continue);
+        assert!(
+            daemon.state.wakeups.is_empty(),
+            "due wakeup must be drained from state"
+        );
+        assert!(
+            daemon.state.fired_wakeups.iter().any(|w| w.id == "w1"),
+            "fired wakeup must be recorded"
+        );
+    }
+
+    // Robust: the roster short-circuits on the first non-Continue outcome. A
+    // service returning Restart stops the tick before later services run.
+    #[tokio::test]
+    async fn run_tick_short_circuits_on_restart_robust() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        struct Restarter;
+        #[async_trait::async_trait]
+        impl DaemonService for Restarter {
+            fn name(&self) -> &str {
+                "restarter"
+            }
+            async fn tick(&mut self, _d: &mut Daemon, _n: SystemTime) -> TickOutcome {
+                TickOutcome::Restart
+            }
         }
-        assert!(c.stop().is_empty(), "clean teardown");
+        struct ShouldNotRun(Arc<AtomicBool>);
+        #[async_trait::async_trait]
+        impl DaemonService for ShouldNotRun {
+            fn name(&self) -> &str {
+                "should_not_run"
+            }
+            async fn tick(&mut self, _d: &mut Daemon, _n: SystemTime) -> TickOutcome {
+                self.0.store(true, Ordering::SeqCst);
+                TickOutcome::Continue
+            }
+        }
+        let ran = Arc::new(AtomicBool::new(false));
+        let dir = tempfile::tempdir().unwrap();
+        let mut daemon = Daemon::new(dir.path()).expect("daemon");
+        let mut services = DaemonServices {
+            services: vec![Box::new(Restarter), Box::new(ShouldNotRun(ran.clone()))],
+        };
+        let outcome = services.run_tick(&mut daemon, SystemTime::now()).await;
+        assert_eq!(outcome, TickOutcome::Restart);
+        assert!(!ran.load(Ordering::SeqCst), "service after Restart must not run");
     }
 
     /// A service that appends `init:<name>` / `stop:<name>` to a shared log so

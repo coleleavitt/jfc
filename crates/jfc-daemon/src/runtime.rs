@@ -15,7 +15,6 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use super::control::apply_worker_control_requests;
 use super::cron::{CronJob, CronSchedule, describe_schedule, run_cron_command, should_fire_cron};
 use super::logs::append_log_line;
 use super::pid::{is_daemon_running, remove_pid_file, write_pid_file};
@@ -381,74 +380,31 @@ pub async fn run_daemon(paths: DaemonPaths) -> std::io::Result<()> {
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut restart_requested = false;
 
+    // The per-tick work is now an ordered roster of services (see
+    // `crate::svcs::DaemonServices`) rather than an inline block. The roster
+    // preserves the historical order exactly — reconcile → runtime-info →
+    // memory → control → worker-sync → cron → wakeup → idle-check — and
+    // signals loop exits via `TickOutcome`.
+    let mut services = crate::svcs::DaemonServices::new();
+
     loop {
         tokio::select! {
             _ = interval.tick() => {
                 let now = SystemTime::now();
-                let reconciled = reconcile_background_agents(&paths)
-                    .unwrap_or_default();
-                daemon.state.background_agents = reconciled.background_agents.clone();
-                if refresh_runtime_info(&mut daemon).unwrap_or(false) {
-                    restart_requested = true;
-                    tracing::warn!(
-                        target: "jfc::daemon",
-                        reason = ?daemon.state.runtime.restart_reason,
-                        "daemon restart requested by runtime resilience check"
-                    );
-                    break;
-                }
-                if maybe_retire_low_memory_worker(&paths, &mut daemon).unwrap_or(false) {
-                    daemon.touch_activity();
-                }
-                if apply_worker_control_requests(&paths, &mut daemon.state) {
-                    daemon.touch_activity();
-                }
-
-                // Sync in-memory worker roster from the latest persisted
-                // background_agents state. Any agent with Running status
-                // and a live PID is considered an active worker.
-                let state_for_workers = daemon.state.clone();
-                sync_workers_from_state(&mut daemon, &state_for_workers);
-
-                let fired = daemon.tick_cron(now);
-                for id in &fired {
-                    if let Some(job) = daemon.cron_by_id(id).cloned() {
+                match services.run_tick(&mut daemon, now).await {
+                    crate::svcs::TickOutcome::Continue => {}
+                    crate::svcs::TickOutcome::Restart => {
+                        restart_requested = true;
+                        break;
+                    }
+                    crate::svcs::TickOutcome::IdleExit => {
                         tracing::info!(
                             target: "jfc::daemon",
-                            cron_id = %job.id,
-                            cmd = %job.command,
-                            "cron firing"
+                            idle_secs = daemon.last_activity.elapsed().as_secs(),
+                            "idle timeout reached with no active workers, exiting"
                         );
-                        let _ = run_cron_command(&job).await;
+                        break;
                     }
-                }
-                if !fired.is_empty() {
-                    daemon.touch_activity();
-                }
-
-                let wakes = daemon.drain_due_wakeups(now);
-                if !wakes.is_empty() {
-                    daemon.touch_activity();
-                }
-                for w in wakes {
-                    tracing::info!(
-                        target: "jfc::daemon",
-                        wakeup_id = %w.id,
-                        reason = %w.reason,
-                        "wakeup firing"
-                    );
-                    println!("[wakeup {}] {} :: {}", w.id, w.reason, w.prompt);
-                }
-
-                // Idle-exit: if there's no meaningful work and no active
-                // workers, the daemon can shut itself down to save resources.
-                if daemon.should_idle_exit() {
-                    tracing::info!(
-                        target: "jfc::daemon",
-                        idle_secs = daemon.last_activity.elapsed().as_secs(),
-                        "idle timeout reached with no active workers, exiting"
-                    );
-                    break;
                 }
             }
             _ = &mut shutdown => {
@@ -554,7 +510,7 @@ async fn shutdown_signal() {
 /// `background_agents` state. Agents with `Running` status and a live PID
 /// are registered; previously-tracked workers whose PID vanished or moved
 /// to terminal status are deregistered.
-fn sync_workers_from_state(daemon: &mut Daemon, state: &DaemonState) {
+pub(crate) fn sync_workers_from_state(daemon: &mut Daemon, state: &DaemonState) {
     use super::state::BackgroundAgentStatus;
 
     // Collect PIDs that are running per persisted state.
@@ -744,7 +700,7 @@ pub fn status_string(paths: &DaemonPaths) -> String {
     s
 }
 
-fn refresh_runtime_info(daemon: &mut Daemon) -> std::io::Result<bool> {
+pub(crate) fn refresh_runtime_info(daemon: &mut Daemon) -> std::io::Result<bool> {
     let now = SystemTime::now();
     if daemon.state.runtime.restart_requested {
         daemon.persist();
@@ -785,7 +741,7 @@ fn refresh_runtime_info(daemon: &mut Daemon) -> std::io::Result<bool> {
     Ok(false)
 }
 
-fn maybe_retire_low_memory_worker(
+pub(crate) fn maybe_retire_low_memory_worker(
     paths: &DaemonPaths,
     daemon: &mut Daemon,
 ) -> std::io::Result<bool> {

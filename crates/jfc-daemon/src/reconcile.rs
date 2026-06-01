@@ -27,7 +27,7 @@ use super::worker::{
     record_background_agent_worker_pid, spawn_worker_process,
 };
 
-pub(super) fn reconcile_background_agents(paths: &DaemonPaths) -> std::io::Result<DaemonState> {
+pub(crate) fn reconcile_background_agents(paths: &DaemonPaths) -> std::io::Result<DaemonState> {
     let (state, stale_logs, respawns) = with_state_lock(paths, || -> std::io::Result<_> {
         let mut state = load_state_for_update(paths)?;
         let now = SystemTime::now();

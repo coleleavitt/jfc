@@ -334,7 +334,7 @@ pub(super) fn field_str(f: &CronField) -> String {
 // CLI dispatch
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub(super) async fn run_cron_command(job: &CronJob) -> std::io::Result<()> {
+pub(crate) async fn run_cron_command(job: &CronJob) -> std::io::Result<()> {
     use tokio::process::Command;
     let mut command = Command::new("bash");
     command.arg("-c").arg(&job.command);
