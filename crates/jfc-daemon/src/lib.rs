@@ -13,6 +13,7 @@ pub mod reconcile;
 pub mod registry;
 pub mod runtime;
 pub mod state;
+pub mod svcs;
 pub mod worker;
 
 #[cfg(test)]
