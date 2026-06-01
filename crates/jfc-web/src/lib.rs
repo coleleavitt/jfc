@@ -54,11 +54,9 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use reqwest::header::RETRY_AFTER;
 use serde::Deserialize;
 use tokio::time::sleep;
-use rand::Rng;
-
-pub mod primo_mining;
 
 // ── Public entry point ──────────────────────────────────────────────────────
 
@@ -526,18 +524,17 @@ fn arxiv_to_paper(e: ArxivEntry) -> PaperEntry {
     }
 }
 
-/// Exponential backoff retry with jitter for HTTP requests.
-/// Retries on 429 (rate limit) with delays: 3s → 6s → 12s (max 3 attempts).
+/// Exponential backoff retry for arXiv HTTP requests.
+/// Retries on 429 (rate limit) with either Retry-After or 3s → 6s → 12s delays.
 async fn fetch_with_backoff(
     client: &reqwest::Client,
     url: &str,
     params: &[(&str, &str)],
 ) -> Result<reqwest::Response, String> {
-    const MAX_RETRIES: u32 = 3;
-    let mut delay_ms = 3000u64;
-    let mut rng = rand::thread_rng();
+    const MAX_ATTEMPTS: u32 = 3;
+    let mut delay = Duration::from_secs(3);
 
-    for attempt in 1..=MAX_RETRIES {
+    for attempt in 1..=MAX_ATTEMPTS {
         let resp = client
             .get(url)
             .query(params)
@@ -545,79 +542,33 @@ async fn fetch_with_backoff(
             .await
             .map_err(|e| format!("arXiv request failed: {e}"))?;
 
-        if resp.status() == 429 {
-            if attempt < MAX_RETRIES {
-                // Add ±10% jitter to avoid thundering herd
-                let jitter = rng.gen_range(-100..=100) as i64;
-                let actual_delay = (delay_ms as i64 + jitter).max(500) as u64;
-                tracing::warn!(
-                    "arXiv rate limited (429), retrying in {}ms (attempt {}/{})",
-                    actual_delay,
-                    attempt,
-                    MAX_RETRIES
-                );
-                sleep(Duration::from_millis(actual_delay)).await;
-                delay_ms = (delay_ms * 2).min(12000);
-                continue;
-            } else {
-                return Err("arXiv rate limited (429) — max retries exhausted".to_string());
-            }
+        if resp.status() != 429 {
+            return Ok(resp);
         }
 
-        return Ok(resp);
+        if attempt == MAX_ATTEMPTS {
+            return Err("arXiv rate limited (429) — max retries exhausted".to_string());
+        }
+
+        let retry_after = resp
+            .headers()
+            .get(RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(Duration::from_secs)
+            .unwrap_or(delay);
+
+        tracing::warn!(
+            "arXiv rate limited (429), retrying in {}ms (attempt {}/{})",
+            retry_after.as_millis(),
+            attempt,
+            MAX_ATTEMPTS
+        );
+        sleep(retry_after).await;
+        delay = delay.saturating_mul(2).min(Duration::from_secs(12));
     }
 
     Err("arXiv request failed — unexpected control flow".to_string())
-}
-
-/// Deobfuscate JavaScript using the jsbeautify binary (if available).
-/// Falls back to returning the input unchanged if jsbeautify is not found.
-async fn deobfuscate_javascript(code: &str) -> Result<String, String> {
-    // Spawn jsbeautify binary via blocking task to avoid blocking async runtime
-    let code = code.to_string();
-    tokio::task::spawn_blocking(move || {
-        use std::io::Write;
-        use std::process::{Command, Stdio};
-
-        match Command::new("jsbeautify")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            Ok(mut child) => {
-                {
-                    if let Some(mut stdin) = child.stdin.take() {
-                        if let Err(e) = stdin.write_all(code.as_bytes()) {
-                            tracing::debug!("Failed to write to jsbeautify: {e}");
-                            return Ok(code);
-                        }
-                    }
-                }
-
-                match child.wait_with_output() {
-                    Ok(output) if output.status.success() => {
-                        String::from_utf8(output.stdout)
-                            .map_err(|e| format!("jsbeautify output invalid UTF-8: {e}"))
-                    }
-                    Ok(_) => {
-                        tracing::debug!("jsbeautify failed, using original code");
-                        Ok(code)
-                    }
-                    Err(e) => {
-                        tracing::debug!("jsbeautify execution error: {e}, using original code");
-                        Ok(code)
-                    }
-                }
-            }
-            Err(_) => {
-                tracing::debug!("jsbeautify not found, using original code");
-                Ok(code)
-            }
-        }
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking error: {e}"))?
 }
 
 /// Run an arXiv search and return structured entries (used by combined search).
