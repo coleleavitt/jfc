@@ -165,7 +165,112 @@ pub(crate) fn handle_redacted_thinking(app: &mut App, data: String) {
     }
 }
 
+/// Accumulate a server-authoritative thinking-token estimate
+/// (`thinking_delta.estimated_tokens`). During *summarized* or *redacted*
+/// thinking the API streams these estimates without any visible reasoning
+/// text, so `handle_chunk` never fires and the spinner would otherwise show
+/// no thinking activity at all. Marking `thinking_started_at` here lets the
+/// `thinking …` verb surface during that phase, and the running total feeds
+/// the `⟳ N thinking` chip. Mirrors cli.js's `thinkingTokenEstimate +=`
+/// accumulation (cli.beautified.js:574722).
+pub(crate) fn handle_thinking_tokens(app: &mut App, tokens: u32) {
+    app.record_stream_activity();
+    let now = std::time::Instant::now();
+    // Reset the stall clock — an estimate ping is wire activity, same as a
+    // visible delta. Without this a long silent-thinking phase would trip the
+    // "almost done thinking" stall hint while the model is actively working.
+    app.streaming_last_token_at = Some(now);
+    // Mark the thinking phase live if no visible reasoning byte set it. Only
+    // on the first estimate, and only before any text byte ended thinking, so
+    // we never re-open a concluded thinking block.
+    if app.thinking_started_at.is_none() && app.thinking_ended_at.is_none() {
+        app.thinking_started_at = Some(now);
+    }
+    app.streaming_thinking_tokens = app.streaming_thinking_tokens.saturating_add(tokens as u64);
+}
+
 pub(crate) fn handle_response_id(app: &mut App, id: String) {
     app.record_stream_activity();
     app.last_response_id = Some(id);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+
+    use super::*;
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    fn test_app() -> App {
+        App::new(Arc::new(TestProvider), "test-model")
+    }
+
+    // Summarized/redacted thinking: estimates arrive with no visible reasoning
+    // text, so this handler is the only thing that can light up the thinking
+    // phase. It must both accumulate the count AND mark thinking started.
+    #[test]
+    fn thinking_tokens_accumulate_and_mark_phase_normal() {
+        let mut app = test_app();
+        assert!(app.thinking_started_at.is_none());
+
+        handle_thinking_tokens(&mut app, 40);
+        handle_thinking_tokens(&mut app, 35);
+
+        assert_eq!(app.streaming_thinking_tokens, 75);
+        assert!(
+            app.thinking_started_at.is_some(),
+            "first estimate must mark the thinking phase live"
+        );
+        assert!(app.thinking_ended_at.is_none());
+    }
+
+    // Once a visible text byte concluded thinking (`thinking_ended_at` set), a
+    // late stray estimate must NOT re-open the thinking phase.
+    #[test]
+    fn thinking_tokens_do_not_reopen_concluded_phase_robust() {
+        let mut app = test_app();
+        let t0 = std::time::Instant::now();
+        app.thinking_started_at = Some(t0);
+        app.thinking_ended_at = Some(t0);
+
+        handle_thinking_tokens(&mut app, 10);
+
+        // Counter still moves, but the phase stays concluded.
+        assert_eq!(app.streaming_thinking_tokens, 10);
+        assert_eq!(app.thinking_started_at, Some(t0));
+        assert_eq!(app.thinking_ended_at, Some(t0));
+    }
+
+    // Saturating add: pathological huge estimates can't overflow the counter.
+    #[test]
+    fn thinking_tokens_saturate_robust() {
+        let mut app = test_app();
+        app.streaming_thinking_tokens = u64::MAX - 1;
+        handle_thinking_tokens(&mut app, 100);
+        assert_eq!(app.streaming_thinking_tokens, u64::MAX);
+    }
 }

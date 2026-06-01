@@ -587,6 +587,20 @@ pub fn translate(
                 if let Some(Some(BlockState::Thinking { accumulated })) = blocks.get_mut(index) {
                     accumulated.push_str(&thinking);
                 }
+                // One-shot visibility into whether the server actually honors
+                // the thinking-token-count beta: log the first delta that
+                // carries an estimate. If this never fires on a thinking turn,
+                // the beta isn't reaching the server (header gate) rather than
+                // a display bug.
+                if estimated_tokens.is_some() {
+                    tracing::trace!(
+                        target: "jfc::provider::anthropic_sse",
+                        index,
+                        estimated_tokens,
+                        delta_len = thinking.len(),
+                        "thinking_delta carried estimated_tokens"
+                    );
+                }
                 Some(StreamEvent::ThinkingDelta {
                     index,
                     delta: thinking,
