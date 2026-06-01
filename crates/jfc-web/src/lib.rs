@@ -107,7 +107,10 @@ pub async fn search(query: &str, max_results: usize) -> Result<String, String> {
     } else if let Some(q) = match_prefix(query, "cn") {
         search_google(&scoped_query(q, CN_TLDS), max_results).await
     } else if let Some(q) = match_prefix(query, "gov") {
-        search_google(&scoped_query(q, GOV_TLDS), max_results).await
+        // CSE doesn't honour bare TLD site: filters like site:.gov; use explicit
+        // domain suffixes instead.
+        let gov_query = format!("{q} (site:usa.gov OR site:nih.gov OR site:cdc.gov OR site:nsf.gov OR site:energy.gov OR site:nasa.gov OR site:congress.gov OR site:whitehouse.gov OR site:govinfo.gov OR site:gov.uk OR site:gc.ca OR site:australia.gov.au OR site:europa.eu)");
+        search_google(&gov_query, max_results).await
     } else {
         search_google(query, max_results).await
     }
@@ -138,8 +141,6 @@ const EDU_TLDS: &[&str] = &[
 /// teaching (`edu.cn`) from research institutes (`ac.cn`); cover both.
 const CN_TLDS: &[&str] = &[".edu.cn", ".ac.cn", ".edu.hk", ".edu.mo", ".edu.tw"];
 
-/// Government second-level domains, for the `gov:` prefix.
-const GOV_TLDS: &[&str] = &[".gov", ".gov.uk", ".gc.ca", ".gov.au", ".europa.eu"];
 
 /// Build a Google query restricted to a set of TLDs via a `site:` OR-group.
 fn scoped_query(query: &str, tlds: &[&str]) -> String {
@@ -1124,13 +1125,14 @@ fn strip_html_tags(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_tag = false;
     for c in s.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => out.push(c),
-            // Intentional no-op: inside a tag, non-delimiter chars are skipped.
-            _ => {}
+        if c == '<' {
+            in_tag = true;
+        } else if c == '>' {
+            in_tag = false;
+        } else if !in_tag {
+            out.push(c);
         }
+        // else: inside a tag — skip character, no action needed
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -1370,9 +1372,13 @@ async fn resolve_institution(
     name: &str,
 ) -> Result<Option<(String, String, String, u64)>, String> {
     let client = http_client()?;
+    // Use the main institutions search API (not autocomplete) sorted by
+    // works_count so the largest/most prominent institution wins —
+    // autocomplete returns lexicographic matches, which causes "MIT World Peace
+    // University" to beat "Massachusetts Institute of Technology".
     let mut req = client
-        .get("https://api.openalex.org/autocomplete/institutions")
-        .query(&[("q", name)]);
+        .get("https://api.openalex.org/institutions")
+        .query(&[("search", name), ("sort", "works_count:desc"), ("per_page", "1")]);
     if let Some(email) = polite_pool_email(&["OPENALEX_EMAIL", "CROSSREF_EMAIL"]) {
         req = req.query(&[("mailto", email.as_str())]);
     }
