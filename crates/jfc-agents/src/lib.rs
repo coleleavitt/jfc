@@ -4,6 +4,7 @@
 //! by tooling, daemon workers, and test harnesses without pulling in
 //! the full TUI dependency tree.
 
+pub mod evals;
 mod lifecycle;
 mod registry;
 mod state;
