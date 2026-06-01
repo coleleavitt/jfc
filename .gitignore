@@ -15,6 +15,8 @@ profiling-results/
 .codegraph/
 .idea/
 *.bak
+core
+core.*
 
 # jfc runtime state (caches, task store, pending learning) — keep project
 # config (.jfc/agents, .jfc/memory, .jfc/workflows, .jfc/plans) tracked.
@@ -23,6 +25,7 @@ profiling-results/
 .jfc/tasks-history.jsonl
 .jfc/learn/
 .jfc/teleport/
+.jfc/verification/
 # Runtime audit ledger + agent change-sets (per-run state, not source).
 .jfc/audit/
 .jfc/changes/
