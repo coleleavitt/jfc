@@ -22,6 +22,9 @@ profiling-results/
 .jfc/tasks.json
 .jfc/learn/
 .jfc/teleport/
+# Runtime audit ledger + agent change-sets (per-run state, not source).
+.jfc/audit/
+.jfc/changes/
 .jfc/*-cache.json
 .jfc/*-heights.json
 # Per-crate runtime state dirs created when running jfc from a subdir.
