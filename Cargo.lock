@@ -2856,6 +2856,7 @@ dependencies = [
  "jfc-anthropic-sdk",
  "jfc-auth",
  "jfc-bridge",
+ "jfc-changeset",
  "jfc-config",
  "jfc-core",
  "jfc-daemon",

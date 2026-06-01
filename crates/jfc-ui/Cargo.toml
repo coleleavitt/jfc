@@ -77,6 +77,7 @@ jfc-auth = { path = "../jfc-auth" }
 jfc-bridge = { path = "../jfc-bridge" }
 jfc-agents = { path = "../jfc-agents" }
 jfc-core = { path = "../jfc-core" }
+jfc-changeset = { path = "../jfc-changeset" }
 jfc-provider = { path = "../jfc-provider" }
 jfc-session = { path = "../jfc-session" }
 jfc-tools = { path = "../jfc-tools" }

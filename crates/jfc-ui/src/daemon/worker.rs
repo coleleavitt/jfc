@@ -282,12 +282,11 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
     Ok(())
 }
 
+type BackgroundWorktree = (crate::worktrees::WorktreeInfo, PathBuf, Option<String>);
+
 async fn prepare_background_worktree(
     launch: &BackgroundAgentLaunch,
-) -> (
-    Option<(crate::worktrees::WorktreeInfo, PathBuf)>,
-    Option<PathBuf>,
-) {
+) -> (Option<BackgroundWorktree>, Option<PathBuf>) {
     if launch.task_input.isolation.as_deref() != Some("worktree") {
         return (None, None);
     }
@@ -321,7 +320,21 @@ async fn prepare_background_worktree(
                 &launch.task_id,
                 &format!("[worktree] created {}", path.display()),
             );
-            (Some((info, repo_root)), Some(path))
+            // Open a change-set so the background agent's isolated run is a
+            // durable, reviewable proposal — same as the foreground Task path.
+            let origin = crate::changeset::ChangeOrigin {
+                task_id: Some(launch.task_id.clone()),
+                agent_id: launch
+                    .task_input
+                    .subagent_type
+                    .clone()
+                    .or_else(|| Some("background".to_string())),
+                session_id: launch.parent_session_id.clone(),
+            };
+            let change_id =
+                crate::changeset::open_for_worktree(&repo_root, &info.path, &info.branch, &origin)
+                    .await;
+            (Some((info, repo_root, change_id)), Some(path))
         }
         Err(e) => {
             record_background_agent_log(
@@ -333,13 +346,15 @@ async fn prepare_background_worktree(
     }
 }
 
-async fn finish_background_worktree(
-    task_id: &str,
-    worktree_info: Option<(crate::worktrees::WorktreeInfo, PathBuf)>,
-) {
-    let Some((wt, repo_root)) = worktree_info else {
+async fn finish_background_worktree(task_id: &str, worktree_info: Option<BackgroundWorktree>) {
+    let Some((wt, repo_root, change_id)) = worktree_info else {
         return;
     };
+    // Finalize the change-set (diff vs base → Ready, or Abandoned if clean)
+    // while the worktree still exists to diff against.
+    if let Some(ref cid) = change_id {
+        crate::changeset::finalize_for_worktree(&repo_root, cid, &wt.path).await;
+    }
     let dirty = match tokio::process::Command::new("git")
         .arg("-C")
         .arg(&wt.path)

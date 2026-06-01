@@ -16,6 +16,7 @@ mod bash_processes;
 mod bridge_attestation;
 #[allow(dead_code)]
 mod ccr;
+mod changeset;
 mod claude_status;
 mod cli;
 #[allow(dead_code)]

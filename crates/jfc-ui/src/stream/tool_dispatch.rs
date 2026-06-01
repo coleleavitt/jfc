@@ -298,6 +298,10 @@ pub(crate) fn dispatch_tools_batched(
         }
 
         let cancel_task = cancel.clone();
+        // Clone the session id for the change-set origin so the closure's use
+        // doesn't move the loop-shared `current_session_id` (still needed by
+        // later iterations + the daemon-registration call below).
+        let changeset_session_id = current_session_id.as_ref().map(|s| s.as_str().to_string());
         tokio::spawn(async move {
             // If isolation: "worktree", create a git worktree for this agent
             let worktree_info = if task_input.isolation.as_deref() == Some("worktree") {
@@ -330,7 +334,24 @@ pub(crate) fn dispatch_tools_batched(
                             worktree = %info.path,
                             "task tool: created worktree for isolated agent"
                         );
-                        Some((info, repo_root))
+                        // Open a change-set so this isolated run becomes a
+                        // durable, reviewable proposal (Dolt-style branch).
+                        let origin = crate::changeset::ChangeOrigin {
+                            task_id: Some(task_id.clone()),
+                            agent_id: task_input
+                                .subagent_type
+                                .clone()
+                                .or_else(|| Some("task".to_string())),
+                            session_id: changeset_session_id.clone(),
+                        };
+                        let change_id = crate::changeset::open_for_worktree(
+                            &repo_root,
+                            &info.path,
+                            &info.branch,
+                            &origin,
+                        )
+                        .await;
+                        Some((info, repo_root, change_id))
                     }
                     Err(e) => {
                         tracing::warn!(
@@ -382,7 +403,7 @@ pub(crate) fn dispatch_tools_batched(
             // existed on disk but the agent ran against the parent cwd.
             let cwd_override = worktree_info
                 .as_ref()
-                .map(|(info, _)| std::path::PathBuf::from(&info.path));
+                .map(|(info, _, _)| std::path::PathBuf::from(&info.path));
             // No daemon registration for in-process subagents — they're
             // tracked via `app.background_tasks` and the assistant
             // message's TaskStatus parts. Previously this call planted
@@ -457,9 +478,16 @@ pub(crate) fn dispatch_tools_batched(
             let worktree_outcome: Option<(crate::worktrees::WorktreeInfo, bool)> = if let Some((
                 wt,
                 repo_root,
+                change_id,
             )) =
                 worktree_info
             {
+                // Finalize the change-set (diff vs base → Ready, or Abandoned
+                // if clean) BEFORE any cleanup, while the worktree still
+                // exists to diff against.
+                if let Some(ref cid) = change_id {
+                    crate::changeset::finalize_for_worktree(&repo_root, cid, &wt.path).await;
+                }
                 let dirty = match tokio::process::Command::new("git")
                     .arg("-C")
                     .arg(&wt.path)
