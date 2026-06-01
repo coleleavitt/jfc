@@ -1392,7 +1392,9 @@ async fn ctrl_e_with_text_jumps_to_end_normal() {
 // ─────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn ctrl_r_resubmits_last_prompt_normal() {
+async fn ctrl_r_opens_prompt_history_search_normal() {
+    // Ctrl+R opens reverse-history search (bash convention); the most recent
+    // user prompt is the top match, so Ctrl+R then Enter still "retries last".
     let mut app = test_app();
     app.messages.push(ChatMessage::user("ask".into()));
     let (tx, mut rx) = channel();
@@ -1403,10 +1405,10 @@ async fn ctrl_r_resubmits_last_prompt_normal() {
     )
     .await
     .unwrap();
-    match rx.try_recv().unwrap() {
-        AppEvent::Ui(UiEvent::Submit(t)) => assert_eq!(t, "ask"),
-        _ => panic!("expected Submit"),
-    }
+    let search = app.prompt_search.as_ref().expect("prompt search opened");
+    assert_eq!(search.selected_text(), Some("ask"));
+    // Opening search does not itself submit anything.
+    assert!(rx.try_recv().is_err());
 }
 
 #[tokio::test]
@@ -1568,8 +1570,14 @@ async fn ctrl_o_closes_diagnostic_panel_when_open_robust() {
 
 #[tokio::test]
 async fn ctrl_o_toggles_reasoning_robust_no_diagnostics() {
+    // Ctrl+O toggles the reasoning block on the most recent assistant message
+    // that has one. The renderer treats a missing entry as expanded, so the
+    // first press seeds `true` then flips to `false` (collapse).
     let mut app = test_app();
-    app.messages.push(ChatMessage::assistant("hi".into()));
+    app.messages.push(ChatMessage::assistant_parts(vec![
+        crate::types::MessagePart::Reasoning("thinking".into()),
+        crate::types::MessagePart::Text("hi".into()),
+    ]));
     let (tx, _rx) = channel();
     handle_key(
         &mut app,
@@ -1578,7 +1586,7 @@ async fn ctrl_o_toggles_reasoning_robust_no_diagnostics() {
     )
     .await
     .unwrap();
-    assert_eq!(app.reasoning_expanded.get(&0), Some(&true));
+    assert_eq!(app.reasoning_expanded.get(&0), Some(&false));
 }
 
 // ─────────────────────────────────────────────────────────────────────
