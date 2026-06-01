@@ -374,6 +374,7 @@ pub fn built_in_agents() -> Vec<AgentDef> {
                 "verification",
                 include_str!("builtin_prompts/verification.txt"),
             );
+            a.skills = strs(&["verification-findings"]);
             a.allowed_tools = strs(&[
                 "Read",
                 "Glob",
