@@ -206,6 +206,45 @@ pub(crate) fn render_help(specs: &[&dyn CommandSpec]) -> String {
     out
 }
 
+/// Generate a machine-readable command manifest (one JSON-ish line per spec)
+/// from the unified metadata. This is the single artifact shell completions,
+/// the model-facing tool manifest, and external tooling read — so they cannot
+/// drift from the live registries the way three hand-maintained lists did.
+pub(crate) fn render_manifest(specs: &[&dyn CommandSpec]) -> String {
+    let mut out = String::new();
+    for spec in specs {
+        out.push_str(&format!(
+            "{{\"name\":\"{}\",\"surface\":\"{}\",\"permission\":\"{}\",\"description\":\"{}\"}}\n",
+            spec.name(),
+            spec.surface().label(),
+            spec.permission().label(),
+            spec.description().replace('"', "'")
+        ));
+    }
+    out
+}
+
+/// Render the full manifest from the live unified spec list.
+pub(crate) fn render_manifest_all() -> String {
+    let specs = all_specs();
+    let refs: Vec<&dyn CommandSpec> = specs.iter().map(|s| s as &dyn CommandSpec).collect();
+    render_manifest(&refs)
+}
+
+/// Generate bash completion words — just the command names, one per line, from
+/// the same metadata. A completion script `source`s this so it never lists a
+/// command the registry doesn't have.
+pub(crate) fn render_completions(specs: &[&dyn CommandSpec]) -> String {
+    let mut names: Vec<&str> = specs.iter().map(|s| s.name()).collect();
+    names.sort_unstable();
+    names.dedup();
+    let mut out = names.join(" ");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +295,61 @@ mod tests {
     #[test]
     fn render_help_empty_is_empty_robust() {
         assert_eq!(render_help(&[]), "");
+    }
+
+    // Normal — single-source guarantee: the manifest has exactly one line per
+    // spec in the unified list, so it is derived from the metadata, never a
+    // hand-maintained parallel list that could drift.
+    #[test]
+    fn manifest_is_one_line_per_spec_normal() {
+        let specs = all_specs();
+        let manifest = render_manifest_all();
+        let lines = manifest.lines().filter(|l| !l.is_empty()).count();
+        assert_eq!(
+            lines,
+            specs.len(),
+            "manifest must have exactly one row per metadata spec (no drift)"
+        );
+        // Every spec name appears in the manifest.
+        for s in &specs {
+            assert!(
+                manifest.contains(&format!("\"name\":\"{}\"", s.name())),
+                "manifest missing {}",
+                s.name()
+            );
+        }
+    }
+
+    // Robust: completions are the sorted unique command names from the same
+    // metadata — a known command is present, and there are no duplicates.
+    #[test]
+    fn completions_cover_metadata_names_robust() {
+        let specs = all_specs();
+        let refs: Vec<&dyn CommandSpec> = specs.iter().map(|s| s as &dyn CommandSpec).collect();
+        let completions = render_completions(&refs);
+        assert!(completions.contains("/changes"), "slash cmd present");
+        assert!(completions.contains("changes"), "cli cmd present");
+
+        let words: Vec<&str> = completions.split_whitespace().collect();
+        let mut unique = words.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(words.len(), unique.len(), "completions must be deduped");
+    }
+
+    // Robust: manifest JSON escapes embedded quotes so a description can't
+    // break the line format.
+    #[test]
+    fn manifest_escapes_quotes_robust() {
+        let spec = StaticSpec {
+            name: "x",
+            description: "has \"quotes\" inside",
+            surface: Surface::Cli,
+            permission: Permission::ReadOnly,
+        };
+        let refs: [&dyn CommandSpec; 1] = [&spec];
+        let manifest = render_manifest(&refs);
+        assert!(!manifest.contains("\"quotes\""), "embedded quotes escaped");
+        assert_eq!(manifest.lines().count(), 1);
     }
 }

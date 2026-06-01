@@ -142,18 +142,35 @@ pub(super) async fn cmd_audit(
     app.messages.push(ChatMessage::assistant(body));
 }
 
-/// `/commands` — the unified command/tool list, generated from the single
-/// CommandSpec metadata layer across CLI, slash, and tool surfaces.
+/// `/commands [manifest|completions]` — the unified command/tool list,
+/// generated from the single CommandSpec metadata layer across CLI, slash, and
+/// tool surfaces. `manifest` emits the machine-readable JSON-lines manifest;
+/// `completions` emits the deduped completion words.
 pub(super) async fn cmd_commands(
     app: &mut App,
-    _parts: &[&str],
+    parts: &[&str],
     _text: &str,
     _tx: Option<&mpsc::Sender<AppEvent>>,
 ) {
-    let body = format!(
-        "Commands across all surfaces:\n{}",
-        crate::command_spec::render_all()
-    );
+    let body = match parts.get(1) {
+        Some(&"manifest") => format!(
+            "Command manifest (single-source):\n{}",
+            crate::command_spec::render_manifest_all()
+        ),
+        Some(&"completions") => {
+            let specs = crate::command_spec::all_specs();
+            let refs: Vec<&dyn crate::command_spec::CommandSpec> =
+                specs.iter().map(|s| s as &dyn crate::command_spec::CommandSpec).collect();
+            format!(
+                "Completion words:\n{}",
+                crate::command_spec::render_completions(&refs)
+            )
+        }
+        _ => format!(
+            "Commands across all surfaces:\n{}",
+            crate::command_spec::render_all()
+        ),
+    };
     app.messages.push(ChatMessage::assistant(body));
 }
 
