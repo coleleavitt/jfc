@@ -394,6 +394,7 @@ pub(crate) struct CliRuntimeConfig {
     pub task_budget: Option<u64>,
     pub mcp_config_path: Option<PathBuf>,
     pub cowork: bool,
+    pub local_advisor_provider: Option<jfc_provider::ProviderId>,
     pub local_advisor_model: Option<ModelId>,
     pub server_advisor_model: Option<ModelId>,
     pub custom_betas: Vec<String>,
@@ -572,7 +573,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
         model = resolved.model;
     }
     let advisor_cli = cli.advisor.clone();
-    let local_advisor_model = {
+    let local_advisor = {
         let cfg = crate::config::load_arc();
         let configured = advisor_cli
             .as_deref()
@@ -587,7 +588,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
                 force,
                 cfg.advisor_enabled,
             ) {
-                Ok(model) => model,
+                Ok(target) => target,
                 Err(e) if force => anyhow::bail!("--advisor: {e}"),
                 Err(e) => {
                     tracing::warn!(target: "jfc::advisor", error = %e, "local advisor disabled");
@@ -595,13 +596,17 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
                 }
             }
         };
-        crate::advisor::set_active_local_advisor_model(advisor.clone());
+        let advisor_provider = advisor.as_ref().and_then(|target| target.provider.clone());
+        let advisor_model = advisor.as_ref().map(|target| target.model.clone());
+        crate::advisor::set_active_local_advisor_provider(advisor_provider.clone());
+        crate::advisor::set_active_local_advisor_model(advisor_model.clone());
         if cli.no_advisor {
             tracing::info!(target: "jfc::advisor", "local advisor disabled by --no-advisor");
-        } else if let Some(advisor_model) = &advisor {
+        } else if let Some(target) = &advisor {
             tracing::info!(
                 target: "jfc::advisor",
-                advisor_model = %advisor_model,
+                advisor_provider = ?target.provider,
+                advisor_model = %target.model,
                 "local advisor enabled"
             );
         } else {
@@ -610,7 +615,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
                 "local advisor disabled"
             );
         }
-        advisor
+        (advisor_provider, advisor_model)
     };
     let server_advisor_cli = cli.server_advisor.clone();
     let advisor_model = {
@@ -737,7 +742,8 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
         task_budget: cli.task_budget,
         mcp_config_path: cli.mcp_config.clone(),
         cowork: cli.cowork,
-        local_advisor_model,
+        local_advisor_provider: local_advisor.0,
+        local_advisor_model: local_advisor.1,
         server_advisor_model: advisor_model,
         custom_betas: cli.betas.clone(),
         fine_grained_tool_streaming: cli.fine_grained_tool_streaming,

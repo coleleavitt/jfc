@@ -93,7 +93,10 @@ pub(super) async fn cmd_advisor(
         let local = app
             .local_advisor_model
             .as_ref()
-            .map(|m| m.to_string())
+            .map(|m| match app.local_advisor_provider.as_ref() {
+                Some(provider) => format!("{provider}/{m}"),
+                None => m.to_string(),
+            })
             .unwrap_or_else(|| "disabled".to_owned());
         app.messages
             .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
@@ -217,7 +220,7 @@ pub(super) async fn cmd_advisor(
         if raw_model.is_empty() {
             app.messages
                 .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
-                    "Usage: `/advisor config opus`, `/advisor config sonnet`, or `/advisor config <model-id>`.".into(),
+                    "Usage: `/advisor config opus`, `/advisor config sonnet`, `/advisor config openai/gpt-5.5`, or `/advisor config <provider/model>`.".into(),
                 )]));
             return;
         }
@@ -227,24 +230,52 @@ pub(super) async fn cmd_advisor(
             true,
             Some(true),
         ) {
-            Ok(Some(model)) => match crate::config::save_advisor_model(Some(model.as_str())) {
-                Ok(_) => {
-                    crate::advisor::set_active_local_advisor_model(Some(model.clone()));
-                    app.local_advisor_model = Some(model.clone());
-                    app.advisor_enabled = true;
-                    app.advisor_session = Some(crate::advisor::AdvisorSession::new(model.clone()));
-                    app.messages
-                        .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
-                            format!("Local advisor set to `{model}`."),
-                        )]));
+            Ok(Some(model)) => {
+                let provider = crate::advisor::resolve_local_advisor_provider(
+                    &app.providers,
+                    std::sync::Arc::clone(&app.provider),
+                    model.provider.as_ref(),
+                    &model.model,
+                );
+                match provider {
+                    Ok(provider) => {
+                        match crate::config::save_advisor_model(Some(&model.config_value())) {
+                            Ok(_) => {
+                                crate::advisor::set_active_local_advisor_provider(
+                                    model.provider.clone(),
+                                );
+                                crate::advisor::set_active_local_advisor_model(Some(
+                                    model.model.clone(),
+                                ));
+                                app.local_advisor_provider = model.provider.clone();
+                                app.local_advisor_model = Some(model.model.clone());
+                                app.advisor_enabled = true;
+                                app.advisor_session =
+                                    Some(crate::advisor::AdvisorSession::new(model.model.clone()));
+                                app.messages.push(ChatMessage::assistant_parts(vec![
+                                    MessagePart::Advisor(format!(
+                                        "Local advisor set to `{}` via `{}`.",
+                                        model.config_value(),
+                                        provider.name()
+                                    )),
+                                ]));
+                            }
+                            Err(e) => {
+                                app.messages.push(ChatMessage::assistant_parts(vec![
+                                    MessagePart::Advisor(format!(
+                                        "Could not persist advisor setting: {e}"
+                                    )),
+                                ]));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        app.messages.push(ChatMessage::assistant_parts(vec![
+                            MessagePart::Advisor(format!("Advisor provider config error: {e}")),
+                        ]));
+                    }
                 }
-                Err(e) => {
-                    app.messages
-                        .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
-                            format!("Could not persist advisor setting: {e}"),
-                        )]));
-                }
-            },
+            }
             Ok(None) => {
                 app.messages
                     .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
@@ -286,7 +317,21 @@ pub(super) async fn cmd_advisor(
         // immutably while we're holding `&mut app.advisor_session`
         // mutably — borrow-check fails.
         let snapshot = app.messages.clone();
-        let provider = std::sync::Arc::clone(&app.provider);
+        let provider = match crate::advisor::resolve_local_advisor_provider(
+            &app.providers,
+            std::sync::Arc::clone(&app.provider),
+            app.local_advisor_provider.as_ref(),
+            &session.model,
+        ) {
+            Ok(provider) => provider,
+            Err(e) => {
+                app.messages
+                    .push(ChatMessage::assistant_parts(vec![MessagePart::Advisor(
+                        format!("Advisor provider error: {e}"),
+                    )]));
+                return;
+            }
+        };
         match crate::advisor::ask_advisor(provider.as_ref(), session, query.clone(), &snapshot)
             .await
         {

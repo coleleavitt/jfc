@@ -83,6 +83,7 @@ pub(crate) async fn run(
     app.cli_task_budget = cli_config.task_budget;
     app.mcp_config_path = cli_config.mcp_config_path;
     app.cowork = cli_config.cowork;
+    app.local_advisor_provider = cli_config.local_advisor_provider.clone();
     app.local_advisor_model = cli_config.local_advisor_model.clone();
     app.advisor_enabled = app.advisor_enabled || app.local_advisor_model.is_some();
     app.server_advisor_model = cli_config.server_advisor_model.clone();

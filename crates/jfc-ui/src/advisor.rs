@@ -25,7 +25,7 @@
 //! consumes `MessagePart::Advisor(String)` inline. See the follow-up note in
 //! `render.rs` for where a split-pane would hook in.
 
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use anyhow::{Result, anyhow};
 use futures::StreamExt;
@@ -33,7 +33,7 @@ use uuid::Uuid;
 
 use crate::types::{ChatMessage, MessagePart, Role, ToolCall, ToolOutput};
 use jfc_provider::{
-    CompletionResponse, ModelId, ModelSpec, Provider, ProviderContent, ProviderMessage,
+    CompletionResponse, ModelId, ModelSpec, Provider, ProviderContent, ProviderId, ProviderMessage,
     ProviderRole, StreamEvent, StreamOptions,
 };
 
@@ -81,6 +81,7 @@ If you've already retrieved data pointing one way and the advisor points another
 
 static SERVER_ADVISOR_MODEL: OnceLock<RwLock<Option<ModelId>>> = OnceLock::new();
 static LOCAL_ADVISOR_MODEL: OnceLock<RwLock<Option<ModelId>>> = OnceLock::new();
+static LOCAL_ADVISOR_PROVIDER: OnceLock<RwLock<Option<ProviderId>>> = OnceLock::new();
 static LOCAL_ADVISOR_TOOL_SESSION: OnceLock<tokio::sync::Mutex<Option<AdvisorSession>>> =
     OnceLock::new();
 
@@ -90,6 +91,10 @@ fn server_advisor_slot() -> &'static RwLock<Option<ModelId>> {
 
 fn local_advisor_slot() -> &'static RwLock<Option<ModelId>> {
     LOCAL_ADVISOR_MODEL.get_or_init(|| RwLock::new(None))
+}
+
+fn local_advisor_provider_slot() -> &'static RwLock<Option<ProviderId>> {
+    LOCAL_ADVISOR_PROVIDER.get_or_init(|| RwLock::new(None))
 }
 
 fn local_advisor_tool_session() -> &'static tokio::sync::Mutex<Option<AdvisorSession>> {
@@ -116,9 +121,91 @@ pub fn active_local_advisor_model() -> Option<ModelId> {
         .and_then(|guard| guard.clone())
 }
 
+pub fn active_local_advisor_provider() -> Option<ProviderId> {
+    local_advisor_provider_slot()
+        .read()
+        .ok()
+        .and_then(|guard| guard.clone())
+}
+
 pub fn set_active_local_advisor_model(model: Option<ModelId>) {
     if let Ok(mut guard) = local_advisor_slot().write() {
         *guard = model;
+    }
+}
+
+pub fn set_active_local_advisor_provider(provider: Option<ProviderId>) {
+    if let Ok(mut guard) = local_advisor_provider_slot().write() {
+        *guard = provider;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalAdvisorTarget {
+    pub provider: Option<ProviderId>,
+    pub model: ModelId,
+}
+
+impl LocalAdvisorTarget {
+    pub fn config_value(&self) -> String {
+        match &self.provider {
+            Some(provider) => {
+                ModelSpec::qualified(provider.clone(), self.model.clone()).to_string()
+            }
+            None => self.model.to_string(),
+        }
+    }
+}
+
+pub fn resolve_local_advisor_provider(
+    providers: &[Arc<dyn Provider>],
+    active_provider: Arc<dyn Provider>,
+    configured_provider: Option<&ProviderId>,
+    advisor_model: &ModelId,
+) -> Result<Arc<dyn Provider>, String> {
+    if let Some(configured) = configured_provider {
+        return providers
+            .iter()
+            .find(|provider| provider.name() == configured.as_str())
+            .cloned()
+            .ok_or_else(|| format!("advisor provider `{configured}` is not configured"));
+    }
+
+    if let Some(resolved) = crate::resolve_provider_model(providers, advisor_model.as_str()) {
+        return Ok(resolved.provider);
+    }
+
+    if provider_can_run_model(active_provider.as_ref(), advisor_model.as_str()) {
+        return Ok(active_provider);
+    }
+
+    Err(format!(
+        "advisor model `{advisor_model}` does not match any configured provider"
+    ))
+}
+
+fn provider_can_run_model(provider: &dyn Provider, model: &str) -> bool {
+    if provider
+        .available_models()
+        .iter()
+        .any(|info| info.id.as_str() == model)
+    {
+        return true;
+    }
+
+    let lower = model.to_ascii_lowercase();
+    match provider.name() {
+        "anthropic" | "anthropic-oauth" => lower.starts_with("claude-"),
+        "openai" => {
+            lower.starts_with("gpt-")
+                || lower.starts_with("o1")
+                || lower.starts_with("o3")
+                || lower.starts_with("o4")
+        }
+        "codex" => lower.contains("codex"),
+        "gemini" | "antigravity" => lower.starts_with("gemini"),
+        "litellm" | "openwebui" | "openrouter" => true,
+        _ => false,
     }
 }
 
@@ -151,20 +238,40 @@ pub fn normalize_server_advisor_model(raw: &str) -> Result<ModelId, String> {
     Ok(ModelId::from(model))
 }
 
-pub fn normalize_local_advisor_model(raw: &str, fallback: &ModelId) -> Result<ModelId, String> {
+pub fn normalize_local_advisor_model(
+    raw: &str,
+    fallback: &ModelId,
+) -> Result<LocalAdvisorTarget, String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return Ok(fallback.clone());
+        return Ok(LocalAdvisorTarget {
+            provider: None,
+            model: fallback.clone(),
+        });
     }
-    let model = match trimmed.to_ascii_lowercase().as_str() {
-        "opus" => crate::providers::anthropic_models::ALIAS_OPUS.to_owned(),
-        "sonnet" => crate::providers::anthropic_models::ALIAS_SONNET.to_owned(),
-        "haiku" => crate::providers::anthropic_models::ALIAS_HAIKU.to_owned(),
-        _ => ModelSpec::parse_lenient(trimmed)
-            .map(|spec| spec.into_model().to_string())
-            .unwrap_or_else(|_| trimmed.to_owned()),
+    let target = match trimmed.to_ascii_lowercase().as_str() {
+        "opus" => LocalAdvisorTarget {
+            provider: None,
+            model: ModelId::from(crate::providers::anthropic_models::ALIAS_OPUS.to_owned()),
+        },
+        "sonnet" => LocalAdvisorTarget {
+            provider: None,
+            model: ModelId::from(crate::providers::anthropic_models::ALIAS_SONNET.to_owned()),
+        },
+        "haiku" => LocalAdvisorTarget {
+            provider: None,
+            model: ModelId::from(crate::providers::anthropic_models::ALIAS_HAIKU.to_owned()),
+        },
+        _ => {
+            let spec = ModelSpec::parse_lenient(trimmed)
+                .map_err(|e| format!("invalid advisor model `{trimmed}`: {e}"))?;
+            LocalAdvisorTarget {
+                provider: spec.provider().cloned(),
+                model: spec.into_model(),
+            }
+        }
     };
-    Ok(ModelId::from(model))
+    Ok(target)
 }
 
 pub fn resolve_local_advisor_model(
@@ -172,7 +279,7 @@ pub fn resolve_local_advisor_model(
     configured: Option<&str>,
     force_enable: bool,
     configured_enabled: Option<bool>,
-) -> Result<Option<ModelId>, String> {
+) -> Result<Option<LocalAdvisorTarget>, String> {
     let env_model = std::env::var("JFC_ADVISOR_MODEL").ok();
     let env_enabled = env_truthy("JFC_ADVISOR_ENABLED");
     let env_disabled = env_truthy("JFC_ADVISOR_DISABLED") || env_truthy("JFC_DISABLE_ADVISOR");
@@ -376,7 +483,11 @@ fn render_snapshot(main_transcript: &[ChatMessage]) -> String {
                     // authoritative "main agent" decisions.
                 }
                 MessagePart::TaskStatus(_) | MessagePart::CompactBoundary { .. } => {}
-                _ => {}
+                other => tracing::debug!(
+                    target: "jfc::advisor",
+                    part = ?other,
+                    "skipping unsupported message part in advisor snapshot"
+                ),
             }
         }
     }
@@ -609,7 +720,11 @@ async fn stream_to_completion(
             }
             Ok(StreamEvent::Done { .. }) => break,
             Ok(StreamEvent::Error { message }) => return Err(anyhow!("{}", message)),
-            Ok(_) => {}
+            Ok(other) => tracing::debug!(
+                target: "jfc::advisor",
+                event = ?other,
+                "ignoring non-text advisor stream event"
+            ),
             Err(e) => return Err(anyhow!("{}", e)),
         }
     }
@@ -632,12 +747,16 @@ mod tests {
     /// Modelled on `auto_mode::tests::FakeProvider` — same Mutex-of-Option
     /// pattern so we can stash either Ok or Err and pop it once.
     struct FakeProvider {
+        name: &'static str,
+        models: Vec<ModelInfo>,
         result: std::sync::Mutex<Option<Result<CompletionResponse>>>,
     }
 
     impl FakeProvider {
         fn echo(reply: &str) -> Self {
             Self {
+                name: "fake-advisor",
+                models: Vec::new(),
                 result: std::sync::Mutex::new(Some(Ok(CompletionResponse {
                     content: reply.to_owned(),
                     usage: jfc_provider::TokenUsage {
@@ -652,7 +771,20 @@ mod tests {
 
         fn err() -> Self {
             Self {
+                name: "fake-advisor",
+                models: Vec::new(),
                 result: std::sync::Mutex::new(Some(Err(anyhow!("network down")))),
+            }
+        }
+
+        fn catalog(name: &'static str, models: &[&str]) -> Self {
+            Self {
+                name,
+                models: models
+                    .iter()
+                    .map(|id| ModelInfo::new(*id, *id, name))
+                    .collect(),
+                result: std::sync::Mutex::new(Some(Err(anyhow!("not used")))),
             }
         }
     }
@@ -660,10 +792,10 @@ mod tests {
     #[async_trait]
     impl Provider for FakeProvider {
         fn name(&self) -> &str {
-            "fake-advisor"
+            self.name
         }
         fn available_models(&self) -> Vec<ModelInfo> {
-            Vec::new()
+            self.models.clone()
         }
         fn stream_convention(&self) -> StreamConvention {
             StreamConvention::AnthropicNative
@@ -756,6 +888,36 @@ mod tests {
         assert_eq!(session.transcript.len(), 2);
         assert_eq!(session.transcript[0].role, Role::User);
         assert_eq!(session.transcript[1].role, Role::Assistant);
+    }
+
+    /// Normal: local advisor provider selection routes to the provider that owns
+    /// the configured advisor model instead of blindly using the active provider.
+    #[test]
+    fn resolve_local_advisor_provider_uses_model_owner_normal() {
+        let anthropic: Arc<dyn Provider> = Arc::new(FakeProvider::catalog(
+            "anthropic-oauth",
+            &["claude-sonnet-4-6"],
+        ));
+        let openai: Arc<dyn Provider> = Arc::new(FakeProvider::catalog("openai", &["gpt-5.5"]));
+        let providers = vec![anthropic.clone(), openai.clone()];
+
+        let selected =
+            resolve_local_advisor_provider(&providers, anthropic, None, &ModelId::new("gpt-5.5"))
+                .expect("advisor provider should resolve");
+
+        assert_eq!(selected.name(), "openai");
+    }
+
+    /// Normal: provider-qualified advisor config preserves its provider prefix
+    /// rather than stripping it to a bare model id.
+    #[test]
+    fn normalize_local_advisor_model_preserves_provider_prefix_normal() {
+        let target = normalize_local_advisor_model("openai/gpt-5.5", &ModelId::new("fallback"))
+            .expect("model should parse");
+
+        assert_eq!(target.provider.as_ref().map(|p| p.as_str()), Some("openai"));
+        assert_eq!(target.model.as_str(), "gpt-5.5");
+        assert_eq!(target.config_value(), "openai/gpt-5.5");
     }
 
     /// Normal: render_snapshot produces role-prefixed lines for text parts.

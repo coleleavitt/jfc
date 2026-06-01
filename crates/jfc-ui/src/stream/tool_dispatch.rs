@@ -14,6 +14,7 @@ use jfc_provider::{ModelId, Provider};
 
 #[derive(Clone)]
 pub(crate) struct LocalAdvisorDispatchContext {
+    pub provider: Arc<dyn Provider>,
     pub advisor_model: ModelId,
     pub transcript: Vec<ChatMessage>,
 }
@@ -24,7 +25,24 @@ impl LocalAdvisorDispatchContext {
             return None;
         }
         let advisor_model = app.local_advisor_model.clone()?;
+        let provider = match crate::advisor::resolve_local_advisor_provider(
+            &app.providers,
+            Arc::clone(&app.provider),
+            app.local_advisor_provider.as_ref(),
+            &advisor_model,
+        ) {
+            Ok(provider) => provider,
+            Err(e) => {
+                tracing::warn!(
+                    target: "jfc::advisor",
+                    error = %e,
+                    "local advisor provider unavailable"
+                );
+                return None;
+            }
+        };
         Some(Self {
+            provider,
             advisor_model,
             transcript: app.messages.clone(),
         })
@@ -88,7 +106,6 @@ pub(crate) fn dispatch_tools_batched(
     for tc in advisor_calls {
         let tx_advisor = tx.clone();
         let done = send_all_complete.clone();
-        let provider_advisor = provider.clone();
         let tool_id = tc.id.clone();
         let context = local_advisor.clone();
         let cancel_advisor = cancel.clone();
@@ -101,7 +118,7 @@ pub(crate) fn dispatch_tools_batched(
                 result = async {
                     match context {
                         Some(context) => match crate::advisor::ask_local_advisor_tool(
-                            provider_advisor.as_ref(),
+                            context.provider.as_ref(),
                             context.advisor_model,
                             &context.transcript,
                         )

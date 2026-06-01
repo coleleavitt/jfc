@@ -1180,6 +1180,10 @@ pub struct App {
     /// normal `Advisor` tool and executes it through the local provider path,
     /// returning the advisor reply as a regular tool result.
     pub local_advisor_model: Option<ModelId>,
+    /// Optional provider prefix for the local advisor model. Preserves
+    /// `provider/model` config so Advisor can run through OpenAI, OpenWebUI,
+    /// LiteLLM, etc. instead of assuming the active chat provider.
+    pub local_advisor_provider: Option<jfc_provider::ProviderId>,
     /// Active Anthropic server-side advisor model. This is distinct from the
     /// local parallel `/advisor <query>` session above; when set, outbound
     /// Anthropic requests advertise the `advisor` server tool.
@@ -1574,6 +1578,7 @@ impl App {
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
             local_advisor_model: crate::advisor::active_local_advisor_model(),
+            local_advisor_provider: crate::advisor::active_local_advisor_provider(),
             server_advisor_model: crate::advisor::active_server_advisor_model(),
             brief_mode: false,
             autonomous_loop: None,
