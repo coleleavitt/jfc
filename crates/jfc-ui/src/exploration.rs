@@ -161,16 +161,11 @@ impl TemperatureState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExplorationPolicy {
     Fixed,
+    #[default]
     Adaptive,
-}
-
-impl Default for ExplorationPolicy {
-    fn default() -> Self {
-        Self::Adaptive
-    }
 }
 
 impl ExplorationPolicy {

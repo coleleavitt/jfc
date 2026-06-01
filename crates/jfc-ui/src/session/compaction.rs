@@ -177,10 +177,8 @@ fn terminalize_stranded_tools(messages: &mut [ChatMessage], tail: TerminalizeTai
     if len == 0 {
         return;
     }
-    if len < 2 {
-        if tail == TerminalizeTail::Preserve {
-            return; // only message is the (possibly in-flight) tail — leave it.
-        }
+    if len < 2 && tail == TerminalizeTail::Preserve {
+        return; // only message is the (possibly in-flight) tail — leave it.
     }
     let last_idx = len - 1;
     for (idx, msg) in messages.iter_mut().enumerate() {
@@ -211,11 +209,33 @@ fn terminalize_stranded_tools(messages: &mut [ChatMessage], tail: TerminalizeTai
     }
 }
 
+/// Strip orphan tool parts that ended up on a `User` message.
+///
+/// In jfc's transcript model `MessagePart::Tool` belongs only on assistant
+/// turns; a tool part on a user message is malformed and trips
+/// `validate_turn_invariants`' `OrphanToolResult` check, which the load path
+/// then logs as "still violates after repair". The wire builder already drops
+/// these (`stream/messages/provider_messages.rs`: "orphaned tool part in
+/// non-assistant message — skipping to avoid API 400"), so the repair path
+/// mirrors that: remove the offending parts, then drop any user message left
+/// with no content. Runs before `coalesce_consecutive_same_role` so a dropped
+/// message lets its neighbours merge into one valid alternating turn.
+fn strip_orphan_user_tool_parts(messages: &mut Vec<ChatMessage>) {
+    for m in messages.iter_mut() {
+        if m.role == Role::User {
+            m.parts.retain(|p| !matches!(p, MessagePart::Tool(_)));
+        }
+    }
+    // An empty user message is itself an invariant violation, so drop it.
+    messages.retain(|m| m.role != Role::User || !m.parts.is_empty());
+}
+
 pub(super) fn repair_loaded_messages(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
-    let stripped: Vec<ChatMessage> = messages
+    let mut stripped: Vec<ChatMessage> = messages
         .into_iter()
         .filter(|m| !is_empty_assistant_placeholder(m))
         .collect();
+    strip_orphan_user_tool_parts(&mut stripped);
     let mut repaired = coalesce_consecutive_same_role(&stripped);
     terminalize_stranded_tools(&mut repaired, TerminalizeTail::Include);
     for m in &mut repaired {
@@ -392,6 +412,51 @@ mod coalesce_tests {
             out[2].is_compact_boundary(),
             "boundary must survive on its own message"
         );
+    }
+
+    // Robust: a USER turn mixing text + a stray tool part keeps the text but
+    // loses the tool part (the `OrphanToolResult` shape the load path logged
+    // as "still violates after repair"). The repaired transcript is valid.
+    #[test]
+    fn repair_strips_orphan_tool_part_keeps_user_text_robust() {
+        let mut bad_user = ChatMessage::user("please continue".into());
+        bad_user.parts.push(tool_part("toolu_orphan"));
+
+        let out = super::repair_loaded_messages(vec![
+            user_text("start"),
+            assistant_text("ok"),
+            bad_user,
+            assistant_text("done"),
+        ]);
+
+        let user_tool_parts = out
+            .iter()
+            .filter(|m| m.role == Role::User)
+            .flat_map(|m| &m.parts)
+            .filter(|p| matches!(p, MessagePart::Tool(_)))
+            .count();
+        assert_eq!(user_tool_parts, 0, "user tool part must be stripped");
+        validate_turn_invariants(&out).expect("repaired transcript must be valid");
+    }
+
+    // Robust: a USER turn that is *only* a tool part has no content left after
+    // stripping, so the whole turn is dropped and its assistant neighbours
+    // coalesce into one valid alternating turn.
+    #[test]
+    fn repair_drops_user_message_that_is_only_a_tool_part_robust() {
+        let mut only_tool = ChatMessage::user(String::new());
+        only_tool.parts = vec![tool_part("toolu_only")];
+
+        let out = super::repair_loaded_messages(vec![
+            user_text("start"),
+            assistant_text("more"),
+            only_tool,
+            assistant_text("done"),
+        ]);
+
+        let user_count = out.iter().filter(|m| m.role == Role::User).count();
+        assert_eq!(user_count, 1, "tool-only user turn must be dropped");
+        validate_turn_invariants(&out).expect("repaired transcript must be valid");
     }
 }
 
