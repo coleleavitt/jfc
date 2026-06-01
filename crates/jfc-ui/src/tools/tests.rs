@@ -1151,6 +1151,56 @@ fn apply_winning_solution_writes_file_blocks_normal() {
     );
 }
 
+// Robust — the review/test-before-production gate: a solution whose tests
+// failed is refused, and nothing is written to the main checkout.
+#[test]
+fn apply_winning_solution_refuses_failed_tests_robust() {
+    use jfc_economy::types::{AgentId, Solution};
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let cwd = tmp.path();
+    let sol = Solution {
+        agent_id: AgentId::new("solver"),
+        bounty_id: "gated".into(),
+        patch: "===FILE: hello.txt===\nhi\n===END===\n".into(),
+        explanation: "x".into(),
+        self_assessment: 0.9,
+        tokens_consumed: 1,
+        compiles: Some(true),
+        tests_pass: Some(false),
+        suspicious: false,
+    };
+    let res = apply_winning_solution(cwd, "gated", Some(&sol));
+    assert!(res.files.is_empty(), "must write nothing: {}", res.summary);
+    assert!(res.summary.contains("tests failed"));
+    assert!(
+        !cwd.join("hello.txt").exists(),
+        "production file must not be written when tests failed"
+    );
+}
+
+// Robust: a solution flagged suspicious by the validator is likewise refused.
+#[test]
+fn apply_winning_solution_refuses_suspicious_robust() {
+    use jfc_economy::types::{AgentId, Solution};
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let cwd = tmp.path();
+    let sol = Solution {
+        agent_id: AgentId::new("solver"),
+        bounty_id: "susp".into(),
+        patch: "===FILE: x.txt===\nx\n===END===\n".into(),
+        explanation: "x".into(),
+        self_assessment: 0.9,
+        tokens_consumed: 1,
+        compiles: Some(true),
+        tests_pass: Some(true),
+        suspicious: true,
+    };
+    let res = apply_winning_solution(cwd, "susp", Some(&sol));
+    assert!(res.files.is_empty());
+    assert!(res.summary.contains("suspicious"));
+    assert!(!cwd.join("x.txt").exists());
+}
+
 // Robust: apply_winning_solution with None reports nothing-written
 // and creates no audit dir.
 #[test]

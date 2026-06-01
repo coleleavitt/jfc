@@ -616,6 +616,44 @@ pub(crate) fn apply_winning_solution(
             summary: "No winning solution — nothing written.".into(),
         };
     };
+    // Review/test-before-production gate (mirrors the ChangeSet state machine:
+    // a change cannot reach Applied without passing tests). A winning solution
+    // that explicitly failed its validator checks — tests failed, or flagged
+    // suspicious by the adversarial validator — must NOT be written to the
+    // main checkout. `None` (unknown) is permitted: not every bounty runs a
+    // test oracle, and that path is unchanged from before.
+    if sol.tests_pass == Some(false) || sol.suspicious {
+        let reason = if sol.suspicious {
+            "flagged suspicious by validation"
+        } else {
+            "tests failed"
+        };
+        tracing::warn!(
+            target: "jfc::ui::bounty",
+            bounty_id = %bounty_id,
+            winner = %sol.agent_id.0,
+            reason,
+            "refusing to apply winning solution to the main checkout (review/test gate)"
+        );
+        crate::changeset::record_event(
+            jfc_changeset::LedgerEvent::new(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0),
+                jfc_changeset::EventKind::Failure,
+                "bounty-apply-blocked",
+            )
+            .with_detail(format!("{bounty_id}: {reason}")),
+        );
+        return AppliedSolution {
+            files: vec![],
+            summary: format!(
+                "Refused to apply winning solution ({reason}). \
+                 Review/test-before-production gate blocked the write."
+            ),
+        };
+    }
     let audit_dir = cwd.join(".jfc").join("bounties").join(bounty_id);
     if let Err(e) = std::fs::create_dir_all(&audit_dir) {
         tracing::error!(
