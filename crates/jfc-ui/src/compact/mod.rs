@@ -112,7 +112,7 @@ pub fn auto_compact_disabled() -> bool {
         return true;
     }
     // Then check config (autoCompactEnabled / auto_compact_enabled).
-    let via_config = !crate::config::load().auto_compact_enabled;
+    let via_config = !crate::config::load_arc().auto_compact_enabled;
     if via_config {
         trace!(target: "jfc::compact", "auto-compact disabled via config auto_compact_enabled=false");
     }
@@ -127,7 +127,7 @@ pub fn auto_compact_disabled() -> bool {
 /// `window` argument for the headroom calculation.
 pub fn compact_threshold(window: usize) -> usize {
     // Config-level window override (valid range: 100_000–1_000_000).
-    let effective_window = crate::config::load()
+    let effective_window = crate::config::load_arc()
         .auto_compact_window
         .map(|w| w as usize)
         .filter(|&w| (100_000..=1_000_000).contains(&w))

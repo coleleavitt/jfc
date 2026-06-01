@@ -396,8 +396,8 @@ mod tests {
     // service returning Restart stops the tick before later services run.
     #[tokio::test]
     async fn run_tick_short_circuits_on_restart_robust() {
-        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
 
         struct Restarter;
         #[async_trait::async_trait]
@@ -428,7 +428,10 @@ mod tests {
         };
         let outcome = services.run_tick(&mut daemon, SystemTime::now()).await;
         assert_eq!(outcome, TickOutcome::Restart);
-        assert!(!ran.load(Ordering::SeqCst), "service after Restart must not run");
+        assert!(
+            !ran.load(Ordering::SeqCst),
+            "service after Restart must not run"
+        );
     }
 
     /// A service that appends `init:<name>` / `stop:<name>` to a shared log so
@@ -565,6 +568,13 @@ mod tests {
         c.stop();
         let errors = c.stop(); // second stop
         assert!(errors.is_empty());
-        assert_eq!(log.lock().unwrap().iter().filter(|e| *e == "stop:a").count(), 1);
+        assert_eq!(
+            log.lock()
+                .unwrap()
+                .iter()
+                .filter(|e| *e == "stop:a")
+                .count(),
+            1
+        );
     }
 }

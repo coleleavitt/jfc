@@ -689,7 +689,7 @@ pub(super) async fn handle_submit(
     } else {
         app.model.clone()
     };
-    let cfg = crate::config::load();
+    let cfg = crate::config::load_arc();
     app.exploration_state.begin_turn(&display_text, &cfg);
     let tx = tx.clone();
     let interrupt = app.interrupt_flag.clone();

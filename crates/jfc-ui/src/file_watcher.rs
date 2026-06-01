@@ -115,6 +115,7 @@ fn spawn_watcher() -> Result<(), String> {
 
                     if is_watched {
                         CHANGE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                        jfc_config::mark_config_changed();
                         tracing::debug!(
                             target: "jfc::file_watcher",
                             kind = ?event.kind,

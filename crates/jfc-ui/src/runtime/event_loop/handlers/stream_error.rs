@@ -205,7 +205,7 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
     }
     let retry_assistant_idx = app.streaming_assistant_idx;
     let retry_turn_started_at = app.turn_started_at;
-    
+
     // BUG FIX (2026-06-01): When a stream fails AFTER emitting content
     // (committed_output=true), append a truncation warning to the message
     // so the user knows the response was incomplete. This prevents the
@@ -214,18 +214,22 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
     if let Some(idx) = retry_assistant_idx
         && let Some(msg) = app.messages.get_mut(idx)
         && (msg.usage.as_ref().map(|u| u.output_tokens).unwrap_or(0) > 0
-            || msg.parts.iter().any(|p| matches!(p, types::MessagePart::Text(t) if !t.trim().is_empty())))
+            || msg
+                .parts
+                .iter()
+                .any(|p| matches!(p, types::MessagePart::Text(t) if !t.trim().is_empty())))
     {
         // Only add the warning if the message has actual content (text or tools).
         // This avoids the warning on streams that failed before emitting anything.
         let warning = "\n\n⚠️ **Response truncated** — stream ended unexpectedly. \
-                      Press Ctrl+R to retry.".to_string();
+                      Press Ctrl+R to retry."
+            .to_string();
         match msg.parts.last_mut() {
             Some(types::MessagePart::Text(t)) => t.push_str(&warning),
             _ => msg.parts.push(types::MessagePart::Text(warning)),
         }
     }
-    
+
     app.is_streaming = false;
     app.last_stream_event_at = None;
     app.streaming_started_at = None;

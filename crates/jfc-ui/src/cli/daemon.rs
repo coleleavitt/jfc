@@ -229,7 +229,8 @@ pub(super) fn compact_terminal_agents_on_startup() {
         &mut state,
         std::time::SystemTime::now(),
         crate::daemon::TERMINAL_AGENT_RETENTION,
-        crate::daemon::TERMINAL_AGENT_CAP,
+        crate::daemon::TERMINAL_AGENTS_PER_SESSION,
+        crate::daemon::TERMINAL_AGENT_GLOBAL_CAP,
     );
     if dropped == 0 {
         return;

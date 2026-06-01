@@ -374,7 +374,7 @@ pub(crate) async fn handle_stream_done(
     // switch to a cheaper model. We never hard-block (an
     // in-flight investigation shouldn't be killed mid-turn
     // by an estimate); the toast is the user's signal.
-    if let Some(budget_usd) = config::load().session_cost_budget_usd
+    if let Some(budget_usd) = config::load_arc().session_cost_budget_usd
         && budget_usd > 0.0
     {
         let spent = crate::cost::total_cost(&app.usage_by_model);
@@ -719,9 +719,7 @@ fn should_self_continue_after_stop_reason(stop_reason: &jfc_provider::StopReason
 /// (including a `thought_signature`-bearing reasoning part) is lost.
 fn assistant_turn_has_no_content(msg: &types::ChatMessage) -> bool {
     !msg.parts.iter().any(|p| match p {
-        MessagePart::Text(s) | MessagePart::Reasoning(s) | MessagePart::Advisor(s) => {
-            !s.is_empty()
-        }
+        MessagePart::Text(s) | MessagePart::Reasoning(s) | MessagePart::Advisor(s) => !s.is_empty(),
         MessagePart::RedactedThinking(_)
         | MessagePart::Tool(_)
         | MessagePart::TaskStatus(_)
@@ -988,8 +986,7 @@ mod stream_done_lifecycle_tests {
             "user turn preserved"
         );
         assert!(
-            !app
-                .messages
+            !app.messages
                 .iter()
                 .any(|m| m.usage.as_ref().is_some_and(|u| u.output_tokens == 64)),
             "the billed empty assistant message must have been removed"
@@ -1016,8 +1013,7 @@ mod stream_done_lifecycle_tests {
 
         assert_eq!(app.empty_billed_resend_count, 1, "Other(_) must resend");
         assert!(
-            !app
-                .messages
+            !app.messages
                 .iter()
                 .any(|m| m.usage.as_ref().is_some_and(|u| u.output_tokens == 64)),
             "the billed empty assistant message must have been removed"
@@ -1458,14 +1454,14 @@ mod empty_billed_tests {
         assert!(!assistant_turn_has_no_content(&ChatMessage::assistant(
             "hi".into()
         )));
-        assert!(!assistant_turn_has_no_content(&ChatMessage::assistant_parts(
-            vec![MessagePart::Reasoning("thinking…".into())]
-        )));
-        assert!(!assistant_turn_has_no_content(&ChatMessage::assistant_parts(
-            vec![tool_part("t1")]
-        )));
-        assert!(!assistant_turn_has_no_content(&ChatMessage::assistant_parts(
-            vec![MessagePart::RedactedThinking("blob".into())]
-        )));
+        assert!(!assistant_turn_has_no_content(
+            &ChatMessage::assistant_parts(vec![MessagePart::Reasoning("thinking…".into())])
+        ));
+        assert!(!assistant_turn_has_no_content(
+            &ChatMessage::assistant_parts(vec![tool_part("t1")])
+        ));
+        assert!(!assistant_turn_has_no_content(
+            &ChatMessage::assistant_parts(vec![MessagePart::RedactedThinking("blob".into())])
+        ));
     }
 }

@@ -397,47 +397,94 @@ pub fn load_state_for_update(paths: &DaemonPaths) -> std::io::Result<DaemonState
 pub const TERMINAL_AGENT_RETENTION: std::time::Duration =
     std::time::Duration::from_secs(7 * 24 * 60 * 60);
 
-/// Cap on the number of terminal background agents retained regardless of
-/// age. Most recent N are kept; the rest are dropped. Stops the state file
-/// from growing unbounded when the user runs hundreds of background tasks
-/// inside the retention window.
-pub const TERMINAL_AGENT_CAP: usize = 100;
+/// Per-session cap on retained terminal background agents. A single session can
+/// fan out 100+ subagents; keeping the cap per `parent_session_id` means a
+/// burst session retains its full roster while old sessions still age out.
+/// Most recent N per session are kept; the rest are dropped.
+pub const TERMINAL_AGENTS_PER_SESSION: usize = 100;
 
-/// Drop terminal (Completed/Failed/Cancelled) background-agent records that
-/// are either older than `retention` or beyond the most-recent `cap`.
-/// Running agents are always retained. Returns the number of records dropped
-/// so callers can decide whether to persist the compacted state.
+/// Global safety-net cap on total terminal records, applied after the
+/// per-session cap. Bounds the file size against pathological accumulation
+/// (e.g. thousands of one-off unparented records) so the per-second
+/// daemon-state sync never scans an unbounded roster.
+pub const TERMINAL_AGENT_GLOBAL_CAP: usize = 500;
+
+/// Drop terminal (Completed/Failed/Cancelled) background-agent records.
+/// Running/pending agents are always retained. Compaction runs in three
+/// passes:
+///
+/// 1. **Age window** — drop terminal records older than `retention`.
+/// 2. **Per-session cap** — within each `parent_session_id` bucket
+///    (unparented records share one bucket), keep the most-recent
+///    `per_session_cap` and drop the rest.
+/// 3. **Global cap** — if the surviving terminal count still exceeds
+///    `global_cap`, drop the globally-oldest until it fits.
+///
+/// Returns the number of records dropped so callers can decide whether to
+/// persist the compacted state.
 pub fn compact_background_agents(
     state: &mut DaemonState,
     now: SystemTime,
     retention: std::time::Duration,
-    cap: usize,
+    per_session_cap: usize,
+    global_cap: usize,
 ) -> usize {
     let initial_count = state.background_agents.len();
-    // First pass: drop records past the retention window.
+    let terminal_ts = |a: &BackgroundAgentInfo| a.completed_at.unwrap_or(a.updated_at);
+
+    // Pass 1: drop records past the retention window.
     let cutoff = now.checked_sub(retention).unwrap_or(UNIX_EPOCH);
     state.background_agents.retain(|_, agent| {
         if !agent.status.is_terminal() {
             return true;
         }
-        let ts = agent.completed_at.unwrap_or(agent.updated_at);
-        ts >= cutoff
+        terminal_ts(agent) >= cutoff
     });
 
-    // Second pass: cap the terminal-record count at `cap`.
+    // Pass 2: per-session cap. Group terminal records by parent session
+    // (unparented records collapse into a single synthetic bucket), then
+    // within each bucket keep the most-recent `per_session_cap`.
+    let mut by_session: HashMap<String, Vec<(String, SystemTime)>> = HashMap::new();
+    for (id, agent) in &state.background_agents {
+        if !agent.status.is_terminal() {
+            continue;
+        }
+        let bucket = agent
+            .parent_session_id
+            .clone()
+            .unwrap_or_else(|| "<unparented>".to_owned());
+        by_session
+            .entry(bucket)
+            .or_default()
+            .push((id.clone(), terminal_ts(agent)));
+    }
+    for records in by_session.values_mut() {
+        if records.len() <= per_session_cap {
+            continue;
+        }
+        // Newest first, then drop everything past the cap.
+        records.sort_by(|(l_id, l_ts), (r_id, r_ts)| r_ts.cmp(l_ts).then_with(|| r_id.cmp(l_id)));
+        for (id, _) in records.iter().skip(per_session_cap) {
+            state.background_agents.remove(id);
+        }
+    }
+
+    // Pass 3: global safety net across all surviving terminal records.
     let mut terminal: Vec<(String, SystemTime)> = state
         .background_agents
         .iter()
         .filter(|(_, a)| a.status.is_terminal())
-        .map(|(id, a)| (id.clone(), a.completed_at.unwrap_or(a.updated_at)))
+        .map(|(id, a)| (id.clone(), terminal_ts(a)))
         .collect();
-    if terminal.len() > cap {
-        terminal.sort_by_key(|(_, ts)| *ts);
-        let drop_count = terminal.len() - cap;
+    if terminal.len() > global_cap {
+        // Oldest first so the drop window takes the stalest records.
+        terminal.sort_by(|(l_id, l_ts), (r_id, r_ts)| l_ts.cmp(r_ts).then_with(|| l_id.cmp(r_id)));
+        let drop_count = terminal.len() - global_cap;
         for (id, _) in terminal.into_iter().take(drop_count) {
             state.background_agents.remove(&id);
         }
     }
+
     initial_count.saturating_sub(state.background_agents.len())
 }
 
@@ -485,11 +532,21 @@ mod tests {
         completed_offset: std::time::Duration,
         now: SystemTime,
     ) -> BackgroundAgentInfo {
+        agent_in_session(id, status, completed_offset, now, None)
+    }
+
+    fn agent_in_session(
+        id: &str,
+        status: BackgroundAgentStatus,
+        completed_offset: std::time::Duration,
+        now: SystemTime,
+        parent_session_id: Option<&str>,
+    ) -> BackgroundAgentInfo {
         let ts = now - completed_offset;
         BackgroundAgentInfo {
             id: id.into(),
             description: "x".into(),
-            parent_session_id: None,
+            parent_session_id: parent_session_id.map(str::to_owned),
             status,
             started_at: ts,
             updated_at: ts,
@@ -553,6 +610,7 @@ mod tests {
             now,
             std::time::Duration::from_secs(7 * 86400),
             100,
+            500,
         );
         assert_eq!(dropped, 1);
         assert!(!state.background_agents.contains_key("old"));
@@ -560,32 +618,119 @@ mod tests {
         assert!(state.background_agents.contains_key("running"));
     }
 
-    // Normal: when the terminal record count exceeds the cap, the oldest
-    // are dropped first.
+    // Normal: when a single session's terminal record count exceeds the
+    // per-session cap, the oldest are dropped first.
     #[test]
-    fn compact_enforces_cap_keeps_most_recent_normal() {
+    fn compact_enforces_per_session_cap_keeps_most_recent_normal() {
         let now = SystemTime::now();
         let mut state = DaemonState::default();
         for i in 0..10 {
             state.background_agents.insert(
                 format!("a{i}"),
-                agent(
+                agent_in_session(
                     &format!("a{i}"),
                     BackgroundAgentStatus::Completed,
                     // a0 is oldest, a9 newest
                     std::time::Duration::from_secs((10 - i) as u64),
                     now,
+                    Some("sess-1"),
                 ),
             );
         }
-        let dropped =
-            compact_background_agents(&mut state, now, std::time::Duration::from_secs(86400), 3);
+        let dropped = compact_background_agents(
+            &mut state,
+            now,
+            std::time::Duration::from_secs(86400),
+            3,
+            500,
+        );
         assert_eq!(dropped, 7);
         assert_eq!(state.background_agents.len(), 3);
         // The three newest (highest i) must survive.
         for i in 7..10 {
             assert!(state.background_agents.contains_key(&format!("a{i}")));
         }
+    }
+
+    // Normal: the per-session cap is applied independently per session — a
+    // 100-agent burst in one session does not evict another session's records.
+    #[test]
+    fn compact_per_session_cap_is_independent_per_session_normal() {
+        let now = SystemTime::now();
+        let mut state = DaemonState::default();
+        // Session A fans out 5 terminal agents; session B has 2.
+        for i in 0..5 {
+            state.background_agents.insert(
+                format!("a{i}"),
+                agent_in_session(
+                    &format!("a{i}"),
+                    BackgroundAgentStatus::Completed,
+                    std::time::Duration::from_secs((5 - i) as u64),
+                    now,
+                    Some("sess-A"),
+                ),
+            );
+        }
+        for i in 0..2 {
+            state.background_agents.insert(
+                format!("b{i}"),
+                agent_in_session(
+                    &format!("b{i}"),
+                    BackgroundAgentStatus::Completed,
+                    std::time::Duration::from_secs((2 - i) as u64),
+                    now,
+                    Some("sess-B"),
+                ),
+            );
+        }
+        // Cap of 3 per session: A drops 2 (keeps newest 3), B keeps both.
+        let dropped = compact_background_agents(
+            &mut state,
+            now,
+            std::time::Duration::from_secs(86400),
+            3,
+            500,
+        );
+        assert_eq!(dropped, 2);
+        for i in 2..5 {
+            assert!(state.background_agents.contains_key(&format!("a{i}")));
+        }
+        assert!(state.background_agents.contains_key("b0"));
+        assert!(state.background_agents.contains_key("b1"));
+    }
+
+    // Robust: the global cap bounds total terminal records even when each
+    // session is individually under the per-session cap.
+    #[test]
+    fn compact_global_cap_bounds_total_terminal_records_robust() {
+        let now = SystemTime::now();
+        let mut state = DaemonState::default();
+        // 6 sessions × 2 agents = 12 terminal records, each session under the
+        // per-session cap of 5, but the global cap of 8 forces 4 drops.
+        for s in 0..6 {
+            for i in 0..2 {
+                let id = format!("s{s}-a{i}");
+                state.background_agents.insert(
+                    id.clone(),
+                    agent_in_session(
+                        &id,
+                        BackgroundAgentStatus::Completed,
+                        std::time::Duration::from_secs((100 - (s * 2 + i)) as u64),
+                        now,
+                        Some(&format!("sess-{s}")),
+                    ),
+                );
+            }
+        }
+        let dropped = compact_background_agents(
+            &mut state,
+            now,
+            std::time::Duration::from_secs(86400),
+            5,
+            8,
+        );
+        assert_eq!(dropped, 4);
+        assert_eq!(state.background_agents.len(), 8);
     }
 
     // Robust: compact on an empty state is a no-op.
@@ -597,6 +742,7 @@ mod tests {
             SystemTime::now(),
             std::time::Duration::from_secs(86400),
             100,
+            500,
         );
         assert_eq!(dropped, 0);
     }

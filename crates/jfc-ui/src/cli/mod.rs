@@ -573,7 +573,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
     }
     let advisor_cli = cli.advisor.clone();
     let local_advisor_model = {
-        let cfg = crate::config::load();
+        let cfg = crate::config::load_arc();
         let configured = advisor_cli
             .as_deref()
             .or_else(|| cfg.advisor_model.as_deref());
@@ -614,7 +614,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
     };
     let server_advisor_cli = cli.server_advisor.clone();
     let advisor_model = {
-        let cfg = crate::config::load();
+        let cfg = crate::config::load_arc();
         let configured = server_advisor_cli
             .as_deref()
             .or_else(|| cfg.server_advisor_model.as_deref());
@@ -834,7 +834,7 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
             // If no --permission-mode flag was passed, read the persisted
             // mode from config.toml [default.permission].mode so the user's
             // `/mode` choice survives across sessions.
-            let cfg = crate::config::load();
+            let cfg = crate::config::load_arc();
             cfg.default
                 .permission
                 .get("mode")

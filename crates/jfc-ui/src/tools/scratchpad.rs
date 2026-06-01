@@ -23,10 +23,10 @@ fn lock_scratchpad(lock_path: &Path) -> std::io::Result<std::fs::File> {
     if let Some(parent) = lock_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    
+
     let start = Instant::now();
     let mut delay = LOCK_RETRY_DELAY;
-    
+
     loop {
         let file = std::fs::OpenOptions::new()
             .create(true)
@@ -34,17 +34,17 @@ fn lock_scratchpad(lock_path: &Path) -> std::io::Result<std::fs::File> {
             .write(true)
             .read(true)
             .open(lock_path)?;
-        
+
         // SAFETY: flock operates on a valid file descriptor and the kernel
         // releases the lock when `file` is dropped.
         // Use LOCK_NB (non-blocking) + LOCK_EX (exclusive)
         let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-        
+
         if rc == 0 {
             // Lock acquired successfully
             return Ok(file);
         }
-        
+
         // Check if we've exceeded timeout
         if start.elapsed() >= LOCK_TIMEOUT {
             return Err(std::io::Error::new(
@@ -52,7 +52,7 @@ fn lock_scratchpad(lock_path: &Path) -> std::io::Result<std::fs::File> {
                 "Scratchpad lock timeout (5s): another agent may hold the lock",
             ));
         }
-        
+
         // Wait before retrying, with exponential backoff
         std::thread::sleep(delay);
         delay = (delay * 2).min(LOCK_MAX_DELAY);
@@ -64,11 +64,11 @@ fn lock_scratchpad(lock_path: &Path) -> std::io::Result<std::fs::File> {
     if let Some(parent) = lock_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    
+
     // On Windows, try with retry loop (no native flock with timeout)
     let start = Instant::now();
     let mut delay = LOCK_RETRY_DELAY;
-    
+
     loop {
         match std::fs::OpenOptions::new()
             .create(true)
@@ -78,7 +78,10 @@ fn lock_scratchpad(lock_path: &Path) -> std::io::Result<std::fs::File> {
             .open(lock_path)
         {
             Ok(file) => return Ok(file),
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && start.elapsed() < LOCK_TIMEOUT => {
+            Err(e)
+                if e.kind() == std::io::ErrorKind::PermissionDenied
+                    && start.elapsed() < LOCK_TIMEOUT =>
+            {
                 // File is locked by another process, retry with backoff
                 std::thread::sleep(delay);
                 delay = (delay * 2).min(LOCK_MAX_DELAY);

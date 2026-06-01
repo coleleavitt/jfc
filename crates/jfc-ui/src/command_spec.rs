@@ -125,7 +125,11 @@ pub(crate) fn tool_spec(kind: crate::types::ToolKind) -> StaticSpec {
         ToolKind::ApplyPatch => ("apply_patch", "apply a patch", Permission::Mutating),
         ToolKind::Glob => ("Glob", "match files by glob", Permission::ReadOnly),
         ToolKind::Grep => ("Grep", "search file contents", Permission::ReadOnly),
-        ToolKind::Search => ("codebase_search", "semantic code search", Permission::ReadOnly),
+        ToolKind::Search => (
+            "codebase_search",
+            "semantic code search",
+            Permission::ReadOnly,
+        ),
         ToolKind::TaskCreate => ("TaskCreate", "create a task", Permission::Management),
         _ => ("tool", "model tool", Permission::Management),
     };
@@ -384,7 +388,10 @@ mod tests {
             ToolKind::Search,
             ToolKind::TaskCreate,
         ] {
-            assert!(!tool_is_mutating(kind.clone()), "{kind:?} must not be mutating");
+            assert!(
+                !tool_is_mutating(kind.clone()),
+                "{kind:?} must not be mutating"
+            );
         }
     }
 
@@ -395,8 +402,10 @@ mod tests {
     fn slash_help_lines_cover_every_unique_description_robust() {
         let rendered = slash_help_lines();
         // One line per UNIQUE help string in the registry (aliases dedup).
-        let unique_helps: std::collections::HashSet<&str> =
-            crate::input::SLASH_COMMANDS.iter().map(|(_, h)| *h).collect();
+        let unique_helps: std::collections::HashSet<&str> = crate::input::SLASH_COMMANDS
+            .iter()
+            .map(|(_, h)| *h)
+            .collect();
         let line_count = rendered.lines().filter(|l| !l.is_empty()).count();
         assert_eq!(
             line_count,

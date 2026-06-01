@@ -551,9 +551,10 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
         tokio::spawn(async move {
             // Use compaction_model from config if set; otherwise
             // fall back to the session's current model.
-            let compact_model_id = crate::config::load()
+            let compact_model_id = crate::config::load_arc()
                 .default
                 .compaction_model
+                .clone()
                 .map(jfc_provider::ModelId::new)
                 .unwrap_or_else(|| model.clone());
             let options = jfc_provider::StreamOptions::new(compact_model_id.clone());

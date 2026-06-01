@@ -341,7 +341,7 @@ pub async fn compact(
         // Build system prompt with optional custom instructions from config.
         let system_prompt = {
             let mut prompt = COMPACTION_SYSTEM_PROMPT.to_owned();
-            if let Some(ref instructions) = crate::config::load().compact_instructions
+            if let Some(ref instructions) = crate::config::load_arc().compact_instructions
                 && !instructions.trim().is_empty()
             {
                 prompt.push_str("\n\nAdditional Instructions:\n");

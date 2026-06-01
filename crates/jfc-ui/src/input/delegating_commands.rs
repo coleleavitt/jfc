@@ -159,8 +159,10 @@ pub(super) async fn cmd_commands(
         ),
         Some(&"completions") => {
             let specs = crate::command_spec::all_specs();
-            let refs: Vec<&dyn crate::command_spec::CommandSpec> =
-                specs.iter().map(|s| s as &dyn crate::command_spec::CommandSpec).collect();
+            let refs: Vec<&dyn crate::command_spec::CommandSpec> = specs
+                .iter()
+                .map(|s| s as &dyn crate::command_spec::CommandSpec)
+                .collect();
             format!(
                 "Completion words:\n{}",
                 crate::command_spec::render_completions(&refs)

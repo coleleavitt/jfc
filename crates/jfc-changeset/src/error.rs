@@ -7,10 +7,7 @@ use crate::state::ChangeState;
 pub enum ChangeSetError {
     /// I/O error (file system, lock acquisition, etc.)
     #[error("I/O error ({context}): {source}")]
-    Io {
-        source: io::Error,
-        context: String,
-    },
+    Io { source: io::Error, context: String },
 
     /// JSON serialization / deserialization failure.
     #[error("serialization error ({context}): {source}")]

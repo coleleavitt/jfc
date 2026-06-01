@@ -36,8 +36,9 @@ pub use runtime::{
 };
 pub use state::{
     BackgroundAgentInfo, BackgroundAgentLaunch, BackgroundAgentStatus, DaemonPaths, DaemonState,
-    ScheduledWakeup, SessionId, SessionInfo, SessionStatus, TERMINAL_AGENT_CAP,
-    TERMINAL_AGENT_RETENTION, WorkerControlKind, WorkerControlRecord, WorkerControlStatus,
+    ScheduledWakeup, SessionId, SessionInfo, SessionStatus, TERMINAL_AGENT_GLOBAL_CAP,
+    TERMINAL_AGENT_RETENTION, TERMINAL_AGENTS_PER_SESSION, WorkerControlKind, WorkerControlRecord,
+    WorkerControlStatus,
     compact_background_agents, load_state, load_state_if_changed, save_state, state_file_mtime,
 };
 pub use worker::spawn_background_agent_worker;

@@ -63,8 +63,9 @@ pub(crate) fn isolation_fallback() -> IsolationFallback {
             return IsolationFallback::FailClosed;
         }
     }
-    let fail_closed = crate::config::load()
+    let fail_closed = crate::config::load_arc()
         .isolation
+        .as_ref()
         .map(|i| i.fail_closed)
         .unwrap_or(true);
     isolation_fallback_for(fail_closed)
@@ -195,7 +196,12 @@ pub(crate) fn render_ledger(events: &[LedgerEvent]) -> String {
     }
     let mut out = String::with_capacity(events.len() * 48);
     for e in events {
-        out.push_str(&format!("{:>14}  {:<13} {}", e.at_ms, e.kind.label(), e.subject));
+        out.push_str(&format!(
+            "{:>14}  {:<13} {}",
+            e.at_ms,
+            e.kind.label(),
+            e.subject
+        ));
         if let Some(cid) = &e.change_id {
             out.push_str(&format!("  [change={cid}]"));
         }
@@ -443,7 +449,10 @@ pub(crate) fn show_change(root: &Path, id: &str) -> String {
         out.push_str(&format!("  diff:     {}\n", cs.diff_summary));
     }
     for f in &cs.changed_files {
-        out.push_str(&format!("    {} (+{} -{})\n", f.path, f.insertions, f.deletions));
+        out.push_str(&format!(
+            "    {} (+{} -{})\n",
+            f.path, f.insertions, f.deletions
+        ));
     }
     for t in &cs.test_runs {
         out.push_str(&format!(
@@ -492,7 +501,10 @@ pub(crate) async fn test_change(root: &Path, id: &str, command: &str) -> String 
         .output()
         .await;
     let (exit_code, duration_ms) = match output {
-        Ok(o) => (o.status.code().unwrap_or(-1), started.elapsed().as_millis() as u64),
+        Ok(o) => (
+            o.status.code().unwrap_or(-1),
+            started.elapsed().as_millis() as u64,
+        ),
         Err(e) => return format!("failed to run test command: {e}"),
     };
 
@@ -626,10 +638,7 @@ pub(crate) async fn revert_change(root: &Path, id: &str) -> String {
     match revert {
         Ok(o) if o.status.success() => {}
         Ok(o) => {
-            return format!(
-                "git revert failed:\n{}",
-                String::from_utf8_lossy(&o.stderr)
-            );
+            return format!("git revert failed:\n{}", String::from_utf8_lossy(&o.stderr));
         }
         Err(e) => return format!("failed to spawn git revert: {e}"),
     }
@@ -902,8 +911,9 @@ mod tests {
     /// Build an Approved change-set whose `branch` is a REAL git branch
     /// carrying one extra commit (a new file), so `apply_change` has something
     /// to merge. Returns the change-set id and the file the branch adds.
-    async fn approved_change_with_real_branch(root: &Path) -> (String, jfc_changeset::AgentChangeSet)
-    {
+    async fn approved_change_with_real_branch(
+        root: &Path,
+    ) -> (String, jfc_changeset::AgentChangeSet) {
         init_repo(root).await;
         // Create a feature branch with a distinct commit, then return to the
         // base branch so apply's `git merge <branch>` has a real merge to do.

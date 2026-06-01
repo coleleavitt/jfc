@@ -8,7 +8,8 @@ pub mod feature_config;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
@@ -482,22 +483,29 @@ impl FallbackModel {
 
 /// Canonical path to the config file.
 pub fn config_path() -> PathBuf {
-    let path = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("jfc")
-        .join("config.toml");
-    tracing::trace!(target: "jfc::config", path = %path.display(), "resolved config path");
-    path
+    static CONFIG_PATH: OnceLock<PathBuf> = OnceLock::new();
+    CONFIG_PATH
+        .get_or_init(|| {
+            let path = dirs::config_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("jfc")
+                .join("config.toml");
+            tracing::trace!(target: "jfc::config", path = %path.display(), "resolved config path");
+            path
+        })
+        .clone()
 }
 
 #[derive(Clone)]
 struct Cached {
     path: PathBuf,
     mtime: Option<SystemTime>,
-    config: Config,
+    generation: u64,
+    config: Arc<Config>,
 }
 
 static CACHE: Mutex<Option<Cached>> = Mutex::new(None);
+static CACHE_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
 static READ_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -509,9 +517,23 @@ pub fn read_count() -> u64 {
 
 /// Bust the cached parse.
 pub fn invalidate_cache() {
+    mark_config_changed();
     if let Ok(mut slot) = CACHE.lock() {
         *slot = None;
     }
+}
+
+/// Current cache invalidation generation.
+pub fn cache_generation() -> u64 {
+    CACHE_GENERATION.load(Ordering::Acquire)
+}
+
+/// Mark the canonical config inputs as changed.
+///
+/// The file watcher calls this on real config-file notifications, so the hot
+/// cache path can avoid polling `metadata()` for every caller.
+pub fn mark_config_changed() {
+    CACHE_GENERATION.fetch_add(1, Ordering::AcqRel);
 }
 
 /// Read + parse config from disk, no caching.
@@ -555,7 +577,12 @@ fn load_from(path: &Path) -> Config {
 
 /// Load config with caching.
 pub fn load() -> Config {
-    load_cached(&config_path())
+    (*load_arc()).clone()
+}
+
+/// Load the canonical config as a shared value.
+pub fn load_arc() -> Arc<Config> {
+    load_cached_arc(&config_path())
 }
 
 /// Candidate managed-settings files, from highest to lowest precedence.
@@ -653,24 +680,39 @@ pub fn managed_settings_sources() -> Vec<ManagedSettingsSource> {
 
 /// Inner cache-and-load against an arbitrary path.
 pub fn load_cached(path: &Path) -> Config {
-    let cur_mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+    (*load_cached_arc(path)).clone()
+}
+
+/// Inner cache-and-load against an arbitrary path, returning a cheap shared
+/// pointer on cache hits.
+pub fn load_cached_arc(path: &Path) -> Arc<Config> {
+    let generation = cache_generation();
+    let canonical_path = config_path();
+    let generation_only = path == canonical_path.as_path();
+    let cur_mtime = if generation_only {
+        None
+    } else {
+        std::fs::metadata(path).and_then(|m| m.modified()).ok()
+    };
 
     {
         let slot = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(c) = slot.as_ref()
             && c.path == path
+            && c.generation == generation
             && c.mtime == cur_mtime
         {
-            return c.config.clone();
+            return Arc::clone(&c.config);
         }
     }
 
-    let config = load_from(path);
+    let config = Arc::new(load_from(path));
     let mut slot = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     *slot = Some(Cached {
         path: path.to_path_buf(),
         mtime: cur_mtime,
-        config: config.clone(),
+        generation,
+        config: Arc::clone(&config),
     });
     config
 }
@@ -1306,8 +1348,7 @@ disallowed_tools = ["Bash", "Write"]
     // Robust: opting out is explicit and round-trips.
     #[test]
     fn isolation_fail_open_opt_out_robust() {
-        let cfg: Config =
-            toml::from_str("[isolation]\nfail_closed = false\n").expect("parse");
+        let cfg: Config = toml::from_str("[isolation]\nfail_closed = false\n").expect("parse");
         assert!(!cfg.isolation.expect("present").fail_closed);
     }
 }

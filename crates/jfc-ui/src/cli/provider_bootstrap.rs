@@ -43,9 +43,10 @@ pub(crate) fn build_providers() -> ProvidersInit {
         .or_else(|| std::env::var("OPENROUTER_MODEL").ok())
         .or_else(|| std::env::var("JFC_LITELLM_MODEL").ok())
         .filter(|s| !s.is_empty());
-    let cfg_model = crate::config::load()
+    let cfg_model = crate::config::load_arc()
         .default
         .model
+        .clone()
         .filter(|s| !s.is_empty());
     let recent_model = crate::app::load_recent_models()
         .into_iter()

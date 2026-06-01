@@ -19,9 +19,9 @@ mod ccr;
 mod changeset;
 mod claude_status;
 mod cli;
-mod command_spec;
 #[allow(dead_code)]
 mod coach;
+mod command_spec;
 mod compact;
 mod config;
 mod context;

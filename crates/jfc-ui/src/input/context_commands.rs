@@ -336,7 +336,7 @@ pub(super) async fn cmd_config(
             p.display()
         )));
     } else {
-        let cfg = crate::config::load();
+        let cfg = crate::config::load_arc();
         let body = match toml::to_string_pretty(&cfg) {
             Ok(s) if s.trim().is_empty() => "(empty config — no overrides)".to_owned(),
             Ok(s) => format!("```toml\n{s}```"),
@@ -873,7 +873,7 @@ pub(super) async fn cmd_memory(
                 ));
             }
             "status" | "" => {
-                let persisted = crate::config::load().memory_recall_enabled;
+                let persisted = crate::config::load_arc().memory_recall_enabled;
                 let effective = crate::memory_recall::is_enabled(persisted);
                 app.messages.push(ChatMessage::assistant(format!(
                     "**Memory recall**\n\
@@ -1541,7 +1541,7 @@ pub(super) async fn cmd_remote_control(
     }
 
     // Check config-level disable.
-    if crate::config::load()
+    if crate::config::load_arc()
         .remote_control
         .as_ref()
         .is_some_and(|rc| rc.disabled)

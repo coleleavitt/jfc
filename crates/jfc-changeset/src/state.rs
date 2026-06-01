@@ -113,7 +113,11 @@ mod tests {
         let err = Ready.ensure_transition(Applied).unwrap_err();
         assert!(matches!(
             err,
-            ChangeSetError::IllegalTransition { from: Ready, to: Applied, .. }
+            ChangeSetError::IllegalTransition {
+                from: Ready,
+                to: Applied,
+                ..
+            }
         ));
     }
 

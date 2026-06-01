@@ -184,19 +184,19 @@ mod tests {
         let mut app = test_app();
         app.messages.push(ChatMessage::assistant(String::new()));
         app.streaming_assistant_idx = Some(0);
-        
+
         // Simulate ResponseMetadata arriving with input_tokens only
         handle_stream_usage(&mut app, 40_000, 0, 0, 0);
-        
+
         // The message should NOT have usage stamped yet (prevents the bug)
         assert!(
             app.messages[0].usage.is_none(),
             "partial_input_only on first arrival must NOT stamp message"
         );
-        
+
         // Later, final Usage event arrives with full data
         handle_stream_usage(&mut app, 40_000, 2_000, 75_000, 5_000);
-        
+
         // Now the full usage is stamped
         let usage = app.messages[0].usage.as_ref().expect("usage");
         assert_eq!(usage.output_tokens, 2_000);

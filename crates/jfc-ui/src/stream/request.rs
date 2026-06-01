@@ -393,8 +393,8 @@ Do not use a colon before tool calls.";
 
         let memories = crate::memory::load_all_memories(&cwd_path);
 
-        let recall_enabled =
-            crate::memory_recall::is_enabled(crate::config::load().memory_recall_enabled);
+        let config = crate::config::load_arc();
+        let recall_enabled = crate::memory_recall::is_enabled(config.memory_recall_enabled);
         let mut recall_block: Option<String> = None;
         if recall_enabled && !memories.is_empty() {
             let last_user_query = last_user_text(messages);
@@ -431,8 +431,7 @@ Do not use a colon before tool calls.";
         // `<system-reminder>` context block. Same gating logic as memory
         // recall: skip on empty plan set, slash commands, or when disabled
         // via env var / runtime override / persisted config.
-        let plan_recall_enabled =
-            crate::plan_recall::is_enabled(crate::config::load().plan_recall_enabled);
+        let plan_recall_enabled = crate::plan_recall::is_enabled(config.plan_recall_enabled);
         if plan_recall_enabled
             && let Ok(plan_store) = crate::plan::PlanStore::open_project(Some(&cwd_path))
         {

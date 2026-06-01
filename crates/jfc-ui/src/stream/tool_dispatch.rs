@@ -729,7 +729,7 @@ fn spawn_workflow(
         }
 
         // ── named-workflow permission gate ──────────────────────────────
-        let config = crate::config::load();
+        let config = crate::config::load_arc();
         // Allow and Ask both proceed here — the upstream opt-in
         // (ultrawork / explicit request) is the gate for Ask; a future
         // interactive dialog can refine this.

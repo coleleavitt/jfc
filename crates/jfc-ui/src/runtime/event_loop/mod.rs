@@ -89,15 +89,16 @@ pub(crate) async fn run(
     app.custom_betas = cli_config.custom_betas;
     app.fine_grained_tool_streaming = cli_config.fine_grained_tool_streaming;
     app.strict_tool_schemas = cli_config.strict_tool_schemas;
+    let startup_config = config::load_arc();
 
     // Remote-control auto-start: from --remote-control flag or config.
     let rc_wanted = cli_config.remote_control
-        || config::load()
+        || startup_config
             .remote_control
             .as_ref()
             .is_some_and(|rc| rc.auto_start);
     if rc_wanted {
-        let rc_port = config::load()
+        let rc_port = startup_config
             .remote_control
             .as_ref()
             .map(|rc| rc.port)
@@ -149,7 +150,7 @@ pub(crate) async fn run(
     // Apply the user's persisted theme choice from
     // ~/.config/jfc/config.toml. Unknown / missing names fall back
     // silently to the default dark theme set by App::new.
-    if let Some(name) = crate::config::load().theme.as_deref()
+    if let Some(name) = startup_config.theme.as_deref()
         && let Some(theme) = crate::theme::Theme::by_name(name)
     {
         tracing::info!(target: "jfc::ui::theme", theme = %name, "applied persisted theme");
@@ -164,7 +165,7 @@ pub(crate) async fn run(
         app.render_cache.borrow_mut().clear();
         crate::markdown::clear_highlight_cache();
     }
-    if let Some(name) = crate::config::load().output_style.as_deref() {
+    if let Some(name) = startup_config.output_style.as_deref() {
         let parsed = crate::output_style::OutputStyle::from_str_loose(name);
         tracing::info!(
             target: "jfc::ui::output_style",
@@ -225,9 +226,8 @@ pub(crate) async fn run(
     // submission consults the router to pick a per-turn model based on the
     // classifier's `QueryClass`. See `crates/jfc-ui/src/slate.rs`.
     {
-        let cfg = config::load();
-        if cfg.slate_enabled {
-            let rules = config::slate_rules_from_config(&cfg);
+        if startup_config.slate_enabled {
+            let rules = config::slate_rules_from_config(&startup_config);
             let rule_count = rules.len();
             let router = slate::SlateRouter::new(rules);
             tracing::info!(
@@ -503,7 +503,7 @@ pub(crate) async fn run(
     // the session's saved model) so the effort resolves for the ACTUAL
     // model in use, not the initial CLI-provided one.
     {
-        let cfg = crate::config::load();
+        let cfg = crate::config::load_arc();
         let effort_str = resolve_effort_for_model(&cfg, &app.model);
         if let Some(level) = effort_str
             .as_deref()
@@ -655,7 +655,7 @@ pub(crate) async fn run(
     {
         let registry = crate::mcp::McpRegistry::new();
         crate::tools::register_mcp_registry(registry.clone());
-        let mcp_configs = crate::config::load().mcp;
+        let mcp_configs = crate::config::load_arc().mcp.clone();
         let tx_mcp = tx.clone();
         tokio::spawn(async move {
             crate::mcp::register_servers_from_config(&registry, &mcp_configs).await;
@@ -727,7 +727,7 @@ pub(crate) async fn run(
         } else {
             app.model.clone()
         };
-        let cfg = crate::config::load();
+        let cfg = crate::config::load_arc();
         app.exploration_state.begin_turn(&prompt, &cfg);
         let tx_clone = tx.clone();
         let interrupt = app.interrupt_flag.clone();

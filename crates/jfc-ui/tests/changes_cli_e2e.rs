@@ -102,7 +102,10 @@ fn changes_list_empty_is_graceful_robust() {
 
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("No change-sets recorded."), "stdout: {stdout}");
+    assert!(
+        stdout.contains("No change-sets recorded."),
+        "stdout: {stdout}"
+    );
 }
 
 // Robust: applying a non-Approved change is refused (the review/test gate),

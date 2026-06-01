@@ -474,7 +474,7 @@ impl App {
         // prompts add friction without security value — auto-approve
         // unless the user has explicitly opted out via config.
         if crate::is_sandbox_active() {
-            let auto_allow = crate::config::load()
+            let auto_allow = crate::config::load_arc()
                 .permission_automation
                 .as_ref()
                 .map(|pa| pa.auto_allow_if_sandboxed)

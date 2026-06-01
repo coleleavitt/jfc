@@ -122,8 +122,11 @@ impl ChangeStore {
 
     /// All change-sets matching `filter`, newest-updated first.
     pub fn query(&self, filter: &ChangeFilter) -> Vec<&AgentChangeSet> {
-        let mut out: Vec<&AgentChangeSet> =
-            self.index.values().filter(|cs| filter.matches(cs)).collect();
+        let mut out: Vec<&AgentChangeSet> = self
+            .index
+            .values()
+            .filter(|cs| filter.matches(cs))
+            .collect();
         out.sort_by_key(|cs| std::cmp::Reverse(cs.updated_at_ms));
         out
     }
@@ -171,9 +174,10 @@ impl ChangeStore {
         ids.sort();
         for id in ids {
             let cs = &self.index[id];
-            let json =
-                serde_json::to_string(cs).map_err(|e| ChangeSetError::serde(e, "encoding change-set"))?;
-            writeln!(tmp, "{json}").map_err(|e| ChangeSetError::io(e, "writing change-set line"))?;
+            let json = serde_json::to_string(cs)
+                .map_err(|e| ChangeSetError::serde(e, "encoding change-set"))?;
+            writeln!(tmp, "{json}")
+                .map_err(|e| ChangeSetError::io(e, "writing change-set line"))?;
         }
         tmp.flush()
             .map_err(|e| ChangeSetError::io(e, "flushing changes.jsonl.tmp"))?;
@@ -293,13 +297,21 @@ mod tests {
             id
         };
         // Append garbage directly to the file.
-        let path = dir.path().join(".jfc").join("changes").join("changes.jsonl");
+        let path = dir
+            .path()
+            .join(".jfc")
+            .join("changes")
+            .join("changes.jsonl");
         let mut f = OpenOptions::new().append(true).open(&path).unwrap();
         writeln!(f, "{{not valid json").unwrap();
         drop(f);
 
         let store = ChangeStore::open_project(dir.path()).unwrap();
-        assert_eq!(store.len(), 1, "good record survives a corrupt sibling line");
+        assert_eq!(
+            store.len(),
+            1,
+            "good record survives a corrupt sibling line"
+        );
         assert!(store.get(&id).is_some());
     }
 

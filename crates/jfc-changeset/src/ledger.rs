@@ -260,14 +260,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = LedgerStore::open_project(dir.path()).unwrap();
         store
-            .append(
-                &ev(100, EventKind::ToolCall, "Edit").with_change_id(Some("cs-a".into())),
-            )
+            .append(&ev(100, EventKind::ToolCall, "Edit").with_change_id(Some("cs-a".into())))
             .unwrap();
         store
-            .append(
-                &ev(110, EventKind::ToolCall, "Bash").with_change_id(Some("cs-b".into())),
-            )
+            .append(&ev(110, EventKind::ToolCall, "Bash").with_change_id(Some("cs-b".into())))
             .unwrap();
 
         let a = store

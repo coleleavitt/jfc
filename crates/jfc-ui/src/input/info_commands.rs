@@ -229,7 +229,7 @@ pub(super) async fn cmd_doctor(
 
     // ── 5. MCP servers ────────────────────────────────────────────────
     {
-        let cfg = crate::config::load();
+        let cfg = crate::config::load_arc();
         if cfg.mcp.is_empty() {
             report.push_str("  MCP: no servers configured\n");
         } else {

@@ -128,7 +128,7 @@ fn cached_agent_models() -> &'static std::collections::HashMap<String, crate::co
     static CACHE: std::sync::OnceLock<
         std::collections::HashMap<String, crate::config::AgentConfig>,
     > = std::sync::OnceLock::new();
-    CACHE.get_or_init(|| crate::config::load().agents)
+    CACHE.get_or_init(|| crate::config::load_arc().agents.clone())
 }
 
 pub(crate) fn selected_subagent_model(

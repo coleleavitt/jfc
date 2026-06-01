@@ -146,7 +146,7 @@ pub(crate) fn auto_continue_enabled() -> bool {
             return false;
         }
     }
-    let cfg = crate::config::load();
+    let cfg = crate::config::load_arc();
     if let Some(c) = cfg.continuation.as_ref()
         && c.auto_continue
     {
@@ -159,7 +159,7 @@ pub(crate) fn auto_continue_enabled() -> bool {
 /// prevents a runaway loop if the model keeps stalling. Configurable via
 /// `[continuation] max_self_continuations` (default 25).
 pub(crate) fn max_self_continuations() -> u32 {
-    crate::config::load()
+    crate::config::load_arc()
         .continuation
         .as_ref()
         .map(|c| c.max_self_continuations)

@@ -8,6 +8,8 @@ use std::sync::{Arc, OnceLock};
 // Graph session cache
 // ---------------------------------------------------------------------------
 
+const GRAPH_BUILD_STACK_BYTES: usize = 16 * 1024 * 1024;
+
 /// Process-global cache of code-graph sessions keyed by canonicalized
 /// workspace root. Without this, every `graph_query` / `symbol_edit`
 /// tool call rebuilt the graph from scratch by re-running tree-sitter
@@ -43,11 +45,11 @@ pub(super) fn build_graph_session_for_key(
         return Arc::new(session);
     }
 
-    // Cache miss or stale — full build on 64MB-stack thread.
+    // Cache miss or stale — full build on a larger-than-tokio stack.
     let key_clone = key.clone();
     let session = std::thread::Builder::new()
         .name("graph-build".into())
-        .stack_size(64 * 1024 * 1024)
+        .stack_size(GRAPH_BUILD_STACK_BYTES)
         .spawn(move || jfc_graph::session::GraphSession::from_directory(&key_clone))
         .expect("failed to spawn graph-build thread")
         .join()
@@ -189,7 +191,8 @@ pub(super) fn with_graph_session_mut<R>(
 ///
 /// Graph building and analysis (tarjan_scc, page_rank, etc.) can recurse
 /// deeply on large codebases. We spawn the build on a dedicated thread
-/// with a 64MB stack to avoid overflowing tokio's 8MB worker threads.
+/// with a 16MB stack to avoid overflowing tokio's 8MB worker threads without
+/// reserving a large virtual-memory range for every build.
 pub(crate) fn get_or_build_graph_session(
     cwd: &std::path::Path,
 ) -> Arc<jfc_graph::session::GraphSession> {

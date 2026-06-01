@@ -30,7 +30,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -40,10 +40,15 @@ pub use jfc_core::{
 };
 
 pub fn task_stores_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("jfc")
-        .join("tasks")
+    static TASK_STORES_DIR: OnceLock<PathBuf> = OnceLock::new();
+    TASK_STORES_DIR
+        .get_or_init(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("jfc")
+                .join("tasks")
+        })
+        .clone()
 }
 
 pub fn task_store_path(session_id: &str) -> PathBuf {
@@ -53,11 +58,16 @@ pub fn task_store_path(session_id: &str) -> PathBuf {
 pub fn team_tasks_dir(team_name: &str) -> PathBuf {
     let home = std::env::var_os("JFC_SWARM_HOME_OVERRIDE")
         .map(PathBuf::from)
-        .or_else(dirs::home_dir)
+        .or_else(cached_home_dir)
         .unwrap_or_else(|| PathBuf::from("."));
     home.join(".claude")
         .join("tasks")
         .join(sanitize_path_component(team_name))
+}
+
+fn cached_home_dir() -> Option<PathBuf> {
+    static HOME_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    HOME_DIR.get_or_init(dirs::home_dir).clone()
 }
 
 pub fn team_task_store_path(team_name: &str) -> PathBuf {
@@ -98,6 +108,18 @@ fn is_legacy_placeholder_task(task: &Task) -> bool {
     task.subject.trim().eq_ignore_ascii_case("subj")
         && task.description.trim().eq_ignore_ascii_case("desc")
 }
+
+/// Age-based retention for terminal (completed/failed/deleted) tasks. Terminal
+/// rows whose `created_at_ms` is older than this are dropped on store open and
+/// after external reloads. This handles the common "one long session created
+/// 100 tasks" case without a count cap evicting that session's own history,
+/// while still bounding growth from stale prior sessions.
+const TERMINAL_TASK_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+
+/// Hard upper bound on retained terminal tasks regardless of age. Acts as a
+/// safety net so a single session can't bloat the file without limit; the
+/// most-recent N are kept once the age window has been applied.
+const MAX_TERMINAL_TASKS: usize = 200;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeletedFilter {
@@ -233,6 +255,7 @@ impl TaskStore {
             disk_mtime: Mutex::new(disk_mtime),
         });
         store.delete_legacy_placeholders();
+        store.prune_terminal_tasks(MAX_TERMINAL_TASKS);
         store
     }
 
@@ -254,6 +277,7 @@ impl TaskStore {
             disk_mtime: Mutex::new(disk_mtime),
         });
         store.delete_legacy_placeholders();
+        store.prune_terminal_tasks(MAX_TERMINAL_TASKS);
         store
     }
 
@@ -283,6 +307,7 @@ impl TaskStore {
             disk_mtime: Mutex::new(disk_mtime),
         });
         store.delete_legacy_placeholders();
+        store.prune_terminal_tasks(MAX_TERMINAL_TASKS);
         store
     }
 
@@ -389,6 +414,87 @@ impl TaskStore {
         placeholder_ids.len()
     }
 
+    /// Hard-remove stale terminal tasks while keeping recent terminal rows for
+    /// session history. Active tasks are never pruned. Two passes: an age
+    /// window (`TERMINAL_TASK_RETENTION_MS`) then a count cap (`max_terminal`).
+    pub fn prune_terminal_tasks(&self, max_terminal: usize) -> usize {
+        let mut inner = self.inner.lock().unwrap();
+        let now_ms = now_ms();
+        let pruned = Self::prune_terminal_tasks_from_inner(&mut inner, max_terminal, now_ms);
+        if pruned == 0 {
+            return 0;
+        }
+
+        self.persist(&inner);
+        tracing::info!(
+            target: "jfc::tasks",
+            pruned,
+            retained = max_terminal,
+            retention_ms = TERMINAL_TASK_RETENTION_MS,
+            path = %self.path.display(),
+            "pruned old terminal tasks"
+        );
+        pruned
+    }
+
+    fn prune_terminal_tasks_from_inner(
+        inner: &mut TaskStoreInner,
+        max_terminal: usize,
+        now_ms: u64,
+    ) -> usize {
+        let is_terminal = |task: &Task| {
+            matches!(
+                task.status,
+                TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Deleted
+            )
+        };
+
+        // Pass 1: age window — drop terminal rows older than the retention
+        // horizon. `saturating_sub` guards against clock skew / future stamps.
+        let cutoff = now_ms.saturating_sub(TERMINAL_TASK_RETENTION_MS);
+        let mut prune_ids: BTreeSet<TaskId> = inner
+            .tasks
+            .iter()
+            .filter(|(_, task)| is_terminal(task) && task.created_at_ms < cutoff)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        // Pass 2: count cap over the terminal rows that survived the age
+        // window — keep the most-recent `max_terminal`, drop the rest.
+        let mut surviving_terminal: Vec<(TaskId, u64)> = inner
+            .tasks
+            .iter()
+            .filter(|(id, task)| is_terminal(task) && !prune_ids.contains(*id))
+            .map(|(id, task)| (id.clone(), task.created_at_ms))
+            .collect();
+
+        if surviving_terminal.len() > max_terminal {
+            surviving_terminal.sort_by(|(left_id, left_created), (right_id, right_created)| {
+                right_created
+                    .cmp(left_created)
+                    .then_with(|| right_id.as_str().cmp(left_id.as_str()))
+            });
+            for (id, _) in surviving_terminal.into_iter().skip(max_terminal) {
+                prune_ids.insert(id);
+            }
+        }
+
+        if prune_ids.is_empty() {
+            return 0;
+        }
+
+        for id in &prune_ids {
+            inner.tasks.remove(id);
+        }
+
+        for task in inner.tasks.values_mut() {
+            task.blocks.retain(|id| !prune_ids.contains(id));
+            task.blocked_by.retain(|id| !prune_ids.contains(id));
+        }
+
+        prune_ids.len()
+    }
+
     /// Current on-disk modification time of `path`, or `None` if the file
     /// doesn't exist / can't be stat'd. Used to mtime-gate `reload_if_changed`.
     fn file_mtime(path: &PathBuf) -> Option<std::time::SystemTime> {
@@ -420,18 +526,21 @@ impl TaskStore {
         }
         let mut fresh = Self::load_inner(&self.path);
         let deleted = Self::delete_legacy_placeholders_from_inner(&mut fresh);
+        let pruned =
+            Self::prune_terminal_tasks_from_inner(&mut fresh, MAX_TERMINAL_TASKS, now_ms());
         let mut inner = self.inner.lock().unwrap();
         *inner = fresh;
         drop(inner);
-        if deleted > 0 {
+        if deleted > 0 || pruned > 0 {
             if let Ok(inner) = self.inner.lock() {
                 self.persist(&inner);
             }
             tracing::warn!(
                 target: "jfc::tasks",
                 deleted,
+                pruned,
                 path = %self.path.display(),
-                "deleted legacy placeholder tasks after external reload"
+                "compacted task store after external reload"
             );
         } else {
             *self.disk_mtime.lock().unwrap() = current;
@@ -1268,6 +1377,112 @@ mod tests {
 
         let list = store.list(DeletedFilter::Exclude);
         assert_eq!(list.len(), 1);
+    }
+
+    // Normal: the count cap keeps the most-recent terminal rows and never
+    // touches active tasks. Timestamps are recent (within the age window) so
+    // only the count-cap pass fires.
+    #[test]
+    fn prune_terminal_tasks_keeps_recent_and_active_normal() {
+        let store = TaskStore::in_memory();
+        let mut terminal_ids = Vec::new();
+
+        for n in 0..55 {
+            let task = store
+                .create(
+                    format!("done {n}"),
+                    "details".into(),
+                    None,
+                    Vec::<TaskId>::new(),
+                )
+                .unwrap();
+            store
+                .update(
+                    task.id.as_str(),
+                    TaskPatch {
+                        status: Some(TaskStatus::Completed),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            terminal_ids.push(task.id);
+        }
+
+        let active = store
+            .create(
+                "active".into(),
+                "details".into(),
+                None,
+                vec![terminal_ids[0].clone()],
+            )
+            .unwrap();
+
+        // Recent timestamps spaced 1s apart: index 0 is the oldest, 54 the
+        // newest, all comfortably inside the retention window.
+        let base = now_ms();
+        {
+            let mut inner = store.inner.lock().unwrap();
+            for (n, id) in terminal_ids.iter().enumerate() {
+                inner.tasks.get_mut(id).unwrap().created_at_ms = base - (55 - n as u64) * 1000;
+            }
+            inner.tasks.get_mut(&active.id).unwrap().created_at_ms = base;
+        }
+
+        // Cap of 50 over 55 recent terminal rows drops the 5 oldest.
+        assert_eq!(store.prune_terminal_tasks(50), 5);
+        assert!(store.get(terminal_ids[0].as_str()).is_none());
+        assert!(store.get(terminal_ids[54].as_str()).is_some());
+
+        let active_after = store.get(active.id.as_str()).unwrap();
+        assert_eq!(active_after.status, TaskStatus::Pending);
+        assert!(!active_after.blocked_by.contains(&terminal_ids[0]));
+    }
+
+    // Normal: the age window drops terminal rows older than the retention
+    // horizon even when the count is well under the cap, and never prunes
+    // active tasks regardless of age.
+    #[test]
+    fn prune_terminal_tasks_age_window_drops_stale_normal() {
+        let store = TaskStore::in_memory();
+        let now = now_ms();
+
+        let stale = store
+            .create("stale".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        let fresh = store
+            .create("fresh".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        for id in [&stale.id, &fresh.id] {
+            store
+                .update(
+                    id.as_str(),
+                    TaskPatch {
+                        status: Some(TaskStatus::Completed),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        }
+        // An ancient *active* task must survive — age pruning is terminal-only.
+        let old_active = store
+            .create("old-active".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+
+        {
+            let mut inner = store.inner.lock().unwrap();
+            // stale: 8 days old (past 7-day retention). fresh: 1 hour old.
+            inner.tasks.get_mut(&stale.id).unwrap().created_at_ms =
+                now - 8 * 24 * 60 * 60 * 1000;
+            inner.tasks.get_mut(&fresh.id).unwrap().created_at_ms = now - 60 * 60 * 1000;
+            inner.tasks.get_mut(&old_active.id).unwrap().created_at_ms =
+                now - 30 * 24 * 60 * 60 * 1000;
+        }
+
+        // Cap is high; only the age window fires, dropping just `stale`.
+        assert_eq!(store.prune_terminal_tasks(200), 1);
+        assert!(store.get(stale.id.as_str()).is_none());
+        assert!(store.get(fresh.id.as_str()).is_some());
+        assert!(store.get(old_active.id.as_str()).is_some());
     }
 
     // Normal: blocked_by cross-links — when t2 declares blocked_by=[t1], t1's

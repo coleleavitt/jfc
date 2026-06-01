@@ -1785,8 +1785,8 @@ mod macro_equivalence_tests {
                 "TaskUpdate",
                 json!({"task_id":"t1","depends_on":["t2","t3"]})
             ).unwrap(),
-            ToolInput::TaskUpdate { 
-                task_id, 
+            ToolInput::TaskUpdate {
+                task_id,
                 blocked_by,
                 ..
             } if task_id == "t1" && blocked_by == vec!["t2".to_string(), "t3".to_string()]
@@ -1798,8 +1798,8 @@ mod macro_equivalence_tests {
                 "TaskUpdate",
                 json!({"task_id":"t1","blocked_by":["t4","t5"]})
             ).unwrap(),
-            ToolInput::TaskUpdate { 
-                task_id, 
+            ToolInput::TaskUpdate {
+                task_id,
                 blocked_by,
                 ..
             } if task_id == "t1" && blocked_by == vec!["t4".to_string(), "t5".to_string()]
@@ -1811,8 +1811,8 @@ mod macro_equivalence_tests {
                 "TaskUpdate",
                 json!({"task_id":"t1","blocked_by":["t6"],"depends_on":["t7"]})
             ).unwrap(),
-            ToolInput::TaskUpdate { 
-                task_id, 
+            ToolInput::TaskUpdate {
+                task_id,
                 blocked_by,
                 ..
             } if task_id == "t1" && blocked_by == vec!["t6".to_string()]
