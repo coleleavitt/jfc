@@ -421,6 +421,58 @@ pub fn live_token_count(wire_output: u64, char_estimate: u64) -> u64 {
     wire_output.max(char_estimate)
 }
 
+/// Trailing window over which the live tokens/sec rate is measured. A short
+/// window self-smooths the bursty `message_delta` batches (Anthropic sends
+/// cumulative `output_tokens` every few hundred ms) while still reflecting
+/// *current* speed — unlike a lifetime cumulative average, which lags badly
+/// once a fast opening burst tapers off.
+pub const TOKEN_RATE_WINDOW: Duration = Duration::from_secs(5);
+
+/// Minimum time span between the oldest and newest in-window sample before a
+/// rate is reported. Below this the denominator is too small to be stable
+/// (early-stream noise / a single delta), so we suppress the `tok/s` chip
+/// rather than flicker a wild number.
+const TOKEN_RATE_MIN_SPAN: Duration = Duration::from_millis(1200);
+
+/// Floor below which the rate chip is hidden — a sub-1 tok/s reading is
+/// almost always a stalled tail, better communicated by the stall status.
+const TOKEN_RATE_FLOOR: f64 = 1.0;
+
+/// Drop samples older than `window` relative to the newest sample. `samples`
+/// is `(elapsed_from_stream_start, cumulative_token_count)`, monotonic in both
+/// coordinates. Kept pure (operates on `Duration`, not `Instant`) so it's unit
+/// testable without sleeping.
+pub fn trim_token_samples(samples: &mut std::collections::VecDeque<(Duration, u64)>) {
+    let Some(&(newest, _)) = samples.back() else {
+        return;
+    };
+    let cutoff = newest.saturating_sub(TOKEN_RATE_WINDOW);
+    while samples.len() > 2 {
+        match samples.front() {
+            Some(&(t, _)) if t < cutoff => {
+                samples.pop_front();
+            }
+            _ => break,
+        }
+    }
+}
+
+/// Compute tokens/sec over the in-window samples: `Δtokens / Δseconds` between
+/// the oldest and newest retained sample. Returns `None` when there isn't
+/// enough spread to be meaningful (so the caller hides the chip). Self-
+/// smoothing by construction — no EMA needed.
+pub fn windowed_token_rate(samples: &std::collections::VecDeque<(Duration, u64)>) -> Option<f64> {
+    let (&(oldest_t, oldest_tok), &(newest_t, newest_tok)) =
+        samples.front().zip(samples.back())?;
+    let span = newest_t.saturating_sub(oldest_t);
+    if span < TOKEN_RATE_MIN_SPAN {
+        return None;
+    }
+    let delta_tokens = newest_tok.saturating_sub(oldest_tok) as f64;
+    let rate = delta_tokens / span.as_secs_f64();
+    (rate >= TOKEN_RATE_FLOOR).then_some(rate)
+}
+
 /// Live-vs-finished thinking signal for `format_status`. Mirrors v126's
 /// `thinkingStatus` prop on the spinner component (cli.js:323189): the
 /// model is either *currently* producing reasoning, *has finished*
@@ -449,6 +501,7 @@ pub fn status_segments(
     tick: usize,
     elapsed: Duration,
     output_tokens: u64,
+    token_rate: Option<f64>,
     time_since_last_token: Duration,
     time_since_last_stream_event: Option<Duration>,
     thinking: Option<ThinkingStatus>,
@@ -456,12 +509,12 @@ pub fn status_segments(
     let mut parts: Vec<String> = vec![fmt_elapsed(elapsed)];
     if output_tokens > 0 {
         parts.push(format!("↓ {} tokens", fmt_tokens(output_tokens)));
-        let elapsed_secs = elapsed.as_secs_f64();
-        if elapsed_secs >= 2.0 {
-            let rate = output_tokens as f64 / elapsed_secs;
-            if rate > 0.5 {
-                parts.push(format!("{:.0} tok/s", rate));
-            }
+        // Windowed tokens/sec (computed by the caller from a trailing sample
+        // window) — reflects *current* speed, not a lifetime average that
+        // lags after a fast opening burst. `None` means "not enough spread
+        // yet", so the chip is simply omitted.
+        if let Some(rate) = token_rate {
+            parts.push(format!("{rate:.0} tok/s"));
         }
     }
     if let Some(d) = time_since_last_stream_event {
@@ -507,6 +560,7 @@ pub fn format_status(
     tick: usize,
     elapsed: Duration,
     output_tokens: u64,
+    token_rate: Option<f64>,
     time_since_last_token: Duration,
     time_since_last_stream_event: Option<Duration>,
     thinking: Option<ThinkingStatus>,
@@ -514,17 +568,9 @@ pub fn format_status(
     let mut parts: Vec<String> = vec![fmt_elapsed(elapsed)];
     if output_tokens > 0 {
         parts.push(format!("↓ {} tokens", fmt_tokens(output_tokens)));
-        // Live token rate. Skipping the first 2 seconds because the
-        // initial burst is dominated by start-up latency and gives a
-        // misleading rate. Once we have meaningful data, show the
-        // rolling estimate so the user can spot when the stream
-        // actually slowed down vs. just feels slow.
-        let elapsed_secs = elapsed.as_secs_f64();
-        if elapsed_secs >= 2.0 {
-            let rate = output_tokens as f64 / elapsed_secs;
-            if rate > 0.5 {
-                parts.push(format!("{:.0} tok/s", rate));
-            }
+        // Windowed tokens/sec — see `status_segments` for the rationale.
+        if let Some(rate) = token_rate {
+            parts.push(format!("{rate:.0} tok/s"));
         }
     }
     if let Some(d) = time_since_last_stream_event {
@@ -683,6 +729,7 @@ mod tests {
             2,
             Duration::from_secs(310),
             14_600,
+            Some(47.0),
             Duration::from_secs(70),
             Some(Duration::from_secs(0)),
             None,
@@ -695,6 +742,55 @@ mod tests {
             s.contains("almost done thinking"),
             "stall hint missing: {s}"
         );
+        assert!(s.contains("47 tok/s"), "rate chip missing: {s}");
+    }
+
+    // --- windowed_token_rate / trim_token_samples ---
+
+    #[test]
+    fn windowed_rate_basic_normal() {
+        let mut samples = std::collections::VecDeque::new();
+        samples.push_back((Duration::from_millis(0), 0u64));
+        samples.push_back((Duration::from_millis(2000), 100u64));
+        // 100 tokens in 2s = 50 tok/s
+        let rate = windowed_token_rate(&samples).expect("should produce a rate");
+        assert!((rate - 50.0).abs() < 0.1, "expected 50 tok/s, got {rate}");
+    }
+
+    #[test]
+    fn trim_drops_stale_samples_normal() {
+        let mut samples = std::collections::VecDeque::new();
+        for (t, tok) in [(0u64, 0u64), (1000, 50), (2000, 100), (10_000, 500)] {
+            samples.push_back((Duration::from_millis(t), tok));
+        }
+        trim_token_samples(&mut samples);
+        // newest=10s, TOKEN_RATE_WINDOW=5s → cutoff=5s; t=0,1,2 stale but
+        // trim keeps ≥2 entries so at least oldest+newest survive
+        assert!(samples.len() >= 2, "must keep ≥2 samples: {:?}", samples);
+        assert_eq!(*samples.back().unwrap(), (Duration::from_millis(10_000), 500));
+    }
+
+    #[test]
+    fn windowed_rate_single_sample_returns_none_robust() {
+        let mut samples = std::collections::VecDeque::new();
+        samples.push_back((Duration::from_millis(0), 0u64));
+        assert!(windowed_token_rate(&samples).is_none());
+    }
+
+    #[test]
+    fn windowed_rate_below_min_span_returns_none_robust() {
+        let mut samples = std::collections::VecDeque::new();
+        samples.push_back((Duration::from_millis(0), 0u64));
+        samples.push_back((Duration::from_millis(500), 100u64));
+        // 500ms < TOKEN_RATE_MIN_SPAN (1200ms) → None
+        assert!(windowed_token_rate(&samples).is_none());
+    }
+
+    #[test]
+    fn windowed_rate_empty_returns_none_robust() {
+        let samples: std::collections::VecDeque<(Duration, u64)> =
+            std::collections::VecDeque::new();
+        assert!(windowed_token_rate(&samples).is_none());
     }
 
     #[test]
@@ -703,6 +799,7 @@ mod tests {
             0,
             Duration::from_secs(3),
             0,
+            None,
             Duration::from_secs(0),
             None,
             None,
@@ -720,6 +817,7 @@ mod tests {
             0,
             Duration::from_secs(5),
             100,
+            None,
             Duration::from_secs(2),
             None,
             None,
@@ -737,6 +835,7 @@ mod tests {
             0,
             Duration::from_secs(20),
             500,
+            None,
             Duration::from_secs(20),
             Some(Duration::from_secs(20)),
             Some(ThinkingStatus::Live),
@@ -762,6 +861,7 @@ mod tests {
             0,
             Duration::from_secs(60),
             5_000,
+            None,
             Duration::from_secs(0),
             Some(Duration::from_secs(1)),
             Some(ThinkingStatus::Done(Duration::from_secs(12))),
@@ -777,6 +877,7 @@ mod tests {
             0,
             Duration::from_secs(5),
             100,
+            None,
             Duration::from_secs(0),
             None,
             Some(ThinkingStatus::Done(Duration::from_millis(400))),

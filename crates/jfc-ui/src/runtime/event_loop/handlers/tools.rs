@@ -702,6 +702,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
         app.streaming_started_at = None;
         app.last_stream_event_at = None;
         app.streaming_last_token_at = None;
+        app.token_rate_samples.clear();
         app.thinking_started_at = None;
         app.thinking_ended_at = None;
         app.streaming_text.clear();

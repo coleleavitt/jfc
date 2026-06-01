@@ -971,6 +971,17 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         } else {
             0
         };
+        // Windowed tokens/sec: sample (elapsed, live_tokens) into a trailing
+        // window each frame, then compute Δtokens/Δt over it. This reflects
+        // *current* throughput (self-smoothing over TOKEN_RATE_WINDOW) rather
+        // than the old lifetime average, which lagged once a fast opening
+        // burst tapered. `messages.rs` renders with `&App`, so we can't push
+        // here — sampling happens in the tick handler; here we only read.
+        let token_rate = if stream_is_live && live_tokens > 0 {
+            crate::spinner::windowed_token_rate(&app.token_rate_samples)
+        } else {
+            None
+        };
         // Thinking signal — Some(Live) while reasoning is streaming,
         // Some(Done(d)) once we got the first text byte after thinking,
         // None when the model isn't using extended thinking this turn.
@@ -990,6 +1001,7 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             app.spinner_frame,
             elapsed,
             live_tokens,
+            token_rate,
             stall,
             stream_idle,
             thinking,

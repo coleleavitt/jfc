@@ -28,6 +28,20 @@ pub(crate) async fn handle_tick(
     app.spinner_frame = (app.spinner_frame + 1) % crate::app::SPINNER.len();
     app.check_stream_watchdog();
 
+    // Windowed tokens/sec sampling: push one (elapsed, live_token_count) point
+    // per tick while streaming, then trim to TOKEN_RATE_WINDOW. The render path
+    // reads the window each frame; we mutate it here because tick.rs has `&mut
+    // App` while the renderer only has `&App`.
+    if app.is_streaming {
+        if let Some(started) = app.streaming_started_at {
+            let elapsed = started.elapsed();
+            let estimate = app.streaming_response_bytes as u64 / 4;
+            let live = crate::spinner::live_token_count(app.last_usage_output as u64, estimate);
+            app.token_rate_samples.push_back((elapsed, live));
+            crate::spinner::trim_token_samples(&mut app.token_rate_samples);
+        }
+    }
+
     // Detached background workers update their progress in
     // `daemon-state.json` (they're a different process — no
     // AppEvent channel back to the UI). Re-read once a

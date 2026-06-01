@@ -456,6 +456,13 @@ pub struct App {
     /// → "almost done thinking"). Mirrors v126 `timeSinceLastToken` (cli.js
     /// line 323162).
     pub streaming_last_token_at: Option<Instant>,
+    /// Trailing window of `(elapsed_since_stream_start, live_token_count)`
+    /// samples used to compute the windowed tokens/sec rate shown in the
+    /// spinner. Sampled each render frame while streaming; trimmed to
+    /// `spinner::TOKEN_RATE_WINDOW`. A windowed Δtokens/Δt is self-smoothing
+    /// and reflects *current* throughput, unlike a lifetime average that lags
+    /// after a fast opening burst tapers. Cleared at end-of-turn.
+    pub token_rate_samples: std::collections::VecDeque<(std::time::Duration, u64)>,
     /// Instant the model started producing reasoning output (extended
     /// thinking). Set on the first reasoning chunk per turn; cleared when
     /// the turn ends. Mirrors v126's `streamMode = "thinking"` transition
@@ -1271,6 +1278,7 @@ impl App {
             last_response_id: None,
             streaming_started_at: None,
             streaming_last_token_at: None,
+            token_rate_samples: std::collections::VecDeque::new(),
             thinking_started_at: None,
             thinking_ended_at: None,
             turn_started_at: None,

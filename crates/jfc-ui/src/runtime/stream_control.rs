@@ -81,6 +81,10 @@ pub(crate) fn restart_stream_in_place_with_overrides(
     app.streaming_started_at = Some(now);
     app.last_stream_event_at = Some(now);
     app.streaming_last_token_at = Some(now);
+    // Fresh rate window for the new turn; seed a zero-token sample at t=0 so
+    // the first real sample has a baseline to measure throughput against.
+    app.token_rate_samples.clear();
+    app.token_rate_samples.push_back((std::time::Duration::ZERO, 0));
     app.turn_started_at = turn_started_at.or(Some(now));
     app.thinking_started_at = None;
     app.thinking_ended_at = None;

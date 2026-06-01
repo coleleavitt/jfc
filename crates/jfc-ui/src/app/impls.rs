@@ -190,6 +190,7 @@ impl App {
             self.streaming_started_at = None;
             self.last_stream_event_at = None;
             self.streaming_last_token_at = None;
+            self.token_rate_samples.clear();
             self.thinking_started_at = None;
             self.thinking_ended_at = None;
             self.streaming_text.clear();
