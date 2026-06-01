@@ -87,6 +87,12 @@ pub struct StreamRequestOverrides {
     /// Interactive brief mode: keep `SendUserMessage` advertised and suppress
     /// routine assistant prose from the visible transcript.
     pub brief_mode: bool,
+    /// Tokens saved by the most recent compaction, forwarded once on the next
+    /// outbound request so the `context-hint-2026-04-09` beta path fires
+    /// (`context_hint.target_tokens_saved`). Drained after a single use —
+    /// the hint is only meaningful on the turn immediately following a
+    /// compaction. `None` when no compaction happened since the last send.
+    pub context_hint_tokens_saved: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

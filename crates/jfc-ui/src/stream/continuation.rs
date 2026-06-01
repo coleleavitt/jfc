@@ -260,6 +260,7 @@ fn spawn_substream(app: &mut App, messages: Vec<ProviderMessage>, tx: &mpsc::Sen
         max_thinking_tokens: app.cli_max_thinking_tokens,
         thinking_display: app.cli_thinking_display.clone(),
         brief_mode: app.brief_mode,
+        context_hint_tokens_saved: app.take_context_hint_tokens_saved(),
         ..Default::default()
     };
     let tx_guard = tx.clone();

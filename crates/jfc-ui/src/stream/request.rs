@@ -843,6 +843,11 @@ Do not use a colon before tool calls.";
     if let Some(tokens) = overrides.task_budget {
         base = base.task_budget(tokens);
     }
+    // Forward the post-compaction savings hint so the API's context-management
+    // assist (context-hint-2026-04-09) knows how much we just freed. The body
+    // builder gates on a >=20k floor (matching cli.js's `2e4`), so a trivial
+    // compaction won't emit the hint.
+    base.context_hint_tokens_saved = overrides.context_hint_tokens_saved;
 
     let mut opts = thinking_mode.apply_to(base);
     opts = crate::exploration::apply_to_stream_options(

@@ -2389,6 +2389,35 @@ mod tests {
         assert_eq!(body["output_config"]["effort"], "high");
     }
 
+    // Normal: a post-compaction savings hint above the 20k floor emits the
+    // context_hint block (context-hint-2026-04-09 parity).
+    #[test]
+    fn build_body_emits_context_hint_above_floor_normal() {
+        let mut o = opts("claude-opus-4-8");
+        o.context_hint_tokens_saved = Some(50_000);
+        let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
+        assert_eq!(body["context_hint"]["enabled"], true);
+        assert_eq!(body["context_hint"]["target_tokens_saved"], 50_000);
+    }
+
+    // Robust: a trivial savings below the 20k floor must NOT emit the hint —
+    // hinting a tiny compaction is noise.
+    #[test]
+    fn build_body_omits_context_hint_below_floor_robust() {
+        let mut o = opts("claude-opus-4-8");
+        o.context_hint_tokens_saved = Some(5_000);
+        let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
+        assert!(body.get("context_hint").is_none());
+    }
+
+    // Robust: no compaction (None) means no context_hint at all.
+    #[test]
+    fn build_body_omits_context_hint_when_unset_robust() {
+        let o = opts("claude-opus-4-8");
+        let body = build_body(vec![make_user_msg("hi")], &o, TEST_BH);
+        assert!(body.get("context_hint").is_none());
+    }
+
     // strip_block removes the entire `<env>...</env>` span and leaves
     // surrounding text intact. v126 prompts wrap env / cwd / file lists
     // in tags that the Anthropic OAuth validator pattern-matches as

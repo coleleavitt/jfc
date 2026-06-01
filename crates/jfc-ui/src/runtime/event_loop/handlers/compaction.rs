@@ -57,6 +57,12 @@ pub(super) async fn handle_done(
     // Reset post-compact read tracker so we can detect re-reads.
     app.post_compact_reads.clear();
     let saved = pre_tokens.saturating_sub(post_tokens);
+    // Stash the savings so the next outbound request forwards it as the
+    // context-hint (context-hint-2026-04-09). Drained after one send. Only
+    // worth hinting when non-trivial; the body builder enforces the 20k floor.
+    if saved > 0 {
+        app.pending_context_hint_tokens_saved = Some(saved as u64);
+    }
     tracing::info!(
         target: "jfc::compact",
         pre_tokens, post_tokens, saved,

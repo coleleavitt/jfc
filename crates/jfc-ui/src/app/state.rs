@@ -383,6 +383,12 @@ pub struct App {
     /// Populated during extended-thinking phases (live thinking) or redacted-thinking blocks.
     /// Reset at the start of each streaming turn. Displayed separately from output tokens.
     pub streaming_thinking_tokens: u64,
+    /// Tokens freed by the most recent compaction, pending forward to the next
+    /// outbound request as `context_hint.target_tokens_saved`
+    /// (context-hint-2026-04-09 beta). Set by the CompactionDone handler;
+    /// drained into `StreamRequestOverrides` on the next send so the hint
+    /// fires exactly once. `None` when no compaction is pending acknowledgement.
+    pub pending_context_hint_tokens_saved: Option<u64>,
     /// Visible while a provider is silently retrying a transient network/API
     /// failure. The spinner replaces its normal cycling verb with this code
     /// until the next real stream byte arrives.
@@ -1275,6 +1281,7 @@ impl App {
             streaming_reasoning: String::new(),
             streaming_response_bytes: 0,
             streaming_thinking_tokens: 0,
+            pending_context_hint_tokens_saved: None,
             network_recovery_status: None,
             network_recovery_attempts: 0,
             claude_status: None,
@@ -1557,6 +1564,14 @@ impl App {
     /// queue is empty until the next FS event arrives.
     pub fn take_background_reminders(&mut self) -> Vec<String> {
         std::mem::take(&mut self.pending_background_reminders)
+    }
+
+    /// Drain the pending post-compaction savings hint. Returns the value once,
+    /// then clears it so the `context_hint` is only sent on the single request
+    /// immediately following a compaction (matching cli.js's one-shot
+    /// context-hint emission).
+    pub fn take_context_hint_tokens_saved(&mut self) -> Option<u64> {
+        self.pending_context_hint_tokens_saved.take()
     }
 
     /// Return the merged list of disallowed tools from CLI flags and
