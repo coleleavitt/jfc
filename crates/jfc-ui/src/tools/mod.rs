@@ -1,4 +1,5 @@
 mod bash;
+mod catalog;
 mod daemon;
 mod defs;
 mod dispatch;
@@ -38,6 +39,7 @@ pub use dispatch::execute_tool;
 pub(crate) use dispatch::advance_linked_plans;
 
 // tool definitions (for advertised tool list)
+pub(crate) use catalog::progressive_tool_defs;
 pub(crate) use defs::all_tool_defs;
 pub use safe_tools::all_tool_defs_with_mcp;
 

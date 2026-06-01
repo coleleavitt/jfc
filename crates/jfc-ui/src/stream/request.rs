@@ -367,6 +367,12 @@ pub(super) async fn prepare_stream_request(
 ## Using your tools\n\
 Prefer dedicated tools over Bash when one fits (Read, Write, Edit, Glob, Grep) — reserve Bash for shell-only operations.\n\
 \n\
+### Tool discovery — specialized tools are progressive\n\
+To keep the prompt small, only core tools plus intent-matched tools are advertised at the start of an action turn. \
+If you need a capability that is not in the visible tool list, call `ToolSearch` or `ToolSuggest` with the capability name. \
+Tools returned by those discovery calls are advertised on the next continuation, so you can invoke the exact matching tool after the result arrives. \
+Explicit managed/user allowlists still override this and expose only the allowed tools.\n\
+\n\
 ### Code navigation — reach for the graph FIRST\n\
 The workspace is indexed into a code graph (auto-built for whatever directory you're in — it is NOT specific to this project). For anything about *code structure*, the graph tools are faster and more precise than grep/Read, and they return exact `file:start-end` ranges. Use this routing:\n\
 - **Find a symbol by name** (function, struct, enum, trait, type) → `graph_search` (add `include_code=true` to get the body inline — this replaces the search-then-Read/sed dance). Do NOT grep for an identifier like `SalesforceApi` or `from_sf_cli`; `graph_search` resolves it in one call and never needs regex-guessing.\n\
@@ -756,7 +762,22 @@ Do not use a colon before tool calls.";
              assistant text.",
         );
     }
-    let mut advertised_tools = tools::all_tool_defs_with_mcp().await;
+    let full_tool_catalog = tools::all_tool_defs_with_mcp().await;
+    let full_tool_count = full_tool_catalog.len();
+    let mut advertised_tools = if overrides.allowed_tools.is_empty() {
+        let tool_intent = last_user_text(messages);
+        let selected =
+            tools::progressive_tool_defs(full_tool_catalog, messages, tool_intent.as_deref());
+        tracing::debug!(
+            target: "jfc::stream::tools",
+            selected = selected.len(),
+            full = full_tool_count,
+            "selected progressive tool catalog"
+        );
+        selected
+    } else {
+        full_tool_catalog
+    };
     tools::apply_send_user_message_policy(
         &mut advertised_tools,
         effective_brief_mode,
@@ -1216,7 +1237,9 @@ mod tests {
         // the local-environment detector — only concrete possessive/deictic
         // references do.
         assert!(!user_text_requests_action("what is the rust memory model"));
-        assert!(!user_text_requests_action("explain how the os schedules threads"));
+        assert!(!user_text_requests_action(
+            "explain how the os schedules threads"
+        ));
     }
 
     // REGRESSION (gpt-5.5 "tell me about my device" leaked raw <Bash/> XML):
