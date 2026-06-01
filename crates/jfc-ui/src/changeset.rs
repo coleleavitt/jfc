@@ -121,6 +121,42 @@ pub(crate) fn ledger_detail_for(
     }
 }
 
+/// Record an approval grant/denial to the audit ledger — the security trail
+/// of "what was the agent allowed to do, and who decided". `granted=false`
+/// records a denial.
+pub(crate) fn record_approval(tool: &str, granted: bool, session_id: Option<String>) {
+    let detail = if granted { "granted" } else { "denied" };
+    record_event(
+        LedgerEvent::new(now_ms(), EventKind::Approval, tool)
+            .with_detail(detail)
+            .with_session_id(session_id),
+    );
+}
+
+/// Record a provider/model call (the start of a stream) to the audit ledger.
+pub(crate) fn record_provider_call(model: &str, session_id: Option<String>) {
+    record_event(
+        LedgerEvent::new(now_ms(), EventKind::ProviderCall, model).with_session_id(session_id),
+    );
+}
+
+/// Record a cancellation (user interrupt / turn abort) to the audit ledger.
+pub(crate) fn record_cancellation(subject: &str, task_id: Option<String>) {
+    record_event(
+        LedgerEvent::new(now_ms(), EventKind::Cancellation, subject).with_task_id(task_id),
+    );
+}
+
+/// Record a daemon-driven background job start to the audit ledger.
+pub(crate) fn record_daemon_job(task_id: &str, detail: &str, session_id: Option<String>) {
+    record_event(
+        LedgerEvent::new(now_ms(), EventKind::DaemonJob, task_id)
+            .with_detail(detail)
+            .with_task_id(Some(task_id.to_string()))
+            .with_session_id(session_id),
+    );
+}
+
 /// Convenience: record a tool-call event tagged with optional provenance.
 pub(crate) fn record_tool_call(
     tool: &str,
@@ -728,6 +764,59 @@ mod tests {
 
         // Empty render is graceful.
         assert_eq!(render_ledger(&[]), "No audit events recorded.");
+    }
+
+    // Robust — full emission surface: approvals, provider calls, and
+    // cancellations all land in the ledger with the right EventKind, queryable
+    // by kind. Proves the audit covers more than mutating tool calls.
+    #[test]
+    fn ledger_records_approval_provider_cancellation_robust() {
+        use jfc_changeset::{EventKind, LedgerEvent, LedgerStore};
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+
+        // Emit one of each new event kind directly to this root's ledger.
+        let store = LedgerStore::open_project(root).unwrap();
+        store
+            .append(&LedgerEvent::new(now_ms(), EventKind::Approval, "Bash").with_detail("granted"))
+            .unwrap();
+        store
+            .append(&LedgerEvent::new(now_ms(), EventKind::Approval, "Write").with_detail("denied"))
+            .unwrap();
+        store
+            .append(&LedgerEvent::new(now_ms(), EventKind::ProviderCall, "opus"))
+            .unwrap();
+        store
+            .append(&LedgerEvent::new(now_ms(), EventKind::Cancellation, "task"))
+            .unwrap();
+
+        let approvals = query_ledger_in(
+            root,
+            &LedgerFilter {
+                kind: Some(EventKind::Approval),
+                ..Default::default()
+            },
+        );
+        assert_eq!(approvals.len(), 2, "both grant + denial recorded");
+
+        let provider = query_ledger_in(
+            root,
+            &LedgerFilter {
+                kind: Some(EventKind::ProviderCall),
+                ..Default::default()
+            },
+        );
+        assert_eq!(provider.len(), 1);
+        assert_eq!(provider[0].subject, "opus");
+
+        let cancels = query_ledger_in(
+            root,
+            &LedgerFilter {
+                kind: Some(EventKind::Cancellation),
+                ..Default::default()
+            },
+        );
+        assert_eq!(cancels.len(), 1);
     }
 
     async fn git(args: &[&str], dir: &Path) {

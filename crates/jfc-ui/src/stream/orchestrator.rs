@@ -49,6 +49,16 @@ pub async fn stream_response(
         opts.previous_message_id = Some(id);
     }
 
+    // Audit: record the provider/model call to the runtime ledger so spend +
+    // "which model did what" is queryable. Offloaded so the locked append
+    // never blocks the stream's first byte.
+    {
+        let model_label = model.to_string();
+        tokio::task::spawn_blocking(move || {
+            crate::changeset::record_provider_call(&model_label, None);
+        });
+    }
+
     // Report system prompt size back to App for post-compaction overhead estimate.
     let _ = tx.try_send(AppEvent::Stream(StreamEvent::SystemPromptLen(
         prepared.system_prompt_tokens,

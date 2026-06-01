@@ -174,6 +174,14 @@ pub async fn run_background_agent_worker(launch_path: PathBuf) -> std::io::Resul
             Some(std::process::id()),
         );
     }
+    // Audit: a background (daemon-driven) agent job has started. Tagged with
+    // the task + originating session so the ledger answers "what background
+    // work ran, for which session".
+    crate::changeset::record_daemon_job(
+        &launch.task_id,
+        &launch.task_input.description,
+        launch.parent_session_id.clone(),
+    );
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::runtime::AppEvent>(512);
     let event_task_id = launch.task_id.clone();

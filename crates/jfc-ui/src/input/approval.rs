@@ -37,6 +37,10 @@ fn dispatch_approved_tools(app: &mut App, tools: Vec<ToolCall>, tx: &mpsc::Sende
     if tools.is_empty() {
         return;
     }
+    let session_id = app
+        .current_session_id
+        .as_ref()
+        .map(|id| id.as_str().to_owned());
     for tool in &tools {
         tracing::info!(
             target: "jfc::ui::approval",
@@ -45,6 +49,8 @@ fn dispatch_approved_tools(app: &mut App, tools: Vec<ToolCall>, tx: &mpsc::Sende
             queue_remaining = app.approval_queue.len(),
             "approved → dispatch"
         );
+        // Audit: record the approval grant (the security trail).
+        crate::changeset::record_approval(tool.kind.label(), true, session_id.clone());
     }
     send_set_in_progress(tx, "add", tool_ids(&tools));
     app.in_flight_tool_batches += 1;
@@ -138,6 +144,14 @@ fn finish_approval_decision(
 /// `should_continue_loop` then sees a Failed entry and continues normally.
 fn deny_tool(app: &mut App, tool: ToolCall) {
     let id = tool.id.as_str().to_owned();
+    // Audit: record the denial (the security trail).
+    crate::changeset::record_approval(
+        tool.kind.label(),
+        false,
+        app.current_session_id
+            .as_ref()
+            .map(|sid| sid.as_str().to_owned()),
+    );
     app.set_in_progress_tool_use_ids("remove", std::slice::from_ref(&id));
     let mark_denied = |msg: &mut crate::types::ChatMessage| {
         for part in &mut msg.parts {

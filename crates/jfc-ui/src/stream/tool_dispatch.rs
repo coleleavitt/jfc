@@ -459,6 +459,8 @@ pub(crate) fn dispatch_tools_batched(
                         killed,
                         "task tool cancelled via turn token"
                     );
+                    // Audit: record the cancellation against the task.
+                    crate::changeset::record_cancellation("task", Some(task_id.clone()));
                     crate::runtime::ExecutionResult::failure("Task cancelled by user")
                 }
                 result = crate::tools::execute_task(
