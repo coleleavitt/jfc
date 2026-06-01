@@ -23,11 +23,13 @@
 //! and economy mode without a dependency cycle.
 
 mod error;
+mod ledger;
 mod state;
 mod store;
 mod types;
 
 pub use error::{ChangeSetError, Result};
+pub use ledger::{EventKind, LedgerEvent, LedgerFilter, LedgerStore};
 pub use state::ChangeState;
 pub use store::{ChangeFilter, ChangeStore};
 pub use types::{AgentChangeSet, Approval, ChangedFile, TestRun};

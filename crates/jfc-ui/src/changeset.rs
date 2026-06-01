@@ -14,7 +14,9 @@
 
 use std::path::Path;
 
-use jfc_changeset::{AgentChangeSet, ChangeStore, ChangedFile};
+use jfc_changeset::{
+    AgentChangeSet, ChangeStore, ChangedFile, EventKind, LedgerEvent, LedgerFilter, LedgerStore,
+};
 
 /// Provenance captured when a worktree-isolated agent starts.
 #[derive(Debug, Clone, Default)]
@@ -74,6 +76,96 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// Resolve the project root for ledger/store IO. Best-effort: the repo root
+/// when inside a git tree, else the current dir.
+fn project_root() -> std::path::PathBuf {
+    std::env::current_dir().unwrap_or_default()
+}
+
+/// Append an event to the runtime audit ledger. Best-effort and synchronous
+/// (an append is a single locked line write); failures log and are swallowed
+/// so audit never breaks a tool call. Call from a blocking context or wrap in
+/// `spawn_blocking` on hot async paths.
+pub(crate) fn record_event(event: LedgerEvent) {
+    let root = project_root();
+    match LedgerStore::open_project(&root).and_then(|s| s.append(&event)) {
+        Ok(()) => {}
+        Err(e) => tracing::warn!(target: "jfc::audit", error = %e, "failed to append ledger event"),
+    }
+}
+
+/// Extract a concise, non-sensitive detail string for a mutating tool call —
+/// the command for Bash, the target path for Edit/Write/MultiEdit. Long
+/// commands are truncated so the ledger stays scannable.
+pub(crate) fn ledger_detail_for(
+    kind: &crate::types::ToolKind,
+    input: &crate::types::ToolInput,
+) -> String {
+    use crate::types::{ToolInput, ToolKind};
+    match (kind, input) {
+        (ToolKind::Bash, ToolInput::Bash { command, .. }) => {
+            let cmd = command.trim();
+            if cmd.chars().count() > 120 {
+                let head: String = cmd.chars().take(117).collect();
+                format!("{head}...")
+            } else {
+                cmd.to_string()
+            }
+        }
+        (ToolKind::Edit, ToolInput::Edit { file_path, .. })
+        | (ToolKind::Write, ToolInput::Write { file_path, .. })
+        | (ToolKind::MultiEdit, ToolInput::MultiEdit { file_path, .. }) => file_path.clone(),
+        _ => String::new(),
+    }
+}
+
+/// Convenience: record a tool-call event tagged with optional provenance.
+pub(crate) fn record_tool_call(
+    tool: &str,
+    detail: impl Into<String>,
+    change_id: Option<String>,
+    task_id: Option<String>,
+) {
+    record_event(
+        LedgerEvent::new(now_ms(), EventKind::ToolCall, tool)
+            .with_detail(detail)
+            .with_change_id(change_id)
+            .with_task_id(task_id),
+    );
+}
+
+/// Query the runtime ledger at `root` (newest-first for display). Best-effort:
+/// returns an empty vec on IO error.
+pub(crate) fn query_ledger_in(root: &Path, filter: &LedgerFilter) -> Vec<LedgerEvent> {
+    match LedgerStore::open_project(root).and_then(|s| s.query(filter)) {
+        Ok(mut events) => {
+            events.reverse();
+            events
+        }
+        Err(e) => {
+            tracing::warn!(target: "jfc::audit", error = %e, "failed to query ledger");
+            Vec::new()
+        }
+    }
+}
+
+/// Render a queried ledger as a compact text table for `jfc audit` / `/audit`.
+/// One line per event: `<iso-ish ms>  <kind>  <subject>  [change=<id>]`.
+pub(crate) fn render_ledger(events: &[LedgerEvent]) -> String {
+    if events.is_empty() {
+        return "No audit events recorded.".to_string();
+    }
+    let mut out = String::with_capacity(events.len() * 48);
+    for e in events {
+        out.push_str(&format!("{:>14}  {:<13} {}", e.at_ms, e.kind.label(), e.subject));
+        if let Some(cid) = &e.change_id {
+            out.push_str(&format!("  [change={cid}]"));
+        }
+        out.push('\n');
+    }
+    out
 }
 
 /// `git -C <dir> rev-parse HEAD`, or `None` if it can't be resolved.
@@ -275,6 +367,68 @@ mod tests {
     #[test]
     fn isolation_fail_open_allows_cwd_robust() {
         assert_eq!(isolation_fallback_for(false), IsolationFallback::AllowCwd);
+    }
+
+    // Normal: the audit ledger detail extractor pulls the command for Bash and
+    // the path for Write.
+    #[test]
+    fn ledger_detail_extracts_command_and_path_normal() {
+        let bash = crate::types::ToolInput::Bash {
+            command: "cargo test".into(),
+            timeout: None,
+            workdir: None,
+        };
+        assert_eq!(
+            ledger_detail_for(&crate::types::ToolKind::Bash, &bash),
+            "cargo test"
+        );
+        let write = crate::types::ToolInput::Write {
+            file_path: "src/lib.rs".into(),
+            content: "x".into(),
+        };
+        assert_eq!(
+            ledger_detail_for(&crate::types::ToolKind::Write, &write),
+            "src/lib.rs"
+        );
+    }
+
+    // Robust — the end-to-end audit-ledger contract: append events to a
+    // project root, then query-filter by change_id and render. Proves the
+    // "what did this agent do, queryable per change" requirement.
+    #[test]
+    fn audit_ledger_emit_query_render_robust() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+
+        // Two events on change cs-1, one on cs-2.
+        for (kind, subject, cid) in [
+            (EventKind::ToolCall, "Bash", "cs-1"),
+            (EventKind::FileWrite, "src/a.rs", "cs-1"),
+            (EventKind::ToolCall, "Edit", "cs-2"),
+        ] {
+            let store = LedgerStore::open_project(&root).unwrap();
+            store
+                .append(
+                    &LedgerEvent::new(now_ms(), kind, subject)
+                        .with_change_id(Some(cid.to_string())),
+                )
+                .unwrap();
+        }
+
+        let cs1 = query_ledger_in(
+            &root,
+            &LedgerFilter {
+                change_id: Some("cs-1".into()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(cs1.len(), 2, "two events tagged cs-1");
+        let rendered = render_ledger(&cs1);
+        assert!(rendered.contains("[change=cs-1]"));
+        assert!(!rendered.contains("cs-2"), "filter must exclude cs-2");
+
+        // Empty render is graceful.
+        assert_eq!(render_ledger(&[]), "No audit events recorded.");
     }
 
     async fn git(args: &[&str], dir: &Path) {

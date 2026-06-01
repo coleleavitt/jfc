@@ -119,6 +119,29 @@ pub(super) async fn cmd_status(
     handle_status_command(app);
 }
 
+/// `/audit [change <id>]` — show the runtime audit ledger (agent actions).
+/// With `change <id>`, scope to a single change-set's events.
+pub(super) async fn cmd_audit(
+    app: &mut App,
+    parts: &[&str],
+    _text: &str,
+    _tx: Option<&mpsc::Sender<AppEvent>>,
+) {
+    let mut filter = jfc_changeset::LedgerFilter::default();
+    if let (Some(&"change"), Some(id)) = (parts.get(1), parts.get(2)) {
+        filter.change_id = Some((*id).to_string());
+    }
+    let root = std::path::PathBuf::from(&app.cwd);
+    let events = crate::changeset::query_ledger_in(&root, &filter);
+    let body = format!(
+        "Audit ledger ({} event{}):\n{}",
+        events.len(),
+        if events.len() == 1 { "" } else { "s" },
+        crate::changeset::render_ledger(&events)
+    );
+    app.messages.push(ChatMessage::assistant(body));
+}
+
 pub(super) async fn cmd_bug(
     app: &mut App,
     parts: &[&str],

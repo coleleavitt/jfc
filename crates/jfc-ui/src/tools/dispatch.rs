@@ -84,6 +84,21 @@ pub async fn execute_tool(
         }
     }
 
+    // Audit ledger: record mutating tool calls (Bash/Edit/Write/MultiEdit)
+    // as immutable facts so "what did this agent do, when" is answerable.
+    // Read-only tools are skipped to keep ledger volume meaningful. Offloaded
+    // to a blocking thread so the locked line-append never stalls dispatch.
+    if matches!(
+        kind,
+        ToolKind::Bash | ToolKind::Edit | ToolKind::Write | ToolKind::MultiEdit
+    ) {
+        let tool = kind.api_name().to_string();
+        let detail = crate::changeset::ledger_detail_for(&kind, &input);
+        tokio::task::spawn_blocking(move || {
+            crate::changeset::record_tool_call(&tool, detail, None, None);
+        });
+    }
+
     // For task tools in team mode, prefer the caller-supplied store if
     // one was passed (the UI keeps `app.task_store` pointing at the
     // team's `tasks.json` once team mode is active, and the event-loop
