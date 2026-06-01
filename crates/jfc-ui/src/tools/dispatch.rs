@@ -84,14 +84,13 @@ pub async fn execute_tool(
         }
     }
 
-    // Audit ledger: record mutating tool calls (Bash/Edit/Write/MultiEdit)
-    // as immutable facts so "what did this agent do, when" is answerable.
-    // Read-only tools are skipped to keep ledger volume meaningful. Offloaded
-    // to a blocking thread so the locked line-append never stalls dispatch.
-    if matches!(
-        kind,
-        ToolKind::Bash | ToolKind::Edit | ToolKind::Write | ToolKind::MultiEdit
-    ) {
+    // Audit ledger: record mutating tool calls as immutable facts so "what did
+    // this agent do, when" is answerable. The mutating/read-only classification
+    // is derived from the unified CommandSpec metadata (one source), not a
+    // hand-maintained match here. Read-only tools are skipped to keep ledger
+    // volume meaningful. Offloaded to a blocking thread so the locked
+    // line-append never stalls dispatch.
+    if crate::command_spec::tool_is_mutating(kind.clone()) {
         let tool = kind.api_name().to_string();
         let detail = crate::changeset::ledger_detail_for(&kind, &input);
         tokio::task::spawn_blocking(move || {

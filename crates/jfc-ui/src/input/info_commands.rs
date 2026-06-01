@@ -326,18 +326,14 @@ pub(super) async fn cmd_help(
     app.show_help = true;
     app.messages.push(ChatMessage::user("/help".into()));
 
-    // Command list is generated from the SLASH_COMMANDS registry table — the
-    // same single source of truth that drives dispatch and autocomplete — so
-    // /help can never list a command that doesn't exist (or miss one). Each
-    // alias collapses onto its canonical row's help text, so we de-dup by
-    // help string to avoid printing the same description once per alias.
+    // Command list is rendered from the unified CommandSpec metadata layer
+    // (`command_spec::slash_help_lines`), which reads the SLASH_COMMANDS
+    // registry — the same single source that drives dispatch and autocomplete —
+    // so /help can never list a command that doesn't exist (or miss one), and
+    // it stays in lock-step with `/commands`. Aliases collapse onto their
+    // canonical row's help text.
     let mut body = String::from("**Available commands:**\n");
-    let mut seen_help: std::collections::HashSet<&str> = std::collections::HashSet::new();
-    for (name, help) in crate::input::SLASH_COMMANDS {
-        if seen_help.insert(help) {
-            body.push_str(&format!("- `{name}` — {help}\n"));
-        }
-    }
+    body.push_str(&crate::command_spec::slash_help_lines());
     body.push_str(
         "\n\
          **Keys:**\n\

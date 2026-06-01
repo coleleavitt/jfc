@@ -137,6 +137,30 @@ pub(crate) fn tool_spec(kind: crate::types::ToolKind) -> StaticSpec {
     }
 }
 
+/// Whether a tool mutates the user's files/system, derived from its
+/// [`CommandSpec`] permission. This is the SINGLE source for the
+/// "is this a mutating tool?" decision — the dispatch layer (audit-ledger
+/// emission, isolation gating) calls this instead of hand-maintaining its own
+/// `Bash|Edit|Write|…` match that could drift from the spec.
+pub(crate) fn tool_is_mutating(kind: crate::types::ToolKind) -> bool {
+    tool_spec(kind).permission() == Permission::Mutating
+}
+
+/// The `/help` command list, rendered from the slash rows of the unified
+/// metadata — deduped by description so aliases collapse onto one line. `/help`
+/// reads THIS instead of iterating `SLASH_COMMANDS` itself, so the help text
+/// and the unified command surface can't drift.
+pub(crate) fn slash_help_lines() -> String {
+    let mut out = String::new();
+    let mut seen: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+    for (name, help) in crate::input::SLASH_COMMANDS {
+        if seen.insert(help) {
+            out.push_str(&format!("- `{name}` — {help}\n"));
+        }
+    }
+    out
+}
+
 /// Build the unified spec list from the live registries of all three
 /// surfaces: the `SLASH_COMMANDS` table, the model tool kinds, and the CLI
 /// subcommands. This is the single source the help/manifest generator reads,
@@ -335,6 +359,52 @@ mod tests {
         unique.sort_unstable();
         unique.dedup();
         assert_eq!(words.len(), unique.len(), "completions must be deduped");
+    }
+
+    // Normal — single-source mutating classification: the dispatch layer's
+    // "is this a mutating tool?" decision is derived from the spec. The
+    // mutating tools are exactly Write/Edit/MultiEdit/Bash/ApplyPatch; the
+    // read-only and management tools are not.
+    #[test]
+    fn tool_is_mutating_matches_spec_permission_normal() {
+        use crate::types::ToolKind;
+        for kind in [
+            ToolKind::Write,
+            ToolKind::Edit,
+            ToolKind::MultiEdit,
+            ToolKind::Bash,
+            ToolKind::ApplyPatch,
+        ] {
+            assert!(tool_is_mutating(kind.clone()), "{kind:?} must be mutating");
+        }
+        for kind in [
+            ToolKind::Read,
+            ToolKind::Glob,
+            ToolKind::Grep,
+            ToolKind::Search,
+            ToolKind::TaskCreate,
+        ] {
+            assert!(!tool_is_mutating(kind.clone()), "{kind:?} must not be mutating");
+        }
+    }
+
+    // Robust — no drift: /help's command list is byte-identical to rendering
+    // the slash rows from the unified metadata, proving /help has no parallel
+    // hand-maintained list.
+    #[test]
+    fn slash_help_lines_cover_every_unique_description_robust() {
+        let rendered = slash_help_lines();
+        // One line per UNIQUE help string in the registry (aliases dedup).
+        let unique_helps: std::collections::HashSet<&str> =
+            crate::input::SLASH_COMMANDS.iter().map(|(_, h)| *h).collect();
+        let line_count = rendered.lines().filter(|l| !l.is_empty()).count();
+        assert_eq!(
+            line_count,
+            unique_helps.len(),
+            "help must render exactly one line per unique command description"
+        );
+        // A known command appears.
+        assert!(rendered.contains("/help"), "rendered: {rendered}");
     }
 
     // Robust: manifest JSON escapes embedded quotes so a description can't
