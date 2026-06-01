@@ -725,17 +725,18 @@ fn assistant_turn_has_no_content(msg: &types::ChatMessage) -> bool {
 }
 
 /// Stop reasons for which re-streaming an empty-but-billed turn is sane.
-/// `Refusal` is excluded — re-sending the identical context reproduces the
-/// refusal, an infinite billed loop. `MaxTokens` is excluded — the output
-/// budget, not a degraded stream, ended the turn, so a resend won't help.
-/// `EndTurn` and `Other(_)` (the dropped/abandoned-stream class that dominates
-/// the observed empty-billed warnings) are eligible.
+/// `Refusal` is eligible only inside this stricter empty-billed gate: the turn
+/// had no text, no tools, no reasoning/redacted-thinking, and is capped by the
+/// resend budget. A refusal that produced real content still reaches the normal
+/// non-EndTurn stop path and never self-continues.
+/// `MaxTokens` is excluded — the output budget, not a degraded stream, ended
+/// the turn, so a resend won't help. `EndTurn`, empty `Refusal`, and
+/// non-refusal `Other(_)` are eligible.
 fn empty_billed_resend_eligible(stop_reason: &jfc_provider::StopReason) -> bool {
     match stop_reason {
-        jfc_provider::StopReason::EndTurn => true,
+        jfc_provider::StopReason::EndTurn | jfc_provider::StopReason::Refusal => true,
         jfc_provider::StopReason::Other(s) => !looks_like_refusal_stop_reason(s),
-        jfc_provider::StopReason::Refusal
-        | jfc_provider::StopReason::MaxTokens
+        jfc_provider::StopReason::MaxTokens
         | jfc_provider::StopReason::StopSequence
         | jfc_provider::StopReason::ToolUse
         | jfc_provider::StopReason::PauseTurn => false,
@@ -1018,11 +1019,13 @@ mod stream_done_lifecycle_tests {
         unsafe { std::env::remove_var("JFC_AUTO_CONTINUE") };
     }
 
-    // Robust: a refusal must NOT be auto-resent — re-sending the identical
-    // context reproduces the refusal, an infinite billed loop.
+    // Robust: an empty-billed refusal is usually a provider continuation
+    // failure, not a semantic content refusal. It is safe to discard and
+    // resend because the assistant turn has no content to preserve and the
+    // empty-billed resend cap prevents paid loops.
     #[serial_test::serial]
     #[tokio::test]
-    async fn empty_billed_refusal_is_not_resent_robust() {
+    async fn empty_billed_refusal_is_discarded_once_regression() {
         unsafe { std::env::set_var("JFC_AUTO_CONTINUE", "1") };
         let mut app = app_with_empty_billed_turn();
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
@@ -1030,8 +1033,14 @@ mod stream_done_lifecycle_tests {
         handle_stream_done(&mut app, &tx, jfc_provider::StopReason::Refusal).await;
 
         assert_eq!(
-            app.empty_billed_resend_count, 0,
-            "refusal must not trigger a resend"
+            app.empty_billed_resend_count, 1,
+            "empty-billed refusal should trigger one capped resend"
+        );
+        assert!(
+            !app.messages
+                .iter()
+                .any(|m| m.usage.as_ref().is_some_and(|u| u.output_tokens == 64)),
+            "the billed empty assistant message must have been removed"
         );
         unsafe { std::env::remove_var("JFC_AUTO_CONTINUE") };
     }
@@ -1389,8 +1398,9 @@ mod empty_billed_tests {
         assert_eq!(decide_empty_billed(&i), EmptyBilledAction::None);
     }
 
-    // Robust: refusal / max-tokens / auto-continue-off / plan-mode all suppress
-    // the resend (warn only) — re-sending a refusal verbatim would loop.
+    // Robust: max-tokens / auto-continue-off / plan-mode suppress the resend
+    // (warn only). Empty refusal is handled by the eligible path above; a
+    // contentful refusal never reaches this empty-billed decision.
     #[test]
     fn ineligible_conditions_warn_only_robust() {
         for i in [
@@ -1422,15 +1432,16 @@ mod empty_billed_tests {
         assert_eq!(decide_empty_billed(&i), EmptyBilledAction::CapReached);
     }
 
-    // Robust: the stop-reason gate matches the spec — EndTurn and generic
-    // Other(_) are resend-eligible; refusal/max-tokens/tool-use/pause are not.
+    // Robust: the stop-reason gate matches the spec — EndTurn, empty Refusal,
+    // and generic Other(_) are resend-eligible; max-tokens/tool-use/pause are
+    // not. Refusal is eligible only through the stricter empty-billed caller.
     #[test]
     fn resend_eligible_stop_reasons_robust() {
         assert!(empty_billed_resend_eligible(&StopReason::EndTurn));
         assert!(empty_billed_resend_eligible(&StopReason::Other(
             "stream_error".into()
         )));
-        assert!(!empty_billed_resend_eligible(&StopReason::Refusal));
+        assert!(empty_billed_resend_eligible(&StopReason::Refusal));
         assert!(!empty_billed_resend_eligible(&StopReason::Other(
             "content_filter".into()
         )));
