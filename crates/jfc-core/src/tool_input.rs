@@ -1756,83 +1756,88 @@ mod macro_equivalence_tests {
         );
     }
 
+    // Each alias case is a separate test so a failure names the exact broken alias.
+
     #[test]
-    fn claude_code_compat_aliases_parse_normal() {
+    fn edit_old_str_new_str_aliases_parse_normal() {
         assert!(matches!(
             ToolInput::from_value(
                 "Edit",
                 json!({"file_path":"a.rs","old_str":"old","new_str":"new"})
             )
             .unwrap(),
-            ToolInput::Edit {
-                old_string,
-                new_string,
-                ..
-            } if old_string == "old" && new_string == "new"
+            ToolInput::Edit { ref old_string, ref new_string, .. }
+                if old_string == "old" && new_string == "new"
         ));
+    }
 
+    #[test]
+    fn read_string_offset_limit_coerced_normal() {
         assert!(matches!(
             ToolInput::from_value(
                 "Read",
                 json!({"file_path":"a.rs","offset":"12","limit":"34"})
             )
             .unwrap(),
-            ToolInput::Read {
-                offset: Some(12),
-                limit: Some(34),
-                ..
-            }
-        ));
-
-        assert!(matches!(
-            ToolInput::from_value("TaskStop", json!({"agentId":"agent-1"})).unwrap(),
-            ToolInput::TaskStop { task_id } if task_id == "agent-1"
-        ));
-        assert!(matches!(
-            ToolInput::from_value("TaskStop", json!({"bash_id":"bash-1"})).unwrap(),
-            ToolInput::TaskStop { task_id } if task_id == "bash-1"
+            ToolInput::Read { offset: Some(12), limit: Some(34), .. }
         ));
     }
 
     #[test]
-    fn task_update_depends_on_alias() {
-        // Test that TaskUpdate accepts depends_on as alias for blocked_by
+    fn task_stop_agent_id_alias_parses_normal() {
+        assert!(matches!(
+            ToolInput::from_value("TaskStop", json!({"agentId":"agent-1"})).unwrap(),
+            ToolInput::TaskStop { ref task_id } if task_id == "agent-1"
+        ));
+    }
+
+    #[test]
+    fn task_stop_bash_id_alias_parses_normal() {
+        assert!(matches!(
+            ToolInput::from_value("TaskStop", json!({"bash_id":"bash-1"})).unwrap(),
+            ToolInput::TaskStop { ref task_id } if task_id == "bash-1"
+        ));
+    }
+
+    #[test]
+    fn task_update_depends_on_alias_parses_normal() {
         assert!(matches!(
             ToolInput::from_value(
                 "TaskUpdate",
                 json!({"task_id":"t1","depends_on":["t2","t3"]})
-            ).unwrap(),
-            ToolInput::TaskUpdate {
-                task_id,
-                blocked_by,
-                ..
-            } if task_id == "t1" && blocked_by == vec!["t2".to_string(), "t3".to_string()]
+            )
+            .unwrap(),
+            ToolInput::TaskUpdate { ref task_id, ref blocked_by, .. }
+                if task_id == "t1"
+                    && *blocked_by == vec!["t2".to_string(), "t3".to_string()]
         ));
+    }
 
-        // Test that blocked_by still works (explicit primary field)
+    #[test]
+    fn task_update_blocked_by_primary_field_parses_normal() {
         assert!(matches!(
             ToolInput::from_value(
                 "TaskUpdate",
                 json!({"task_id":"t1","blocked_by":["t4","t5"]})
-            ).unwrap(),
-            ToolInput::TaskUpdate {
-                task_id,
-                blocked_by,
-                ..
-            } if task_id == "t1" && blocked_by == vec!["t4".to_string(), "t5".to_string()]
+            )
+            .unwrap(),
+            ToolInput::TaskUpdate { ref task_id, ref blocked_by, .. }
+                if task_id == "t1"
+                    && *blocked_by == vec!["t4".to_string(), "t5".to_string()]
         ));
+    }
 
-        // Test that blocked_by takes precedence if both provided
+    #[test]
+    fn task_update_blocked_by_wins_over_depends_on_robust() {
+        // When both are supplied, blocked_by takes precedence.
         assert!(matches!(
             ToolInput::from_value(
                 "TaskUpdate",
                 json!({"task_id":"t1","blocked_by":["t6"],"depends_on":["t7"]})
-            ).unwrap(),
-            ToolInput::TaskUpdate {
-                task_id,
-                blocked_by,
-                ..
-            } if task_id == "t1" && blocked_by == vec!["t6".to_string()]
+            )
+            .unwrap(),
+            ToolInput::TaskUpdate { ref task_id, ref blocked_by, .. }
+                if task_id == "t1" && *blocked_by == vec!["t6".to_string()]
         ));
     }
 }
