@@ -263,41 +263,31 @@ pub struct QuestionOption {
     pub preview: Option<String>,
 }
 
-/// A pending `AskUserQuestion` modal awaiting the user's selection.
-///
-/// Mirrors [`PendingApproval`] structurally, but the semantics differ: an
-/// approval *gates a tool dispatch*, whereas a question *collects an answer
-/// that becomes the tool_result*. The event loop blocks the agentic
-/// continuation while this is `Some`; on submit, `answer()` is turned into a
-/// `ToolEvent::Result` for `tool_id` and the loop resumes (see
-/// `input/question.rs`).
-pub struct PendingQuestion {
-    /// The `AskUserQuestion` tool_use this modal answers. The synthesized
-    /// result is recorded against this id.
-    pub tool_id: crate::ids::ToolId,
+/// One question within an `AskUserQuestion` prompt, plus the user's
+/// in-progress selection for it. The auto-injected "Other" row is handled
+/// positionally as the row just past `options.len()` (Claude Code's
+/// `__other__` sentinel).
+pub struct QuestionItem {
     /// The question prose (ends with `?`).
     pub question: String,
-    /// Short chip label (≤12 chars in the contract). Empty if the model
-    /// omitted it.
+    /// Short chip label (≤12 chars in the contract). Empty if omitted.
     pub header: String,
-    /// The model-supplied options, in order. Excludes the auto "Other" row.
+    /// Model-supplied options, in order. Excludes the auto "Other" row.
     pub options: Vec<QuestionOption>,
     /// When true the user may pick more than one option.
     pub multi_select: bool,
-    /// Cursor over `[options…, Other]`. `selected == options.len()` is the
-    /// "Other" free-text row.
+    /// Cursor over `[options…, Other]`. `selected == options.len()` is "Other".
     pub selected: usize,
-    /// Multi-select: chosen option indices (into `options`); the "Other" row,
-    /// when chosen, is represented by `options.len()`.
+    /// Multi-select: chosen option indices; the "Other" row is `options.len()`.
     pub chosen: std::collections::BTreeSet<usize>,
-    /// Whether the "Other" free-text input currently has focus (keys append to
-    /// `other_text` instead of moving the cursor).
-    pub editing_other: bool,
     /// Free text typed into the "Other" row.
     pub other_text: String,
+    /// The committed answer, set when the user confirms this question. `None`
+    /// while still pending.
+    pub answer: Option<String>,
 }
 
-impl PendingQuestion {
+impl QuestionItem {
     /// Index of the synthetic "Other" row in the cursor space.
     pub fn other_row(&self) -> usize {
         self.options.len()
@@ -313,13 +303,13 @@ impl PendingQuestion {
         self.options.len() + 1
     }
 
-    /// Build the answer string sent back to the model.
+    /// The current selection as an answer string (not yet committed).
     ///
     /// Single-select: the focused option's label, or the typed "Other" text.
     /// Multi-select: every chosen option label in order, plus the "Other" text
     /// when the "Other" row is chosen, comma-joined (matches Claude Code's
     /// comma-separated multi-select answers).
-    pub fn answer(&self) -> String {
+    pub fn current_selection(&self) -> String {
         let other = self.other_text.trim();
         if self.multi_select {
             let mut parts: Vec<String> = self
@@ -343,10 +333,73 @@ impl PendingQuestion {
         }
     }
 
-    /// Whether the current selection is submittable. Prevents committing an
-    /// empty answer (e.g. "Other" focused with no text, or multi-select with
-    /// nothing checked).
-    pub fn can_submit(&self) -> bool {
-        !self.answer().trim().is_empty()
+    /// Whether the current selection is committable (non-empty).
+    pub fn can_commit(&self) -> bool {
+        !self.current_selection().trim().is_empty()
+    }
+}
+
+/// A pending `AskUserQuestion` modal awaiting the user's answers.
+///
+/// Mirrors [`PendingApproval`] structurally, but the semantics differ: an
+/// approval *gates a tool dispatch*, whereas a question *collects answers that
+/// become the tool_result*. The event loop blocks the agentic continuation
+/// while this is `Some`; once every question is committed, `combined_result()`
+/// is turned into a `ToolEvent::Result` for `tool_id` and the loop resumes
+/// (see `input/question.rs`). Questions are presented one at a time; `current`
+/// is the focused one and the nav bar shows progress.
+pub struct PendingQuestion {
+    /// The `AskUserQuestion` tool_use this modal answers.
+    pub tool_id: crate::ids::ToolId,
+    /// The 1-4 questions, in order. Always non-empty.
+    pub items: Vec<QuestionItem>,
+    /// Index of the focused question.
+    pub current: usize,
+    /// Whether the focused question's "Other" free-text input has focus.
+    pub editing_other: bool,
+}
+
+impl PendingQuestion {
+    /// The focused question.
+    pub fn cur(&self) -> &QuestionItem {
+        &self.items[self.current]
+    }
+
+    /// The focused question, mutably.
+    pub fn cur_mut(&mut self) -> &mut QuestionItem {
+        &mut self.items[self.current]
+    }
+
+    /// True once every question has a committed answer.
+    pub fn all_committed(&self) -> bool {
+        self.items.iter().all(|i| i.answer.is_some())
+    }
+
+    /// Move `current` to the next question lacking a committed answer (wrapping
+    /// from the end). Returns false when every question is already committed.
+    pub fn advance_to_next_unanswered(&mut self) -> bool {
+        let n = self.items.len();
+        for step in 1..=n {
+            let idx = (self.current + step) % n;
+            if self.items[idx].answer.is_none() {
+                self.current = idx;
+                self.editing_other = false;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The combined tool_result: `"Q1"="A1", "Q2"="A2"` (Claude Code's format).
+    /// Uses each committed answer, falling back to the live selection.
+    pub fn combined_result(&self) -> String {
+        self.items
+            .iter()
+            .map(|i| {
+                let a = i.answer.clone().unwrap_or_else(|| i.current_selection());
+                format!("\"{}\"=\"{}\"", i.question, a)
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }

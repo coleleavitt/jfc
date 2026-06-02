@@ -412,14 +412,8 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             file_path: file_path.clone(),
             edits: edits.clone(),
         },
-        ToolInput::AskUserQuestion {
-            question,
-            options,
-            multi_select,
-        } => SerializedToolInput::AskUserQuestion {
-            question: question.clone(),
-            options: options.clone(),
-            multi_select: *multi_select,
+        ToolInput::AskUserQuestion { questions } => SerializedToolInput::AskUserQuestion {
+            questions: questions.clone(),
         },
         ToolInput::WebFetch { url, prompt } => SerializedToolInput::WebFetch {
             url: url.clone(),

@@ -117,6 +117,34 @@ macro_rules! ti_parse {
             .cloned()
             .unwrap_or(serde_json::Value::Array(vec![]))
     };
+    // AskUserQuestion accepts the canonical `questions: [...]` array, OR the
+    // legacy single-question form `{question, options, multi_select}` which is
+    // normalized into a one-element array so old payloads and resumed sessions
+    // still parse. Always yields a JSON array. (`$k` is fixed as "questions".)
+    ($obj:ident, $tool:ident, ask_user_questions, $k:literal) => {
+        match $obj.and_then(|m| m.get($k)) {
+            Some(serde_json::Value::Array(qs)) => serde_json::Value::Array(qs.clone()),
+            _ => {
+                let question = $obj
+                    .and_then(|m| m.get("question"))
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::Value::String(String::new()));
+                let options = $obj
+                    .and_then(|m| m.get("options"))
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::Value::Array(vec![]));
+                let multi = $obj
+                    .and_then(|m| m.get("multi_select"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                serde_json::json!([{
+                    "question": question,
+                    "options": options,
+                    "multiSelect": multi,
+                }])
+            }
+        }
+    };
     ($obj:ident, $tool:ident, raw_opt, $k:literal) => {
         $obj.and_then(|m| m.get($k)).cloned()
     };
@@ -198,6 +226,9 @@ macro_rules! ti_ser {
         }
     };
     ($v:ident, $field:ident, raw_or_empty_array, $k:literal) => {
+        $v[$k] = $field.clone();
+    };
+    ($v:ident, $field:ident, ask_user_questions, $k:literal) => {
         $v[$k] = $field.clone();
     };
     ($v:ident, $field:ident, bool_field, $k:literal) => {
@@ -298,7 +329,7 @@ macro_rules! for_each_regular_tool_input {
             RunBounty => { bounty_id: req_str @ "bounty_id", max_solvers: opt_u64_as_u8 @ "max_solvers" }
             ExitPlanMode => { plan: req_str @ "plan" }
             MultiEdit => { file_path: req_str @ "file_path", edits: raw_or_empty_array @ "edits" }
-            AskUserQuestion => { question: req_str @ "question", options: raw_or_empty_array @ "options", multi_select: bool_field @ "multi_select" }
+            AskUserQuestion => { questions: ask_user_questions @ "questions" }
             WebFetch => { url: req_str @ "url", prompt: opt_str @ "prompt" }
             WebSearch => { query: req_str @ "query", max_results: opt_u64_as_u32 @ "max_results" }
             CronCreate => { schedule: req_str @ "schedule", command: req_str @ "command", description: req_str @ "description" }
@@ -707,9 +738,11 @@ pub enum ToolInput {
         edits: serde_json::Value,
     },
     AskUserQuestion {
-        question: String,
-        options: serde_json::Value,
-        multi_select: bool,
+        /// Normalized `questions` array (1-4). Each element is
+        /// `{question, header?, options:[{label,description?,preview?}], multiSelect?}`.
+        /// The legacy single-question form is normalized into a 1-element array
+        /// at parse time (see the `ask_user_questions` rule).
+        questions: serde_json::Value,
     },
     WebFetch {
         url: String,
@@ -1002,8 +1035,22 @@ impl ToolInput {
                     if count == 1 { "" } else { "s" }
                 )
             }
-            Self::AskUserQuestion { question, .. } => {
-                format!("ask: {}", question.chars().take(60).collect::<String>())
+            Self::AskUserQuestion { questions } => {
+                let arr = questions.as_array();
+                let first = arr
+                    .and_then(|a| a.first())
+                    .and_then(|q| q.get("question"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let n = arr.map(|a| a.len()).unwrap_or(0);
+                if n > 1 {
+                    format!(
+                        "ask ({n} questions): {}",
+                        first.chars().take(48).collect::<String>()
+                    )
+                } else {
+                    format!("ask: {}", first.chars().take(60).collect::<String>())
+                }
             }
             Self::WebFetch { url, .. } => format!("fetch: {url}"),
             Self::WebSearch { query, .. } => format!("search: {query}"),

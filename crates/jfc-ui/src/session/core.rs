@@ -936,9 +936,11 @@ mod disk_io_tests {
                 prompt: Some("summarize".into()),
             },
             ToolInput::AskUserQuestion {
-                question: "choose one".into(),
-                options: serde_json::json!(["a", "b"]),
-                multi_select: false,
+                questions: serde_json::json!([{
+                    "question": "choose one",
+                    "options": [{"label": "a"}, {"label": "b"}],
+                    "multiSelect": false,
+                }]),
             },
             ToolInput::CodeIndex {
                 path: Some("src".into()),
@@ -984,14 +986,13 @@ mod disk_io_tests {
         );
 
         match input {
-            ToolInput::AskUserQuestion {
-                question,
-                options,
-                multi_select,
-            } => {
-                assert_eq!(question, "Pick a target: prod or staging?");
-                assert_eq!(options, serde_json::json!([]));
-                assert!(!multi_select);
+            ToolInput::AskUserQuestion { questions } => {
+                let first = &questions.as_array().expect("array")[0];
+                assert_eq!(
+                    first.get("question").and_then(|v| v.as_str()),
+                    Some("Pick a target: prod or staging?")
+                );
+                assert_eq!(first.get("multiSelect").and_then(|v| v.as_bool()), Some(false));
             }
             other => panic!("expected AskUserQuestion, got {}", other.summary()),
         }

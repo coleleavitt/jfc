@@ -416,8 +416,7 @@ pub(crate) async fn handle_stream_tool(app: &mut App, tx: &EventSender, tool: To
             tracing::info!(
                 target: "jfc::ui::question",
                 tool_id = %tool.id,
-                options = pending.options.len(),
-                multi = pending.multi_select,
+                questions = pending.items.len(),
                 "route=ask_user_question (modal opened)"
             );
             app.pending_question = Some(pending);

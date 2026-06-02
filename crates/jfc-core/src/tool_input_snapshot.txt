@@ -101,7 +101,7 @@ MultiEdit
   to_value={"file_path":"a.rs","edits":[{"old":"x"}]}
   summary=a.rs (1 edit)
 AskUserQuestion
-  to_value={"question":"q?","options":[{"label":"a"}],"multi_select":true}
+  to_value={"questions":[{"question":"q?","options":[{"label":"a"}],"multiSelect":true}]}
   summary=ask: q?
 WebFetch
   to_value={"url":"http://x","prompt":"p"}

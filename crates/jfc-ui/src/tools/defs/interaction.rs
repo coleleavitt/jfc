@@ -39,26 +39,38 @@ fn ask_user_question_def() -> ToolDef {
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
-                "question": { "type": "string" },
-                "options": {
+                "questions": {
                     "type": "array",
+                    "minItems": 1, "maxItems": 4,
+                    "description": "1-4 questions to ask. They are presented one at a time with a header-chip nav bar showing progress.",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "label": { "type": "string" },
-                            "description": { "type": "string" },
-                            "preview": {
-                                "type": "string",
-                                "description": "Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options."
-                            }
+                            "question": { "type": "string", "description": "The full question; should end with '?'." },
+                            "header": { "type": "string", "description": "Very short chip label shown in the nav bar (<= 12 chars), e.g. 'Auth method'." },
+                            "options": {
+                                "type": "array",
+                                "minItems": 2, "maxItems": 4,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "label": { "type": "string", "description": "Concise choice text (1-5 words)." },
+                                        "description": { "type": "string", "description": "What this option means / its trade-offs." },
+                                        "preview": {
+                                            "type": "string",
+                                            "description": "Optional preview rendered in a side panel when this option is focused. Use for mockups, code snippets, or visual comparisons. Single-select only."
+                                        }
+                                    },
+                                    "required": ["label"]
+                                }
+                            },
+                            "multiSelect": { "type": "boolean", "default": false, "description": "Allow multiple selections for this question." }
                         },
-                        "required": ["label"]
-                    },
-                    "minItems": 2, "maxItems": 4
-                },
-                "multi_select": { "type": "boolean", "default": false }
+                        "required": ["question", "options"]
+                    }
+                }
             },
-            "required": ["question", "options"]
+            "required": ["questions"]
         }),
     }
 }

@@ -363,9 +363,11 @@ pub(crate) fn parse_legacy_enter_worktree(summary: &str) -> Option<ToolInput> {
 pub(crate) fn parse_legacy_ask_user_question(summary: &str) -> Option<ToolInput> {
     let question = strip_any_prefix(summary, &["AskUserQuestion: ", "ask: "])?;
     Some(ToolInput::AskUserQuestion {
-        question: question.to_owned(),
-        options: serde_json::json!([]),
-        multi_select: false,
+        questions: serde_json::json!([{
+            "question": question,
+            "options": [],
+            "multiSelect": false,
+        }]),
     })
 }
 
@@ -614,15 +616,9 @@ pub(crate) fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
         SerializedToolInput::MultiEdit { file_path, edits } => {
             ToolInput::MultiEdit { file_path, edits }
         }
-        SerializedToolInput::AskUserQuestion {
-            question,
-            options,
-            multi_select,
-        } => ToolInput::AskUserQuestion {
-            question,
-            options,
-            multi_select,
-        },
+        SerializedToolInput::AskUserQuestion { questions } => {
+            ToolInput::AskUserQuestion { questions }
+        }
         SerializedToolInput::WebFetch { url, prompt } => ToolInput::WebFetch { url, prompt },
         SerializedToolInput::WebSearch { query, max_results } => {
             ToolInput::WebSearch { query, max_results }

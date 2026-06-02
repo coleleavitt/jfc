@@ -369,10 +369,12 @@ pub enum SerializedToolInput {
         edits: serde_json::Value,
     },
     AskUserQuestion {
-        question: String,
-        options: serde_json::Value,
+        // Normalized `questions` array (1-4). `serde(default)` keeps old session
+        // files (which stored `question`/`options`/`multi_select`) loadable —
+        // those legacy fields are ignored and `questions` defaults to Null,
+        // deserializing to an empty (display-only, already-completed) call.
         #[serde(default)]
-        multi_select: bool,
+        questions: serde_json::Value,
     },
     WebFetch {
         url: String,

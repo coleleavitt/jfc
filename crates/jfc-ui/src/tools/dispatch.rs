@@ -697,53 +697,50 @@ pub async fn execute_tool(
             // Slop guard: check the final content for quality issues.
             maybe_run_slop_guard(result, Path::new(&file_path), &content, &cwd).await
         }
-        (
-            ToolKind::AskUserQuestion,
-            ToolInput::AskUserQuestion {
-                question,
-                options,
-                multi_select,
-            },
-        ) => {
+        (ToolKind::AskUserQuestion, ToolInput::AskUserQuestion { questions }) => {
             // FALLBACK PATH ONLY. The normal route diverts AskUserQuestion
             // into the interactive modal in `handle_stream_tool` (see
             // `app.pending_question` / `input/question.rs`) before it ever
             // reaches dispatch, so this arm is effectively unreachable. It
             // remains as a defensive degrade-to-text path in case a future
-            // code path dispatches the tool directly: surface the prompt as a
-            // transcript entry and treat the user's next message as the answer.
-            let opts_repr: Vec<String> = options
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|opt| {
-                            let label = opt.get("label").and_then(|v| v.as_str())?;
-                            let desc = opt
-                                .get("description")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            if desc.is_empty() {
-                                Some(format!("- {label}"))
-                            } else {
-                                Some(format!("- {label} — {desc}"))
-                            }
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            let body = format!(
-                "**Question for you:** {question}\n\n{}\n\n_(Reply with your choice{} as your next message.)_",
-                opts_repr.join("\n"),
-                if multi_select { "(s)" } else { "" }
-            );
-            // The transcript itself surfaces the question; no separate
-            // toast is needed for the user to act on it.
+            // code path dispatches the tool directly: surface the prompt(s) as
+            // a transcript entry and treat the user's next message as the answer.
+            let mut blocks: Vec<String> = Vec::new();
+            for q in questions.as_array().into_iter().flatten() {
+                let prompt = q.get("question").and_then(|v| v.as_str()).unwrap_or("");
+                let multi = q
+                    .get("multiSelect")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let opts: Vec<String> = q
+                    .get("options")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|opt| {
+                                let label = opt.get("label").and_then(|v| v.as_str())?;
+                                let desc =
+                                    opt.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                                if desc.is_empty() {
+                                    Some(format!("- {label}"))
+                                } else {
+                                    Some(format!("- {label} — {desc}"))
+                                }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                blocks.push(format!(
+                    "**Question for you:** {prompt}\n\n{}\n\n_(Reply with your choice{} as your next message.)_",
+                    opts.join("\n"),
+                    if multi { "(s)" } else { "" }
+                ));
+            }
+            let body = blocks.join("\n\n");
             tracing::info!(
                 target: "jfc::tools::ask",
-                question = %question.chars().take(80).collect::<String>(),
-                option_count = opts_repr.len(),
-                multi = multi_select,
-                "AskUserQuestion surfaced"
+                question_count = questions.as_array().map(|a| a.len()).unwrap_or(0),
+                "AskUserQuestion surfaced (fallback text path)"
             );
             ExecutionResult::success(format!(
                 "{body}\n\n(The user's next message is your tool result.)"

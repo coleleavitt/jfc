@@ -2,9 +2,10 @@
 //! dialog driven by `app.pending_question` (see `input/question.rs`).
 //!
 //! Structurally a sibling of `render/approval.rs`: a centered, cleared dialog
-//! with a header, a keyboard-navigable choice list (single- or multi-select),
-//! an auto-injected "Other" free-text row, and — for a focused single-select
-//! option that carries a `preview` — a side-by-side preview panel.
+//! with (for multi-question prompts) a header-chip nav bar, a keyboard-navigable
+//! choice list (single- or multi-select), an auto-injected "Other" free-text
+//! row, and — for a focused single-select option that carries a `preview` — a
+//! side-by-side preview panel.
 
 use ratatui::{
     Frame,
@@ -14,7 +15,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
 
-use crate::app::{App, PendingQuestion};
+use crate::app::{App, PendingQuestion, QuestionItem};
 use crate::theme::Theme;
 
 pub(super) fn question(f: &mut Frame, app: &App) {
@@ -23,15 +24,16 @@ pub(super) fn question(f: &mut Frame, app: &App) {
     };
     let t = app.theme;
     let area = f.area();
+    let item = pending.cur();
+    let multi_question = pending.items.len() > 1;
 
     // Preview only applies to single-select (matches the contract), and only
     // for the currently-focused option.
-    let focused_preview: Option<&str> = if pending.multi_select {
+    let focused_preview: Option<&str> = if item.multi_select {
         None
     } else {
-        pending
-            .options
-            .get(pending.selected)
+        item.options
+            .get(item.selected)
             .and_then(|o| o.preview.as_deref())
     };
     let has_preview = focused_preview.is_some();
@@ -43,8 +45,12 @@ pub(super) fn question(f: &mut Frame, app: &App) {
         )
     } else {
         (
-            (area.width * 7 / 10).clamp(48, 90).min(area.width.saturating_sub(4)),
-            (area.height * 6 / 10).clamp(10, 24).min(area.height.saturating_sub(4)),
+            (area.width * 7 / 10)
+                .clamp(48, 90)
+                .min(area.width.saturating_sub(4)),
+            (area.height * 6 / 10)
+                .clamp(10, 24)
+                .min(area.height.saturating_sub(4)),
         )
     };
     let x = area.width.saturating_sub(width) / 2;
@@ -53,10 +59,10 @@ pub(super) fn question(f: &mut Frame, app: &App) {
     f.render_widget(Clear, dialog_area);
 
     let accent = t.accent;
-    let title = if pending.header.is_empty() {
+    let title = if item.header.is_empty() {
         " Question ".to_string()
     } else {
-        format!(" {} ", pending.header)
+        format!(" {} ", item.header)
     };
     let block = Block::default()
         .borders(Borders::ALL)
@@ -69,41 +75,74 @@ pub(super) fn question(f: &mut Frame, app: &App) {
     let inner = block.inner(dialog_area);
     f.render_widget(block, dialog_area);
 
-    // Question prose (top, wrapped, ≤4 rows), body (options [+ preview]),
-    // footer hint (bottom).
+    // [nav bar (multi only)] · question prose · body (options [+ preview]) · footer.
+    let nav_h = if multi_question { 1 } else { 0 };
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(question_height(&pending.question, inner.width)),
+            Constraint::Length(nav_h),
+            Constraint::Length(question_height(&item.question, inner.width)),
             Constraint::Min(3),
             Constraint::Length(1),
         ])
         .split(inner);
 
+    if multi_question {
+        f.render_widget(Paragraph::new(nav_bar(pending, &t)), rows[0]);
+    }
+
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            pending.question.clone(),
+            item.question.clone(),
             t.style_text_primary.add_modifier(Modifier::BOLD),
         )))
         .wrap(Wrap { trim: true }),
-        rows[0],
+        rows[1],
     );
 
     if let Some(preview) = focused_preview {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-            .split(rows[1]);
-        render_options(f, pending, cols[0], &t);
+            .split(rows[2]);
+        render_options(f, item, pending.editing_other, cols[0], &t);
         render_preview(f, preview, cols[1], &t);
     } else {
-        render_options(f, pending, rows[1], &t);
+        render_options(f, item, pending.editing_other, rows[2], &t);
     }
 
     f.render_widget(
         Paragraph::new(footer_hint(pending, &t)),
-        rows[2],
+        rows[3],
     );
+}
+
+/// Header-chip nav bar across the questions: current is highlighted, answered
+/// questions get a ✓ prefix.
+fn nav_bar(pending: &PendingQuestion, t: &Theme) -> Line<'static> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for (i, q) in pending.items.iter().enumerate() {
+        let label = if q.header.is_empty() {
+            format!("Q{}", i + 1)
+        } else {
+            q.header.clone()
+        };
+        let mark = if q.answer.is_some() { "✓ " } else { "" };
+        let text = format!(" {mark}{label} ");
+        let style = if i == pending.current {
+            Style::default()
+                .fg(t.bg)
+                .bg(t.accent)
+                .add_modifier(Modifier::BOLD)
+        } else if q.answer.is_some() {
+            t.style_text_secondary
+        } else {
+            t.style_text_muted
+        };
+        spans.push(Span::styled(text, style));
+        spans.push(Span::raw(" "));
+    }
+    Line::from(spans)
 }
 
 /// Wrapped row count for the question prose, clamped to [1, 4].
@@ -118,17 +157,17 @@ fn question_height(question: &str, width: u16) -> u16 {
     rows.clamp(1, 4)
 }
 
-fn render_options(f: &mut Frame, pending: &PendingQuestion, area: Rect, t: &Theme) {
-    let mut items: Vec<ListItem> = Vec::with_capacity(pending.options.len() + 1);
+fn render_options(f: &mut Frame, item: &QuestionItem, editing_other: bool, area: Rect, t: &Theme) {
+    let mut items: Vec<ListItem> = Vec::with_capacity(item.options.len() + 1);
     let highlight = Style::default()
         .fg(t.bg)
         .bg(t.accent)
         .add_modifier(Modifier::BOLD);
 
-    for (i, opt) in pending.options.iter().enumerate() {
-        let focused = i == pending.selected && !pending.editing_other;
-        let marker = if pending.multi_select {
-            if pending.chosen.contains(&i) {
+    for (i, opt) in item.options.iter().enumerate() {
+        let focused = i == item.selected && !editing_other;
+        let marker = if item.multi_select {
+            if item.chosen.contains(&i) {
                 "[x] "
             } else {
                 "[ ] "
@@ -156,10 +195,10 @@ fn render_options(f: &mut Frame, pending: &PendingQuestion, area: Rect, t: &Them
     }
 
     // Auto-injected "Other" free-text row.
-    let other_idx = pending.other_row();
-    let focused_other = pending.selected == other_idx;
-    let marker = if pending.multi_select {
-        if pending.chosen.contains(&other_idx) {
+    let other_idx = item.other_row();
+    let focused_other = item.selected == other_idx;
+    let marker = if item.multi_select {
+        if item.chosen.contains(&other_idx) {
             "[x] "
         } else {
             "[ ] "
@@ -169,14 +208,14 @@ fn render_options(f: &mut Frame, pending: &PendingQuestion, area: Rect, t: &Them
     } else {
         "  "
     };
-    let other_text = if pending.editing_other {
-        format!("Other: {}▏", pending.other_text)
-    } else if pending.other_text.trim().is_empty() {
+    let other_text = if editing_other {
+        format!("Other: {}▏", item.other_text)
+    } else if item.other_text.trim().is_empty() {
         "Other (type your own)…".to_owned()
     } else {
-        format!("Other: {}", pending.other_text)
+        format!("Other: {}", item.other_text)
     };
-    let other_style = if pending.editing_other {
+    let other_style = if editing_other {
         t.style_text_primary
             .fg(t.accent)
             .add_modifier(Modifier::BOLD)
@@ -216,12 +255,22 @@ fn render_preview(f: &mut Frame, preview: &str, area: Rect, t: &Theme) {
 }
 
 fn footer_hint(pending: &PendingQuestion, t: &Theme) -> Line<'static> {
+    let multi_question = pending.items.len() > 1;
     let hint = if pending.editing_other {
-        "type your answer · Enter confirm · Esc back"
-    } else if pending.multi_select {
-        "↑/↓ move · Space toggle · Enter submit · Esc cancel"
+        "type your answer · Enter confirm · Esc back".to_owned()
     } else {
-        "↑/↓ move · Enter select · Esc cancel"
+        let mut parts = vec!["↑/↓ move"];
+        if pending.cur().multi_select {
+            parts.push("Space toggle");
+            parts.push("Enter confirm");
+        } else {
+            parts.push("Enter select");
+        }
+        if multi_question {
+            parts.push("←/→ switch");
+        }
+        parts.push("Esc cancel");
+        parts.join(" · ")
     };
-    Line::from(Span::styled(hint.to_owned(), t.style_text_muted))
+    Line::from(Span::styled(hint, t.style_text_muted))
 }

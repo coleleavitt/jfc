@@ -8,7 +8,7 @@ mod state;
 pub use events::AppEvent;
 pub use permissions::{
     ApprovalChoice, PendingApproval, PendingQuestion, PermissionDecision, PermissionMode,
-    QuestionOption,
+    QuestionItem, QuestionOption,
 };
 pub use recent_models::{load_recent_models, push_recent_model};
 pub use state::{
