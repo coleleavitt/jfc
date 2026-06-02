@@ -604,7 +604,7 @@ async fn handle_command_keys(
                         &mut app.toasts,
                         crate::toast::Toast::new(
                             crate::toast::ToastKind::Info,
-                            format!("image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
+                            format!("Image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
                         ),
                     );
                     app.image_counter += 1;

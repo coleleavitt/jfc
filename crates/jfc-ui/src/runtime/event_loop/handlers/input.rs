@@ -40,7 +40,7 @@ pub(crate) async fn handle_term_event(
                         &mut app.toasts,
                         toast::Toast::new(
                             toast::ToastKind::Info,
-                            format!("image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
+                            format!("Image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
                         ),
                     );
                     app.image_counter += 1;

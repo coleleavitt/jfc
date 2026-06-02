@@ -462,7 +462,7 @@ fn apply_text_selection(f: &mut Frame, app: &mut App) {
             &mut app.toasts,
             crate::toast::Toast::new(
                 crate::toast::ToastKind::Info,
-                format!("copied {} chars", text.chars().count()),
+                format!("Copied {} chars", text.chars().count()),
             ),
         );
         // Persist the highlight (copied=true) so the user sees what was

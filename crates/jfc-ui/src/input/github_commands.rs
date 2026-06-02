@@ -8,7 +8,7 @@ fn push_gh_unavailable(app: &mut App, cmd: &str) {
         .to_owned();
     crate::toast::push_with_cap(
         &mut app.toasts,
-        crate::toast::Toast::new(crate::toast::ToastKind::Error, "gh not installed"),
+        crate::toast::Toast::new(crate::toast::ToastKind::Error, "GitHub CLI (gh) not installed"),
     );
     app.messages.push(ChatMessage::user(cmd.to_owned()));
     app.messages.push(ChatMessage::assistant(msg));

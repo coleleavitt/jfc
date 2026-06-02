@@ -368,7 +368,7 @@ pub(crate) async fn handle_tick(
         crate::keybindings::load();
         toast::push_with_cap(
             &mut app.toasts,
-            toast::Toast::new(toast::ToastKind::Info, "keybindings.toml reloaded"),
+            toast::Toast::new(toast::ToastKind::Info, "Reloaded keybindings.toml"),
         );
         needs_draw = true;
     }

@@ -62,7 +62,7 @@ pub(super) fn apply_theme(app: &mut App, name: &str) {
                 &mut app.toasts,
                 crate::toast::Toast::new(
                     crate::toast::ToastKind::Warning,
-                    format!("theme: {} (not persisted: {err})", choice.label),
+                    format!("Theme: {} (not persisted: {err})", choice.label),
                 ),
             );
         } else {
@@ -70,7 +70,7 @@ pub(super) fn apply_theme(app: &mut App, name: &str) {
                 &mut app.toasts,
                 crate::toast::Toast::new(
                     crate::toast::ToastKind::Success,
-                    format!("theme: {}", choice.label),
+                    format!("Theme: {}", choice.label),
                 ),
             );
         }

@@ -1031,7 +1031,7 @@ pub(crate) async fn run(
                         &mut app.toasts,
                         crate::toast::Toast::new(
                             crate::toast::ToastKind::Info,
-                            format!("↻ recalled memory ({tokens} tokens of context)"),
+                            format!("↻ Recalled memory ({tokens} tokens of context)"),
                         ),
                     );
                     needs_draw = true;
