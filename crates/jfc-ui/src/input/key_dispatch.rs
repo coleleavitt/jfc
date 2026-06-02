@@ -371,132 +371,10 @@ async fn handle_command_keys(
             Some(Ok(false))
         }
         (KeyModifiers::CONTROL, KeyCode::Char('e')) if !input_has_text(app) => {
-            // Edit the most recent user message. Pre-fills the
-            // textarea with its body and flags edit mode; submit
-            // replaces that message and drops subsequent turns.
-            // Esc cancels. Useful when the previous prompt was
-            // ambiguous and the user wants a clean re-roll without
-            // re-typing.
-            if app.is_streaming
-                || !app.pending_tool_calls.is_empty()
-                || app.pending_approval.is_some()
-            {
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Warning,
-                        "edit: still in flight, finish or interrupt first".to_string(),
-                    ),
-                );
-                return Some(Ok(false));
-            }
-            let last_user: Option<(usize, String)> =
-                app.messages.iter().enumerate().rev().find_map(|(i, m)| {
-                    if m.role_is_user() && !m.is_compact_boundary() {
-                        m.parts.iter().find_map(|p| match p {
-                            MessagePart::Text(s) if !s.is_empty() && !s.starts_with('/') => {
-                                Some((i, s.clone()))
-                            }
-                            _ => None,
-                        })
-                    } else {
-                        None
-                    }
-                });
-            if let Some((idx, text)) = last_user {
-                app.textarea.select_all();
-                app.textarea.cut();
-                app.textarea.insert_str(&text);
-                app.editing_message_idx = Some(idx);
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Info,
-                        "editing previous message — Esc cancels, Enter resubmits".to_string(),
-                    ),
-                );
-            } else {
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Info,
-                        "no previous user message to edit".to_string(),
-                    ),
-                );
-            }
-            Some(Ok(false))
+            cmd_edit_last_user_message(app)
         }
-        (KeyModifiers::CONTROL, KeyCode::Char('l')) => {
-            // Yank a `path:line(:col)?` reference out of recent tool
-            // output to the clipboard. First press copies the most
-            // recent match; subsequent presses cycle through older
-            // matches in the same transcript scan, so a multi-error
-            // cargo run becomes "Ctrl+L Ctrl+L Ctrl+L" through each
-            // file:line pair.
-            let paths = collect_recent_paths(&app.messages);
-            if paths.is_empty() {
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Info,
-                        "no path:line refs found in recent output".to_string(),
-                    ),
-                );
-                return Some(Ok(false));
-            }
-            let idx = app.path_yank_cursor % paths.len();
-            let target = paths[idx].clone();
-            // Funnel through the clipboard owner so the path survives on
-            // X11/Wayland and reaches SSH/tmux via OSC 52. The copy is
-            // enqueued (best-effort, logged on failure), so confirm visually.
-            crate::runtime::copy_to_clipboard(&target, "path-yank");
-            crate::toast::push_with_cap(
-                &mut app.toasts,
-                crate::toast::Toast::new(
-                    crate::toast::ToastKind::Success,
-                    format!("{} ({}/{})", target, idx + 1, paths.len()),
-                ),
-            );
-            app.path_yank_cursor = app.path_yank_cursor.wrapping_add(1);
-            Some(Ok(false))
-        }
-        (KeyModifiers::CONTROL, KeyCode::Char('r')) => {
-            // Ctrl+R opens reverse-history search over past prompts (bash
-            // convention). The top match is the most recent prompt, so
-            // Ctrl+R then Enter still gives you the old "retry last" — but
-            // now you can fuzz back to any earlier prompt too.
-            let mut all: Vec<String> = Vec::new();
-            let mut seen = std::collections::HashSet::new();
-            for m in app.messages.iter().rev() {
-                if !m.role_is_user() || m.is_compact_boundary() {
-                    continue;
-                }
-                if let Some(text) = m.parts.iter().find_map(|p| match p {
-                    MessagePart::Text(s) if !s.is_empty() && !s.starts_with('/') => Some(s.clone()),
-                    _ => None,
-                }) && seen.insert(text.clone())
-                {
-                    all.push(text);
-                }
-            }
-            if all.is_empty() {
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Info,
-                        "no prompt history to search".to_string(),
-                    ),
-                );
-            } else {
-                let mut search = crate::app::PromptSearch {
-                    all,
-                    ..Default::default()
-                };
-                search.refilter();
-                app.prompt_search = Some(search);
-            }
-            Some(Ok(false))
-        }
+        (KeyModifiers::CONTROL, KeyCode::Char('l')) => cmd_yank_path_ref(app),
+        (KeyModifiers::CONTROL, KeyCode::Char('r')) => cmd_open_prompt_search(app),
         (KeyModifiers::CONTROL, KeyCode::Char('z')) => {
             // Undo the last textarea edit. ratatui-textarea tracks
             // history internally — Ctrl+Z is the universal undo
@@ -591,48 +469,7 @@ async fn handle_command_keys(
             app.info_sidebar_scroll = app.info_sidebar_scroll.saturating_add(10);
             Some(Ok(false))
         }
-        (KeyModifiers::CONTROL, KeyCode::Char('v')) => {
-            // Image-paste keybind. Some terminals don't translate Ctrl+V
-            // into bracketed-paste events (xterm without
-            // `enableModifyOtherKeys`, certain tmux configurations), so
-            // we explicitly try `read_clipboard_image` here. If the
-            // clipboard holds an image, attach it; if it holds text,
-            // fall through to the textarea's normal paste handling.
-            match crate::attachments::read_clipboard_image() {
-                Ok(Some((att, w, h))) => {
-                    crate::toast::push_with_cap(
-                        &mut app.toasts,
-                        crate::toast::Toast::new(
-                            crate::toast::ToastKind::Info,
-                            format!("Image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
-                        ),
-                    );
-                    app.image_counter += 1;
-                    let id = app.image_counter;
-                    app.pasted_images.push(crate::attachments::PastedContent {
-                        id,
-                        attachment: att,
-                        width: w,
-                        height: h,
-                    });
-                    app.textarea.insert_str(format!("[Image #{id}]"));
-                    Some(Ok(false))
-                }
-                Ok(None) => {
-                    // Try text clipboard fallback.
-                    if let Ok(mut cb) = arboard::Clipboard::new()
-                        && let Ok(text) = cb.get_text()
-                    {
-                        app.textarea.insert_str(&text);
-                    }
-                    Some(Ok(false))
-                }
-                Err(e) => {
-                    tracing::debug!(target: "jfc::input", error = %e, "Ctrl+V image paste failed");
-                    Some(Ok(false))
-                }
-            }
-        }
+        (KeyModifiers::CONTROL, KeyCode::Char('v')) => cmd_paste_clipboard_image(app),
         // NOTE: Ctrl+Y (yank last assistant message) is handled earlier by
         // `handle_yank_key`, which runs before this match. No arm here.
         (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
@@ -761,69 +598,7 @@ async fn handle_command_keys(
             Some(Ok(false))
         }
         (KeyModifiers::NONE, KeyCode::Char('o')) if !input_has_text(app) && app.vim.is_none() => {
-            // In the subagent task view (`viewing_task_id.is_some()`),
-            // `o` toggles expansion of the most recent long entry in
-            // `BackgroundTask.messages`. In the main chat it falls
-            // through to the most recent `LargeText` tool block. The
-            // two paths can't share state until Phase B unifies the
-            // subagent renderer with `MessageView`.
-            if let Some(ref task_id) = app.viewing_task_id.clone() {
-                if let Some(bt) = app.background_tasks.get(task_id) {
-                    let threshold_lines = crate::render::TASK_VIEW_COLLAPSE_LINES;
-                    let threshold_bytes = crate::render::TASK_VIEW_COLLAPSE_BYTES;
-                    let last_collapsible = bt
-                        .messages
-                        .iter()
-                        .enumerate()
-                        .rev()
-                        .find(|(_, m)| {
-                            m.lines().count() > threshold_lines || m.len() > threshold_bytes
-                        })
-                        .map(|(i, _)| i);
-                    if let Some(idx) = last_collapsible {
-                        let entry = app
-                            .viewing_task_expanded
-                            .entry(task_id.clone())
-                            .or_default();
-                        if !entry.insert(idx) {
-                            entry.remove(&idx);
-                        }
-                    }
-                }
-                return Some(Ok(false));
-            }
-            'toggle: {
-                let messages = &mut app.messages;
-                for msg in messages.iter_mut().rev() {
-                    for part in msg.parts.iter_mut().rev() {
-                        if let MessagePart::Tool(tc) = part {
-                            // Two-level expand: huge LargeText pivots
-                            // teaser ⇄ body (`toggle_collapsed`); all
-                            // other tools pivot 80-line cap ⇄ 500-line
-                            // cap (`toggle_expanded`). The user gets a
-                            // single `o` shortcut that scales: small
-                            // Read → expand to full, huge Bash dump →
-                            // expand teaser to body.
-                            match &tc.output {
-                                ToolOutput::LargeText(lt)
-                                    if lt.line_count > crate::types::LargeText::COLLAPSE_LINES
-                                        || lt.content.len()
-                                            > crate::types::LargeText::COLLAPSE_BYTES =>
-                                {
-                                    tc.display.toggle_collapsed();
-                                    break 'toggle;
-                                }
-                                ToolOutput::Empty => {}
-                                _ => {
-                                    tc.display.toggle_expanded();
-                                    break 'toggle;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Some(Ok(false))
+            cmd_toggle_expand_recent(app)
         }
         // ─── Task view: sticky arrow navigation ──────────────────────────
         // Once you're inside the task view (Ctrl+X then ↓ to enter, or you
@@ -880,96 +655,7 @@ async fn handle_command_keys(
             }
             Some(Ok(false))
         }
-        (KeyModifiers::NONE, KeyCode::Esc) => {
-            // In vim, Esc from any non-Normal mode returns to Normal and is
-            // consumed here (so it doesn't also clear the input). Esc *in*
-            // Normal mode falls through to the app behavior below (dismiss
-            // popups, clear input).
-            if app
-                .vim
-                .as_ref()
-                .is_some_and(|s| s.mode != crate::input::vim::VimMode::Normal)
-            {
-                app.textarea.cancel_selection();
-                if let Some(s) = app.vim.as_mut() {
-                    s.mode = crate::input::vim::VimMode::Normal;
-                    s.pending = ratatui_textarea::Input::default();
-                }
-                return Some(Ok(false));
-            }
-            // A persisted post-copy selection highlight is the least-destructive
-            // thing Esc can clear — do it before the recap/interrupt cascade.
-            if app.text_selection.is_some() {
-                app.text_selection = None;
-                return Some(Ok(false));
-            }
-            // Dismiss the "while you were away" recap band first if it's up.
-            if app.away_recap.is_some() {
-                app.away_recap = None;
-                return Some(Ok(false));
-            }
-            if app.show_help {
-                app.show_help = false;
-                return Some(Ok(false));
-            }
-            // Cancel edit mode if armed; clear input so the user
-            // doesn't accidentally re-submit the prefilled text.
-            if app.editing_message_idx.is_some() {
-                app.editing_message_idx = None;
-                app.textarea.select_all();
-                app.textarea.cut();
-                crate::toast::push_with_cap(
-                    &mut app.toasts,
-                    crate::toast::Toast::new(
-                        crate::toast::ToastKind::Info,
-                        "edit cancelled".to_string(),
-                    ),
-                );
-                return Some(Ok(false));
-            }
-            if app.viewing_task_id.is_some() {
-                app.viewing_task_id = None;
-                return Some(Ok(false));
-            }
-
-            // Double-tap ESC to instantly kill active work:
-            //   1st ESC → toast "Press ESC again to interrupt", arm the timer
-            //   2nd ESC (within 600ms) → cancel_token.cancel() which fires
-            //     the select! arm in stream_response instantly (no 50ms poll)
-            //     + SIGTERM all bash + set interrupt_flag for legacy callers
-            //
-            // This gives the user a confirmation step (prevents accidental
-            // kills) while making the actual kill truly instant when confirmed.
-            const DOUBLE_TAP_MS: u128 = 600;
-            let active = app.has_interruptible_work();
-            if active {
-                if key.kind == event::KeyEventKind::Repeat {
-                    return Some(Ok(false));
-                }
-
-                let now = std::time::Instant::now();
-                let armed = app
-                    .last_esc_at
-                    .map(|t| now.duration_since(t).as_millis() < DOUBLE_TAP_MS)
-                    .unwrap_or(false);
-                if armed {
-                    request_user_interrupt(app, tx);
-                } else {
-                    // 1st ESC — arm the double-tap timer + hint.
-                    app.last_esc_at = Some(now);
-                    crate::toast::push_with_cap(
-                        &mut app.toasts,
-                        crate::toast::Toast::new(
-                            crate::toast::ToastKind::Info,
-                            "Press ESC again to interrupt".to_owned(),
-                        ),
-                    );
-                }
-                return Some(Ok(false));
-            }
-            reset_input(app);
-            Some(Ok(false))
-        }
+        (KeyModifiers::NONE, KeyCode::Esc) => cmd_handle_escape(app, key, tx),
         (KeyModifiers::SHIFT, KeyCode::BackTab) | (KeyModifiers::NONE, KeyCode::BackTab) => {
             // Shift+Tab cycles permission modes
             app.permission_mode = app.permission_mode.next();
@@ -1059,6 +745,292 @@ async fn handle_command_keys(
         }
         _ => None,
     }
+}
+
+// ─── Extracted command-key handlers ──────────────────────────────────────
+// These are the formerly-inline bodies of the larger `handle_command_keys`
+// match arms, lifted out verbatim so the dispatch match stays scannable.
+// Each returns the same `Option<Result<bool>>` contract: `Some(Ok(false))`
+// = handled, keep running; `Some(Ok(true))` = quit; `None` = not handled.
+
+/// Ctrl+E — edit the most recent user message in place.
+fn cmd_edit_last_user_message(app: &mut App) -> Option<anyhow::Result<bool>> {
+    if app.is_streaming || !app.pending_tool_calls.is_empty() || app.pending_approval.is_some() {
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Warning,
+                "edit: still in flight, finish or interrupt first".to_string(),
+            ),
+        );
+        return Some(Ok(false));
+    }
+    let last_user: Option<(usize, String)> =
+        app.messages.iter().enumerate().rev().find_map(|(i, m)| {
+            if m.role_is_user() && !m.is_compact_boundary() {
+                m.parts.iter().find_map(|p| match p {
+                    MessagePart::Text(s) if !s.is_empty() && !s.starts_with('/') => {
+                        Some((i, s.clone()))
+                    }
+                    _ => None,
+                })
+            } else {
+                None
+            }
+        });
+    if let Some((idx, text)) = last_user {
+        app.textarea.select_all();
+        app.textarea.cut();
+        app.textarea.insert_str(&text);
+        app.editing_message_idx = Some(idx);
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Info,
+                "editing previous message — Esc cancels, Enter resubmits".to_string(),
+            ),
+        );
+    } else {
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Info,
+                "no previous user message to edit".to_string(),
+            ),
+        );
+    }
+    Some(Ok(false))
+}
+
+/// Ctrl+L — yank a `path:line(:col)?` reference from recent tool output,
+/// cycling through matches on repeated presses.
+fn cmd_yank_path_ref(app: &mut App) -> Option<anyhow::Result<bool>> {
+    let paths = collect_recent_paths(&app.messages);
+    if paths.is_empty() {
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Info,
+                "no path:line refs found in recent output".to_string(),
+            ),
+        );
+        return Some(Ok(false));
+    }
+    let idx = app.path_yank_cursor % paths.len();
+    let target = paths[idx].clone();
+    crate::runtime::copy_to_clipboard(&target, "path-yank");
+    crate::toast::push_with_cap(
+        &mut app.toasts,
+        crate::toast::Toast::new(
+            crate::toast::ToastKind::Success,
+            format!("{} ({}/{})", target, idx + 1, paths.len()),
+        ),
+    );
+    app.path_yank_cursor = app.path_yank_cursor.wrapping_add(1);
+    Some(Ok(false))
+}
+
+/// Ctrl+R — open reverse-history search over past user prompts.
+fn cmd_open_prompt_search(app: &mut App) -> Option<anyhow::Result<bool>> {
+    let mut all: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for m in app.messages.iter().rev() {
+        if !m.role_is_user() || m.is_compact_boundary() {
+            continue;
+        }
+        if let Some(text) = m.parts.iter().find_map(|p| match p {
+            MessagePart::Text(s) if !s.is_empty() && !s.starts_with('/') => Some(s.clone()),
+            _ => None,
+        }) && seen.insert(text.clone())
+        {
+            all.push(text);
+        }
+    }
+    if all.is_empty() {
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Info,
+                "no prompt history to search".to_string(),
+            ),
+        );
+    } else {
+        let mut search = crate::app::PromptSearch {
+            all,
+            ..Default::default()
+        };
+        search.refilter();
+        app.prompt_search = Some(search);
+    }
+    Some(Ok(false))
+}
+
+/// Ctrl+V — attach a clipboard image, falling back to text paste.
+fn cmd_paste_clipboard_image(app: &mut App) -> Option<anyhow::Result<bool>> {
+    match crate::attachments::read_clipboard_image() {
+        Ok(Some((att, w, h))) => {
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Info,
+                    format!("Image attached ({}x{}, {} bytes)", w, h, att.bytes.len()),
+                ),
+            );
+            app.image_counter += 1;
+            let id = app.image_counter;
+            app.pasted_images.push(crate::attachments::PastedContent {
+                id,
+                attachment: att,
+                width: w,
+                height: h,
+            });
+            app.textarea.insert_str(format!("[Image #{id}]"));
+            Some(Ok(false))
+        }
+        Ok(None) => {
+            if let Ok(mut cb) = arboard::Clipboard::new()
+                && let Ok(text) = cb.get_text()
+            {
+                app.textarea.insert_str(&text);
+            }
+            Some(Ok(false))
+        }
+        Err(e) => {
+            tracing::debug!(target: "jfc::input", error = %e, "Ctrl+V image paste failed");
+            Some(Ok(false))
+        }
+    }
+}
+
+/// `o` (no input, non-vim) — toggle expansion of the most recent collapsible
+/// entry: subagent task-view message if viewing a task, else the latest
+/// `LargeText`/tool block in the main transcript.
+fn cmd_toggle_expand_recent(app: &mut App) -> Option<anyhow::Result<bool>> {
+    if let Some(ref task_id) = app.viewing_task_id.clone() {
+        if let Some(bt) = app.background_tasks.get(task_id) {
+            let threshold_lines = crate::render::TASK_VIEW_COLLAPSE_LINES;
+            let threshold_bytes = crate::render::TASK_VIEW_COLLAPSE_BYTES;
+            let last_collapsible = bt
+                .messages
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, m)| m.lines().count() > threshold_lines || m.len() > threshold_bytes)
+                .map(|(i, _)| i);
+            if let Some(idx) = last_collapsible {
+                let entry = app
+                    .viewing_task_expanded
+                    .entry(task_id.clone())
+                    .or_default();
+                if !entry.insert(idx) {
+                    entry.remove(&idx);
+                }
+            }
+        }
+        return Some(Ok(false));
+    }
+    'toggle: {
+        let messages = &mut app.messages;
+        for msg in messages.iter_mut().rev() {
+            for part in msg.parts.iter_mut().rev() {
+                if let MessagePart::Tool(tc) = part {
+                    match &tc.output {
+                        ToolOutput::LargeText(lt)
+                            if lt.line_count > crate::types::LargeText::COLLAPSE_LINES
+                                || lt.content.len() > crate::types::LargeText::COLLAPSE_BYTES =>
+                        {
+                            tc.display.toggle_collapsed();
+                            break 'toggle;
+                        }
+                        ToolOutput::Empty => {}
+                        _ => {
+                            tc.display.toggle_expanded();
+                            break 'toggle;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Some(Ok(false))
+}
+
+/// Esc (no input) — the dismiss/interrupt cascade: vim-mode exit, clear a
+/// post-copy highlight, dismiss recap/help, cancel edit/task-view, then the
+/// double-tap-to-interrupt flow, finally clearing the input.
+fn cmd_handle_escape(
+    app: &mut App,
+    key: event::KeyEvent,
+    tx: &mpsc::Sender<crate::runtime::AppEvent>,
+) -> Option<anyhow::Result<bool>> {
+    if app
+        .vim
+        .as_ref()
+        .is_some_and(|s| s.mode != crate::input::vim::VimMode::Normal)
+    {
+        app.textarea.cancel_selection();
+        if let Some(s) = app.vim.as_mut() {
+            s.mode = crate::input::vim::VimMode::Normal;
+            s.pending = ratatui_textarea::Input::default();
+        }
+        return Some(Ok(false));
+    }
+    if app.text_selection.is_some() {
+        app.text_selection = None;
+        return Some(Ok(false));
+    }
+    if app.away_recap.is_some() {
+        app.away_recap = None;
+        return Some(Ok(false));
+    }
+    if app.show_help {
+        app.show_help = false;
+        return Some(Ok(false));
+    }
+    if app.editing_message_idx.is_some() {
+        app.editing_message_idx = None;
+        app.textarea.select_all();
+        app.textarea.cut();
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(crate::toast::ToastKind::Info, "edit cancelled".to_string()),
+        );
+        return Some(Ok(false));
+    }
+    if app.viewing_task_id.is_some() {
+        app.viewing_task_id = None;
+        return Some(Ok(false));
+    }
+
+    // Double-tap ESC to instantly kill active work: 1st arms a 600ms timer +
+    // hint, 2nd (within the window) fires the interrupt.
+    const DOUBLE_TAP_MS: u128 = 600;
+    let active = app.has_interruptible_work();
+    if active {
+        if key.kind == event::KeyEventKind::Repeat {
+            return Some(Ok(false));
+        }
+        let now = std::time::Instant::now();
+        let armed = app
+            .last_esc_at
+            .map(|t| now.duration_since(t).as_millis() < DOUBLE_TAP_MS)
+            .unwrap_or(false);
+        if armed {
+            request_user_interrupt(app, tx);
+        } else {
+            app.last_esc_at = Some(now);
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Info,
+                    "Press ESC again to interrupt".to_owned(),
+                ),
+            );
+        }
+        return Some(Ok(false));
+    }
+    reset_input(app);
+    Some(Ok(false))
 }
 
 /// Decide whether a fresh submit should *interrupt* the in-flight stream
