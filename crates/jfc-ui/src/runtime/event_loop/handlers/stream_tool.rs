@@ -389,6 +389,48 @@ pub(crate) async fn handle_stream_tool(app: &mut App, tx: &EventSender, tool: To
         if let Some(msg) = streaming_assistant_mut(app) {
             msg.parts.push(MessagePart::Tool(tool));
         }
+    } else if matches!(tool.kind, ToolKind::AskUserQuestion) {
+        // AskUserQuestion is neither dispatched nor approval-gated: it opens an
+        // interactive modal whose selection becomes the tool_result (replacing
+        // the old "post text, treat the next user message as the answer" stub
+        // in dispatch.rs). At most one question is ever pending — it's a
+        // turn-ending tool — so a second concurrent one, or a malformed
+        // `options` array, is recorded as a failed tool_result so the tool_use
+        // stays paired and the loop can continue.
+        if app.pending_question.is_some() {
+            let mut tool = tool;
+            tool.status = ToolStatus::Failed;
+            tool.output = ToolOutput::Text(
+                "A question is already awaiting an answer; only one AskUserQuestion \
+                 may be open at a time."
+                    .to_owned(),
+            );
+            if let Some(msg) = streaming_assistant_mut(app) {
+                msg.parts.push(MessagePart::Tool(tool));
+            }
+        } else if let Some(pending) = crate::input::build_pending_question(&tool) {
+            if let Some(msg) = streaming_assistant_mut(app) {
+                msg.parts.push(MessagePart::Tool(tool.clone()));
+            }
+            emit_deferred_tool_use(tx, &tool, "awaiting_user_answer");
+            tracing::info!(
+                target: "jfc::ui::question",
+                tool_id = %tool.id,
+                options = pending.options.len(),
+                multi = pending.multi_select,
+                "route=ask_user_question (modal opened)"
+            );
+            app.pending_question = Some(pending);
+        } else {
+            let mut tool = tool;
+            tool.status = ToolStatus::Failed;
+            tool.output = ToolOutput::Text(
+                "AskUserQuestion requires a non-empty `options` array.".to_owned(),
+            );
+            if let Some(msg) = streaming_assistant_mut(app) {
+                msg.parts.push(MessagePart::Tool(tool));
+            }
+        }
     } else if let Some(reason) = app.tool_denied_by_mode(&tool) {
         // Guard 2: the active permission mode auto-denies this
         // tool (e.g. Plan mode blocking a Write, or an

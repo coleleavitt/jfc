@@ -9,6 +9,7 @@ use super::overlays::{
     search_bar, slash_popup, toast_overlay,
 };
 use super::palette::palette;
+use super::question::question;
 use super::session_picker::session_picker;
 use super::session_sidebar::sidebar;
 use super::sidebar::info_sidebar;
@@ -374,6 +375,13 @@ pub fn frame(f: &mut Frame, app: &mut App) {
 
     if app.pending_approval.is_some() {
         approval(f, app);
+    }
+
+    // The AskUserQuestion modal. Mutually exclusive with approval in practice
+    // (approval gates a dispatch; a question is a separate turn-ending tool),
+    // but rendered last so it wins if both were somehow set.
+    if app.pending_question.is_some() {
+        question(f, app);
     }
 }
 

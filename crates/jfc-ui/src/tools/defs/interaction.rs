@@ -18,11 +18,23 @@ pub fn interaction_tool_defs() -> Vec<ToolDef> {
 fn ask_user_question_def() -> ToolDef {
     ToolDef {
         name: "AskUserQuestion".into(),
-        description: "Ask the user a multi-choice question mid-turn to gather \
-            preferences, clarify ambiguity, or offer choices. Use sparingly — \
-            only when context genuinely requires user input. Each option is \
-            a `{label, description}` object. Returns the user's selected \
-            label(s) as the tool result."
+        description: "Ask the user a multiple-choice question mid-turn to gather \
+            preferences, clarify ambiguity, or offer choices. Opens an \
+            interactive modal: the user navigates options with the arrow keys \
+            and picks with Enter. Use sparingly — only when context genuinely \
+            requires user input; bias toward making the reasonable call and \
+            continuing.\n\n\
+            - Provide 2-4 options, each a `{label, description}` object (an \
+            optional `preview` renders a side panel for comparing concrete \
+            artifacts like code snippets or mockups).\n\
+            - An \"Other\" free-text choice is added automatically — never \
+            include your own.\n\
+            - If you recommend a specific option, make it the FIRST option and \
+            append \"(Recommended)\" to its label.\n\
+            - Set `multi_select: true` only when the choices are not mutually \
+            exclusive.\n\
+            Returns the user's selected label(s) (free text for \"Other\") as \
+            the tool result."
             .into(),
         input_schema: serde_json::json!({
             "type": "object",

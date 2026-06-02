@@ -20,6 +20,7 @@ mod modal_handlers;
 mod model_picker;
 mod navigation;
 mod palette;
+mod question;
 mod session_commands;
 mod session_picker;
 mod slash_commands;
@@ -66,6 +67,7 @@ use crate::types::*;
 
 // Re-export the public functions from sub-modules
 pub(crate) use approval::handle_remote_approval_response;
+pub(crate) use question::build_pending_question;
 pub use key_dispatch::handle_key;
 pub(crate) use slash_commands::SLASH_COMMANDS;
 pub use slash_commands::run_slash_command;

@@ -18,6 +18,7 @@ mod messages;
 mod model_picker;
 mod overlays;
 pub(crate) mod palette;
+mod question;
 pub(crate) mod session_picker;
 mod session_sidebar;
 mod sidebar;

@@ -648,6 +648,12 @@ pub struct App {
     /// were silently dropped, leaving the conversation with a tool_use that
     /// had no matching tool_result and a stalled agentic loop.
     pub approval_queue: std::collections::VecDeque<ToolCall>,
+    /// Active `AskUserQuestion` modal, if any. While `Some`, the agentic loop
+    /// is parked (the question is the turn's terminal act) and key input is
+    /// routed to the question handler. Resolved by submit (answer → tool_result)
+    /// or Esc (declined). Unlike `approval_queue`, questions don't queue —
+    /// `AskUserQuestion` is a turn-ending tool, so at most one is ever pending.
+    pub pending_question: Option<crate::app::PendingQuestion>,
     /// Tool calls that have been yielded to the host but are not executing yet:
     /// waiting for approval, classifier judgment, or stream_done batch
     /// dispatch. This is the TUI/remote equivalent of upstream's
@@ -1482,6 +1488,7 @@ impl App {
             reasoning_expanded: HashMap::new(),
             pending_approval: None,
             approval_queue: std::collections::VecDeque::new(),
+            pending_question: None,
             deferred_tool_uses: VecDeque::with_capacity(DEFERRED_TOOL_USES_CAP),
             in_progress_tool_use_ids: HashSet::new(),
             tool_use_summaries: VecDeque::with_capacity(TOOL_USE_SUMMARIES_CAP),

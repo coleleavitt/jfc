@@ -252,3 +252,101 @@ pub struct PendingApproval {
     pub tool: ToolCall,
     pub selected: usize,
 }
+
+/// One selectable option in an `AskUserQuestion` prompt. The auto-injected
+/// "Other" row is NOT stored here — it's rendered/handled positionally as the
+/// row just past `options.len()`, mirroring Claude Code's `__other__` sentinel.
+#[derive(Clone, Debug)]
+pub struct QuestionOption {
+    pub label: String,
+    pub description: String,
+    pub preview: Option<String>,
+}
+
+/// A pending `AskUserQuestion` modal awaiting the user's selection.
+///
+/// Mirrors [`PendingApproval`] structurally, but the semantics differ: an
+/// approval *gates a tool dispatch*, whereas a question *collects an answer
+/// that becomes the tool_result*. The event loop blocks the agentic
+/// continuation while this is `Some`; on submit, `answer()` is turned into a
+/// `ToolEvent::Result` for `tool_id` and the loop resumes (see
+/// `input/question.rs`).
+pub struct PendingQuestion {
+    /// The `AskUserQuestion` tool_use this modal answers. The synthesized
+    /// result is recorded against this id.
+    pub tool_id: crate::ids::ToolId,
+    /// The question prose (ends with `?`).
+    pub question: String,
+    /// Short chip label (≤12 chars in the contract). Empty if the model
+    /// omitted it.
+    pub header: String,
+    /// The model-supplied options, in order. Excludes the auto "Other" row.
+    pub options: Vec<QuestionOption>,
+    /// When true the user may pick more than one option.
+    pub multi_select: bool,
+    /// Cursor over `[options…, Other]`. `selected == options.len()` is the
+    /// "Other" free-text row.
+    pub selected: usize,
+    /// Multi-select: chosen option indices (into `options`); the "Other" row,
+    /// when chosen, is represented by `options.len()`.
+    pub chosen: std::collections::BTreeSet<usize>,
+    /// Whether the "Other" free-text input currently has focus (keys append to
+    /// `other_text` instead of moving the cursor).
+    pub editing_other: bool,
+    /// Free text typed into the "Other" row.
+    pub other_text: String,
+}
+
+impl PendingQuestion {
+    /// Index of the synthetic "Other" row in the cursor space.
+    pub fn other_row(&self) -> usize {
+        self.options.len()
+    }
+
+    /// True when the cursor is on the "Other" row.
+    pub fn on_other(&self) -> bool {
+        self.selected == self.other_row()
+    }
+
+    /// Total navigable rows: every option plus the "Other" row.
+    pub fn row_count(&self) -> usize {
+        self.options.len() + 1
+    }
+
+    /// Build the answer string sent back to the model.
+    ///
+    /// Single-select: the focused option's label, or the typed "Other" text.
+    /// Multi-select: every chosen option label in order, plus the "Other" text
+    /// when the "Other" row is chosen, comma-joined (matches Claude Code's
+    /// comma-separated multi-select answers).
+    pub fn answer(&self) -> String {
+        let other = self.other_text.trim();
+        if self.multi_select {
+            let mut parts: Vec<String> = self
+                .options
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| self.chosen.contains(i))
+                .map(|(_, opt)| opt.label.clone())
+                .collect();
+            if self.chosen.contains(&self.other_row()) && !other.is_empty() {
+                parts.push(other.to_owned());
+            }
+            parts.join(", ")
+        } else if self.on_other() {
+            other.to_owned()
+        } else {
+            self.options
+                .get(self.selected)
+                .map(|opt| opt.label.clone())
+                .unwrap_or_default()
+        }
+    }
+
+    /// Whether the current selection is submittable. Prevents committing an
+    /// empty answer (e.g. "Other" focused with no text, or multi-select with
+    /// nothing checked).
+    pub fn can_submit(&self) -> bool {
+        !self.answer().trim().is_empty()
+    }
+}

@@ -78,6 +78,11 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
         // tool_use block in a user message causes API 400.
         let mut assistant_tool_blocks: Vec<ProviderContent> = Vec::new();
         let mut user_tool_results: Vec<ProviderContent> = Vec::new();
+        // Successfully-answered AskUserQuestion tools are replayed as plain
+        // user-authored text turns instead of tool_use/tool_result pairs (see
+        // the trust rewrite below). Collected here, emitted after the assistant
+        // turn alongside `user_tool_results`.
+        let mut user_text_rewrites: Vec<String> = Vec::new();
         if role == ProviderRole::Assistant {
             for part in &m.parts {
                 let MessagePart::Tool(tc) = part else {
@@ -96,6 +101,23 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
                     if let Some(result) = server_tool_result_content(tc, &mut counters) {
                         assistant_tool_blocks.push(result);
                     }
+                } else if matches!(tc.kind, crate::types::ToolKind::AskUserQuestion)
+                    && tc.status == crate::types::ToolStatus::Completed
+                {
+                    // Trust rewrite: a successfully-answered AskUserQuestion is
+                    // replayed as a user-authored turn
+                    // `[User answered AskUserQuestion]: …` rather than a
+                    // tool_use/tool_result pair. Dropping BOTH blocks together
+                    // keeps tool pairing valid (no orphaned tool_use). This is
+                    // the prompt-injection-safety carve-out — the answer is
+                    // *direct user intent*, not untrusted tool output. Mirrors
+                    // cli.js 2.1.160 :294912 (the rewrite) + :294659 (the trust
+                    // exception) + the s15 tool_use skip. Declines (Failed) fall
+                    // through to the normal tool_result path below.
+                    user_text_rewrites.push(format!(
+                        "[User answered AskUserQuestion]: {}",
+                        tc.output.text_only()
+                    ));
                 } else {
                     assistant_tool_blocks.push(tool_use_content(tc, &mut counters));
                     user_tool_results.push(tool_result_content(
@@ -143,6 +165,19 @@ fn build_assistant_and_tool_result_messages(msgs: &[ChatMessage]) -> Vec<Provide
             out.push(ProviderMessage {
                 role: ProviderRole::User,
                 content: user_tool_results,
+            });
+        }
+
+        // Emit any AskUserQuestion answers as a user turn. Kept separate from
+        // `user_tool_results` so the rewrite carries no tool_result block —
+        // `merge_consecutive_same_role` folds it into an adjacent user turn.
+        if !user_text_rewrites.is_empty() {
+            out.push(ProviderMessage {
+                role: ProviderRole::User,
+                content: user_text_rewrites
+                    .into_iter()
+                    .map(ProviderContent::Text)
+                    .collect(),
             });
         }
     }
@@ -310,6 +345,69 @@ mod tests {
             }
             _ => panic!("expected ToolResult"),
         }
+    }
+
+    // Trust rewrite: a *completed* AskUserQuestion is replayed as a plain user
+    // text turn `[User answered AskUserQuestion]: …` with NO tool_use/tool_result
+    // pair, so the answer reads as direct user intent. Pairing stays valid
+    // because both blocks are dropped together.
+    #[test]
+    fn build_answered_ask_user_question_rewrites_to_user_text_regression() {
+        let tool = make_tool_call(
+            "toolu_q",
+            ToolKind::AskUserQuestion,
+            ToolStatus::Completed,
+            ToolOutput::Text("User has answered your question: \"X?\"=\"Yes\".".into()),
+        );
+        let msgs = vec![
+            user_msg("which one?"),
+            assistant_with_parts(vec![MessagePart::Tool(tool)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        // No ToolUse / ToolResult block survives for the question.
+        for m in &out {
+            for c in &m.content {
+                assert!(
+                    !matches!(c, ProviderContent::ToolUse { .. } | ProviderContent::ToolResult { .. }),
+                    "AskUserQuestion must not emit tool_use/tool_result blocks"
+                );
+            }
+        }
+        // A user turn carries the trust-marked answer.
+        let has_marker = out.iter().any(|m| {
+            m.role == ProviderRole::User
+                && m.content.iter().any(|c| {
+                    matches!(c, ProviderContent::Text(t) if t.starts_with("[User answered AskUserQuestion]:"))
+                })
+        });
+        assert!(has_marker, "expected a [User answered AskUserQuestion] user turn");
+    }
+
+    // Robust: a *declined* (Failed) AskUserQuestion is NOT rewritten — it keeps
+    // the normal tool_use/tool_result pair (is_error=true) so the model sees the
+    // decline, and pairing is preserved.
+    #[test]
+    fn build_declined_ask_user_question_keeps_tool_result_robust() {
+        let tool = make_tool_call(
+            "toolu_q2",
+            ToolKind::AskUserQuestion,
+            ToolStatus::Failed,
+            ToolOutput::Text("User declined to answer the question.".into()),
+        );
+        let msgs = vec![
+            user_msg("pick one"),
+            assistant_with_parts(vec![MessagePart::Tool(tool)]),
+        ];
+        let out = build_provider_messages_with_tool_results(&msgs);
+        let has_tool_use = out
+            .iter()
+            .flat_map(|m| &m.content)
+            .any(|c| matches!(c, ProviderContent::ToolUse { id, .. } if id == "toolu_q2"));
+        let has_tool_result = out.iter().flat_map(|m| &m.content).any(
+            |c| matches!(c, ProviderContent::ToolResult { tool_use_id, is_error, .. } if tool_use_id == "toolu_q2" && *is_error),
+        );
+        assert!(has_tool_use, "declined question keeps its tool_use");
+        assert!(has_tool_result, "declined question keeps its error tool_result");
     }
 
     // Normal: a Failed tool surfaces as is_error=true so the model can react

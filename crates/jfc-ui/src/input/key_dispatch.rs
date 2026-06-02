@@ -31,6 +31,10 @@ pub async fn handle_key(
         return Ok(false);
     }
 
+    if question::handle_question_key(app, key, tx) {
+        return Ok(false);
+    }
+
     if modal_handlers::handle_modal_key(app, key, tx).await {
         return Ok(false);
     }

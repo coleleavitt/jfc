@@ -705,12 +705,13 @@ pub async fn execute_tool(
                 multi_select,
             },
         ) => {
-            // Surface the prompt to the user as a special transcript
-            // entry. The user replies with text that the next turn
-            // sees as the tool result. We don't block here because
-            // jfc has no modal-prompt UI yet — the entry pattern is
-            // "post the question, return immediately, treat the next
-            // user message as the answer."
+            // FALLBACK PATH ONLY. The normal route diverts AskUserQuestion
+            // into the interactive modal in `handle_stream_tool` (see
+            // `app.pending_question` / `input/question.rs`) before it ever
+            // reaches dispatch, so this arm is effectively unreachable. It
+            // remains as a defensive degrade-to-text path in case a future
+            // code path dispatches the tool directly: surface the prompt as a
+            // transcript entry and treat the user's next message as the answer.
             let opts_repr: Vec<String> = options
                 .as_array()
                 .map(|arr| {

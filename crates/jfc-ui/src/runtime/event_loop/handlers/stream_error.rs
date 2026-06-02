@@ -269,6 +269,11 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
         app.turn_started_at = None;
     }
     app.pending_tool_calls.clear();
+    // A question modal only exists as a turn's terminal act; if the turn died
+    // (error/cancel) the answer can no longer feed anywhere, so close the modal
+    // rather than leave it capturing all key input. The dangling AskUserQuestion
+    // tool_use is marked Failed by the synthetic-tool-result injection above.
+    app.pending_question = None;
     app.pre_dispatched_tool_ids.clear();
     app.deferred_tool_uses.clear();
     app.in_progress_tool_use_ids.clear();

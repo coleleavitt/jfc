@@ -6,7 +6,10 @@ mod shell_safety;
 mod state;
 
 pub use events::AppEvent;
-pub use permissions::{ApprovalChoice, PendingApproval, PermissionDecision, PermissionMode};
+pub use permissions::{
+    ApprovalChoice, PendingApproval, PendingQuestion, PermissionDecision, PermissionMode,
+    QuestionOption,
+};
 pub use recent_models::{load_recent_models, push_recent_model};
 pub use state::{
     ANIM_TICK_MS, App, BackgroundTask, ExpandedView, IDLE_TICK_MS, NetworkRecoveryProvider,
