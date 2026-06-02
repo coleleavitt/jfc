@@ -668,16 +668,21 @@ pub struct AnthropicOAuthProvider {
 /// surfacing the error.
 const ROTATION_MAX_ATTEMPTS: usize = 5;
 
-/// Maximum wall-time we'll wait for the soonest-recovering account when ALL
-/// accounts are rate-limited mid-rotation. CC v138 caps the same wait at
-/// `Ay6 = 21600000` ms (6 h); we use a smaller window because jfc is
-/// interactive and a 6h freeze would be hostile.
-const MAX_RECOVERY_WAIT: Duration = Duration::from_secs(5 * 60);
+/// Maximum length of a *single* sleep while waiting for the soonest-recovering
+/// account when ALL accounts are rate-limited mid-rotation. CC v138 caps the
+/// same wait at `Ay6 = 21600000` ms (6 h); we cap each individual sleep at 90s
+/// so the rotation loop re-evaluates account state often (a sibling account may
+/// recover sooner than predicted, or the user may want out) instead of
+/// committing to one multi-minute byte-silent freeze.
+const MAX_RECOVERY_WAIT: Duration = Duration::from_secs(90);
 
-/// Total wall-time budget across all sleep-and-retry iterations. Hard floor
-/// so a degenerate "every account permanently rate-limited" never strands
-/// the user — they get a real error after this.
-const MAX_TOTAL_WAIT: Duration = Duration::from_secs(10 * 60);
+/// Total wall-time budget across all sleep-and-retry iterations. Hard floor so
+/// a degenerate "every account permanently rate-limited" never strands the
+/// user — they get a real, actionable error (switch model, wait, top up) after
+/// this. Kept short because this blocks interactive turns (and, worse, silent
+/// `complete()` calls like compaction/classification) with no streaming
+/// feedback; a 10-minute freeze read as a hang.
+const MAX_TOTAL_WAIT: Duration = Duration::from_secs(3 * 60);
 
 /// Default fallback model used when the per-account 529 counter trips the
 /// `OVERLOADED_FALLBACK_THRESHOLD`. Mirrors CC v138's recommended Opus→Sonnet

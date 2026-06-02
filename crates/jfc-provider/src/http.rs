@@ -1,13 +1,17 @@
 use std::time::Duration;
 
 const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-/// Default inter-chunk read timeout for streaming responses. The previous
-/// 60s value was too aggressive for Bedrock-via-LiteLLM and other proxies
-/// that can go silent for 60-90s during long thinking turns or while a
-/// large tool call is being assembled. We keep 600s as the default to match
-/// the `x-litellm-stream-timeout: 600` header opencode-openwebui-auth's
-/// fetch.ts sets, while still allowing Claude Code-compatible env overrides.
-const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
+/// Default inter-chunk read timeout for streaming responses. A 60s value was
+/// too aggressive for Bedrock-via-LiteLLM and other proxies that can go silent
+/// for 60-90s during long thinking turns or while a large tool call is being
+/// assembled. 600s (matching `x-litellm-stream-timeout: 600`) went too far the
+/// other way: a genuinely dead stream could sit byte-silent for ~10 minutes
+/// before the HTTP layer noticed, freezing the spinner with no recourse.
+/// 300s keeps a 3-4x margin over the worst observed proxy quiet period while
+/// bounding a hung stream to ~5 minutes. Proxy-heavy users who need the old
+/// behavior can restore it via `JFC_STREAM_IDLE_TIMEOUT_MS=600000` (or the
+/// Claude Code-compatible `CLAUDE_STREAM_IDLE_TIMEOUT_MS`).
+const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 const MIN_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const HTTP_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);

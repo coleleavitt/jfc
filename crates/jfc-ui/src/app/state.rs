@@ -350,11 +350,13 @@ pub const SPINNER: &[&str] = crate::glyphs::TASK_FRAMES;
 pub const IDLE_TICK_MS: u64 = 80;
 pub const ANIM_TICK_MS: u64 = 33;
 /// Hard idle limit for a provider stream. This must stay longer than the
-/// provider HTTP read timeout (600s) so the HTTP layer, not the UI watchdog,
-/// reports real network failures. Anthropic/Bedrock streams can legitimately
-/// go quiet for minutes while the model is thinking or an upstream proxy is
-/// queueing.
-pub const STREAM_WATCHDOG_TIMEOUT_SECS: u64 = 660;
+/// provider HTTP read timeout (default 300s) so the HTTP layer, not the UI
+/// watchdog, reports real network failures. Anthropic/Bedrock streams can
+/// legitimately go quiet for minutes while the model is thinking or an upstream
+/// proxy is queueing, so we keep ~1 minute of slack above the read timeout.
+/// Users who raise `JFC_STREAM_IDLE_TIMEOUT_MS` past this should raise the
+/// watchdog too, or the watchdog will fire first.
+pub const STREAM_WATCHDOG_TIMEOUT_SECS: u64 = 360;
 /// Cap on how many turns of token usage we retain for the info-sidebar
 /// sparkline. 32 datapoints fit comfortably in a 30-col-wide sidebar
 /// while still showing a meaningful trend.
