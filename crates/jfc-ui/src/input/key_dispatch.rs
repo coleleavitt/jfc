@@ -117,37 +117,8 @@ pub async fn handle_key(
     // Check before built-in bindings so users can override defaults.
     // Uses run_slash_command so actions stay in sync with their slash
     // counterparts automatically.
-    if let Some(action) = crate::keybindings::lookup(&key) {
-        use crate::keybindings::KeyAction;
-        match action {
-            KeyAction::ToggleFastMode => {
-                run_slash_command(app, "/fast").await;
-                return Ok(false);
-            }
-            KeyAction::ClearHistory => {
-                run_slash_command(app, "/clear").await;
-                return Ok(false);
-            }
-            KeyAction::Compact => {
-                run_slash_command(app, "/compact").await;
-                return Ok(false);
-            }
-            KeyAction::OpenModelPicker => {
-                open_model_picker(app);
-                return Ok(false);
-            }
-            KeyAction::ToggleVerbose => {
-                run_slash_command(app, "/verbose").await;
-                return Ok(false);
-            }
-            KeyAction::Exit => {
-                return Ok(true);
-            }
-            KeyAction::ToggleHelp => {
-                app.show_help = !app.show_help;
-                return Ok(false);
-            }
-        }
+    if let Some(result) = handle_configured_keybinding(app, key).await {
+        return result;
     }
 
     if let Some(result) = handle_arrow_history_keys(app, key) {
@@ -193,35 +164,8 @@ pub async fn handle_key(
         }
     }
 
-    // Chip atomic delete: when Backspace is pressed and the cursor sits
-    // immediately after `]` of an `[Image #N]` or `[Pasted #N · …]` token,
-    // delete the whole chip as one unit instead of char-by-char.
-    if key.code == KeyCode::Backspace {
-        let cursor = app.textarea.cursor();
-        let (row, col) = (cursor.0, cursor.1);
-        if let Some(line) = app.textarea.lines().get(row) {
-            let byte_col = line.char_indices().nth(col).map_or(line.len(), |(i, _)| i);
-            let before_cursor = &line[..byte_col];
-            let chip_start = [before_cursor.rfind("[Image #"), before_cursor.rfind("[Pasted #")]
-                .into_iter()
-                .flatten()
-                .max();
-            if let Some(start) = chip_start {
-                let chip = &before_cursor[start..];
-                if chip.ends_with(']') {
-                    let chip_len = chip.len();
-                    // Delete the entire chip by moving cursor back and deleting forward
-                    for _ in 0..chip_len {
-                        app.textarea.input(crossterm::event::KeyEvent::new(
-                            KeyCode::Backspace,
-                            KeyModifiers::NONE,
-                        ));
-                    }
-                    update_mention_state_after_input(app);
-                    return Ok(false);
-                }
-            }
-        }
+    if let Some(result) = handle_chip_atomic_delete(app, key) {
+        return result;
     }
 
     // Vim mode owns the prompt when enabled: Normal-mode keys are commands,
@@ -317,6 +261,60 @@ fn request_user_interrupt(app: &mut App, tx: &mpsc::Sender<crate::runtime::AppEv
             },
         ),
     );
+}
+
+/// User-configured keybindings (`keybindings.toml`), checked before built-in
+/// bindings so users can override defaults. Returns `Some(result)` when a
+/// configured action fired, `None` to fall through. Actions route through
+/// `run_slash_command` so they stay in sync with their slash counterparts.
+async fn handle_configured_keybinding(
+    app: &mut App,
+    key: event::KeyEvent,
+) -> Option<anyhow::Result<bool>> {
+    use crate::keybindings::KeyAction;
+    let action = crate::keybindings::lookup(&key)?;
+    match action {
+        KeyAction::ToggleFastMode => run_slash_command(app, "/fast").await,
+        KeyAction::ClearHistory => run_slash_command(app, "/clear").await,
+        KeyAction::Compact => run_slash_command(app, "/compact").await,
+        KeyAction::OpenModelPicker => open_model_picker(app),
+        KeyAction::ToggleVerbose => run_slash_command(app, "/verbose").await,
+        KeyAction::Exit => return Some(Ok(true)),
+        KeyAction::ToggleHelp => app.show_help = !app.show_help,
+    }
+    Some(Ok(false))
+}
+
+/// Chip atomic delete: when Backspace is pressed with the cursor immediately
+/// after the `]` of an `[Image #N]` or `[Pasted #N · …]` token, delete the
+/// whole chip as one unit instead of char-by-char. Returns `Some(Ok(false))`
+/// when a chip was deleted, `None` to let normal Backspace handling proceed.
+fn handle_chip_atomic_delete(app: &mut App, key: event::KeyEvent) -> Option<anyhow::Result<bool>> {
+    if key.code != KeyCode::Backspace {
+        return None;
+    }
+    let cursor = app.textarea.cursor();
+    let (row, col) = (cursor.0, cursor.1);
+    let line = app.textarea.lines().get(row)?;
+    let byte_col = line.char_indices().nth(col).map_or(line.len(), |(i, _)| i);
+    let before_cursor = &line[..byte_col];
+    let start = [before_cursor.rfind("[Image #"), before_cursor.rfind("[Pasted #")]
+        .into_iter()
+        .flatten()
+        .max()?;
+    let chip = &before_cursor[start..];
+    if !chip.ends_with(']') {
+        return None;
+    }
+    let chip_len = chip.len();
+    for _ in 0..chip_len {
+        app.textarea.input(crossterm::event::KeyEvent::new(
+            KeyCode::Backspace,
+            KeyModifiers::NONE,
+        ));
+    }
+    update_mention_state_after_input(app);
+    Some(Ok(false))
 }
 
 /// Command-key handling: the global keybinding match (Ctrl/Alt combos,
@@ -1144,54 +1142,7 @@ async fn handle_enter_submit(
                         return Some(Err(e));
                     }
                 } else {
-                    let is_meta = text.starts_with('/');
-                    let glyph = if is_meta { "⚙" } else { "⏳" };
-                    tracing::info!(
-                        target: "jfc::ui::queue",
-                        depth = app.queued_prompts.len() + 1,
-                        is_meta,
-                        "queued_prompt"
-                    );
-                    // Capture referenced [Image #N] attachments onto THIS
-                    // queued prompt so they re-stage atomically when the
-                    // entry drains. Only matched entries are taken;
-                    // unreferenced images are left for later prompts.
-                    let attachments: Vec<crate::attachments::Attachment> = {
-                        let re_pattern = regex::Regex::new(r"\[Image #(\d+)\]").unwrap();
-                        let mut referenced_ids: Vec<u32> = Vec::new();
-                        for cap in re_pattern.captures_iter(&text) {
-                            if let Ok(id) = cap[1].parse::<u32>() {
-                                referenced_ids.push(id);
-                            }
-                        }
-                        let mut matched = Vec::new();
-                        let mut remaining = Vec::new();
-                        for pc in std::mem::take(&mut app.pasted_images) {
-                            if referenced_ids.contains(&pc.id) {
-                                matched.push(pc.attachment);
-                            } else {
-                                remaining.push(pc);
-                            }
-                        }
-                        app.pasted_images = remaining;
-                        matched
-                    };
-                    app.queued_prompts.push(crate::app::QueuedPrompt {
-                        text: text.clone(),
-                        is_meta,
-                        priority: crate::app::QueuePriority::Later,
-                        attachments,
-                    });
-                    // Insert as a `queued` user message so the user can SEE
-                    // "I queued this" in the transcript, but
-                    // `build_provider_messages*` will skip it. Without this
-                    // flag, `continue_agentic_loop` sent the queued user
-                    // text to the provider as if it were part of the current
-                    // turn, inflating the prompt and creating the gauge
-                    // jump after queuing.
-                    app.messages
-                        .push(ChatMessage::user_queued(format!("{glyph} {text}")));
-                    app.scroll_to_bottom();
+                    queue_prompt_for_later(app, text);
                 } // end else (not can_interrupt)
             } else {
                 if let Err(e) = handle_submit(app, text, tx).await {
@@ -1202,6 +1153,53 @@ async fn handle_enter_submit(
         return Some(Ok(false));
     }
     None
+}
+
+/// Queue a prompt behind in-flight work (streaming / busy pipeline /
+/// compaction) when it can't be interrupted. Captures any referenced
+/// `[Image #N]` attachments onto the queued entry so they re-stage
+/// atomically on drain (unreferenced images are left for later prompts),
+/// and inserts a `queued` user message so the transcript shows it landed
+/// (build_provider_messages* skips queued messages so they don't inflate
+/// the current turn).
+fn queue_prompt_for_later(app: &mut App, text: String) {
+    let is_meta = text.starts_with('/');
+    let glyph = if is_meta { "⚙" } else { "⏳" };
+    tracing::info!(
+        target: "jfc::ui::queue",
+        depth = app.queued_prompts.len() + 1,
+        is_meta,
+        "queued_prompt"
+    );
+    let attachments: Vec<crate::attachments::Attachment> = {
+        let re_pattern = regex::Regex::new(r"\[Image #(\d+)\]").unwrap();
+        let mut referenced_ids: Vec<u32> = Vec::new();
+        for cap in re_pattern.captures_iter(&text) {
+            if let Ok(id) = cap[1].parse::<u32>() {
+                referenced_ids.push(id);
+            }
+        }
+        let mut matched = Vec::new();
+        let mut remaining = Vec::new();
+        for pc in std::mem::take(&mut app.pasted_images) {
+            if referenced_ids.contains(&pc.id) {
+                matched.push(pc.attachment);
+            } else {
+                remaining.push(pc);
+            }
+        }
+        app.pasted_images = remaining;
+        matched
+    };
+    app.queued_prompts.push(crate::app::QueuedPrompt {
+        text: text.clone(),
+        is_meta,
+        priority: crate::app::QueuePriority::Later,
+        attachments,
+    });
+    app.messages
+        .push(ChatMessage::user_queued(format!("{glyph} {text}")));
+    app.scroll_to_bottom();
 }
 
 /// Transcript-search (`Ctrl+F`) key handling. Active only while
