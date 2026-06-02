@@ -1,29 +1,20 @@
-//! Clipboard helpers — local clipboard via `arboard` *and* the OSC 52
-//! terminal escape so SSH/tmux sessions copy correctly without a local
-//! clipboard daemon.
-//!
-//! Two entry points:
-//!   * [`yank_last_assistant`] — used by Ctrl+Y and the mouse click-to-
-//!     copy handler; copies the most recent assistant message text.
-//!   * [`copy_to_clipboard`] — generic helper for the `/copy` slash
-//!     command; takes any text payload.
+//! Clipboard helpers — every text-copy path in the TUI funnels through
+//! [`copy_to_clipboard`], which hands the payload to a single
+//! process-lifetime [`ClipboardOwner`] thread. That thread owns the
+//! `arboard` handle for the whole session (so X11/Wayland clipboard
+//! ownership survives — see [`ClipboardOwner`]) and emits an OSC 52
+//! escape so SSH/tmux/remote sessions copy correctly too. The actual
+//! (potentially blocking) clipboard I/O runs on that thread, never on
+//! the render/event loop.
 
 use std::io::Write;
+use std::sync::OnceLock;
+use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::{
     app::App,
     types::{MessagePart, Role},
 };
-
-/// Copy the text of the most recent assistant message to the local
-/// clipboard *and* echo it through an OSC 52 escape so terminal
-/// multiplexers / SSH sessions get a copy too.
-pub(crate) fn yank_last_assistant(app: &App) {
-    let Some(text) = last_assistant_text(app).filter(|t| !t.is_empty()) else {
-        return;
-    };
-    copy_to_clipboard(&text, "yank_last_assistant");
-}
 
 /// Pull the rendered text of the last assistant message. Pure helper —
 /// no side effects, exposed at crate-vis for the `/copy last` path.
@@ -86,46 +77,152 @@ fn join_text_parts(parts: &[MessagePart]) -> String {
         .join("\n")
 }
 
-/// Write `text` to the local clipboard (via `arboard`) AND emit an OSC
-/// 52 escape so terminal-multiplexers, SSH, and copy-over-the-wire
-/// flows pick it up. Logs at info on success, warn on failure, but
-/// never panics — clipboard backends are notoriously flaky on Linux
-/// (no display server, sandboxed wayland, etc.) and we want the copy
-/// to be best-effort.
-pub(crate) fn copy_to_clipboard(text: &str, source: &str) {
+/// Copy `text` to the system clipboard. The payload is handed to the
+/// process-lifetime [`ClipboardOwner`] thread, which keeps the native
+/// clipboard handle alive (so the copy survives on X11/Wayland) and
+/// emits an OSC 52 escape for SSH/tmux/remote. This call itself is a
+/// non-blocking channel send — safe to invoke from the render path.
+/// `source` is a static label used only for logging.
+pub(crate) fn copy_to_clipboard(text: &str, source: &'static str) {
     if text.is_empty() {
         return;
     }
-    // 1. Local clipboard via arboard.
-    match arboard::Clipboard::new() {
-        Ok(mut clipboard) => match clipboard.set_text(text.to_owned()) {
-            Ok(()) => tracing::info!(
-                target: "jfc::ui::yank",
-                source,
-                len = text.len(),
-                "clipboard set via arboard"
-            ),
-            Err(e) => tracing::warn!(
-                target: "jfc::ui::yank",
-                source,
-                error = %e,
-                "arboard set_text failed; OSC 52 fallback only"
-            ),
-        },
-        Err(e) => tracing::warn!(
-            target: "jfc::ui::yank",
-            source,
-            error = %e,
-            "arboard backend unavailable; OSC 52 fallback only"
-        ),
+    clipboard_owner().copy(text.to_owned(), source);
+}
+
+/// Detect an SSH session. Over SSH the *native* clipboard (arboard) writes
+/// to the remote machine the user can't see (and may block), so we skip it
+/// and let OSC 52 — which the local terminal emulator intercepts — carry the
+/// copy.
+///
+/// Gate on `SSH_CONNECTION`, NOT `SSH_TTY`: a tmux pane inherits `SSH_TTY`
+/// forever even after you detach the SSH session and reattach locally, so
+/// keying on `SSH_TTY` would wrongly suppress the native clipboard on a local
+/// pane. `SSH_CONNECTION` is in tmux's default `update-environment` set and
+/// clears on local attach. (Lesson lifted from Claude Code's `osc.ts`.)
+fn is_ssh_session() -> bool {
+    std::env::var_os("SSH_CONNECTION").is_some()
+}
+
+/// Wrap an escape sequence for tmux / GNU screen DCS passthrough so OSC 52
+/// reaches the *outer* terminal. Without this, the multiplexer swallows the
+/// raw sequence and the copy never reaches the system clipboard. tmux gates
+/// passthrough behind `set -g allow-passthrough on`; when off it silently
+/// drops the whole DCS (no worse than an unwrapped sequence it would ignore).
+/// Whether the active terminal is kitty (which accepts `ST` to terminate
+/// OSC 52, avoiding a BEL beep on some configs).
+fn is_kitty() -> bool {
+    std::env::var_os("KITTY_WINDOW_ID").is_some()
+        || std::env::var("TERM").is_ok_and(|t| t.contains("kitty"))
+}
+
+/// OSC 52 terminator: `ST` (`ESC \`) on kitty when NOT inside a multiplexer —
+/// inside tmux/screen the `ST`'s `ESC` would collide with the DCS terminator
+/// that `wrap_for_multiplexer` appends, so fall back to the universal `BEL`.
+fn osc52_terminator(is_kitty: bool, in_mux: bool) -> &'static str {
+    if is_kitty && !in_mux { "\x1b\\" } else { "\x07" }
+}
+
+fn wrap_for_multiplexer(seq: &str) -> String {
+    if std::env::var_os("TMUX").is_some() {
+        // Inner ESCs must be doubled inside tmux passthrough.
+        let escaped = seq.replace('\x1b', "\x1b\x1b");
+        format!("\x1bPtmux;{escaped}\x1b\\")
+    } else if std::env::var_os("STY").is_some() {
+        format!("\x1bP{seq}\x1b\\")
+    } else {
+        seq.to_owned()
+    }
+}
+
+/// Lazily-spawned, process-lifetime owner of the system clipboard.
+fn clipboard_owner() -> &'static ClipboardOwner {
+    static OWNER: OnceLock<ClipboardOwner> = OnceLock::new();
+    OWNER.get_or_init(ClipboardOwner::spawn)
+}
+
+/// A long-lived owner of the system clipboard handle.
+///
+/// On X11 and most Wayland compositors the clipboard is *served by the
+/// process that set it*: the instant the `arboard::Clipboard` is dropped, a
+/// freshly-copied selection vanishes. Historically every copy path in this
+/// crate created a `Clipboard`, called `set_text`, and dropped it on the same
+/// line — so on Linux the copy was gone before the user could paste.
+/// `ClipboardOwner` holds the handle on a dedicated thread for the whole
+/// process lifetime, and runs the (possibly blocking) clipboard + OSC 52 I/O
+/// there so a copy never stalls a render frame.
+struct ClipboardOwner {
+    tx: Sender<(String, &'static str)>,
+}
+
+impl ClipboardOwner {
+    fn spawn() -> Self {
+        let (tx, rx) = mpsc::channel::<(String, &'static str)>();
+        let _ = std::thread::Builder::new()
+            .name("jfc-clipboard".into())
+            .spawn(move || clipboard_owner_loop(rx));
+        Self { tx }
     }
 
-    // 2. OSC 52 — terminal escape for SSH/tmux/Kitty/iTerm2 etc. Format:
-    //    ESC ] 52 ; c ; <base64-payload> BEL
-    // We write directly to stderr so ratatui's frame buffer doesn't
-    // swallow the escape. Bounded at 100KB because xterm rejects bigger
-    // payloads silently (some terminals quietly truncate at smaller
-    // ceilings, but 100KB is the widely-quoted spec ceiling).
+    fn copy(&self, text: String, source: &'static str) {
+        // Best-effort: the owner is process-lifetime, so a closed channel
+        // only happens at shutdown, where OSC 52 / the terminal already hold
+        // the copy.
+        let _ = self.tx.send((text, source));
+    }
+}
+
+/// Owns the native clipboard handle across copies and serves each request.
+fn clipboard_owner_loop(rx: Receiver<(String, &'static str)>) {
+    let ssh = is_ssh_session();
+    // Kept alive between copies so X11/Wayland clipboard ownership survives.
+    // `None` over SSH (native would hit the remote box) or until the first
+    // successful `Clipboard::new()`.
+    let mut native: Option<arboard::Clipboard> = None;
+    while let Ok((text, source)) = rx.recv() {
+        if !ssh {
+            if native.is_none() {
+                match arboard::Clipboard::new() {
+                    Ok(cb) => native = Some(cb),
+                    Err(e) => tracing::warn!(
+                        target: "jfc::ui::yank",
+                        source,
+                        error = %e,
+                        "arboard backend unavailable; OSC 52 only"
+                    ),
+                }
+            }
+            if let Some(cb) = native.as_mut() {
+                match cb.set_text(text.clone()) {
+                    Ok(()) => tracing::info!(
+                        target: "jfc::ui::yank",
+                        source,
+                        len = text.len(),
+                        "clipboard set via arboard"
+                    ),
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "jfc::ui::yank",
+                            source,
+                            error = %e,
+                            "arboard set_text failed; dropping handle, OSC 52 only"
+                        );
+                        // Drop the handle so the next copy re-creates it.
+                        native = None;
+                    }
+                }
+            }
+        }
+        emit_osc52(&text, source);
+    }
+}
+
+/// Emit an OSC 52 clipboard escape on stderr.
+///
+/// Format: `ESC ] 52 ; c ; <base64-payload> BEL`. Written to stderr so
+/// ratatui's stdout frame buffer doesn't swallow it. Bounded at 100KB
+/// because xterm rejects bigger payloads silently.
+fn emit_osc52(text: &str, source: &'static str) {
     const OSC52_MAX: usize = 100 * 1024;
     let payload: &str = if text.len() > OSC52_MAX {
         tracing::warn!(
@@ -144,7 +241,9 @@ pub(crate) fn copy_to_clipboard(text: &str, source: &str) {
         text
     };
     let encoded = base64_encode(payload.as_bytes());
-    let escape = format!("\x1b]52;c;{encoded}\x07");
+    let in_mux = std::env::var_os("TMUX").is_some() || std::env::var_os("STY").is_some();
+    let term = osc52_terminator(is_kitty(), in_mux);
+    let escape = wrap_for_multiplexer(&format!("\x1b]52;c;{encoded}{term}"));
     let mut stderr = std::io::stderr().lock();
     if let Err(e) = stderr.write_all(escape.as_bytes()) {
         tracing::warn!(
@@ -193,7 +292,15 @@ fn base64_encode(input: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::base64_encode;
+    use super::{base64_encode, osc52_terminator};
+
+    #[test]
+    fn osc52_terminator_picks_st_only_on_bare_kitty_normal() {
+        assert_eq!(osc52_terminator(true, false), "\x1b\\"); // kitty, no mux → ST
+        assert_eq!(osc52_terminator(true, true), "\x07"); // kitty in tmux → BEL
+        assert_eq!(osc52_terminator(false, false), "\x07"); // non-kitty → BEL
+        assert_eq!(osc52_terminator(false, true), "\x07");
+    }
 
     #[test]
     fn base64_empty_normal() {

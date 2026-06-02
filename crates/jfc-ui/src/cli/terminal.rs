@@ -2,7 +2,7 @@ use std::io;
 
 use crossterm::{
     event::{
-        DisableBracketedPaste, DisableMouseCapture, KeyboardEnhancementFlags,
+        DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, KeyboardEnhancementFlags,
         PushKeyboardEnhancementFlags,
     },
     execute,
@@ -17,7 +17,8 @@ pub(super) fn install_terminal_panic_hook() {
             io::stdout(),
             LeaveAlternateScreen,
             DisableMouseCapture,
-            DisableBracketedPaste
+            DisableBracketedPaste,
+            DisableFocusChange
         );
         previous(info);
     }));

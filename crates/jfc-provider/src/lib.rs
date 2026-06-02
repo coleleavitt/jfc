@@ -1033,6 +1033,19 @@ pub trait Provider: Send + Sync + seal::Sealed {
     ) -> anyhow::Result<CompletionResponse> {
         anyhow::bail!("{} does not support non-streaming completion", self.name())
     }
+
+    /// Count input tokens for a request via the provider's tokenizer/endpoint
+    /// (e.g. Anthropic's `/v1/messages/count_tokens`). Returns the true input
+    /// token count. Default errors — callers fall back to a chars/4 estimate,
+    /// so only providers with a real count endpoint need to override.
+    async fn count_tokens(
+        &self,
+        _model: &str,
+        _system: Option<String>,
+        _messages: Vec<ProviderMessage>,
+    ) -> anyhow::Result<u64> {
+        anyhow::bail!("{} does not support count_tokens", self.name())
+    }
 }
 
 #[cfg(test)]

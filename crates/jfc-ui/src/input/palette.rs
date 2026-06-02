@@ -1,6 +1,6 @@
 use crate::{app::App, types::ChatMessage};
 
-use super::theme_picker::apply_theme;
+use super::theme_picker::{apply_theme, open_theme_picker};
 
 pub(super) async fn execute_palette_action(app: &mut App, label: &str) {
     match label {
@@ -40,11 +40,7 @@ pub(super) async fn execute_palette_action(app: &mut App, label: &str) {
             app.model_picker_selected = 0;
             app.model_picker_models = collect_all_models(app);
         }
-        "Open Theme Picker (/theme)" => {
-            app.show_theme_picker = true;
-            app.theme_picker_input.clear();
-            app.theme_picker_selected = 0;
-        }
+        "Open Theme Picker (/theme)" => open_theme_picker(app),
         "Use Catppuccin Theme (/theme catppuccin)" => apply_theme(app, "catppuccin"),
         "Use Tokyo Night Theme (/theme tokyo-night)" => apply_theme(app, "tokyo-night"),
         "Use Gruvbox Theme (/theme gruvbox)" => apply_theme(app, "gruvbox"),

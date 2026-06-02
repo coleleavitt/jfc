@@ -78,6 +78,49 @@ pub(crate) async fn handle_stream_done(
             streaming_response_bytes = app.streaming_response_bytes,
             "stream turn finalized"
         );
+        // Refusal fallback (adapts Claude Code 2.1.160's "switch models when a
+        // message is flagged"): if this turn ended in a refusal and the user
+        // configured a fallback model, switch to it and resend once. INERT by
+        // default — `refusal_fallback_model` is `None` unless the user opts in
+        // — and loop-guarded by `refusal_fallback_attempted` (one swap/turn).
+        if !app.refusal_fallback_attempted && stop_reason_is_refusal(&stop_reason) {
+            let cfg = crate::config::load_arc();
+            if cfg.refusal_fallback_enabled
+                && let Some(fb) = cfg.refusal_fallback_model.clone()
+                && !fb.is_empty()
+                && fb != app.model.as_str()
+            {
+                app.refusal_fallback_attempted = true;
+                let from = app.model.to_string();
+                tracing::warn!(
+                    target: "jfc::stream::lifecycle",
+                    %from, fallback = %fb, ?stop_reason,
+                    "refusal — switching to fallback model and resending"
+                );
+                crate::toast::push_with_cap(
+                    &mut app.toasts,
+                    crate::toast::Toast::new(
+                        crate::toast::ToastKind::Warning,
+                        format!("{from} refused — retrying on {fb}"),
+                    ),
+                );
+                app.model = jfc_provider::ModelId::new(&fb);
+                // Teardown mirrors the empty-billed DiscardAndResend path below.
+                app.is_streaming = false;
+                app.active_stream_handle = None;
+                app.last_stream_event_at = None;
+                app.render_cache.borrow_mut().clear_streaming();
+                app.streaming_text = String::new();
+                app.streaming_reasoning = String::new();
+                app.streaming_assistant_idx = None;
+                app.current_stream_request = None;
+                if idx < app.messages.len() {
+                    app.messages.remove(idx);
+                }
+                stream::continue_agentic_loop(app, tx).await;
+                return;
+            }
+        }
         let inputs = EmptyBilledInputs {
             safe_to_discard,
             out_tokens,
@@ -820,6 +863,14 @@ fn looks_like_refusal_stop_reason(reason: &str) -> bool {
     reason == "content_filter" || reason.contains("refusal")
 }
 
+/// Whether the turn ended in a refusal — the first-class `Refusal` stop reason
+/// or a refusal-shaped `Other` (content_filter / "refusal"). Drives the
+/// refusal-fallback model swap.
+fn stop_reason_is_refusal(sr: &jfc_provider::StopReason) -> bool {
+    matches!(sr, jfc_provider::StopReason::Refusal)
+        || matches!(sr, jfc_provider::StopReason::Other(s) if looks_like_refusal_stop_reason(s))
+}
+
 fn dynamic_loop_keepalive_needed(app: &App) -> bool {
     if !crate::autonomous_loop::loop_keepalive_enabled() {
         return false;
@@ -881,6 +932,17 @@ mod stream_done_lifecycle_tests {
     use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 
     use super::*;
+
+    #[test]
+    fn stop_reason_is_refusal_classifies_normal() {
+        use jfc_provider::StopReason;
+        assert!(stop_reason_is_refusal(&StopReason::Refusal));
+        assert!(stop_reason_is_refusal(&StopReason::Other("content_filter".into())));
+        assert!(stop_reason_is_refusal(&StopReason::Other("model_refusal".into())));
+        assert!(!stop_reason_is_refusal(&StopReason::EndTurn));
+        assert!(!stop_reason_is_refusal(&StopReason::ToolUse));
+        assert!(!stop_reason_is_refusal(&StopReason::Other("stop".into())));
+    }
 
     struct TestProvider;
 

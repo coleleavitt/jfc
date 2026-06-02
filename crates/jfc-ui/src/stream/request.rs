@@ -310,6 +310,24 @@ fn anthropic_tool_choice_value(_choice: StreamToolChoice) -> serde_json::Value {
     serde_json::json!({ "type": "auto" })
 }
 
+/// Pick a fast/cheap model for the pre-flight memory/plan recall. Recall is a
+/// trivial select→extract classification, so running it on the main model
+/// (e.g. opus) is needlessly slow and expensive — a haiku-class model does it
+/// in a fraction of the time, which is the bigger half of cold-recall latency.
+/// Uses the provider's own haiku model when it advertises one; otherwise falls
+/// back to the main model (recall then behaves exactly as before, and still
+/// degrades to a full memory dump if it errors). Provider-aware, so it picks
+/// the right haiku id for Anthropic/Bedrock/Vertex and no-ops for providers
+/// (e.g. OpenWebUI) that don't offer one.
+fn fast_recall_model(provider: &Arc<dyn Provider>, main: &ModelId) -> ModelId {
+    provider
+        .available_models()
+        .into_iter()
+        .find(|m| m.id.as_str().contains("haiku"))
+        .map(|m| m.id)
+        .unwrap_or_else(|| main.clone())
+}
+
 pub(super) async fn prepare_stream_request(
     provider: Arc<dyn Provider>,
     messages: &[ProviderMessage],
@@ -476,29 +494,88 @@ Do not use a colon before tool calls.";
 
         let config = crate::config::load_arc();
         let recall_enabled = crate::memory_recall::is_enabled(config.memory_recall_enabled);
-        let mut recall_block: Option<String> = None;
-        let mut recall_was_fresh = false;
-        if recall_enabled && !memories.is_empty() {
-            let last_user_query = last_user_text(messages);
-            if let Some(query) = last_user_query {
+        let plan_recall_enabled = crate::plan_recall::is_enabled(config.plan_recall_enabled);
+        // Run recall on a fast (haiku) model, not the main model — the other
+        // half of the cold-recall speedup (alongside running the two recalls
+        // concurrently below).
+        let recall_model = fast_recall_model(&provider, model);
+
+        // Memory recall and plan recall are INDEPENDENT two-phase LLM
+        // round-trips. They used to run as back-to-back `.await`s — up to ~4
+        // sequential LLM calls (≈4–12s on a cold cache) blocking the turn
+        // before `provider.stream()` ever fires, which is the dominant reason
+        // a cold turn lags a thin client. Run them CONCURRENTLY so cold-recall
+        // latency is the slower of the two, not their sum. Both are cache
+        // hits / no-ops in the steady state. (`tokio::join!` runs them on this
+        // one task — no extra threads, shared `&` borrows are fine.)
+        let memory_fut = async {
+            if recall_enabled
+                && !memories.is_empty()
+                && let Some(query) = last_user_text(messages)
+            {
                 let trimmed = query.trim();
                 if !trimmed.is_empty() && !trimmed.starts_with('/') {
-                    // Check the cache BEFORE calling run_recall so we know whether
-                    // this is a fresh recall or a hit from a prior substream in the
-                    // same agentic turn. Only fire the `MemoryRecalled` toast on
-                    // the first (fresh) recall — not on every continuation.
+                    // Cache check BEFORE run_recall so we only fire the
+                    // `MemoryRecalled` toast on a fresh (cache-miss) recall,
+                    // not on every agentic-loop continuation.
                     let was_cached = crate::memory_recall::cached_recall(trimmed).is_some();
-                    recall_block = crate::memory_recall::run_recall(
+                    let block = crate::memory_recall::run_recall(
                         trimmed,
                         &memories,
                         provider.clone(),
-                        model.clone(),
+                        recall_model.clone(),
                     )
                     .await;
-                    recall_was_fresh = !was_cached && recall_block.is_some();
+                    let fresh = !was_cached && block.is_some();
+                    return (block, fresh);
                 }
             }
-        }
+            (None, false)
+        };
+        let plan_fut = async {
+            if plan_recall_enabled
+                && let Ok(plan_store) = crate::plan::PlanStore::open_project(Some(&cwd_path))
+            {
+                let plans = plan_store.list(None);
+                if !plans.is_empty()
+                    && let Some(query) = last_user_text(messages)
+                {
+                    let trimmed = query.trim();
+                    if !trimmed.is_empty() && !trimmed.starts_with('/') {
+                        // `run_plan_recall` handles its own caching.
+                        return crate::plan_recall::run_plan_recall(
+                            trimmed,
+                            &plans,
+                            provider.clone(),
+                            recall_model.clone(),
+                        )
+                        .await;
+                    }
+                }
+            }
+            None
+        };
+        // Bound the wait: haiku recall almost always finishes well under this,
+        // but a network hiccup must never stall the turn. On timeout, proceed
+        // with no recall (the full-memory-dump fallback below) — the turn
+        // starts; recall just doesn't enrich this one.
+        const RECALL_DEADLINE_MS: u64 = 1500;
+        let ((recall_block, recall_was_fresh), plan_block) = match tokio::time::timeout(
+            std::time::Duration::from_millis(RECALL_DEADLINE_MS),
+            async { tokio::join!(memory_fut, plan_fut) },
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(_) => {
+                tracing::debug!(
+                    target: "jfc::stream",
+                    deadline_ms = RECALL_DEADLINE_MS,
+                    "recall exceeded deadline; proceeding without it this turn"
+                );
+                ((None, false), None)
+            }
+        };
 
         if let Some(ref b) = recall_block {
             tracing::debug!(
@@ -521,43 +598,13 @@ Do not use a colon before tool calls.";
         if let Some(memory_store_section) = sdk_memory_store_prompt_section().await {
             system_prompt.push_str(&memory_store_section);
         }
-
-        // Plan recall — parallel to memory recall above. Two-phase LLM call
-        // selects relevant plans from `.jfc/plans/` then synthesizes a
-        // `<system-reminder>` context block. Same gating logic as memory
-        // recall: skip on empty plan set, slash commands, or when disabled
-        // via env var / runtime override / persisted config.
-        let plan_recall_enabled = crate::plan_recall::is_enabled(config.plan_recall_enabled);
-        if plan_recall_enabled
-            && let Ok(plan_store) = crate::plan::PlanStore::open_project(Some(&cwd_path))
-        {
-            let plans = plan_store.list(None);
-            if !plans.is_empty() {
-                let last_user_query = last_user_text(messages);
-                if let Some(query) = last_user_query {
-                    let trimmed = query.trim();
-                    if !trimmed.is_empty() && !trimmed.starts_with('/') {
-                        // `run_plan_recall` handles its own caching via
-                        // `plan_recall::cache_recall` — repeated turns with
-                        // the same query reuse the prior synthesis.
-                        if let Some(block) = crate::plan_recall::run_plan_recall(
-                            trimmed,
-                            &plans,
-                            provider.clone(),
-                            model.clone(),
-                        )
-                        .await
-                        {
-                            tracing::debug!(
-                                target: "jfc::stream",
-                                plan_recall_block_len = block.len(),
-                                "appending plan recall block"
-                            );
-                            system_prompt.push_str(&block);
-                        }
-                    }
-                }
-            }
+        if let Some(block) = plan_block {
+            tracing::debug!(
+                target: "jfc::stream",
+                plan_recall_block_len = block.len(),
+                "appending plan recall block"
+            );
+            system_prompt.push_str(&block);
         }
 
         // t221 — AutoSearchHints: scan the user's prompt for code-path /

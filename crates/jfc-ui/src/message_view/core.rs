@@ -54,6 +54,13 @@ pub struct RenderCtx<'a> {
     pub streaming_idx: Option<usize>,
     pub is_streaming: bool,
     pub reasoning_expanded: &'a HashMap<usize, bool>,
+    /// Index of the message whose reasoning is *actively streaming* this turn.
+    /// Its thinking block defaults to expanded (live preview); every other,
+    /// completed reasoning block defaults to collapsed so finished turns don't
+    /// pile full thinking transcripts on screen. The `reasoning_expanded` map
+    /// still overrides this per-message when the user toggles with ctrl+o.
+    /// Mirrors Claude Code: expand streaming thinking, collapse once done.
+    pub active_reasoning_idx: Option<usize>,
     pub tool_group_expanded: &'a std::collections::HashSet<String>,
     pub render_cache: &'a RefCell<crate::render_cache::RenderCache>,
     pub theme: crate::theme::Theme,
@@ -71,6 +78,16 @@ impl<'a> RenderCtx<'a> {
             streaming_idx: app.streaming_assistant_idx,
             is_streaming: app.is_streaming,
             reasoning_expanded: &app.reasoning_expanded,
+            active_reasoning_idx: {
+                // Only the live, still-thinking block defaults expanded.
+                let thinking_live =
+                    app.thinking_started_at.is_some() && app.thinking_ended_at.is_none();
+                if thinking_live {
+                    app.streaming_assistant_idx
+                } else {
+                    None
+                }
+            },
             tool_group_expanded: &app.tool_group_expanded,
             render_cache: &app.render_cache,
             theme: app.theme,
@@ -91,6 +108,7 @@ impl<'a> RenderCtx<'a> {
             streaming_idx: None,
             is_streaming: false,
             reasoning_expanded: EMPTY_REASONING.get_or_init(HashMap::new),
+            active_reasoning_idx: None,
             tool_group_expanded: EMPTY_GROUPS.get_or_init(std::collections::HashSet::new),
             render_cache: &app.render_cache,
             theme: app.theme,
@@ -606,6 +624,46 @@ pub(super) fn is_groupable(kind: &ToolKind) -> bool {
     )
 }
 
+/// Remove every `<system-reminder>…</system-reminder>` block from `s`. Used to
+/// tell whether a user turn has any real (user-authored) content left.
+fn strip_system_reminders(s: &str) -> String {
+    const OPEN: &str = "<system-reminder>";
+    const CLOSE: &str = "</system-reminder>";
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(start) = rest.find(OPEN) {
+        out.push_str(&rest[..start]);
+        if let Some(end) = rest[start..].find(CLOSE) {
+            rest = &rest[start + end + CLOSE.len()..];
+        } else {
+            // Unterminated tag — drop the opener and stop.
+            rest = &rest[start + OPEN.len()..];
+            break;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// True when a user message would render as a bare empty "you" bubble — its
+/// only parts are text, and after stripping `<system-reminder>` blocks nothing
+/// the user typed remains. Catches the auto-continuation nudge turns. A turn
+/// with any non-text part (attachment, etc.) is real content and returns false.
+fn is_reminder_only_user(msg: &ChatMessage) -> bool {
+    if !msg.parts.iter().all(|p| matches!(p, MessagePart::Text(_))) {
+        return false;
+    }
+    let joined: String = msg
+        .parts
+        .iter()
+        .filter_map(|p| match p {
+            MessagePart::Text(t) => Some(t.as_str()),
+            _ => None,
+        })
+        .collect();
+    strip_system_reminders(&joined).trim().is_empty()
+}
+
 fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<RenderItem<'a>> {
     let t = ctx.theme;
     let mut items: Vec<RenderItem<'a>> = Vec::new();
@@ -638,6 +696,18 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
             if !has_content {
                 continue;
             }
+        }
+
+        // Auto-continuation nudges (goal loop, dynamic keepalive, background
+        // reminders) push a USER message whose only content is a
+        // `<system-reminder>` block. The markdown renderer drops that as a raw
+        // HTML block, leaving a bare empty "you" bubble in the transcript
+        // ("random empty user inputs"). Skip reminder-only (or otherwise
+        // empty-display) user turns — they're internal context, not something
+        // the user typed. Real prompts (text, with reminders appended) and
+        // attachment-only turns still render.
+        if msg.role == Role::User && is_reminder_only_user(msg) {
+            continue;
         }
 
         // Role label gets a colored gutter glyph (`▎`) prefix so the
@@ -696,7 +766,15 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
             items.push(RenderItem::TextLine(label_line));
         }
 
-        let reasoning_expanded = ctx.reasoning_expanded.get(&idx).copied().unwrap_or(true);
+        // Default: expanded only while this block is the actively-streaming
+        // reasoning; completed thinking collapses to the one-line summary
+        // (ctrl+o re-expands via `reasoning_expanded`). Keeps finished turns
+        // from stacking full thinking transcripts on screen.
+        let reasoning_expanded = ctx
+            .reasoning_expanded
+            .get(&idx)
+            .copied()
+            .unwrap_or(ctx.active_reasoning_idx == Some(idx));
 
         // Walk parts with peek-ahead so consecutive groupable tools
         // (Read/Glob/Grep) collapse into a single ToolGroup row when
@@ -904,4 +982,27 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
     // signals activity.
 
     items
+}
+
+#[cfg(test)]
+mod reminder_skip_tests {
+    use super::strip_system_reminders;
+
+    #[test]
+    fn reminder_only_strips_to_empty_normal() {
+        let s = "<system-reminder>\ngoal unmet, keep going\n</system-reminder>";
+        assert!(strip_system_reminders(s).trim().is_empty());
+    }
+
+    #[test]
+    fn real_text_with_appended_reminder_survives_normal() {
+        let s = "fix the bug\n<system-reminder>\nplan is live\n</system-reminder>";
+        assert_eq!(strip_system_reminders(s).trim(), "fix the bug");
+    }
+
+    #[test]
+    fn unterminated_reminder_does_not_panic_robust() {
+        assert!(strip_system_reminders("<system-reminder>oops").trim().is_empty());
+        assert_eq!(strip_system_reminders("hi <system-reminder>x").trim(), "hi");
+    }
 }

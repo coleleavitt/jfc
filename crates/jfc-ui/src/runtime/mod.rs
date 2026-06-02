@@ -32,5 +32,4 @@ pub(crate) use task_activity::{task_drift_reminder, update_task_activities};
 pub(crate) use terminal::{draw_synchronized, read_git_branch_from_root, set_terminal_title};
 pub(crate) use yank::{
     copy_to_clipboard, full_transcript_text, last_assistant_text, tail_transcript_text,
-    yank_last_assistant,
 };

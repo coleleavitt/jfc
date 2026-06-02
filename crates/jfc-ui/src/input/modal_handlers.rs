@@ -4,7 +4,9 @@ use crate::app::App;
 use crate::runtime::AppEvent;
 
 use super::palette::{execute_palette_action, palette_items};
-use super::theme_picker::{apply_theme, filtered_theme_choices};
+use super::theme_picker::{
+    apply_theme, close_theme_picker, filtered_theme_choices, preview_theme,
+};
 
 pub(super) async fn handle_modal_key(
     app: &mut App,
@@ -244,19 +246,25 @@ fn handle_theme_picker_key(app: &mut App, key: event::KeyEvent) -> bool {
     let total = filtered_theme_choices(app).len();
     match key.code {
         KeyCode::Esc => {
-            app.show_theme_picker = false;
-            app.theme_picker_input.clear();
-            app.theme_picker_selected = 0;
+            // Cancel: revert to the theme that was active before previewing.
+            if let Some(orig) = app.theme_preview_original.take() {
+                app.theme = orig;
+                app.render_cache.borrow_mut().clear();
+                crate::markdown::clear_highlight_cache();
+            }
+            close_theme_picker(app);
+            return true;
         }
         KeyCode::Enter => {
-            let filtered = filtered_theme_choices(app);
-            if let Some(choice) = filtered.get(app.theme_picker_selected) {
-                let name = choice.name;
+            // Commit: persist the highlighted theme (apply_theme toasts + saves).
+            let name = filtered_theme_choices(app)
+                .get(app.theme_picker_selected)
+                .map(|choice| choice.name);
+            if let Some(name) = name {
                 apply_theme(app, name);
-                app.show_theme_picker = false;
-                app.theme_picker_input.clear();
-                app.theme_picker_selected = 0;
             }
+            close_theme_picker(app);
+            return true;
         }
         KeyCode::Up if app.theme_picker_selected > 0 => {
             app.theme_picker_selected -= 1;
@@ -289,6 +297,14 @@ fn handle_theme_picker_key(app: &mut App, key: event::KeyEvent) -> bool {
             app.theme_picker_selected = 0;
         }
         _ => {}
+    }
+    // Live preview: apply whatever is now highlighted (no persist, no toast),
+    // so the whole UI re-themes as the user moves through the list. Esc reverts.
+    if let Some(name) = filtered_theme_choices(app)
+        .get(app.theme_picker_selected)
+        .map(|choice| choice.name)
+    {
+        preview_theme(app, name);
     }
     true
 }

@@ -173,11 +173,16 @@ pub fn frame(f: &mut Frame, app: &mut App) {
         };
         body + overflow
     };
-    // Flattened: a single TOP divider (1 row of chrome), not a full box.
-    let tasks_pinned_height: u16 = if task_pin_rows > 0 && !in_task_view {
-        (task_pin_rows as u16).min(10) + 1
-    } else {
+    // Floats (no divider rule). All-done collapses to one "✓ N tasks done"
+    // line; live work shows a header line + task rows.
+    let tasks_pinned_height: u16 = if in_task_view || task_pin_rows == 0 {
         0
+    } else if tp_open == 0 {
+        1
+    } else {
+        // +1 for the progress-header content line (the old `+1` was the
+        // divider row; the header is now content, so the count is unchanged).
+        (task_pin_rows as u16).min(10) + 1
     };
     // Agent fan beneath the input: leader row ("agents") plus one row
     // per alive sub-agent. Capped at 8 so a fan of 30 doesn't push the
@@ -216,7 +221,7 @@ pub fn frame(f: &mut Frame, app: &mut App) {
             Constraint::Length(tasks_pinned_height),    // 4
             Constraint::Length(input_height),           // 5
             Constraint::Length(agent_fan_height),       // 6
-            Constraint::Length(2),                      // 7: status
+            Constraint::Length(2),                      // 7: status (gauge-divider + info line)
         ])
         .split(f.area());
 
@@ -306,6 +311,13 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     }
     status(f, app, chunks[7]);
 
+    // Resolve a pending word/line multi-click into a selection span (needs the
+    // buffer), then paint the drag highlight / extract + copy on finalize.
+    // Both run BEFORE the overlays below so extraction reads clean transcript
+    // cells, never an approval modal / popup painted on top.
+    resolve_select_request(f, app);
+    apply_text_selection(f, app);
+
     if app.show_palette {
         palette(f, app);
     }
@@ -363,10 +375,6 @@ pub fn frame(f: &mut Frame, app: &mut App) {
     if app.pending_approval.is_some() {
         approval(f, app);
     }
-
-    // Copy-on-select: paint the drag highlight, or (on button-up) read the
-    // covered cells straight out of the just-painted buffer and copy them.
-    apply_text_selection(f, app);
 }
 
 /// Column span `[c0, c1)` of the selection on `row`, in terminal-selection
@@ -401,20 +409,27 @@ fn apply_text_selection(f: &mut Frame, app: &mut App) {
         return;
     };
     if area.width < 3 || area.height < 3 {
+        // Too small to extract or highlight; don't leave a finalize request
+        // (or a persisted post-copy highlight) stuck on the state forever.
+        if sel.finalize || sel.copied {
+            app.text_selection = None;
+        }
         return;
     }
     // Body bounds inside the rounded border (1-cell border + the scrollbar
     // gutter on the right are excluded so we don't copy frame glyphs).
-    let top = area.y.saturating_add(1);
-    let bottom = area.y + area.height - 1; // exclusive (bottom border row)
-    let left = area.x.saturating_add(1);
-    let right = area.x + area.width - 1; // exclusive (right border / scrollbar)
+    // The transcript is borderless now: content fills the area top-to-bottom,
+    // inset 1 col by horizontal padding, with the scrollbar on the last column.
+    let top = area.y;
+    let bottom = area.y + area.height; // exclusive (last content row = bottom-1)
+    let left = area.x.saturating_add(1); // horizontal padding
+    let right = area.x + area.width - 1; // exclusive (scrollbar column)
 
     let (start, end) = sel.ordered();
     let r0 = start.1.max(top);
     let r1 = end.1.min(bottom.saturating_sub(1));
     if r0 > r1 {
-        if sel.finalize {
+        if sel.finalize || sel.copied {
             app.text_selection = None;
         }
         return;
@@ -437,21 +452,34 @@ fn apply_text_selection(f: &mut Frame, app: &mut App) {
             }
         }
         let text = rows.join("\n");
-        app.text_selection = None;
-        if !text.trim().is_empty() {
-            crate::runtime::copy_to_clipboard(&text, "select");
-            crate::toast::push_with_cap(
-                &mut app.toasts,
-                crate::toast::Toast::new(
-                    crate::toast::ToastKind::Info,
-                    format!("copied {} chars", text.chars().count()),
-                ),
-            );
+        if text.trim().is_empty() {
+            // Nothing to copy or keep highlighted (blank-area drag).
+            app.text_selection = None;
+            return;
         }
-        return;
+        crate::runtime::copy_to_clipboard(&text, "select");
+        crate::toast::push_with_cap(
+            &mut app.toasts,
+            crate::toast::Toast::new(
+                crate::toast::ToastKind::Info,
+                format!("copied {} chars", text.chars().count()),
+            ),
+        );
+        // Persist the highlight (copied=true) so the user sees what was
+        // copied; cleared on the next mouse-down, scroll, Esc, or resize. Fall
+        // through to paint the highlight this same frame.
+        app.text_selection = Some(crate::app::TextSelection {
+            finalize: false,
+            copied: true,
+            dragged: false,
+            ..sel
+        });
     }
 
-    // Live highlight: reverse-video the covered cells.
+    // Live highlight: paint the covered cells with the theme's selection
+    // background, leaving each cell's foreground intact (a solid bg reads as
+    // one contiguous band, whereas SGR reverse fragments over syntax colors).
+    let sel_bg = app.theme.selection_bg();
     let buf = f.buffer_mut();
     let bounds = *buf.area();
     for row in r0..=r1 {
@@ -459,8 +487,113 @@ fn apply_text_selection(f: &mut Frame, app: &mut App) {
         for col in c0..c1 {
             if col < bounds.right() && row < bounds.bottom() {
                 let cell = &mut buf[(col, row)];
-                cell.set_style(cell.style().add_modifier(Modifier::REVERSED));
+                cell.set_style(cell.style().bg(sel_bg));
             }
         }
+    }
+}
+
+/// Resolve a pending multi-click into a one-row `TextSelection` span and hand
+/// it to the finalize path (which extracts + copies + persists the highlight).
+/// Word = the word-class run under the click; Line = the row's content span.
+fn resolve_select_request(f: &mut Frame, app: &mut App) {
+    let Some(req) = app.pending_select_request.take() else {
+        return;
+    };
+    let Some(area) = *app.messages_rect.borrow() else {
+        return;
+    };
+    if area.width < 3 || area.height < 3 {
+        return;
+    }
+    // Borderless transcript: content fills the area, inset 1 col by padding.
+    let top = area.y;
+    let bottom = area.y + area.height; // exclusive (last content row = bottom-1)
+    let left = area.x.saturating_add(1); // horizontal padding
+    let right = area.x + area.width - 1; // exclusive (scrollbar column)
+    if right <= left || req.row < top || req.row >= bottom {
+        return;
+    }
+    let row = req.row;
+    let (anchor_col, head_col) = match req.kind {
+        crate::app::SelectKind::Line => (left, right - 1),
+        crate::app::SelectKind::Word => {
+            let buf = f.buffer_mut();
+            let bounds = *buf.area();
+            let mut chars: Vec<char> = Vec::with_capacity((right - left) as usize);
+            for col in left..right {
+                let ch = if col < bounds.right() && row < bounds.bottom() {
+                    buf[(col, row)].symbol().chars().next().unwrap_or(' ')
+                } else {
+                    ' '
+                };
+                chars.push(ch);
+            }
+            let click_off = (req.col.clamp(left, right - 1) - left) as usize;
+            let (s, e) = word_span_in_row(&chars, click_off);
+            (left + s as u16, left + e as u16)
+        }
+    };
+    app.text_selection = Some(crate::app::TextSelection {
+        anchor: (anchor_col, row),
+        head: (head_col, row),
+        dragged: true,
+        finalize: true,
+        copied: false,
+    });
+}
+
+/// Character class for word selection (matches Claude Code's WORD_CHAR set).
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || matches!(c, '_' | '/' | '.' | '-' | '+' | '~' | '\\')
+}
+
+/// Inclusive `[start, end]` cell offsets of the word under `idx`. A click on a
+/// non-word char selects just that cell (whitespace then trims to empty in
+/// extraction — a no-op double-click on blank space).
+fn word_span_in_row(chars: &[char], idx: usize) -> (usize, usize) {
+    if chars.is_empty() {
+        return (0, 0);
+    }
+    let idx = idx.min(chars.len() - 1);
+    if !is_word_char(chars[idx]) {
+        return (idx, idx);
+    }
+    let mut start = idx;
+    while start > 0 && is_word_char(chars[start - 1]) {
+        start -= 1;
+    }
+    let mut end = idx;
+    while end + 1 < chars.len() && is_word_char(chars[end + 1]) {
+        end += 1;
+    }
+    (start, end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_word_char, word_span_in_row};
+
+    #[test]
+    fn word_span_selects_full_token_normal() {
+        // "  foo/bar.rs  " — click inside the token grabs the whole path-like
+        // run (/, ., - are word chars).
+        let chars: Vec<char> = "  foo/bar.rs  ".chars().collect();
+        let (s, e) = word_span_in_row(&chars, 5); // on the '/'
+        assert_eq!(&chars[s..=e].iter().collect::<String>(), "foo/bar.rs");
+    }
+
+    #[test]
+    fn word_span_on_whitespace_is_single_cell_robust() {
+        let chars: Vec<char> = "ab cd".chars().collect();
+        assert_eq!(word_span_in_row(&chars, 2), (2, 2)); // the space
+    }
+
+    #[test]
+    fn word_span_stops_at_punctuation_boundary_robust() {
+        let chars: Vec<char> = "foo(bar)".chars().collect();
+        let (s, e) = word_span_in_row(&chars, 1); // inside "foo"
+        assert_eq!((s, e), (0, 2));
+        assert!(!is_word_char('('));
     }
 }

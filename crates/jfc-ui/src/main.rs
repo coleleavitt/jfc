@@ -54,6 +54,7 @@ mod lsp_rpc;
 mod managed_session;
 use jfc_markdown as markdown;
 mod dreamer_scheduler;
+mod glyphs;
 mod mcp;
 mod memory;
 mod memory_recall;

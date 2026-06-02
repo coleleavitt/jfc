@@ -3,11 +3,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{LineGauge, Paragraph},
+    widgets::Paragraph,
 };
 
 use crate::app::App;
-use crate::types::Role;
 
 /// One status-bar segment: its own pre-styled spans (so a segment can be
 /// multi-colored, e.g. the diff stat's green `+` / red `−`) plus a drop
@@ -21,22 +20,52 @@ struct StatusSeg {
 pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     let t = app.theme;
 
-    // Two-row status: row 0 = info line (model, profile, cwd, hints),
-    // row 1 = context-window LineGauge with color-coded usage.
+    // The footer is two rows: row 0 is the divider line that DOUBLES as the
+    // context gauge (it fills left→right and shifts green→amber→red as context
+    // grows — no separate "ctx … bar" row), row 1 is the info line. This is
+    // one fewer dense row than a dedicated gauge and reads softer.
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Length(1)])
         .split(area);
 
-    let cwd_display = {
-        let home = std::env::var("HOME").unwrap_or_default();
-        app.cwd
-            .strip_prefix(&home)
-            .map(|rest| format!("~{rest}"))
-            .unwrap_or_else(|| app.cwd.clone())
-    };
+    // ── Row 0: divider-as-context-gauge ──────────────────────────────────
+    {
+        let used = app.tool_ctx.approx_tokens;
+        let max = app.max_context_tokens.max(1);
+        let ratio = (used as f64 / max as f64).clamp(0.0, 1.0);
+        let pct = (ratio * 100.0).round() as u32;
+        let gauge_color = if pct < 60 {
+            t.success
+        } else if pct < 85 {
+            t.warning
+        } else {
+            t.error
+        };
+        // Compact count parked at the right end of the divider; the fill on the
+        // left is the at-a-glance signal.
+        let label = format!(" {} ", context_gauge_label(used, max, pct).trim());
+        let w = rows[0].width as usize;
+        let label_w = super::cell_width(&label).min(w);
+        let gauge_w = w.saturating_sub(label_w);
+        let filled = ((ratio * gauge_w as f64).round() as usize).min(gauge_w);
+        let divider = Line::from(vec![
+            Span::styled("─".repeat(filled), Style::default().fg(gauge_color)),
+            Span::styled("─".repeat(gauge_w - filled), t.style_border),
+            Span::styled(label, t.style_text_muted),
+        ]);
+        f.render_widget(
+            Paragraph::new(divider).style(Style::default().bg(t.surface)),
+            rows[0],
+        );
+    }
 
-    let msg_count = app.messages.iter().filter(|m| m.role == Role::User).count();
+    // Just the project directory name — the full path was noise on a line
+    // that's already tight; the branch + model carry the working context.
+    let cwd_display = std::path::Path::new(&app.cwd)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| app.cwd.clone());
 
     // ── Build prioritised, colour-coded segments (see `StatusSeg`) ──
     let provider_badge = pretty_provider_label(app.provider.name());
@@ -96,7 +125,7 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
         app.approval_queue.len() + if app.pending_approval.is_some() { 1 } else { 0 };
     if approval_count > 0 {
         push1!(
-            format!("⏸ {approval_count}"),
+            format!("{approval_count} pending"),
             gold.add_modifier(Modifier::BOLD),
             90,
         );
@@ -122,9 +151,9 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
             .map(|b| b.tool_use_count)
             .sum();
         let s = if tools > 0 {
-            format!("⏵ {alive_n} · {tools} tools")
+            format!("{alive_n} agents · {tools} tools")
         } else {
-            format!("⏵ {alive_n}")
+            format!("{alive_n} agents")
         };
         push1!(s, gold, 78);
     }
@@ -132,18 +161,12 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     // Mode flags.
     if let crate::app::PermissionMode::Default = app.permission_mode {
     } else {
-        push1!(
-            format!(
-                "{} {}",
-                app.permission_mode.symbol(),
-                app.permission_mode.label()
-            ),
-            gold,
-            85,
-        );
+        // Plain label — the mode word (Bypass / Auto / Plan) reads on its own;
+        // the leading symbol was emoji-zoo noise.
+        push1!(app.permission_mode.label().to_owned(), gold, 85);
     }
     if app.fast_mode {
-        push1!("⚡ FAST".to_owned(), gold, 60);
+        push1!("fast".to_owned(), gold, 60);
     }
     if app.effort_state.current.is_some() {
         push1!(effort_status_badge(app), muted, 50);
@@ -151,14 +174,16 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     if let Some(ref rc) = app.remote_host {
         let clients = rc.client_count.load(std::sync::atomic::Ordering::Relaxed);
         let label = if clients > 0 {
-            format!("📡 RC ({clients})")
+            format!("RC {clients}")
         } else {
-            "📡 RC".to_owned()
+            "RC".to_owned()
         };
         push1!(label, gold, 55);
     }
 
-    // Repo zone: branch · diff (green/red) · cwd.
+    // Repo zone: branch · diff (green/red) · cwd. `⎇` stays — it's the
+    // conventional, compact branch marker (the user's own shell prompt uses
+    // it); the `Δ` diff prefix is dropped since the +/− colors say "diff".
     if let Some(branch) = app.git_branch.as_deref().filter(|b| !b.is_empty()) {
         push1!(format!("⎇ {}", super::truncate_str(branch, 24)), muted, 70);
     }
@@ -166,7 +191,6 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     if diff.total_files > 0 {
         segs.push(StatusSeg {
             spans: vec![
-                Span::styled("Δ ", muted),
                 Span::styled(
                     format!("+{}", diff.additions),
                     Style::default().fg(t.success),
@@ -182,17 +206,12 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     if let Some(badge) = plan_badge(app.subscription_type.as_deref(), app.seat_tier.as_deref()) {
         push1!(badge, muted, 40);
     }
-    if app.worktree_count > 0 {
-        push1!(format!("⌥ {} wt", app.worktree_count), muted, 30);
-    }
     if app
         .last_session_save_at
         .is_some_and(|t| t.elapsed().as_millis() < 2000)
     {
         push1!("✓ saved".to_owned(), Style::default().fg(t.success), 35);
     }
-    // Lowest value — drops first when the line is tight.
-    push1!(format!("{msg_count} msgs"), muted, 10);
 
     // ── Assemble: provider prefix (fixed) · segments · pad · right ──
     let right = " ? help · ^P palette ";
@@ -251,29 +270,11 @@ pub(super) fn status(f: &mut Frame, app: &App, area: Rect) {
     spans.push(Span::styled(" ".repeat(pad), Style::default()));
     spans.push(Span::styled(right, muted));
 
+    // Info line sits below the gauge-divider.
     f.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(t.surface)),
-        rows[0],
+        rows[1],
     );
-
-    let used = app.tool_ctx.approx_tokens;
-    let max = app.max_context_tokens.max(1);
-    let ratio = (used as f64 / max as f64).clamp(0.0, 1.0);
-    let pct = (ratio * 100.0).round() as u32;
-    let bar_color = if pct < 60 {
-        t.success
-    } else if pct < 85 {
-        t.warning
-    } else {
-        t.error
-    };
-    let label = context_gauge_label(used, max, pct);
-    let gauge = LineGauge::default()
-        .filled_style(Style::default().fg(bar_color))
-        .unfilled_style(t.style_border)
-        .label(Span::styled(label, t.style_text_secondary))
-        .ratio(ratio);
-    f.render_widget(gauge, rows[1]);
 }
 
 pub(super) fn context_gauge_label(used: usize, max: usize, pct: u32) -> String {
@@ -294,15 +295,14 @@ pub(super) fn effort_status_badge(app: &App) -> String {
 /// (`"max"`, `"pro"`, `"team"`, `"enterprise"`). Rendered bare next to the
 /// reasoning-effort badge (`effort high`) the lowercase `max` was read as a
 /// *second effort level* — the user reported the footer "showing high and
-/// max". We disambiguate by branding the plan with a `◆` glyph and Title Case
-/// (`◆ Max`), so the subscription tier can't be confused with the effort knob.
+/// max". Title Case (`Max`) plus the effort badge keeping its `effort ` prefix
+/// (`effort max`) keeps the subscription tier distinct from the effort knob,
+/// so the plan no longer needs a `◆` brand glyph.
 pub(super) fn plan_badge(subscription: Option<&str>, seat: Option<&str>) -> Option<String> {
     let plan = subscription.map(pretty_plan_name);
     match (plan, seat) {
-        (Some(plan), Some(seat)) => Some(format!("◆ {plan}·{seat}")),
-        (Some(plan), None) => Some(format!("◆ {plan}")),
-        // A seat tier without a known plan is an internal id (e.g. `opus`),
-        // not a user-facing plan name — show it plainly without the ◆ brand.
+        (Some(plan), Some(seat)) => Some(format!("{plan}·{seat}")),
+        (Some(plan), None) => Some(plan),
         (None, Some(seat)) => Some(seat.to_owned()),
         (None, None) => None,
     }

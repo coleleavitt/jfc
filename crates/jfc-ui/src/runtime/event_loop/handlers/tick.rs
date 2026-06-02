@@ -28,6 +28,44 @@ pub(crate) async fn handle_tick(
     app.spinner_frame = (app.spinner_frame + 1) % crate::app::SPINNER.len();
     app.check_stream_watchdog();
 
+    // Advance the spinner phase machine here, on the throttled tick, so the
+    // status label can only change as fast as the dwell allows (anti-flicker).
+    // The renderer reads `app.spinner_state.phase`; it no longer derives the
+    // label raw from per-frame fields.
+    {
+        let now = std::time::Instant::now();
+        let turn_active = app.turn_started_at.is_some() || app.is_streaming;
+        let thinking_live = app.thinking_started_at.is_some() && app.thinking_ended_at.is_none();
+        if !turn_active {
+            // Turn fully ended — reset the per-turn thinking clock so the next
+            // turn re-measures its own minimum-thinking-display window.
+            app.spinner_state.thinking_first_seen_at = None;
+        } else if thinking_live && app.spinner_state.thinking_first_seen_at.is_none() {
+            app.spinner_state.thinking_first_seen_at = Some(now);
+        }
+        let raw = crate::spinner::RawPhaseInputs {
+            compacting: app.compacting_started_at.is_some(),
+            network_recovery: app.network_recovery_status.is_some(),
+            is_streaming: app.is_streaming,
+            thinking_live,
+            thinking_ended: app.thinking_ended_at.is_some(),
+            output_started: app.streaming_response_bytes > 0,
+            tools_pending: !app.pending_tool_calls.is_empty(),
+            turn_active,
+        };
+        let next = crate::spinner::next_phase(
+            app.spinner_state.phase,
+            app.spinner_state.entered_at,
+            app.spinner_state.thinking_first_seen_at,
+            now,
+            raw,
+        );
+        if next != app.spinner_state.phase {
+            app.spinner_state.phase = next;
+            app.spinner_state.entered_at = now;
+        }
+    }
+
     // Windowed tokens/sec sampling: push one (elapsed, count) point per tick
     // while streaming, then trim to TOKEN_RATE_WINDOW. The render path reads
     // the window each frame; we mutate it here because tick.rs has `&mut App`
@@ -47,10 +85,10 @@ pub(crate) async fn handle_tick(
         let count = if thinking_live {
             app.streaming_thinking_tokens
         } else {
-            // The `responseLengthRef` accumulator (bytes/4) is already
-            // wire-corrected in the usage handler, so it's the live output
-            // count — sample it directly for the tok/s window.
-            app.streaming_response_bytes as u64 / 4
+            // True cumulative wire output tokens — so tok/s is measured on the
+            // real count, not the chars/4 estimate. It only advances on usage
+            // events, which the windowed rate handles fine.
+            app.turn_output_tokens
         };
         if app
             .token_rate_samples

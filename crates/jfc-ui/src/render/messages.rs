@@ -35,12 +35,14 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     // states. A pure visual cost when no scrollbar is visible:
     // ~1.5% of a 60-col message column.
     //
-    // Total horizontal overhead for the message box:
-    //   borders (1 left + 1 right)  = 2
+    // Total horizontal overhead for the (borderless) transcript:
     //   padding (1 left + 1 right)  = 2
     //   scrollbar reserve           = 1
-    //                         total  = 5
-    let inner_width = area.width.saturating_sub(5) as usize;
+    //                         total  = 3
+    // The transcript is flat — no box border — so it costs no rows/cols beyond
+    // padding + the scrollbar gutter (region separators are the flat-top docks
+    // below, not a frame around the messages).
+    let inner_width = area.width.saturating_sub(3) as usize;
 
     // Build render items ONCE per frame and share them with `MessageView::render`.
     // Pre-fix this function called `message_view_total_lines` (one
@@ -58,7 +60,8 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     let items = crate::message_view::build_render_items_pub(&render_ctx, inner_width);
     let total_lines: usize = items.iter().map(|i| i.height(inner_width)).sum();
 
-    let visible = area.height.saturating_sub(2) as usize;
+    // No top/bottom border rows — content fills the full height.
+    let visible = area.height as usize;
 
     // Compute the new scroll offset locally — `items` borrows from `app`, so we
     // can't write `app.scroll_offset` until after `MessageView::render` consumes
@@ -86,33 +89,17 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
         "messages scroll math"
     );
 
-    // Mirror `App::is_at_bottom` against the freshly-computed values so the
-    // overflow indicator reflects the post-render state, not last frame's.
-    let at_bottom = new_scroll_offset >= total_lines.saturating_sub(visible.max(1));
-    let title_right = if !at_bottom {
-        let remaining = total_lines.saturating_sub(new_scroll_offset + visible);
-        format!(" ↓ {remaining} more ")
-    } else {
-        String::new()
-    };
-
-    // No left-side title, no breathing animation. The frame is
-    // just a static rounded border with 1-cell horizontal padding
-    // so prose doesn't kiss the border. The right-side overflow
-    // indicator (`↓ N more`) still surfaces when the user has
-    // scrolled up.
+    // Flat transcript: no box border, just 1-cell horizontal padding so prose
+    // doesn't kiss the edge / scrollbar. Region separation comes from the
+    // flat-top docks below (input/spinner), not a frame around the messages —
+    // matching Claude Code & codex, which leave the transcript open. The
+    // scrollbar thumb conveys scroll position, so the old border-title
+    // `↓ N more` overflow indicator is dropped (it was redundant with it).
     //
-    // (Earlier this border pulsed `t.border ↔ t.accent` on a 1.5s
-    // loop while streaming. Removed at user request — the spinner
-    // row already signals streaming activity, the breathing
-    // border was decoration on top.)
-    let border_color = t.border;
+    // (Earlier this was a rounded border that also pulsed `border ↔ accent`
+    // while streaming; both the pulse and the box are gone now.)
     let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::Rounded)
-        .border_style(Style::default().fg(border_color))
         .padding(Padding::horizontal(1))
-        .title_top(Line::from(Span::styled(title_right, t.style_text_muted)).right_aligned())
         .style(Style::default().bg(t.bg));
 
     let inner = block.inner(area);
@@ -188,10 +175,10 @@ pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
                 .position(new_scroll_offset)
                 .viewport_content_length(visible);
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .begin_symbol(Some("▲"))
-                .end_symbol(Some("▼"))
-                .thumb_symbol("█")
-                .track_symbol(Some("│"))
+                .begin_symbol(Some(crate::glyphs::SCROLLBAR_BEGIN))
+                .end_symbol(Some(crate::glyphs::SCROLLBAR_END))
+                .thumb_symbol(crate::glyphs::SCROLLBAR_THUMB)
+                .track_symbol(Some(crate::glyphs::SCROLLBAR_TRACK))
                 .style(t.style_text_muted)
                 .thumb_style(t.style_accent);
             scrollbar.render(area, f.buffer_mut(), &mut state);
@@ -893,7 +880,7 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             app.compacting_output_chars,
         ));
     } else if let Some(recovery) = app.network_recovery_status.as_ref() {
-        head_glyph = "!";
+        head_glyph = crate::glyphs::RECOVERY;
         let label = match recovery.status_code {
             Some(code) => format!("{code} {}", recovery.reason.label()),
             None => recovery.reason.label().to_owned(),
@@ -942,24 +929,29 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // and jump ~50 each batched delta. OWUI / OpenAI providers that only
         // report usage at `message_stop` still get a live chars/4 count from
         // the same accumulator.
+        // True wire output tokens (cumulative across the turn) — not the
+        // chars/4 estimate. Holds steady between `message_delta` usage events,
+        // then steps by the real increment.
         let live_tokens = if stream_is_live {
-            app.streaming_response_bytes as u64 / 4
+            app.turn_output_tokens
         } else {
             0
         };
-        // Thinking signal — Some(Live) while reasoning is streaming,
-        // Some(Done(d)) once we got the first text byte after thinking,
-        // None when the model isn't using extended thinking this turn.
-        let thinking = if stream_is_live {
-            match (app.thinking_started_at, app.thinking_ended_at) {
-                (Some(_), None) => Some(crate::spinner::ThinkingStatus::Live),
-                (Some(start), Some(end)) => Some(crate::spinner::ThinkingStatus::Done(
-                    end.duration_since(start),
-                )),
-                _ => None,
+        // Thinking signal, driven off the *held* phase so the body stays
+        // consistent with the hysteresis-stabilized label: while "Thinking" is
+        // held past the actual reasoning end, the body still reads "thinking …"
+        // instead of racing ahead to "thought Ns · tokens".
+        let thinking = match app.spinner_state.phase {
+            crate::spinner::SpinnerPhase::Thinking => Some(crate::spinner::ThinkingStatus::Live),
+            crate::spinner::SpinnerPhase::Responding => {
+                match (app.thinking_started_at, app.thinking_ended_at) {
+                    (Some(start), Some(end)) => Some(crate::spinner::ThinkingStatus::Done(
+                        end.duration_since(start),
+                    )),
+                    _ => None,
+                }
             }
-        } else {
-            None
+            _ => None,
         };
         // Windowed tokens/sec: the tick handler samples (elapsed, count)
         // into a trailing window for whichever counter is live this phase
@@ -992,8 +984,10 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
                 .iter()
                 .find(|t| t.status == jfc_session::TaskStatus::InProgress)
                 .and_then(|t| t.active_form.as_deref())
-                .map(|s| std::borrow::Cow::Owned(s.to_owned()))
-                .unwrap_or(std::borrow::Cow::Borrowed(segs.label))
+                // Cap the override so a long `activeForm` can't blow out the
+                // status row (the phase label is always short).
+                .map(|s| std::borrow::Cow::Owned(truncate_str(s, 48)))
+                .unwrap_or(std::borrow::Cow::Borrowed(app.spinner_state.phase.label()))
         };
         // Label color: secondary while live, muted once the stream has
         // gone quiet (the honest "stalled" tint — dimmer, not redder).
@@ -1181,21 +1175,14 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
         ),
     ]);
 
-    // Flat dock: TOP divider with the progress header inline, no box.
-    let block = Block::default()
-        .borders(Borders::TOP)
-        .border_style(Style::default().fg(t.border))
-        .title(title_line)
-        .style(Style::default().bg(t.surface));
+    // Flat: no divider rule — the pinned list floats above the input (the
+    // input keeps the one top rule), so the bottom reads as two boundaries,
+    // not a stack of shelves. The progress header is the first body line.
+    let block = Block::default().style(Style::default().bg(t.surface));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
     let render_width = inner.width as usize;
-    // The panel foregrounds ACTIVE work. Recently-completed tasks were
-    // rendered as a wall of strikethrough rows that crowded out what's
-    // live; now they collapse to a single green celebration line so the
-    // momentum still reads ("✓ 6 just completed") without burying the
-    // in-progress / pending rows underneath.
     let visible_budget = inner.height as usize;
     let mut rendered: Vec<Line<'static>> = Vec::new();
 
@@ -1208,6 +1195,30 @@ pub(super) fn tasks_pinned_row(f: &mut Frame, app: &App, area: Rect) {
                 .is_some_and(|t| now_sort.duration_since(*t).as_secs() < 30)
         })
         .count();
+
+    // Everything done: collapse to a single celebratory line. A full 100%
+    // progress bar plus a "N just completed" line was redundant once nothing
+    // is in flight — the bar is for live work.
+    if !any_live {
+        let n = done.max(recent_done);
+        let label = if n == 1 {
+            "1 task done".to_owned()
+        } else {
+            format!("{n} tasks done")
+        };
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("✓ ", Style::default().fg(t.success)),
+                Span::styled(label, Style::default().fg(t.success)),
+            ]))
+            .style(Style::default().bg(t.surface)),
+            inner,
+        );
+        return;
+    }
+
+    // Live work: progress-bar header line, then the recent-completed summary.
+    rendered.push(title_line);
     if recent_done > 0 && rendered.len() < visible_budget {
         let label = if recent_done == 1 {
             "1 just completed".to_owned()

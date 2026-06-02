@@ -75,6 +75,8 @@ pub(crate) fn restart_stream_in_place_with_overrides(
     app.streaming_text = String::new();
     app.streaming_reasoning = String::new();
     app.streaming_response_bytes = 0;
+    app.turn_output_tokens = 0;
+    app.refusal_fallback_attempted = false;
     app.streaming_thinking_tokens = 0;
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;

@@ -311,6 +311,12 @@ pub struct TextSelection {
     pub head: (u16, u16),
     pub dragged: bool,
     pub finalize: bool,
+    /// Set once the selection has been extracted + copied. The highlight then
+    /// persists (so the user sees what was copied) without re-copying, until
+    /// the next mouse-down, any scroll, Esc, or resize clears it. Safe under
+    /// the absolute-screen-cell model precisely because those clear points
+    /// fire the instant the cells could map to different content.
+    pub copied: bool,
 }
 
 impl TextSelection {
@@ -323,7 +329,24 @@ impl TextSelection {
     }
 }
 
-pub const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+/// Granularity of a multi-click selection: double-click → word, triple → line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectKind {
+    Word,
+    Line,
+}
+
+/// A pending word/line selection from a multi-click. The handler records the
+/// clicked cell + granularity; the renderer (which holds the buffer) resolves
+/// it into a `TextSelection` span and hands it to the normal finalize path.
+#[derive(Clone, Copy, Debug)]
+pub struct SelectRequest {
+    pub col: u16,
+    pub row: u16,
+    pub kind: SelectKind,
+}
+
+pub const SPINNER: &[&str] = crate::glyphs::TASK_FRAMES;
 pub const IDLE_TICK_MS: u64 = 80;
 pub const ANIM_TICK_MS: u64 = 33;
 /// Hard idle limit for a provider stream. This must stay longer than the
@@ -457,6 +480,17 @@ pub struct App {
     /// (a new message began); self-heals to 0 if it ever exceeds the live
     /// accumulator (a missed turn-boundary reset).
     pub streaming_response_baseline: usize,
+    /// True output tokens displayed in the status row, straight from the wire
+    /// `message_delta` usage events (no chars/4 estimate). Accumulated by real
+    /// per-event deltas, so it holds steady between usage events then steps by
+    /// the exact increment. Tracks the same lifecycle as
+    /// `streaming_response_bytes` (reset together) — just true values instead
+    /// of an estimate. Updated in `stream_usage.rs`.
+    pub turn_output_tokens: u64,
+    /// Loop guard for the refusal-fallback: set once this turn has already
+    /// switched to the fallback model after a refusal, so a second refusal
+    /// doesn't trigger an endless model-swap loop. Reset at each new user turn.
+    pub refusal_fallback_attempted: bool,
     /// Server-authoritative cumulative thinking token count from `thinking_delta.estimated_tokens`.
     /// Populated during extended-thinking phases (live thinking) or redacted-thinking blocks.
     /// Reset at the start of each streaming turn. Displayed separately from output tokens.
@@ -585,7 +619,15 @@ pub struct App {
     pub show_theme_picker: bool,
     pub theme_picker_input: String,
     pub theme_picker_selected: usize,
+    /// The theme active when the picker opened. While the picker is up, the
+    /// highlighted theme is applied live (preview); this restores it if the
+    /// user cancels with Esc. `None` when the picker isn't open.
+    pub theme_preview_original: Option<Theme>,
     pub spinner_frame: usize,
+    /// Hysteresis state machine for the status label — advanced once per tick
+    /// so the phase ("Thinking"/"Responding"/…) can't flip per-frame. See
+    /// [`crate::spinner::next_phase`].
+    pub spinner_state: crate::spinner::SpinnerState,
     pub provider: Arc<dyn Provider>,
     pub providers: Vec<Arc<dyn Provider>>,
     pub model: ModelId,
@@ -710,6 +752,14 @@ pub struct App {
     /// the clipboard (OSC 52-aware), and clears the selection. `None` when no
     /// selection is active.
     pub text_selection: Option<TextSelection>,
+    /// Click-count tracker for multi-click (word/line) selection:
+    /// `(col, row, count, at)`. Distinct from `last_tool_click` (tool-pin).
+    pub last_click: Option<(u16, u16, u8, Instant)>,
+    /// A word/line selection awaiting renderer resolution against the buffer.
+    pub pending_select_request: Option<SelectRequest>,
+    /// Debounce/cooldown for the clipboard-image-on-refocus hint (fired from
+    /// the focus-gained handler). `None` until the first probe.
+    pub last_focus_hint_at: Option<Instant>,
     /// Per-turn token usage history (input + output) for the
     /// sparkline rendered in the info sidebar. Pushed each time a
     /// `StreamUsage` event lands at end-of-turn. Capped at the last
@@ -1383,6 +1433,8 @@ impl App {
             streaming_reasoning: String::new(),
             streaming_response_bytes: 0,
             streaming_response_baseline: 0,
+            turn_output_tokens: 0,
+            refusal_fallback_attempted: false,
             streaming_thinking_tokens: 0,
             pending_context_hint_tokens_saved: None,
             network_recovery_status: None,
@@ -1417,7 +1469,9 @@ impl App {
             show_theme_picker: false,
             theme_picker_input: String::new(),
             theme_picker_selected: 0,
+            theme_preview_original: None,
             spinner_frame: 0,
+            spinner_state: crate::spinner::SpinnerState::new(std::time::Instant::now()),
             provider,
             providers,
             model: model.into(),
@@ -1450,6 +1504,9 @@ impl App {
             toasts_rect: std::cell::RefCell::new(None),
             drag_anchor_y: None,
             text_selection: None,
+            last_click: None,
+            pending_select_request: None,
+            last_focus_hint_at: None,
             token_history: std::collections::VecDeque::with_capacity(TOKEN_HISTORY_CAP),
             last_active_agent_task: None,
             interrupt_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),

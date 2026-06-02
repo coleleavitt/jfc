@@ -2235,6 +2235,50 @@ impl Provider for AnthropicOAuthProvider {
             anyhow::anyhow!("all Anthropic OAuth accounts exhausted with no successful response")
         }))
     }
+
+    /// Accurate input-token count via `/v1/messages/count_tokens`. This is a
+    /// cheap, unbilled metadata call, so it skips the full rotation/billing
+    /// machinery `stream`/`complete` use — single token, same auth header set.
+    /// Callers fall back to a chars/4 estimate on any error, so a header/beta
+    /// mismatch degrades gracefully rather than breaking the count.
+    async fn count_tokens(
+        &self,
+        model: &str,
+        system: Option<String>,
+        messages: Vec<ProviderMessage>,
+    ) -> anyhow::Result<u64> {
+        let token = self.get_access_token().await?;
+        let version = fetch_cli_version(&self.client).await;
+        let user_agent = build_user_agent(&version);
+        let mut body = json!({
+            "model": model,
+            "messages": sse::build_messages(&messages),
+        });
+        if let Some(sys) = system {
+            body["system"] = json!(sys);
+        }
+        let resp = self
+            .client
+            .post("https://api.anthropic.com/v1/messages/count_tokens")
+            .header("authorization", format!("Bearer {token}"))
+            .header("anthropic-version", ANTHROPIC_VERSION)
+            .header("anthropic-beta", ANTHROPIC_BETA)
+            .header("content-type", "application/json")
+            .header("user-agent", user_agent)
+            .header("x-app", "cli")
+            .header("anthropic-client-platform", "cli")
+            .json(&body)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            anyhow::bail!("count_tokens HTTP {status}");
+        }
+        let v: serde_json::Value = resp.json().await?;
+        v.get("input_tokens")
+            .and_then(|x| x.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("count_tokens: response missing input_tokens"))
+    }
 }
 
 /// Test convention follows RTCA DO-178B §6.4.2: every requirement is exercised by at

@@ -445,27 +445,18 @@ async fn handle_command_keys(
                 return Some(Ok(false));
             }
             let idx = app.path_yank_cursor % paths.len();
-            let target = &paths[idx];
-            match arboard::Clipboard::new().and_then(|mut c| c.set_text(target.clone())) {
-                Ok(_) => {
-                    crate::toast::push_with_cap(
-                        &mut app.toasts,
-                        crate::toast::Toast::new(
-                            crate::toast::ToastKind::Success,
-                            format!("📋 {} ({}/{})", target, idx + 1, paths.len()),
-                        ),
-                    );
-                }
-                Err(e) => {
-                    crate::toast::push_with_cap(
-                        &mut app.toasts,
-                        crate::toast::Toast::new(
-                            crate::toast::ToastKind::Warning,
-                            format!("clipboard failed: {e}"),
-                        ),
-                    );
-                }
-            }
+            let target = paths[idx].clone();
+            // Funnel through the clipboard owner so the path survives on
+            // X11/Wayland and reaches SSH/tmux via OSC 52. The copy is
+            // enqueued (best-effort, logged on failure), so confirm visually.
+            crate::runtime::copy_to_clipboard(&target, "path-yank");
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Success,
+                    format!("📋 {} ({}/{})", target, idx + 1, paths.len()),
+                ),
+            );
             app.path_yank_cursor = app.path_yank_cursor.wrapping_add(1);
             Some(Ok(false))
         }
@@ -642,70 +633,8 @@ async fn handle_command_keys(
                 }
             }
         }
-        (KeyModifiers::CONTROL, KeyCode::Char('y')) => {
-            // Yank the most recent assistant message's text to the clipboard.
-            // v126 has the same shortcut (cli.js advertises `Ctrl+Y` for
-            // assistant copy). Walks backwards through `messages` looking
-            // for the first Assistant message with a non-empty Text part;
-            // joins all Text parts with newlines so multi-paragraph
-            // replies copy intact. Pushes a Success toast on success,
-            // Error on clipboard failure.
-            let text = app
-                .messages
-                .iter()
-                .rev()
-                .find(|m| m.role == Role::Assistant)
-                .map(|m| {
-                    m.parts
-                        .iter()
-                        .filter_map(|p| match p {
-                            MessagePart::Text(s) if !s.is_empty() => Some(s.as_str()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n\n")
-                });
-            match text {
-                Some(t) if !t.is_empty() => {
-                    use arboard::Clipboard;
-                    match Clipboard::new().and_then(|mut c| c.set_text(t.clone())) {
-                        Ok(()) => {
-                            let preview: String = t.chars().take(40).collect();
-                            let suffix = if t.chars().count() > 40 { "…" } else { "" };
-                            let _ = tx
-                                .send(crate::runtime::AppEvent::Ui(
-                                    crate::runtime::UiEvent::Toast {
-                                        kind: crate::toast::ToastKind::Success,
-                                        text: format!("Copied: {preview}{suffix}"),
-                                    },
-                                ))
-                                .await;
-                        }
-                        Err(e) => {
-                            let _ = tx
-                                .send(crate::runtime::AppEvent::Ui(
-                                    crate::runtime::UiEvent::Toast {
-                                        kind: crate::toast::ToastKind::Error,
-                                        text: format!("Clipboard error: {e}"),
-                                    },
-                                ))
-                                .await;
-                        }
-                    }
-                }
-                _ => {
-                    let _ = tx
-                        .send(crate::runtime::AppEvent::Ui(
-                            crate::runtime::UiEvent::Toast {
-                                kind: crate::toast::ToastKind::Warning,
-                                text: "No assistant message to yank".into(),
-                            },
-                        ))
-                        .await;
-                }
-            }
-            Some(Ok(false))
-        }
+        // NOTE: Ctrl+Y (yank last assistant message) is handled earlier by
+        // `handle_yank_key`, which runs before this match. No arm here.
         (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
             // Ctrl+O toggles the reasoning ("∴ Thinking") block on the
             // streaming / most-recent assistant message — that's what the
@@ -966,6 +895,12 @@ async fn handle_command_keys(
                     s.mode = crate::input::vim::VimMode::Normal;
                     s.pending = ratatui_textarea::Input::default();
                 }
+                return Some(Ok(false));
+            }
+            // A persisted post-copy selection highlight is the least-destructive
+            // thing Esc can clear — do it before the recap/interrupt cascade.
+            if app.text_selection.is_some() {
+                app.text_selection = None;
                 return Some(Ok(false));
             }
             // Dismiss the "while you were away" recap band first if it's up.
@@ -1723,48 +1658,19 @@ fn handle_up_recall_keys(app: &mut App, key: event::KeyEvent) -> Option<anyhow::
 /// `Ctrl+Y` yank-last-assistant-message-to-clipboard. Returns `Some(result)` when handled, `None` to fall through.
 fn handle_yank_key(app: &mut App, key: event::KeyEvent) -> Option<anyhow::Result<bool>> {
     if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('y') {
-        let last_text: Option<String> = app
-            .messages
-            .iter()
-            .rev()
-            .find(|m| m.role == Role::Assistant)
-            .map(|m| {
-                m.parts
-                    .iter()
-                    .filter_map(|p| match p {
-                        MessagePart::Text(t) => Some(t.clone()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            })
-            .filter(|s| !s.is_empty());
-
-        if let Some(text) = last_text {
-            match arboard::Clipboard::new() {
-                Ok(mut cb) => {
-                    if let Err(e) = cb.set_text(text.clone()) {
-                        tracing::warn!(
-                            target: "jfc::ui::yank",
-                            error = %e,
-                            "clipboard set_text failed"
-                        );
-                    } else {
-                        tracing::info!(
-                            target: "jfc::ui::yank",
-                            len = text.len(),
-                            "yanked last assistant message"
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        target: "jfc::ui::yank",
-                        error = %e,
-                        "clipboard backend unavailable"
-                    );
-                }
-            }
+        if let Some(text) = crate::runtime::last_assistant_text(app).filter(|s| !s.is_empty()) {
+            // Single funnel: the owner thread keeps the clipboard handle
+            // alive (survives X11/Wayland) and emits OSC 52 for SSH/tmux.
+            crate::runtime::copy_to_clipboard(&text, "yank");
+            let preview: String = text.chars().take(40).collect();
+            let suffix = if text.chars().count() > 40 { "…" } else { "" };
+            crate::toast::push_with_cap(
+                &mut app.toasts,
+                crate::toast::Toast::new(
+                    crate::toast::ToastKind::Success,
+                    format!("Copied: {preview}{suffix}"),
+                ),
+            );
         }
         return Some(Ok(false));
     }

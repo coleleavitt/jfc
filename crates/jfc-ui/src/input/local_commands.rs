@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use super::theme_picker::apply_theme;
+use super::theme_picker::{apply_theme, open_theme_picker};
 use crate::app::App;
 use crate::runtime::{AppEvent, UiEvent};
 use crate::types::ChatMessage;
@@ -95,9 +95,7 @@ pub(super) async fn handle_dump_context_command(app: &mut App) {
 pub(super) fn handle_theme_command(app: &mut App, args: &str) {
     let name = args.trim();
     if name.is_empty() {
-        app.show_theme_picker = true;
-        app.theme_picker_input.clear();
-        app.theme_picker_selected = 0;
+        open_theme_picker(app);
         return;
     }
     match crate::theme::Theme::choice_by_name(name) {

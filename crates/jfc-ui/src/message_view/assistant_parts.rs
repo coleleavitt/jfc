@@ -13,7 +13,7 @@ pub(super) fn push_reasoning_lines<'a>(
         // (`key=N`) into the chat — debug noise the user never needed.
         items.push(RenderItem::TextLine(Line::from(vec![
             Span::styled(
-                "∴ Thinking",
+                format!("{} Thinking", crate::glyphs::REASONING_HEADER),
                 Style::default()
                     .fg(t.text_muted)
                     .add_modifier(Modifier::ITALIC),
@@ -28,7 +28,10 @@ pub(super) fn push_reasoning_lines<'a>(
         // element. Mirrors how Discord / Slack indent quoted blocks.
         for l in text.lines() {
             items.push(RenderItem::TextLine(Line::from(vec![
-                Span::styled("┃ ", Style::default().fg(t.reasoning_fg)),
+                Span::styled(
+                    format!("{} ", crate::glyphs::REASONING_RIBBON),
+                    Style::default().fg(t.reasoning_fg),
+                ),
                 Span::styled(l.to_string(), t.reasoning()),
             ])));
         }
@@ -75,7 +78,7 @@ pub(super) fn push_reasoning_lines<'a>(
         // discoverable through the palette.
         items.push(RenderItem::TextLine(Line::from(vec![
             Span::styled(
-                "∴ Thinking",
+                format!("{} Thinking", crate::glyphs::REASONING_HEADER),
                 Style::default()
                     .fg(t.text_muted)
                     .add_modifier(Modifier::ITALIC),

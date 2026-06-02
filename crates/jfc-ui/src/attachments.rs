@@ -188,6 +188,84 @@ pub fn image_dimensions(bytes: &[u8]) -> Result<(u32, u32), String> {
     Ok((w, h))
 }
 
+/// True if `s` looks like a path to an image file that exists on disk.
+/// Used to turn a pasted/dragged file path into an inline image attachment
+/// (terminals deliver a dragged file as its path string, not the bytes).
+/// Extension-gated first (cheap) so we only `stat` plausible candidates.
+pub fn is_image_file_path(s: &str) -> bool {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let ext_ok = [".png", ".jpg", ".jpeg", ".gif", ".webp"]
+        .iter()
+        .any(|ext| lower.ends_with(ext));
+    ext_ok && std::path::Path::new(trimmed).is_file()
+}
+
+/// Split a pasted blob into image file paths. Handles both newline-separated
+/// paths and space-separated absolute paths (how file managers deliver a
+/// multi-file drag), mirroring Claude Code's `usePasteHandler` splitting:
+/// a space that precedes a `/` (Unix) or `X:\` (Windows) starts a new path,
+/// since spaces *within* a path are backslash-escaped by the terminal.
+pub fn image_paths_in_paste(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    // First split on " /" and " X:\\" boundaries, then on newlines.
+    let mut rest = text;
+    let mut spans: Vec<&str> = Vec::new();
+    while let Some(idx) = find_path_boundary(rest) {
+        spans.push(&rest[..idx]);
+        rest = &rest[idx + 1..]; // drop the boundary space
+    }
+    spans.push(rest);
+    for span in spans {
+        for line in span.split('\n') {
+            let line = line.trim();
+            if !line.is_empty() && is_image_file_path(line) {
+                out.push(line.to_owned());
+            }
+        }
+    }
+    out
+}
+
+/// Byte index of a space that begins a new absolute path (` /` or ` C:\`).
+fn find_path_boundary(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    for i in 0..bytes.len() {
+        if bytes[i] != b' ' {
+            continue;
+        }
+        match bytes.get(i + 1) {
+            Some(b'/') => return Some(i),
+            // Windows drive: ` X:\`
+            Some(c)
+                if c.is_ascii_alphabetic()
+                    && bytes.get(i + 2) == Some(&b':')
+                    && bytes.get(i + 3) == Some(&b'\\') =>
+            {
+                return Some(i);
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Read an image file from disk and process it into an `(Attachment, width,
+/// height)` triple, mirroring `read_clipboard_image`'s shape. Dimensions are
+/// the *original* file's (pre-clamp), matching the clipboard path.
+pub fn read_image_file(path: &std::path::Path) -> Result<(Attachment, u32, u32), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let kind = detect_kind(&bytes)
+        .filter(|k| !matches!(k, AttachmentKind::ApplicationPdf))
+        .ok_or_else(|| format!("{}: not a recognized image", path.display()))?;
+    let (width, height) = image_dimensions(&bytes)?;
+    let processed = process_image(bytes, kind)?;
+    Ok((processed, width, height))
+}
+
 /// Process raw image bytes: clamp to MAX_IMAGE_DIMENSION, encode as PNG,
 /// fall back to JPEG at decreasing quality if PNG exceeds MAX_IMAGE_BYTES.
 pub fn process_image(raw_bytes: Vec<u8>, _kind: AttachmentKind) -> Result<Attachment, String> {
@@ -484,6 +562,34 @@ pub async fn to_anthropic_content_block_async(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---------- image-path paste splitting ----------
+
+    #[test]
+    fn path_boundary_splits_space_separated_absolute_paths_normal() {
+        // Two Unix paths joined by a space (multi-file drag).
+        let s = "/a/one.png /b/two.png";
+        let idx = find_path_boundary(s).expect("boundary found");
+        assert_eq!(&s[..idx], "/a/one.png");
+        assert_eq!(&s[idx + 1..], "/b/two.png");
+    }
+
+    #[test]
+    fn path_boundary_ignores_spaces_inside_a_path_robust() {
+        // A space NOT before `/` or a drive letter is part of the path.
+        assert_eq!(find_path_boundary("/a/one two.png"), None);
+        // Windows drive boundary is detected.
+        let s = r"/a/one.png C:\b\two.png";
+        let idx = find_path_boundary(s).expect("win boundary");
+        assert_eq!(&s[idx + 1..], r"C:\b\two.png");
+    }
+
+    #[test]
+    fn is_image_file_path_false_for_missing_and_nonimage_robust() {
+        assert!(!is_image_file_path("/definitely/not/here_xyz.png"));
+        assert!(!is_image_file_path("just some pasted prose"));
+        assert!(!is_image_file_path(""));
+    }
 
     // ---------- detect_kind: positive cases ----------
 

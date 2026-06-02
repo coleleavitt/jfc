@@ -1022,15 +1022,16 @@ pub(crate) async fn run(
                     handlers::ui_actions::handle_system_prompt_len(&mut app, len);
                 }
                 AppEvent::Stream(StreamEvent::MemoryRecalled(chars)) => {
-                    // Honest surface: the recall block was injected this turn;
-                    // show its rough size (~chars/4 tokens) so the user sees
-                    // that context was pulled in.
-                    let approx_tokens = chars / 4;
+                    // The recall block was injected this turn; show its size in
+                    // the same chars/4 token model the context gauge uses (no
+                    // `~` prefix — it's presented consistently with every other
+                    // token figure in the UI, not flagged as a guess).
+                    let tokens = chars / 4;
                     crate::toast::push_with_cap(
                         &mut app.toasts,
                         crate::toast::Toast::new(
                             crate::toast::ToastKind::Info,
-                            format!("↻ recalled memory (~{approx_tokens} tokens of context)"),
+                            format!("↻ recalled memory ({tokens} tokens of context)"),
                         ),
                     );
                     needs_draw = true;

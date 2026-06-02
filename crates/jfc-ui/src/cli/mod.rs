@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use crossterm::{
     event::{
-        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        PopKeyboardEnhancementFlags,
+        DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+        EnableFocusChange, EnableMouseCapture, PopKeyboardEnhancementFlags,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -825,7 +825,11 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
         stdout,
         EnterAlternateScreen,
         EnableMouseCapture,
-        EnableBracketedPaste
+        EnableBracketedPaste,
+        // Focus reporting drives the clipboard-image-on-refocus hint. MUST be
+        // paired with DisableFocusChange on every exit path (teardown below +
+        // the panic hook) or the terminal leaks `[I`/`[O` into the shell.
+        EnableFocusChange
     )?;
     let kbd_enhanced = enable_keyboard_enhancement(&mut stdout);
     let backend = CrosstermBackend::new(stdout);
@@ -868,7 +872,8 @@ pub(crate) async fn run(cli: Cli) -> anyhow::Result<()> {
         terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture,
-        DisableBracketedPaste
+        DisableBracketedPaste,
+        DisableFocusChange
     )?;
     terminal.show_cursor()?;
 

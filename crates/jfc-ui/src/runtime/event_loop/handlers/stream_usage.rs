@@ -46,6 +46,17 @@ pub(crate) fn handle_stream_usage(
         }
         let wire_floor = app.streaming_response_baseline + output_tokens as usize * 4;
         app.streaming_response_bytes = app.streaming_response_bytes.max(wire_floor);
+        // True output tokens (what the status row shows) — accumulate the real
+        // per-event delta. `output_tokens` is cumulative within a sub-stream, so
+        // the delta vs the previous event is its growth; a regression (a new
+        // sub-stream restarting lower) contributes its tokens from zero. No
+        // chars/4 anywhere.
+        let token_delta = if output_tokens >= app.last_usage_output {
+            output_tokens - app.last_usage_output
+        } else {
+            output_tokens
+        };
+        app.turn_output_tokens = app.turn_output_tokens.saturating_add(token_delta as u64);
     }
     app.last_usage_input = input_tokens;
     app.last_usage_output = output_tokens;
@@ -224,6 +235,25 @@ mod tests {
         let usage = app.messages[0].usage.as_ref().expect("usage");
         assert_eq!(usage.output_tokens, 2_000);
         assert_eq!(usage.total_context_tokens(), 122_000);
+    }
+
+    #[test]
+    fn turn_output_tokens_tracks_true_wire_across_substreams_normal() {
+        let mut app = test_app();
+        // Input-only metadata arrives first — must not move the output count.
+        handle_stream_usage(&mut app, 12, 0, 0, 0);
+        assert_eq!(app.turn_output_tokens, 0);
+        // Sub-stream 1: cumulative output grows; we accumulate the real delta.
+        handle_stream_usage(&mut app, 12, 100, 0, 0);
+        assert_eq!(app.turn_output_tokens, 100);
+        handle_stream_usage(&mut app, 12, 250, 0, 0);
+        assert_eq!(app.turn_output_tokens, 250);
+        // Sub-stream 2 restarts output_tokens lower (a regression). Its tokens
+        // are counted from zero so the turn total stays true and monotonic.
+        handle_stream_usage(&mut app, 12, 30, 0, 0);
+        assert_eq!(app.turn_output_tokens, 280);
+        handle_stream_usage(&mut app, 12, 80, 0, 0);
+        assert_eq!(app.turn_output_tokens, 330);
     }
 
     #[test]

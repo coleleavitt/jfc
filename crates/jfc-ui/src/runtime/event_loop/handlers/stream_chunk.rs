@@ -133,7 +133,12 @@ pub(crate) fn handle_chunk(app: &mut App, text: Option<String>, reasoning: Optio
     // this gate, scrolling up to read prior context during a
     // long stream would yank you back to the bottom on every
     // chunk. v126 has the same "stick when at bottom" rule.
-    if app.follow_bottom {
+    // …but freeze the viewport while the user is mid-drag selecting text.
+    // The selection is anchored to absolute screen cells; autoscrolling
+    // would slide the transcript out from under the highlight and copy the
+    // wrong content on release.
+    let selecting = app.text_selection.is_some_and(|s| s.dragged);
+    if app.follow_bottom && !selecting {
         app.scroll_to_bottom();
     }
 }

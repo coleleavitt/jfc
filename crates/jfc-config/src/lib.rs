@@ -90,6 +90,20 @@ pub struct Config {
     pub managed_settings: Option<ManagedSettingsConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isolation: Option<IsolationConfig>,
+    /// Auto-copy the transcript selection to the clipboard on mouse-up
+    /// (drag-to-select). Default on; set `copy_on_select = false` to disable
+    /// the gesture entirely so clicks/drags never touch the clipboard.
+    #[serde(default = "default_true")]
+    pub copy_on_select: bool,
+    /// When the model refuses a turn, switch to `refusal_fallback_model` and
+    /// resend once (CC 2.1.160 "switch models when a message is flagged").
+    /// Default on, but INERT unless `refusal_fallback_model` is also set.
+    #[serde(default = "default_true")]
+    pub refusal_fallback_enabled: bool,
+    /// Model to retry on after a refusal (e.g. a different/safer model). `None`
+    /// ⇒ no fallback (the refusal is left as-is). The user opts in by setting it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refusal_fallback_model: Option<String>,
 }
 
 /// Controls what happens when an agent requested worktree isolation but the
@@ -242,6 +256,9 @@ impl Default for Config {
             exploration: None,
             managed_settings: None,
             isolation: None,
+            copy_on_select: default_true(),
+            refusal_fallback_enabled: default_true(),
+            refusal_fallback_model: None,
         }
     }
 }

@@ -4,10 +4,15 @@
 
 use crossterm::event::{Event, KeyEventKind};
 
-use crate::app::{App, TextSelection};
+use crate::app::{App, SelectKind, SelectRequest, TextSelection};
 use crate::runtime::EventSender;
 use crate::types::*;
 use crate::{attachments, input, message_view, toast};
+
+/// Max gap between clicks to count as a multi-click (word/line select).
+const MULTI_CLICK_MS: u128 = 500;
+/// Max cell distance between clicks to count as a multi-click.
+const MULTI_CLICK_DIST: u16 = 1;
 
 /// Dispatch a single crossterm `Event` into the appropriate handler.
 /// Returns `Ok(true)` when the app should quit.
@@ -55,6 +60,46 @@ pub(crate) async fn handle_term_event(
                     false
                 }
             };
+            // Pasted/dragged image *file paths*: terminals deliver a dragged
+            // file as its path string, not the bytes. Detect image paths
+            // (newline- or space-separated for multi-file drags), attach each
+            // from disk like a clipboard image, and strip them from the text
+            // so only the non-image remainder lands in the prompt. Mirrors
+            // Claude Code's `usePasteHandler` multi-image handling.
+            let image_paths = attachments::image_paths_in_paste(&text);
+            let mut text = text;
+            if !image_paths.is_empty() {
+                let mut attached_any = false;
+                for p in &image_paths {
+                    match attachments::read_image_file(std::path::Path::new(p)) {
+                        Ok((att, w, h)) => {
+                            app.image_counter += 1;
+                            let id = app.image_counter;
+                            app.pasted_images.push(crate::attachments::PastedContent {
+                                id,
+                                attachment: att,
+                                width: w,
+                                height: h,
+                            });
+                            // Replace the path occurrence with the chip token.
+                            text = text.replace(p, &format!("[Image #{id}]"));
+                            attached_any = true;
+                        }
+                        Err(e) => {
+                            tracing::debug!(target: "jfc::input", path = %p, error = %e, "image-path paste failed; leaving as text");
+                        }
+                    }
+                }
+                if attached_any {
+                    toast::push_with_cap(
+                        &mut app.toasts,
+                        toast::Toast::new(
+                            toast::ToastKind::Info,
+                            format!("📎 {} image(s) attached from path", image_paths.len()),
+                        ),
+                    );
+                }
+            }
             // Always insert the text — it may be a path or
             // contextual prose alongside the image. A *large* paste
             // collapses to a `[Pasted #N · …]` chip so it doesn't flood
@@ -83,9 +128,45 @@ pub(crate) async fn handle_term_event(
         Event::Mouse(mouse) => {
             handle_mouse(app, mouse, tx).await;
         }
+        // A resize remaps every screen cell, so a persisted selection
+        // highlight (absolute cells) would point at the wrong content — drop it.
+        Event::Resize(..) => {
+            app.text_selection = None;
+        }
+        Event::FocusGained => {
+            handle_focus_gained(app, tx);
+        }
+        Event::FocusLost => {}
         _ => {}
     }
     Ok(false)
+}
+
+/// On terminal refocus, hint that the clipboard holds an image (Ctrl+V to
+/// paste), debounced with a 30s cooldown. The clipboard probe blocks (shells
+/// out / hits arboard), so it runs on a blocking task and reports back via a
+/// Toast event rather than touching `app` off-thread.
+fn handle_focus_gained(app: &mut App, tx: &EventSender) {
+    const FOCUS_HINT_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);
+    let now = std::time::Instant::now();
+    if app
+        .last_focus_hint_at
+        .is_some_and(|t| now.duration_since(t) < FOCUS_HINT_COOLDOWN)
+    {
+        return;
+    }
+    // Debounce the probe itself (not just the toast) so an alt-tab storm
+    // doesn't hammer the clipboard.
+    app.last_focus_hint_at = Some(now);
+    let tx = tx.clone();
+    tokio::task::spawn_blocking(move || {
+        if let Ok(Some(_)) = attachments::read_clipboard_image() {
+            let _ = tx.try_send(crate::runtime::AppEvent::Ui(crate::runtime::UiEvent::Toast {
+                kind: toast::ToastKind::Info,
+                text: "image in clipboard · Ctrl+V to paste".to_string(),
+            }));
+        }
+    });
 }
 
 /// Handle mouse events: scroll, drag, click.
@@ -108,12 +189,19 @@ async fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent, _tx: &
             // selection is the higher-value gesture here.
             if let Some(sel) = app.text_selection.as_mut() {
                 sel.head = (mouse.column, mouse.row);
-                if sel.head != sel.anchor {
+                // Only promote to a real selection once the cursor has moved
+                // a meaningful distance. A one-cell jitter on an ordinary
+                // click must NOT count as a drag — otherwise a shaky click
+                // loses its click action (tool expand, group toggle) and
+                // copies a stray character instead.
+                if !sel.dragged && selection_started(sel.anchor, sel.head) {
                     sel.dragged = true;
                 }
             }
         }
-        MouseEventKind::Up(_) => {
+        // Only the *left* button drives selection. Matching `Up(_)` here let a
+        // right/middle-button release finalize or drop a left-drag selection.
+        MouseEventKind::Up(MouseButton::Left) => {
             app.drag_anchor_y = None;
             match app.text_selection {
                 // A real drag: hand off to the renderer to extract + copy the
@@ -136,20 +224,68 @@ async fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent, _tx: &
         // Press anchors a potential selection but defers the click action to
         // release, so starting a drag doesn't also fire a click (e.g. yank).
         MouseEventKind::Down(MouseButton::Left) => {
-            let in_messages = app.messages_rect.borrow().as_ref().is_some_and(|r| {
-                mouse.column >= r.x
-                    && mouse.column < r.x + r.width
-                    && mouse.row >= r.y
-                    && mouse.row < r.y + r.height
-            });
-            if in_messages {
-                app.text_selection = Some(TextSelection {
-                    anchor: (mouse.column, mouse.row),
-                    head: (mouse.column, mouse.row),
-                    dragged: false,
-                    finalize: false,
+            // `copy_on_select = false` disables the drag-to-select gesture
+            // entirely: clicks fall straight through to the click handler and
+            // the clipboard is never touched by a drag.
+            let copy_on_select = crate::config::load_arc().copy_on_select;
+            let in_messages = copy_on_select
+                && app.messages_rect.borrow().as_ref().is_some_and(|r| {
+                    mouse.column >= r.x
+                        && mouse.column < r.x + r.width
+                        && mouse.row >= r.y
+                        && mouse.row < r.y + r.height
                 });
+            if in_messages {
+                // Track click count for word (double) / line (triple) select.
+                // A click on a tool block is excluded — it keeps its own
+                // double-click-to-pin behavior (run on release in
+                // handle_left_click), so word/line select only applies to
+                // plain transcript text.
+                let on_tool = message_view::find_tool_at(
+                    &app.tool_hit_regions.borrow(),
+                    mouse.column,
+                    mouse.row,
+                )
+                .is_some();
+                let now = std::time::Instant::now();
+                let count = match app.last_click {
+                    Some((c, r, n, t))
+                        if now.duration_since(t).as_millis() < MULTI_CLICK_MS
+                            && c.abs_diff(mouse.column) <= MULTI_CLICK_DIST
+                            && r.abs_diff(mouse.row) <= MULTI_CLICK_DIST =>
+                    {
+                        n.saturating_add(1)
+                    }
+                    _ => 1,
+                };
+                app.last_click = Some((mouse.column, mouse.row, count, now));
+                if !on_tool && count >= 2 {
+                    // Renderer resolves the word/line span against the buffer.
+                    let kind = if count >= 3 {
+                        SelectKind::Line
+                    } else {
+                        SelectKind::Word
+                    };
+                    app.pending_select_request = Some(SelectRequest {
+                        col: mouse.column,
+                        row: mouse.row,
+                        kind,
+                    });
+                    // The request owns this frame; don't also start a drag.
+                    app.text_selection = None;
+                } else {
+                    app.text_selection = Some(TextSelection {
+                        anchor: (mouse.column, mouse.row),
+                        head: (mouse.column, mouse.row),
+                        dragged: false,
+                        finalize: false,
+                        copied: false,
+                    });
+                }
             } else {
+                // A click outside the transcript dismisses any persisted
+                // post-copy highlight before running the click action.
+                app.text_selection = None;
                 handle_left_click(app, mouse).await;
             }
         }
@@ -157,10 +293,8 @@ async fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent, _tx: &
     }
 }
 
-/// Handle left-click: tool toggle, toast dismiss, sidebar session load, yank.
+/// Handle left-click: tool toggle, toast dismiss, sidebar session load.
 async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
-    use crate::runtime::yank_last_assistant;
-
     // First, see if the click landed on a tool block —
     // each visible tool is registered in
     // `app.tool_hit_regions` by the renderer. Toggling
@@ -305,14 +439,39 @@ async fn handle_left_click(app: &mut App, mouse: crossterm::event::MouseEvent) {
             }
         }
         app.last_tool_click = Some((tool_id, now));
-    } else {
-        let in_input = mouse.row as usize
-            >= app
-                .viewport_height
-                .saturating_add(app.scroll_offset)
-                .saturating_sub(2);
-        if !in_input {
-            yank_last_assistant(app);
-        }
+    }
+    // A plain click on empty transcript space does nothing. It used to yank
+    // the whole last assistant message to the clipboard, which was surprising
+    // (any stray click silently overwrote the clipboard). Explicit copy lives
+    // on Ctrl+Y and drag-to-select.
+}
+
+/// Whether a drag has moved far enough from its anchor to count as a real
+/// text selection rather than click jitter. Any row change, or ≥2 columns
+/// horizontally on the same row, qualifies.
+fn selection_started(anchor: (u16, u16), head: (u16, u16)) -> bool {
+    const MIN_DRAG_COLS: u16 = 2;
+    anchor.1 != head.1 || anchor.0.abs_diff(head.0) >= MIN_DRAG_COLS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::selection_started;
+
+    #[test]
+    fn one_cell_jitter_is_not_a_selection_normal() {
+        // A click that wobbles one column must stay a click.
+        assert!(!selection_started((10, 5), (10, 5)));
+        assert!(!selection_started((10, 5), (11, 5)));
+        assert!(!selection_started((10, 5), (9, 5)));
+    }
+
+    #[test]
+    fn real_drag_starts_selection_normal() {
+        // Two+ columns on the same row, or any row change, counts.
+        assert!(selection_started((10, 5), (12, 5)));
+        assert!(selection_started((10, 5), (8, 5)));
+        assert!(selection_started((10, 5), (10, 6)));
+        assert!(selection_started((10, 5), (10, 4)));
     }
 }

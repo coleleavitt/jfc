@@ -245,6 +245,8 @@ pub(super) async fn handle_submit(
         app.streaming_text.clear();
         app.streaming_reasoning.clear();
         app.streaming_response_bytes = 0;
+        app.turn_output_tokens = 0;
+        app.refusal_fallback_attempted = false;
         app.streaming_assistant_idx = None;
     }
     if text.starts_with('/') {
@@ -664,6 +666,11 @@ pub(super) async fn handle_submit(
     app.streaming_text.clear();
     app.streaming_reasoning.clear();
     app.streaming_response_bytes = 0;
+    // New turn — restart the true output-token counter (it accumulates across
+    // this turn's agentic sub-streams, but starts fresh per user turn) and the
+    // refusal-fallback guard (each user turn gets one fallback attempt).
+    app.turn_output_tokens = 0;
+    app.refusal_fallback_attempted = false;
     app.network_recovery_status = None;
     app.network_recovery_attempts = 0;
     app.streaming_assistant_idx = Some(assistant_idx);

@@ -29,11 +29,6 @@ use std::{sync::OnceLock, time::Duration};
 pub struct StatusSegments {
     /// Spinner glyph for this frame (e.g. `✦`).
     pub glyph: &'static str,
-    /// Honest phase label: `Thinking`, `Responding`, or `Working`. The
-    /// renderer may override this with an in-progress task's `activeForm`
-    /// (which describes the *actual* work) — that's still honest, just
-    /// more specific.
-    pub label: &'static str,
     /// Trailing metadata, already `·`-joined and prefixed with a leading
     /// separator: e.g. ` · 1m04s · 2.4k tokens · 47 tok/s`. Rendered
     /// muted — it's context, not the active label.
@@ -74,7 +69,7 @@ pub fn interpolate_rgb(c1: (u8, u8, u8), c2: (u8, u8, u8), t: f32) -> (u8, u8, u
 /// Spinner glyph cycle. A small star set — the user reads the star pulse
 /// as "Claude". The renderer advances it one frame per tick while
 /// streaming and holds it on a single frame otherwise.
-pub const FRAMES: &[&str] = &["·", "✢", "✦", "✶", "✻", "✽"];
+pub const FRAMES: &[&str] = crate::glyphs::STATUS_FRAMES;
 
 /// Glyph for `tick`. Caller bumps the tick once per redraw while
 /// streaming; a held tick freezes the glyph.
@@ -185,6 +180,157 @@ pub enum ThinkingStatus {
     Done(Duration),
 }
 
+// ── Spinner phase state machine (anti-flicker) ───────────────────────────
+//
+// The label used to be derived raw at render time, so it flipped the instant
+// a driving field changed (Thinking→Responding on the first text byte;
+// Working→Responding on the first token), producing visible strobing and
+// "stuck" reads in the agentic gap. We instead drive an explicit phase with a
+// minimum dwell so a label can't change faster than `MIN_PHASE_DWELL`, plus a
+// minimum thinking-display so a brief reasoning burst still reads as
+// "Thinking" for a beat. Transitions are only ever *delayed*, never
+// fabricated — every phase maps to a real stream signal.
+
+/// Minimum time a soft phase stays on screen before a different soft phase can
+/// replace it. Suppresses sub-frame thrash (e.g. Responding↔Working across the
+/// stream-end → tool-run → next-stream agentic gap).
+pub const MIN_PHASE_DWELL: Duration = Duration::from_millis(400);
+/// Minimum time `Thinking` is held before `Responding` may take over, so a
+/// short reasoning burst doesn't strobe. Matches Claude Code's 2s.
+pub const MIN_THINKING_DISPLAY: Duration = Duration::from_millis(2000);
+
+/// The honest spinner phase. Each variant maps 1:1 to a real stream signal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpinnerPhase {
+    /// Request sent, connection live, no bytes yet.
+    Requesting,
+    /// Extended-thinking chunks arriving.
+    Thinking,
+    /// Output text/tokens streaming.
+    Responding,
+    /// Stream ended; tools executing in the agentic gap.
+    ToolUse,
+    /// Turn active but none of the above (startup gap / waiting).
+    Working,
+    /// Pre-submit context compaction.
+    Compacting,
+    /// Provider retry after a transient network/API failure.
+    NetworkRecovery,
+}
+
+impl SpinnerPhase {
+    /// Honest one-word label. `Compacting`/`NetworkRecovery` render through
+    /// their own row shapes in `spinner_row`, so this label is only read for
+    /// the streaming phases.
+    pub fn label(self) -> &'static str {
+        match self {
+            SpinnerPhase::Requesting => "Requesting",
+            SpinnerPhase::Thinking => "Thinking",
+            SpinnerPhase::Responding => "Responding",
+            // Tools run between sub-streams; "Working" is the honest umbrella.
+            SpinnerPhase::ToolUse | SpinnerPhase::Working => "Working",
+            SpinnerPhase::Compacting => "Compacting",
+            SpinnerPhase::NetworkRecovery => "Recovering",
+        }
+    }
+}
+
+/// Raw per-tick signals the phase machine reduces into a phase.
+#[derive(Debug, Clone, Copy)]
+pub struct RawPhaseInputs {
+    pub compacting: bool,
+    pub network_recovery: bool,
+    pub is_streaming: bool,
+    pub thinking_live: bool,
+    pub thinking_ended: bool,
+    pub output_started: bool,
+    pub tools_pending: bool,
+    pub turn_active: bool,
+}
+
+/// Stored phase plus the timestamps the hysteresis rules read. Lives on `App`,
+/// advanced once per tick by [`next_phase`].
+#[derive(Debug, Clone, Copy)]
+pub struct SpinnerState {
+    pub phase: SpinnerPhase,
+    pub entered_at: std::time::Instant,
+    /// When `Thinking` was first seen this turn (drives `MIN_THINKING_DISPLAY`).
+    pub thinking_first_seen_at: Option<std::time::Instant>,
+}
+
+impl SpinnerState {
+    pub fn new(now: std::time::Instant) -> Self {
+        Self {
+            phase: SpinnerPhase::Working,
+            entered_at: now,
+            thinking_first_seen_at: None,
+        }
+    }
+}
+
+/// The phase the raw signals *want*, before hysteresis.
+fn desired_phase(r: &RawPhaseInputs) -> SpinnerPhase {
+    if r.compacting {
+        return SpinnerPhase::Compacting;
+    }
+    if r.network_recovery {
+        return SpinnerPhase::NetworkRecovery;
+    }
+    if r.thinking_live {
+        return SpinnerPhase::Thinking;
+    }
+    if r.is_streaming && (r.thinking_ended || r.output_started) {
+        return SpinnerPhase::Responding;
+    }
+    if r.tools_pending {
+        return SpinnerPhase::ToolUse;
+    }
+    if r.is_streaming && r.turn_active {
+        return SpinnerPhase::Requesting;
+    }
+    SpinnerPhase::Working
+}
+
+/// Compute the next phase from the current one, applying hysteresis. Pure —
+/// all clocks are passed in, so it unit-tests without sleeping.
+pub fn next_phase(
+    current: SpinnerPhase,
+    entered_at: std::time::Instant,
+    thinking_first_seen_at: Option<std::time::Instant>,
+    now: std::time::Instant,
+    r: RawPhaseInputs,
+) -> SpinnerPhase {
+    let desired = desired_phase(&r);
+    // Hard, non-oscillating states win immediately (entering AND leaving): the
+    // user must see compaction / network recovery the instant it's true, and
+    // these fields don't flicker so there's nothing to debounce.
+    if matches!(
+        desired,
+        SpinnerPhase::Compacting | SpinnerPhase::NetworkRecovery
+    ) || matches!(
+        current,
+        SpinnerPhase::Compacting | SpinnerPhase::NetworkRecovery
+    ) {
+        return desired;
+    }
+    // Hold Thinking for a beat so a brief reasoning burst doesn't strobe to
+    // Responding on the first text byte.
+    if current == SpinnerPhase::Thinking
+        && desired == SpinnerPhase::Responding
+        && thinking_first_seen_at.is_some_and(|t| now.duration_since(t) < MIN_THINKING_DISPLAY)
+    {
+        return SpinnerPhase::Thinking;
+    }
+    if desired == current {
+        return current;
+    }
+    // Soft transition: enforce the dwell floor so labels can't flip per-frame.
+    if now.duration_since(entered_at) < MIN_PHASE_DWELL {
+        return current;
+    }
+    desired
+}
+
 /// Build the honest status row. `thinking` selects the phase label and
 /// which token counter leads; `output_tokens` / `thinking_tokens` /
 /// `token_rate` come straight off the wire; `time_since_last_token`
@@ -198,13 +344,6 @@ pub fn status_segments(
     thinking: Option<ThinkingStatus>,
     thinking_tokens: u64,
 ) -> StatusSegments {
-    let label = match thinking {
-        Some(ThinkingStatus::Live) => "Thinking",
-        Some(ThinkingStatus::Done(_)) => "Responding",
-        None if output_tokens > 0 => "Responding",
-        None => "Working",
-    };
-
     let mut parts: Vec<String> = vec![fmt_elapsed(elapsed)];
     let push_rate = |parts: &mut Vec<String>| {
         if let Some(rate) = token_rate {
@@ -217,11 +356,12 @@ pub fn status_segments(
             // Show live thinking duration (never frozen) instead of a static token count.
             // The thinking phase duration lives in the elapsed timer, so it always moves.
             parts.push(format!("thinking {}", fmt_elapsed(elapsed)));
-            // Add token estimate if available, but don't gate on it — during
-            // extended thinking the server may stop incrementing estimated_tokens
-            // after reaching a steady state, so we show the estimate we have.
+            // Show the cumulative thinking-token total (not a `~`-marked
+            // estimate) — the same honest count Claude Code surfaces. The
+            // server's running total may plateau at a steady state, but it's
+            // still the real count, so we present it plainly.
             if thinking_tokens > 0 {
-                parts.push(format!("~{} tok", fmt_tokens(thinking_tokens)));
+                parts.push(format!("{} tokens", fmt_tokens(thinking_tokens)));
             }
             push_rate(&mut parts);
         }
@@ -246,7 +386,6 @@ pub fn status_segments(
 
     StatusSegments {
         glyph: frame_for(tick),
-        label,
         body: format!(" · {}", parts.join(" · ")),
         dim: time_since_last_token.as_secs() >= QUIET_DIM_SECS,
     }
@@ -286,6 +425,102 @@ pub fn format_compact_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn streaming_responding() -> RawPhaseInputs {
+        RawPhaseInputs {
+            compacting: false,
+            network_recovery: false,
+            is_streaming: true,
+            thinking_live: false,
+            thinking_ended: true,
+            output_started: true,
+            tools_pending: false,
+            turn_active: true,
+        }
+    }
+
+    #[test]
+    fn phase_holds_thinking_for_min_display_normal() {
+        use std::time::Instant;
+        let t0 = Instant::now();
+        let raw = streaming_responding();
+        // 500ms after Thinking began → still Thinking (held).
+        assert_eq!(
+            next_phase(
+                SpinnerPhase::Thinking,
+                t0,
+                Some(t0),
+                t0 + Duration::from_millis(500),
+                raw
+            ),
+            SpinnerPhase::Thinking
+        );
+        // Past the 2s floor → Responding allowed.
+        assert_eq!(
+            next_phase(
+                SpinnerPhase::Thinking,
+                t0,
+                Some(t0),
+                t0 + Duration::from_millis(2100),
+                raw
+            ),
+            SpinnerPhase::Responding
+        );
+    }
+
+    #[test]
+    fn phase_dwell_suppresses_fast_soft_switch_robust() {
+        use std::time::Instant;
+        let t0 = Instant::now();
+        let raw = RawPhaseInputs {
+            is_streaming: false,
+            tools_pending: true,
+            ..streaming_responding()
+        };
+        // Only 100ms in Responding → ToolUse switch suppressed.
+        assert_eq!(
+            next_phase(
+                SpinnerPhase::Responding,
+                t0,
+                None,
+                t0 + Duration::from_millis(100),
+                raw
+            ),
+            SpinnerPhase::Responding
+        );
+        // After the dwell floor → transition allowed.
+        assert_eq!(
+            next_phase(
+                SpinnerPhase::Responding,
+                t0,
+                None,
+                t0 + Duration::from_millis(500),
+                raw
+            ),
+            SpinnerPhase::ToolUse
+        );
+    }
+
+    #[test]
+    fn phase_compacting_overrides_dwell_immediately_robust() {
+        use std::time::Instant;
+        let t0 = Instant::now();
+        let raw = RawPhaseInputs {
+            compacting: true,
+            ..streaming_responding()
+        };
+        // Entered Responding 10ms ago, but compaction must win now.
+        assert_eq!(
+            next_phase(
+                SpinnerPhase::Responding,
+                t0,
+                None,
+                t0 + Duration::from_millis(10),
+                raw
+            ),
+            SpinnerPhase::Compacting
+        );
+    }
 
     #[test]
     fn elapsed_format_under_60s_normal() {
@@ -350,7 +585,6 @@ mod tests {
             None,
             0,
         );
-        assert_eq!(s.label, "Responding");
         assert_eq!(s.glyph, frame_for(2));
         assert!(s.body.contains("1m22s"), "elapsed missing: {}", s.body);
         assert!(s.body.contains("2.4k tokens"), "tokens missing: {}", s.body);
@@ -369,7 +603,6 @@ mod tests {
             Some(ThinkingStatus::Live),
             1_200,
         );
-        assert_eq!(s.label, "Thinking");
         assert!(s.body.contains("1m04s"), "elapsed missing: {}", s.body);
         // Live thinking duration is shown (never frozen), e.g., "thinking 1m04s"
         assert!(
@@ -377,21 +610,20 @@ mod tests {
             "thinking duration missing: {}",
             s.body
         );
-        // Token estimate shown as "~1.2k tok" (approximate, may stall at server)
+        // Cumulative thinking-token total, no `~` estimate marker.
         assert!(
-            s.body.contains("~1.2k tok"),
-            "thinking token estimate missing: {}",
+            s.body.contains("1.2k tokens"),
+            "thinking token total missing: {}",
+            s.body
+        );
+        assert!(
+            !s.body.contains('~'),
+            "thinking tokens should be the total, not a ~ estimate: {}",
             s.body
         );
         assert!(
             s.body.contains("18 tok/s"),
             "thinking rate missing: {}",
-            s.body
-        );
-        // While thinking we never show output `tokens`.
-        assert!(
-            !s.body.contains(" tokens"),
-            "should not show output tokens: {}",
             s.body
         );
     }
@@ -407,7 +639,6 @@ mod tests {
             Some(ThinkingStatus::Done(Duration::from_secs(12))),
             0,
         );
-        assert_eq!(s.label, "Responding");
         assert!(
             s.body.contains("thought 12s"),
             "thought chip missing: {}",
@@ -449,7 +680,6 @@ mod tests {
             None,
             0,
         );
-        assert_eq!(s.label, "Working");
         assert!(!s.body.contains("tokens"), "no token chip yet: {}", s.body);
         assert!(s.body.contains("2s"));
     }
