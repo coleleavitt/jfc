@@ -433,7 +433,12 @@ impl Theme {
             border: Color::Rgb(76, 86, 106),           // nord3
             text_primary: Color::Rgb(216, 222, 233),   // nord4
             text_secondary: Color::Rgb(229, 233, 240), // nord5
-            text_muted: Color::Rgb(76, 86, 106),
+            // Lightened from bare nord3 (76,86,106): nord3 *is* the `surface`
+            // (nord1) neighbour, so muted text rendered on `surface` (status
+            // row, dividers) scored a 1.36 WCAG ratio — effectively invisible,
+            // far below every other theme (~2.5+). This blue-gray stays in the
+            // Nord family but clears the legibility floor (~2.7 on surface).
+            text_muted: Color::Rgb(123, 132, 150),
             accent: Color::Rgb(136, 192, 208),  // nord8 (frost)
             success: Color::Rgb(163, 190, 140), // nord14
             warning: Color::Rgb(235, 203, 139), // nord13
@@ -842,6 +847,26 @@ mod tests {
         }
     }
 
+    /// WCAG 2.x relative-luminance contrast ratio between two RGB colors,
+    /// in the range 1.0 (identical) .. 21.0 (black on white). Used to assert
+    /// that low-emphasis text is still legible on the surface it renders on.
+    fn wcag_contrast(fg: (u8, u8, u8), bg: (u8, u8, u8)) -> f64 {
+        fn chan(c: u8) -> f64 {
+            let c = c as f64 / 255.0;
+            if c <= 0.039_28 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        }
+        fn lum((r, g, b): (u8, u8, u8)) -> f64 {
+            0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b)
+        }
+        let (a, b) = (lum(fg), lum(bg));
+        let (hi, lo) = if a >= b { (a, b) } else { (b, a) };
+        (hi + 0.05) / (lo + 0.05)
+    }
+
     /// Every slot on every bundled theme must be a true-color RGB value —
     /// using a 16-color or palette index would produce the wrong contrast
     /// against neighbouring slots that *are* RGB.
@@ -922,6 +947,36 @@ mod tests {
         let t = Theme::catppuccin();
         assert_all_slots_rgb(&t, "catppuccin");
         assert_text_distinct_from_bg(&t, "catppuccin");
+    }
+
+    /// Low-emphasis text (`text_muted`, `text_secondary`) is rendered on
+    /// `surface` — the status row, gauge divider, and modal chrome all use
+    /// that background. If the contrast is too low the text is invisible:
+    /// Nord originally set `text_muted` to bare nord3, which *is* the surface
+    /// neighbour, scoring a 1.36 WCAG ratio. The 2.0 floor is evidence-based —
+    /// every other bundled theme clears ~2.5+, so this catches a slot set to
+    /// (or near) the surface color without flagging the legitimately-muted
+    /// palettes.
+    #[test]
+    fn muted_text_is_legible_on_surface_robust() {
+        for name in Theme::available_names() {
+            let t = Theme::by_name(name)
+                .unwrap_or_else(|| panic!("available name {name:?} must resolve"));
+            let surface = rgb_of(t.surface).unwrap();
+            let muted = rgb_of(t.text_muted).unwrap();
+            let secondary = rgb_of(t.text_secondary).unwrap();
+            let muted_ratio = wcag_contrast(muted, surface);
+            let secondary_ratio = wcag_contrast(secondary, surface);
+            assert!(
+                muted_ratio >= 2.0,
+                "{name}: text_muted on surface contrast {muted_ratio:.2} < 2.0 — \
+                 muted text would be near-invisible on the status row",
+            );
+            assert!(
+                secondary_ratio >= 2.0,
+                "{name}: text_secondary on surface contrast {secondary_ratio:.2} < 2.0",
+            );
+        }
     }
 
     /// Every canonical theme — including the new opencode-style palettes —
