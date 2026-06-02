@@ -4,9 +4,7 @@ use crate::app::App;
 use crate::runtime::AppEvent;
 
 use super::palette::{execute_palette_action, palette_items};
-use super::theme_picker::{
-    apply_theme, close_theme_picker, filtered_theme_choices, preview_theme,
-};
+use super::theme_picker::{apply_theme, close_theme_picker, filtered_theme_choices, preview_theme};
 
 pub(super) async fn handle_modal_key(
     app: &mut App,

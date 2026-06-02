@@ -14,6 +14,7 @@ use crate::{toast, types};
 /// Handle `StreamEvent::Error(e)`.
 pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: String) {
     app.record_stream_activity();
+    app.stream_lifecycle = None;
     tracing::error!(
         target: "jfc::stream",
         error = %e,
@@ -259,6 +260,7 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
     app.streaming_assistant_idx = None;
     app.active_stream_handle = None;
     app.current_stream_request = None;
+    app.stream_lifecycle = None;
     // Clear the turn clock and any pending tool calls so the
     // spinner row stops rendering. Without this, the
     // `show_spinner` condition stays true (it checks

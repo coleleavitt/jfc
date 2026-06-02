@@ -1039,6 +1039,9 @@ pub(crate) async fn run(
                 AppEvent::Stream(StreamEvent::RequestMetadata(meta)) => {
                     handlers::ui_actions::handle_request_metadata(&mut app, meta);
                 }
+                AppEvent::Stream(StreamEvent::Lifecycle(status)) => {
+                    handlers::ui_actions::handle_stream_lifecycle(&mut app, status);
+                }
 
                 // ── Provider events ─────────────────────────────────────
                 AppEvent::Provider(ev) => {

@@ -111,10 +111,7 @@ pub(super) fn question(f: &mut Frame, app: &App) {
         render_options(f, item, pending.editing_other, rows[2], &t);
     }
 
-    f.render_widget(
-        Paragraph::new(footer_hint(pending, &t)),
-        rows[3],
-    );
+    f.render_widget(Paragraph::new(footer_hint(pending, &t)), rows[3]);
 }
 
 /// Header-chip nav bar across the questions: current is highlighted, answered
@@ -229,10 +226,7 @@ fn render_options(f: &mut Frame, item: &QuestionItem, editing_other: bool, area:
         other_style,
     ))));
 
-    f.render_widget(
-        List::new(items).style(Style::default().bg(t.surface)),
-        area,
-    );
+    f.render_widget(List::new(items).style(Style::default().bg(t.surface)), area);
 }
 
 fn render_preview(f: &mut Frame, preview: &str, area: Rect, t: &Theme) {

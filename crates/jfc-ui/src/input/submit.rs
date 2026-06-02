@@ -36,7 +36,9 @@ pub(super) async fn handle_submit(
             ) {
                 Ok(path) => format!(
                     "remembered → {}",
-                    path.file_name().and_then(|n| n.to_str()).unwrap_or("memory")
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("memory")
                 ),
                 Err(e) => format!("memory save failed: {e}"),
             };

@@ -711,6 +711,7 @@ pub(crate) async fn handle_all_complete(app: &mut App, tx: &EventSender) {
         app.streaming_response_bytes = 0;
         app.streaming_assistant_idx = None;
         app.current_stream_request = None;
+        app.stream_lifecycle = None;
         app.turn_started_at = None;
     } else if app.pending_approval.is_none()
         && app.approval_queue.is_empty()

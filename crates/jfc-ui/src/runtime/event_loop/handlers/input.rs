@@ -161,10 +161,12 @@ fn handle_focus_gained(app: &mut App, tx: &EventSender) {
     let tx = tx.clone();
     tokio::task::spawn_blocking(move || {
         if let Ok(Some(_)) = attachments::read_clipboard_image() {
-            let _ = tx.try_send(crate::runtime::AppEvent::Ui(crate::runtime::UiEvent::Toast {
-                kind: toast::ToastKind::Info,
-                text: "image in clipboard · Ctrl+V to paste".to_string(),
-            }));
+            let _ = tx.try_send(crate::runtime::AppEvent::Ui(
+                crate::runtime::UiEvent::Toast {
+                    kind: toast::ToastKind::Info,
+                    text: "image in clipboard · Ctrl+V to paste".to_string(),
+                },
+            ));
         }
     });
 }

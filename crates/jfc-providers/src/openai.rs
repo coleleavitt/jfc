@@ -966,7 +966,11 @@ mod tests {
     #[test]
     fn openai_effort_clamp_passthrough_robust() {
         for tier in ["none", "minimal", "low", "medium", "high", "xhigh"] {
-            assert_eq!(clamp_effort_for_openai(tier), tier, "{tier} must pass through");
+            assert_eq!(
+                clamp_effort_for_openai(tier),
+                tier,
+                "{tier} must pass through"
+            );
         }
         assert_eq!(clamp_effort_for_openai("max"), "xhigh");
         assert_eq!(clamp_effort_for_openai("MAX"), "xhigh");

@@ -134,6 +134,7 @@ pub(crate) async fn drain_queued_prompts(app: &mut App, tx: &EventSender) {
     app.refusal_fallback_attempted = false;
     app.network_recovery_status = None;
     app.network_recovery_attempts = 0;
+    app.stream_lifecycle = None;
     app.streaming_assistant_idx = Some(assistant_idx);
     app.is_streaming = true;
     let now = std::time::Instant::now();

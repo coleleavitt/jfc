@@ -76,126 +76,211 @@ fn transition(state: &VimState, input: Input, ta: &mut TextArea<'_>) -> Transiti
     match state.mode {
         VimMode::Normal | VimMode::Visual | VimMode::Operator(_) => {
             match input {
-                Input { key: Key::Char('h') | Key::Left, .. } => ta.move_cursor(CursorMove::Back),
-                Input { key: Key::Char('j') | Key::Down, .. } => ta.move_cursor(CursorMove::Down),
-                Input { key: Key::Char('k') | Key::Up, .. } => ta.move_cursor(CursorMove::Up),
-                Input { key: Key::Char('l') | Key::Right, .. } => {
-                    ta.move_cursor(CursorMove::Forward)
-                }
-                Input { key: Key::Char('w'), .. } => ta.move_cursor(CursorMove::WordForward),
-                Input { key: Key::Char('e'), ctrl: false, .. } => {
+                Input {
+                    key: Key::Char('h') | Key::Left,
+                    ..
+                } => ta.move_cursor(CursorMove::Back),
+                Input {
+                    key: Key::Char('j') | Key::Down,
+                    ..
+                } => ta.move_cursor(CursorMove::Down),
+                Input {
+                    key: Key::Char('k') | Key::Up,
+                    ..
+                } => ta.move_cursor(CursorMove::Up),
+                Input {
+                    key: Key::Char('l') | Key::Right,
+                    ..
+                } => ta.move_cursor(CursorMove::Forward),
+                Input {
+                    key: Key::Char('w'),
+                    ..
+                } => ta.move_cursor(CursorMove::WordForward),
+                Input {
+                    key: Key::Char('e'),
+                    ctrl: false,
+                    ..
+                } => {
                     ta.move_cursor(CursorMove::WordEnd);
                     if matches!(state.mode, VimMode::Operator(_)) {
                         ta.move_cursor(CursorMove::Forward);
                     }
                 }
-                Input { key: Key::Char('b'), ctrl: false, .. } => {
-                    ta.move_cursor(CursorMove::WordBack)
-                }
-                Input { key: Key::Char('^' | '0'), .. } => ta.move_cursor(CursorMove::Head),
-                Input { key: Key::Char('$'), .. } => ta.move_cursor(CursorMove::End),
-                Input { key: Key::Char('D'), .. } => {
+                Input {
+                    key: Key::Char('b'),
+                    ctrl: false,
+                    ..
+                } => ta.move_cursor(CursorMove::WordBack),
+                Input {
+                    key: Key::Char('^' | '0'),
+                    ..
+                } => ta.move_cursor(CursorMove::Head),
+                Input {
+                    key: Key::Char('$'),
+                    ..
+                } => ta.move_cursor(CursorMove::End),
+                Input {
+                    key: Key::Char('D'),
+                    ..
+                } => {
                     ta.delete_line_by_end();
                     return Transition::Mode(VimMode::Normal);
                 }
-                Input { key: Key::Char('C'), .. } => {
+                Input {
+                    key: Key::Char('C'),
+                    ..
+                } => {
                     ta.delete_line_by_end();
                     ta.cancel_selection();
                     return Transition::Mode(VimMode::Insert);
                 }
-                Input { key: Key::Char('p'), .. } => {
+                Input {
+                    key: Key::Char('p'),
+                    ..
+                } => {
                     ta.paste();
                     return Transition::Mode(VimMode::Normal);
                 }
-                Input { key: Key::Char('u'), ctrl: false, .. } => {
+                Input {
+                    key: Key::Char('u'),
+                    ctrl: false,
+                    ..
+                } => {
                     ta.undo();
                     return Transition::Mode(VimMode::Normal);
                 }
-                Input { key: Key::Char('r'), ctrl: true, .. } => {
+                Input {
+                    key: Key::Char('r'),
+                    ctrl: true,
+                    ..
+                } => {
                     ta.redo();
                     return Transition::Mode(VimMode::Normal);
                 }
-                Input { key: Key::Char('x'), .. }
-                    if is_before_line_end(ta) || ta.lines()[ta.cursor().0].is_empty() =>
-                {
+                Input {
+                    key: Key::Char('x'),
+                    ..
+                } if is_before_line_end(ta) || ta.lines()[ta.cursor().0].is_empty() => {
                     ta.delete_next_char();
                     return Transition::Mode(VimMode::Normal);
                 }
-                Input { key: Key::Char('i'), .. } => {
+                Input {
+                    key: Key::Char('i'),
+                    ..
+                } => {
                     ta.cancel_selection();
                     return Transition::Mode(VimMode::Insert);
                 }
-                Input { key: Key::Char('a'), .. } => {
+                Input {
+                    key: Key::Char('a'),
+                    ..
+                } => {
                     ta.cancel_selection();
                     if is_before_line_end(ta) {
                         ta.move_cursor(CursorMove::Forward);
                     }
                     return Transition::Mode(VimMode::Insert);
                 }
-                Input { key: Key::Char('A'), .. } => {
+                Input {
+                    key: Key::Char('A'),
+                    ..
+                } => {
                     ta.cancel_selection();
                     ta.move_cursor(CursorMove::End);
                     return Transition::Mode(VimMode::Insert);
                 }
-                Input { key: Key::Char('o'), .. } => {
+                Input {
+                    key: Key::Char('o'),
+                    ..
+                } => {
                     ta.move_cursor(CursorMove::End);
                     ta.insert_newline();
                     return Transition::Mode(VimMode::Insert);
                 }
-                Input { key: Key::Char('O'), .. } => {
+                Input {
+                    key: Key::Char('O'),
+                    ..
+                } => {
                     ta.move_cursor(CursorMove::Head);
                     ta.insert_newline();
                     ta.move_cursor(CursorMove::Up);
                     return Transition::Mode(VimMode::Insert);
                 }
-                Input { key: Key::Char('I'), .. } => {
+                Input {
+                    key: Key::Char('I'),
+                    ..
+                } => {
                     ta.cancel_selection();
                     ta.move_cursor(CursorMove::Head);
                     return Transition::Mode(VimMode::Insert);
                 }
-                Input { key: Key::Char('r'), ctrl: false, .. }
-                    if state.mode == VimMode::Normal =>
-                {
+                Input {
+                    key: Key::Char('r'),
+                    ctrl: false,
+                    ..
+                } if state.mode == VimMode::Normal => {
                     return Transition::Mode(VimMode::Replace(true));
                 }
-                Input { key: Key::Char('R'), ctrl: false, .. }
-                    if state.mode == VimMode::Normal =>
-                {
+                Input {
+                    key: Key::Char('R'),
+                    ctrl: false,
+                    ..
+                } if state.mode == VimMode::Normal => {
                     return Transition::Mode(VimMode::Replace(false));
                 }
-                Input { key: Key::Char('v'), ctrl: false, .. }
-                    if state.mode == VimMode::Normal =>
-                {
+                Input {
+                    key: Key::Char('v'),
+                    ctrl: false,
+                    ..
+                } if state.mode == VimMode::Normal => {
                     ta.start_selection();
                     return Transition::Mode(VimMode::Visual);
                 }
-                Input { key: Key::Char('V'), ctrl: false, .. }
-                    if state.mode == VimMode::Normal =>
-                {
+                Input {
+                    key: Key::Char('V'),
+                    ctrl: false,
+                    ..
+                } if state.mode == VimMode::Normal => {
                     ta.move_cursor(CursorMove::Head);
                     ta.start_selection();
                     ta.move_cursor(CursorMove::End);
                     return Transition::Mode(VimMode::Visual);
                 }
                 Input { key: Key::Esc, .. }
-                | Input { key: Key::Char('v'), ctrl: false, .. }
-                    if state.mode == VimMode::Visual =>
-                {
+                | Input {
+                    key: Key::Char('v'),
+                    ctrl: false,
+                    ..
+                } if state.mode == VimMode::Visual => {
                     ta.cancel_selection();
                     return Transition::Mode(VimMode::Normal);
                 }
-                Input { key: Key::Char('g'), ctrl: false, .. }
-                    if matches!(state.pending, Input { key: Key::Char('g'), ctrl: false, .. }) =>
+                Input {
+                    key: Key::Char('g'),
+                    ctrl: false,
+                    ..
+                } if matches!(
+                    state.pending,
+                    Input {
+                        key: Key::Char('g'),
+                        ctrl: false,
+                        ..
+                    }
+                ) =>
                 {
                     ta.move_cursor(CursorMove::Top)
                 }
-                Input { key: Key::Char('G'), ctrl: false, .. } => {
-                    ta.move_cursor(CursorMove::Bottom)
-                }
+                Input {
+                    key: Key::Char('G'),
+                    ctrl: false,
+                    ..
+                } => ta.move_cursor(CursorMove::Bottom),
                 // Doubled operator (dd / cc / yy): select the whole line.
-                Input { key: Key::Char(c), ctrl: false, .. }
-                    if state.mode == VimMode::Operator(c) =>
-                {
+                Input {
+                    key: Key::Char(c),
+                    ctrl: false,
+                    ..
+                } if state.mode == VimMode::Operator(c) => {
                     ta.move_cursor(CursorMove::Head);
                     ta.start_selection();
                     let cursor = ta.cursor();
@@ -204,29 +289,37 @@ fn transition(state: &VimState, input: Input, ta: &mut TextArea<'_>) -> Transiti
                         ta.move_cursor(CursorMove::End);
                     }
                 }
-                Input { key: Key::Char(op @ ('y' | 'd' | 'c')), ctrl: false, .. }
-                    if state.mode == VimMode::Normal =>
-                {
+                Input {
+                    key: Key::Char(op @ ('y' | 'd' | 'c')),
+                    ctrl: false,
+                    ..
+                } if state.mode == VimMode::Normal => {
                     ta.start_selection();
                     return Transition::Mode(VimMode::Operator(op));
                 }
-                Input { key: Key::Char('y'), ctrl: false, .. }
-                    if state.mode == VimMode::Visual =>
-                {
+                Input {
+                    key: Key::Char('y'),
+                    ctrl: false,
+                    ..
+                } if state.mode == VimMode::Visual => {
                     ta.move_cursor(CursorMove::Forward);
                     ta.copy();
                     return Transition::Mode(VimMode::Normal);
                 }
-                Input { key: Key::Char('d'), ctrl: false, .. }
-                    if state.mode == VimMode::Visual =>
-                {
+                Input {
+                    key: Key::Char('d'),
+                    ctrl: false,
+                    ..
+                } if state.mode == VimMode::Visual => {
                     ta.move_cursor(CursorMove::Forward);
                     ta.cut();
                     return Transition::Mode(VimMode::Normal);
                 }
-                Input { key: Key::Char('c'), ctrl: false, .. }
-                    if state.mode == VimMode::Visual =>
-                {
+                Input {
+                    key: Key::Char('c'),
+                    ctrl: false,
+                    ..
+                } if state.mode == VimMode::Visual => {
                     ta.move_cursor(CursorMove::Forward);
                     ta.cut();
                     return Transition::Mode(VimMode::Insert);
@@ -253,7 +346,11 @@ fn transition(state: &VimState, input: Input, ta: &mut TextArea<'_>) -> Transiti
         }
         VimMode::Insert => match input {
             Input { key: Key::Esc, .. }
-            | Input { key: Key::Char('['), ctrl: true, .. } => Transition::Mode(VimMode::Normal),
+            | Input {
+                key: Key::Char('['),
+                ctrl: true,
+                ..
+            } => Transition::Mode(VimMode::Normal),
             input => {
                 ta.input(input);
                 Transition::Mode(VimMode::Insert)
@@ -261,7 +358,12 @@ fn transition(state: &VimState, input: Input, ta: &mut TextArea<'_>) -> Transiti
         },
         VimMode::Replace(once) => match input {
             Input { key: Key::Esc, .. } => Transition::Mode(VimMode::Normal),
-            Input { key: Key::Char(c), ctrl: false, alt: false, .. } => {
+            Input {
+                key: Key::Char(c),
+                ctrl: false,
+                alt: false,
+                ..
+            } => {
                 if is_before_line_end(ta)
                     || ta.lines()[ta.cursor().0].chars().count() == ta.cursor().1
                 {

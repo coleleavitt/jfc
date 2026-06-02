@@ -15,6 +15,7 @@ pub(crate) async fn handle_stream_done(
     app.record_stream_activity();
     app.network_recovery_status = None;
     app.network_recovery_attempts = 0;
+    app.stream_lifecycle = None;
     tracing::info!(
         target: "jfc::stream",
         ?stop_reason,
@@ -114,6 +115,7 @@ pub(crate) async fn handle_stream_done(
                 app.streaming_reasoning = String::new();
                 app.streaming_assistant_idx = None;
                 app.current_stream_request = None;
+                app.stream_lifecycle = None;
                 if idx < app.messages.len() {
                     app.messages.remove(idx);
                 }
@@ -158,6 +160,7 @@ pub(crate) async fn handle_stream_done(
                 app.streaming_reasoning = String::new();
                 app.streaming_assistant_idx = None;
                 app.current_stream_request = None;
+                app.stream_lifecycle = None;
                 if idx < app.messages.len() {
                     app.messages.remove(idx);
                 }
@@ -656,6 +659,7 @@ pub(crate) async fn handle_stream_done(
         }
         app.streaming_assistant_idx = None;
         app.current_stream_request = None;
+        app.stream_lifecycle = None;
         app.scroll_to_bottom();
     } else if stream::should_continue_loop(&app.messages) {
         // The assistant emitted tool_use blocks that were all recorded
@@ -715,6 +719,7 @@ pub(crate) async fn handle_stream_done(
         }
         app.streaming_assistant_idx = None;
         app.current_stream_request = None;
+        app.stream_lifecycle = None;
         app.scroll_to_bottom();
     }
 
@@ -937,8 +942,12 @@ mod stream_done_lifecycle_tests {
     fn stop_reason_is_refusal_classifies_normal() {
         use jfc_provider::StopReason;
         assert!(stop_reason_is_refusal(&StopReason::Refusal));
-        assert!(stop_reason_is_refusal(&StopReason::Other("content_filter".into())));
-        assert!(stop_reason_is_refusal(&StopReason::Other("model_refusal".into())));
+        assert!(stop_reason_is_refusal(&StopReason::Other(
+            "content_filter".into()
+        )));
+        assert!(stop_reason_is_refusal(&StopReason::Other(
+            "model_refusal".into()
+        )));
         assert!(!stop_reason_is_refusal(&StopReason::EndTurn));
         assert!(!stop_reason_is_refusal(&StopReason::ToolUse));
         assert!(!stop_reason_is_refusal(&StopReason::Other("stop".into())));

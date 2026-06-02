@@ -30,6 +30,18 @@ pub struct Range {
     pub importance: u8,
 }
 
+impl Range {
+    pub fn edge_source(start: u32, name: String, importance: u8) -> Self {
+        Self {
+            start,
+            end: start,
+            name,
+            kind: NodeKind::Function,
+            importance,
+        }
+    }
+}
+
 /// A merged group of nearby ranges, ready to be rendered as a single
 /// contiguous source slice (with line-number prefixes and a few lines
 /// of context padding on each side).
@@ -53,6 +65,20 @@ pub fn build_ranges(
     entry_points: &HashSet<NodeId>,
     file_line_count: u32,
 ) -> Vec<Range> {
+    build_ranges_with_importance(graph, nodes, file_line_count, |id| {
+        if entry_points.contains(id) { 10 } else { 1 }
+    })
+}
+
+pub fn build_ranges_with_importance<F>(
+    graph: &CodeGraph,
+    nodes: &[NodeId],
+    file_line_count: u32,
+    importance_for: F,
+) -> Vec<Range>
+where
+    F: Fn(&NodeId) -> u8,
+{
     let mut out = Vec::with_capacity(nodes.len());
     for id in nodes {
         let Some(node) = graph.get_node(id) else {
@@ -65,7 +91,7 @@ pub fn build_ranges(
         if is_envelope_kind(node.kind) && file_line_count > 0 && span_size * 2 > file_line_count {
             continue;
         }
-        let importance = if entry_points.contains(id) { 10 } else { 1 };
+        let importance = importance_for(id);
         out.push(Range {
             start: node.span.start_line,
             end: node.span.end_line,
@@ -97,7 +123,7 @@ pub fn build_clusters(ranges: &[Range], gap_threshold: u32) -> Vec<Cluster> {
         symbols: vec![format!(
             "{}({})",
             ranges[0].name,
-            kind_label(ranges[0].kind)
+            display_kind_label(ranges[0].kind)
         )],
         score: ranges[0].importance as u32,
         max_importance: ranges[0].importance,
@@ -107,7 +133,7 @@ pub fn build_clusters(ranges: &[Range], gap_threshold: u32) -> Vec<Cluster> {
             current.end = current.end.max(r.end);
             current
                 .symbols
-                .push(format!("{}({})", r.name, kind_label(r.kind)));
+                .push(format!("{}({})", r.name, display_kind_label(r.kind)));
             current.score = current.score.saturating_add(r.importance as u32);
             if r.importance > current.max_importance {
                 current.max_importance = r.importance;
@@ -117,7 +143,7 @@ pub fn build_clusters(ranges: &[Range], gap_threshold: u32) -> Vec<Cluster> {
             current = Cluster {
                 start: r.start,
                 end: r.end,
-                symbols: vec![format!("{}({})", r.name, kind_label(r.kind))],
+                symbols: vec![format!("{}({})", r.name, display_kind_label(r.kind))],
                 score: r.importance as u32,
                 max_importance: r.importance,
             };
@@ -127,7 +153,7 @@ pub fn build_clusters(ranges: &[Range], gap_threshold: u32) -> Vec<Cluster> {
     clusters
 }
 
-fn kind_label(kind: NodeKind) -> &'static str {
+pub fn display_kind_label(kind: NodeKind) -> &'static str {
     match kind {
         NodeKind::Function => "fn",
         NodeKind::Struct => "struct",

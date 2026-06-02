@@ -373,7 +373,10 @@ pub(super) fn fit_segments(
 ) -> Vec<bool> {
     let mut keep = vec![true; prios.len()];
     loop {
-        let used: usize = (0..prios.len()).filter(|&i| keep[i]).map(|i| widths[i]).sum();
+        let used: usize = (0..prios.len())
+            .filter(|&i| keep[i])
+            .map(|i| widths[i])
+            .sum();
         if prefix_w + used <= avail {
             break;
         }
@@ -390,4 +393,3 @@ pub(super) fn fit_segments(
     }
     keep
 }
-

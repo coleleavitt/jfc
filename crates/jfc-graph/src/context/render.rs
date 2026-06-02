@@ -6,7 +6,7 @@
 //! chained queries. Each renderer takes the budget so it can truncate
 //! itself rather than letting a wrapper post-process the string.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::context::budget::ExploreBudget;
 use crate::context::heuristics::{TaskIntent, reminder_for};
@@ -168,6 +168,7 @@ pub fn render_context(
     out.push_str(&format!("**Query:** {query}\n\n"));
     push_entry_points(&mut out, graph, entry_points);
     push_related_symbols(&mut out, graph, related);
+    push_relationships(&mut out, graph, entry_points, related, budget);
     push_code_blocks(&mut out, graph, code_blocks);
     out.push_str(reminder_for(intent));
     if budget.include_completeness_signal && !code_blocks.is_empty() {
@@ -177,6 +178,89 @@ pub fn render_context(
         ));
     }
     out
+}
+
+fn push_relationships(
+    out: &mut String,
+    graph: &CodeGraph,
+    entry_points: &[NodeId],
+    related: &[NodeId],
+    budget: &ExploreBudget,
+) {
+    if !budget.include_relationships {
+        return;
+    }
+    let node_set: HashSet<NodeId> = entry_points.iter().chain(related.iter()).cloned().collect();
+    if node_set.len() < 2 {
+        return;
+    }
+
+    let mut by_kind: HashMap<EdgeKind, Vec<(String, String)>> = HashMap::new();
+    for src in &node_set {
+        let Some(src_node) = graph.get_node(src) else {
+            continue;
+        };
+        for (target, edge) in graph.get_edges_from(src) {
+            if !node_set.contains(target) || !is_context_relationship_edge(&edge.kind) {
+                continue;
+            }
+            let Some(target_node) = graph.get_node(target) else {
+                continue;
+            };
+            let src_label = relation_label(src_node);
+            let target_label = relation_label(target_node);
+            let entries = by_kind.entry(edge.kind.clone()).or_default();
+            if !entries
+                .iter()
+                .any(|(s, t)| s == &src_label && t == &target_label)
+            {
+                entries.push((src_label, target_label));
+            }
+        }
+    }
+
+    if by_kind.is_empty() {
+        return;
+    }
+    let mut rels: Vec<_> = by_kind.into_iter().collect();
+    rels.sort_by_key(|(kind, edges)| {
+        (
+            edge_kind_label(kind).to_string(),
+            std::cmp::Reverse(edges.len()),
+        )
+    });
+
+    out.push_str("### Relationships\n\n");
+    for (kind, edges) in rels {
+        out.push_str(&format!("**{}:**\n", edge_kind_label(&kind)));
+        for (src, target) in edges.iter().take(budget.max_edges_per_relationship_kind) {
+            out.push_str(&format!("- {src} -> {target}\n"));
+        }
+        if edges.len() > budget.max_edges_per_relationship_kind {
+            out.push_str(&format!(
+                "- ... and {} more\n",
+                edges.len() - budget.max_edges_per_relationship_kind
+            ));
+        }
+        out.push('\n');
+    }
+}
+
+fn relation_label(node: &NodeData) -> String {
+    format!("{}:{}", node.name, node.span.start_line)
+}
+
+fn is_context_relationship_edge(kind: &EdgeKind) -> bool {
+    matches!(
+        kind,
+        EdgeKind::Calls
+            | EdgeKind::UnresolvedCall(_)
+            | EdgeKind::UsesType
+            | EdgeKind::References
+            | EdgeKind::Implements
+            | EdgeKind::Returns
+            | EdgeKind::TypeOf
+    )
 }
 
 fn push_entry_points(out: &mut String, graph: &CodeGraph, entry_points: &[NodeId]) {
@@ -263,6 +347,8 @@ pub fn render_explore(
     relationships: &[(EdgeKind, Vec<(String, String)>)],
     file_blocks: &[(String, String, String, String)],
     additional_files: &[(String, String)],
+    overload_notes: &[String],
+    semantic_notes: &[String],
     budget: &ExploreBudget,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
@@ -289,6 +375,20 @@ pub fn render_explore(
             }
             lines.push(String::new());
         }
+    }
+
+    if !overload_notes.is_empty() {
+        lines.push("### Matched Symbols".into());
+        lines.push(String::new());
+        lines.extend(overload_notes.iter().cloned());
+        lines.push(String::new());
+    }
+
+    if !semantic_notes.is_empty() {
+        lines.push("### Semantic Enrichment".into());
+        lines.push(String::new());
+        lines.extend(semantic_notes.iter().cloned());
+        lines.push(String::new());
     }
 
     if !file_blocks.is_empty() {
@@ -333,7 +433,7 @@ pub fn render_explore(
         lines.push(format!(
             "> **Explore budget: {} calls max for this project.** \
              Stop exploring and synthesise your answer once you've used the budget.",
-            ExploreBudget::call_budget(usize::MAX), // caller embeds correct value via wrapper
+            budget.recommended_call_budget,
         ));
     }
 
@@ -436,6 +536,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::edges::EdgeData;
     use crate::nodes::{NodeId, NodeKind, Span, Visibility};
 
     fn span(start: u32) -> Span {
@@ -533,6 +634,36 @@ mod tests {
     }
 
     #[test]
+    fn render_context_includes_relationship_map() {
+        let mut g = CodeGraph::new();
+        let caller = g.add_node(node("caller", NodeKind::Function, 1));
+        let callee = g.add_node(node("callee", NodeKind::Function, 10));
+        g.add_edge(
+            &caller,
+            &callee,
+            EdgeData {
+                kind: EdgeKind::Calls,
+                source_span: span(3),
+                weight: 1.0,
+            },
+        )
+        .unwrap();
+        let budget = ExploreBudget::for_file_count(1000);
+        let out = render_context(
+            &g,
+            "caller",
+            &[caller],
+            &[callee],
+            &[],
+            TaskIntent::Exploration,
+            &budget,
+        );
+        assert!(out.contains("### Relationships"));
+        assert!(out.contains("**calls:**"));
+        assert!(out.contains("caller:1 -> callee:10"));
+    }
+
+    #[test]
     fn truncate_to_budget_keeps_under_cap() {
         let big = "line\n".repeat(1000);
         let truncated = truncate_to_budget(&big, 200);
@@ -544,7 +675,7 @@ mod tests {
     fn render_explore_emits_relationships() {
         let budget = ExploreBudget::for_file_count(1000);
         let rels = vec![(EdgeKind::Calls, vec![("a".to_string(), "b".to_string())])];
-        let out = render_explore("test", 1, 1, &rels, &[], &[], &budget);
+        let out = render_explore("test", 1, 1, &rels, &[], &[], &[], &[], &budget);
         assert!(out.contains("### Relationships"));
         assert!(out.contains("**calls:**"));
         assert!(out.contains("a → b"));

@@ -368,7 +368,10 @@ mod tests {
         for m in &out {
             for c in &m.content {
                 assert!(
-                    !matches!(c, ProviderContent::ToolUse { .. } | ProviderContent::ToolResult { .. }),
+                    !matches!(
+                        c,
+                        ProviderContent::ToolUse { .. } | ProviderContent::ToolResult { .. }
+                    ),
                     "AskUserQuestion must not emit tool_use/tool_result blocks"
                 );
             }
@@ -380,7 +383,10 @@ mod tests {
                     matches!(c, ProviderContent::Text(t) if t.starts_with("[User answered AskUserQuestion]:"))
                 })
         });
-        assert!(has_marker, "expected a [User answered AskUserQuestion] user turn");
+        assert!(
+            has_marker,
+            "expected a [User answered AskUserQuestion] user turn"
+        );
     }
 
     // Robust: a *declined* (Failed) AskUserQuestion is NOT rewritten — it keeps
@@ -407,7 +413,10 @@ mod tests {
             |c| matches!(c, ProviderContent::ToolResult { tool_use_id, is_error, .. } if tool_use_id == "toolu_q2" && *is_error),
         );
         assert!(has_tool_use, "declined question keeps its tool_use");
-        assert!(has_tool_result, "declined question keeps its error tool_result");
+        assert!(
+            has_tool_result,
+            "declined question keeps its error tool_result"
+        );
     }
 
     // Normal: a Failed tool surfaces as is_error=true so the model can react

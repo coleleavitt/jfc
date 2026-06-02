@@ -1826,7 +1826,11 @@ mod macro_equivalence_tests {
                 json!({"file_path":"a.rs","offset":"12","limit":"34"})
             )
             .unwrap(),
-            ToolInput::Read { offset: Some(12), limit: Some(34), .. }
+            ToolInput::Read {
+                offset: Some(12),
+                limit: Some(34),
+                ..
+            }
         ));
     }
 

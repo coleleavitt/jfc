@@ -978,6 +978,7 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
         // Honest phase label, unless an in-progress task names the actual
         // work — its `activeForm` is more specific *and* still honest, so
         // it wins. No random decorative verb, no shimmer sweep.
+        let lifecycle = app.stream_lifecycle.as_ref();
         let label: std::borrow::Cow<'_, str> = {
             let tasks = app.task_store.list(jfc_session::DeletedFilter::Exclude);
             tasks
@@ -987,6 +988,9 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
                 // Cap the override so a long `activeForm` can't blow out the
                 // status row (the phase label is always short).
                 .map(|s| std::borrow::Cow::Owned(truncate_str(s, 48)))
+                .or_else(|| {
+                    lifecycle.map(|status| std::borrow::Cow::Borrowed(status.phase.label()))
+                })
                 .unwrap_or(std::borrow::Cow::Borrowed(app.spinner_state.phase.label()))
         };
         // Label color: secondary while live, muted once the stream has
@@ -996,7 +1000,22 @@ pub(super) fn spinner_row(f: &mut Frame, app: &App, area: Rect) {
             label.into_owned(),
             Style::default().fg(label_color),
         ));
-        tail_body = segs.body;
+        tail_body = if let Some(status) = lifecycle {
+            let age = now.duration_since(status.updated_at).as_secs();
+            let mut body = String::new();
+            if let Some(detail) = status.detail.as_deref().filter(|s| !s.is_empty()) {
+                body.push_str(" · ");
+                body.push_str(detail);
+            }
+            body.push_str(&format!(" · {age}s"));
+            if !segs.body.is_empty() {
+                body.push_str(" · ");
+                body.push_str(segs.body.trim_start_matches(" · "));
+            }
+            body
+        } else {
+            segs.body
+        };
     };
     // The `· N agents…` fanout badge that used to live here is gone — the
     // agent fan's `agents  ●N ○N ✓N ✗N` summary line (just below the

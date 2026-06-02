@@ -130,7 +130,11 @@ pub(super) async fn drain_stream_events(
                     }))
                     .await;
             }
-            StreamEvent::ThinkingDelta { delta, estimated_tokens, .. } => {
+            StreamEvent::ThinkingDelta {
+                delta,
+                estimated_tokens,
+                ..
+            } => {
                 committed_output = true;
                 // Same rationale as TextDelta — thinking text is displayed
                 // in the UI and losing chunks creates gaps in the reasoning

@@ -16,7 +16,7 @@ use crate::auto_mode::AutoModeConfig;
 use crate::context::{ReadDedupCache, ToolContext};
 use crate::query::QueryCache;
 use crate::render_cache::RenderCache;
-use crate::runtime::StreamRequestMetadata;
+use crate::runtime::{StreamLifecycleStatus, StreamRequestMetadata};
 use crate::slate::SlateRouter;
 use crate::theme::Theme;
 use crate::types::*;
@@ -325,7 +325,11 @@ impl TextSelection {
     pub fn ordered(&self) -> ((u16, u16), (u16, u16)) {
         let (a, h) = (self.anchor, self.head);
         // Order by row, then column.
-        if (a.1, a.0) <= (h.1, h.0) { (a, h) } else { (h, a) }
+        if (a.1, a.0) <= (h.1, h.0) {
+            (a, h)
+        } else {
+            (h, a)
+        }
     }
 }
 
@@ -508,6 +512,11 @@ pub struct App {
     /// until the next real stream byte arrives.
     pub network_recovery_status: Option<NetworkRecoveryStatus>,
     pub network_recovery_attempts: u32,
+    /// Latest pre-content request lifecycle phase. Unlike
+    /// `network_recovery_status`, this also covers normal quiet windows:
+    /// context assembly, first-byte wait, stream-open/no-event, and fallback
+    /// attempts. Cleared on the first real stream output/tool/done/error.
+    pub stream_lifecycle: Option<StreamLifecycleStatus>,
     /// Latest status.claude.com heartbeat. This is intentionally
     /// best-effort UI context, not a dependency for provider requests.
     pub claude_status: Option<crate::claude_status::ClaudeStatusSnapshot>,
@@ -1447,6 +1456,7 @@ impl App {
             pending_context_hint_tokens_saved: None,
             network_recovery_status: None,
             network_recovery_attempts: 0,
+            stream_lifecycle: None,
             claude_status: None,
             claude_status_error: None,
             streaming_assistant_idx: None,

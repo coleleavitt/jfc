@@ -2,7 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::sync::mpsc;
 
-use crate::runtime::{AppEvent, StreamEvent, StreamRequestOverrides};
+use crate::runtime::{
+    AppEvent, StreamEvent, StreamLifecyclePhase, StreamLifecycleStatus, StreamRequestOverrides,
+};
 use jfc_provider::{ModelId, Provider, ProviderMessage, StopReason, StreamOptions};
 
 use super::{live_events, open_stream_with_bedrock_retries, prepare_stream_request};
@@ -43,6 +45,13 @@ pub async fn stream_response(
     previous_message_id: Option<String>,
     overrides: StreamRequestOverrides,
 ) {
+    let _ = tx.try_send(AppEvent::Stream(StreamEvent::Lifecycle(
+        StreamLifecycleStatus::new(
+            StreamLifecyclePhase::PreparingContext,
+            Some(format!("{} messages", messages.len())),
+        ),
+    )));
+
     let prepared = prepare_stream_request(provider.clone(), &messages, &model, overrides).await;
     let mut opts = prepared.opts;
     if let Some(id) = previous_message_id {
@@ -97,6 +106,12 @@ pub async fn stream_response(
     // Wrap in Arc so the retry loop and thinking-fallback path share the same
     // allocation instead of cloning the full Vec<ProviderMessage> on each attempt.
     let messages = Arc::new(messages);
+    let _ = tx.try_send(AppEvent::Stream(StreamEvent::Lifecycle(
+        StreamLifecycleStatus::new(
+            StreamLifecyclePhase::WaitingForFirstByte,
+            Some(format!("{} · {}", provider.name(), model)),
+        ),
+    )));
     let stream = match open_stream_with_cancel_and_timeout(
         provider.as_ref(),
         Arc::clone(&messages),
@@ -107,6 +122,12 @@ pub async fn stream_response(
     {
         Ok(s) => {
             tracing::debug!(target: "jfc::stream", "stream opened successfully");
+            let _ = tx.try_send(AppEvent::Stream(StreamEvent::Lifecycle(
+                StreamLifecycleStatus::new(
+                    StreamLifecyclePhase::StreamOpened,
+                    Some("waiting for first event".to_string()),
+                ),
+            )));
             s
         }
         Err(e) => {
@@ -124,6 +145,12 @@ pub async fn stream_response(
                 fallback_opts.adaptive_thinking = false;
                 fallback_opts.thinking_budget = None;
                 fallback_opts.thinking_display = None;
+                let _ = tx.try_send(AppEvent::Stream(StreamEvent::Lifecycle(
+                    StreamLifecycleStatus::new(
+                        StreamLifecyclePhase::RetryingWithoutThinking,
+                        Some(model.to_string()),
+                    ),
+                )));
                 match open_stream_with_cancel_and_timeout(
                     provider.as_ref(),
                     Arc::clone(&messages),
@@ -357,6 +384,14 @@ async fn try_nonstreaming_fallback(
         error = %error,
         "stream failed; trying non-streaming completion fallback"
     );
+    let _ = tx
+        .send(AppEvent::Stream(StreamEvent::Lifecycle(
+            StreamLifecycleStatus::new(
+                StreamLifecyclePhase::NonStreamingFallback,
+                Some(provider.name().to_string()),
+            ),
+        )))
+        .await;
     let response = match provider.complete((*messages).clone(), opts).await {
         Ok(response) => response,
         Err(fallback_error) => {

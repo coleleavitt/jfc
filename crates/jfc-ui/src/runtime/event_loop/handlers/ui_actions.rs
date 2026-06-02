@@ -50,43 +50,59 @@ pub(crate) async fn handle_submit(
     if away >= crate::session_recap::AWAY_THRESHOLD && !app.idle_return_shown {
         use crate::types::{MessagePart, Role, ToolInput};
         let start_idx = app.interaction_message_idx.min(app.messages.len());
-        let since: Vec<crate::session_recap::RecapMessage> = app.messages[start_idx..]
-            .iter()
-            .map(|m| {
-                let text_preview = m.parts.iter().find_map(|p| match p {
-                    MessagePart::Text(t) if !t.is_empty() => {
-                        Some(t.chars().take(160).collect::<String>())
-                    }
-                    _ => None,
-                }).unwrap_or_default();
-                let tool_calls: Vec<String> = m.parts.iter().filter_map(|p| match p {
-                    MessagePart::Tool(t) => Some(t.kind.label().to_string()),
-                    _ => None,
-                }).collect();
-                // Surface which files the agent actually touched (Edit/Write/
-                // MultiEdit/NotebookEdit carry a `file_path`).
-                let files_changed: Vec<String> = m.parts.iter().filter_map(|p| match p {
-                    MessagePart::Tool(t) => match &t.input {
-                        ToolInput::Edit { file_path, .. }
-                        | ToolInput::Write { file_path, .. } => Some(file_path.clone()),
-                        _ => None,
-                    },
-                    _ => None,
-                }).collect();
-                let had_error = m.parts.iter().any(|p| matches!(p,
+        let since: Vec<crate::session_recap::RecapMessage> =
+            app.messages[start_idx..]
+                .iter()
+                .map(|m| {
+                    let text_preview = m
+                        .parts
+                        .iter()
+                        .find_map(|p| match p {
+                            MessagePart::Text(t) if !t.is_empty() => {
+                                Some(t.chars().take(160).collect::<String>())
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    let tool_calls: Vec<String> = m
+                        .parts
+                        .iter()
+                        .filter_map(|p| match p {
+                            MessagePart::Tool(t) => Some(t.kind.label().to_string()),
+                            _ => None,
+                        })
+                        .collect();
+                    // Surface which files the agent actually touched (Edit/Write/
+                    // MultiEdit/NotebookEdit carry a `file_path`).
+                    let files_changed: Vec<String> = m
+                        .parts
+                        .iter()
+                        .filter_map(|p| match p {
+                            MessagePart::Tool(t) => match &t.input {
+                                ToolInput::Edit { file_path, .. }
+                                | ToolInput::Write { file_path, .. } => Some(file_path.clone()),
+                                _ => None,
+                            },
+                            _ => None,
+                        })
+                        .collect();
+                    let had_error = m.parts.iter().any(|p| matches!(p,
                     MessagePart::Tool(t) if t.status == crate::types::ExecutionStatus::Failed
                 ));
-                crate::session_recap::RecapMessage {
-                    is_assistant: m.role == Role::Assistant,
-                    tool_calls,
-                    had_error,
-                    files_changed,
-                    text_preview,
-                }
-            })
-            .collect();
+                    crate::session_recap::RecapMessage {
+                        is_assistant: m.role == Role::Assistant,
+                        tool_calls,
+                        had_error,
+                        files_changed,
+                        text_preview,
+                    }
+                })
+                .collect();
         if let Some(recap) = crate::session_recap::generate_recap(&since) {
-            app.away_recap = Some(format!("{recap}\n(away {}m · Esc to dismiss)", away.as_secs() / 60));
+            app.away_recap = Some(format!(
+                "{recap}\n(away {}m · Esc to dismiss)",
+                away.as_secs() / 60
+            ));
         }
         app.idle_return_shown = true;
     }
@@ -122,6 +138,21 @@ pub(crate) fn handle_request_metadata(app: &mut App, meta: crate::runtime::Strea
         "stream request metadata"
     );
     app.current_stream_request = Some(meta);
+}
+
+/// Handle `StreamEvent::Lifecycle(status)`.
+pub(crate) fn handle_stream_lifecycle(
+    app: &mut App,
+    status: crate::runtime::StreamLifecycleStatus,
+) {
+    app.record_stream_activity();
+    tracing::debug!(
+        target: "jfc::stream::lifecycle",
+        phase = ?status.phase,
+        detail = ?status.detail,
+        "stream lifecycle status"
+    );
+    app.stream_lifecycle = Some(status);
 }
 
 /// Handle `UiEvent::Toast { kind, text }`.

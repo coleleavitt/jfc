@@ -26,9 +26,9 @@ mod session_picker;
 mod slash_commands;
 mod submit;
 mod support;
-pub(crate) mod vim;
 mod task_commands;
 mod theme_picker;
+pub(crate) mod vim;
 mod worktree_commands;
 
 #[cfg(test)]
@@ -67,8 +67,8 @@ use crate::types::*;
 
 // Re-export the public functions from sub-modules
 pub(crate) use approval::handle_remote_approval_response;
-pub(crate) use question::build_pending_question;
 pub use key_dispatch::handle_key;
+pub(crate) use question::build_pending_question;
 pub(crate) use slash_commands::SLASH_COMMANDS;
 pub use slash_commands::run_slash_command;
 pub use submit::handle_submit_text;

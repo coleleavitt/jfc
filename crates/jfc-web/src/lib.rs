@@ -112,7 +112,9 @@ pub async fn search(query: &str, max_results: usize) -> Result<String, String> {
     } else if let Some(q) = match_prefix(query, "gov") {
         // CSE doesn't honour bare TLD site: filters like site:.gov; use explicit
         // domain suffixes instead.
-        let gov_query = format!("{q} (site:usa.gov OR site:nih.gov OR site:cdc.gov OR site:nsf.gov OR site:energy.gov OR site:nasa.gov OR site:congress.gov OR site:whitehouse.gov OR site:govinfo.gov OR site:gov.uk OR site:gc.ca OR site:australia.gov.au OR site:europa.eu)");
+        let gov_query = format!(
+            "{q} (site:usa.gov OR site:nih.gov OR site:cdc.gov OR site:nsf.gov OR site:energy.gov OR site:nasa.gov OR site:congress.gov OR site:whitehouse.gov OR site:govinfo.gov OR site:gov.uk OR site:gc.ca OR site:australia.gov.au OR site:europa.eu)"
+        );
         search_google(&gov_query, max_results).await
     } else {
         search_google(query, max_results).await
@@ -124,26 +126,25 @@ pub async fn search(query: &str, max_results: usize) -> Result<String, String> {
 /// OR-group stays within Google CSE's effective query-length limit (large
 /// OR-groups start returning zero results).
 const EDU_TLDS: &[&str] = &[
-    ".edu",     // USA
-    ".ac.uk",   // United Kingdom
-    ".ac.jp",   // Japan
-    ".edu.cn",  // China (teaching institutions)
-    ".ac.cn",   // China (research institutes)
-    ".edu.au",  // Australia
-    ".ac.in",   // India
-    ".ac.kr",   // South Korea
-    ".edu.hk",  // Hong Kong
-    ".edu.tw",  // Taiwan
-    ".edu.sg",  // Singapore
-    ".ac.nz",   // New Zealand
-    ".ac.za",   // South Africa
-    ".edu.br",  // Brazil
+    ".edu",    // USA
+    ".ac.uk",  // United Kingdom
+    ".ac.jp",  // Japan
+    ".edu.cn", // China (teaching institutions)
+    ".ac.cn",  // China (research institutes)
+    ".edu.au", // Australia
+    ".ac.in",  // India
+    ".ac.kr",  // South Korea
+    ".edu.hk", // Hong Kong
+    ".edu.tw", // Taiwan
+    ".edu.sg", // Singapore
+    ".ac.nz",  // New Zealand
+    ".ac.za",  // South Africa
+    ".edu.br", // Brazil
 ];
 
 /// Chinese academic second-level domains, for the `cn:` prefix. China splits
 /// teaching (`edu.cn`) from research institutes (`ac.cn`); cover both.
 const CN_TLDS: &[&str] = &[".edu.cn", ".ac.cn", ".edu.hk", ".edu.mo", ".edu.tw"];
-
 
 /// Build a Google query restricted to a set of TLDs via a `site:` OR-group.
 fn scoped_query(query: &str, tlds: &[&str]) -> String {
@@ -430,13 +431,15 @@ async fn search_google(query: &str, max_results: usize) -> Result<String, String
             // No Google keys — fall back to Brave Search if it's configured,
             // otherwise surface a setup error covering both options.
             tracing::info!("No Google CSE keys, attempting Brave Search fallback");
-            return brave_results(query, max_results).await.map_err(|brave_err| {
-                format!(
-                    "No Google CSE API keys configured (set GOOGLE_CSE_API_KEY + \
+            return brave_results(query, max_results)
+                .await
+                .map_err(|brave_err| {
+                    format!(
+                        "No Google CSE API keys configured (set GOOGLE_CSE_API_KEY + \
                      GOOGLE_CSE_CX or ~/.config/google-search-mcp/config.toml), and \
                      Brave fallback unavailable: {brave_err}"
-                )
-            });
+                    )
+                });
         }
     };
 
@@ -584,12 +587,10 @@ async fn search_arxiv_entries(query: &str, max_results: usize) -> Result<Vec<Pap
         ("sortBy", "relevance".to_string()),
         ("sortOrder", "descending".to_string()),
     ];
-    let params_ref: Vec<(&str, &str)> = params
-        .iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
+    let params_ref: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
-    let resp = fetch_with_backoff(&client, "https://export.arxiv.org/api/query", &params_ref).await?;
+    let resp =
+        fetch_with_backoff(&client, "https://export.arxiv.org/api/query", &params_ref).await?;
 
     if !resp.status().is_success() {
         return Err(format!("arXiv returned HTTP {}", resp.status()));
@@ -616,12 +617,10 @@ async fn search_arxiv(query: &str, max_results: usize) -> Result<String, String>
         ("sortBy", "relevance".to_string()),
         ("sortOrder", "descending".to_string()),
     ];
-    let params_ref: Vec<(&str, &str)> = params
-        .iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
+    let params_ref: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
-    let resp = fetch_with_backoff(&client, "https://export.arxiv.org/api/query", &params_ref).await?;
+    let resp =
+        fetch_with_backoff(&client, "https://export.arxiv.org/api/query", &params_ref).await?;
 
     if !resp.status().is_success() {
         return Err(format!("arXiv returned HTTP {}", resp.status()));
@@ -1365,10 +1364,7 @@ fn openalex_to_paper(work: &serde_json::Value) -> PaperEntry {
         year,
         venue,
         citations,
-        url: work
-            .get("id")
-            .and_then(|v| v.as_str())
-            .map(String::from),
+        url: work.get("id").and_then(|v| v.as_str()).map(String::from),
         pdf,
         abstract_text,
         arxiv_id: None,
@@ -1398,7 +1394,10 @@ async fn search_openalex_entries(
     if !resp.status().is_success() {
         return Err(format!("OpenAlex returned HTTP {}", resp.status()));
     }
-    let body = resp.text().await.map_err(|e| format!("Response read: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Response read: {e}"))?;
     let parsed: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("JSON parse: {e}"))?;
 
@@ -1420,17 +1419,17 @@ async fn search_openalex(query: &str, max_results: usize) -> Result<String, Stri
 /// Resolve a university name to its top OpenAlex institution, returning
 /// `(openalex_id, display_name, country_code, works_count)`. Works for any
 /// university worldwide — US, Chinese, European — via the ROR-backed index.
-async fn resolve_institution(
-    name: &str,
-) -> Result<Option<(String, String, String, u64)>, String> {
+async fn resolve_institution(name: &str) -> Result<Option<(String, String, String, u64)>, String> {
     let client = http_client()?;
     // Use the main institutions search API (not autocomplete) sorted by
     // works_count so the largest/most prominent institution wins —
     // autocomplete returns lexicographic matches, which causes "MIT World Peace
     // University" to beat "Massachusetts Institute of Technology".
-    let mut req = client
-        .get("https://api.openalex.org/institutions")
-        .query(&[("search", name), ("sort", "works_count:desc"), ("per_page", "1")]);
+    let mut req = client.get("https://api.openalex.org/institutions").query(&[
+        ("search", name),
+        ("sort", "works_count:desc"),
+        ("per_page", "1"),
+    ]);
     if let Some(email) = polite_pool_email(&["OPENALEX_EMAIL", "CROSSREF_EMAIL"]) {
         req = req.query(&[("mailto", email.as_str())]);
     }
@@ -1441,7 +1440,10 @@ async fn resolve_institution(
     if !resp.status().is_success() {
         return Err(format!("OpenAlex returned HTTP {}", resp.status()));
     }
-    let body = resp.text().await.map_err(|e| format!("Response read: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Response read: {e}"))?;
     let parsed: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("JSON parse: {e}"))?;
 
@@ -1451,7 +1453,11 @@ async fn resolve_institution(
         .and_then(|arr| arr.first())
         .and_then(|inst| {
             // id looks like https://openalex.org/I99065089 — keep the short id.
-            let id = inst.get("id").and_then(|v| v.as_str())?.rsplit('/').next()?;
+            let id = inst
+                .get("id")
+                .and_then(|v| v.as_str())?
+                .rsplit('/')
+                .next()?;
             let display = inst
                 .get("display_name")
                 .and_then(|v| v.as_str())
@@ -1464,7 +1470,10 @@ async fn resolve_institution(
                 .and_then(|h| h.rsplit(',').next())
                 .map(|s| s.trim().to_string())
                 .unwrap_or_default();
-            let works = inst.get("works_count").and_then(|v| v.as_u64()).unwrap_or(0);
+            let works = inst
+                .get("works_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
             Some((id.to_string(), display, country, works))
         }))
 }
@@ -1496,10 +1505,9 @@ async fn search_university(query: &str, max_results: usize) -> Result<String, St
     let filter = format!("authorships.institutions.lineage:{inst_id}");
     let client = http_client()?;
 
-    let mut req = client.get("https://api.openalex.org/works").query(&[
-        ("filter", filter.as_str()),
-        ("per_page", per_page.as_str()),
-    ]);
+    let mut req = client
+        .get("https://api.openalex.org/works")
+        .query(&[("filter", filter.as_str()), ("per_page", per_page.as_str())]);
     if topic.is_empty() {
         // No topic ⇒ show the institution's most-cited works.
         req = req.query(&[("sort", "cited_by_count:desc")]);
@@ -1636,7 +1644,10 @@ async fn search_crossref(query: &str, max_results: usize) -> Result<String, Stri
     if !resp.status().is_success() {
         return Err(format!("Crossref returned HTTP {}", resp.status()));
     }
-    let body = resp.text().await.map_err(|e| format!("Response read: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Response read: {e}"))?;
     let parsed: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("JSON parse: {e}"))?;
 
@@ -1703,14 +1714,20 @@ async fn search_pubmed(query: &str, max_results: usize) -> Result<String, String
         .unwrap_or_default();
 
     if ids.is_empty() {
-        return Ok(format!("PubMed: \"{query}\" — {total} total results\n\nNo results found.\n"));
+        return Ok(format!(
+            "PubMed: \"{query}\" — {total} total results\n\nNo results found.\n"
+        ));
     }
 
     // Step 2: esummary → metadata for the PMIDs.
     let id_csv = ids.join(",");
     let mut esummary = client
         .get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi")
-        .query(&[("db", "pubmed"), ("id", id_csv.as_str()), ("retmode", "json")]);
+        .query(&[
+            ("db", "pubmed"),
+            ("id", id_csv.as_str()),
+            ("retmode", "json"),
+        ]);
     if let Some(k) = &api_key {
         esummary = esummary.query(&[("api_key", k.as_str())]);
     }
@@ -1730,7 +1747,10 @@ async fn search_pubmed(query: &str, max_results: usize) -> Result<String, String
             continue;
         };
         let title = doc.get("title").and_then(|v| v.as_str()).unwrap_or("?");
-        let journal = doc.get("fulljournalname").and_then(|v| v.as_str()).unwrap_or("");
+        let journal = doc
+            .get("fulljournalname")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let pubdate = doc.get("pubdate").and_then(|v| v.as_str()).unwrap_or("");
         let authors: Vec<&str> = doc
             .get("authors")
@@ -1749,7 +1769,9 @@ async fn search_pubmed(query: &str, max_results: usize) -> Result<String, String
         if !journal.is_empty() {
             out.push_str(&format!("   Journal: {journal} ({pubdate})\n"));
         }
-        out.push_str(&format!("   URL: https://pubmed.ncbi.nlm.nih.gov/{pmid}/\n\n"));
+        out.push_str(&format!(
+            "   URL: https://pubmed.ncbi.nlm.nih.gov/{pmid}/\n\n"
+        ));
     }
     Ok(out)
 }
@@ -1764,9 +1786,7 @@ async fn search_doaj(query: &str, max_results: usize) -> Result<String, String> 
     let encoded = urlencoding_minimal(query);
 
     let resp = client
-        .get(format!(
-            "https://doaj.org/api/search/articles/{encoded}"
-        ))
+        .get(format!("https://doaj.org/api/search/articles/{encoded}"))
         .query(&[("pageSize", page_size.as_str())])
         .send()
         .await
@@ -1788,7 +1808,11 @@ async fn search_doaj(query: &str, max_results: usize) -> Result<String, String> 
             arr.iter()
                 .map(|r| {
                     let b = r.get("bibjson").unwrap_or(r);
-                    let title = b.get("title").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                    let title = b
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?")
+                        .to_string();
                     let year = b.get("year").and_then(|v| v.as_str()).map(String::from);
                     let venue = b
                         .get("journal")
@@ -1800,7 +1824,9 @@ async fn search_doaj(query: &str, max_results: usize) -> Result<String, String> 
                         .and_then(|v| v.as_array())
                         .map(|arr| {
                             arr.iter()
-                                .filter_map(|a| a.get("name").and_then(|v| v.as_str()).map(String::from))
+                                .filter_map(|a| {
+                                    a.get("name").and_then(|v| v.as_str()).map(String::from)
+                                })
                                 .collect()
                         })
                         .unwrap_or_default();
@@ -1820,9 +1846,8 @@ async fn search_doaj(query: &str, max_results: usize) -> Result<String, String> 
                         .get("identifier")
                         .and_then(|v| v.as_array())
                         .and_then(|arr| {
-                            arr.iter().find(|id| {
-                                id.get("type").and_then(|t| t.as_str()) == Some("doi")
-                            })
+                            arr.iter()
+                                .find(|id| id.get("type").and_then(|t| t.as_str()) == Some("doi"))
                         })
                         .and_then(|id| id.get("id"))
                         .and_then(|v| v.as_str())
@@ -1892,27 +1917,46 @@ async fn search_core(query: &str, max_results: usize) -> Result<String, String> 
         .map_err(|e| format!("Response read: {e}"))
         .and_then(|b| serde_json::from_str(&b).map_err(|e| format!("JSON parse: {e}")))?;
 
-    let total = parsed.get("totalHits").and_then(|v| v.as_u64()).unwrap_or(0);
+    let total = parsed
+        .get("totalHits")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let entries: Vec<PaperEntry> = parsed
         .get("results")
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
                 .map(|w| {
-                    let title = w.get("title").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-                    let year = w.get("yearPublished").and_then(|v| v.as_u64()).map(|y| y.to_string());
+                    let title = w
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?")
+                        .to_string();
+                    let year = w
+                        .get("yearPublished")
+                        .and_then(|v| v.as_u64())
+                        .map(|y| y.to_string());
                     let authors = w
                         .get("authors")
                         .and_then(|v| v.as_array())
                         .map(|arr| {
                             arr.iter()
-                                .filter_map(|a| a.get("name").and_then(|v| v.as_str()).map(String::from))
+                                .filter_map(|a| {
+                                    a.get("name").and_then(|v| v.as_str()).map(String::from)
+                                })
                                 .collect()
                         })
                         .unwrap_or_default();
-                    let abstract_text = w.get("abstract").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let abstract_text = w
+                        .get("abstract")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let doi = w.get("doi").and_then(|v| v.as_str()).map(String::from);
-                    let pdf = w.get("downloadUrl").and_then(|v| v.as_str()).map(String::from);
+                    let pdf = w
+                        .get("downloadUrl")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
                     PaperEntry {
                         title,
                         authors,
@@ -1985,7 +2029,10 @@ async fn search_unpaywall(doi: &str) -> Result<String, String> {
     let year = p.get("year").and_then(|v| v.as_u64());
     let journal = p.get("journal_name").and_then(|v| v.as_str()).unwrap_or("");
     let is_oa = p.get("is_oa").and_then(|v| v.as_bool()).unwrap_or(false);
-    let oa_status = p.get("oa_status").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let oa_status = p
+        .get("oa_status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
 
     let mut out = format!("Unpaywall: {doi}\n\n{title}");
     if let Some(y) = year {
@@ -2062,7 +2109,10 @@ async fn brave_results(query: &str, max_results: usize) -> Result<String, String
             for (i, item) in items.iter().enumerate() {
                 let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("?");
                 let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                let desc = item.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                let desc = item
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 out.push_str(&format!("{}. {title}\n   URL: {url}\n   {desc}\n\n", i + 1));
             }
         }
@@ -2080,9 +2130,13 @@ async fn search_brave(query: &str, max_results: usize) -> Result<String, String>
 // ═══════════════════════════════════════════════════════════════════════════
 
 async fn search_tavily(query: &str, max_results: usize) -> Result<String, String> {
-    let key = std::env::var("TAVILY_API_KEY").ok().filter(|k| !k.is_empty()).ok_or_else(|| {
-        "Tavily requires an API key. Set TAVILY_API_KEY (free tier at https://tavily.com)".to_string()
-    })?;
+    let key = std::env::var("TAVILY_API_KEY")
+        .ok()
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| {
+            "Tavily requires an API key. Set TAVILY_API_KEY (free tier at https://tavily.com)"
+                .to_string()
+        })?;
     let limit = max_results.clamp(1, 20);
     let client = http_client()?;
 
@@ -2136,9 +2190,12 @@ async fn search_tavily(query: &str, max_results: usize) -> Result<String, String
 // ═══════════════════════════════════════════════════════════════════════════
 
 async fn search_exa(query: &str, max_results: usize) -> Result<String, String> {
-    let key = std::env::var("EXA_API_KEY").ok().filter(|k| !k.is_empty()).ok_or_else(|| {
-        "Exa requires an API key. Set EXA_API_KEY (free tier at https://exa.ai)".to_string()
-    })?;
+    let key = std::env::var("EXA_API_KEY")
+        .ok()
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| {
+            "Exa requires an API key. Set EXA_API_KEY (free tier at https://exa.ai)".to_string()
+        })?;
     let limit = max_results.clamp(1, 20);
     let client = http_client()?;
 
@@ -2212,8 +2269,14 @@ async fn search_duckduckgo(query: &str) -> Result<String, String> {
     let mut any = false;
 
     let heading = parsed.get("Heading").and_then(|v| v.as_str()).unwrap_or("");
-    let abstract_text = parsed.get("AbstractText").and_then(|v| v.as_str()).unwrap_or("");
-    let abstract_url = parsed.get("AbstractURL").and_then(|v| v.as_str()).unwrap_or("");
+    let abstract_text = parsed
+        .get("AbstractText")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let abstract_url = parsed
+        .get("AbstractURL")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if !abstract_text.is_empty() {
         any = true;
         if !heading.is_empty() {
@@ -2343,230 +2406,1063 @@ async fn search_wikipedia(query: &str, max_results: usize) -> Result<String, Str
 ///   all others — they fail gracefully with a clear error message.
 static PRIMO_INSTANCES: &[(&str, &str, &str, &str, &str, &str)] = &[
     // ── USA (verified ✓ / documented) ───────────────────────────────────
-    ("cmu",         "cmu.primo.exlibrisgroup.com",        "01CMU_INST:01CMU",           "01CMU_INST",    "Everything",        "MyInst_and_CI"),
-    ("mit",         "mit.primo.exlibrisgroup.com",         "01MIT_INST:MIT",              "01MIT_INST",    "all",               "all"),
-    ("harvard",     "hollis.harvard.edu",                  "01HVD_INST:HVD2",            "01HVD_INST",    "Everything",        "MyInst_and_CI"),
-    ("stanford",    "stanford.primo.exlibrisgroup.com",    "01STANFORD_INST:stanford",   "01STANFORD_INST","Everything",       "everything"),
-    ("berkeley",    "berkeley.primo.exlibrisgroup.com",    "01UCS_BER:UCB",              "01UCS_BER",     "Everything",        "everything"),
-    ("columbia",    "columbia.primo.exlibrisgroup.com",    "01COLU_INST:COLU",           "01COLU_INST",   "All",               "COLU"),
-    ("cornell",     "cornell.primo.exlibrisgroup.com",     "01CORNELL_INST:CORNELL",     "01CORNELL_INST","Everything",        "everything"),
-    ("yale",        "yale.primo.exlibrisgroup.com",        "01YAL_INST:default",          "01YAL_INST",    "default_tab",       "default_scope"),
-    ("princeton",   "princeton.primo.exlibrisgroup.com",   "01PRI_INST:PRINCETON",       "01PRI_INST",    "Everything",        "everything"),
-    ("brown",       "brown.primo.exlibrisgroup.com",       "01BU_INST:BROWN",            "01BU_INST",     "Everything",        "MyInst_and_CI"),
-    ("michigan",    "umich.primo.exlibrisgroup.com",       "01UMICH_INST:UMICH",         "01UMICH_INST",  "Everything",        "everything"),
-    ("ucla",        "ucla.primo.exlibrisgroup.com",        "01UCS_LAC:UCLA",             "01UCS_LAC",     "Everything",        "everything"),
-    ("chicago",     "uchicago.primo.exlibrisgroup.com",    "01UCHICAGO_INST:UCHICAGO",   "01UCHICAGO_INST","everything",       "everything"),
-    ("caltech",     "caltech.primo.exlibrisgroup.com",     "01CALT_INST:Caltech",        "01CALT_INST",   "everything",        "everything"),
-    ("nyu",         "nyu-primo.hosted.exlibrisgroup.com",  "NYU:NYU",                    "NYU",           "all",               "all"),
-    ("jhu",         "jhu.primo.exlibrisgroup.com",         "01JHU_INST:JHU",             "01JHU_INST",    "all",               "allsystem"),
-    ("duke",        "duke.primo.exlibrisgroup.com",        "01DUKE_INST:duke_library",   "01DUKE_INST",   "Everything",        "everything"),
-    ("purdue",      "purdue.primo.exlibrisgroup.com",      "PURDUE:PURDUE",              "PURDUE",        "boilermakers_tab",  "MyInst_and_CI"),
-    ("uiuc",        "uiuc.primo.exlibrisgroup.com",        "01CARLI_UIU:UIUC_DEFAULT",   "01CARLI_UIU",   "UIUC_DEFAULT",      "LibraryCatalog"),
-    ("gatech",      "gatech.primo.exlibrisgroup.com",      "01GALI_GIT:GT",              "01GALI_GIT",    "default_tab",       "defaultscope"),
-    ("washington",  "uw.primo.exlibrisgroup.com",          "01ALLIANCE_UW:UW",           "01ALLIANCE_UW", "uw_alma",           "uw_everything"),
+    (
+        "cmu",
+        "cmu.primo.exlibrisgroup.com",
+        "01CMU_INST:01CMU",
+        "01CMU_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "mit",
+        "mit.primo.exlibrisgroup.com",
+        "01MIT_INST:MIT",
+        "01MIT_INST",
+        "all",
+        "all",
+    ),
+    (
+        "harvard",
+        "hollis.harvard.edu",
+        "01HVD_INST:HVD2",
+        "01HVD_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "stanford",
+        "stanford.primo.exlibrisgroup.com",
+        "01STANFORD_INST:stanford",
+        "01STANFORD_INST",
+        "Everything",
+        "everything",
+    ),
+    (
+        "berkeley",
+        "berkeley.primo.exlibrisgroup.com",
+        "01UCS_BER:UCB",
+        "01UCS_BER",
+        "Everything",
+        "everything",
+    ),
+    (
+        "columbia",
+        "columbia.primo.exlibrisgroup.com",
+        "01COLU_INST:COLU",
+        "01COLU_INST",
+        "All",
+        "COLU",
+    ),
+    (
+        "cornell",
+        "cornell.primo.exlibrisgroup.com",
+        "01CORNELL_INST:CORNELL",
+        "01CORNELL_INST",
+        "Everything",
+        "everything",
+    ),
+    (
+        "yale",
+        "yale.primo.exlibrisgroup.com",
+        "01YAL_INST:default",
+        "01YAL_INST",
+        "default_tab",
+        "default_scope",
+    ),
+    (
+        "princeton",
+        "princeton.primo.exlibrisgroup.com",
+        "01PRI_INST:PRINCETON",
+        "01PRI_INST",
+        "Everything",
+        "everything",
+    ),
+    (
+        "brown",
+        "brown.primo.exlibrisgroup.com",
+        "01BU_INST:BROWN",
+        "01BU_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "michigan",
+        "umich.primo.exlibrisgroup.com",
+        "01UMICH_INST:UMICH",
+        "01UMICH_INST",
+        "Everything",
+        "everything",
+    ),
+    (
+        "ucla",
+        "ucla.primo.exlibrisgroup.com",
+        "01UCS_LAC:UCLA",
+        "01UCS_LAC",
+        "Everything",
+        "everything",
+    ),
+    (
+        "chicago",
+        "uchicago.primo.exlibrisgroup.com",
+        "01UCHICAGO_INST:UCHICAGO",
+        "01UCHICAGO_INST",
+        "everything",
+        "everything",
+    ),
+    (
+        "caltech",
+        "caltech.primo.exlibrisgroup.com",
+        "01CALT_INST:Caltech",
+        "01CALT_INST",
+        "everything",
+        "everything",
+    ),
+    (
+        "nyu",
+        "nyu-primo.hosted.exlibrisgroup.com",
+        "NYU:NYU",
+        "NYU",
+        "all",
+        "all",
+    ),
+    (
+        "jhu",
+        "jhu.primo.exlibrisgroup.com",
+        "01JHU_INST:JHU",
+        "01JHU_INST",
+        "all",
+        "allsystem",
+    ),
+    (
+        "duke",
+        "duke.primo.exlibrisgroup.com",
+        "01DUKE_INST:duke_library",
+        "01DUKE_INST",
+        "Everything",
+        "everything",
+    ),
+    (
+        "purdue",
+        "purdue.primo.exlibrisgroup.com",
+        "PURDUE:PURDUE",
+        "PURDUE",
+        "boilermakers_tab",
+        "MyInst_and_CI",
+    ),
+    (
+        "uiuc",
+        "uiuc.primo.exlibrisgroup.com",
+        "01CARLI_UIU:UIUC_DEFAULT",
+        "01CARLI_UIU",
+        "UIUC_DEFAULT",
+        "LibraryCatalog",
+    ),
+    (
+        "gatech",
+        "gatech.primo.exlibrisgroup.com",
+        "01GALI_GIT:GT",
+        "01GALI_GIT",
+        "default_tab",
+        "defaultscope",
+    ),
+    (
+        "washington",
+        "uw.primo.exlibrisgroup.com",
+        "01ALLIANCE_UW:UW",
+        "01ALLIANCE_UW",
+        "uw_alma",
+        "uw_everything",
+    ),
     // ── Additional USA (newly discovered + verified) ─────────────────────
-    ("pitt",        "pitt.primo.exlibrisgroup.com",        "01PITT_INST:01PITT_INST",    "01PITT_INST",   "Everything",        "MyInst_and_CI"),
-    ("rochester",   "rochester.primo.exlibrisgroup.com",   "01ROCH_INST:UR01",           "01ROCH_INST",   "Everything",        "MyInst_and_CI"),
-    ("emory",       "emory.primo.exlibrisgroup.com",       "01GALI_EMORY:EMORY",         "01GALI_EMORY",  "Everything",        "MyInst_and_CI"),
-    ("vanderbilt",  "vanderbilt.primo.exlibrisgroup.com",  "01VAN_INST:vandy",           "01VAN_INST",    "Everything",        "MyInst_and_CI"),
-    ("rice",        "rice.primo.exlibrisgroup.com",        "01RICE_INST:RICE",           "01RICE_INST",   "Everything",        "MyInst_and_CI"),
-    ("utah",        "utah.primo.exlibrisgroup.com",        "01UTAH_INST:UTAH",           "01UTAH_INST",   "Everything",        "MyInst_and_CI"),
-    ("miami",       "miami.primo.exlibrisgroup.com",       "01UMIAMI_INST:umiami",       "01UMIAMI_INST", "Everything",        "MyInst_and_CI"),
-    ("scu",         "scu.primo.exlibrisgroup.com",         "01SCU_INST:SCU",             "01SCU_INST",    "Everything",        "MyInst_and_CI"),
-    ("davidson",    "davidson.primo.exlibrisgroup.com",    "01DCOLL_INST:01DCOLL",       "01DCOLL_INST",  "Everything",        "MyInst_and_CI"),
-    ("sva",         "sva.primo.exlibrisgroup.com",         "01VISUAL_INST:01VISUAL",     "01VISUAL_INST", "Everything",        "MyInst_and_CI"),
-    ("aul",         "aul.primo.exlibrisgroup.com",         "01AUL_INST:AUL",             "01AUL_INST",    "Everything",        "MyInst_and_CI_noR"),
-    ("usma",        "usma.primo.exlibrisgroup.com",        "01USMA_INST:USMA",           "01USMA_INST",   "Everything",        "MyInst_and_CI"),
-    ("lva",         "lva.primo.exlibrisgroup.com",         "01LVA_INST:LVA_default",     "01LVA_INST",    "Everything",        "MyInst_and_CI"),
-    ("wrlc",        "wrlc-gm.primo.exlibrisgroup.com",     "01WRLC_GML:01WRLC_GML",     "01WRLC_GML",    "Everything",        "MyInst_and_CI"),
-    ("uky",         "saalck-uky.primo.exlibrisgroup.com",  "01SAA_UKY:UKY",             "01SAA_UKY",     "Everything",        "MyInst_and_CI"),
-    ("du",          "du.primo.exlibrisgroup.com",          "01UDENVER_INST:UDENVER",     "01UDENVER_INST","Everything",        "MyInst_and_CI"),
-    ("glendale",    "caccl-glendale.primo.exlibrisgroup.com","01CACCL_GLENDALE:GLENDALE","01CACCL_GLENDALE","Everything",     "MyInst_and_CI"),
-    ("sfsu",        "csu-sfsu.primo.exlibrisgroup.com",    "01CSFSU_INST:SFSU",          "01CSFSU_INST",  "Everything",        "MyInst_and_CI"),
-    ("bll",         "bll01.primo.exlibrisgroup.com",       "01BLL_INST:BLUK_VU1",        "01BLL_INST",    "Everything",        "MyInst_and_CI"),
-    ("psu",         "psu.primo.exlibrisgroup.com",         "01PSU_INST:PSU",             "01PSU_INST",    "Everything",        "everything"),
-    ("osu",         "osu.primo.exlibrisgroup.com",         "01OPLIN_OSU:OSU",            "01OPLIN_OSU",   "Everything",        "everything"),
-    ("usc",         "usc.primo.exlibrisgroup.com",         "01USC_INST:01USC",           "01USC_INST",    "Everything",        "everything"),
-    ("bu",          "bu.primo.exlibrisgroup.com",          "01BOSU_INST:BOSU",           "01BOSU_INST",   "everything",        "everything"),
-    ("northeastern","northeastern.primo.exlibrisgroup.com","01NEU_INST:NEU",             "01NEU_INST",    "Everything",        "everything"),
-    ("tufts",       "tufts.primo.exlibrisgroup.com",       "01TUFTS_INST:TUFTS",         "01TUFTS_INST",  "Everything",        "everything"),
-    ("dartmouth",   "dartmouth.primo.exlibrisgroup.com",   "01DCLD_INST:DARTMOUTH",      "01DCLD_INST",   "Everything",        "everything"),
-    ("unc",         "unc.primo.exlibrisgroup.com",         "01UNC_INST:UNC",             "01UNC_INST",    "Everything",        "everything"),
-    ("georgetown",  "georgetown.primo.exlibrisgroup.com",  "01GUTO_INST:GUTO",           "01GUTO_INST",   "Everything",        "everything"),
+    (
+        "pitt",
+        "pitt.primo.exlibrisgroup.com",
+        "01PITT_INST:01PITT_INST",
+        "01PITT_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "rochester",
+        "rochester.primo.exlibrisgroup.com",
+        "01ROCH_INST:UR01",
+        "01ROCH_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "emory",
+        "emory.primo.exlibrisgroup.com",
+        "01GALI_EMORY:EMORY",
+        "01GALI_EMORY",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "vanderbilt",
+        "vanderbilt.primo.exlibrisgroup.com",
+        "01VAN_INST:vandy",
+        "01VAN_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "rice",
+        "rice.primo.exlibrisgroup.com",
+        "01RICE_INST:RICE",
+        "01RICE_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "utah",
+        "utah.primo.exlibrisgroup.com",
+        "01UTAH_INST:UTAH",
+        "01UTAH_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "miami",
+        "miami.primo.exlibrisgroup.com",
+        "01UMIAMI_INST:umiami",
+        "01UMIAMI_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "scu",
+        "scu.primo.exlibrisgroup.com",
+        "01SCU_INST:SCU",
+        "01SCU_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "davidson",
+        "davidson.primo.exlibrisgroup.com",
+        "01DCOLL_INST:01DCOLL",
+        "01DCOLL_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "sva",
+        "sva.primo.exlibrisgroup.com",
+        "01VISUAL_INST:01VISUAL",
+        "01VISUAL_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "aul",
+        "aul.primo.exlibrisgroup.com",
+        "01AUL_INST:AUL",
+        "01AUL_INST",
+        "Everything",
+        "MyInst_and_CI_noR",
+    ),
+    (
+        "usma",
+        "usma.primo.exlibrisgroup.com",
+        "01USMA_INST:USMA",
+        "01USMA_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "lva",
+        "lva.primo.exlibrisgroup.com",
+        "01LVA_INST:LVA_default",
+        "01LVA_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "wrlc",
+        "wrlc-gm.primo.exlibrisgroup.com",
+        "01WRLC_GML:01WRLC_GML",
+        "01WRLC_GML",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "uky",
+        "saalck-uky.primo.exlibrisgroup.com",
+        "01SAA_UKY:UKY",
+        "01SAA_UKY",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "du",
+        "du.primo.exlibrisgroup.com",
+        "01UDENVER_INST:UDENVER",
+        "01UDENVER_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "glendale",
+        "caccl-glendale.primo.exlibrisgroup.com",
+        "01CACCL_GLENDALE:GLENDALE",
+        "01CACCL_GLENDALE",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "sfsu",
+        "csu-sfsu.primo.exlibrisgroup.com",
+        "01CSFSU_INST:SFSU",
+        "01CSFSU_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "bll",
+        "bll01.primo.exlibrisgroup.com",
+        "01BLL_INST:BLUK_VU1",
+        "01BLL_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "psu",
+        "psu.primo.exlibrisgroup.com",
+        "01PSU_INST:PSU",
+        "01PSU_INST",
+        "Everything",
+        "everything",
+    ),
+    (
+        "osu",
+        "osu.primo.exlibrisgroup.com",
+        "01OPLIN_OSU:OSU",
+        "01OPLIN_OSU",
+        "Everything",
+        "everything",
+    ),
+    (
+        "usc",
+        "usc.primo.exlibrisgroup.com",
+        "01USC_INST:01USC",
+        "01USC_INST",
+        "Everything",
+        "everything",
+    ),
+    (
+        "bu",
+        "bu.primo.exlibrisgroup.com",
+        "01BOSU_INST:BOSU",
+        "01BOSU_INST",
+        "everything",
+        "everything",
+    ),
+    (
+        "northeastern",
+        "northeastern.primo.exlibrisgroup.com",
+        "01NEU_INST:NEU",
+        "01NEU_INST",
+        "Everything",
+        "everything",
+    ),
+    (
+        "tufts",
+        "tufts.primo.exlibrisgroup.com",
+        "01TUFTS_INST:TUFTS",
+        "01TUFTS_INST",
+        "Everything",
+        "everything",
+    ),
+    (
+        "dartmouth",
+        "dartmouth.primo.exlibrisgroup.com",
+        "01DCLD_INST:DARTMOUTH",
+        "01DCLD_INST",
+        "Everything",
+        "everything",
+    ),
+    (
+        "unc",
+        "unc.primo.exlibrisgroup.com",
+        "01UNC_INST:UNC",
+        "01UNC_INST",
+        "Everything",
+        "everything",
+    ),
+    (
+        "georgetown",
+        "georgetown.primo.exlibrisgroup.com",
+        "01GUTO_INST:GUTO",
+        "01GUTO_INST",
+        "Everything",
+        "everything",
+    ),
     // ── Canada ───────────────────────────────────────────────────────────
-    ("toronto",     "utoronto.primo.exlibrisgroup.com",    "01UTORONTO_INST:UTORONTO",   "01UTORONTO_INST","default",          "UTORONTO_DEFAULT"),
-    ("mcgill",      "mcgill.primo.exlibrisgroup.com",      "01MCGILL_INST:default",      "01MCGILL_INST", "everything",        "everything"),
-    ("ubc",         "ubc.primo.exlibrisgroup.com",         "01UBC_INST:UBC_default",     "01UBC_INST",    "Everything",        "Everything"),
-    ("waterloo",    "waterloo.primo.exlibrisgroup.com",    "01WLU_INST:WATERLOO",        "01WLU_INST",    "Everything",        "everything"),
+    (
+        "toronto",
+        "utoronto.primo.exlibrisgroup.com",
+        "01UTORONTO_INST:UTORONTO",
+        "01UTORONTO_INST",
+        "default",
+        "UTORONTO_DEFAULT",
+    ),
+    (
+        "mcgill",
+        "mcgill.primo.exlibrisgroup.com",
+        "01MCGILL_INST:default",
+        "01MCGILL_INST",
+        "everything",
+        "everything",
+    ),
+    (
+        "ubc",
+        "ubc.primo.exlibrisgroup.com",
+        "01UBC_INST:UBC_default",
+        "01UBC_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "waterloo",
+        "waterloo.primo.exlibrisgroup.com",
+        "01WLU_INST:WATERLOO",
+        "01WLU_INST",
+        "Everything",
+        "everything",
+    ),
     // ── UK ───────────────────────────────────────────────────────────────
-    ("oxford",      "solo.bodleian.ox.ac.uk",              "OXFORD:SOLO",                "OXFORD",        "Everything",        "SOLO_Everything"),
-    ("cambridge",   "idiscover.lib.cam.ac.uk",             "44CAM_INST:44CAM_VU2",       "44CAM_INST",    "default_tab",       "default_scope"),
-    ("ucl",         "ucl.primo.exlibrisgroup.com",         "44UCL_INST:UCL_VU2",         "44UCL_INST",    "Everything",        "MyInst_and_CI"),
-    ("imperial",    "imperial.primo.exlibrisgroup.com",    "44IMP_INST:ICL_VU1",         "44IMP_INST",    "Everything",        "MyInst_and_CI"),
-    ("edinburgh",   "discovered.ed.ac.uk",                 "44UOE_INST:44UOE_VU1",       "44UOE_INST",    "UoE",               "UoE_discovery"),
-    ("manchester",  "manchester.primo.exlibrisgroup.com",  "44MAN_INST:MAN_VU1",         "44MAN_INST",    "Everything",        "Everything"),
-    ("lse",         "lse.primo.exlibrisgroup.com",         "44LSE_INST:44LSE",           "44LSE_INST",    "Everything",        "Everything"),
-    ("kings",       "kcl.primo.exlibrisgroup.com",         "44KCL_INST:KCL_VU1",         "44KCL_INST",    "Everything",        "Everything"),
-    ("bristol",     "bristol.primo.exlibrisgroup.com",     "44BRI_INST:BRI_VU1",         "44BRI_INST",    "Everything",        "Everything"),
-    ("warwick",     "warwick.primo.exlibrisgroup.com",     "44WAR_INST:WAR_VU1",         "44WAR_INST",    "Everything",        "Everything"),
+    (
+        "oxford",
+        "solo.bodleian.ox.ac.uk",
+        "OXFORD:SOLO",
+        "OXFORD",
+        "Everything",
+        "SOLO_Everything",
+    ),
+    (
+        "cambridge",
+        "idiscover.lib.cam.ac.uk",
+        "44CAM_INST:44CAM_VU2",
+        "44CAM_INST",
+        "default_tab",
+        "default_scope",
+    ),
+    (
+        "ucl",
+        "ucl.primo.exlibrisgroup.com",
+        "44UCL_INST:UCL_VU2",
+        "44UCL_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "imperial",
+        "imperial.primo.exlibrisgroup.com",
+        "44IMP_INST:ICL_VU1",
+        "44IMP_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "edinburgh",
+        "discovered.ed.ac.uk",
+        "44UOE_INST:44UOE_VU1",
+        "44UOE_INST",
+        "UoE",
+        "UoE_discovery",
+    ),
+    (
+        "manchester",
+        "manchester.primo.exlibrisgroup.com",
+        "44MAN_INST:MAN_VU1",
+        "44MAN_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "lse",
+        "lse.primo.exlibrisgroup.com",
+        "44LSE_INST:44LSE",
+        "44LSE_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "kings",
+        "kcl.primo.exlibrisgroup.com",
+        "44KCL_INST:KCL_VU1",
+        "44KCL_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "bristol",
+        "bristol.primo.exlibrisgroup.com",
+        "44BRI_INST:BRI_VU1",
+        "44BRI_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "warwick",
+        "warwick.primo.exlibrisgroup.com",
+        "44WAR_INST:WAR_VU1",
+        "44WAR_INST",
+        "Everything",
+        "Everything",
+    ),
     // ── Europe ───────────────────────────────────────────────────────────
-    ("eth",         "eth.primo.exlibrisgroup.com",         "41SLSP_ETH:ETH",             "41SLSP_ETH",    "default",           "default"),
-    ("epfl",        "epfl.primo.exlibrisgroup.com",        "41SLSP_EPF:EPFL_VU1",        "41SLSP_EPF",    "default",           "default"),
-    ("tum",         "tum.primo.exlibrisgroup.com",         "49TUM_INST:TUM",             "49TUM_INST",    "MyCatalog",         "MyCatalog"),
-    ("lmu",         "lmu.primo.exlibrisgroup.com",         "49MUM_INST:MUM",             "49MUM_INST",    "everything_ub",     "everything_ub"),
-    ("humboldt",    "hu-berlin.primo.exlibrisgroup.com",   "49HUB_INST:HUB_default",     "49HUB_INST",    "default",           "default"),
-    ("leiden",      "catalogue.leidenuniv.nl",             "31UKB_LEI_INST:SINGLE_LEIDENU","31UKB_LEI_INST","Catalogus",       "LEIDENU"),
-    ("delft",       "tudelft.primo.exlibrisgroup.com",     "31TUD_INST:31TUD_INST",      "31TUD_INST",    "Everything",        "Everything"),
-    ("amsterdam",   "uva.primo.exlibrisgroup.com",         "31UKB_UAM_INST:UAMD",        "31UKB_UAM_INST","catalogue",         "UAMD"),
-    ("karolinska",  "ki.primo.exlibrisgroup.com",          "46KI_INST:KI_VU1",           "46KI_INST",     "default_tab",       "default_scope"),
-    ("kth",         "kth.primo.exlibrisgroup.com",         "46KTH_INST:KTH",             "46KTH_INST",    "default_tab",       "default_scope"),
-    ("stockholm",   "su.primo.exlibrisgroup.com",          "46SU_INST:46SU_VU1",         "46SU_INST",     "default_tab",       "default_scope"),
-    ("chalmers",    "chalmers.primo.exlibrisgroup.com",    "46CHA_INST:46CHA_VU1",       "46CHA_INST",    "default_tab",       "default_scope"),
-    ("ghent",       "ugent.primo.exlibrisgroup.com",       "32UGE_INST:Ugent",           "32UGE_INST",    "everything",        "everything"),
-    ("leuven",      "leuven.primo.exlibrisgroup.com",      "32KUL_INST:KUL",             "32KUL_INST",    "all_content",       "all_content"),
-    ("paris",       "biu-sante.primo.exlibrisgroup.com",   "33USPC_INST:33USPC",         "33USPC_INST",   "Everything",        "Everything"),
-    ("sorbonne",    "sorbonne-universite.primo.exlibrisgroup.com","33SOR_INST:VU_SOR",   "33SOR_INST",    "Everything",        "Everything"),
-    ("bologna",     "unibo.primo.exlibrisgroup.com",       "39UBO_INST:39UBO_VU1",       "39UBO_INST",    "Everything",        "Everything"),
-    ("sapienza",    "uniroma1.primo.exlibrisgroup.com",    "39SAP_INST:SAPIENZA",        "39SAP_INST",    "Everything",        "Everything"),
+    (
+        "eth",
+        "eth.primo.exlibrisgroup.com",
+        "41SLSP_ETH:ETH",
+        "41SLSP_ETH",
+        "default",
+        "default",
+    ),
+    (
+        "epfl",
+        "epfl.primo.exlibrisgroup.com",
+        "41SLSP_EPF:EPFL_VU1",
+        "41SLSP_EPF",
+        "default",
+        "default",
+    ),
+    (
+        "tum",
+        "tum.primo.exlibrisgroup.com",
+        "49TUM_INST:TUM",
+        "49TUM_INST",
+        "MyCatalog",
+        "MyCatalog",
+    ),
+    (
+        "lmu",
+        "lmu.primo.exlibrisgroup.com",
+        "49MUM_INST:MUM",
+        "49MUM_INST",
+        "everything_ub",
+        "everything_ub",
+    ),
+    (
+        "humboldt",
+        "hu-berlin.primo.exlibrisgroup.com",
+        "49HUB_INST:HUB_default",
+        "49HUB_INST",
+        "default",
+        "default",
+    ),
+    (
+        "leiden",
+        "catalogue.leidenuniv.nl",
+        "31UKB_LEI_INST:SINGLE_LEIDENU",
+        "31UKB_LEI_INST",
+        "Catalogus",
+        "LEIDENU",
+    ),
+    (
+        "delft",
+        "tudelft.primo.exlibrisgroup.com",
+        "31TUD_INST:31TUD_INST",
+        "31TUD_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "amsterdam",
+        "uva.primo.exlibrisgroup.com",
+        "31UKB_UAM_INST:UAMD",
+        "31UKB_UAM_INST",
+        "catalogue",
+        "UAMD",
+    ),
+    (
+        "karolinska",
+        "ki.primo.exlibrisgroup.com",
+        "46KI_INST:KI_VU1",
+        "46KI_INST",
+        "default_tab",
+        "default_scope",
+    ),
+    (
+        "kth",
+        "kth.primo.exlibrisgroup.com",
+        "46KTH_INST:KTH",
+        "46KTH_INST",
+        "default_tab",
+        "default_scope",
+    ),
+    (
+        "stockholm",
+        "su.primo.exlibrisgroup.com",
+        "46SU_INST:46SU_VU1",
+        "46SU_INST",
+        "default_tab",
+        "default_scope",
+    ),
+    (
+        "chalmers",
+        "chalmers.primo.exlibrisgroup.com",
+        "46CHA_INST:46CHA_VU1",
+        "46CHA_INST",
+        "default_tab",
+        "default_scope",
+    ),
+    (
+        "ghent",
+        "ugent.primo.exlibrisgroup.com",
+        "32UGE_INST:Ugent",
+        "32UGE_INST",
+        "everything",
+        "everything",
+    ),
+    (
+        "leuven",
+        "leuven.primo.exlibrisgroup.com",
+        "32KUL_INST:KUL",
+        "32KUL_INST",
+        "all_content",
+        "all_content",
+    ),
+    (
+        "paris",
+        "biu-sante.primo.exlibrisgroup.com",
+        "33USPC_INST:33USPC",
+        "33USPC_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "sorbonne",
+        "sorbonne-universite.primo.exlibrisgroup.com",
+        "33SOR_INST:VU_SOR",
+        "33SOR_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "bologna",
+        "unibo.primo.exlibrisgroup.com",
+        "39UBO_INST:39UBO_VU1",
+        "39UBO_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "sapienza",
+        "uniroma1.primo.exlibrisgroup.com",
+        "39SAP_INST:SAPIENZA",
+        "39SAP_INST",
+        "Everything",
+        "Everything",
+    ),
     // ── Asia-Pacific ─────────────────────────────────────────────────────
-    ("nus",         "nus.primo.exlibrisgroup.com",         "65NU_INST:NUS",              "65NU_INST",     "Everything",        "Everything"),
-    ("ntu",         "ntu.primo.exlibrisgroup.com",         "65NTUSG_INST:NTU",           "65NTUSG_INST",  "Everything",        "Everything"),
-    ("smu",         "smu.primo.exlibrisgroup.com",         "65SMU_INST:SMU",             "65SMU_INST",    "Everything",        "MyInst_and_CI"),
-    ("sutd",        "sutd.primo.exlibrisgroup.com",        "65SUTD_INST:SUTD",           "65SUTD_INST",   "Everything",        "MyInst_and_CI"),
-    ("hku",         "julac-hku.primo.exlibrisgroup.com",   "852JULAC_HKU:HKU",           "852JULAC_HKU",  "Everything",        "MyInst_and_CI"),
-    ("cuhk",        "julac-cuhk.primo.exlibrisgroup.com",  "852JULAC_CUHK:CUHK",        "852JULAC_CUHK", "default_tab",       "All"),
-    ("hkust",       "julac-hkust.primo.exlibrisgroup.com", "852JULAC_HKUST:HKUST",      "852JULAC_HKUST","Everything",        "HKUST_catalog_primo"),
-    ("cityu",       "cityu.primo.exlibrisgroup.com",       "852CITYU_INST:CITYU",        "852CITYU_INST", "Everything",        "Everything"),
-    ("mahidol",     "mahidol.primo.exlibrisgroup.com",     "66MU_INST:MU",               "66MU_INST",     "Everything",        "MyInst_and_CI"),
-    ("melbourne",   "unimelb.primo.exlibrisgroup.com",     "61UMELB_INST:UoM",           "61UMELB_INST",  "Everything",        "Everything"),
-    ("sydney",      "usyd.primo.exlibrisgroup.com",        "61USYD_INST:sydney",         "61USYD_INST",   "Everything",        "Everything"),
-    ("anu",         "anu.primo.exlibrisgroup.com",         "61ANU_INST:ANU",             "61ANU_INST",    "Everything",        "MyInst_and_CI"),
-    ("uq",          "uq.primo.exlibrisgroup.com",          "61UQ_INST:61UQ",             "61UQ_INST",     "61UQ_All",          "61UQ_All"),
-    ("monash",      "monash.primo.exlibrisgroup.com",      "61MONASH_INST:Monash",       "61MONASH_INST", "Everything",        "Everything"),
-    ("uwa",         "uwa.primo.exlibrisgroup.com",         "61UWA_INST:UWA",             "61UWA_INST",    "Everything",        "MyInst_and_CI"),
-    ("qut",         "qut.primo.exlibrisgroup.com",         "61QUT_INST:61QUT",           "61QUT_INST",    "Everything",        "Everything"),
-    ("otago",       "primo.otago.ac.nz",                   "64OTAGO_INST:OTAGO",         "64OTAGO_INST",  "Everything",        "Everything"),
-    ("auckland",    "auckland.primo.exlibrisgroup.com",    "64UAU_INST:UAU",             "64UAU_INST",    "Everything",        "Everything"),
+    (
+        "nus",
+        "nus.primo.exlibrisgroup.com",
+        "65NU_INST:NUS",
+        "65NU_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "ntu",
+        "ntu.primo.exlibrisgroup.com",
+        "65NTUSG_INST:NTU",
+        "65NTUSG_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "smu",
+        "smu.primo.exlibrisgroup.com",
+        "65SMU_INST:SMU",
+        "65SMU_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "sutd",
+        "sutd.primo.exlibrisgroup.com",
+        "65SUTD_INST:SUTD",
+        "65SUTD_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "hku",
+        "julac-hku.primo.exlibrisgroup.com",
+        "852JULAC_HKU:HKU",
+        "852JULAC_HKU",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "cuhk",
+        "julac-cuhk.primo.exlibrisgroup.com",
+        "852JULAC_CUHK:CUHK",
+        "852JULAC_CUHK",
+        "default_tab",
+        "All",
+    ),
+    (
+        "hkust",
+        "julac-hkust.primo.exlibrisgroup.com",
+        "852JULAC_HKUST:HKUST",
+        "852JULAC_HKUST",
+        "Everything",
+        "HKUST_catalog_primo",
+    ),
+    (
+        "cityu",
+        "cityu.primo.exlibrisgroup.com",
+        "852CITYU_INST:CITYU",
+        "852CITYU_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "mahidol",
+        "mahidol.primo.exlibrisgroup.com",
+        "66MU_INST:MU",
+        "66MU_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "melbourne",
+        "unimelb.primo.exlibrisgroup.com",
+        "61UMELB_INST:UoM",
+        "61UMELB_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "sydney",
+        "usyd.primo.exlibrisgroup.com",
+        "61USYD_INST:sydney",
+        "61USYD_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "anu",
+        "anu.primo.exlibrisgroup.com",
+        "61ANU_INST:ANU",
+        "61ANU_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "uq",
+        "uq.primo.exlibrisgroup.com",
+        "61UQ_INST:61UQ",
+        "61UQ_INST",
+        "61UQ_All",
+        "61UQ_All",
+    ),
+    (
+        "monash",
+        "monash.primo.exlibrisgroup.com",
+        "61MONASH_INST:Monash",
+        "61MONASH_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "uwa",
+        "uwa.primo.exlibrisgroup.com",
+        "61UWA_INST:UWA",
+        "61UWA_INST",
+        "Everything",
+        "MyInst_and_CI",
+    ),
+    (
+        "qut",
+        "qut.primo.exlibrisgroup.com",
+        "61QUT_INST:61QUT",
+        "61QUT_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "otago",
+        "primo.otago.ac.nz",
+        "64OTAGO_INST:OTAGO",
+        "64OTAGO_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "auckland",
+        "auckland.primo.exlibrisgroup.com",
+        "64UAU_INST:UAU",
+        "64UAU_INST",
+        "Everything",
+        "Everything",
+    ),
     // ── China ────────────────────────────────────────────────────────────
-    ("pku",         "pku.primo.exlibrisgroup.com",         "86PKU_INST:PKU",             "86PKU_INST",    "Everything",        "Everything"),
-    ("sjtu",        "sjtu.primo.exlibrisgroup.com",        "86SJTU_INST:SJTU",           "86SJTU_INST",   "Everything",        "Everything"),
-    ("fudan",       "fudan.primo.exlibrisgroup.com",       "86FDU_INST:FDU",             "86FDU_INST",    "Everything",        "Everything"),
-    ("zju",         "zju.primo.exlibrisgroup.com",         "86ZJU_INST:ZJU",             "86ZJU_INST",    "Everything",        "Everything"),
+    (
+        "pku",
+        "pku.primo.exlibrisgroup.com",
+        "86PKU_INST:PKU",
+        "86PKU_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "sjtu",
+        "sjtu.primo.exlibrisgroup.com",
+        "86SJTU_INST:SJTU",
+        "86SJTU_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "fudan",
+        "fudan.primo.exlibrisgroup.com",
+        "86FDU_INST:FDU",
+        "86FDU_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "zju",
+        "zju.primo.exlibrisgroup.com",
+        "86ZJU_INST:ZJU",
+        "86ZJU_INST",
+        "Everything",
+        "Everything",
+    ),
     // ── Middle East / Africa ─────────────────────────────────────────────
-    ("tau",         "tau.primo.exlibrisgroup.com",         "972TAU_INST:TAU",            "972TAU_INST",   "TAU",               "TAU"),
-    ("huji",        "huji.primo.exlibrisgroup.com",        "972HJU_INST:HJU",            "972HJU_INST",   "Everything",        "Everything"),
-    ("technion",    "technion.primo.exlibrisgroup.com",    "972TECH_INST:TECH",          "972TECH_INST",  "Everything",        "Everything"),
-    ("weizmann",    "weizmann.primo.exlibrisgroup.com",    "972WIS_INST:WIS",            "972WIS_INST",   "Everything",        "Everything"),
-    ("bgu",         "bgu.primo.exlibrisgroup.com",         "972BGU_INST:BGU",            "972BGU_INST",   "Everything",        "Everything"),
-    ("haifa",       "haifa.primo.exlibrisgroup.com",       "972UH_INST:UH",              "972UH_INST",    "Everything",        "Everything"),
-    ("biu",         "biu.primo.exlibrisgroup.com",         "972BILU_INST:BIU",           "972BILU_INST",  "Everything",        "Everything"),
-    ("uct",         "uct.primo.exlibrisgroup.com",         "27UCT_INST:ZA-UCT",          "27UCT_INST",    "Everything",        "Everything"),
-    ("up",          "up.primo.exlibrisgroup.com",          "27UP_INST:ZA-UP",            "27UP_INST",     "Everything",        "Everything"),
-    ("bne",         "bne.primo.exlibrisgroup.com",         "34BNE_INST:BNE",             "34BNE_INST",    "Everything",        "Everything"),
-    ("kb",          "kb.primo.exlibrisgroup.com",          "31KB_INST:KB",               "31KB_INST",     "Everything",        "Everything"),
-    ("nla",         "nla.primo.exlibrisgroup.com",         "61NLA_INST:NLA",             "61NLA_INST",    "Everything",        "Everything"),
-    ("uab",         "uab.primo.exlibrisgroup.com",         "34UAB_INST:UAB",             "34UAB_INST",    "Everything",        "Everything"),
-    ("postech",     "postech.primo.exlibrisgroup.com",     "82POSTECH_INST:POSTECH",     "82POSTECH_INST","Everything",        "Everything"),
-    ("snu",         "snu.primo.exlibrisgroup.com",         "82SNU_INST:SNU",             "82SNU_INST",    "Everything",        "Everything"),
+    (
+        "tau",
+        "tau.primo.exlibrisgroup.com",
+        "972TAU_INST:TAU",
+        "972TAU_INST",
+        "TAU",
+        "TAU",
+    ),
+    (
+        "huji",
+        "huji.primo.exlibrisgroup.com",
+        "972HJU_INST:HJU",
+        "972HJU_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "technion",
+        "technion.primo.exlibrisgroup.com",
+        "972TECH_INST:TECH",
+        "972TECH_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "weizmann",
+        "weizmann.primo.exlibrisgroup.com",
+        "972WIS_INST:WIS",
+        "972WIS_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "bgu",
+        "bgu.primo.exlibrisgroup.com",
+        "972BGU_INST:BGU",
+        "972BGU_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "haifa",
+        "haifa.primo.exlibrisgroup.com",
+        "972UH_INST:UH",
+        "972UH_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "biu",
+        "biu.primo.exlibrisgroup.com",
+        "972BILU_INST:BIU",
+        "972BILU_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "uct",
+        "uct.primo.exlibrisgroup.com",
+        "27UCT_INST:ZA-UCT",
+        "27UCT_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "up",
+        "up.primo.exlibrisgroup.com",
+        "27UP_INST:ZA-UP",
+        "27UP_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "bne",
+        "bne.primo.exlibrisgroup.com",
+        "34BNE_INST:BNE",
+        "34BNE_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "kb",
+        "kb.primo.exlibrisgroup.com",
+        "31KB_INST:KB",
+        "31KB_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "nla",
+        "nla.primo.exlibrisgroup.com",
+        "61NLA_INST:NLA",
+        "61NLA_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "uab",
+        "uab.primo.exlibrisgroup.com",
+        "34UAB_INST:UAB",
+        "34UAB_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "postech",
+        "postech.primo.exlibrisgroup.com",
+        "82POSTECH_INST:POSTECH",
+        "82POSTECH_INST",
+        "Everything",
+        "Everything",
+    ),
+    (
+        "snu",
+        "snu.primo.exlibrisgroup.com",
+        "82SNU_INST:SNU",
+        "82SNU_INST",
+        "Everything",
+        "Everything",
+    ),
     // ── Latin America ────────────────────────────────────────────────────
-    ("usp",         "usp.primo.exlibrisgroup.com",         "55USP_INST:USP",             "55USP_INST",    "Everything",        "Everything"),
+    (
+        "usp",
+        "usp.primo.exlibrisgroup.com",
+        "55USP_INST:USP",
+        "55USP_INST",
+        "Everything",
+        "Everything",
+    ),
 ];
 
 /// Map a Primo instance key to a human-readable institution name.
 fn primo_display_name(key: &str) -> &'static str {
     match key.to_lowercase().as_str() {
-        "cmu"        => "Carnegie Mellon University",
-        "mit"        => "MIT",
-        "harvard"    => "Harvard University",
-        "stanford"   => "Stanford University",
-        "berkeley"   => "UC Berkeley",
-        "columbia"   => "Columbia University",
-        "cornell"    => "Cornell University",
-        "yale"       => "Yale University",
-        "princeton"  => "Princeton University",
-        "brown"      => "Brown University",
-        "michigan"   => "University of Michigan",
-        "ucla"       => "UCLA",
-        "chicago"    => "University of Chicago",
-        "caltech"    => "Caltech",
-        "nyu"        => "New York University",
-        "jhu"        => "Johns Hopkins University",
-        "duke"       => "Duke University",
-        "oxford"     => "University of Oxford (SOLO)",
-        "cambridge"  => "University of Cambridge",
-        "ucl"        => "University College London",
-        "imperial"   => "Imperial College London",
-        "edinburgh"  => "University of Edinburgh",
+        "cmu" => "Carnegie Mellon University",
+        "mit" => "MIT",
+        "harvard" => "Harvard University",
+        "stanford" => "Stanford University",
+        "berkeley" => "UC Berkeley",
+        "columbia" => "Columbia University",
+        "cornell" => "Cornell University",
+        "yale" => "Yale University",
+        "princeton" => "Princeton University",
+        "brown" => "Brown University",
+        "michigan" => "University of Michigan",
+        "ucla" => "UCLA",
+        "chicago" => "University of Chicago",
+        "caltech" => "Caltech",
+        "nyu" => "New York University",
+        "jhu" => "Johns Hopkins University",
+        "duke" => "Duke University",
+        "oxford" => "University of Oxford (SOLO)",
+        "cambridge" => "University of Cambridge",
+        "ucl" => "University College London",
+        "imperial" => "Imperial College London",
+        "edinburgh" => "University of Edinburgh",
         "manchester" => "University of Manchester",
-        "lse"        => "London School of Economics",
-        "eth"        => "ETH Zürich",
-        "epfl"       => "EPFL Lausanne",
-        "tum"        => "TU Munich",
-        "leiden"     => "Leiden University",
-        "delft"      => "TU Delft",
-        "leuven"     => "KU Leuven",
-        "toronto"    => "University of Toronto",
-        "mcgill"     => "McGill University",
-        "ubc"        => "University of British Columbia",
-        "nus"        => "National University of Singapore",
-        "ntu"        => "Nanyang Technological University",
-        "hku"        => "University of Hong Kong",
-        "cuhk"       => "Chinese University of Hong Kong",
-        "hkust"      => "HKUST",
-        "melbourne"  => "University of Melbourne",
-        "sydney"     => "University of Sydney",
-        "anu"        => "Australian National University",
-        "monash"     => "Monash University",
-        "pku"        => "Peking University",
-        "sjtu"       => "Shanghai Jiao Tong University",
-        "fudan"      => "Fudan University",
-        "zju"        => "Zhejiang University",
-        "tau"        => "Tel Aviv University",
-        "huji"       => "Hebrew University of Jerusalem",
-        "uct"        => "University of Cape Town",
-        "usp"        => "University of São Paulo",
-        "pitt"       => "University of Pittsburgh",
-        "rochester"  => "University of Rochester",
-        "emory"      => "Emory University",
-        "rice"       => "Rice University",
-        "utah"       => "University of Utah",
-        "miami"      => "University of Miami",
-        "scu"        => "Santa Clara University",
-        "davidson"   => "Davidson College",
-        "sva"        => "School of Visual Arts (NYC)",
-        "aul"        => "Air University Library",
-        "usma"       => "West Point / USMA",
-        "lva"        => "Library of Virginia",
-        "wrlc"       => "Washington Research Libraries Consortium",
-        "uky"        => "University of Kentucky",
-        "du"         => "University of Denver",
-        "glendale"   => "Glendale Community College",
-        "sfsu"       => "San Francisco State University",
-        "bll"        => "British Library",
+        "lse" => "London School of Economics",
+        "eth" => "ETH Zürich",
+        "epfl" => "EPFL Lausanne",
+        "tum" => "TU Munich",
+        "leiden" => "Leiden University",
+        "delft" => "TU Delft",
+        "leuven" => "KU Leuven",
+        "toronto" => "University of Toronto",
+        "mcgill" => "McGill University",
+        "ubc" => "University of British Columbia",
+        "nus" => "National University of Singapore",
+        "ntu" => "Nanyang Technological University",
+        "hku" => "University of Hong Kong",
+        "cuhk" => "Chinese University of Hong Kong",
+        "hkust" => "HKUST",
+        "melbourne" => "University of Melbourne",
+        "sydney" => "University of Sydney",
+        "anu" => "Australian National University",
+        "monash" => "Monash University",
+        "pku" => "Peking University",
+        "sjtu" => "Shanghai Jiao Tong University",
+        "fudan" => "Fudan University",
+        "zju" => "Zhejiang University",
+        "tau" => "Tel Aviv University",
+        "huji" => "Hebrew University of Jerusalem",
+        "uct" => "University of Cape Town",
+        "usp" => "University of São Paulo",
+        "pitt" => "University of Pittsburgh",
+        "rochester" => "University of Rochester",
+        "emory" => "Emory University",
+        "rice" => "Rice University",
+        "utah" => "University of Utah",
+        "miami" => "University of Miami",
+        "scu" => "Santa Clara University",
+        "davidson" => "Davidson College",
+        "sva" => "School of Visual Arts (NYC)",
+        "aul" => "Air University Library",
+        "usma" => "West Point / USMA",
+        "lva" => "Library of Virginia",
+        "wrlc" => "Washington Research Libraries Consortium",
+        "uky" => "University of Kentucky",
+        "du" => "University of Denver",
+        "glendale" => "Glendale Community College",
+        "sfsu" => "San Francisco State University",
+        "bll" => "British Library",
         "vanderbilt" => "Vanderbilt University",
-        "smu"        => "Singapore Management University",
-        "sutd"       => "Singapore Univ. of Technology & Design",
-        "cityu"      => "City University of Hong Kong",
-        "mahidol"    => "Mahidol University",
-        "uq"         => "University of Queensland",
-        "uwa"        => "University of Western Australia",
-        "technion"   => "Technion – Israel Institute of Technology",
-        "weizmann"   => "Weizmann Institute of Science",
-        "bgu"        => "Ben-Gurion University",
-        "haifa"      => "University of Haifa",
-        "biu"        => "Bar-Ilan University",
-        "up"         => "University of Pretoria",
-        "bne"        => "Biblioteca Nacional de España",
-        "kb"         => "Koninklijke Bibliotheek (Netherlands)",
-        "nla"        => "National Library of Australia",
-        "uab"        => "Universitat Autònoma de Barcelona",
-        "postech"    => "POSTECH",
-        "snu"        => "Seoul National University",
+        "smu" => "Singapore Management University",
+        "sutd" => "Singapore Univ. of Technology & Design",
+        "cityu" => "City University of Hong Kong",
+        "mahidol" => "Mahidol University",
+        "uq" => "University of Queensland",
+        "uwa" => "University of Western Australia",
+        "technion" => "Technion – Israel Institute of Technology",
+        "weizmann" => "Weizmann Institute of Science",
+        "bgu" => "Ben-Gurion University",
+        "haifa" => "University of Haifa",
+        "biu" => "Bar-Ilan University",
+        "up" => "University of Pretoria",
+        "bne" => "Biblioteca Nacional de España",
+        "kb" => "Koninklijke Bibliotheek (Netherlands)",
+        "nla" => "National Library of Australia",
+        "uab" => "Universitat Autònoma de Barcelona",
+        "postech" => "POSTECH",
+        "snu" => "Seoul National University",
         // Unknown key — fall back to the raw key, which is `'static` because
         // it comes from the `PRIMO_INSTANCES` static table or a literal branch.
         // Use a leak only if the key is a user-supplied runtime string; in
         // practice the key is always one of the static table entries.
-        _            => "?",
+        _ => "?",
     }
 }
 
@@ -2585,12 +3481,12 @@ fn pnx_str<'a>(disp: &'a serde_json::Value, field: &str) -> &'a str {
 
 /// Format one Primo PNX document into the human-readable output block.
 fn primo_format_doc(i: usize, doc: &serde_json::Value, host: &str, vid: &str) -> String {
-    let pnx  = doc.get("pnx").unwrap_or(doc);
+    let pnx = doc.get("pnx").unwrap_or(doc);
     let disp = pnx.get("display").unwrap_or(pnx);
 
-    let title       = pnx_str(disp, "title");
-    let year        = pnx_str(disp, "creationdate");
-    let dtype       = pnx_str(disp, "type");
+    let title = pnx_str(disp, "title");
+    let year = pnx_str(disp, "creationdate");
+    let dtype = pnx_str(disp, "type");
     let description = pnx_str(disp, "description");
 
     let creators: Vec<&str> = disp
@@ -2608,11 +3504,18 @@ fn primo_format_doc(i: usize, doc: &serde_json::Value, host: &str, vid: &str) ->
         .unwrap_or("");
 
     let mut out = format!("{}. {}", i + 1, if title.is_empty() { "?" } else { title });
-    if !year.is_empty()  { out.push_str(&format!(" ({year})"));   }
-    if !dtype.is_empty() { out.push_str(&format!("  [{dtype}]")); }
+    if !year.is_empty() {
+        out.push_str(&format!(" ({year})"));
+    }
+    if !dtype.is_empty() {
+        out.push_str(&format!("  [{dtype}]"));
+    }
     out.push('\n');
     if !creators.is_empty() {
-        out.push_str(&format!("   Authors: {}\n", creators[..creators.len().min(4)].join("; ")));
+        out.push_str(&format!(
+            "   Authors: {}\n",
+            creators[..creators.len().min(4)].join("; ")
+        ));
     }
     if !record_id.is_empty() {
         out.push_str(&format!(
@@ -2626,11 +3529,20 @@ fn primo_format_doc(i: usize, doc: &serde_json::Value, host: &str, vid: &str) ->
     out
 }
 
-fn find_primo_instance(key: &str) -> Option<&'static (&'static str, &'static str, &'static str, &'static str, &'static str, &'static str)> {
+fn find_primo_instance(
+    key: &str,
+) -> Option<&'static (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+)> {
     let lower = key.to_lowercase();
-    PRIMO_INSTANCES.iter().find(|(k, host, _, _, _, _)| {
-        lower == *k || host.contains(&lower) || lower.contains(k)
-    })
+    PRIMO_INSTANCES
+        .iter()
+        .find(|(k, host, _, _, _, _)| lower == *k || host.contains(&lower) || lower.contains(k))
 }
 
 /// `primo: <query>` or `primo: <inst>/<query>` — search any ExLibris Primo
@@ -2651,8 +3563,7 @@ async fn search_primo(query: &str, max_results: usize) -> Result<String, String>
         ("cmu", query.trim())
     };
 
-    let inst = find_primo_instance(inst_key)
-        .unwrap_or_else(|| &PRIMO_INSTANCES[0]); // fallback to CMU
+    let inst = find_primo_instance(inst_key).unwrap_or_else(|| &PRIMO_INSTANCES[0]); // fallback to CMU
     let (_key, host, vid, inst_code, tab, scope) = inst;
 
     let limit = max_results.clamp(1, 10).to_string();
@@ -2663,9 +3574,7 @@ async fn search_primo(query: &str, max_results: usize) -> Result<String, String>
     // commas that must reach the server unencoded. The full parameter list is
     // required — the server returns 400 if the "extra" flags are missing.
     let q_encoded = urlencoding_minimal(q);
-    let referer_query = urlencoding_minimal(&format!(
-        "any,contains,{q}",
-    ));
+    let referer_query = urlencoding_minimal(&format!("any,contains,{q}",));
     let url = format!(
         "https://{host}/primaws/rest/pub/pnxs\
          ?acTriggered=false\
@@ -2721,8 +3630,11 @@ async fn search_primo(query: &str, max_results: usize) -> Result<String, String>
         .map_err(|e| format!("Response read: {e}"))
         .and_then(|b| serde_json::from_str(&b).map_err(|e| format!("JSON parse: {e}")))?;
 
-    let total = parsed.pointer("/info/total").and_then(|v| v.as_u64()).unwrap_or(0);
-    let docs  = parsed.get("docs").and_then(|v| v.as_array());
+    let total = parsed
+        .pointer("/info/total")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let docs = parsed.get("docs").and_then(|v| v.as_array());
 
     let inst_display = primo_display_name(inst_key);
     let mut out = format!("Primo ({inst_display}): \"{q}\" — {total} total results\n\n");

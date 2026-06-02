@@ -118,10 +118,10 @@ fn graph_context_def() -> ToolDef {
         description: "PRIMARY TOOL for 'how does X work' / architecture / bug-context questions. \
             Composes search + BFS + type-hierarchy expansion + per-file diversity cap + intent \
             detection into ONE call. Returns entry points, related symbols grouped by file, \
-            optional source blocks for entry points, and a feature/UX reminder when the task \
-            description looks like a new-feature request. Prefer this over chaining graph_search \
-            + graph_query. NOTE: surfaces CODE context, not product requirements — for new \
-            features still clarify UX/edge cases with the user."
+            relationship maps, and optional line-numbered source blocks for entry points. Prefer \
+            this over chaining graph_search + graph_query + Read for architecture or bug context. \
+            NOTE: surfaces CODE context, not product requirements — for new features still \
+            clarify UX/edge cases with the user."
             .into(),
         input_schema: serde_json::json!({
             "type": "object",
@@ -363,11 +363,13 @@ fn graph_explore_def() -> ToolDef {
     ToolDef {
         name: "graph_explore".into(),
         description: "Returns source for SEVERAL related symbols grouped by file, plus a \
-            relationship map, in ONE capped call. This is the efficient way to inspect many \
-            related symbols at once — strongly prefer it over a series of graph_node or Read \
-            calls (each separate call re-reads the whole context, so 8 node calls cost far \
-            more than 1 explore). Query with specific symbol/file/code terms, NOT \
-            natural-language sentences — run graph_search first to find names."
+            relationship map, in ONE capped call. Output is line-numbered, adaptively budgeted \
+            by project size, and includes additional relevant files / completeness notes when \
+            useful. This is the efficient way to inspect many related symbols at once — strongly \
+            prefer it over a series of graph_node or Read calls (each separate call re-reads the \
+            whole context, so 8 node calls cost far more than 1 explore). Query with specific \
+            symbol/file/code terms, NOT natural-language sentences — run graph_search first to \
+            find names when you only have prose."
             .into(),
         input_schema: serde_json::json!({
             "type": "object",

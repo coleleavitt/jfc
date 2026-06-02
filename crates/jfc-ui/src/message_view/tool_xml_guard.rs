@@ -24,8 +24,12 @@ use std::sync::LazyLock;
 /// must name one of these to be suppressed — bare `<div>` / `<Foo>` prose is
 /// left alone. Names are case-sensitive (`Bash`, `Read`, …) to match how the
 /// catalog advertises them and avoid colliding with lowercase HTML tags.
-static TOOL_NAMES: LazyLock<HashSet<String>> =
-    LazyLock::new(|| crate::tools::all_tool_defs().into_iter().map(|d| d.name).collect());
+static TOOL_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
+    crate::tools::all_tool_defs()
+        .into_iter()
+        .map(|d| d.name)
+        .collect()
+});
 
 /// Suppress any leaked tool-call markup in `text`, returning a sanitized copy.
 ///
@@ -216,7 +220,10 @@ mod tests {
         let out = sanitize_with(input, &names);
         assert!(matches!(out, Cow::Owned(_)));
         assert!(!out.contains("<Bash"), "raw markup leaked: {out}");
-        assert!(out.contains("suppressed leaked tool-call markup: Bash"), "{out}");
+        assert!(
+            out.contains("suppressed leaked tool-call markup: Bash"),
+            "{out}"
+        );
         assert!(out.starts_with("Sure: ") && out.ends_with(" done"), "{out}");
     }
 
@@ -258,7 +265,10 @@ mod tests {
         let names = catalog();
         let input = "Example:\n```\n<Bash command=\"ls\" />\n```\nend";
         let out = sanitize_with(input, &names);
-        assert!(matches!(out, Cow::Borrowed(_)), "fenced markup rewritten: {out}");
+        assert!(
+            matches!(out, Cow::Borrowed(_)),
+            "fenced markup rewritten: {out}"
+        );
         assert!(out.contains("<Bash command=\"ls\" />"), "{out}");
     }
 
@@ -285,13 +295,20 @@ mod tests {
         let names = catalog();
         let input = r#"<Read path="/a" /> mid <Grep pattern="x" />"#;
         let out = sanitize_with(input, &names);
-        assert_eq!(out.matches("suppressed leaked tool-call markup").count(), 2, "{out}");
+        assert_eq!(
+            out.matches("suppressed leaked tool-call markup").count(),
+            2,
+            "{out}"
+        );
         assert!(out.contains(" mid "), "{out}");
     }
 
     // Sanity: the live catalog actually contains the tools we guard against.
     #[test]
     fn live_catalog_contains_bash_normal() {
-        assert!(TOOL_NAMES.contains("Bash"), "expected Bash in live tool catalog");
+        assert!(
+            TOOL_NAMES.contains("Bash"),
+            "expected Bash in live tool catalog"
+        );
     }
 }

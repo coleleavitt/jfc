@@ -402,7 +402,9 @@ pub(super) fn prompt_search_overlay(f: &mut Frame, app: &App) {
         let (prefix, style) = if is_sel {
             (
                 "▌ ",
-                Style::default().fg(t.text_primary).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(t.text_primary)
+                    .add_modifier(Modifier::BOLD),
             )
         } else {
             ("  ", Style::default().fg(t.text_muted))

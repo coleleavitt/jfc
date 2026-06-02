@@ -319,10 +319,13 @@ fn handle_chip_atomic_delete(app: &mut App, key: event::KeyEvent) -> Option<anyh
     let line = app.textarea.lines().get(row)?;
     let byte_col = line.char_indices().nth(col).map_or(line.len(), |(i, _)| i);
     let before_cursor = &line[..byte_col];
-    let start = [before_cursor.rfind("[Image #"), before_cursor.rfind("[Pasted #")]
-        .into_iter()
-        .flatten()
-        .max()?;
+    let start = [
+        before_cursor.rfind("[Image #"),
+        before_cursor.rfind("[Pasted #"),
+    ]
+    .into_iter()
+    .flatten()
+    .max()?;
     let chip = &before_cursor[start..];
     if !chip.ends_with(']') {
         return None;
@@ -1251,10 +1254,7 @@ fn queue_prompt_for_later(app: &mut App, text: String) {
 /// Char/Backspace edit the query; Up/Down (and Ctrl+R) move the selection;
 /// Enter loads the highlighted prompt into the input (the user can then edit
 /// or submit); Esc cancels.
-fn handle_prompt_search_keys(
-    app: &mut App,
-    key: event::KeyEvent,
-) -> Option<anyhow::Result<bool>> {
+fn handle_prompt_search_keys(app: &mut App, key: event::KeyEvent) -> Option<anyhow::Result<bool>> {
     app.prompt_search.as_ref()?;
     match (key.modifiers, key.code) {
         (_, KeyCode::Esc) => {

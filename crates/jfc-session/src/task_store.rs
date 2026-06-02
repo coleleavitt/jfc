@@ -432,8 +432,7 @@ impl TaskStore {
     pub fn prune_terminal_tasks(&self, max_terminal: usize) -> usize {
         let mut inner = self.inner.lock().unwrap();
         let now_ms = now_ms();
-        let archived =
-            Self::prune_terminal_tasks_from_inner(&mut inner, max_terminal, now_ms);
+        let archived = Self::prune_terminal_tasks_from_inner(&mut inner, max_terminal, now_ms);
         let pruned = archived.len();
         if pruned == 0 {
             return 0;
@@ -566,7 +565,8 @@ impl TaskStore {
         let now_ms = now_ms();
         let mut fresh = Self::load_inner(&self.path);
         let deleted = Self::delete_legacy_placeholders_from_inner(&mut fresh);
-        let archived = Self::prune_terminal_tasks_from_inner(&mut fresh, MAX_TERMINAL_TASKS, now_ms);
+        let archived =
+            Self::prune_terminal_tasks_from_inner(&mut fresh, MAX_TERMINAL_TASKS, now_ms);
         let pruned = archived.len();
         let mut inner = self.inner.lock().unwrap();
         *inner = fresh;
@@ -1512,8 +1512,7 @@ mod tests {
         {
             let mut inner = store.inner.lock().unwrap();
             // stale: 8 days old (past 7-day retention). fresh: 1 hour old.
-            inner.tasks.get_mut(&stale.id).unwrap().created_at_ms =
-                now - 8 * 24 * 60 * 60 * 1000;
+            inner.tasks.get_mut(&stale.id).unwrap().created_at_ms = now - 8 * 24 * 60 * 60 * 1000;
             inner.tasks.get_mut(&fresh.id).unwrap().created_at_ms = now - 60 * 60 * 1000;
             inner.tasks.get_mut(&old_active.id).unwrap().created_at_ms =
                 now - 30 * 24 * 60 * 60 * 1000;

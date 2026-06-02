@@ -1273,8 +1273,15 @@ mod helper_tests {
         // content_w = 20 → wrap_w = 18 → 50 chars = 18 + 18 + 14 = 3 rows.
         let rows = bash_continuation_lines(&t, 20);
         assert_eq!(rows.len(), 3, "got: {rows:?}");
-        assert_eq!(rows.iter().map(|r| r.len()).collect::<Vec<_>>(), vec![18, 18, 14]);
-        assert_eq!(rows.concat(), command, "wrapped rows must reconstruct the command");
+        assert_eq!(
+            rows.iter().map(|r| r.len()).collect::<Vec<_>>(),
+            vec![18, 18, 14]
+        );
+        assert_eq!(
+            rows.concat(),
+            command,
+            "wrapped rows must reconstruct the command"
+        );
     }
 
     #[test]

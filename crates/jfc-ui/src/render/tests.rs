@@ -930,7 +930,10 @@ mod pure_helper_tests {
 
     #[test]
     fn plan_badge_passes_through_unknown_plan_robust() {
-        assert_eq!(plan_badge(Some("startup"), None), Some("◆ startup".to_string()));
+        assert_eq!(
+            plan_badge(Some("startup"), None),
+            Some("◆ startup".to_string())
+        );
     }
 
     // --- fit_segments (status-row always-visible floor) ----------------

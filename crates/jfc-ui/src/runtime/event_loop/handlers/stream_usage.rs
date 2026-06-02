@@ -13,6 +13,7 @@ pub(crate) fn handle_stream_usage(
     cache_write_tokens: u32,
 ) {
     app.record_stream_activity();
+    app.stream_lifecycle = None;
     // Anthropic sends *cumulative* token counts in every
     // `message_delta` event (sse.rs:212-218 — see also
     // anthropic-messaging spec). Naively calling `add_delta`

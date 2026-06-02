@@ -719,8 +719,10 @@ pub async fn execute_tool(
                         arr.iter()
                             .filter_map(|opt| {
                                 let label = opt.get("label").and_then(|v| v.as_str())?;
-                                let desc =
-                                    opt.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                                let desc = opt
+                                    .get("description")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
                                 if desc.is_empty() {
                                     Some(format!("- {label}"))
                                 } else {

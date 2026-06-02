@@ -992,7 +992,10 @@ mod disk_io_tests {
                     first.get("question").and_then(|v| v.as_str()),
                     Some("Pick a target: prod or staging?")
                 );
-                assert_eq!(first.get("multiSelect").and_then(|v| v.as_bool()), Some(false));
+                assert_eq!(
+                    first.get("multiSelect").and_then(|v| v.as_bool()),
+                    Some(false)
+                );
             }
             other => panic!("expected AskUserQuestion, got {}", other.summary()),
         }

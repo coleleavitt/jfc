@@ -1,5 +1,6 @@
 //! High-level session facade — the single entry point for jfc-ui.
 
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use tracing::warn;
@@ -9,10 +10,11 @@ use crate::builder::GraphBuilder;
 use crate::capabilities::{Capability, CapabilityTree};
 use crate::context::{self, ContextOptions, ContextResult};
 use crate::dsl::{self, QueryConfig, QueryError, QueryResult};
+use crate::edges::EdgeKind;
 use crate::formatting::{self, FormattedOutput};
 use crate::graph::CodeGraph;
 use crate::incremental::{QueryCache, QueryKey, ReadSet};
-use crate::nodes::NodeId;
+use crate::nodes::{NodeData, NodeId};
 use crate::persistence::EventLog;
 use crate::symbols::SymbolTable;
 use crate::worktree::{self, WorktreeMismatch};
@@ -42,6 +44,12 @@ pub struct GraphSession {
     /// lookup. See [`crate::content_index`].
     content_index: crate::content_index::ContentIndex,
     adapter: RustAdapter,
+}
+
+#[derive(Debug, Clone)]
+struct ExploreFileGroup {
+    nodes: Vec<NodeId>,
+    score: u32,
 }
 
 impl GraphSession {
@@ -478,112 +486,490 @@ impl GraphSession {
     /// relationship map, in ONE capped call. Splits the query on whitespace,
     /// resolves each term, groups by file, and renders fenced code blocks
     /// with line numbers.
-    pub fn explore(&self, query: &str, max_files: usize) -> String {
-        use std::collections::HashMap;
-
+    pub fn explore(&self, query: &str, max_files: Option<usize>) -> String {
         let terms: Vec<&str> = query.split_whitespace().collect();
         if terms.is_empty() {
             return "No search terms provided. Pass specific symbol/file/code terms.".to_string();
         }
 
-        // Resolve all terms and group node IDs by file path.
-        let mut file_nodes: HashMap<std::path::PathBuf, Vec<NodeId>> = HashMap::new();
+        let file_count = self.distinct_file_count();
+        let budget = context::ExploreBudget::for_file_count(file_count);
+        let max_files = max_files
+            .unwrap_or(budget.default_max_files)
+            .clamp(1, 50)
+            .min(budget.default_max_files.max(1));
+
+        // Resolve all terms, then add a shallow relationship closure around
+        // the hits. This mirrors upstream codegraph_explore: one call should
+        // return enough adjacent code that the model does not immediately
+        // need graph_node/Read fan-out.
+        let mut seeds: Vec<NodeId> = Vec::new();
+        let mut seen_seeds: HashSet<NodeId> = HashSet::new();
         for term in &terms {
-            let hits = context::resolve_symbol(&self.graph, term);
+            let mut hits = context::resolve_symbol(&self.graph, term);
+            if hits.is_empty() {
+                hits.extend(
+                    crate::symbols::fuzzy_search(&self.graph, term, 2, 8)
+                        .into_iter()
+                        .map(|(id, _)| id),
+                );
+            }
             for id in hits {
-                if let Some(node) = self.graph.get_node(&id) {
-                    file_nodes
-                        .entry(node.file_path.clone())
-                        .or_default()
-                        .push(id);
+                if seen_seeds.insert(id.clone()) {
+                    seeds.push(id);
                 }
             }
         }
 
-        if file_nodes.is_empty() {
+        // File/path terms are common after graph_files/code_index. If a term
+        // looks like a path fragment, include symbols from matching files.
+        let path_terms: Vec<String> = terms
+            .iter()
+            .filter(|term| term.contains('/') || term.contains('.') || term.contains('\\'))
+            .map(|term| term.to_ascii_lowercase())
+            .collect();
+        if !path_terms.is_empty() {
+            for id in self.graph.all_node_ids() {
+                let Some(node) = self.graph.get_node(id) else {
+                    continue;
+                };
+                let path = node.file_path.to_string_lossy().to_ascii_lowercase();
+                if path_terms.iter().any(|term| path.contains(term))
+                    && seen_seeds.insert(id.clone())
+                {
+                    seeds.push(id.clone());
+                    if seeds.len() >= 160 {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if seeds.is_empty() {
             return format!("No symbols found matching query terms: `{query}`");
         }
 
-        // Sort files by number of matched symbols descending, take up to max_files.
-        let mut file_list: Vec<_> = file_nodes.into_iter().collect();
-        file_list.sort_by_key(|b| std::cmp::Reverse(b.1.len()));
-        file_list.truncate(max_files);
+        let seed_set: HashSet<NodeId> = seeds.iter().cloned().collect();
+        let (candidates, connected_to_entry) = self.explore_candidates(&seeds, 220);
+        let relationships = self.explore_relationships(&candidates, &budget);
+        let query_terms = normalized_query_terms(query);
 
-        let mut out = String::new();
-        out.push_str(&format!("## Explore: `{query}`\n\n"));
-        out.push_str(&format!(
-            "{} files, {} terms\n\n",
-            file_list.len(),
-            terms.len()
-        ));
-
-        const MAX_OUTPUT: usize = 15000;
-
-        for (file_path, node_ids) in &file_list {
-            if out.len() >= MAX_OUTPUT {
-                out.push_str("\n[output truncated — use fewer terms or lower max_files]\n");
-                break;
-            }
-
-            // Cached, mtime-validated lines (shared with graph_grep).
-            let Some(cached) = self.content_index.lines(file_path) else {
-                continue;
-            };
-            let lines: Vec<&str> = cached.iter().map(String::as_str).collect();
-
-            // Collect spans from nodes in this file.
-            let mut ranges: Vec<(u32, u32)> = Vec::new();
-            for id in node_ids {
-                if let Some(node) = self.graph.get_node(id) {
-                    ranges.push((node.span.start_line, node.span.end_line));
-                }
-            }
-            ranges.sort_by_key(|r| r.0);
-
-            // Merge overlapping/adjacent ranges (with 2 lines of context).
-            let mut merged: Vec<(usize, usize)> = Vec::new();
-            for (start, end) in &ranges {
-                let s = (*start).saturating_sub(1).max(1) as usize - 1; // 0-indexed
-                let e = ((*end) as usize).min(lines.len());
-                if let Some(last) = merged.last_mut() {
-                    if s <= last.1 + 2 {
-                        last.1 = last.1.max(e);
-                    } else {
-                        merged.push((s, e));
-                    }
+        let mut file_groups: HashMap<PathBuf, ExploreFileGroup> = HashMap::new();
+        for id in &candidates {
+            if let Some(node) = self.graph.get_node(id) {
+                let group = file_groups
+                    .entry(node.file_path.clone())
+                    .or_insert_with(|| ExploreFileGroup {
+                        nodes: Vec::new(),
+                        score: 0,
+                    });
+                group.nodes.push(id.clone());
+                group.score += if seed_set.contains(id) {
+                    10
+                } else if connected_to_entry.contains(id) {
+                    3
                 } else {
-                    merged.push((s, e));
-                }
-            }
-
-            let lang = if file_path.extension().and_then(|e| e.to_str()) == Some("rs") {
-                "rust"
-            } else if file_path.extension().and_then(|e| e.to_str()) == Some("ts")
-                || file_path.extension().and_then(|e| e.to_str()) == Some("tsx")
-            {
-                "typescript"
-            } else if file_path.extension().and_then(|e| e.to_str()) == Some("py") {
-                "python"
-            } else {
-                ""
-            };
-
-            out.push_str(&format!("### {}\n\n", file_path.display()));
-            for (s, e) in &merged {
-                if out.len() >= MAX_OUTPUT {
-                    break;
-                }
-                out.push_str(&format!("```{}\n", lang));
-                for i in *s..*e {
-                    if i < lines.len() {
-                        out.push_str(&format!("{:>4} | {}\n", i + 1, lines[i]));
-                    }
-                }
-                out.push_str("```\n\n");
+                    1
+                };
             }
         }
 
-        out
+        let mut relevant_files: Vec<(PathBuf, ExploreFileGroup)> = file_groups
+            .iter()
+            .filter(|(_, group)| group.score >= 3)
+            .map(|(path, group)| (path.clone(), group.clone()))
+            .collect();
+        relevant_files.sort_by(|a, b| compare_explore_files(&self.graph, a, b, &query_terms));
+
+        let peripheral_files: Vec<(PathBuf, ExploreFileGroup)> = file_groups
+            .into_iter()
+            .filter(|(_, group)| group.score < 3)
+            .collect();
+
+        let total_symbols: usize = candidates.len();
+        let total_files = relevant_files.len() + peripheral_files.len();
+
+        let mut file_blocks: Vec<(String, String, String, String)> = Vec::new();
+        let mut files_included = 0usize;
+        let mut any_file_trimmed = false;
+        for (file_path, group) in relevant_files.iter() {
+            if files_included >= max_files {
+                break;
+            }
+            let Some(cached) = self.content_index.lines(file_path) else {
+                continue;
+            };
+            let mut unique_nodes = group.nodes.clone();
+            unique_nodes.sort();
+            unique_nodes.dedup();
+
+            let mut ranges = context::clustering::build_ranges_with_importance(
+                &self.graph,
+                &unique_nodes,
+                cached.len() as u32,
+                |id| {
+                    if seed_set.contains(id) {
+                        10
+                    } else if connected_to_entry.contains(id) {
+                        3
+                    } else {
+                        1
+                    }
+                },
+            );
+            self.add_edge_source_ranges(file_path, &unique_nodes, &candidates, &mut ranges);
+            if ranges.is_empty() {
+                continue;
+            }
+            let clusters = context::clustering::build_clusters(&ranges, budget.gap_threshold);
+            let ranked = context::clustering::rank_clusters_for_inclusion(&clusters);
+            let mut chosen: Vec<usize> = Vec::new();
+            let mut used_chars = 0usize;
+            for idx in ranked {
+                let cluster = &clusters[idx];
+                let Some(source) = context::clustering::read_cluster_source(file_path, cluster, 3)
+                else {
+                    continue;
+                };
+                let separator_len = if chosen.is_empty() {
+                    0
+                } else {
+                    "\n\n... (gap) ...\n\n".len()
+                };
+                let next = used_chars.saturating_add(source.len() + separator_len);
+                if chosen.is_empty() || next <= budget.max_chars_per_file {
+                    chosen.push(idx);
+                    used_chars = next;
+                }
+            }
+            if chosen.is_empty() {
+                continue;
+            }
+            if chosen.len() < clusters.len() {
+                any_file_trimmed = true;
+            }
+            chosen.sort_unstable();
+
+            let mut body = String::new();
+            let mut symbols: Vec<String> = Vec::new();
+            for idx in chosen {
+                let cluster = &clusters[idx];
+                let Some(mut source) =
+                    context::clustering::read_cluster_source(file_path, cluster, 3)
+                else {
+                    continue;
+                };
+                if source.len() > budget.max_chars_per_file {
+                    let mut cut = budget.max_chars_per_file;
+                    while cut > 0 && !source.is_char_boundary(cut) {
+                        cut -= 1;
+                    }
+                    source.truncate(cut);
+                    source.push_str("\n... (trimmed) ...\n");
+                    any_file_trimmed = true;
+                }
+                body.push_str(source.trim_end());
+                body.push('\n');
+                if !body.is_empty() {
+                    body.push_str("\n... (gap) ...\n\n");
+                }
+                symbols.extend(cluster.symbols.iter().cloned());
+            }
+            while body.ends_with("\n... (gap) ...\n\n") {
+                let new_len = body.len() - "\n... (gap) ...\n\n".len();
+                body.truncate(new_len);
+            }
+            if body.is_empty() {
+                continue;
+            }
+            let header =
+                context::clustering::build_file_header(&symbols, budget.max_symbols_in_file_header);
+            file_blocks.push((
+                file_path.display().to_string(),
+                lang_for(file_path).to_string(),
+                header,
+                body,
+            ));
+            files_included += 1;
+        }
+
+        let mut remaining_files: Vec<(PathBuf, ExploreFileGroup)> = relevant_files
+            .into_iter()
+            .skip(files_included)
+            .chain(peripheral_files.into_iter())
+            .collect();
+        remaining_files.sort_by_key(|(_, group)| std::cmp::Reverse(group.score));
+        let additional_files: Vec<(String, String)> = remaining_files
+            .iter()
+            .take(20)
+            .map(|(file_path, group)| {
+                let mut symbols: Vec<String> = group
+                    .nodes
+                    .iter()
+                    .filter_map(|id| self.graph.get_node(id))
+                    .map(|node| format!("{}:{}", node.name, node.span.start_line))
+                    .collect();
+                symbols.sort();
+                symbols.dedup();
+                (
+                    file_path.display().to_string(),
+                    symbols.into_iter().take(8).collect::<Vec<_>>().join(", "),
+                )
+            })
+            .collect();
+
+        let overload_notes = self.explore_overload_notes(&seeds);
+        let mut semantic_notes = self.explore_semantic_notes(&candidates, any_file_trimmed);
+        semantic_notes.insert(
+            0,
+            format!(
+                "Source coverage: included {} file(s), referenced {} additional file(s), across {total_symbols} relevant symbol(s).",
+                file_blocks.len(),
+                additional_files.len()
+            ),
+        );
+
+        context::render::render_explore(
+            query,
+            total_symbols,
+            total_files,
+            &relationships,
+            &file_blocks,
+            &additional_files,
+            &overload_notes,
+            &semantic_notes,
+            &budget,
+        )
+    }
+
+    fn explore_candidates(
+        &self,
+        seeds: &[NodeId],
+        max_nodes: usize,
+    ) -> (Vec<NodeId>, HashSet<NodeId>) {
+        let mut out: Vec<NodeId> = Vec::new();
+        let mut seen: HashSet<NodeId> = HashSet::new();
+        let mut connected_to_entry: HashSet<NodeId> = HashSet::new();
+        let mut queue: VecDeque<(NodeId, usize)> = VecDeque::new();
+        for seed in seeds {
+            if seen.insert(seed.clone()) {
+                out.push(seed.clone());
+                queue.push_back((seed.clone(), 0));
+            }
+        }
+
+        while let Some((current, depth)) = queue.pop_front() {
+            if out.len() >= max_nodes {
+                break;
+            }
+            if depth >= 3 {
+                continue;
+            }
+            let mut added_for_seed = 0usize;
+            for (neighbor, edge) in self
+                .graph
+                .get_edges_from(&current)
+                .into_iter()
+                .chain(self.graph.get_edges_to(&current).into_iter())
+            {
+                if !is_explore_edge(&edge.kind) {
+                    continue;
+                }
+                if depth == 0 {
+                    connected_to_entry.insert(neighbor.clone());
+                }
+                if seen.insert(neighbor.clone()) {
+                    out.push(neighbor.clone());
+                    queue.push_back((neighbor.clone(), depth + 1));
+                    added_for_seed += 1;
+                    if out.len() >= max_nodes || added_for_seed >= 16 {
+                        break;
+                    }
+                }
+            }
+        }
+        (out, connected_to_entry)
+    }
+
+    fn explore_relationships(
+        &self,
+        candidates: &[NodeId],
+        budget: &context::ExploreBudget,
+    ) -> Vec<(EdgeKind, Vec<(String, String)>)> {
+        let candidate_set: HashSet<&NodeId> = candidates.iter().collect();
+        let mut by_kind: HashMap<EdgeKind, Vec<(String, String)>> = HashMap::new();
+        for src in candidates {
+            let Some(src_node) = self.graph.get_node(src) else {
+                continue;
+            };
+            for (target, edge) in self.graph.get_edges_from(src) {
+                if !candidate_set.contains(target) || !is_explore_edge(&edge.kind) {
+                    continue;
+                }
+                let Some(target_node) = self.graph.get_node(target) else {
+                    continue;
+                };
+                let src_label =
+                    relationship_node_label(src_node, Some(edge.source_span.start_line));
+                let target_label = relationship_node_label(target_node, None);
+                let entries = by_kind.entry(edge.kind.clone()).or_default();
+                if !entries
+                    .iter()
+                    .any(|(s, t)| s == &src_label && t == &target_label)
+                {
+                    entries.push((src_label, target_label));
+                }
+            }
+        }
+        let mut rels: Vec<_> = by_kind.into_iter().collect();
+        rels.sort_by_key(|(kind, edges)| {
+            (
+                context::render::edge_kind_label(kind).to_string(),
+                std::cmp::Reverse(edges.len()),
+            )
+        });
+        for (_, edges) in &mut rels {
+            edges.truncate(budget.max_edges_per_relationship_kind.saturating_mul(2));
+        }
+        rels
+    }
+
+    fn add_edge_source_ranges(
+        &self,
+        file_path: &Path,
+        node_ids: &[NodeId],
+        candidates: &[NodeId],
+        ranges: &mut Vec<context::clustering::Range>,
+    ) {
+        let candidate_set: HashSet<&NodeId> = candidates.iter().collect();
+        let mut seen: HashSet<(u32, NodeId)> = HashSet::new();
+        for id in node_ids {
+            for (target, edge) in self.graph.get_edges_from(id) {
+                if matches!(edge.kind, EdgeKind::Contains)
+                    || edge.source_span.start_line == 0
+                    || edge.source_span.file != file_path
+                {
+                    continue;
+                }
+                let key = (edge.source_span.start_line, target.clone());
+                if !seen.insert(key) {
+                    continue;
+                }
+                let target_name = self
+                    .graph
+                    .get_node(target)
+                    .map(|node| node.name.clone())
+                    .unwrap_or_else(|| context::render::edge_kind_label(&edge.kind).to_owned());
+                let importance = if candidate_set.contains(target) { 2 } else { 1 };
+                ranges.push(context::clustering::Range::edge_source(
+                    edge.source_span.start_line,
+                    format!(
+                        "{}@{}",
+                        target_name,
+                        context::render::edge_kind_label(&edge.kind)
+                    ),
+                    importance,
+                ));
+            }
+        }
+        ranges.sort_by_key(|range| range.start);
+    }
+
+    fn explore_overload_notes(&self, seeds: &[NodeId]) -> Vec<String> {
+        let mut by_name: HashMap<&str, Vec<&NodeData>> = HashMap::new();
+        for id in seeds {
+            if let Some(node) = self.graph.get_node(id) {
+                by_name.entry(node.name.as_str()).or_default().push(node);
+            }
+        }
+        let mut notes = Vec::new();
+        for (name, nodes) in by_name {
+            if nodes.len() < 2 {
+                continue;
+            }
+            notes.push(format!("`{name}` matched {} symbols:", nodes.len()));
+            for node in nodes.iter().take(8) {
+                let sig = signature_summary(node);
+                let sig_suffix = sig
+                    .as_deref()
+                    .map(|s| format!(" — `{s}`"))
+                    .unwrap_or_default();
+                notes.push(format!(
+                    "- {}:{}{}",
+                    node.file_path.display(),
+                    node.span.start_line,
+                    sig_suffix
+                ));
+            }
+            if nodes.len() > 8 {
+                notes.push(format!("- ... and {} more", nodes.len() - 8));
+            }
+        }
+        notes
+    }
+
+    fn explore_semantic_notes(&self, candidates: &[NodeId], any_file_trimmed: bool) -> Vec<String> {
+        let candidate_set: HashSet<&NodeId> = candidates.iter().collect();
+        let mut unresolved = Vec::new();
+        let mut unresolved_total = 0usize;
+        for src in candidates {
+            let Some(src_node) = self.graph.get_node(src) else {
+                continue;
+            };
+            for (target, edge) in self.graph.get_edges_from(src) {
+                let EdgeKind::UnresolvedCall(name) = &edge.kind else {
+                    continue;
+                };
+                unresolved_total += 1;
+                if unresolved.len() < 8 {
+                    let target_hint = if candidate_set.contains(target) {
+                        self.graph
+                            .get_node(target)
+                            .map(|node| format!(" -> candidate {}", node.name))
+                            .unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+                    unresolved.push(format!(
+                        "- `{}` at {}:{}:{}{}",
+                        name,
+                        src_node.file_path.display(),
+                        edge.source_span.start_line,
+                        edge.source_span.start_col.saturating_add(1),
+                        target_hint
+                    ));
+                }
+            }
+        }
+
+        let mut notes = Vec::new();
+        if unresolved_total > 0 {
+            notes.push(format!(
+                "LSP/rust-analyzer enrichment candidates: {unresolved_total} unresolved call edge(s)."
+            ));
+            notes.extend(unresolved);
+            notes.push(
+                "Use the LSP tool with `definition` or `references` on these coordinates for exact rust-analyzer resolution; the graph engine currently keeps LSP enrichment read-only/async-boundary-safe."
+                    .to_string(),
+            );
+        }
+        if any_file_trimmed {
+            notes.push(
+                "Some source clusters were trimmed or omitted by budget; use graph_node or Read for full bodies only when needed."
+                    .to_string(),
+            );
+        }
+        notes
+    }
+
+    fn distinct_file_count(&self) -> usize {
+        let mut files: HashSet<&Path> = HashSet::new();
+        for id in self.graph.all_node_ids() {
+            if let Some(node) = self.graph.get_node(id) {
+                files.insert(node.file_path.as_path());
+            }
+        }
+        files.len()
     }
 
     /// Like [`search`](Self::search) but appends each function/method hit's
@@ -819,6 +1205,131 @@ impl GraphSession {
     ) -> Result<(), crate::overlay::OverlayError> {
         crate::overlay::save_base_snapshot(path, &self.graph, workspace_root, base_ref)
     }
+}
+
+fn normalized_query_terms(query: &str) -> Vec<String> {
+    query
+        .split_whitespace()
+        .map(|term| {
+            term.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != ':' && c != '/')
+                .to_ascii_lowercase()
+        })
+        .filter(|term| term.len() >= 3)
+        .collect()
+}
+
+fn compare_explore_files(
+    graph: &CodeGraph,
+    a: &(PathBuf, ExploreFileGroup),
+    b: &(PathBuf, ExploreFileGroup),
+    query_terms: &[String],
+) -> std::cmp::Ordering {
+    let a_relevant = file_has_query_relevance(graph, &a.0, &a.1.nodes, query_terms);
+    let b_relevant = file_has_query_relevance(graph, &b.0, &b.1.nodes, query_terms);
+    if a_relevant != b_relevant {
+        return if a_relevant {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
+        };
+    }
+
+    let a_low = is_low_value_explore_path(&a.0);
+    let b_low = is_low_value_explore_path(&b.0);
+    if a_low != b_low {
+        return if a_low {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Less
+        };
+    }
+
+    b.1.score
+        .cmp(&a.1.score)
+        .then_with(|| b.1.nodes.len().cmp(&a.1.nodes.len()))
+        .then_with(|| a.0.cmp(&b.0))
+}
+
+fn file_has_query_relevance(
+    graph: &CodeGraph,
+    file_path: &Path,
+    node_ids: &[NodeId],
+    query_terms: &[String],
+) -> bool {
+    if query_terms.is_empty() {
+        return true;
+    }
+    let path = file_path.to_string_lossy().to_ascii_lowercase();
+    if query_terms.iter().any(|term| path.contains(term)) {
+        return true;
+    }
+    node_ids.iter().any(|id| {
+        graph.get_node(id).is_some_and(|node| {
+            let name = node.name.to_ascii_lowercase();
+            let qualified = node.qualified_name.to_ascii_lowercase();
+            let signature = node
+                .metadata
+                .get("signature")
+                .map(|sig| sig.to_ascii_lowercase())
+                .unwrap_or_default();
+            query_terms.iter().any(|term| {
+                name.contains(term) || qualified.contains(term) || signature.contains(term)
+            })
+        })
+    })
+}
+
+fn is_low_value_explore_path(path: &Path) -> bool {
+    let p = path.to_string_lossy().to_ascii_lowercase();
+    p.split('/').any(|seg| {
+        matches!(
+            seg,
+            "test" | "tests" | "__test__" | "__tests__" | "spec" | "specs" | "icons" | "icon"
+        )
+    }) || p.contains("/i18n/")
+        || p.contains("\\i18n\\")
+        || p.ends_with("_test.rs")
+        || p.ends_with(".test.ts")
+        || p.ends_with(".test.tsx")
+        || p.ends_with(".spec.ts")
+        || p.ends_with(".spec.tsx")
+}
+
+fn relationship_node_label(node: &NodeData, source_line: Option<u32>) -> String {
+    let line = source_line.unwrap_or(node.span.start_line);
+    let sig = signature_summary(node)
+        .map(|sig| format!(" `{}`", truncate_for_label(&sig, 64)))
+        .unwrap_or_default();
+    format!("{}:{}{}", node.name, line, sig)
+}
+
+fn signature_summary(node: &NodeData) -> Option<String> {
+    node.metadata
+        .get("signature")
+        .filter(|sig| !sig.trim().is_empty())
+        .cloned()
+}
+
+fn truncate_for_label(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max_chars.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
+fn is_explore_edge(kind: &EdgeKind) -> bool {
+    matches!(
+        kind,
+        EdgeKind::Calls
+            | EdgeKind::UnresolvedCall(_)
+            | EdgeKind::UsesType
+            | EdgeKind::References
+            | EdgeKind::Implements
+            | EdgeKind::Returns
+            | EdgeKind::TypeOf
+    )
 }
 
 /// Markdown code-fence language tag from a file extension.

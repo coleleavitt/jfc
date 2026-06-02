@@ -339,7 +339,15 @@ mod tests {
         ];
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        handle_done(&mut app, &tx, compacted, ToolContext::new(), 120_000, 20_000).await;
+        handle_done(
+            &mut app,
+            &tx,
+            compacted,
+            ToolContext::new(),
+            120_000,
+            20_000,
+        )
+        .await;
 
         assert!(
             app.follow_bottom,

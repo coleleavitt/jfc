@@ -337,6 +337,7 @@ pub(crate) fn dispatch_pending_after_stream(app: &mut App, tx: &EventSender) -> 
 /// Handle a new tool announced by the stream layer.
 pub(crate) async fn handle_stream_tool(app: &mut App, tx: &EventSender, tool: ToolCall) {
     app.record_stream_activity();
+    app.stream_lifecycle = None;
     // Trace every StreamTool entry so next-run diagnostics show
     // exactly which routing path each tool took. Without this,
     // tools that take the auto-mode or no-approval branches are

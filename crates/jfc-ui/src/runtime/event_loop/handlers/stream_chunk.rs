@@ -11,6 +11,7 @@ pub(crate) fn handle_chunk(app: &mut App, text: Option<String>, reasoning: Optio
     app.record_stream_activity();
     app.network_recovery_status = None;
     app.network_recovery_attempts = 0;
+    app.stream_lifecycle = None;
     // First-byte trace: log exactly once per turn, when the very first
     // text/reasoning delta lands. This is the "connection opened, model is
     // producing output" signal — the boundary the interrupt-on-submit and
@@ -146,6 +147,7 @@ pub(crate) fn handle_chunk(app: &mut App, text: Option<String>, reasoning: Optio
 pub(crate) fn handle_tool_input_delta(app: &mut App, byte_len: usize) {
     app.network_recovery_status = None;
     app.network_recovery_attempts = 0;
+    app.stream_lifecycle = None;
     // Tool input JSON streaming — accumulate bytes for the spinner's
     // token estimate and reset the stall timer. Matches v126's
     // accumulation of input_json_delta into responseLengthRef.
@@ -160,6 +162,7 @@ pub(crate) fn handle_tool_input_delta(app: &mut App, byte_len: usize) {
 
 pub(crate) fn handle_redacted_thinking(app: &mut App, data: String) {
     app.record_stream_activity();
+    app.stream_lifecycle = None;
     if let Some(msg) = streaming_assistant_mut(app) {
         msg.parts.push(MessagePart::RedactedThinking(data));
     }
@@ -175,6 +178,7 @@ pub(crate) fn handle_redacted_thinking(app: &mut App, data: String) {
 /// accumulation (cli.beautified.js:574722).
 pub(crate) fn handle_thinking_tokens(app: &mut App, tokens: u32) {
     app.record_stream_activity();
+    app.stream_lifecycle = None;
     let now = std::time::Instant::now();
     // Reset the quiet clock — an estimate ping is wire activity, same as a
     // visible delta. Without this a long silent-thinking phase would wrongly
@@ -191,6 +195,7 @@ pub(crate) fn handle_thinking_tokens(app: &mut App, tokens: u32) {
 
 pub(crate) fn handle_response_id(app: &mut App, id: String) {
     app.record_stream_activity();
+    app.stream_lifecycle = None;
     app.last_response_id = Some(id);
 }
 

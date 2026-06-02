@@ -102,6 +102,44 @@ pub struct StreamRequestMetadata {
     pub tool_choice: StreamToolChoice,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StreamLifecyclePhase {
+    PreparingContext,
+    WaitingForFirstByte,
+    StreamOpened,
+    RetryingWithoutThinking,
+    NonStreamingFallback,
+}
+
+impl StreamLifecyclePhase {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::PreparingContext => "preparing context",
+            Self::WaitingForFirstByte => "waiting first byte",
+            Self::StreamOpened => "stream opened",
+            Self::RetryingWithoutThinking => "retrying without thinking",
+            Self::NonStreamingFallback => "non-stream fallback",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StreamLifecycleStatus {
+    pub phase: StreamLifecyclePhase,
+    pub detail: Option<String>,
+    pub updated_at: std::time::Instant,
+}
+
+impl StreamLifecycleStatus {
+    pub fn new(phase: StreamLifecyclePhase, detail: impl Into<Option<String>>) -> Self {
+        Self {
+            phase,
+            detail: detail.into(),
+            updated_at: std::time::Instant::now(),
+        }
+    }
+}
+
 impl AppEvent {
     pub fn is_tick(&self) -> bool {
         matches!(self, Self::Ui(UiEvent::Tick))
@@ -217,6 +255,10 @@ pub enum StreamEvent {
     /// filtering are known. The event loop uses this to tell a valid prose
     /// answer from a narration-only failure on agentic prompts.
     RequestMetadata(StreamRequestMetadata),
+    /// User-visible stream lifecycle phase before normal content arrives.
+    /// Keeps long context assembly, first-byte waits, and fallback retries from
+    /// looking like a frozen UI.
+    Lifecycle(StreamLifecycleStatus),
 }
 
 #[allow(clippy::large_enum_variant)]

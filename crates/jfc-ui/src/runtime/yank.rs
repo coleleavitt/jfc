@@ -120,7 +120,11 @@ fn is_kitty() -> bool {
 /// inside tmux/screen the `ST`'s `ESC` would collide with the DCS terminator
 /// that `wrap_for_multiplexer` appends, so fall back to the universal `BEL`.
 fn osc52_terminator(is_kitty: bool, in_mux: bool) -> &'static str {
-    if is_kitty && !in_mux { "\x1b\\" } else { "\x07" }
+    if is_kitty && !in_mux {
+        "\x1b\\"
+    } else {
+        "\x07"
+    }
 }
 
 fn wrap_for_multiplexer(seq: &str) -> String {

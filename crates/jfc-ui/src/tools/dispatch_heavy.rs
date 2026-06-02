@@ -298,7 +298,7 @@ pub(super) fn execute_graph_explore(
     cwd: &Path,
 ) -> ExecutionResult {
     let session = get_or_build_graph_session(cwd);
-    let n = max_files.unwrap_or(12).clamp(1, 50);
+    let n = max_files.map(|n| n.clamp(1, 50));
     ExecutionResult::success(session.explore(&query, n))
 }
 

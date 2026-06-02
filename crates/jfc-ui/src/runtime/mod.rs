@@ -17,8 +17,9 @@ pub(crate) use background::{
 };
 pub use events::{
     APP_EVENT_BUFFER, AppEvent, CompactionEvent, EventReceiver, EventSender, GoalEvent,
-    ProviderEvent, StreamEvent, StreamRequestMetadata, StreamRequestOverrides, StreamToolChoice,
-    TaskEvent, TeamEvent, ToolEvent, UiEvent, WorkflowProgressEvent, send_critical,
+    ProviderEvent, StreamEvent, StreamLifecyclePhase, StreamLifecycleStatus, StreamRequestMetadata,
+    StreamRequestOverrides, StreamToolChoice, TaskEvent, TeamEvent, ToolEvent, UiEvent,
+    WorkflowProgressEvent, send_critical,
 };
 #[cfg(test)]
 pub use execution::{DiagnosticLevel, ToolOutcome};

@@ -36,6 +36,9 @@ pub struct ExploreBudget {
     pub include_completeness_signal: bool,
     /// Include the explore-budget reminder at the end.
     pub include_budget_note: bool,
+    /// Recommended number of explore/context calls before the agent should
+    /// stop fanning out and synthesize.
+    pub recommended_call_budget: usize,
 }
 
 impl ExploreBudget {
@@ -55,6 +58,7 @@ impl ExploreBudget {
                 include_additional_files: false,
                 include_completeness_signal: false,
                 include_budget_note: false,
+                recommended_call_budget: Self::call_budget(file_count),
             }
         } else if file_count < 5_000 {
             Self {
@@ -68,6 +72,7 @@ impl ExploreBudget {
                 include_additional_files: true,
                 include_completeness_signal: true,
                 include_budget_note: true,
+                recommended_call_budget: Self::call_budget(file_count),
             }
         } else if file_count < 15_000 {
             Self {
@@ -81,6 +86,7 @@ impl ExploreBudget {
                 include_additional_files: true,
                 include_completeness_signal: true,
                 include_budget_note: true,
+                recommended_call_budget: Self::call_budget(file_count),
             }
         } else {
             Self {
@@ -94,6 +100,7 @@ impl ExploreBudget {
                 include_additional_files: true,
                 include_completeness_signal: true,
                 include_budget_note: true,
+                recommended_call_budget: Self::call_budget(file_count),
             }
         }
     }

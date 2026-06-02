@@ -722,13 +722,8 @@ mod tests {
                 );
             }
         }
-        let dropped = compact_background_agents(
-            &mut state,
-            now,
-            std::time::Duration::from_secs(86400),
-            5,
-            8,
-        );
+        let dropped =
+            compact_background_agents(&mut state, now, std::time::Duration::from_secs(86400), 5, 8);
         assert_eq!(dropped, 4);
         assert_eq!(state.background_agents.len(), 8);
     }

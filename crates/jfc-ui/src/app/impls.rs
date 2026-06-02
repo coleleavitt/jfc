@@ -28,7 +28,8 @@ impl App {
         let turn_active = self.turn_started_at.is_some()
             || self.compacting_started_at.is_some()
             || !self.pending_tool_calls.is_empty()
-            || self.network_recovery_status.is_some();
+            || self.network_recovery_status.is_some()
+            || self.stream_lifecycle.is_some();
         let dominated = self.launched_at.elapsed() < std::time::Duration::from_millis(1500)
             || self.is_streaming
             || turn_active
@@ -211,6 +212,7 @@ impl App {
             self.streaming_response_bytes = 0;
             self.streaming_assistant_idx = None;
             self.current_stream_request = None;
+            self.stream_lifecycle = None;
             self.turn_started_at = None;
             // Clear any pending tool calls that accumulated during the
             // dead stream — they're stale and would dispatch into wrong

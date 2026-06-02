@@ -317,14 +317,30 @@ impl<'de> Deserialize<'de> for ContentBlock {
 #[derive(Debug)]
 #[allow(clippy::enum_variant_names)]
 pub enum Delta {
-    TextDelta { text: String },
-    ThinkingDelta { thinking: String, estimated_tokens: Option<u32> },
-    InputJsonDelta { partial_json: String },
-    SignatureDelta { signature: String },
+    TextDelta {
+        text: String,
+    },
+    ThinkingDelta {
+        thinking: String,
+        estimated_tokens: Option<u32>,
+    },
+    InputJsonDelta {
+        partial_json: String,
+    },
+    SignatureDelta {
+        signature: String,
+    },
     CitationsDelta {},
-    ConnectorTextDelta { connector_text: String },
-    CompactionContentBlockDelta { content: String },
-    Unknown { kind: String, raw: Value },
+    ConnectorTextDelta {
+        connector_text: String,
+    },
+    CompactionContentBlockDelta {
+        content: String,
+    },
+    Unknown {
+        kind: String,
+        raw: Value,
+    },
 }
 
 impl<'de> Deserialize<'de> for Delta {
@@ -583,7 +599,10 @@ pub fn translate(
                 }
                 Some(StreamEvent::TextDelta { index, delta: text })
             }
-            Delta::ThinkingDelta { thinking, estimated_tokens } => {
+            Delta::ThinkingDelta {
+                thinking,
+                estimated_tokens,
+            } => {
                 if let Some(Some(BlockState::Thinking { accumulated })) = blocks.get_mut(index) {
                     accumulated.push_str(&thinking);
                 }

@@ -23,8 +23,8 @@ pub(crate) mod task_body;
 mod terminal_output;
 mod tests;
 mod tool_blocks;
-mod tool_xml_guard;
 mod tool_height;
+mod tool_xml_guard;
 mod truncation;
 
 #[allow(unused_imports)]

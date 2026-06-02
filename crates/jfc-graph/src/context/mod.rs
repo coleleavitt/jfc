@@ -245,7 +245,12 @@ fn read_node_source(graph: &CodeGraph, id: &NodeId) -> Option<String> {
     if start >= end {
         return None;
     }
-    Some(lines[start..end].join("\n"))
+    let mut out = String::new();
+    for (offset, line) in lines[start..end].iter().enumerate() {
+        let lineno = start + 1 + offset;
+        out.push_str(&format!("{lineno}\t{line}\n"));
+    }
+    Some(out.trim_end().to_string())
 }
 
 /// Render a callers / callees result starting from one or more

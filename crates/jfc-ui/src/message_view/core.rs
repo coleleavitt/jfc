@@ -856,12 +856,11 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
                     // muted notice so the raw XML never reaches the transcript.
                     // Only assistant output is sanitized — a user who pasted
                     // tool-call-looking text should see it verbatim.
-                    let render_text: std::borrow::Cow<'_, str> =
-                        if msg.role == Role::Assistant {
-                            super::tool_xml_guard::sanitize_leaked_tool_calls(text)
-                        } else {
-                            std::borrow::Cow::Borrowed(text.as_str())
-                        };
+                    let render_text: std::borrow::Cow<'_, str> = if msg.role == Role::Assistant {
+                        super::tool_xml_guard::sanitize_leaked_tool_calls(text)
+                    } else {
+                        std::borrow::Cow::Borrowed(text.as_str())
+                    };
                     let render_text = render_text.as_ref();
                     let lines = if is_streaming_placeholder {
                         // Streaming fast path: recompute every frame without
@@ -877,7 +876,8 @@ fn build_render_items_inner<'a>(ctx: &'a RenderCtx<'_>, inner_w: usize) -> Vec<R
                         if let Some(lines) = cache.get_streaming(idx, width, render_text) {
                             lines.to_vec()
                         } else {
-                            let lines = markdown::to_lines_streaming(render_text, &theme, content_w);
+                            let lines =
+                                markdown::to_lines_streaming(render_text, &theme, content_w);
                             cache.set_streaming(idx, width, render_text, lines.clone());
                             lines
                         }
@@ -1005,7 +1005,11 @@ mod reminder_skip_tests {
 
     #[test]
     fn unterminated_reminder_does_not_panic_robust() {
-        assert!(strip_system_reminders("<system-reminder>oops").trim().is_empty());
+        assert!(
+            strip_system_reminders("<system-reminder>oops")
+                .trim()
+                .is_empty()
+        );
         assert_eq!(strip_system_reminders("hi <system-reminder>x").trim(), "hi");
     }
 }
