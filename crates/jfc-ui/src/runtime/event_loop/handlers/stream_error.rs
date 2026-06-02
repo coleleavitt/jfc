@@ -210,18 +210,7 @@ pub(crate) async fn handle_stream_error(app: &mut App, tx: &EventSender, e: Stri
                  the re-driven turn re-sends text only"
             );
         }
-        let last_user_text = last_user.and_then(|m| {
-            let joined = m
-                .parts
-                .iter()
-                .filter_map(|p| match p {
-                    types::MessagePart::Text(t) if !t.trim().is_empty() => Some(t.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n");
-            (!joined.trim().is_empty()).then_some(joined)
-        });
+        let last_user_text = last_user.and_then(recoverable_requeue_text);
         if let Some(text) = last_user_text {
             let tx_compact = tx.clone();
             tokio::spawn(async move {
@@ -384,6 +373,28 @@ pub(crate) fn handle_fallback_triggered(
         &mut app.toasts,
         toast::Toast::new(toast::ToastKind::Warning, message),
     );
+}
+
+/// Join every non-empty text part of a user message into the single string the
+/// auto-compact re-queue replays via `UiEvent::Submit`. Returns `None` when the
+/// message carries no usable prompt text (e.g. an attachment-only turn), so the
+/// caller skips the re-queue rather than submitting an empty prompt.
+///
+/// Joining *all* text parts (not just the first) keeps a structured multi-text
+/// user message from being silently truncated to its opening block. Caller is
+/// responsible for excluding compact-boundary messages before calling this —
+/// see the `rfind` filter at the call site.
+fn recoverable_requeue_text(m: &ChatMessage) -> Option<String> {
+    let joined = m
+        .parts
+        .iter()
+        .filter_map(|p| match p {
+            types::MessagePart::Text(t) if !t.trim().is_empty() => Some(t.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    (!joined.trim().is_empty()).then_some(joined)
 }
 
 #[cfg(test)]
@@ -613,5 +624,93 @@ mod tests {
             text.contains("**Error:**"),
             "genuine pre-open cancel must surface a hard error, got: {text}"
         );
+    }
+
+    // ─── auto-compact re-queue selection (regression: fix #6) ───────────
+
+    /// Mirror the call-site selector: most-recent genuine user message that is
+    /// NOT a compact boundary, joined into its replayable prompt text.
+    fn select_requeue_text(messages: &[ChatMessage]) -> Option<String> {
+        messages
+            .iter()
+            .rfind(|m| matches!(m.role, types::Role::User) && !m.is_compact_boundary())
+            .and_then(recoverable_requeue_text)
+    }
+
+    // Normal: a plain user prompt is recovered verbatim for re-queue.
+    #[test]
+    fn requeue_recovers_plain_user_prompt_normal() {
+        let messages = vec![
+            ChatMessage::user("first".into()),
+            ChatMessage::assistant("reply".into()),
+            ChatMessage::user("the real prompt".into()),
+        ];
+        assert_eq!(
+            select_requeue_text(&messages),
+            Some("the real prompt".to_owned())
+        );
+    }
+
+    // Regression: when the transcript already ends on a compact boundary, the
+    // selector must SKIP the boundary's "This session is being continued…"
+    // summary prose and recover the genuine user prompt before it — replaying
+    // the summary as the user's prompt was the bug.
+    #[test]
+    fn requeue_skips_compact_boundary_robust() {
+        let messages = vec![
+            ChatMessage::user("genuine prompt".into()),
+            ChatMessage::assistant("reply".into()),
+            ChatMessage::compact_boundary("a long summary of the session", 120_000),
+        ];
+        let recovered = select_requeue_text(&messages).expect("must recover the genuine prompt");
+        assert_eq!(recovered, "genuine prompt");
+        assert!(
+            !recovered.contains("This session is being continued"),
+            "must not replay the compact-boundary summary as the user's prompt"
+        );
+    }
+
+    // Regression: a structured multi-text user message must be joined in full,
+    // not truncated to its opening block.
+    #[test]
+    fn requeue_joins_multi_text_parts_robust() {
+        let msg = ChatMessage {
+            role: Role::User,
+            parts: vec![
+                MessagePart::Text("part one".into()),
+                MessagePart::Text("   ".into()), // blank → dropped
+                MessagePart::Text("part two".into()),
+            ],
+            agent_name: None,
+            model_name: None,
+            cost_tier: None,
+            elapsed: None,
+            usage: None,
+            queued: false,
+            attachments: Vec::new(),
+        };
+        assert_eq!(
+            recoverable_requeue_text(&msg),
+            Some("part one\n\npart two".to_owned())
+        );
+    }
+
+    // Edge: an attachment-only / whitespace-only user message yields no
+    // replayable text, so the re-queue is skipped (None) rather than
+    // submitting an empty prompt.
+    #[test]
+    fn requeue_skips_textless_message_edge() {
+        let msg = ChatMessage {
+            role: Role::User,
+            parts: vec![MessagePart::Text("   \n  ".into())],
+            agent_name: None,
+            model_name: None,
+            cost_tier: None,
+            elapsed: None,
+            usage: None,
+            queued: false,
+            attachments: Vec::new(),
+        };
+        assert_eq!(recoverable_requeue_text(&msg), None);
     }
 }

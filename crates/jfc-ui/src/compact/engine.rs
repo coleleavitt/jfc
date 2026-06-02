@@ -478,29 +478,7 @@ pub async fn compact(
                 tool_ctx.read_cache.clear();
 
                 if !restored_files.is_empty() {
-                    let restore_text = restored_files.join("\n\n");
-                    // Place restored files as a *user-role* context block
-                    // immediately after the summary boundary, mirroring
-                    // Claude/OpenClaude's [boundary, summary, file-context,
-                    // kept messages] shape (compact.ts:333). Two earlier bugs
-                    // are fixed here:
-                    //   1. Role was `assistant`, which made the model treat
-                    //      restored file contents as *its own prior output*
-                    //      rather than supplied context — the summary boundary
-                    //      itself is `Role::User`, so the file context belongs
-                    //      on the user side too.
-                    //   2. It was appended *after* `to_preserve` (the recent
-                    //      tail), so the freshest restored-file context landed
-                    //      at the very end where it could shadow the actual
-                    //      last turn. Inserting at index 1 keeps it adjacent to
-                    //      the summary and ahead of the preserved tail.
-                    // `merge_consecutive_same_role` collapses the boundary +
-                    // restore pair on the wire (no tool_result between them).
-                    let restore_msg = ChatMessage::user(format!(
-                        "[Post-compact context restoration — recently accessed files:]\n\n{}",
-                        restore_text
-                    ));
-                    compacted.insert(1, restore_msg);
+                    insert_restored_files(&mut compacted, &restored_files);
                     // Recompute post_tokens with the restored files included
                     let post_tokens = estimate_tokens(&compacted);
                     tool_ctx.approx_tokens = post_tokens;
@@ -1034,6 +1012,31 @@ fn restore_recent_files(cache: &crate::context::ReadDedupCache) -> Vec<String> {
     results
 }
 
+/// Insert the post-compact restored-file context block into a freshly-built
+/// compacted transcript. `compacted[0]` is the summary boundary and
+/// `compacted[1..]` is the preserved recent tail.
+///
+/// The block is a **user-role** message (the restored files are *supplied
+/// context*, not the model's own prior output — the boundary itself is
+/// `Role::User`, so this belongs on the user side too) inserted at **index 1**,
+/// immediately after the summary boundary and ahead of the preserved tail. That
+/// mirrors Claude/OpenClaude's `[boundary, summary, file-context, kept]` shape
+/// and keeps the freshest restored context from being appended at the very end
+/// where it would shadow the actual last turn. `merge_consecutive_same_role`
+/// collapses the boundary + restore pair on the wire.
+fn insert_restored_files(compacted: &mut Vec<ChatMessage>, restored_files: &[String]) {
+    debug_assert!(
+        !compacted.is_empty(),
+        "compacted transcript always begins with the summary boundary"
+    );
+    let restore_text = restored_files.join("\n\n");
+    let restore_msg = ChatMessage::user(format!(
+        "[Post-compact context restoration — recently accessed files:]\n\n{}",
+        restore_text
+    ));
+    compacted.insert(1, restore_msg);
+}
+
 #[cfg(test)]
 mod level_tests {
     use super::*;
@@ -1565,5 +1568,90 @@ mod level_tests {
         let formatted = format_compact_summary(raw).expect("matched tags should yield Some");
         assert!(formatted.starts_with("Summary:"));
         assert!(formatted.contains("inner content"));
+    }
+
+    // ─── post-compact restored-file placement (regression: fix #5) ──────
+
+    use crate::types::{MessagePart, Role};
+
+    /// Build a minimal compacted transcript: [boundary, preserved tail…].
+    fn compacted_with_tail() -> Vec<ChatMessage> {
+        vec![
+            ChatMessage::compact_boundary("summary", 120_000),
+            ChatMessage::assistant("preserved assistant turn".into()),
+            ChatMessage::user("the most recent user turn".into()),
+        ]
+    }
+
+    // Regression: restored files land as a USER-role block (not assistant —
+    // that made the model treat supplied files as its own prior output).
+    #[test]
+    fn restored_files_are_user_role_robust() {
+        let mut compacted = compacted_with_tail();
+        insert_restored_files(&mut compacted, &["--- a.rs ---\nfn main(){}".to_owned()]);
+        assert_eq!(
+            compacted[1].role,
+            Role::User,
+            "restored-file context must be user-role supplied context"
+        );
+    }
+
+    // Regression: the block is inserted at index 1 (right after the summary
+    // boundary, AHEAD of the preserved tail) — not appended at the end where
+    // it would shadow the actual last turn.
+    #[test]
+    fn restored_files_inserted_after_boundary_before_tail_robust() {
+        let mut compacted = compacted_with_tail();
+        let before_len = compacted.len();
+        insert_restored_files(&mut compacted, &["--- a.rs ---\ncontents".to_owned()]);
+
+        assert_eq!(compacted.len(), before_len + 1);
+        // [0] boundary, [1] restored files, [2..] preserved tail unchanged.
+        assert!(compacted[0].is_compact_boundary(), "boundary stays first");
+        let restored_text: String = compacted[1]
+            .parts
+            .iter()
+            .filter_map(|p| match p {
+                MessagePart::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            restored_text.contains("Post-compact context restoration"),
+            "index 1 must be the restored-file block"
+        );
+        // The original last turn is still the last message — not shadowed.
+        let last_text: String = compacted
+            .last()
+            .unwrap()
+            .parts
+            .iter()
+            .filter_map(|p| match p {
+                MessagePart::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(last_text, "the most recent user turn");
+    }
+
+    // The restored block carries every file joined, with the restoration
+    // marker prefix.
+    #[test]
+    fn restored_files_join_all_entries_normal() {
+        let mut compacted = compacted_with_tail();
+        insert_restored_files(
+            &mut compacted,
+            &["--- a.rs ---\nA".to_owned(), "--- b.rs ---\nB".to_owned()],
+        );
+        let text: String = compacted[1]
+            .parts
+            .iter()
+            .filter_map(|p| match p {
+                MessagePart::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(text.contains("a.rs"));
+        assert!(text.contains("b.rs"));
     }
 }

@@ -282,3 +282,107 @@ pub(crate) async fn handle_compaction_event(app: &mut App, tx: &EventSender, ev:
         } => handle_failed(app, tx, reason, calibrated_tokens, transient).await,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+
+    use super::*;
+    use crate::context::ToolContext;
+    use crate::types::Role;
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        async fn stream(
+            &self,
+            #[allow(dead_code)] _messages: Vec<ProviderMessage>,
+            #[allow(dead_code)] _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    fn test_app() -> App {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.task_store = jfc_session::TaskStore::in_memory();
+        app
+    }
+
+    // Regression (fix #4): after compaction replaces the whole message vec,
+    // any prior `scroll_offset` indexes a buffer that no longer exists. The
+    // user who had scrolled up (follow_bottom=false) before a /compact must be
+    // repinned to the bottom, not stranded mid-buffer on stale rows.
+    #[tokio::test]
+    async fn compaction_done_repins_scroll_to_bottom_robust() {
+        let mut app = test_app();
+        // Simulate a user who scrolled up before compaction.
+        app.total_lines = 500;
+        app.viewport_height = 20;
+        app.scroll_offset = 5;
+        app.follow_bottom = false;
+        app.is_streaming = false;
+
+        let compacted = vec![
+            ChatMessage::compact_boundary("summary of the session so far", 120_000),
+            ChatMessage::assistant("resumed reply".into()),
+        ];
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_done(&mut app, &tx, compacted, ToolContext::new(), 120_000, 20_000).await;
+
+        assert!(
+            app.follow_bottom,
+            "compaction is a hard transcript reset — follow_bottom must re-arm"
+        );
+        // scroll_to_bottom() pins to max_scroll() = total_lines - viewport_height
+        // (500 - 20 = 480), clearing the stale offset of 5.
+        assert_eq!(
+            app.scroll_offset, 480,
+            "scroll_offset must be repinned to the bottom of the new transcript"
+        );
+    }
+
+    // Defensive: if a stream is somehow live when CompactionDone arrives, the
+    // result is discarded — and we must NOT touch scroll state in that path.
+    #[tokio::test]
+    async fn compaction_done_while_streaming_does_not_repin_edge() {
+        let mut app = test_app();
+        app.is_streaming = true;
+        app.follow_bottom = false;
+        app.scroll_offset = 5;
+        let before = app.messages.len();
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_done(
+            &mut app,
+            &tx,
+            vec![ChatMessage::assistant("ignored".into())],
+            ToolContext::new(),
+            120_000,
+            20_000,
+        )
+        .await;
+
+        assert_eq!(app.messages.len(), before, "result must be discarded");
+        assert!(!app.follow_bottom, "discard path must not repin");
+        assert_eq!(app.scroll_offset, 5);
+    }
+
+    #[test]
+    fn compact_boundary_is_user_role_invariant() {
+        let b = ChatMessage::compact_boundary("s", 1);
+        assert_eq!(b.role, Role::User);
+        assert!(b.is_compact_boundary());
+    }
+}
