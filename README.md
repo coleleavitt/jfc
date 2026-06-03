@@ -1,6 +1,6 @@
 # jfc
 
-A high-performance AI coding agent for the terminal. It combines a Rust ratatui UI, durable background workers, persistent swarms, code-graph intelligence, provider OAuth, MCP tools, and a competit[ive bounty marketplace.
+A high-performance AI coding agent for the terminal. Built in Rust with a ratatui TUI, persistent swarms, code-graph intelligence, multi-provider auth, and a bounty marketplace for competitive code solving.
 
 ![Rust](https://img.shields.io/badge/rust-nightly-orange)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
@@ -12,150 +12,179 @@ A high-performance AI coding agent for the terminal. It combines a Rust ratatui 
 ## Quick Start
 
 ```bash
-# Install from source
+# Install
 git clone https://github.com/coleleavitt/jfc.git
 cd jfc
 cargo install --path crates/jfc-ui
 
-# Or run dev build
-cargo build -p jfc-ui --bin jfc
-./target/debug/jfc
+# Run
+jfc                           # Interactive TUI
+jfc --continue                # Resume last session
+jfc -p "explain this code"    # One-shot print mode
+jfc daemon start              # Run background daemon
 ```
 
-**Usage:**
-```bash
-jfc                                  # Interactive TUI
-jfc --continue                        # Resume most recent session
-jfc -p "explain this codebase"        # One-shot prompt (print mode)
-jfc --model claude-sonnet-4-6         # Specify model
-jfc daemon start                      # Run background daemon
-```
+## What Makes jfc Different
 
-## Highlights
+- **Foreground + detached background agents** — Tasks run inline or fork durable daemon processes that survive the TUI.
+- **Persistent swarms** — Named teammates with mailbox messaging, shared task lists, and permission gating.
+- **Code graph DSL** — Tree-sitter powered queries: `fn("name") | callees | depth 3 | taint "var"` with multi-language support.
+- **Bounty marketplace** — Post tasks, spawn 1-5 competing solvers, adversarial validators, and settlement with trust scoring.
+- **MCP + Skills** — Model Context Protocol servers, declarative skill files, learning/memory subsystem, and remote control.
+- **Multi-provider** — Anthropic API/OAuth, OpenAI, Codex, OpenWebUI/LiteLLM, Bedrock, Vertex with unified auth layer.
 
-- **Full agentic loop** — streaming responses, tool calls, approval modes, task tracking, auto-compaction, and cancellation.
-- **Foreground + detached background agents** — `Task` can run inline or fork a durable `jfc daemon` process that survives the TUI.
-- **Persistent swarms** — spawn named teammates, send mailbox messages, share task lists/memory, and gate teammate tools through leader approval.
-- **Code graph intelligence** — tree-sitter graph queries, callers/callees, path search, taint/preconditions, coverage metadata, and semantic `symbol_edit` cascades.
-- **Bounty marketplace** — post coding bounties, run competing solver agents, adversarial validators, settlement, trust, and token ledger accounting.
-- **Multi-provider auth** — Anthropic API/OAuth, OpenAI, Codex/ChatGPT OAuth, OpenWebUI/LiteLLM, Bedrock, and Vertex provider foundations.
-- **MCP + Skills** — local and remote MCP tools, skill files, memories, web fetch/search, notebooks, cron, wakeups, LSP, notifications, and webhooks.
+---
+
+## Crates Overview
+
+| Crate | Purpose |
+| --- | --- |
+| **jfc-ui** | Main binary: TUI event loop, streaming tool calls, approval modes, session persistence |
+| **jfc-graph** | Code graph builder + DSL query engine (tree-sitter, SCC, dataflow, taint, preconditions) |
+| **jfc-economy** | Bounty lifecycle: solvers, validators, trust, ledger, settlement |
+| **jfc-anthropic-sdk** | Anthropic managed-session SDK foundations and model streaming |
+| **jfc-providers** | Multi-provider backends (Anthropic, Bedrock, Gemini, OpenAI, OpenWebUI, Codex) |
+| **jfc-provider** | Core provider trait, ModelSpec, StreamOptions, cost, retry logic |
+| **jfc-agents** | Agent lifecycle, registry, state management, subagent spawning |
+| **jfc-audit** | Security: taint analysis, reachability, vulnerability enumeration, suspicious-point detection |
+| **jfc-learn** | Learning subsystem: historian, dreamer, key-files, auto-hints, memory verification |
+| **jfc-daemon** | Background daemon: cron, PID, worker pool, state reconciliation, durable job tracking |
+| **jfc-core** | Shared types: tasks, tool inputs, IDs, diffs, execution results |
+| **jfc-config** | Config management, feature flags, atomic writes, TOML parsing |
+| **jfc-auth** | OAuth core, credential vault, account management, provider flows |
+| **jfc-mcp** | MCP server: tool registry, dispatch, Stdio/SSE transports, lifecycle management |
+| **jfc-memory** | Memory recall, persistence, deduplication, user/project memory promotion |
+| **jfc-session** | Session + task store, persistence layer, task status types, hydration |
+| **jfc-tools** | Shared tool definitions: Bash, Read, Write, Edit, Graph, Market, Web, Notebook |
+| **jfc-web** | Web search (Google CSE, arXiv, Semantic Scholar), fetch, caching |
+| **jfc-remote** | Remote control: wire protocol, HMAC auth, WebSocket transport, managed sessions |
+| **jfc-markdown** | Markdown rendering, fence detection, syntax highlighting utilities |
+| **jfc-theme** | Terminal themes, palette validation, ANSI color management |
+| **jfc-bridge** | *New* — OAuth bridge, request attestation, credential exchange |
+| **jfc-changeset** | *New* — Diff tracking, file changes, cascade planning for symbol edits |
 
 ---
 
 ## Architecture
 
-```text
-jfc/
-├── crates/
-│   ├── jfc-ui/             # Main binary: TUI, event loop, tools, providers, swarm, daemon
-│   ├── jfc-graph/          # Code graph, DSL, symbol table, coverage, semantic edit validation
-│   ├── jfc-economy/        # Bounty lifecycle, solvers, validators, trust, ledger, settlement
-│   ├── jfc-anthropic-sdk/  # Anthropic managed-session / SDK foundations
-│   ├── jfc-providers/      # Multi-provider backends (Anthropic, Bedrock, Gemini, OpenAI, OpenWebUI, Codex)
-│   ├── jfc-provider/       # Core provider trait, ModelSpec, StreamOptions, cost, retry
-│   ├── jfc-agents/         # Agent lifecycle, registry, and state management
-│   ├── jfc-audit/          # Security audit: taint, reachability, suspicious-point enumeration
-│   ├── jfc-learn/          # Learning subsystem: historian, dreamer, key-files, auto-hints, verifier
-│   ├── jfc-daemon/         # Background daemon: cron, PID, worker pool, state reconciliation
-│   ├── jfc-core/           # Shared types: tasks, tool inputs, IDs, diffs, execution results
-│   ├── jfc-config/         # Config management, feature flags, atomic writes
-│   ├── jfc-auth/           # OAuth core + credential vault
-│   ├── jfc-mcp/            # MCP server: tool dispatch, transport, protocol, registry
-│   ├── jfc-memory/         # Memory recall & persistence
-│   ├── jfc-session/        # Session + task store persistence, task status types
-│   ├── jfc-tools/          # Shared tool definitions and execution contracts
-│   ├── jfc-web/            # Web search (Google CSE, arXiv, Semantic Scholar)
-│   ├── jfc-remote/         # Remote control: wire protocol, HMAC auth, WS transport
-│   ├── jfc-markdown/       # Markdown rendering utilities, fence detection
-│   └── jfc-theme/          # Terminal themes, palette validation, ANSI color management
-├── .claude/skills/         # Declarative skill files
-├── .claude/agents/         # Optional project agent definitions
-├── .claude/workflows/      # Workflow scripts (multi-agent orchestration)
-└── .jfc/memory/            # Persistent project memories
+**Core runtime:** `AppEvent` → `BackgroundTask`
+
+```
+┌─────────────────────────────────────┐
+│        jfc-ui (Main Binary)         │
+│  TUI + Event Loop + Tool Dispatch   │
+└──┬──────────────────────────────────┘
+   │
+   ├─→ jfc-graph        (Code analysis)
+   ├─→ jfc-agents       (Subagent spawn/registry)
+   ├─→ jfc-session      (Persistence)
+   ├─→ jfc-providers    (Model backends)
+   ├─→ jfc-tools        (Bash, Edit, etc.)
+   ├─→ jfc-daemon       (Background workers)
+   │
+   └─→ Foreground/Detached/Swarm Tasks
+       ├─ Streaming subagents
+       ├─ Durable daemon workers
+       ├─ Swarm teammates
+       └─ Bounty solvers/validators (jfc-economy)
 ```
 
-**Central runtime:** `AppEvent` → `BackgroundTask` — foreground subagents, detached workers, swarm teammates, and bounty solver/validator agents all stream progress into the same fan/task display.
+All modes stream progress into the same `TaskPanel` for unified visibility.
 
 ---
 
-## Features
+## Key Features
 
-### Core Agent + TUI
+### Session & Context
 
-| Feature | Description |
+| Feature | Details |
 | --- | --- |
-| **Multi-provider** | Anthropic API/OAuth, OpenAI, Codex OAuth, OpenWebUI/LiteLLM, Bedrock, Vertex. |
-| **Streaming tool loop** | Models emit tool calls, jfc executes tools, returns results, and continues until completion. |
-| **Approval modes** | `plan`, `default`, `acceptEdits`, `auto`, and `bypass` modes; Shift+Tab cycles. |
-| **Auto-mode classifier** | ML classifier auto-approves safe tool calls when `/auto-mode on` is active. |
-| **Session persistence** | Auto-save, `--continue`, `/continue`, `/resume`, session picker/sidebar, cwd mismatch warnings. |
-| **Context management** | Token gauge, auto-compaction, forced `/compact`, subagent history compaction, byte-budget tool-result caps. |
-| **Sandbox** | bubblewrap (bwrap) + Landlock LSM kernel sandboxing for Bash tool execution. |
-| **Slop guard** | Post-response quality checks: duplication, dead code, churn, coherence, complexity, and test quality. |
-| **File checkpoints** | Automatic pre-edit snapshots with `/undo` restore and configurable pruning. |
-| **Sprint budgets** | Token budget tracking with pressure warnings and handoff thresholds for long sessions. |
-| **Goal loop** | `/goal <condition>` sets an autonomous objective; the agent loops until the condition is met. |
-
-### Agents + Background Workers + Swarms
-
-| Mode | What it does |
-| --- | --- |
-| **Foreground `Task`** | Runs an in-process one-shot subagent, streams `AgentChunk` and `TaskProgress` live. |
-| **Detached background `Task`** | `run_in_background=true` forks `jfc daemon worker --launch <json>`. |
-| **Worktree-isolated `Task`** | `isolation="worktree"` creates `.jfc-worktrees/<name>` and runs tools from that checkout. |
-| **Teammate spawn** | `Task` with `name` + `team_name` creates a persistent teammate addressable with `SendMessage`. |
-| **Swarm task claiming** | Teammates can claim unowned team tasks from the shared `TaskStore`. |
-| **Permission sync** | Plan-mode teammates write permission requests; leader resolves with `/swarm-approve` or `/swarm-deny`. |
-
-### Daemon / Durable Jobs
-
-| Command | Description |
-| --- | --- |
-| `jfc daemon start` | Run the daemon loop in the foreground. |
-| `jfc daemon stop` | Stop the running daemon via PID file. |
-| `jfc daemon status` | Show daemon health and counts. |
-| `jfc daemon attach <id>` | Follow a detached agent log until terminal state. |
-
-### Code Graph (`jfc-graph`)
-
-The graph subsystem builds a symbol/call/type graph from the workspace and exposes it through the `graph_query` tool.
-
-| Capability | Example |
-| --- | --- |
-| Entrypoints | `entrypoints`, `entrypoints kind=PublicApi` |
-| Function/type search | `fn("execute_tool")`, `type("Config")` |
-| Traversal | `fn("execute_task") \| callees \| depth 3` |
-| Set algebra | `fn("spawn") union fn("worker")` |
-| Taint | `fn("parse") \| taint "input" \| depth 5` |
-| Preconditions | `fn("dangerous_op") \| callers \| preconditions` |
-
-Supported languages: Rust, TypeScript/JavaScript, Python, Go, Java, Kotlin, C, C++, C#, PHP, Ruby, Swift.
-
-**Advanced analysis:** CFG, dataflow, taint propagation, module clustering, complexity metrics, co-change analysis, CSR, incremental re-indexing, pointer analysis, generic instantiation, polyglot resolution.
-
-### Bounty Market (`jfc-economy`)
-
-| Feature | Description |
-| --- | --- |
-| **Post** | `post_bounty` registers a task with a token budget and acceptance criteria. |
-| **Solve** | `run_bounty` spawns 1-5 solver agents; each produces a patch/FILE blocks. |
-| **Validate** | Validator agents inspect solutions in sealed sessions and propose flaws/tests. |
-| **Settle** | Market ranks solutions, pays winners, updates trust, and records ledger usage. |
+| **Auto-save & Resume** | `--continue` resumes last session; `/resume <id>` restores specific sessions |
+| **Token budgeting** | Gauge, auto-compaction at 80% threshold, forced `/compact` |
+| **Subagent auto-compaction** | History elided before oversized requests |
+| **Context compression** | Byte-budget caps on tool results, session recap on resume |
 
 ### Tools
 
-**Filesystem/Shell:** `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`
-
-**Tasks/Teams:** `Task`, `TaskCreate`, `TaskList`, `TaskDone`, `SendMessage`, `TeamCreate`
+**Filesystem:** `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`
 
 **Code:** `GraphQuery`, `GraphContext`, `SymbolEdit`, `CodeIndex`, `RunCoverage`
 
-**Memory/Web:** `MemoryCreate`, `WebFetch`, `WebSearch`
+**Tasks:** `Task`, `TaskCreate`, `TaskList`, `TaskDone`, `TaskGet`
+
+**Agents:** `SendMessage`, `TeamCreate`, `TeamDelete`, `TeamMemberMode`
+
+**Market:** `PostBounty`, `RunBounty`, `MarketStatus`
+
+**Memory:** `MemoryCreate`, `MemoryDelete`
+
+**Web:** `WebFetch`, `WebSearch`
 
 **Daemon:** `CronCreate`, `CronList`, `CronDelete`, `ScheduleWakeup`
 
-**Advanced:** `PostBounty`, `RunBounty`, `Workflow`, `Advisor`, `MCP`, `LSP`, `Monitor`, `Notebook`
+**Advanced:** `LSP`, `Notebook`, `Monitor`, `Workflow`, `Advisor`, `MCP`
+
+### Approval Modes
+
+Shift+Tab cycles: `plan` → `default` → `acceptEdits` → `auto` → `bypass`
+
+- `plan`: Asks permission for every tool call
+- `auto`: ML classifier auto-approves safe calls (when `/auto-mode on`)
+- `bypass`: Silent execution (for daemons/background tasks)
+
+### Code Graph DSL
+
+9 query operators (pipe-separated):
+
+```text
+fn("name")              # Select functions by substring
+type("name")            # Select types (struct/enum/trait)
+callers                 # Walk incoming Calls edges
+callees                 # Walk outgoing Calls edges
+depth N                 # Expand N hops outward
+filter kind=Function    # Retain only a specific node kind
+taint "var"             # Forward data-flow proxy over calls
+preconditions           # Backward control-flow analysis
+show signature|body     # Control output projection
+```
+
+**Examples:**
+```text
+fn("execute_tool") | callees | depth 2
+type("Config") | callers | filter kind=Function
+fn("parse") | taint "input" | depth 5 | show body
+```
+
+**Languages:** Rust, TypeScript/JavaScript, Python, Go, Java, Kotlin, C, C++, C#, PHP, Ruby, Swift
+
+### Bounty Marketplace
+
+| Phase | Description |
+| --- | --- |
+| **Post** | Register task with token budget and acceptance criteria |
+| **Solve** | Spawn 1-5 competing solver agents; each produces a patch |
+| **Validate** | Validator agents inspect solutions and propose flaws/tests |
+| **Settle** | Rank solutions, pay winners, update trust, record ledger |
+| **Apply** | Winning patch written to disk; audit artifacts under `.jfc/bounties/<id>/` |
+
+### Swarms
+
+Spawn named teammates with permissions:
+- Shared task list (`TaskStore`)
+- File-backed mailboxes for async messaging
+- Plan-mode approval gating (leader resolves with `/swarm-approve` or `/swarm-deny`)
+- Shared `.jfc/memory/` for persistent team context
+
+### Daemon / Background Jobs
+
+```bash
+jfc daemon start              # Run daemon in foreground
+jfc daemon stop               # Stop via PID file
+jfc daemon status             # Health & counts
+jfc daemon attach <id>        # Follow detached agent logs
+jfc daemon wait <id>          # Block until task completes
+jfc daemon fire <id>          # Manually trigger a cron job
+```
 
 ---
 
@@ -163,26 +192,29 @@ Supported languages: Rust, TypeScript/JavaScript, Python, Go, Java, Kotlin, C, C
 
 | Command | Description |
 | --- | --- |
-| `/help` | Show command/key help. |
-| `/clear` | Clear conversation and start fresh. |
-| `/continue [all]` / `/c` | Continue most recent session. |
-| `/resume <id>` | Resume a saved session. |
-| `/sessions` | List saved sessions. |
-| `/compact` | Queue manual context compaction. |
-| `/undo` | Undo recent tool edit where supported. |
-| `/goal <condition>` | Keep working toward a goal condition. |
-| `/workflow` / `/wf` | Workflow helper. |
-| `/market` | Show bounty-market status. |
-| `/graph-history` | Show recent graph queries. |
-| `/tasks` | Show task list. |
-| `/cost` / `/stats` | Show usage/cost stats. |
-| `/mode <name>` | Show/switch permission mode. |
-| `/auto-mode on\|off\|status` | Toggle classifier-based auto-approval. |
-| `/theme [name]` | Pick or persist a theme. |
-| `/login [provider]` | Provider login chooser. |
-| `/mcp [list\|restart\|logs]` | Inspect/restart MCP servers. |
+| `/help` | Show commands and keybindings |
+| `/continue [all]` / `/c` | Continue most recent session |
+| `/resume <id>` | Resume a saved session |
+| `/sessions` | List saved sessions |
+| `/clear` | Start fresh session |
+| `/compact` | Manual context compaction |
+| `/goal <condition>` | Autonomous loop until condition met |
+| `/workflow` / `/wf` | Multi-agent orchestration helper |
+| `/undo` | Undo recent edit |
+| `/tasks` | Show task list |
+| `/market` | Show bounty market status |
+| `/graph-history` | Show recent graph queries |
+| `/mode <name>` | Show/switch permission mode |
+| `/auto-mode on\|off` | Toggle ML auto-approval |
+| `/memory` / `/mem` | List/manage memories |
+| `/skills` | List loaded skill files |
+| `/agents` | List loaded agent definitions |
+| `/mcp [list\|restart]` | Inspect/restart MCP servers |
+| `/theme [name]` | Pick or persist theme |
+| `/cost` / `/stats` | Show usage & cost stats |
+| `/login [provider]` | Provider login chooser |
 
-**More:** `/check`, `/config`, `/batch`, `/diff`, `/export`, `/verbose`, `/timeline`, `/doctor`, `/effort`, `/feature`, `/memory`, `/skills`, `/agents`, `/cascade`, `/worktree`, `/teleport`, `/init`, `/bug`, `/rewind`, `/pr <num>`, `/swarm-approve`
+**More:** `/check`, `/config`, `/diff`, `/export`, `/timeline`, `/doctor`, `/effort`, `/feature`, `/batch`, `/init`, `/bug`, `/pr <num>`, `/swarm-approve`
 
 ---
 
@@ -190,30 +222,25 @@ Supported languages: Rust, TypeScript/JavaScript, Python, Go, Java, Kotlin, C, C
 
 | Key | Action |
 | --- | --- |
-| `Enter` | Send message. |
-| `Shift+Enter` | Newline in input. |
-| `Shift+Tab` | Cycle permission mode. |
-| `Ctrl+P` | Command palette. |
-| `Ctrl+B` | Toggle sessions sidebar. |
-| `Ctrl+S` | Toggle info sidebar. |
-| `Ctrl+M` | Open model picker. |
-| `Ctrl+O` | Expand reasoning / diagnostic panel. |
-| `Ctrl+Y` | Yank last assistant message to clipboard. |
-| `Ctrl+C` | Cancel streaming / exit. |
-| `Esc` | Dismiss popup / close panel. |
-| `@` | Autocomplete file paths. |
-| `↑/↓` | Scroll or recall input history. |
+| `Enter` | Send message |
+| `Shift+Enter` | Newline in input |
+| `Shift+Tab` | Cycle permission mode |
+| `Ctrl+P` | Command palette |
+| `Ctrl+B` | Toggle sessions sidebar |
+| `Ctrl+M` | Open model picker |
+| `Ctrl+O` | Expand reasoning panel |
+| `Ctrl+Y` | Copy last assistant message |
+| `Ctrl+C` | Cancel/exit |
+| `Esc` | Dismiss popup |
+| `@` | Autocomplete file paths |
+| `↑/↓` | Scroll or recall history |
 
 ---
 
 ## Configuration
 
-**Config path:**
-```text
-~/.config/jfc/config.toml
-```
+**Config path:** `~/.config/jfc/config.toml`
 
-**Example:**
 ```toml
 [model]
 default = "claude-sonnet-4-6-20250514"
@@ -222,7 +249,7 @@ default = "claude-sonnet-4-6-20250514"
 auto_pct = 80
 
 [permissions]
-mode = "default"  # plan | default | accept | auto | bypass
+mode = "default"  # plan | default | acceptEdits | auto | bypass
 
 [daemon]
 max_sessions = 5
@@ -235,7 +262,7 @@ model = "litellm/qwen/qwen3.6-35b-a3b:coding"
 model = "claude-opus-4-7"
 ```
 
-**Project feature config** (`.jfc/features.toml`):
+**Project config** (`.jfc/features.toml`):
 ```toml
 [permissions]
 enabled = true
@@ -244,42 +271,33 @@ enabled = true
 max_concurrent = 10
 ```
 
-**Built-in subagents:**
-
-| Subagent | Default Model | Role |
-| --- | --- | --- |
-| `Explore` | `haiku` | Read-only codebase search and grep |
-| `general-purpose` | inherit | Multi-step tasks with full tool access |
-| `Plan` | inherit | Architecture design, read-only planning |
-| `verification` | inherit | Post-edit testing |
-| `orchestrator` | inherit | Decomposes broad requests into subtask plans |
+**Built-in subagents:** `Explore` (read-only, haiku), `Plan` (architecture), `verification` (testing), `general-purpose` (multi-step), `orchestrator` (decomposition)
 
 **Environment variables:**
 
-| Env var | Effect |
+| Var | Effect |
 | --- | --- |
-| `JFC_LITELLM_API_KEY` | LiteLLM proxy API key. |
-| `JFC_LITELLM_API` | LiteLLM proxy base URL. |
-| `JFC_DISABLE_BELL=1` | Silence terminal bell. |
-| `JFC_DISABLE_AUTO_COMPACT=1` | Disable auto-compaction. |
-| `JFC_ADVISOR_ENABLED=1` | Enable `/advisor`. |
-| `JFC_WORKER_BIN=/abs/path/jfc` | Force detached worker executable path. |
+| `JFC_LITELLM_API_KEY` | LiteLLM API key |
+| `JFC_LITELLM_API` | LiteLLM base URL |
+| `JFC_DISABLE_BELL=1` | Silence completion bell |
+| `JFC_DISABLE_AUTO_COMPACT=1` | Disable auto-compaction |
+| `JFC_ADVISOR_ENABLED=1` | Enable `/advisor` |
 
 ---
 
 ## Skills & Agents
 
-**Skills** are Markdown files in `.claude/skills/` with optional YAML frontmatter:
+**Skills** (`.claude/skills/*.md`) — Markdown with optional YAML frontmatter:
 
 ```markdown
 ---
 name: my-skill
 description: Domain-specific instructions
 ---
-Instructions for the agent when this skill is invoked.
+Instructions for this skill.
 ```
 
-**Agents** are Markdown files in `.claude/agents/` with YAML frontmatter:
+**Agents** (`.claude/agents/*.md`) — Markdown with YAML frontmatter:
 
 ```markdown
 ---
@@ -293,7 +311,7 @@ skills: [ripgrep]
 You explore codebases and report concise, cited findings.
 ```
 
-**Built-in skills:** `do-178b`, `vuln-researcher`, `git-master`, `rust-style`, `tracing`, `snafu`, `thiserror`, `ripgrep`.
+**Built-in skills:** `do-178b`, `vuln-researcher`, `git-master`, `rust-style`, `tracing`, `snafu`, `thiserror`, `ripgrep`
 
 ---
 
@@ -301,22 +319,34 @@ You explore codebases and report concise, cited findings.
 
 - Stdio and SSE transports
 - Tool registry with schema validation
-- Dynamic tool dispatch to registered handlers
-- Server lifecycle management (`/mcp list`, `/mcp restart`, `/mcp logs`)
-- Client-side: discovers and calls remote MCP tools as `mcp__<server>__<tool>`
+- Dynamic dispatch to handlers
+- Server lifecycle: `/mcp list`, `/mcp restart`, `/mcp logs`
+- Discover and call remote tools as `mcp__<server>__<tool>`
+
+---
+
+## Inter-Agent Communication
+
+| Mechanism | Description |
+| --- | --- |
+| **Scratchpad** | File-backed key-value store for sibling agents |
+| **Mailbox** | Per-teammate async message queues |
+| **Task Store** | Shared task list; teammates claim/update/complete |
+| **Team Memory** | Shared `.jfc/memory/` visible to all team members |
 
 ---
 
 ## Performance
 
-- Markdown/tool rendering cached by content hash and viewport width.
-- Virtual scrolling with cached tool heights.
-- Read-only tools dispatched in parallel.
-- Detached background workers don't block the TUI event loop.
-- Graph sessions memoize queries and invalidate after file edits.
-- Subagents auto-compact or elide history before oversized requests.
-- Web results cached in LRU.
-- Incremental graph re-indexing via file watcher.
+- Markdown rendering cached by content hash + viewport width
+- Virtual scrolling with cached tool heights
+- Parallel read-only tool dispatch
+- Detached workers don't block TUI event loop
+- Graph sessions memoize queries; invalidate after edits
+- Subagent auto-compaction before oversized requests
+- LRU cache for web results
+- Incremental graph re-indexing via file watcher
+- CSR (compressed sparse row) for large graph traversal
 
 ---
 
@@ -324,14 +354,14 @@ You explore codebases and report concise, cited findings.
 
 ```bash
 cargo fmt --all --check
-cargo check -p jfc-ui
+cargo check --workspace
 cargo test -p jfc-ui app::tests::
 cargo test -p jfc-graph
 cargo test -p jfc-economy
 cargo clippy --workspace
 ```
 
-See `.claude/` for skills, agents, and workflows.
+Each crate has its own `Cargo.toml` and tests. Use `.claude/skills/`, `.claude/agents/`, and `.claude/workflows/` for project-specific instructions.
 
 ---
 
