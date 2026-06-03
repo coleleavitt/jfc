@@ -1,7 +1,7 @@
 /// Main tool dispatcher for jfc.
 /// Contains the `execute_tool` async fn and all its match arms.
 /// State helpers live in `registry`; synchronous helpers in `safe_tools`.
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -10,7 +10,7 @@ use crate::runtime::ExecutionResult;
 use crate::types::{ToolInput, ToolKind};
 use jfc_session::TaskStore;
 
-use super::bash::execute_bash;
+use super::bash::{execute_bash_output, execute_bash_with_options};
 use super::daemon::{
     execute_cron_create, execute_cron_delete, execute_cron_list, execute_monitor,
     execute_schedule_wakeup,
@@ -42,6 +42,18 @@ use super::safe_tools::tool_permission_path;
 use super::safe_tools::{
     execute_code_index, execute_tool_search, execute_tool_suggest, maybe_run_slop_guard,
 };
+
+pub(super) fn resolve_bash_workdir(cwd: &Path, workdir: Option<&str>) -> PathBuf {
+    let Some(workdir) = workdir.map(str::trim).filter(|workdir| !workdir.is_empty()) else {
+        return cwd.to_path_buf();
+    };
+    let path = Path::new(workdir);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    }
+}
 
 #[tracing::instrument(target = "jfc::tools", skip(input, cwd, dedup, task_store), fields(kind = ?kind))]
 pub async fn execute_tool(
@@ -127,9 +139,30 @@ pub async fn execute_tool(
         (
             ToolKind::Bash,
             ToolInput::Bash {
-                command, timeout, ..
+                command,
+                timeout,
+                workdir,
+                run_in_background,
             },
-        ) => execute_bash(&command, timeout, &cwd).await,
+        ) => {
+            let effective_cwd = resolve_bash_workdir(&cwd, workdir.as_deref());
+            execute_bash_with_options(
+                &command,
+                timeout,
+                &effective_cwd,
+                None,
+                run_in_background.unwrap_or(false),
+            )
+            .await
+        }
+        (
+            ToolKind::BashOutput,
+            ToolInput::BashOutput {
+                task_id,
+                offset,
+                limit,
+            },
+        ) => execute_bash_output(&task_id, offset, limit).await,
         (
             ToolKind::Read,
             ToolInput::Read {
@@ -468,6 +501,27 @@ pub async fn execute_tool(
         (ToolKind::GraphFiles, ToolInput::GraphFiles { path }) => {
             dispatch_heavy::execute_graph_files(path.as_deref(), &cwd)
         }
+        (
+            ToolKind::GetProgramSlice,
+            ToolInput::GetProgramSlice {
+                symbol,
+                backward,
+                max_nodes,
+            },
+        ) => dispatch_heavy::execute_get_program_slice(symbol, backward, max_nodes, &cwd),
+        (
+            ToolKind::GetDataDependencies,
+            ToolInput::GetDataDependencies { symbol, max_nodes },
+        ) => dispatch_heavy::execute_get_data_dependencies(symbol, max_nodes, &cwd),
+        (
+            ToolKind::TaintFlow,
+            ToolInput::TaintFlow {
+                sources,
+                sinks,
+                sanitizers,
+                max_paths,
+            },
+        ) => dispatch_heavy::execute_taint_flow(sources, sinks, sanitizers, max_paths, &cwd),
         (ToolKind::PlanCreate, ToolInput::PlanCreate { title, body }) => {
             crate::tools::plans::execute_plan_create(&title, body.as_deref())
         }

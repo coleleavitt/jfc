@@ -16,10 +16,12 @@
 
 pub mod budget;
 pub mod clustering;
+pub mod dataflow_seed;
 pub mod expansion;
 pub mod heuristics;
 pub mod render;
 pub mod resolver;
+pub mod retrieval_gate;
 
 use std::collections::HashSet;
 
@@ -30,9 +32,11 @@ use crate::symbols::SymbolTable;
 use crate::traversal::{TraversalConfig, TraversalDirection, traverse};
 
 pub use budget::ExploreBudget;
+pub use dataflow_seed::{seed_from_dataflow, seed_from_nodes};
 pub use expansion::ExpandedSubgraph;
 pub use heuristics::{TaskIntent, classify_intent};
 pub use resolver::{MatchQuality, matches_symbol, resolve_symbol};
+pub use retrieval_gate::{RetrievalSignal, can_skip_retrieval, should_retrieve};
 
 /// Options for `codegraph_context`-style queries.
 #[derive(Debug, Clone)]

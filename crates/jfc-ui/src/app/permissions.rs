@@ -119,6 +119,9 @@ impl PermissionMode {
                 | ToolKind::GraphGrep
                 | ToolKind::GraphStatus
                 | ToolKind::GraphFiles
+                | ToolKind::GetProgramSlice
+                | ToolKind::GetDataDependencies
+                | ToolKind::TaintFlow
                 | ToolKind::RunCoverage
                 | ToolKind::MarketStatus
                 | ToolKind::CronList
@@ -188,6 +191,9 @@ impl PermissionMode {
                 | ToolKind::GraphGrep
                 | ToolKind::GraphStatus
                 | ToolKind::GraphFiles
+                | ToolKind::GetProgramSlice
+                | ToolKind::GetDataDependencies
+                | ToolKind::TaintFlow
                 | ToolKind::RunCoverage
                 | ToolKind::MarketStatus
                 | ToolKind::CronList

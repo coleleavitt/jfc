@@ -272,6 +272,7 @@ mod tests {
                 command: "ls".into(),
                 timeout: None,
                 workdir: None,
+                run_in_background: None,
             },
         )
     }

@@ -298,6 +298,7 @@ macro_rules! for_each_regular_tool_input {
             MemoryDelete => { path: req_str @ "path" }
             TeamCreate => { team_name: req_str @ "team_name", description: opt_str @ "description" }
             TeamMemberMode => { member_name: req_str @ "member_name", mode: req_str @ "mode" }
+            BashOutput => { task_id: req_str @ "task_id", offset: opt_u64 @ "offset", limit: opt_u64 @ "limit" }
             CodeIndex => { path: opt_str @ "path", query: opt_str @ "query", kind: opt_str @ "kind", max_entries: opt_u64_as_usize @ "max_entries" }
             GraphQuery => { query: req_str @ "query", max_tokens: opt_u64_as_usize @ "max_tokens", include_handles: raw_bool_opt @ "include_handles", format: opt_str @ "format" }
             GraphContext => { task: req_str @ "task", max_nodes: opt_u64_as_usize @ "max_nodes", include_code: raw_bool_opt @ "include_code", format: opt_str @ "format" }
@@ -311,6 +312,9 @@ macro_rules! for_each_regular_tool_input {
             GraphGrep => { pattern: req_str @ "pattern", glob: opt_str @ "glob", limit: opt_u64_as_usize @ "limit" }
             GraphStatus => {}
             GraphFiles => { path: opt_str @ "path" }
+            GetProgramSlice => { symbol: req_str @ "symbol", backward: bool_field @ "backward", max_nodes: opt_u64_as_usize @ "max_nodes" }
+            GetDataDependencies => { symbol: req_str @ "symbol", max_nodes: opt_u64_as_usize @ "max_nodes" }
+            TaintFlow => { sources: str_vec @ "sources", sinks: str_vec @ "sinks", sanitizers: str_vec @ "sanitizers", max_paths: opt_u64_as_usize @ "max_paths" }
             RunCoverage => { lcov_path: opt_str @ "lcov_path", include_untested_list: bool_true @ "include_untested_list" }
             SymbolEdit => { handle: req_str @ "handle", new_content: req_str @ "new_content", validate: bool_field @ "validate", dispatch_cascade: bool_field @ "dispatch_cascade" }
             PlanCreate => { title: req_str @ "title", body: opt_str @ "body" }
@@ -358,7 +362,7 @@ macro_rules! for_each_regular_tool_input {
 macro_rules! for_each_to_value_only_tool_input {
     ($cb:ident) => {
         $cb! {
-            Bash => { command: req_str @ "command", timeout: opt_u64 @ "timeout", workdir: opt_str @ "workdir" }
+            Bash => { command: req_str @ "command", timeout: opt_u64 @ "timeout", workdir: opt_str @ "workdir", run_in_background: raw_bool_opt @ "run_in_background" }
             TaskCreate => { subject: req_str @ "subject", description: req_str @ "description", active_form: opt_str @ "active_form", blocked_by: str_vec @ "blocked_by", acceptance_criteria: opt_str @ "acceptance_criteria", verification_command: opt_str @ "verification_command", risk: opt_str @ "risk", parent_id: opt_str @ "parent_id", kind: opt_str @ "kind", tags: str_vec @ "tags", priority: opt_u8 @ "priority", effort: opt_str @ "effort", model: opt_str @ "model" }
             Skill => { name: req_str @ "name", args: opt_str @ "args" }
             SendMessage => { to: req_str @ "to", message: req_str @ "message", summary: opt_str @ "summary" }
@@ -482,6 +486,12 @@ pub enum ToolInput {
         command: String,
         timeout: Option<u64>,
         workdir: Option<String>,
+        run_in_background: Option<bool>,
+    },
+    BashOutput {
+        task_id: String,
+        offset: Option<u64>,
+        limit: Option<u64>,
     },
     Glob {
         pattern: String,
@@ -669,6 +679,26 @@ pub enum ToolInput {
     GraphFiles {
         #[serde(default)]
         path: Option<String>,
+    },
+    GetProgramSlice {
+        symbol: String,
+        #[serde(default)]
+        backward: bool,
+        #[serde(default)]
+        max_nodes: Option<usize>,
+    },
+    GetDataDependencies {
+        symbol: String,
+        #[serde(default)]
+        max_nodes: Option<usize>,
+    },
+    TaintFlow {
+        sources: Vec<String>,
+        sinks: Vec<String>,
+        #[serde(default)]
+        sanitizers: Vec<String>,
+        #[serde(default)]
+        max_paths: Option<usize>,
     },
     PostBounty {
         description: String,
@@ -906,6 +936,7 @@ impl ToolInput {
                 Some(workdir) => format!("{command} in {workdir}"),
                 None => command.clone(),
             },
+            Self::BashOutput { task_id, .. } => format!("output for {task_id}"),
             Self::Glob { pattern, path } => match path {
                 Some(path) => format!("{pattern} in {path}"),
                 None => pattern.clone(),
@@ -993,6 +1024,13 @@ impl ToolInput {
             Self::GraphStatus {} => "graph_status".into(),
             Self::GraphFiles { path, .. } => {
                 format!("files({})", path.as_deref().unwrap_or("."))
+            }
+            Self::GetProgramSlice { symbol, backward, .. } => {
+                format!("{} slice: {symbol}", if *backward { "backward" } else { "forward" })
+            }
+            Self::GetDataDependencies { symbol, .. } => format!("data_deps: {symbol}"),
+            Self::TaintFlow { sources, sinks, .. } => {
+                format!("taint_flow: {}→{}", sources.join(","), sinks.join(","))
             }
             Self::RunCoverage { lcov_path, .. } => {
                 format!("coverage({})", lcov_path.as_deref().unwrap_or("auto"))
@@ -1184,6 +1222,10 @@ impl ToolInput {
             obj.and_then(|map| map.get(key))
                 .and_then(|value| value.as_u64())
         };
+        let raw_bool_opt_field = |key: &str| -> Option<bool> {
+            obj.and_then(|map| map.get(key))
+                .and_then(|value| value.as_bool())
+        };
         let opt_u64_loose_field = |key: &str| -> Option<u64> {
             obj.and_then(|map| map.get(key)).and_then(|value| {
                 value
@@ -1266,6 +1308,7 @@ impl ToolInput {
                     command,
                     timeout: opt_u64_field("timeout"),
                     workdir: opt_str_field("workdir"),
+                    run_in_background: raw_bool_opt_field("run_in_background"),
                 }
             }
             ToolKind::TaskCreate => {

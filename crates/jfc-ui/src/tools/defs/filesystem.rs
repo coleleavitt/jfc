@@ -4,7 +4,7 @@ pub fn filesystem_tool_defs() -> Vec<ToolDef> {
     vec![
         ToolDef {
             name: "Bash".into(),
-            description: "Executes a given bash command in a persistent shell session with optional timeout. Use for running commands, scripts, and terminal operations.".into(),
+            description: "Executes a bash command in a fresh non-interactive shell. Shell state does not persist between calls; use `workdir` to run in a specific directory. Prefer Glob/Grep/Read/Edit/Write for file discovery and edits. Use Bash for real shell commands, scripts, builds, tests, and package managers. For long-running commands, set `run_in_background=true`; JFC also auto-backgrounds commands that exceed the foreground budget and returns a task id plus output file.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -16,12 +16,42 @@ pub fn filesystem_tool_defs() -> Vec<ToolDef> {
                         "type": "number",
                         "description": "Optional timeout in milliseconds (max 600000)"
                     },
+                    "workdir": {
+                        "type": "string",
+                        "description": "Directory to run the command in. Relative paths are resolved against the current workspace directory."
+                    },
+                    "run_in_background": {
+                        "type": "boolean",
+                        "description": "Start the command as a background Bash task and return immediately with a task id and output file."
+                    },
                     "description": {
                         "type": "string",
                         "description": "Clear, concise description of what this command does"
                     }
                 },
                 "required": ["command"]
+            }),
+        },
+        ToolDef {
+            name: "BashOutput".into(),
+            description: "Read output for a Bash command that was backgrounded by `Bash.run_in_background` or auto-backgrounded after exceeding the foreground budget. Returns current status, output file path, and output text; use `offset`/`limit` for large logs.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Background Bash task id returned by Bash"
+                    },
+                    "offset": {
+                        "type": "number",
+                        "description": "Optional 1-indexed line number to start reading from"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum number of lines to return"
+                    }
+                },
+                "required": ["task_id"]
             }),
         },
         ToolDef {

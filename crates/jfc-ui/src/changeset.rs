@@ -689,6 +689,7 @@ mod tests {
             command: "cargo test".into(),
             timeout: None,
             workdir: None,
+            run_in_background: None,
         };
         assert_eq!(
             ledger_detail_for(&crate::types::ToolKind::Bash, &bash),

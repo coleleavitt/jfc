@@ -122,6 +122,7 @@ pub fn sample_tool_harness_message() -> ChatMessage {
                 command: "cargo check -p jfc-ui".into(),
                 timeout: None,
                 workdir: None,
+                run_in_background: None,
             },
             output: ToolOutput::Command {
                 stdout: "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.38s"
@@ -453,6 +454,7 @@ mod tests {
                 command: "ls".into(),
                 timeout: None,
                 workdir: None,
+                run_in_background: None,
             },
             output: ToolOutput::Empty,
             display: ToolDisplayState::DEFAULT,

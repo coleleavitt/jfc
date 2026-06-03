@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::engine::{AgentRequest, ProgressSignal, SubWorkflowRequest, run_script};
 use super::journal::{self, JournalCache, JournalEntry, JournalWriter};
+use jfc_core::{Effort, FanoutDecision, FanoutPlan, FanoutPredictor, PlannedAgent};
 use jfc_provider::{ModelId, Provider};
 
 /// Max concurrent agent() calls = min(16, cpus - 2), floor 2.
@@ -85,6 +86,10 @@ struct Orchestrator {
     token_budget: Option<u64>,
     /// Running tally of tokens consumed (estimated as output_len / 4).
     tokens_spent: Arc<AtomicU64>,
+    /// Predictive fan-out gate: before spawning an agent under a token budget,
+    /// estimate its cost and defer if the remaining budget can't fit it, so we
+    /// don't dispatch work we predict can't finish.
+    fanout_predictor: FanoutPredictor,
 }
 
 impl Orchestrator {
@@ -138,13 +143,28 @@ impl Orchestrator {
     /// otherwise spawn a semaphore-gated dispatch.
     fn dispatch(&mut self, req: AgentRequest) {
         // Enforce token budget before the agent cap.
-        if let Some(budget) = self.token_budget
-            && self.tokens_spent.load(Ordering::Relaxed) >= budget
-        {
-            let _ = req
-                .reply
-                .send(Err("workflow token budget exhausted".to_owned()));
-            return;
+        if let Some(budget) = self.token_budget {
+            let spent = self.tokens_spent.load(Ordering::Relaxed);
+            if spent >= budget {
+                let _ = req
+                    .reply
+                    .send(Err("workflow token budget exhausted".to_owned()));
+                return;
+            }
+            // Predictive gate: if the remaining budget can't fit even one
+            // estimated agent, defer rather than spawn into a wall. Per-agent
+            // effort isn't known here, so estimate at the Medium default.
+            let plan = FanoutPlan {
+                agents: vec![PlannedAgent::at(Effort::Medium)],
+                remaining_budget: Some(budget - spent),
+                concurrency: max_concurrency(),
+            };
+            if let FanoutDecision::Defer { reason } = self.fanout_predictor.gate(&plan) {
+                let _ = req
+                    .reply
+                    .send(Err(format!("workflow fan-out gated by budget: {reason}")));
+                return;
+            }
         }
 
         if self.dispatched.load(Ordering::Relaxed) >= MAX_AGENTS {
@@ -322,6 +342,7 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
         logs: Vec::new(),
         token_budget,
         tokens_spent: Arc::new(AtomicU64::new(0)),
+        fanout_predictor: FanoutPredictor::default(),
     };
 
     // Drive both channels until the engine thread finishes.

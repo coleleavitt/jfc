@@ -61,6 +61,7 @@ pub(crate) fn deserialize_part(part: SerializedPart) -> MessagePart {
                         command: String::new(),
                         timeout: None,
                         workdir: None,
+                        run_in_background: None,
                     },
                 },
                 output: match output {
@@ -400,10 +401,21 @@ pub(crate) fn deserialize_tool_input(input: SerializedToolInput) -> ToolInput {
             command,
             timeout,
             workdir,
+            run_in_background,
         } => ToolInput::Bash {
             command,
             timeout,
             workdir,
+            run_in_background,
+        },
+        SerializedToolInput::BashOutput {
+            task_id,
+            offset,
+            limit,
+        } => ToolInput::BashOutput {
+            task_id,
+            offset,
+            limit,
         },
         SerializedToolInput::Glob { pattern, path } => ToolInput::Glob { pattern, path },
         SerializedToolInput::Grep {

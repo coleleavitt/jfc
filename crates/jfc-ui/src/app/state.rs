@@ -987,6 +987,10 @@ pub struct App {
     /// for the current batch of pending tasks. Reset to false whenever new
     /// tasks are created via TaskCreate.
     pub plan_verified_this_batch: bool,
+    /// Cache of task-batch decompositions keyed by a normalized goal signature.
+    /// The factory consults it during plan verification to surface a similar
+    /// prior plan as advisory context (plan reuse).
+    pub plan_cache: jfc_core::PlanCache,
     pub last_usage_input: u32,
     pub last_usage_output: u32,
     /// Auto-expiring toast queue. Pruned every `UiEvent::Tick`. Pushed via
@@ -1591,6 +1595,7 @@ impl App {
             task_panel_detail: false,
             task_activities: HashMap::new(),
             plan_verified_this_batch: false,
+            plan_cache: jfc_core::PlanCache::new(64),
             last_usage_input: 0,
             last_usage_output: 0,
             toasts: Vec::new(),

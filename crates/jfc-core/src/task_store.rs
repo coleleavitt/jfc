@@ -230,6 +230,24 @@ pub struct TaskValidation {
     pub no_verification_path: Vec<TodoTaskId>,
     pub duplicate_subjects: Vec<String>,
     pub parallelization_opportunities: Vec<String>,
+    /// Dependency cycles in the `blocked_by` graph, each inner `Vec` a Tarjan
+    /// strongly-connected component (size > 1, or a single task that blocks
+    /// itself). The per-edge guard in `update()` rejects *new* cycles, but a
+    /// graph loaded from disk or hand-edited JSON can still contain one — this
+    /// surfaces it. Mirrors Terraform `internal/dag/tarjan.go`.
+    #[serde(default)]
+    pub dependency_cycles: Vec<Vec<TodoTaskId>>,
+    /// Tasks transitively blocked by a Failed/Deleted (or missing) task —
+    /// Terraform's `upstreamFailed`. They are stuck through no fault of their
+    /// own, so a scheduler must not report them as their *own* failures. This
+    /// is the transitive superset of `blocked_forever`.
+    #[serde(default)]
+    pub upstream_failed: Vec<TodoTaskId>,
+    /// The ready frontier: pending, unowned tasks whose blockers are all
+    /// completed — the set safe to dispatch in parallel right now. Mirrors the
+    /// Terraform ready-set DAG walk.
+    #[serde(default)]
+    pub ready: Vec<TodoTaskId>,
     pub total_tasks: usize,
     pub pending_count: usize,
     pub in_progress_count: usize,

@@ -1186,7 +1186,7 @@ async fn handle_enter_submit(
 /// and inserts a `queued` user message so the transcript shows it landed
 /// (build_provider_messages* skips queued messages so they don't inflate
 /// the current turn).
-fn queue_prompt_for_later(app: &mut App, text: String) {
+pub(super) fn queue_prompt_for_later(app: &mut App, text: String) {
     // Expand any `[Pasted #N · …]` chips to their full text BEFORE queuing —
     // the non-queued submit path does this in `handle_submit`, but a queued
     // prompt bypasses that, so without this the placeholder (and the eventually

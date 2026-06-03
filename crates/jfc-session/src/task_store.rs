@@ -28,7 +28,7 @@
 
 #![allow(dead_code)]
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -912,19 +912,58 @@ impl TaskStore {
                 id_a.cmp(&id_b)
             })
         });
+        let now = now_ms();
         let claim_id = ids.into_iter().find(|id| {
             inner.tasks.get(id.as_str()).is_some_and(|task| {
                 task.status == TaskStatus::Pending
                     && task.owner.as_deref().unwrap_or("").is_empty()
                     && task.blocked_by.iter().all(|dep| completed.contains(dep))
+                    && !in_retry_backoff(task, now)
             })
         })?;
         let task = inner.tasks.get_mut(claim_id.as_str())?;
         task.owner = Some(owner.to_owned());
         task.status = TaskStatus::InProgress;
+        clear_retry_after(task); // Forget: a fresh attempt starts a new curve.
         let task = task.clone();
         self.persist(&inner);
         Some(task)
+    }
+
+    /// The ready frontier: every pending, unowned task whose blockers are all
+    /// completed — the set that is safe to dispatch *in parallel right now*.
+    /// This is the batch form of [`Self::claim_next_available`], for schedulers
+    /// that fan work across the whole ready set instead of claiming one task at
+    /// a time (Terraform `internal/dag/walk.go` ready-set walk). Sorted by
+    /// priority (lower first), then creation order, so the ordering matches
+    /// `claim_next_available`'s single-task pick.
+    pub fn ready_frontier(&self) -> Vec<Task> {
+        let inner = self.inner.lock().unwrap();
+        let completed: BTreeSet<TaskId> = inner
+            .tasks
+            .values()
+            .filter(|t| t.status == TaskStatus::Completed)
+            .map(|t| t.id.clone())
+            .collect();
+        let now = now_ms();
+        let mut ready: Vec<Task> = inner
+            .tasks
+            .values()
+            .filter(|t| {
+                t.status == TaskStatus::Pending
+                    && t.owner.as_deref().unwrap_or("").is_empty()
+                    && t.blocked_by.iter().all(|dep| completed.contains(dep))
+                    && !in_retry_backoff(t, now)
+            })
+            .cloned()
+            .collect();
+        ready.sort_by(cmp_priority_then_creation);
+        tracing::trace!(
+            target: "jfc::tasks",
+            count = ready.len(),
+            "TaskStore::ready_frontier"
+        );
+        ready
     }
 
     /// Reset tasks stuck `InProgress` under `owner` back to Pending + unowned
@@ -1138,12 +1177,16 @@ impl TaskStore {
         if transient && attempts < max_attempts {
             task.status = TaskStatus::Pending;
             task.owner = None;
+            // Exponential backoff: don't let the claim paths re-dispatch this
+            // task until the deadline passes, so a flaky task can't hot-loop.
+            let backoff_ms = retry_backoff_ms(attempts);
+            set_retry_after(task, now_ms() + backoff_ms);
             let id = task.id.clone();
             self.persist(&inner);
             tracing::info!(
                 target: "jfc::tasks",
-                failed_id, attempts, max_attempts,
-                "recover_from_failure: transient failure, re-queued for retry"
+                failed_id, attempts, max_attempts, backoff_ms,
+                "recover_from_failure: transient failure, re-queued for retry after backoff"
             );
             return FailureRecovery::Retried {
                 task_id: id,
@@ -1343,12 +1386,35 @@ impl TaskStore {
             }
         }
 
+        // Ready frontier: pending, unowned, all blockers completed, and not in
+        // retry-backoff — the set safe to fan out in parallel right now
+        // (Terraform ready-set walk).
+        let now = now_ms();
+        let mut ready: Vec<TaskId> = tasks
+            .iter()
+            .filter(|t| {
+                t.status == TaskStatus::Pending
+                    && t.owner.as_deref().unwrap_or("").is_empty()
+                    && t.blocked_by.iter().all(|dep| completed_ids.contains(dep))
+                    && !in_retry_backoff(t, now)
+            })
+            .map(|t| t.id.clone())
+            .collect();
+        ready.sort();
+
+        // Tarjan cycle detection + transitive upstream-failed propagation.
+        let dependency_cycles = dependency_cycles(&inner);
+        let upstream_failed = upstream_failed_tasks(&inner);
+
         TaskValidation {
             orphaned_tasks: orphaned,
             blocked_forever,
             no_verification_path: no_verification,
             duplicate_subjects,
             parallelization_opportunities,
+            dependency_cycles,
+            upstream_failed,
+            ready,
             total_tasks: tasks.len(),
             pending_count: tasks
                 .iter()
@@ -1362,6 +1428,220 @@ impl TaskStore {
             failed_count: failed_ids.len(),
         }
     }
+}
+
+/// Order tasks by priority (lower number = higher priority, default 5), then
+/// by numeric creation order (`t<N>`). Shared by `ready_frontier` so its
+/// ordering matches `claim_next_available`'s single-task pick.
+fn cmp_priority_then_creation(a: &Task, b: &Task) -> std::cmp::Ordering {
+    let pa = a.priority.unwrap_or(5);
+    let pb = b.priority.unwrap_or(5);
+    let seq = |t: &Task| {
+        t.id
+            .as_str()
+            .strip_prefix('t')
+            .and_then(|n| n.parse::<u64>().ok())
+            .unwrap_or(0)
+    };
+    pa.cmp(&pb).then_with(|| seq(a).cmp(&seq(b)))
+}
+
+/// Whether a blocker id refers to a "dead" task — Failed, Deleted, or missing
+/// entirely. Matches the existing `blocked_forever` semantics in `validate`.
+fn blocker_is_dead(inner: &TaskStoreInner, id: &TaskId) -> bool {
+    match inner.tasks.get(id.as_str()) {
+        None => true,
+        Some(t) => matches!(t.status, TaskStatus::Failed | TaskStatus::Deleted),
+    }
+}
+
+// ── Retry backoff ──────────────────────────────────────────────────────────
+//
+// When `recover_from_failure` re-queues a transient failure it stamps the task
+// with a `retry_after_ms` deadline computed from an exponential curve, and the
+// claim paths refuse to re-dispatch the task until that deadline passes. This
+// is the per-item exponential backoff half of the Kubernetes workqueue
+// discipline — the richer `MaxOf(exp, token-bucket)` form with `NumRequeues`/
+// `Forget` lives in `jfc_economy::rate_limiter::RetryRateLimiter` for the
+// bounty/subagent layer; the task store only needs the per-item curve, and
+// can't depend on `jfc-economy`, so the (short) formula is mirrored here.
+
+/// Base retry delay; doubles per attempt up to [`RETRY_MAX_MS`].
+const RETRY_BASE_MS: u64 = 1_000;
+/// Ceiling on the retry backoff (1 minute).
+const RETRY_MAX_MS: u64 = 60_000;
+/// Metadata key holding the epoch-ms deadline before which a re-queued task
+/// must not be re-claimed.
+const RETRY_AFTER_KEY: &str = "retry_after_ms";
+
+/// `base * 2^(attempt-1)`, saturating, capped at [`RETRY_MAX_MS`]. `attempt`
+/// is 1-based (the `attempt_count` value *after* it is incremented), so the
+/// first retry waits `base`, the second `2*base`, etc.
+fn retry_backoff_ms(attempt: u32) -> u64 {
+    let exp = attempt.saturating_sub(1).min(20); // 2^20 already exceeds the cap
+    RETRY_BASE_MS.saturating_mul(1u64 << exp).min(RETRY_MAX_MS)
+}
+
+/// Stamp a task with its next-retry deadline (epoch ms).
+fn set_retry_after(task: &mut Task, deadline_ms: u64) {
+    let obj = task
+        .metadata
+        .get_or_insert_with(|| serde_json::json!({}));
+    if let Some(map) = obj.as_object_mut() {
+        map.insert(RETRY_AFTER_KEY.into(), serde_json::json!(deadline_ms));
+    } else {
+        *obj = serde_json::json!({ RETRY_AFTER_KEY: deadline_ms });
+    }
+}
+
+/// Clear a task's retry deadline — the `Forget` half of the contract, called
+/// when the task is (re-)claimed so a future failure starts a fresh curve.
+fn clear_retry_after(task: &mut Task) {
+    if let Some(map) = task.metadata.as_mut().and_then(|m| m.as_object_mut()) {
+        map.remove(RETRY_AFTER_KEY);
+    }
+}
+
+/// Whether `task` is still inside its retry-backoff window as of `now_ms`.
+fn in_retry_backoff(task: &Task, now_ms: u64) -> bool {
+    task.metadata
+        .as_ref()
+        .and_then(|m| m.as_object())
+        .and_then(|m| m.get(RETRY_AFTER_KEY))
+        .and_then(|v| v.as_u64())
+        .is_some_and(|deadline| deadline > now_ms)
+}
+
+/// Tasks transitively blocked by a dead (Failed/Deleted/missing) task —
+/// Terraform's `upstreamFailed`. Fixpoint over `blocked_by`: a non-terminal
+/// task is upstream-failed if *any* of its blockers is dead or itself
+/// upstream-failed. Only Pending/InProgress tasks are reported (terminal tasks
+/// own their state). This is the transitive superset of `blocked_forever`
+/// (which requires *all* blockers dead and only the direct case).
+fn upstream_failed_tasks(inner: &TaskStoreInner) -> Vec<TaskId> {
+    let mut failed: BTreeSet<TaskId> = BTreeSet::new();
+    loop {
+        let mut changed = false;
+        for (id, task) in &inner.tasks {
+            if !matches!(task.status, TaskStatus::Pending | TaskStatus::InProgress) {
+                continue;
+            }
+            if failed.contains(id) {
+                continue;
+            }
+            let stuck = task
+                .blocked_by
+                .iter()
+                .any(|dep| blocker_is_dead(inner, dep) || failed.contains(dep));
+            if stuck {
+                failed.insert(id.clone());
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    failed.into_iter().collect()
+}
+
+/// Iterative-recursion Tarjan SCC over the `blocked_by` edges of the
+/// non-deleted task graph. Returns only components that form a real cycle:
+/// any SCC of size > 1, plus any single task that lists itself as a blocker.
+/// The per-edge guard in `update()` rejects *new* cycles, but a graph loaded
+/// from disk or hand-edited JSON can still contain one — this surfaces it.
+/// Mirrors Terraform `internal/dag/tarjan.go`. Task graphs are small (tens of
+/// nodes), so recursive descent is safe.
+fn dependency_cycles(inner: &TaskStoreInner) -> Vec<Vec<TaskId>> {
+    struct Tarjan<'a> {
+        inner: &'a TaskStoreInner,
+        index: usize,
+        indices: HashMap<TaskId, usize>,
+        lowlink: HashMap<TaskId, usize>,
+        on_stack: HashSet<TaskId>,
+        stack: Vec<TaskId>,
+        sccs: Vec<Vec<TaskId>>,
+    }
+    impl Tarjan<'_> {
+        fn connect(&mut self, v: &TaskId) {
+            self.indices.insert(v.clone(), self.index);
+            self.lowlink.insert(v.clone(), self.index);
+            self.index += 1;
+            self.stack.push(v.clone());
+            self.on_stack.insert(v.clone());
+            if let Some(task) = self.inner.tasks.get(v.as_str()) {
+                for w in &task.blocked_by {
+                    let alive = self
+                        .inner
+                        .tasks
+                        .get(w.as_str())
+                        .is_some_and(|t| t.status != TaskStatus::Deleted);
+                    if !alive {
+                        continue;
+                    }
+                    if !self.indices.contains_key(w) {
+                        self.connect(w);
+                        let low = self.lowlink[v].min(self.lowlink[w]);
+                        self.lowlink.insert(v.clone(), low);
+                    } else if self.on_stack.contains(w) {
+                        let low = self.lowlink[v].min(self.indices[w]);
+                        self.lowlink.insert(v.clone(), low);
+                    }
+                }
+            }
+            if self.lowlink[v] == self.indices[v] {
+                let mut scc = Vec::new();
+                while let Some(w) = self.stack.pop() {
+                    self.on_stack.remove(&w);
+                    let is_root = &w == v;
+                    scc.push(w);
+                    if is_root {
+                        break;
+                    }
+                }
+                self.sccs.push(scc);
+            }
+        }
+    }
+
+    let mut t = Tarjan {
+        inner,
+        index: 0,
+        indices: HashMap::new(),
+        lowlink: HashMap::new(),
+        on_stack: HashSet::new(),
+        stack: Vec::new(),
+        sccs: Vec::new(),
+    };
+    // Deterministic root order so cycle reporting is stable across runs.
+    let mut roots: Vec<TaskId> = inner
+        .tasks
+        .iter()
+        .filter(|(_, task)| task.status != TaskStatus::Deleted)
+        .map(|(id, _)| id.clone())
+        .collect();
+    roots.sort();
+    for v in &roots {
+        if !t.indices.contains_key(v) {
+            t.connect(v);
+        }
+    }
+    t.sccs
+        .into_iter()
+        .filter(|scc| {
+            scc.len() > 1
+                || scc.first().is_some_and(|v| {
+                    inner
+                        .tasks
+                        .get(v.as_str())
+                        .is_some_and(|task| task.blocked_by.contains(v))
+                })
+        })
+        .map(|mut scc| {
+            scc.sort();
+            scc
+        })
+        .collect()
 }
 
 fn dependency_path_to(inner: &TaskStoreInner, start: &TaskId, target: &str) -> Option<Vec<TaskId>> {
@@ -2183,5 +2463,201 @@ mod tests {
         let back: Task = serde_json::from_str(&json).unwrap();
         assert_eq!(back.effort.as_deref(), Some("max"));
         assert_eq!(back.model.as_deref(), Some("claude-opus-4"));
+    }
+
+    // ---- Parallel-DAG enhancements (Terraform internal/dag) ----
+
+    fn complete(store: &TaskStore, id: &str) {
+        store
+            .update(
+                id,
+                TaskPatch {
+                    status: Some(TaskStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+
+    fn fail(store: &TaskStore, id: &str) {
+        store
+            .update(
+                id,
+                TaskPatch {
+                    status: Some(TaskStatus::Failed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+
+    // Normal: the ready frontier is exactly the pending, unowned tasks whose
+    // blockers are all completed — and it grows as blockers complete.
+    #[test]
+    fn ready_frontier_tracks_completed_blockers_normal() {
+        let store = TaskStore::in_memory();
+        let t1 = store
+            .create("a".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        let _t2 = store
+            .create("b".into(), "".into(), None, vec![t1.id.clone()])
+            .unwrap();
+
+        // Only the unblocked root is ready initially.
+        let ready: Vec<String> = store
+            .ready_frontier()
+            .iter()
+            .map(|t| t.id.to_string())
+            .collect();
+        assert_eq!(ready, vec!["t1".to_string()]);
+
+        // Completing the blocker promotes the dependent into the frontier;
+        // the completed task itself drops out (it's no longer Pending).
+        complete(&store, "t1");
+        let ready: Vec<String> = store
+            .ready_frontier()
+            .iter()
+            .map(|t| t.id.to_string())
+            .collect();
+        assert_eq!(ready, vec!["t2".to_string()]);
+    }
+
+    // Normal: a claimed (owned) task is not in the ready frontier even though
+    // its blockers are clear — it's already being worked.
+    #[test]
+    fn ready_frontier_excludes_owned_tasks_normal() {
+        let store = TaskStore::in_memory();
+        store
+            .create("solo".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        assert_eq!(store.ready_frontier().len(), 1);
+        store.claim_next_available("worker").unwrap();
+        assert!(store.ready_frontier().is_empty());
+    }
+
+    // Robust: transitive upstreamFailed — a failed task taints every task that
+    // (transitively) depends on it, so they are not reported as their own
+    // failures. validate().upstream_failed is the transitive superset.
+    #[test]
+    fn validate_propagates_upstream_failed_robust() {
+        let store = TaskStore::in_memory();
+        let t1 = store
+            .create("root".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        let t2 = store
+            .create("mid".into(), "".into(), None, vec![t1.id.clone()])
+            .unwrap();
+        let _t3 = store
+            .create("leaf".into(), "".into(), None, vec![t2.id.clone()])
+            .unwrap();
+
+        fail(&store, "t1");
+        let v = store.validate();
+        // t2 (direct) and t3 (transitive) are upstream-failed; the failed t1
+        // itself is not (it owns its terminal state).
+        assert_eq!(
+            v.upstream_failed,
+            vec![TaskId::from("t2"), TaskId::from("t3")]
+        );
+        // blocked_forever is the *direct, all-blockers-dead* subset: t2 only.
+        assert_eq!(v.blocked_forever, vec![TaskId::from("t2")]);
+    }
+
+    // Robust: Tarjan finds a cycle that the per-edge guard cannot — one
+    // injected directly into the store as if loaded from hand-edited JSON.
+    #[test]
+    fn validate_detects_injected_dependency_cycle_robust() {
+        let store = TaskStore::in_memory();
+        let t1 = store
+            .create("a".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        let t2 = store
+            .create("b".into(), "".into(), None, vec![t1.id.clone()])
+            .unwrap();
+        // Inject the back-edge t1 -> t2 directly (bypassing update()'s guard),
+        // forming the cycle t1 <-> t2.
+        {
+            let mut inner = store.inner.lock().unwrap();
+            inner
+                .tasks
+                .get_mut(t1.id.as_str())
+                .unwrap()
+                .blocked_by
+                .insert(t2.id.clone());
+        }
+        let v = store.validate();
+        assert_eq!(v.dependency_cycles.len(), 1, "exactly one cycle");
+        assert_eq!(
+            v.dependency_cycles[0],
+            vec![TaskId::from("t1"), TaskId::from("t2")]
+        );
+    }
+
+    // Normal: an acyclic graph reports no cycles.
+    #[test]
+    fn validate_no_cycles_on_dag_normal() {
+        let store = TaskStore::in_memory();
+        let t1 = store
+            .create("a".into(), "".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        store
+            .create("b".into(), "".into(), None, vec![t1.id.clone()])
+            .unwrap();
+        assert!(store.validate().dependency_cycles.is_empty());
+    }
+
+    // ---- Retry backoff (k8s per-item exponential curve) ----
+
+    // Normal: the backoff curve doubles per attempt and caps.
+    #[test]
+    fn retry_backoff_curve_normal() {
+        assert_eq!(retry_backoff_ms(1), 1_000); // base
+        assert_eq!(retry_backoff_ms(2), 2_000);
+        assert_eq!(retry_backoff_ms(3), 4_000);
+        assert_eq!(retry_backoff_ms(99), RETRY_MAX_MS); // saturates, never panics
+    }
+
+    // Robust: a transient retry stamps a future deadline and the task is NOT
+    // re-claimable until it passes — no hot-loop retrying.
+    #[test]
+    fn transient_retry_backs_off_claim_robust() {
+        let store = TaskStore::in_memory();
+        let t = store
+            .create("flaky".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        store.recover_from_failure(t.id.as_str(), "connection timeout");
+
+        let after = store.get(t.id.as_str()).unwrap();
+        assert_eq!(after.status, TaskStatus::Pending);
+        // Deadline is in the future.
+        assert!(in_retry_backoff(&after, now_ms()));
+        // And the factory can't immediately re-claim it.
+        assert!(store.claim_next_available("jfc-factory").is_none());
+        // It's also excluded from the ready frontier.
+        assert!(store.ready_frontier().is_empty());
+    }
+
+    // Robust: once the backoff deadline is in the past, the task is claimable
+    // again and the deadline is cleared on claim (Forget).
+    #[test]
+    fn elapsed_backoff_is_claimable_and_forgotten_robust() {
+        let store = TaskStore::in_memory();
+        let t = store
+            .create("flaky".into(), "d".into(), None, Vec::<TaskId>::new())
+            .unwrap();
+        // Inject a deadline in the past (as if the backoff has elapsed).
+        {
+            let mut inner = store.inner.lock().unwrap();
+            let task = inner.tasks.get_mut(t.id.as_str()).unwrap();
+            set_retry_after(task, 1); // epoch ms 1 — long past
+        }
+        let claimed = store.claim_next_available("jfc-factory").unwrap();
+        assert_eq!(claimed.id, t.id);
+        // The retry deadline was forgotten on claim.
+        assert!(!in_retry_backoff(&claimed, now_ms()));
+        assert!(store.get(t.id.as_str()).unwrap().metadata.is_none() || {
+            let m = store.get(t.id.as_str()).unwrap();
+            !in_retry_backoff(&m, now_ms())
+        });
     }
 }

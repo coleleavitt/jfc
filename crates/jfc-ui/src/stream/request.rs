@@ -301,9 +301,24 @@ fn explicitly_requests_tool_use(trimmed: &str) -> bool {
         "use tools",
         "use the tool",
         "use the tools",
+        "tool call",
+        "tool calls",
+        "websearch",
+        "web search",
+        "available tools",
+        "tools available",
+        "backends i have",
+        "backend i have",
+        "search backends",
+        "search backend",
+        "primo:",
     ]
     .iter()
     .any(|needle| trimmed.contains(needle))
+}
+
+fn preserve_non_action_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "ToolSearch" | "ToolSuggest" | "SendUserMessage")
 }
 
 fn anthropic_tool_choice_value(_choice: StreamToolChoice) -> serde_json::Value {
@@ -944,16 +959,14 @@ Do not use a colon before tool calls.";
             .map(user_text_requests_action)
             .unwrap_or(false);
     if !action_expected && !advertised_tools.is_empty() {
+        let before = advertised_tools.len();
+        advertised_tools.retain(|tool| preserve_non_action_tool(&tool.name));
         tracing::debug!(
             target: "jfc::stream::tools",
-            tool_count = advertised_tools.len(),
-            "suppressing tool catalog for non-action prompt"
+            before,
+            after = advertised_tools.len(),
+            "reduced tool catalog for non-action prompt"
         );
-        if effective_brief_mode || pewter_owl_tool {
-            advertised_tools.retain(|tool| tool.name == "SendUserMessage");
-        } else {
-            advertised_tools.clear();
-        }
     }
     let advertised_tool_count = advertised_tools.len();
 
@@ -1160,7 +1173,10 @@ fn memory_value_to_text(value: &serde_json::Value) -> String {
 mod tests {
     use std::sync::Arc;
 
-    use super::{conversation_is_mid_tool_loop, prepare_stream_request, user_text_requests_action};
+    use super::{
+        conversation_is_mid_tool_loop, prepare_stream_request, preserve_non_action_tool,
+        user_text_requests_action,
+    };
     use jfc_provider::{
         EventStream, ModelId, ModelInfo, Provider, ProviderContent, ProviderMessage, ProviderRole,
         StreamConvention, StreamOptions,
@@ -1269,6 +1285,12 @@ mod tests {
         assert!(user_text_requests_action(
             "explain the architecture and use codegraph"
         ));
+        assert!(user_text_requests_action(
+            "see what websearch backends I have right"
+        ));
+        assert!(user_text_requests_action(
+            "use primo please use the tool calls please"
+        ));
     }
 
     #[test]
@@ -1300,6 +1322,42 @@ mod tests {
         assert!(user_text_requests_action("what's installed on here"));
         assert!(user_text_requests_action("tell me about this repo"));
         assert!(user_text_requests_action("what is this codebase"));
+    }
+
+    #[test]
+    fn non_action_catalog_keeps_discovery_tools_regression() {
+        assert!(preserve_non_action_tool("ToolSearch"));
+        assert!(preserve_non_action_tool("ToolSuggest"));
+        assert!(preserve_non_action_tool("SendUserMessage"));
+        assert!(!preserve_non_action_tool("Bash"));
+        assert!(!preserve_non_action_tool("Read"));
+        assert!(!preserve_non_action_tool("WebFetch"));
+    }
+
+    #[tokio::test]
+    async fn prepare_preserves_discovery_tools_for_plain_question_regression() {
+        let provider = Arc::new(TestProvider {
+            name: "openai-test",
+            convention: StreamConvention::OpenAiNative,
+        });
+        let request = prepare_stream_request(
+            provider,
+            &[user_text("what is ownership in rust?")],
+            &ModelId::new("test-model"),
+            Default::default(),
+        )
+        .await;
+
+        let tool_names = request
+            .opts
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>();
+        assert!(tool_names.contains(&"ToolSearch"));
+        assert!(tool_names.contains(&"ToolSuggest"));
+        assert!(!tool_names.contains(&"Bash"));
+        assert!(!tool_names.contains(&"Read"));
     }
 
     #[tokio::test]

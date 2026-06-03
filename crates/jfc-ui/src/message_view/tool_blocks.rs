@@ -741,7 +741,7 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         ToolKind::Read => Color::Rgb(120, 180, 255), // soft blue
         ToolKind::Write => Color::Rgb(255, 200, 130), // amber
         ToolKind::Edit | ToolKind::ApplyPatch => Color::Rgb(160, 230, 170), // mint
-        ToolKind::Bash => Color::Rgb(180, 180, 200), // neutral grey
+        ToolKind::Bash | ToolKind::BashOutput => Color::Rgb(180, 180, 200), // neutral grey
         ToolKind::Glob | ToolKind::Grep | ToolKind::Search => Color::Rgb(200, 160, 255), // lavender
         ToolKind::Task => Color::Rgb(255, 170, 220), // rose
         ToolKind::TaskCreate
@@ -771,6 +771,9 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         | ToolKind::GraphGrep
         | ToolKind::GraphStatus
         | ToolKind::GraphFiles
+        | ToolKind::GetProgramSlice
+        | ToolKind::GetDataDependencies
+        | ToolKind::TaintFlow
         | ToolKind::SymbolEdit
         | ToolKind::RunCoverage => Color::Rgb(130, 200, 180), // sage
         ToolKind::PlanCreate

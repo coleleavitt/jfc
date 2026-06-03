@@ -126,6 +126,7 @@ fn permission_mode_plan_decisions_normal() {
         command: "ls /tmp".into(),
         timeout: None,
         workdir: None,
+        run_in_background: None,
     };
     assert_eq!(
         PermissionMode::Plan.auto_approves(&bash_ls),
@@ -137,6 +138,7 @@ fn permission_mode_plan_decisions_normal() {
         command: "rm -rf /".into(),
         timeout: None,
         workdir: None,
+        run_in_background: None,
     };
     assert!(matches!(
         PermissionMode::Plan.auto_approves(&bash_rm),
@@ -215,6 +217,7 @@ fn make_bash_tool(command: &str) -> ToolCall {
             command: command.to_string(),
             timeout: None,
             workdir: None,
+            run_in_background: None,
         },
         output: ToolOutput::Empty,
         display: crate::types::ToolDisplayState::DEFAULT,

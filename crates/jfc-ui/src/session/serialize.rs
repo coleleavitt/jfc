@@ -115,10 +115,21 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
             command,
             timeout,
             workdir,
+            run_in_background,
         } => SerializedToolInput::Bash {
             command: command.clone(),
             timeout: *timeout,
             workdir: workdir.clone(),
+            run_in_background: *run_in_background,
+        },
+        ToolInput::BashOutput {
+            task_id,
+            offset,
+            limit,
+        } => SerializedToolInput::BashOutput {
+            task_id: task_id.clone(),
+            offset: *offset,
+            limit: *limit,
         },
         ToolInput::Glob { pattern, path } => SerializedToolInput::Glob {
             pattern: pattern.clone(),
@@ -330,6 +341,18 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         },
         ToolInput::GraphFiles { path, .. } => SerializedToolInput::Generic {
             summary: format!("graph_files: {}", path.as_deref().unwrap_or(".")),
+        },
+        ToolInput::GetProgramSlice { symbol, backward, .. } => SerializedToolInput::Generic {
+            summary: format!(
+                "{} slice: {symbol}",
+                if *backward { "backward" } else { "forward" }
+            ),
+        },
+        ToolInput::GetDataDependencies { symbol, .. } => SerializedToolInput::Generic {
+            summary: format!("data_deps: {symbol}"),
+        },
+        ToolInput::TaintFlow { sources, sinks, .. } => SerializedToolInput::Generic {
+            summary: format!("taint_flow: {}→{}", sources.join(","), sinks.join(",")),
         },
         ToolInput::PlanCreate { title, .. } => SerializedToolInput::Generic {
             summary: format!("plan_create: {title}"),

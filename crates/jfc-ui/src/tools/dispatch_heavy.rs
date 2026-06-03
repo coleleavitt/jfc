@@ -369,6 +369,48 @@ pub(super) fn execute_graph_files(path_filter: Option<&str>, cwd: &Path) -> Exec
     ExecutionResult::success(out)
 }
 
+/// `get_program_slice` tool — interprocedural backward/forward program slice
+/// around a symbol, source-annotated and node-capped.
+pub(super) fn execute_get_program_slice(
+    symbol: String,
+    backward: bool,
+    max_nodes: Option<usize>,
+    cwd: &Path,
+) -> ExecutionResult {
+    let session = get_or_build_graph_session(cwd);
+    let n = max_nodes.unwrap_or(40).clamp(1, 200);
+    let out = jfc_graph::analysis_tools::program_slice(&session.graph, &symbol, backward, n);
+    ExecutionResult::success(out)
+}
+
+/// `get_data_dependencies` tool — direct interprocedural data dependencies of
+/// a symbol, source-annotated and node-capped.
+pub(super) fn execute_get_data_dependencies(
+    symbol: String,
+    max_nodes: Option<usize>,
+    cwd: &Path,
+) -> ExecutionResult {
+    let session = get_or_build_graph_session(cwd);
+    let n = max_nodes.unwrap_or(40).clamp(1, 200);
+    let out = jfc_graph::analysis_tools::data_dependencies(&session.graph, &symbol, n);
+    ExecutionResult::success(out)
+}
+
+/// `taint_flow` tool — source→sink taint flows across the code graph, with a
+/// path cap and sanitizer annotation.
+pub(super) fn execute_taint_flow(
+    sources: Vec<String>,
+    sinks: Vec<String>,
+    sanitizers: Vec<String>,
+    max_paths: Option<usize>,
+    cwd: &Path,
+) -> ExecutionResult {
+    let session = get_or_build_graph_session(cwd);
+    let n = max_paths.unwrap_or(20).clamp(1, 100);
+    let out = jfc_graph::analysis_tools::taint_flow(&session.graph, &sources, &sinks, &sanitizers, n);
+    ExecutionResult::success(out)
+}
+
 /// Render a neighbour list (callers / callees / impact) as a versioned
 /// JSON envelope. Centralised so the three tools stay in sync on shape.
 fn json_neighbors(

@@ -97,6 +97,7 @@ mod tests {
                 command: "echo hi".to_owned(),
                 timeout: None,
                 workdir: None,
+                run_in_background: None,
             },
         )
     }

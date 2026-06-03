@@ -166,6 +166,15 @@ pub enum SerializedToolInput {
         timeout: Option<u64>,
         #[serde(default)]
         workdir: Option<String>,
+        #[serde(default)]
+        run_in_background: Option<bool>,
+    },
+    BashOutput {
+        task_id: String,
+        #[serde(default)]
+        offset: Option<u64>,
+        #[serde(default)]
+        limit: Option<u64>,
     },
     Glob {
         pattern: String,

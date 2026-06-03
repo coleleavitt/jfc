@@ -77,6 +77,11 @@ pub(crate) async fn maybe_continue_task_factory(app: &mut App, tx: &EventSender)
     // without the verification round-trip.
     if counts.pending >= 3 && counts.in_progress == 0 && !app.plan_verified_this_batch {
         app.plan_verified_this_batch = true;
+        // Run the task-graph validator and surface its *computed* findings —
+        // dependency cycles (Tarjan), upstream-failed propagation, the ready
+        // frontier, and parallelization opportunities — instead of asking the
+        // leader to eyeball them.
+        let validation = app.task_store.validate();
         let tasks = app.task_store.list_all();
         let pending: Vec<_> = tasks
             .iter()
@@ -102,11 +107,72 @@ pub(crate) async fn maybe_continue_task_factory(app: &mut App, tx: &EventSender)
             })
             .collect::<Vec<_>>()
             .join("\n");
+
+        // Computed graph findings.
+        let mut findings = String::new();
+        if !validation.dependency_cycles.is_empty() {
+            findings.push_str("\n\n⚠ DEPENDENCY CYCLES detected — break these before execution:\n");
+            for cycle in &validation.dependency_cycles {
+                let chain = cycle
+                    .iter()
+                    .map(|id| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" -> ");
+                findings.push_str(&format!("  - {chain}\n"));
+            }
+        }
+        if !validation.upstream_failed.is_empty() {
+            findings.push_str(&format!(
+                "\nBlocked by a failed/deleted upstream task (won't run until rerouted): {}\n",
+                validation
+                    .upstream_failed
+                    .iter()
+                    .map(|id| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if !validation.parallelization_opportunities.is_empty() {
+            findings.push_str("\nParallelizable (share blockers, independent of each other):\n");
+            for opp in &validation.parallelization_opportunities {
+                findings.push_str(&format!("  - {opp}\n"));
+            }
+        }
+        if !validation.ready.is_empty() {
+            findings.push_str(&format!(
+                "\nReady to start now (no incomplete blockers): {}\n",
+                validation
+                    .ready
+                    .iter()
+                    .map(|id| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+
+        // Plan reuse: surface a similar prior decomposition as advisory
+        // context, then cache this batch's decomposition under its signature.
+        let subjects: Vec<String> = pending.iter().map(|t| t.subject.clone()).collect();
+        let signature = jfc_core::normalize_signature(&subjects.join(" "));
+        let prior_note = app
+            .plan_cache
+            .get_similar(&signature, 0.6)
+            .map(|p| {
+                format!(
+                    "\n\nA similar plan ran before ('{}') with steps: {}. \
+                     Reuse what still applies.",
+                    p.source_description,
+                    p.steps.join("; ")
+                )
+            })
+            .unwrap_or_default();
+        app.plan_cache.insert(&subjects.join(" "), subjects.clone());
+
         let prompt = format!(
-            "Before executing the task queue, verify this plan is sound:\n\n{task_list}\n\n\
-             Check for: missing dependencies, circular deps, tasks that should be parallel but are serial, \
-             tasks that are too broad to complete in one agent turn, high-risk tasks that need user review, \
-             tasks missing acceptance criteria. \
+            "Before executing the task queue, verify this plan is sound:\n\n{task_list}\n{findings}{prior_note}\n\
+             The cycle/blocker/parallelism findings above are computed by the task-graph validator — \
+             trust them. Also check for: tasks too broad to finish in one agent turn, high-risk tasks \
+             that need user review, and tasks missing acceptance criteria. \
              If the plan is good, say 'Plan verified' and I'll start execution. \
              If changes are needed, use TaskUpdate/TaskCreate/TaskDone to revise, then say 'Plan revised'."
         );

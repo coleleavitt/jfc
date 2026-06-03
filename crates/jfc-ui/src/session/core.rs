@@ -661,6 +661,7 @@ mod disk_io_tests {
                 command: "echo hi".into(),
                 timeout: Some(30_000),
                 workdir: Some("/tmp".into()),
+                run_in_background: None,
             },
             output: ToolOutput::Command {
                 stdout: "hi\n".into(),
@@ -693,6 +694,7 @@ mod disk_io_tests {
                         command,
                         timeout,
                         workdir,
+                        ..
                     } => {
                         assert_eq!(command, "echo hi");
                         assert_eq!(*timeout, Some(30_000));

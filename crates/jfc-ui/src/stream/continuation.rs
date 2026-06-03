@@ -1123,6 +1123,7 @@ mod pause_turn_end_to_end_tests {
                 command: "ls".into(),
                 timeout: None,
                 workdir: None,
+                run_in_background: None,
             },
             output: ToolOutput::Command {
                 stdout: "file.txt\n".into(),

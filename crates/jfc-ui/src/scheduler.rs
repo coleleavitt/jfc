@@ -48,6 +48,7 @@ pub fn is_concurrency_safe(kind: &ToolKind) -> bool {
             | ToolKind::Glob
             | ToolKind::Grep
             | ToolKind::Search
+            | ToolKind::BashOutput
             | ToolKind::TaskCreate
             | ToolKind::TaskUpdate
             | ToolKind::TaskList
@@ -605,6 +606,7 @@ mod tests {
                 command: command.to_owned(),
                 timeout: Some(5_000),
                 workdir: None,
+                run_in_background: None,
             },
             output: ToolOutput::Empty,
             display: crate::types::ToolDisplayState::DEFAULT,
@@ -722,6 +724,7 @@ mod tests {
             command: "echo hi".to_owned(),
             timeout: None,
             workdir: None,
+            run_in_background: None,
         };
         let batches = schedule_tools(vec![bash]);
         // One Sequential batch.

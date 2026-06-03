@@ -122,6 +122,11 @@ pub(crate) fn tool_spec(kind: crate::types::ToolKind) -> StaticSpec {
         ToolKind::Edit => ("Edit", "edit a file", Permission::Mutating),
         ToolKind::MultiEdit => ("MultiEdit", "apply multiple edits", Permission::Mutating),
         ToolKind::Bash => ("Bash", "run a shell command", Permission::Mutating),
+        ToolKind::BashOutput => (
+            "BashOutput",
+            "read background Bash output",
+            Permission::ReadOnly,
+        ),
         ToolKind::ApplyPatch => ("apply_patch", "apply a patch", Permission::Mutating),
         ToolKind::Glob => ("Glob", "match files by glob", Permission::ReadOnly),
         ToolKind::Grep => ("Grep", "search file contents", Permission::ReadOnly),

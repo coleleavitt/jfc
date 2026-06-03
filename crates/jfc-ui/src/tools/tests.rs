@@ -1,6 +1,7 @@
-use super::bash::{execute_bash, execute_bash_inner};
+use super::bash::{execute_bash, execute_bash_inner, execute_bash_output};
 use super::daemon::execute_monitor;
 use super::defs::all_tool_defs;
+use super::dispatch::resolve_bash_workdir;
 use super::economy::{
     apply_winning_solution, looks_like_unified_diff, market_report_string, parse_file_blocks,
     parse_validator_output, split_patch_and_explanation, verify_bounty_solution,
@@ -250,6 +251,7 @@ fn all_tool_defs_includes_every_canonical_tool_normal() {
     let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
     for required in [
         "Bash",
+        "BashOutput",
         "Read",
         "Write",
         "Edit",
@@ -287,6 +289,37 @@ fn all_tool_defs_includes_every_canonical_tool_normal() {
             "all_tool_defs missing {required}; got {names:?}",
         );
     }
+}
+
+#[test]
+fn bash_tool_schema_advertises_workdir_and_fresh_shell_regression() {
+    let defs = all_tool_defs();
+    let bash = defs
+        .iter()
+        .find(|def| def.name == "Bash")
+        .expect("Bash tool should be present");
+
+    assert!(
+        bash.description.contains("fresh non-interactive shell"),
+        "Bash description must not imply persistent shell state: {}",
+        bash.description
+    );
+    assert!(
+        bash.input_schema["properties"].get("workdir").is_some(),
+        "Bash schema must advertise the workdir field: {}",
+        bash.input_schema
+    );
+    assert!(
+        bash.input_schema["properties"]
+            .get("run_in_background")
+            .is_some(),
+        "Bash schema must advertise run_in_background: {}",
+        bash.input_schema
+    );
+    assert!(
+        defs.iter().any(|def| def.name == "BashOutput"),
+        "BashOutput retrieval tool must be advertised"
+    );
 }
 
 // ─── graph_session_cache ─────────────────────────────────────────────
@@ -2426,6 +2459,22 @@ async fn execute_team_member_mode_no_team_fails_robust() {
 
 // ─── execute_tool dispatch ────────────────────────────────────────────
 
+#[test]
+fn resolve_bash_workdir_defaults_and_resolves_paths_regression() {
+    let cwd = Path::new("/repo");
+
+    assert_eq!(resolve_bash_workdir(cwd, None), PathBuf::from("/repo"));
+    assert_eq!(resolve_bash_workdir(cwd, Some("")), PathBuf::from("/repo"));
+    assert_eq!(
+        resolve_bash_workdir(cwd, Some("sub/dir")),
+        PathBuf::from("/repo/sub/dir")
+    );
+    assert_eq!(
+        resolve_bash_workdir(cwd, Some("/tmp")),
+        PathBuf::from("/tmp")
+    );
+}
+
 #[tokio::test]
 async fn execute_tool_dispatches_bash_normal() {
     let dir = tempfile::tempdir().expect("temp dir");
@@ -2435,6 +2484,7 @@ async fn execute_tool_dispatches_bash_normal() {
             command: "echo dispatched".into(),
             timeout: Some(5_000),
             workdir: None,
+            run_in_background: None,
         },
         dir.path().to_path_buf(),
         None,
@@ -2444,6 +2494,197 @@ async fn execute_tool_dispatches_bash_normal() {
     .await;
     assert!(!result.is_error(), "{}", result.output);
     assert!(result.output.contains("dispatched"), "{}", result.output);
+}
+
+#[tokio::test]
+async fn execute_tool_bash_honors_workdir_regression() {
+    crate::sandbox::reset_active_bash_sandbox_for_test();
+    let dir = tempfile::tempdir().expect("temp dir");
+    let subdir = dir.path().join("subdir");
+    std::fs::create_dir(&subdir).expect("create subdir");
+
+    let result = execute_tool(
+        ToolKind::Bash,
+        ToolInput::Bash {
+            command: "pwd -P".into(),
+            timeout: Some(5_000),
+            workdir: Some("subdir".into()),
+            run_in_background: None,
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(!result.is_error(), "{}", result.output);
+    let actual = Path::new(result.output.trim());
+    let expected = subdir.canonicalize().expect("canonical subdir");
+    assert_eq!(actual, expected.as_path(), "{}", result.output);
+}
+
+fn parse_bash_task_id(output: &str) -> String {
+    output
+        .lines()
+        .find_map(|line| line.strip_prefix("task_id: "))
+        .expect("background result should include task_id")
+        .trim()
+        .to_owned()
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn execute_tool_bash_run_in_background_can_be_read_regression() {
+    crate::sandbox::reset_active_bash_sandbox_for_test();
+    let dir = tempfile::tempdir().expect("temp dir");
+    let result = execute_tool(
+        ToolKind::Bash,
+        ToolInput::Bash {
+            command: "printf start; sleep 0.2; printf done".into(),
+            timeout: Some(5_000),
+            workdir: None,
+            run_in_background: Some(true),
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(!result.is_error(), "{}", result.output);
+    assert!(
+        result.output.contains("status: running"),
+        "{}",
+        result.output
+    );
+    assert!(result.output.contains("output_file:"), "{}", result.output);
+    let task_id = parse_bash_task_id(&result.output);
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+
+    let output = execute_tool(
+        ToolKind::BashOutput,
+        ToolInput::BashOutput {
+            task_id,
+            offset: None,
+            limit: None,
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(!output.is_error(), "{}", output.output);
+    assert!(
+        output.output.contains("status: completed"),
+        "{}",
+        output.output
+    );
+    assert!(output.output.contains("startdone"), "{}", output.output);
+}
+
+struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var_os(key);
+        // Tests using this helper are serial; no concurrent env readers are
+        // expected in these focused regressions.
+        unsafe {
+            std::env::set_var(key, value);
+        }
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        unsafe {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn execute_tool_bash_auto_backgrounds_after_foreground_budget_regression() {
+    crate::sandbox::reset_active_bash_sandbox_for_test();
+    let _guard = EnvVarGuard::set("JFC_BASH_FOREGROUND_BUDGET_MS", "50");
+    let dir = tempfile::tempdir().expect("temp dir");
+    let result = execute_tool(
+        ToolKind::Bash,
+        ToolInput::Bash {
+            command: "printf start; sleep 0.2; printf done".into(),
+            timeout: Some(5_000),
+            workdir: None,
+            run_in_background: None,
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(!result.is_error(), "{}", result.output);
+    assert!(
+        result.output.contains("foreground budget"),
+        "{}",
+        result.output
+    );
+    let task_id = parse_bash_task_id(&result.output);
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+
+    let output = execute_tool(
+        ToolKind::BashOutput,
+        ToolInput::BashOutput {
+            task_id,
+            offset: None,
+            limit: Some(20),
+        },
+        dir.path().to_path_buf(),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(!output.is_error(), "{}", output.output);
+    assert!(output.output.contains("startdone"), "{}", output.output);
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn execute_bash_large_output_persists_full_log_regression() {
+    crate::sandbox::reset_active_bash_sandbox_for_test();
+    let result = execute_bash("yes line | head -n 20000", Some(5_000), Path::new(".")).await;
+
+    assert!(!result.is_error(), "{}", result.output);
+    assert!(
+        result.output.contains("Output truncated"),
+        "{}",
+        result.output
+    );
+    assert!(result.output.contains("output_file:"), "{}", result.output);
+    let task_id = parse_bash_task_id(&result.output);
+    let output = execute_bash_output(&task_id, Some(1), Some(5)).await;
+
+    assert!(!output.is_error(), "{}", output.output);
+    assert!(
+        output.output.contains("showing_lines: 1-5"),
+        "{}",
+        output.output
+    );
+    assert!(output.output.contains("line"), "{}", output.output);
 }
 
 #[tokio::test]

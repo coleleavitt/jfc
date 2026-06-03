@@ -950,6 +950,7 @@ mod tests {
                 command: "cargo check".into(),
                 timeout: None,
                 workdir: None,
+                run_in_background: None,
             },
         );
         tool.mark_completed().expect("mark completed");

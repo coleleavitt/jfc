@@ -74,6 +74,10 @@ pub enum GraphFlag {
     /// Generic monomorphization detection ([`crate::monomorphize`]) has run;
     /// generic functions/structs carry `metadata["mono_instances"]`.
     Monomorphized,
+    /// Web-framework routes ([`crate::framework_routes`]) have been detected
+    /// and annotated onto handler `Function` nodes as `metadata["route.method"]`,
+    /// `metadata["route.path"]`, and `metadata["route.framework"]`.
+    FrameworkRoutesDetected,
 }
 
 /// Set of flags currently true on the graph.

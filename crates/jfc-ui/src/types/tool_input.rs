@@ -297,6 +297,7 @@ mod tests {
             command: "ls".into(),
             timeout: None,
             workdir: Some("/tmp".into()),
+            run_in_background: None,
         };
         assert_eq!(i.summary(), "ls in /tmp");
     }
@@ -307,6 +308,7 @@ mod tests {
             command: "ls -la".into(),
             timeout: None,
             workdir: None,
+            run_in_background: None,
         };
         assert_eq!(i.summary(), "ls -la");
     }
@@ -756,11 +758,13 @@ mod tests {
             command: "echo hi".into(),
             timeout: Some(5_000),
             workdir: Some("/tmp".into()),
+            run_in_background: Some(true),
         };
         let v = i.to_value();
         assert_eq!(v["command"], "echo hi");
         assert_eq!(v["timeout"], 5_000);
         assert_eq!(v["workdir"], "/tmp");
+        assert_eq!(v["run_in_background"], true);
     }
 
     #[test]
@@ -769,11 +773,55 @@ mod tests {
             command: "ls".into(),
             timeout: None,
             workdir: None,
+            run_in_background: None,
         };
         let v = i.to_value();
         assert_eq!(v["command"], "ls");
         assert!(v.get("timeout").is_none());
         assert!(v.get("workdir").is_none());
+        assert!(v.get("run_in_background").is_none());
+    }
+
+    #[test]
+    fn tool_input_from_value_bash_preserves_run_in_background_regression() {
+        let v = serde_json::json!({
+            "command": "sleep 10",
+            "run_in_background": true
+        });
+        let input = ToolInput::from_value("Bash", v).expect("parse Bash input");
+        match input {
+            ToolInput::Bash {
+                command,
+                run_in_background,
+                ..
+            } => {
+                assert_eq!(command, "sleep 10");
+                assert_eq!(run_in_background, Some(true));
+            }
+            other => panic!("expected Bash input, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tool_input_bash_output_roundtrips_regression() {
+        let v = serde_json::json!({
+            "task_id": "bash_123",
+            "offset": 2,
+            "limit": 5
+        });
+        let input = ToolInput::from_value("BashOutput", v).expect("parse BashOutput input");
+        match input {
+            ToolInput::BashOutput {
+                task_id,
+                offset,
+                limit,
+            } => {
+                assert_eq!(task_id, "bash_123");
+                assert_eq!(offset, Some(2));
+                assert_eq!(limit, Some(5));
+            }
+            other => panic!("expected BashOutput input, got {other:?}"),
+        }
     }
 
     #[test]

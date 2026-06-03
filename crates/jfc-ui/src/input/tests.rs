@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use super::navigation::{scan_path_refs, user_prompts};
 use super::*;
 use crate::app::App;
-use crate::runtime::{AppEvent, ToolEvent, UiEvent};
+use crate::runtime::{AppEvent, ToolEvent};
 #[allow(unused_imports)]
 use crate::types::*;
 use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
@@ -96,6 +96,7 @@ fn make_tool(id: &str, kind: ToolKind) -> ToolCall {
             command: "ls".into(),
             timeout: None,
             workdir: None,
+            run_in_background: None,
         },
         ToolKind::Read => ToolInput::Read {
             file_path: "x".into(),
@@ -128,6 +129,7 @@ fn make_bash_tool(id: &str, command: &str) -> ToolCall {
             command: command.into(),
             timeout: None,
             workdir: None,
+            run_in_background: None,
         },
         output: ToolOutput::Empty,
         display: crate::types::ToolDisplayState::DEFAULT,
@@ -318,6 +320,7 @@ fn collect_recent_paths_dedups_normal() {
             command: "echo".into(),
             timeout: None,
             workdir: None,
+            run_in_background: None,
         },
         output: ToolOutput::Command {
             stdout: "src/lib.rs:1 and src/lib.rs:1".into(),
@@ -1049,6 +1052,7 @@ async fn jump_armed_e_jumps_to_error_normal() {
                     command: "x".into(),
                     timeout: None,
                     workdir: None,
+                    run_in_background: None,
                 },
                 output: ToolOutput::Empty,
                 display: crate::types::ToolDisplayState::DEFAULT,
@@ -2134,6 +2138,23 @@ async fn enter_queues_when_streaming_normal() {
     assert_eq!(app.queued_prompts.len(), 1);
     assert_eq!(app.queued_prompts[0].text, "ask");
     assert!(!app.queued_prompts[0].is_meta);
+}
+
+#[tokio::test]
+async fn direct_submit_queues_during_compaction_regression() {
+    let mut app = test_app();
+    app.compacting_started_at = Some(std::time::Instant::now());
+    let (tx, _rx) = channel();
+
+    submit::handle_submit(&mut app, "after compact".into(), &tx)
+        .await
+        .unwrap();
+
+    assert_eq!(app.queued_prompts.len(), 1);
+    assert_eq!(app.queued_prompts[0].text, "after compact");
+    assert!(!app.queued_prompts[0].is_meta);
+    assert!(app.messages.iter().all(|message| message.queued));
+    assert!(!app.is_streaming);
 }
 
 #[tokio::test]

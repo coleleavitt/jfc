@@ -67,6 +67,15 @@ pub(super) async fn handle_submit(
         expanded
     };
 
+    if app.compacting_started_at.is_some() {
+        tracing::info!(
+            target: "jfc::ui::queue",
+            "handle_submit: compaction active — queueing prompt instead of starting stream"
+        );
+        super::key_dispatch::queue_prompt_for_later(app, text);
+        return Ok(());
+    }
+
     tracing::info!(
         target: "jfc::input",
         text_len = text.len(),

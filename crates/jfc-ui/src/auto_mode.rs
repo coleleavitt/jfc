@@ -419,6 +419,7 @@ mod tests {
                 command: cmd.into(),
                 timeout: None,
                 workdir: None,
+                run_in_background: None,
             },
             output: ToolOutput::Empty,
             display: crate::types::ToolDisplayState::Collapsed,

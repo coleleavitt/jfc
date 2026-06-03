@@ -207,6 +207,9 @@ fn is_read_only(kind: &ToolKind) -> bool {
             | ToolKind::GraphExplore
             | ToolKind::GraphStatus
             | ToolKind::GraphFiles
+            | ToolKind::GetProgramSlice
+            | ToolKind::GetDataDependencies
+            | ToolKind::TaintFlow
             | ToolKind::CodeIndex
             | ToolKind::TaskList
             | ToolKind::TaskGet
@@ -315,6 +318,7 @@ mod tests {
             command: cmd.to_string(),
             timeout: None,
             workdir: None,
+            run_in_background: None,
         }
     }
 

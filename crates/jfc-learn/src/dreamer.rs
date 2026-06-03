@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::LearnError;
 use crate::historian::CandidateFact;
+use crate::variant_selector::{PromptVariant, Teleprompter, VariantEvaluator};
 use crate::verifier::{LlmVerifier, PromotionVerifier, VerifierVerdict};
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -29,6 +30,20 @@ pub enum DreamerTask {
     ArchiveStale,
     Improve,
     MaintainDocs,
+    /// Run the DSPy-style prompt/policy compiler: score the configured
+    /// candidate variants against their eval set and select the best. A no-op
+    /// unless [`Dreamer::with_prompt_compile`] was set.
+    CompilePrompts,
+}
+
+/// Configuration for [`DreamerTask::CompilePrompts`]: the candidate variants,
+/// the eval fixtures (held by the [`Teleprompter`]), and the evaluator that
+/// scores them. The evaluator wraps an LLM run + the
+/// [`crate::verifier::PromotionVerifier`] contracts in production.
+pub struct PromptCompileJob {
+    pub teleprompter: Teleprompter,
+    pub variants: Vec<PromptVariant>,
+    pub evaluator: Box<dyn VariantEvaluator + Send + Sync>,
 }
 
 /// A lease granting exclusive access to the dreamer cycle.
@@ -75,6 +90,9 @@ pub struct Dreamer {
     /// a no-op. Used by the end-to-end learning test and by callers that
     /// want a deterministic doc-maintenance side-effect without an LLM.
     pub project_root: Option<PathBuf>,
+    /// When set, [`DreamerTask::CompilePrompts`] runs the prompt/policy
+    /// compiler. `None` makes that task a no-op.
+    pub prompt_compile: Option<PromptCompileJob>,
 }
 
 impl Dreamer {
@@ -82,7 +100,16 @@ impl Dreamer {
         Self {
             lease_path,
             project_root: None,
+            prompt_compile: None,
         }
+    }
+
+    /// Builder hook: configure the prompt/policy compiler so
+    /// [`DreamerTask::CompilePrompts`] selects the best variant against its
+    /// eval set during a cycle.
+    pub fn with_prompt_compile(mut self, job: PromptCompileJob) -> Self {
+        self.prompt_compile = Some(job);
+        self
     }
 
     /// Builder hook: bind a project root so `maintain_docs` actually writes
@@ -117,6 +144,7 @@ impl Dreamer {
                 DreamerTask::Verify => self.verify(),
                 DreamerTask::Improve => self.improve(),
                 DreamerTask::MaintainDocs => self.maintain_docs(memories),
+                DreamerTask::CompilePrompts => self.compile_prompts(),
             };
             let duration_ms = now_ms() - start;
 
@@ -146,6 +174,34 @@ impl Dreamer {
             tasks_run: results,
             circuit_breaker_fired: false,
         })
+    }
+
+    /// CompilePrompts: score the configured candidate prompt/policy variants
+    /// against their eval set and select the winner. Returns the number of
+    /// variants evaluated (the "actions taken" for the cycle report). A no-op
+    /// returning `Ok(0)` when no [`PromptCompileJob`] is configured.
+    fn compile_prompts(&self) -> Result<usize, LearnError> {
+        let Some(job) = &self.prompt_compile else {
+            return Ok(0);
+        };
+        let report = job
+            .teleprompter
+            .compile(&job.variants, job.evaluator.as_ref());
+        if let Some(winner) = &report.winner {
+            tracing::info!(
+                target: "jfc::learn::dreamer",
+                winner = %winner,
+                variants = report.ranked.len(),
+                "prompt compile selected best variant"
+            );
+        } else {
+            tracing::warn!(
+                target: "jfc::learn::dreamer",
+                variants = report.ranked.len(),
+                "prompt compile found no qualifying variant"
+            );
+        }
+        Ok(report.ranked.len())
     }
 
     /// Consolidate: find duplicate memories by normalized_hash within same category, archive dupes.
@@ -487,6 +543,59 @@ mod tests {
         // We need consecutive failures. Since we can't easily force stub failures,
         // let's test the circuit breaker logic by checking that the threshold constant is 3.
         assert_eq!(CIRCUIT_BREAKER_THRESHOLD, 3);
+    }
+
+    // Normal: CompilePrompts is a no-op (Ok(0)) when no job is configured.
+    #[test]
+    fn compile_prompts_noop_without_job_normal() {
+        let tmp = TempDir::new().unwrap();
+        let dreamer = Dreamer::new(tmp.path().join("d.lock"));
+        let mut memories = Vec::new();
+        let report = dreamer
+            .run_cycle(&[DreamerTask::CompilePrompts], &mut memories)
+            .unwrap();
+        assert_eq!(report.tasks_run[0].actions_taken, 0);
+        assert!(report.tasks_run[0].error.is_none());
+    }
+
+    // Robust: with a configured job, CompilePrompts runs the teleprompter and
+    // reports the variants it evaluated.
+    #[test]
+    fn compile_prompts_runs_configured_job_robust() {
+        use crate::variant_selector::{CaseOutcome, EvalCase, PromptVariant};
+
+        struct PickB;
+        impl VariantEvaluator for PickB {
+            fn evaluate(&self, variant: &PromptVariant, _case: &EvalCase) -> CaseOutcome {
+                let score = if variant.name == "b" { 0.9 } else { 0.2 };
+                CaseOutcome {
+                    score,
+                    passed: score >= 0.5,
+                    violated_constraint: false,
+                }
+            }
+        }
+
+        let tmp = TempDir::new().unwrap();
+        let job = PromptCompileJob {
+            teleprompter: Teleprompter::new(vec![EvalCase {
+                name: "c1".into(),
+                input: "i".into(),
+                expected: "o".into(),
+            }]),
+            variants: vec![
+                PromptVariant { name: "a".into(), system_prompt: "pa".into() },
+                PromptVariant { name: "b".into(), system_prompt: "pb".into() },
+            ],
+            evaluator: Box::new(PickB),
+        };
+        let dreamer = Dreamer::new(tmp.path().join("d.lock")).with_prompt_compile(job);
+        let mut memories = Vec::new();
+        let report = dreamer
+            .run_cycle(&[DreamerTask::CompilePrompts], &mut memories)
+            .unwrap();
+        assert_eq!(report.tasks_run[0].actions_taken, 2, "both variants scored");
+        assert!(report.tasks_run[0].error.is_none());
     }
 
     #[test]

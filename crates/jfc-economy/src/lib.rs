@@ -15,6 +15,7 @@ pub mod charter;
 pub mod collusion;
 pub mod ledger;
 pub mod orchestrator;
+pub mod rate_limiter;
 pub mod reporting;
 pub mod settlement;
 pub mod solver;

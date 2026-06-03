@@ -15,9 +15,107 @@ pub fn graph_tool_defs() -> Vec<ToolDef> {
         graph_grep_def(),
         graph_status_def(),
         graph_files_def(),
+        get_program_slice_def(),
+        get_data_dependencies_def(),
+        taint_flow_def(),
         run_coverage_def(),
         symbol_edit_def(),
     ]
+}
+
+fn get_program_slice_def() -> ToolDef {
+    ToolDef {
+        name: "get_program_slice".into(),
+        description: "Compute a program SLICE around a symbol: every function whose behaviour can \
+            affect the value it computes (backward, the default) or that it can influence \
+            (forward). Backed by interprocedural points-to dataflow over the code graph. A \
+            backward slice is the ~90%-smaller set of code you actually need to read to understand \
+            how a value is produced — prefer it over reading whole files when chasing a bug to its \
+            root. Each result is annotated `name (file:line)` so you can jump straight to source."
+            .into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "Symbol name or qualified path to slice around (e.g. `parse_config`)."
+                },
+                "backward": {
+                    "type": "boolean",
+                    "description": "true (default) = what can AFFECT this symbol; false = what this symbol can INFLUENCE."
+                },
+                "max_nodes": {
+                    "type": "number",
+                    "description": "Maximum slice nodes to render (default 40)."
+                }
+            },
+            "required": ["symbol"]
+        }),
+    }
+}
+
+fn get_data_dependencies_def() -> ToolDef {
+    ToolDef {
+        name: "get_data_dependencies".into(),
+        description: "List the DIRECT data dependencies of a symbol — the functions whose values \
+            flow into it, via interprocedural points-to analysis over the code graph. Narrower \
+            than get_program_slice (one hop, not the transitive closure): use it to answer \
+            \"what does this function's result actually depend on?\" Each dependency is annotated \
+            `name (file:line)`."
+            .into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "Symbol name or qualified path to find data dependencies of."
+                },
+                "max_nodes": {
+                    "type": "number",
+                    "description": "Maximum dependencies to render (default 40)."
+                }
+            },
+            "required": ["symbol"]
+        }),
+    }
+}
+
+fn taint_flow_def() -> ToolDef {
+    ToolDef {
+        name: "taint_flow".into(),
+        description: "Trace TAINT flows from source functions to sink functions across the code \
+            graph: does a value from any `sources` reach any `sinks`, and was it sanitized on the \
+            way? Sources are untrusted-input functions, sinks are dangerous operations, sanitizers \
+            neutralise taint. Unsanitized flows are flagged ⚠. Each flow renders its full \
+            source→…→sink path with `file:line` annotations. Use to audit whether user input can \
+            reach a dangerous operation. `max_paths` caps the output."
+            .into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "sources": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Source symbol names (untrusted input), e.g. [\"read_request_body\"]."
+                },
+                "sinks": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Sink symbol names (dangerous ops), e.g. [\"execute_sql\"]."
+                },
+                "sanitizers": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Optional sanitizer symbol names that neutralise taint on a path."
+                },
+                "max_paths": {
+                    "type": "number",
+                    "description": "Maximum taint flows to render (default 20)."
+                }
+            },
+            "required": ["sources", "sinks"]
+        }),
+    }
 }
 
 fn code_index_def() -> ToolDef {

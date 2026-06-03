@@ -93,9 +93,13 @@ impl NodeId {
 /// | `coverage_tested` | [`CoveragePass`] | `"true"/"false"` | Whether coverage_count > 0 |
 /// | `possible_input_types` | [`PossibleTypesPass`] | JSON string array | Types that can flow into fn |
 /// | `possible_return_types` | [`PossibleTypesPass`] | JSON string array | Types fn can produce |
+/// | `route.method` | [`FrameworkRoutesPass`] | HTTP verb / `ANY` | Method of the route this fn handles |
+/// | `route.path` | [`FrameworkRoutesPass`] | string | URL path of the route this fn handles |
+/// | `route.framework` | [`FrameworkRoutesPass`] | string | Detected declaration style (axum/express/…) |
 ///
 /// [`CoveragePass`]: crate::coverage::CoveragePass
 /// [`PossibleTypesPass`]: crate::possible_types::PossibleTypesPass
+/// [`FrameworkRoutesPass`]: crate::framework_routes::FrameworkRoutesPass
 ///
 /// ## Revision tracking
 ///

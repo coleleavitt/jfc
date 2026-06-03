@@ -103,6 +103,7 @@ impl Drop for PendingGuard {
 }
 
 pub struct LspClient {
+    _child: Option<Child>,
     stdin_tx: UnboundedSender<Vec<u8>>,
     next_id: AtomicU64,
     pending: PendingRequests,
@@ -372,6 +373,7 @@ impl LspClient {
         });
 
         let client = Self {
+            _child: Some(child),
             stdin_tx,
             next_id: AtomicU64::new(1),
             pending,
@@ -796,6 +798,7 @@ mod tests {
     fn fresh_client() -> LspClient {
         let (tx, _rx) = mpsc::unbounded_channel::<Vec<u8>>();
         LspClient {
+            _child: None,
             stdin_tx: tx,
             next_id: AtomicU64::new(1),
             pending: Arc::new(Mutex::new(HashMap::new())),
