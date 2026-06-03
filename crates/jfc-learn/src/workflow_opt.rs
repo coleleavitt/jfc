@@ -88,6 +88,103 @@ impl WorkflowVariant {
             _ => None,
         })
     }
+
+    /// Compile this variant into a runnable workflow script for the live
+    /// `jfc-ui` workflow engine (`workflows/engine.rs`).
+    ///
+    /// This closes the AFlow loop: optimise a variant offline, then compile the
+    /// winner into the same `export const meta = {…}` + `phase()/agent()/parallel()`
+    /// form the engine's boa sandbox executes. Each operator becomes a step
+    /// threading a `current` answer variable:
+    /// - `Generate`   → `agent(task)`
+    /// - `Ensemble(n)`→ `parallel([n × agent(task)])`, keeping the first result
+    /// - `Review`     → `agent('critique the current answer …')`
+    /// - `Revise`     → `agent('revise the answer using the critique …')`
+    ///
+    /// `name` is the workflow's registry name; `task` is the JS string literal
+    /// body of the task prompt (callers should pass an already-escaped literal,
+    /// e.g. via [`escape_js_string`]).
+    pub fn to_workflow_script(&self, name: &str, task: &str) -> String {
+        let task_lit = escape_js_string(task);
+        let mut body = String::new();
+        body.push_str(&format!(
+            "export const meta = {{\n  name: '{}',\n  description: 'AFlow-compiled workflow ({} ops, {} llm calls)',\n  phases: [\n    {{ title: 'Solve' }},\n  ],\n}}\n",
+            escape_js_ident(name),
+            self.ops.len(),
+            self.llm_calls(),
+        ));
+        body.push_str("phase('Solve')\n");
+        body.push_str(&format!("const task = '{task_lit}'\n"));
+        body.push_str("let current = null\n");
+
+        for (i, op) in self.ops.iter().enumerate() {
+            match op {
+                WorkflowOp::Generate => {
+                    body.push_str("current = await agent(task)\n");
+                }
+                WorkflowOp::Ensemble(n) => {
+                    let arms = (0..*n)
+                        .map(|k| format!("() => agent(task, {{ label: 'ensemble:{k}' }})"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    body.push_str(&format!("const ensemble{i} = await parallel([{arms}])\n"));
+                    body.push_str(&format!(
+                        "current = ensemble{i}.filter(Boolean)[0] || current\n"
+                    ));
+                }
+                WorkflowOp::Review => {
+                    body.push_str(&format!(
+                        "const review{i} = await agent('Critique this answer to the task; list concrete problems.\\n\\nTask: ' + task + '\\n\\nAnswer: ' + (current || ''))\n"
+                    ));
+                    body.push_str(&format!("current = current; void review{i}\n"));
+                }
+                WorkflowOp::Revise => {
+                    // Revise consumes the most recent review variable if present.
+                    let review_ref = self
+                        .ops
+                        .iter()
+                        .enumerate()
+                        .take(i)
+                        .rev()
+                        .find_map(|(j, o)| matches!(o, WorkflowOp::Review).then_some(j));
+                    match review_ref {
+                        Some(j) => body.push_str(&format!(
+                            "current = await agent('Revise the answer using the critique.\\n\\nTask: ' + task + '\\n\\nAnswer: ' + (current || '') + '\\n\\nCritique: ' + review{j})\n"
+                        )),
+                        None => body.push_str(
+                            "current = await agent('Revise and improve the answer.\\n\\nTask: ' + task + '\\n\\nAnswer: ' + (current || ''))\n",
+                        ),
+                    }
+                }
+            }
+        }
+        body.push_str("return { answer: current }\n");
+        body
+    }
+}
+
+/// Escape a string for embedding inside a single-quoted JS string literal in a
+/// compiled workflow script: backslash, single-quote, and newlines.
+pub fn escape_js_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Escape a workflow name for use as a JS identifier-ish literal (strip quotes
+/// and control chars that would break the `meta` block).
+fn escape_js_ident(s: &str) -> String {
+    s.chars()
+        .filter(|c| !matches!(c, '\'' | '\\' | '\n' | '\r'))
+        .collect()
 }
 
 /// One held-out evaluation task.
@@ -431,5 +528,75 @@ mod tests {
         ]);
         // 1 + 3 + 1 + 1 = 6
         assert_eq!(v.llm_calls(), 6);
+    }
+
+    // Normal: the compiler emits a runnable script — meta header, a Solve phase,
+    // one agent() generation, and a return — preserving operator order.
+    #[test]
+    fn compile_emits_runnable_script_normal() {
+        let v = WorkflowVariant::from_ops(vec![
+            WorkflowOp::Generate,
+            WorkflowOp::Review,
+            WorkflowOp::Revise,
+        ]);
+        let script = v.to_workflow_script("solver", "fix the bug");
+
+        // Required engine contract: starts with the meta block.
+        assert!(script.starts_with("export const meta = {"));
+        assert!(script.contains("name: 'solver'"));
+        assert!(script.contains("phase('Solve')"));
+        // Generation, review, and a revise that references the review variable.
+        assert!(script.contains("current = await agent(task)"));
+        assert!(script.contains("const review1 = await agent("));
+        assert!(script.contains("review1)")); // revise consumes review1
+        assert!(script.trim_end().ends_with("return { answer: current }"));
+
+        // Operator order is preserved: generate before review before revise.
+        let gen_pos = script.find("agent(task)").unwrap();
+        let review = script.find("const review1").unwrap();
+        let revise = script.rfind("Revise the answer").unwrap();
+        assert!(gen_pos < review && review < revise);
+    }
+
+    // Normal: an Ensemble(n) op compiles to a parallel() of n agent arms.
+    #[test]
+    fn compile_ensemble_emits_parallel_arms_normal() {
+        let v = WorkflowVariant::from_ops(vec![WorkflowOp::Generate, WorkflowOp::Ensemble(3)]);
+        let script = v.to_workflow_script("ens", "task");
+        assert!(script.contains("await parallel(["));
+        // Three ensemble arms.
+        assert_eq!(script.matches("agent(task, { label: 'ensemble:").count(), 3);
+    }
+
+    // Robust: the task literal is escaped so quotes/newlines can't break out of
+    // the JS string (no injection into the compiled script).
+    #[test]
+    fn compile_escapes_task_literal_robust() {
+        let v = WorkflowVariant::seed();
+        let script = v.to_workflow_script("x", "it's a \\ test\nwith newline");
+        // The raw unescaped sequence must not appear; the escaped form must.
+        assert!(script.contains("const task = 'it\\'s a \\\\ test\\nwith newline'"));
+        // Exactly one task assignment line, and it is single-quote balanced.
+        let task_line = script.lines().find(|l| l.starts_with("const task = ")).unwrap();
+        // Unescaped single quotes (not preceded by a backslash) only at the two
+        // delimiters.
+        let raw_quotes = task_line
+            .char_indices()
+            .filter(|(i, c)| *c == '\'' && (*i == 0 || task_line.as_bytes()[i - 1] != b'\\'))
+            .count();
+        assert_eq!(raw_quotes, 2, "delimiter quotes only: {task_line}");
+    }
+
+    // Normal: the optimizer's winning variant compiles to a script (end-to-end
+    // AFlow: optimise → compile).
+    #[test]
+    fn optimized_variant_compiles_end_to_end_normal() {
+        let eval = DiminishingReturns;
+        let opt = WorkflowOptimizer::new(tasks(2), &eval, 0.02);
+        let best = opt.optimize(WorkflowVariant::seed(), 12).best;
+        let script = best.to_workflow_script("aflow_best", "solve it");
+        assert!(script.starts_with("export const meta = {"));
+        // The winner has 3 refine rounds → 3 revise agent calls in the script.
+        assert_eq!(script.matches("Revise the answer").count(), 3);
     }
 }

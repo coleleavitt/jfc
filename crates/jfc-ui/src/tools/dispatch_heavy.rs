@@ -158,6 +158,7 @@ pub(super) fn execute_graph_context(
         max_nodes: max_nodes.unwrap_or(20).clamp(1, 100),
         include_code: include_code.unwrap_or(true),
         traversal_depth: 1,
+        ..Default::default()
     };
     let result = session.context(&task, opts);
     if wants_json(format) {

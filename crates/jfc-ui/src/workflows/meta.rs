@@ -230,4 +230,47 @@ const results = await agent('Find bugs')
         let big = "x".repeat(MAX_SCRIPT_SIZE + 1);
         assert!(validate_script(&big).is_err());
     }
+
+    // End-to-end AFlow proof: a WorkflowVariant compiled by the offline
+    // optimizer (jfc-learn) produces a script the LIVE engine parser + validator
+    // accept. This is the cross-crate check that the compiler's output is
+    // actually runnable, not just structurally self-consistent.
+    #[test]
+    fn aflow_compiled_variant_parses_and_validates_normal() {
+        use jfc_learn::{WorkflowOp, WorkflowVariant};
+
+        let variant = WorkflowVariant::from_ops(vec![
+            WorkflowOp::Generate,
+            WorkflowOp::Ensemble(3),
+            WorkflowOp::Review,
+            WorkflowOp::Revise,
+        ]);
+        let script = variant.to_workflow_script("aflow-solver", "fix the failing test");
+
+        // The real engine meta-parser accepts it and recovers the metadata.
+        let (meta, body) = parse_meta(&script).expect("compiled script must parse");
+        assert_eq!(meta.name, "aflow-solver");
+        assert_eq!(meta.phases.len(), 1);
+        assert_eq!(meta.phases[0].title, "Solve");
+        assert!(body.contains("phase('Solve')"));
+        assert!(body.contains("await parallel(["));
+
+        // The real determinism/size validator accepts it (no Date.now/Math.random,
+        // under the size cap).
+        validate_script(&script).expect("compiled script must validate");
+    }
+
+    // Robust: a task prompt containing JS-breaking characters compiles to a
+    // script that STILL parses + validates (escaping holds through the engine).
+    #[test]
+    fn aflow_compiled_variant_escapes_safely_robust() {
+        use jfc_learn::WorkflowVariant;
+        let variant = WorkflowVariant::seed();
+        let script =
+            variant.to_workflow_script("esc", "handle 'quotes' and \\ backslashes\nand newlines");
+        // Must still be a parseable, valid workflow despite the nasty task text.
+        let (meta, _body) = parse_meta(&script).expect("escaped script must parse");
+        assert_eq!(meta.name, "esc");
+        validate_script(&script).expect("escaped script must validate");
+    }
 }

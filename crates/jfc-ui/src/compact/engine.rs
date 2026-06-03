@@ -53,6 +53,56 @@ fn recency_preserve_floor(group_tokens: &[usize], window: usize) -> usize {
     retention.kept.len().clamp(1, total - 1)
 }
 
+/// Quantified before/after for the recency-weighted compaction floor.
+///
+/// The RCT finding is that maximally-aggressive compaction (preserve only the
+/// single newest group) backfires: the model re-derives the recent context it
+/// lost and writes *longer* outputs, raising total cost. The fix is the recency
+/// floor ([`recency_preserve_floor`]). This makes that claim measurable rather
+/// than asserted: it reports how many newest-context tokens the floor preserves
+/// verbatim on the first pass versus the old `preserve_count = 1` baseline.
+///
+/// Measurement-only (consumed by the recency tests), so it is `#[cfg(test)]`
+/// like the other compaction-policy probes in this module.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RecencyMeasurement {
+    /// Newest-context tokens preserved verbatim on the first pass with the
+    /// recency floor.
+    pub tokens_preserved_with_floor: usize,
+    /// Newest-context tokens preserved by the old `preserve_count = 1` policy
+    /// (just the last group).
+    pub tokens_preserved_baseline: usize,
+    /// Groups preserved with the floor (vs always 1 for the baseline).
+    pub groups_preserved_with_floor: usize,
+}
+
+#[cfg(test)]
+impl RecencyMeasurement {
+    /// Extra newest-context tokens kept verbatim by the floor — the headline
+    /// number. Larger = less recent detail thrown away on the first pass.
+    pub fn extra_recent_tokens_preserved(&self) -> usize {
+        self.tokens_preserved_with_floor
+            .saturating_sub(self.tokens_preserved_baseline)
+    }
+}
+
+/// Measure the recency floor against the `preserve_count = 1` baseline for an
+/// oldest-first `group_tokens` vector and a context `window`.
+#[cfg(test)]
+pub(crate) fn measure_recency_floor(group_tokens: &[usize], window: usize) -> RecencyMeasurement {
+    let total = group_tokens.len();
+    let sum_newest = |count: usize| -> usize {
+        group_tokens.iter().rev().take(count).sum()
+    };
+    let floor_groups = recency_preserve_floor(group_tokens, window);
+    RecencyMeasurement {
+        tokens_preserved_with_floor: sum_newest(floor_groups),
+        tokens_preserved_baseline: if total == 0 { 0 } else { sum_newest(1) },
+        groups_preserved_with_floor: floor_groups,
+    }
+}
+
 fn split_into_groups(messages: &[ChatMessage]) -> Vec<ConversationGroup> {
     let mut groups: Vec<ConversationGroup> = Vec::new();
     let mut current = Vec::new();
@@ -1369,6 +1419,32 @@ mod level_tests {
     fn recency_preserve_floor_keeps_recent_groups_normal() {
         let group_tokens = vec![100usize, 100, 100, 100, 100];
         assert_eq!(recency_preserve_floor(&group_tokens, 1000), 3);
+    }
+
+    // Normal: the recency floor preserves strictly MORE newest-context tokens
+    // than the old preserve_count=1 baseline — the measured RCT win. 5 groups of
+    // 100 tokens, window 1000 (budget 300) → floor keeps 3 groups (300 tokens)
+    // vs the baseline's 1 group (100 tokens): +200 recent tokens kept verbatim.
+    #[test]
+    fn measure_recency_floor_preserves_more_recent_tokens_normal() {
+        let group_tokens = vec![100usize, 100, 100, 100, 100];
+        let m = measure_recency_floor(&group_tokens, 1000);
+        assert_eq!(m.groups_preserved_with_floor, 3);
+        assert_eq!(m.tokens_preserved_with_floor, 300);
+        assert_eq!(m.tokens_preserved_baseline, 100);
+        assert_eq!(m.extra_recent_tokens_preserved(), 200);
+        // The direction is the whole point: the floor never preserves less.
+        assert!(m.tokens_preserved_with_floor >= m.tokens_preserved_baseline);
+    }
+
+    // Robust: when groups are huge relative to the window, the floor collapses
+    // to the baseline (1 group) and the measured win is 0 — no false positive.
+    #[test]
+    fn measure_recency_floor_no_win_when_groups_oversized_robust() {
+        let group_tokens = vec![5000usize, 5000, 5000];
+        let m = measure_recency_floor(&group_tokens, 100);
+        assert_eq!(m.groups_preserved_with_floor, 1);
+        assert_eq!(m.extra_recent_tokens_preserved(), 0);
     }
 
     // Robust: a tiny window still preserves at least one group and always leaves

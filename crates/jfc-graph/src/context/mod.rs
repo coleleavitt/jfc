@@ -19,6 +19,7 @@ pub mod clustering;
 pub mod dataflow_seed;
 pub mod expansion;
 pub mod heuristics;
+pub mod measure;
 pub mod render;
 pub mod resolver;
 pub mod retrieval_gate;
@@ -47,6 +48,10 @@ pub struct ContextOptions {
     pub include_code: bool,
     /// BFS expansion depth from entry points.
     pub traversal_depth: u8,
+    /// Force the related-node expansion even when the Repoformer retrieval gate
+    /// would abstain. Used to measure the gate's saved work (the pre-gate
+    /// baseline); normal callers leave this `false`.
+    pub force_expand: bool,
 }
 
 impl Default for ContextOptions {
@@ -55,6 +60,7 @@ impl Default for ContextOptions {
             max_nodes: 20,
             include_code: true,
             traversal_depth: 1,
+            force_expand: false,
         }
     }
 }
@@ -85,23 +91,7 @@ pub fn build_context(
     let budget = ExploreBudget::for_file_count(distinct_file_count(graph));
     let intent = classify_intent(task);
 
-    let name_entries = pick_entry_points(graph, task, opts.max_nodes / 4);
-
-    // DRACO (arXiv:2405.17337): augment the name-matched entry points with the
-    // cursor's *dataflow dependencies* — the type/return/call neighbours of the
-    // resolved symbols — so the context is seeded by what the code actually
-    // depends on, not just textual name matches. Bounded so the seeds can't
-    // crowd out the name entries.
-    let mut entry_points = name_entries.clone();
-    let draco_cap = (opts.max_nodes / 4).max(2);
-    for id in dataflow_seed::seed_from_nodes(graph, &name_entries, 1) {
-        if entry_points.len() >= name_entries.len() + draco_cap {
-            break;
-        }
-        if !entry_points.contains(&id) {
-            entry_points.push(id);
-        }
-    }
+    let entry_points = seed_entry_points(graph, task, opts.max_nodes);
 
     // Repoformer (arXiv:2403.10059) when-to-retrieve gating: if the entry points
     // are entirely self-contained (no cross-file / external edges), the
@@ -110,7 +100,10 @@ pub fn build_context(
     // latency on local-only queries. We still expand whenever any signal says
     // the local view is incomplete.
     let signal = compute_retrieval_signal(graph, &entry_points);
-    let mut related = if retrieval_gate::should_retrieve(&signal) {
+    // The gate decides whether expansion is worth it — unless a caller forces it
+    // (used by the measurement harness to capture the pre-gate baseline).
+    let do_expand = opts.force_expand || retrieval_gate::should_retrieve(&signal);
+    let mut related = if do_expand {
         expand_related(graph, &entry_points, opts.traversal_depth, opts.max_nodes)
     } else {
         Vec::new()
@@ -118,7 +111,7 @@ pub fn build_context(
 
     // Type hierarchy fills in parent traits + sibling implementors that
     // BFS alone may miss when its budget gets eaten by Contains edges.
-    if retrieval_gate::should_retrieve(&signal) {
+    if do_expand {
         let hierarchy_budget = (opts.max_nodes / 4).max(2);
         let hierarchy = expansion::expand_type_hierarchy(graph, &entry_points, hierarchy_budget);
         for id in hierarchy.nodes {
@@ -171,6 +164,29 @@ pub fn build_context(
         intent,
         budget,
     }
+}
+
+/// Resolve the entry points for a task: name matches, then DRACO dataflow
+/// seeding.
+///
+/// DRACO (arXiv:2405.17337): augment the name-matched entry points with the
+/// cursor's *dataflow dependencies* — the type/return/call neighbours of the
+/// resolved symbols — so the context is seeded by what the code actually
+/// depends on, not just textual name matches. The DRACO seeds are bounded so
+/// they can't crowd out the name entries.
+fn seed_entry_points(graph: &CodeGraph, task: &str, max_nodes: usize) -> Vec<NodeId> {
+    let name_entries = pick_entry_points(graph, task, max_nodes / 4);
+    let mut entry_points = name_entries.clone();
+    let draco_cap = (max_nodes / 4).max(2);
+    for id in dataflow_seed::seed_from_nodes(graph, &name_entries, 1) {
+        if entry_points.len() >= name_entries.len() + draco_cap {
+            break;
+        }
+        if !entry_points.contains(&id) {
+            entry_points.push(id);
+        }
+    }
+    entry_points
 }
 
 /// Compute a [`RetrievalSignal`] for a set of entry points: count how many of
