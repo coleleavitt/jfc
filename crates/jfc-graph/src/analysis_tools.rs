@@ -21,13 +21,51 @@
 
 use crate::graph::CodeGraph;
 use crate::ir_map::build_ir_map;
-use crate::nodes::NodeId;
+use crate::nodes::{NodeId, NodeKind};
 use crate::slicing::{PointsToOracle, backward_slice, forward_slice};
+use crate::taint_naming::classify_name;
 use crate::taint_v2::{TaintConfig, analyze as taint_analyze};
 
 /// Default hop cap for slice BFS — deep enough for real chains, bounded so a
 /// dense graph can't explode the output.
 const DEFAULT_SLICE_DEPTH: usize = 6;
+
+/// How many name-classified sources / sinks to auto-seed when the caller gives
+/// none. Bounded so the BFS over the points-to oracle stays cheap.
+const AUTO_SEED_LIMIT: usize = 12;
+
+/// Auto-classify every `Function` node by name ([`crate::taint_naming`]) and
+/// return the top source-leaning and sink-leaning node ids. This is the Fluffy
+/// naming heuristic made load-bearing: when an agent calls `taint_flow` without
+/// naming sources/sinks, the lexicon infers plausible ones (e.g. `read_input`
+/// as a source, `exec_sql` as a sink) so the tool is useful with zero config.
+fn auto_seed_sources_sinks(graph: &CodeGraph) -> (Vec<NodeId>, Vec<NodeId>) {
+    let mut sources: Vec<(f64, NodeId)> = Vec::new();
+    let mut sinks: Vec<(f64, NodeId)> = Vec::new();
+    for node in graph.nodes_by_kind(NodeKind::Function) {
+        let class = classify_name(&node.name);
+        if class.looks_like_source() {
+            sources.push((class.source_score, node.id.clone()));
+        }
+        if class.looks_like_sink() {
+            sinks.push((class.sink_score, node.id.clone()));
+        }
+    }
+    // Highest name-evidence first; stable id tiebreak for determinism.
+    let rank = |v: &mut Vec<(f64, NodeId)>| {
+        v.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.cmp(&b.1))
+        });
+    };
+    rank(&mut sources);
+    rank(&mut sinks);
+    (
+        sources.into_iter().take(AUTO_SEED_LIMIT).map(|(_, id)| id).collect(),
+        sinks.into_iter().take(AUTO_SEED_LIMIT).map(|(_, id)| id).collect(),
+    )
+}
 
 /// Resolve a symbol name to its function NodeIds (qualified-name aware), via
 /// the same matcher the context tools use.
@@ -156,14 +194,29 @@ pub fn taint_flow(
         }
         ids
     };
-    let source_ids = resolve_all(sources);
-    let sink_ids = resolve_all(sinks);
+    let mut source_ids = resolve_all(sources);
+    let mut sink_ids = resolve_all(sinks);
     let sanitizer_ids = resolve_all(sanitizers);
 
+    // Fluffy auto-seed: if the caller named no sources/sinks, infer them from
+    // identifier naming so `taint_flow` is useful with zero configuration.
+    let mut auto_seeded = false;
+    if source_ids.is_empty() && sink_ids.is_empty() {
+        let (auto_src, auto_sink) = auto_seed_sources_sinks(graph);
+        source_ids = auto_src;
+        sink_ids = auto_sink;
+        auto_seeded = true;
+    }
+
     if source_ids.is_empty() || sink_ids.is_empty() {
+        let hint = if auto_seeded {
+            " (none could be inferred from function names either — name them explicitly)"
+        } else {
+            ""
+        };
         return format!(
             "taint_flow needs at least one resolvable source and sink \
-             (resolved {} source(s), {} sink(s)).",
+             (resolved {} source(s), {} sink(s)){hint}.",
             source_ids.len(),
             sink_ids.len()
         );
@@ -179,11 +232,20 @@ pub fn taint_flow(
     let flows = taint_analyze(graph, &oracle, &config);
 
     let total = flows.len();
+    let seed_note = if auto_seeded {
+        format!(
+            " (auto-seeded {} source / {} sink functions by name)",
+            source_ids.len(),
+            sink_ids.len()
+        )
+    } else {
+        String::new()
+    };
     if total == 0 {
-        return "No source→sink taint flows found.".to_string();
+        return format!("No source→sink taint flows found{seed_note}.");
     }
     let mut out = format!(
-        "{total} taint flow{} found:\n",
+        "{total} taint flow{} found{seed_note}:\n",
         if total == 1 { "" } else { "s" }
     );
     for flow in flows.iter().take(max_paths) {
@@ -298,5 +360,45 @@ mod tests {
         let g = CodeGraph::new();
         let out = data_dependencies(&g, "ghost", 20);
         assert!(out.contains("No symbol matching"));
+    }
+
+    // Normal: with NO named sources/sinks, taint_flow auto-seeds from function
+    // naming (Fluffy) — `read_user_input` is inferred as a source and
+    // `exec_command` as a sink, so the tool runs instead of erroring out.
+    #[test]
+    fn taint_flow_auto_seeds_from_naming_normal() {
+        let src = "pub fn read_user_input() {}\npub fn exec_command() {}\n";
+        let path = write_temp("taint_seed.rs", src);
+        let mut g = CodeGraph::new();
+        g.add_node(fn_node(&path, "read_user_input", src, "fn read_user_input"));
+        g.add_node(fn_node(&path, "exec_command", src, "fn exec_command"));
+
+        // Empty sources AND sinks -> auto-seed path.
+        let out = taint_flow(&g, &[], &[], &[], 5);
+        // It must NOT fall back to the "needs a source and sink" error, since
+        // naming inferred both. Either it finds flows or reports none found —
+        // both carry the auto-seed note.
+        assert!(
+            out.contains("auto-seeded"),
+            "expected auto-seed note, got: {out}"
+        );
+        assert!(!out.contains("needs at least one resolvable"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // Robust: auto-seed with no name-classifiable functions still explains the
+    // failure clearly (and notes the inference was attempted).
+    #[test]
+    fn taint_flow_auto_seed_no_candidates_robust() {
+        let src = "pub fn alpha() {}\npub fn beta() {}\n";
+        let path = write_temp("taint_noseed.rs", src);
+        let mut g = CodeGraph::new();
+        g.add_node(fn_node(&path, "alpha", src, "fn alpha"));
+        g.add_node(fn_node(&path, "beta", src, "fn beta"));
+
+        let out = taint_flow(&g, &[], &[], &[], 5);
+        assert!(out.contains("needs at least one resolvable source and sink"));
+        assert!(out.contains("inferred from function names"));
+        let _ = std::fs::remove_file(&path);
     }
 }

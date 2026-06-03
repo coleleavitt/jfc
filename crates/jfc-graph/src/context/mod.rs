@@ -85,17 +85,46 @@ pub fn build_context(
     let budget = ExploreBudget::for_file_count(distinct_file_count(graph));
     let intent = classify_intent(task);
 
-    let entry_points = pick_entry_points(graph, task, opts.max_nodes / 4);
+    let name_entries = pick_entry_points(graph, task, opts.max_nodes / 4);
 
-    let mut related = expand_related(graph, &entry_points, opts.traversal_depth, opts.max_nodes);
+    // DRACO (arXiv:2405.17337): augment the name-matched entry points with the
+    // cursor's *dataflow dependencies* — the type/return/call neighbours of the
+    // resolved symbols — so the context is seeded by what the code actually
+    // depends on, not just textual name matches. Bounded so the seeds can't
+    // crowd out the name entries.
+    let mut entry_points = name_entries.clone();
+    let draco_cap = (opts.max_nodes / 4).max(2);
+    for id in dataflow_seed::seed_from_nodes(graph, &name_entries, 1) {
+        if entry_points.len() >= name_entries.len() + draco_cap {
+            break;
+        }
+        if !entry_points.contains(&id) {
+            entry_points.push(id);
+        }
+    }
+
+    // Repoformer (arXiv:2403.10059) when-to-retrieve gating: if the entry points
+    // are entirely self-contained (no cross-file / external edges), the
+    // expensive BFS + type-hierarchy expansion is unlikely to add value, so we
+    // abstain from it and return just the entry points. This cuts graph_context
+    // latency on local-only queries. We still expand whenever any signal says
+    // the local view is incomplete.
+    let signal = compute_retrieval_signal(graph, &entry_points);
+    let mut related = if retrieval_gate::should_retrieve(&signal) {
+        expand_related(graph, &entry_points, opts.traversal_depth, opts.max_nodes)
+    } else {
+        Vec::new()
+    };
 
     // Type hierarchy fills in parent traits + sibling implementors that
     // BFS alone may miss when its budget gets eaten by Contains edges.
-    let hierarchy_budget = (opts.max_nodes / 4).max(2);
-    let hierarchy = expansion::expand_type_hierarchy(graph, &entry_points, hierarchy_budget);
-    for id in hierarchy.nodes {
-        if !related.contains(&id) && !entry_points.contains(&id) {
-            related.push(id);
+    if retrieval_gate::should_retrieve(&signal) {
+        let hierarchy_budget = (opts.max_nodes / 4).max(2);
+        let hierarchy = expansion::expand_type_hierarchy(graph, &entry_points, hierarchy_budget);
+        for id in hierarchy.nodes {
+            if !related.contains(&id) && !entry_points.contains(&id) {
+                related.push(id);
+            }
         }
     }
 
@@ -141,6 +170,40 @@ pub fn build_context(
         markdown,
         intent,
         budget,
+    }
+}
+
+/// Compute a [`RetrievalSignal`] for a set of entry points: count how many of
+/// their outgoing edges cross a file boundary (cross-module) or point at an
+/// unresolved/external symbol. Drives the Repoformer when-to-retrieve gate —
+/// when nothing reaches outside the entry points' own files, the local view is
+/// self-contained and expansion is skipped.
+fn compute_retrieval_signal(graph: &CodeGraph, entry_points: &[NodeId]) -> RetrievalSignal {
+    let mut cross_module_refs = 0u32;
+    let mut references_external_symbol = false;
+    for id in entry_points {
+        let Some(node) = graph.get_node(id) else {
+            continue;
+        };
+        for (target, edge) in graph.get_edges_from(id) {
+            if matches!(
+                edge.kind,
+                EdgeKind::UnresolvedCall(_) | EdgeKind::ExternalCall(_, _)
+            ) {
+                references_external_symbol = true;
+            }
+            if let Some(target_node) = graph.get_node(target)
+                && target_node.file_path != node.file_path
+            {
+                cross_module_refs += 1;
+            }
+        }
+    }
+    RetrievalSignal {
+        cross_module_refs,
+        unresolved_types: 0,
+        references_external_symbol,
+        local_self_contained: cross_module_refs == 0 && !references_external_symbol,
     }
 }
 
@@ -423,6 +486,95 @@ mod tests {
         let result = build_context(&g, None, "add a widget", ContextOptions::default());
         assert_eq!(result.intent, TaskIntent::Feature);
         assert!(result.markdown.contains("UX preferences"));
+    }
+
+    /// Node in an explicit file (the default `node` helper hardcodes src/lib.rs).
+    fn node_in(name: &str, kind: NodeKind, file: &str) -> NodeData {
+        let id = NodeId::new(file, &format!("crate::{name}"), kind);
+        NodeData {
+            id,
+            kind,
+            name: name.to_string(),
+            qualified_name: format!("crate::{name}"),
+            file_path: PathBuf::from(file),
+            span: Span {
+                file: PathBuf::from(file),
+                start_line: 1,
+                start_col: 0,
+                end_line: 10,
+                end_col: 0,
+                byte_range: 0..1,
+            },
+            visibility: Visibility::Public,
+            metadata: HashMap::new(),
+            birth_revision: 0,
+            last_modified_revision: 0,
+            complexity: None,
+            cfg: None,
+            dataflow: None,
+        }
+    }
+
+    // DRACO: build_context entry points include the resolved symbol's dataflow
+    // dependency (a type it uses), not just name matches.
+    #[test]
+    fn build_context_draco_seeds_dataflow_deps_normal() {
+        let mut g = CodeGraph::new();
+        let handler = g.add_node(node("handler", NodeKind::Function));
+        let req = g.add_node(node("Request", NodeKind::Struct));
+        g.add_edge(
+            &handler,
+            &req,
+            EdgeData { kind: EdgeKind::UsesType, source_span: span_at(1, 1), weight: 1.0 },
+        )
+        .unwrap();
+
+        let result = build_context(&g, None, "look at handler", ContextOptions::default());
+        // `Request` is never named in the task, but DRACO seeds it via the
+        // UsesType dataflow edge out of `handler`.
+        assert!(
+            result.entry_points.contains(&req),
+            "DRACO should seed the dataflow dependency Request"
+        );
+    }
+
+    // Repoformer gate: a fully self-contained entry point (no cross-file or
+    // external edges) skips the related-expansion BFS.
+    #[test]
+    fn build_context_gate_abstains_when_self_contained_normal() {
+        let mut g = CodeGraph::new();
+        // Two functions in the SAME file, no edges at all -> self-contained.
+        g.add_node(node_in("solo", NodeKind::Function, "src/solo.rs"));
+        let result = build_context(&g, None, "look at solo", ContextOptions::default());
+        // Entry point resolves, but with no outward edges the gate abstains, so
+        // there are no related nodes.
+        assert!(!result.entry_points.is_empty());
+        assert!(
+            result.related.is_empty(),
+            "self-contained query should skip expansion, got {:?}",
+            result.related
+        );
+    }
+
+    // Repoformer gate: a cross-file edge makes the signal non-self-contained, so
+    // expansion runs and surfaces the related node.
+    #[test]
+    fn build_context_gate_expands_when_cross_file_robust() {
+        let mut g = CodeGraph::new();
+        let a = g.add_node(node_in("alpha", NodeKind::Function, "src/a.rs"));
+        let b = g.add_node(node_in("beta", NodeKind::Function, "src/b.rs"));
+        g.add_edge(
+            &a,
+            &b,
+            EdgeData { kind: EdgeKind::Calls, source_span: span_at(1, 1), weight: 1.0 },
+        )
+        .unwrap();
+
+        let result = build_context(&g, None, "look at alpha", ContextOptions::default());
+        // alpha -> beta crosses a file boundary, so the gate retrieves and the
+        // BFS surfaces beta as related (or as a DRACO seed entry).
+        let found = result.related.contains(&b) || result.entry_points.contains(&b);
+        assert!(found, "cross-file query should expand to beta");
     }
 
     #[test]

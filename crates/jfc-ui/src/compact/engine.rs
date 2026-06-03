@@ -23,6 +23,36 @@ fn estimate_group_tokens(group: &ConversationGroup) -> usize {
     tokens
 }
 
+/// Fraction of the context window the newest groups are allowed to occupy
+/// verbatim before the first compaction pass. Recency-weighted retention: keep
+/// recent detail rather than collapsing everything but the last group.
+const RECENCY_PRESERVE_FRACTION: f64 = 0.30;
+
+/// Compute the recency-weighted preserve floor — how many of the newest groups
+/// to keep verbatim on the *first* compaction attempt — via
+/// [`jfc_core::select_retained`].
+///
+/// `group_tokens` is oldest-first (matching `split_into_groups`).
+/// [`jfc_core::select_retained`] keeps the newest turns whose cumulative tokens
+/// fit a budget; we map each group to one `TurnCost`, budget = `fraction *
+/// window`, and return the count kept (clamped to `[1, total-1]` so there is
+/// always at least one group to preserve and at least one to summarize).
+fn recency_preserve_floor(group_tokens: &[usize], window: usize) -> usize {
+    let total = group_tokens.len();
+    if total <= 1 {
+        return 1;
+    }
+    let budget = ((window as f64) * RECENCY_PRESERVE_FRACTION) as u64;
+    let turns: Vec<jfc_core::TurnCost> = group_tokens
+        .iter()
+        .enumerate()
+        .map(|(i, &t)| jfc_core::TurnCost { id: i as u64, tokens: t as u64 })
+        .collect();
+    let retention = jfc_core::select_retained(&turns, budget);
+    // Keep at least 1, and always leave at least 1 group to summarize.
+    retention.kept.len().clamp(1, total - 1)
+}
+
 fn split_into_groups(messages: &[ChatMessage]) -> Vec<ConversationGroup> {
     let mut groups: Vec<ConversationGroup> = Vec::new();
     let mut current = Vec::new();
@@ -241,7 +271,14 @@ pub async fn compact(
     let pre_tokens = estimate_tokens(messages);
     let group_tokens: Vec<usize> = groups.iter().map(estimate_group_tokens).collect();
     let total_groups = groups.len();
-    let mut preserve_count: usize = 1;
+    // Recency-weighted preserve floor (RCT finding: uniform aggressive
+    // compression backfires — preserving only the newest group makes the model
+    // re-derive lost context and write *longer* outputs, so total cost rises).
+    // `recency_preserve_floor` keeps the newest groups that fit a fraction of
+    // the window verbatim, so the very first compaction attempt isn't maximally
+    // aggressive. The retry loop only ever *raises* preserve_count, so starting
+    // at this floor (>= 1) is always safe.
+    let mut preserve_count: usize = recency_preserve_floor(&group_tokens, window);
     let mut attempt: u32 = 0;
     let mut strip_media = false;
     // Sourced from API error bodies: `actualTokens - limitTokens` for
@@ -1323,6 +1360,29 @@ mod level_tests {
     #[test]
     fn estimate_tokens_empty_is_zero_normal() {
         assert_eq!(estimate_tokens(&[]), 0);
+    }
+
+    // Normal: the recency preserve floor keeps the newest groups that fit ~30%
+    // of the window, instead of preserving only the last group. 5 groups of 100
+    // tokens, window 1000 → budget 300 → keep newest 3.
+    #[test]
+    fn recency_preserve_floor_keeps_recent_groups_normal() {
+        let group_tokens = vec![100usize, 100, 100, 100, 100];
+        assert_eq!(recency_preserve_floor(&group_tokens, 1000), 3);
+    }
+
+    // Robust: a tiny window still preserves at least one group and always leaves
+    // at least one to summarize (never returns total).
+    #[test]
+    fn recency_preserve_floor_clamps_bounds_robust() {
+        let group_tokens = vec![5000usize, 5000, 5000];
+        // Budget (30% of 100 = 30) fits no full group → clamp up to 1.
+        assert_eq!(recency_preserve_floor(&group_tokens, 100), 1);
+        // Huge window would keep all, but must leave 1 to summarize.
+        let floor = recency_preserve_floor(&group_tokens, 10_000_000);
+        assert_eq!(floor, group_tokens.len() - 1);
+        // A single group always returns 1.
+        assert_eq!(recency_preserve_floor(&[42], 1000), 1);
     }
 
     // Normal: count_user_turns counts back from the end and stops at the
