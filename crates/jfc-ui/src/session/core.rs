@@ -319,11 +319,9 @@ mod disk_io_tests {
     /// lifetime of one test. Restores the previous value on drop so a
     /// later test in the same process doesn't see a dangling override.
     struct TempConfigHome {
-        #[allow(dead_code)]
-        dir: TempDir,
+        _dir: TempDir,
         prior: Option<String>,
-        #[allow(dead_code)]
-        guard: std::sync::MutexGuard<'static, ()>,
+        _guard: std::sync::MutexGuard<'static, ()>,
     }
 
     impl TempConfigHome {
@@ -338,11 +336,9 @@ mod disk_io_tests {
                 std::env::set_var("XDG_CONFIG_HOME", dir.path());
             }
             Self {
-                #[allow(dead_code)]
-                dir,
+                _dir: dir,
                 prior,
-                #[allow(dead_code)]
-                guard,
+                _guard: guard,
             }
         }
     }
@@ -727,13 +723,15 @@ mod disk_io_tests {
         // The function is private, but we can exercise it through
         // deserializing a SerializedPart::Tool with an unknown status.
         let part = SerializedPart::Tool {
-            id: "x".into(),
-            kind: "bash".into(),
-            status: "exotic".into(),
-            is_collapsed: false,
-            input: None,
-            output: None,
-            thought_signature: None,
+            tool: Box::new(crate::session::serialization::SerializedToolPart {
+                id: "x".into(),
+                kind: "bash".into(),
+                status: "exotic".into(),
+                is_collapsed: false,
+                input: None,
+                output: None,
+                thought_signature: None,
+            }),
         };
         let mp = deserialize_part(part);
         match mp {

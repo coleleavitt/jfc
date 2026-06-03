@@ -222,8 +222,6 @@ pub async fn execute_task(
     }
     result
 }
-
-#[allow(clippy::too_many_arguments)]
 async fn execute_task_inner(
     task_input: &crate::types::TaskInput,
     provider: &dyn jfc_provider::Provider,

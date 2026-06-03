@@ -820,6 +820,21 @@ pub fn tool_kind_color(kind: &ToolKind, t: &Theme) -> ratatui::style::Color {
         ToolKind::ReadMcpResource => Color::Rgb(190, 170, 240), // purple (MCP family)
         ToolKind::Advisor => Color::Rgb(255, 215, 100),  // gold
         ToolKind::ConnectGitHub => Color::Rgb(200, 200, 200), // grey
+        ToolKind::DesignProjectCreate
+        | ToolKind::DesignProjectList
+        | ToolKind::DesignProjectSetMeta
+        | ToolKind::DesignListFiles
+        | ToolKind::DesignReadFile
+        | ToolKind::DesignWriteFile
+        | ToolKind::DesignDeleteFile
+        | ToolKind::DesignCopyFile
+        | ToolKind::DesignRegisterAsset
+        | ToolKind::DesignUnregisterAsset
+        | ToolKind::DesignBundleHtml
+        | ToolKind::DesignHandoff
+        | ToolKind::DesignCheckSystem
+        | ToolKind::DesignCapabilities
+        | ToolKind::DesignServe => Color::Rgb(120, 210, 190), // design teal
         ToolKind::Generic(_) => t.text_secondary,
         // Unknown tools render in a muted style — they're never
         // dispatched (permission layer denies them), so the row is
@@ -888,9 +903,7 @@ pub fn tool_status_icon_animated(
         _ => tool_status_icon(tool, t),
     }
 }
-
-#[allow(dead_code)] // test-only helper
-pub(super) fn border_color_for_status(tool: &ToolCall, t: &Theme) -> Color {
+pub fn border_color_for_status(tool: &ToolCall, t: &Theme) -> Color {
     // Idle is Task-only territory but still valid on the unified
     // ExecutionStatus enum — render with the same accent as Running
     // (the tool, if it ever lands here, is "alive but quiet"). A

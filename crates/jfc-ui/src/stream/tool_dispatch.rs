@@ -49,24 +49,37 @@ impl LocalAdvisorDispatchContext {
     }
 }
 
-#[tracing::instrument(target = "jfc::stream", skip(tool_calls, tx, dedup, task_store, provider, model, teammate_event_tx, local_advisor, cancel), fields(n = tool_calls.len()))]
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn dispatch_tools_batched(
-    tool_calls: Vec<ToolCall>,
-    tx: &mpsc::Sender<AppEvent>,
-    dedup: Arc<Mutex<ReadDedupCache>>,
-    task_store: Option<Arc<jfc_session::TaskStore>>,
-    active_team_name: Option<String>,
-    current_session_id: Option<String>,
-    provider: Arc<dyn Provider>,
-    model: ModelId,
-    teammate_event_tx: mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
-    local_advisor: Option<LocalAdvisorDispatchContext>,
-    // wg-async: tool batches can run for minutes (Bash, subagents). Hand
-    // the spawned scheduler a cancel handle so ESC×2 races the batch
-    // against `.cancelled()` rather than orphaning the work.
-    cancel: CancellationToken,
-) {
+pub(crate) struct ToolBatchDispatch {
+    pub(crate) tx: mpsc::Sender<AppEvent>,
+    pub(crate) dedup: Arc<Mutex<ReadDedupCache>>,
+    pub(crate) task_store: Option<Arc<jfc_session::TaskStore>>,
+    pub(crate) active_team_name: Option<String>,
+    pub(crate) current_session_id: Option<String>,
+    pub(crate) provider: Arc<dyn Provider>,
+    pub(crate) model: ModelId,
+    pub(crate) teammate_event_tx: mpsc::UnboundedSender<crate::swarm::runner::TeammateEvent>,
+    pub(crate) local_advisor: Option<LocalAdvisorDispatchContext>,
+    pub(crate) cancel: CancellationToken,
+}
+
+#[tracing::instrument(target = "jfc::stream", skip(tool_calls, dispatch), fields(n = tool_calls.len()))]
+pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBatchDispatch) {
+    let ToolBatchDispatch {
+        tx,
+        dedup,
+        task_store,
+        active_team_name,
+        current_session_id,
+        provider,
+        model,
+        teammate_event_tx,
+        local_advisor,
+        // wg-async: tool batches can run for minutes (Bash, subagents). Hand
+        // the spawned scheduler a cancel handle so ESC×2 races the batch
+        // against `.cancelled()` rather than orphaning the work.
+        cancel,
+    } = dispatch;
+    let tx = &tx;
     let cwd = std::env::current_dir().unwrap_or_default();
 
     let mut regular_calls: Vec<ToolCall> = Vec::new();
@@ -637,15 +650,15 @@ pub(crate) fn dispatch_tools_batched(
 
     for tc in workflow_calls {
         let done = send_all_complete.clone();
-        spawn_workflow(
+        spawn_workflow(WorkflowSpawn {
             tc,
             tx,
-            provider.clone(),
-            model.clone(),
-            current_session_id.clone(),
-            cancel.clone(),
+            provider: provider.clone(),
+            model: model.clone(),
+            current_session_id: current_session_id.clone(),
+            cancel: cancel.clone(),
             done,
-        );
+        });
     }
 
     if !regular_calls.is_empty() {
@@ -683,19 +696,32 @@ pub(crate) fn dispatch_tools_batched(
     }
 }
 
-/// Resolve, register, and spawn a Workflow tool call. Returns immediately
-/// after sending the `async_launched` ToolResult; the workflow runs in the
-/// background and injects a `<task-notification>` when it completes.
-#[allow(clippy::too_many_arguments)]
-fn spawn_workflow(
+struct WorkflowSpawn<'a, F> {
     tc: ToolCall,
-    tx: &mpsc::Sender<AppEvent>,
+    tx: &'a mpsc::Sender<AppEvent>,
     provider: Arc<dyn Provider>,
     model: ModelId,
     current_session_id: Option<String>,
     cancel: CancellationToken,
-    done: impl FnOnce() + Send + 'static,
-) {
+    done: F,
+}
+
+/// Resolve, register, and spawn a Workflow tool call. Returns immediately
+/// after sending the `async_launched` ToolResult; the workflow runs in the
+/// background and injects a `<task-notification>` when it completes.
+fn spawn_workflow<F>(spawn: WorkflowSpawn<'_, F>)
+where
+    F: FnOnce() + Send + 'static,
+{
+    let WorkflowSpawn {
+        tc,
+        tx,
+        provider,
+        model,
+        current_session_id,
+        cancel,
+        done,
+    } = spawn;
     let (script, name, script_path, args, resume_from_run_id) = match tc.input.clone() {
         ToolInput::Workflow {
             script,

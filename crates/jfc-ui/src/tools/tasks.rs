@@ -6,23 +6,59 @@ use super::ExecutionResult;
 use super::subagent::execute_skill_in;
 use jfc_session::{DeletedFilter, TaskKind, TaskPatch, TaskRisk, TaskStatus, TaskStore};
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct TaskCreateRequest {
+    pub(super) subject: String,
+    pub(super) description: String,
+    pub(super) active_form: Option<String>,
+    pub(super) blocked_by: Vec<String>,
+    pub(super) acceptance_criteria: Option<String>,
+    pub(super) verification_command: Option<String>,
+    pub(super) risk: Option<String>,
+    pub(super) parent_id: Option<String>,
+    pub(super) kind: Option<String>,
+    pub(super) tags: Vec<String>,
+    pub(super) priority: Option<u8>,
+    pub(super) effort: Option<String>,
+    pub(super) model: Option<String>,
+}
+
+pub(super) struct TaskUpdateRequest {
+    pub(super) task_id: String,
+    pub(super) status: Option<String>,
+    pub(super) subject: Option<String>,
+    pub(super) description: Option<String>,
+    pub(super) owner: Option<String>,
+    pub(super) acceptance_criteria: Option<String>,
+    pub(super) verification_command: Option<String>,
+    pub(super) risk: Option<String>,
+    pub(super) parent_id: Option<String>,
+    pub(super) kind: Option<String>,
+    pub(super) blocked_by: Vec<String>,
+    pub(super) tags: Vec<String>,
+    pub(super) priority: Option<u8>,
+    pub(super) effort: Option<String>,
+    pub(super) model: Option<String>,
+}
+
 pub(super) fn execute_task_create(
     store: Option<Arc<TaskStore>>,
-    subject: String,
-    description: String,
-    active_form: Option<String>,
-    blocked_by: Vec<String>,
-    acceptance_criteria: Option<String>,
-    verification_command: Option<String>,
-    risk: Option<String>,
-    parent_id: Option<String>,
-    kind: Option<String>,
-    tags: Vec<String>,
-    priority: Option<u8>,
-    effort: Option<String>,
-    model: Option<String>,
+    request: TaskCreateRequest,
 ) -> ExecutionResult {
+    let TaskCreateRequest {
+        subject,
+        description,
+        active_form,
+        blocked_by,
+        acceptance_criteria,
+        verification_command,
+        risk,
+        parent_id,
+        kind,
+        tags,
+        priority,
+        effort,
+        model,
+    } = request;
     debug!(target: "jfc::tools", %subject, blocked_count = blocked_by.len(), "task_create: creating");
     let Some(store) = store else {
         return ExecutionResult::failure("Task store not available");
@@ -92,26 +128,27 @@ pub(super) fn execute_task_create(
 fn is_placeholder_task_input(subject: &str, description: &str) -> bool {
     subject.trim().eq_ignore_ascii_case("subj") && description.trim().eq_ignore_ascii_case("desc")
 }
-
-#[allow(clippy::too_many_arguments)]
 pub(super) fn execute_task_update(
     store: Option<Arc<TaskStore>>,
-    task_id: &str,
-    status: Option<String>,
-    subject: Option<String>,
-    description: Option<String>,
-    owner: Option<String>,
-    acceptance_criteria: Option<String>,
-    verification_command: Option<String>,
-    risk: Option<String>,
-    parent_id: Option<String>,
-    kind: Option<String>,
-    blocked_by: Vec<String>,
-    tags: Vec<String>,
-    priority: Option<u8>,
-    effort: Option<String>,
-    model: Option<String>,
+    request: TaskUpdateRequest,
 ) -> ExecutionResult {
+    let TaskUpdateRequest {
+        task_id,
+        status,
+        subject,
+        description,
+        owner,
+        acceptance_criteria,
+        verification_command,
+        risk,
+        parent_id,
+        kind,
+        blocked_by,
+        tags,
+        priority,
+        effort,
+        model,
+    } = request;
     debug!(target: "jfc::tools", task_id, status = status.as_deref(), "task_update: updating");
     let Some(store) = store else {
         return ExecutionResult::failure("Task store not available");
@@ -150,7 +187,7 @@ pub(super) fn execute_task_update(
         model,
         ..Default::default()
     };
-    match store.update(task_id, patch) {
+    match store.update(&task_id, patch) {
         Ok(task) => {
             debug!(target: "jfc::tools", task_id, "task_update: success");
             ExecutionResult::success(

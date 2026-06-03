@@ -307,8 +307,8 @@ impl jfc_provider::Provider for StubProvider {
     }
     async fn stream(
         &self,
-        #[allow(dead_code)] _messages: Vec<jfc_provider::ProviderMessage>,
-        #[allow(dead_code)] _options: &jfc_provider::StreamOptions,
+        _messages: Vec<jfc_provider::ProviderMessage>,
+        _options: &jfc_provider::StreamOptions,
     ) -> anyhow::Result<jfc_provider::EventStream> {
         use futures::stream;
         let events = self
@@ -420,8 +420,8 @@ impl jfc_provider::Provider for ScriptedProvider {
     }
     async fn stream(
         &self,
-        #[allow(dead_code)] _messages: Vec<jfc_provider::ProviderMessage>,
-        #[allow(dead_code)] _options: &jfc_provider::StreamOptions,
+        _messages: Vec<jfc_provider::ProviderMessage>,
+        _options: &jfc_provider::StreamOptions,
     ) -> anyhow::Result<jfc_provider::EventStream> {
         use futures::stream;
         let next = self

@@ -15,6 +15,13 @@ use super::daemon::{
     execute_cron_create, execute_cron_delete, execute_cron_list, execute_monitor,
     execute_schedule_wakeup,
 };
+use super::design::{
+    execute_design_bundle_html, execute_design_capabilities, execute_design_check_system,
+    execute_design_copy_file, execute_design_delete_file, execute_design_handoff,
+    execute_design_list_files, execute_design_project_create, execute_design_project_list,
+    execute_design_project_set_meta, execute_design_read_file, execute_design_register_asset,
+    execute_design_serve, execute_design_unregister_asset, execute_design_write_file,
+};
 use super::dispatch_heavy;
 use super::economy::strip_html_tags;
 use super::filesystem::{execute_edit, execute_read, execute_write};
@@ -28,8 +35,9 @@ use super::swarm::{
     execute_send_message, execute_team_create, execute_team_delete, execute_team_member_mode,
 };
 use super::tasks::{
-    execute_skill, execute_task_create, execute_task_done, execute_task_get, execute_task_list,
-    execute_task_stop, execute_task_update, execute_task_validate,
+    TaskCreateRequest, TaskUpdateRequest, execute_skill, execute_task_create, execute_task_done,
+    execute_task_get, execute_task_list, execute_task_stop, execute_task_update,
+    execute_task_validate,
 };
 use super::worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
 
@@ -261,19 +269,21 @@ pub async fn execute_tool(
             },
         ) => execute_task_create(
             task_store,
-            subject,
-            description,
-            active_form,
-            blocked_by,
-            acceptance_criteria,
-            verification_command,
-            risk,
-            parent_id,
-            kind,
-            tags,
-            priority,
-            effort,
-            model,
+            TaskCreateRequest {
+                subject,
+                description,
+                active_form,
+                blocked_by,
+                acceptance_criteria,
+                verification_command,
+                risk,
+                parent_id,
+                kind,
+                tags,
+                priority,
+                effort,
+                model,
+            },
         ),
         (
             ToolKind::TaskUpdate,
@@ -296,21 +306,23 @@ pub async fn execute_tool(
             },
         ) => execute_task_update(
             task_store,
-            &task_id,
-            status,
-            subject,
-            description,
-            owner,
-            acceptance_criteria,
-            verification_command,
-            risk,
-            parent_id,
-            kind,
-            blocked_by,
-            tags,
-            priority,
-            effort,
-            model,
+            TaskUpdateRequest {
+                task_id,
+                status,
+                subject,
+                description,
+                owner,
+                acceptance_criteria,
+                verification_command,
+                risk,
+                parent_id,
+                kind,
+                blocked_by,
+                tags,
+                priority,
+                effort,
+                model,
+            },
         ),
         (
             ToolKind::TaskList,
@@ -509,10 +521,9 @@ pub async fn execute_tool(
                 max_nodes,
             },
         ) => dispatch_heavy::execute_get_program_slice(symbol, backward, max_nodes, &cwd),
-        (
-            ToolKind::GetDataDependencies,
-            ToolInput::GetDataDependencies { symbol, max_nodes },
-        ) => dispatch_heavy::execute_get_data_dependencies(symbol, max_nodes, &cwd),
+        (ToolKind::GetDataDependencies, ToolInput::GetDataDependencies { symbol, max_nodes }) => {
+            dispatch_heavy::execute_get_data_dependencies(symbol, max_nodes, &cwd)
+        }
         (
             ToolKind::TaintFlow,
             ToolInput::TaintFlow {
@@ -1230,6 +1241,88 @@ pub async fn execute_tool(
                 Err(e) => ExecutionResult::failure(format!("Failed to read MCP resource: {e}")),
             }
         }
+        (ToolKind::DesignProjectCreate, ToolInput::DesignProjectCreate { title }) => {
+            execute_design_project_create(&cwd, &title)
+        }
+        (ToolKind::DesignProjectList, ToolInput::DesignProjectList {}) => {
+            execute_design_project_list(&cwd)
+        }
+        (
+            ToolKind::DesignProjectSetMeta,
+            ToolInput::DesignProjectSetMeta {
+                project_id,
+                title,
+                is_design_system,
+            },
+        ) => execute_design_project_set_meta(&cwd, &project_id, title.as_deref(), is_design_system),
+        (ToolKind::DesignListFiles, ToolInput::DesignListFiles { project_id }) => {
+            execute_design_list_files(&cwd, &project_id)
+        }
+        (ToolKind::DesignReadFile, ToolInput::DesignReadFile { project_id, path }) => {
+            execute_design_read_file(&cwd, &project_id, &path)
+        }
+        (
+            ToolKind::DesignWriteFile,
+            ToolInput::DesignWriteFile {
+                project_id,
+                path,
+                content,
+                asset_name,
+            },
+        ) => execute_design_write_file(&cwd, &project_id, &path, &content, asset_name.as_deref()),
+        (ToolKind::DesignDeleteFile, ToolInput::DesignDeleteFile { project_id, path }) => {
+            execute_design_delete_file(&cwd, &project_id, &path)
+        }
+        (
+            ToolKind::DesignCopyFile,
+            ToolInput::DesignCopyFile {
+                project_id,
+                from_path,
+                to_path,
+            },
+        ) => execute_design_copy_file(&cwd, &project_id, &from_path, &to_path),
+        (
+            ToolKind::DesignRegisterAsset,
+            ToolInput::DesignRegisterAsset {
+                project_id,
+                name,
+                path,
+            },
+        ) => execute_design_register_asset(&cwd, &project_id, &name, &path),
+        (
+            ToolKind::DesignUnregisterAsset,
+            ToolInput::DesignUnregisterAsset { project_id, path },
+        ) => execute_design_unregister_asset(&cwd, &project_id, &path),
+        (
+            ToolKind::DesignBundleHtml,
+            ToolInput::DesignBundleHtml {
+                input,
+                output,
+                require_thumbnail,
+            },
+        ) => execute_design_bundle_html(&input, output.as_deref(), require_thumbnail),
+        (
+            ToolKind::DesignHandoff,
+            ToolInput::DesignHandoff {
+                project_dir,
+                feature,
+                files,
+            },
+        ) => execute_design_handoff(&project_dir, &feature, &files),
+        (ToolKind::DesignCheckSystem, ToolInput::DesignCheckSystem { project_dir }) => {
+            execute_design_check_system(&project_dir)
+        }
+        (ToolKind::DesignCapabilities, ToolInput::DesignCapabilities { format }) => {
+            execute_design_capabilities(format.as_deref())
+        }
+        (
+            ToolKind::DesignServe,
+            ToolInput::DesignServe {
+                project_dir,
+                port,
+                file,
+            },
+        ) => execute_design_serve(&project_dir, port, file.as_deref()),
         (ToolKind::Advisor, ToolInput::Advisor {}) => ExecutionResult::failure(
             "Advisor must be executed through the stream dispatcher so JFC can \
                  attach the current transcript snapshot. Use `/advisor <question>` \

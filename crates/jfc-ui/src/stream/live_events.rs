@@ -147,13 +147,12 @@ pub(super) async fn drain_stream_events(
                     .await;
                 // Emit server-authoritative thinking token estimate if available.
                 // Matches cli.js pattern of separate "thinking_tokens" system events.
-                if let Some(tokens) = estimated_tokens {
-                    if tx
+                if let Some(tokens) = estimated_tokens
+                    && tx
                         .try_send(AppEvent::Stream(RuntimeStreamEvent::ThinkingTokens(tokens)))
                         .is_err()
-                    {
-                        tracing::trace!(target: "jfc::stream", "ThinkingTokens dropped (buffer full)");
-                    }
+                {
+                    tracing::trace!(target: "jfc::stream", "ThinkingTokens dropped (buffer full)");
                 }
             }
             StreamEvent::ToolDelta { index, delta } => {

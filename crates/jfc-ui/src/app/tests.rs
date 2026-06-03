@@ -26,8 +26,8 @@ impl Provider for TestProvider {
 
     async fn stream(
         &self,
-        #[allow(dead_code)] _messages: Vec<ProviderMessage>,
-        #[allow(dead_code)] _options: &StreamOptions,
+        _messages: Vec<ProviderMessage>,
+        _options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
         Ok(Box::pin(futures::stream::empty()))
     }
@@ -717,11 +717,9 @@ fn sync_task_completions_tracks_and_prunes_normal() {
 /// duration of one test so `push_recent_model` doesn't clobber the
 /// developer's `~/.config/jfc/recent_models.json`.
 struct TempConfigHome {
-    #[allow(dead_code)]
-    dir: tempfile::TempDir,
+    _dir: tempfile::TempDir,
     prior: Option<String>,
-    #[allow(dead_code)]
-    guard: std::sync::MutexGuard<'static, ()>,
+    _guard: std::sync::MutexGuard<'static, ()>,
 }
 
 static RECENT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -736,11 +734,9 @@ impl TempConfigHome {
             std::env::set_var("XDG_CONFIG_HOME", dir.path());
         }
         Self {
-            #[allow(dead_code)]
-            dir,
+            _dir: dir,
             prior,
-            #[allow(dead_code)]
-            guard,
+            _guard: guard,
         }
     }
 }

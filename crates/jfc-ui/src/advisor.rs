@@ -419,7 +419,6 @@ impl AdvisorSession {
     }
 
     /// Builder-style budget override.
-    #[allow(dead_code)]
     pub fn with_budget(mut self, budget: u64) -> Self {
         self.token_budget = budget;
         self

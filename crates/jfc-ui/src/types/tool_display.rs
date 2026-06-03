@@ -54,7 +54,6 @@ impl ToolDisplayState {
     /// `is_expanded()` — the leaf producers keep their own kind-
     /// specific multipliers — but for the generic text/file paths
     /// this is the canonical decision.
-    #[allow(dead_code)]
     pub fn cap_lines(&self) -> usize {
         if self.is_expanded() { 500 } else { 80 }
     }

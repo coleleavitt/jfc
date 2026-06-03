@@ -67,8 +67,7 @@ pub(crate) async fn run(
     // skip the plumbing and so the flag → field mapping lives next to
     // the flag parser instead of buried deep in app/state.rs. Wiring
     // the *consumers* of these fields (stream builder, permission
-    // gate, MCP init, session save) is a separate change — the App
-    // fields are `#[allow(dead_code)]` until those land.
+    // gate, MCP init, session save) lives across focused handlers.
     app.max_turns = cli_config.max_turns;
     app.max_budget_usd = cli_config.max_budget_usd;
     app.allowed_tools = cli_config.allowed_tools;

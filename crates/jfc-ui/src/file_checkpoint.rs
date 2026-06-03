@@ -41,7 +41,6 @@ const BACKUP_EXT: &str = "bak";
 const PATH_SEP_ESCAPE: &str = "__";
 
 /// One row returned by [`list_checkpoints`].
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CheckpointEntry {
     pub original_path: PathBuf,

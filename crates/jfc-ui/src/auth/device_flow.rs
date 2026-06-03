@@ -65,7 +65,6 @@ pub struct TokenResponse {
 #[derive(Debug, Deserialize)]
 struct PollErrorResponse {
     error: String,
-    #[allow(dead_code)]
     #[serde(default)]
     error_description: Option<String>,
 }
@@ -158,9 +157,23 @@ pub async fn poll_for_token(
                     tokio::time::sleep(Duration::from_secs(5)).await;
                     continue;
                 }
-                "access_denied" => return Err(DeviceFlowError::AccessDenied),
-                "expired_token" => return Err(DeviceFlowError::Expired),
-                other => return Err(DeviceFlowError::TokenError(other.to_string())),
+                "access_denied" => {
+                    return Err(match err.error_description {
+                        Some(description) => DeviceFlowError::TokenError(description),
+                        None => DeviceFlowError::AccessDenied,
+                    });
+                }
+                "expired_token" => {
+                    return Err(match err.error_description {
+                        Some(description) => DeviceFlowError::TokenError(description),
+                        None => DeviceFlowError::Expired,
+                    });
+                }
+                other => {
+                    return Err(DeviceFlowError::TokenError(
+                        err.error_description.unwrap_or_else(|| other.to_string()),
+                    ));
+                }
             }
         }
     }

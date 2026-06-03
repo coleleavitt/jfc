@@ -1,15 +1,11 @@
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum McpStatus {
-    #[allow(dead_code)]
     Connected,
-    #[allow(dead_code)]
     Disabled,
-    #[allow(dead_code)]
     Error,
 }
 
 impl McpStatus {
-    #[allow(dead_code)]
     pub fn label(self) -> &'static str {
         match self {
             Self::Connected => "Connected",
@@ -27,9 +23,7 @@ pub struct McpServerInfo {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LspStatus {
-    #[allow(dead_code)]
     Active,
-    #[allow(dead_code)]
     Inactive,
 }
 

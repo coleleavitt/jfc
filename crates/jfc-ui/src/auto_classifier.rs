@@ -26,7 +26,6 @@
 use jfc_core::{ToolInput, ToolKind};
 
 /// Outcome of classifying one tool call.
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClassifierDecision {
     /// Auto-approve.
@@ -220,6 +219,10 @@ fn is_read_only(kind: &ToolKind) -> bool {
             | ToolKind::LearnStatus
             | ToolKind::LearnKeyFilesList
             | ToolKind::LearnUserProfileShow
+            | ToolKind::DesignProjectList
+            | ToolKind::DesignListFiles
+            | ToolKind::DesignReadFile
+            | ToolKind::DesignCapabilities
     )
 }
 
@@ -304,6 +307,17 @@ fn tool_kind_name(kind: &ToolKind) -> &'static str {
         ToolKind::Search => "Search",
         ToolKind::ApplyPatch => "ApplyPatch",
         ToolKind::MultiEdit => "MultiEdit",
+        ToolKind::DesignProjectCreate => "DesignProjectCreate",
+        ToolKind::DesignProjectSetMeta => "DesignProjectSetMeta",
+        ToolKind::DesignWriteFile => "DesignWriteFile",
+        ToolKind::DesignDeleteFile => "DesignDeleteFile",
+        ToolKind::DesignCopyFile => "DesignCopyFile",
+        ToolKind::DesignRegisterAsset => "DesignRegisterAsset",
+        ToolKind::DesignUnregisterAsset => "DesignUnregisterAsset",
+        ToolKind::DesignBundleHtml => "DesignBundleHtml",
+        ToolKind::DesignHandoff => "DesignHandoff",
+        ToolKind::DesignCheckSystem => "DesignCheckSystem",
+        ToolKind::DesignServe => "DesignServe",
         _ => "Other",
     }
 }

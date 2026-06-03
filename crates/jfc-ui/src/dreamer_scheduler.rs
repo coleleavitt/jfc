@@ -183,12 +183,10 @@ fn run_learn_dreamer(
 /// (it keeps running until process exit). Call [`abort`](Self::abort) to
 /// cancel it explicitly.
 pub struct SchedulerHandle {
-    #[allow(dead_code)]
     handle: JoinHandle<()>,
 }
 
 impl SchedulerHandle {
-    #[allow(dead_code)]
     pub fn abort(&self) {
         self.handle.abort();
     }

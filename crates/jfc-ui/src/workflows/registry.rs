@@ -33,7 +33,6 @@ struct PluginManifest {
 
 #[derive(Debug, Deserialize)]
 struct PluginMeta {
-    #[allow(dead_code)]
     name: String,
     workflows_dir: String,
 }
@@ -62,7 +61,10 @@ fn workflow_dir_for_plugin_root(path: &Path) -> PathBuf {
     if let Ok(text) = std::fs::read_to_string(&manifest_path)
         && let Ok(manifest) = toml::from_str::<PluginManifest>(&text)
     {
-        return path.join(manifest.plugin.workflows_dir);
+        let plugin = manifest.plugin;
+        let workflow_dir = plugin.workflows_dir;
+        let _plugin_name = plugin.name;
+        return path.join(workflow_dir);
     }
     let workflows = path.join("workflows");
     if workflows.is_dir() {
@@ -272,9 +274,7 @@ pub fn list_meta(project_root: &Path) -> Vec<(String, String, WorkflowSource)> {
         .map(|w| (w.name, w.description, w.source))
         .collect()
 }
-
-#[allow(dead_code)]
-fn parse_meta_of(wf: &RegisteredWorkflow) -> Option<WorkflowMeta> {
+pub fn parse_meta_of(wf: &RegisteredWorkflow) -> Option<WorkflowMeta> {
     parse_meta(&wf.script).ok().map(|(m, _)| m)
 }
 

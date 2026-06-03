@@ -9,8 +9,6 @@
 //! once by `lib.rs`). Keep the surface area tight — only add a module here
 //! when a test or downstream crate actually needs it.
 
-#![allow(dead_code)]
-
 #[path = "atomic_write.rs"]
 pub mod atomic_write;
 

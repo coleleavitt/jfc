@@ -19,7 +19,6 @@ pub enum PermissionAction {
 pub struct PermissionDecision {
     pub action: PermissionAction,
     pub reason: Option<String>,
-    #[allow(dead_code)]
     pub rule_index: Option<usize>,
 }
 

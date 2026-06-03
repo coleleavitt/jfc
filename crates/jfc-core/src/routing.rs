@@ -114,7 +114,8 @@ fn reconstruct(items: &[(u64, i64)], cap: usize) -> Vec<usize> {
     for i in (1..=n).rev() {
         let (cost, val) = items[i - 1];
         let c = cost as usize;
-        let took = c <= w && value[i - 1][w - c] + val == value[i][w] && value[i][w] != value[i - 1][w];
+        let took =
+            c <= w && value[i - 1][w - c] + val == value[i][w] && value[i][w] != value[i - 1][w];
         if took {
             chosen.push(i - 1);
             w -= c;

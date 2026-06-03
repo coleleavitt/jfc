@@ -1,5 +1,10 @@
 /target/
 target/
+node_modules/
+apps/*/node_modules/
+apps/*/dist/
+apps/*/.vite/
+*.tsbuildinfo
 /research/
 .env
 .env.*
@@ -26,6 +31,7 @@ core.*
 .jfc/learn/
 .jfc/teleport/
 .jfc/verification/
+.jfc/design/
 # Runtime audit ledger + agent change-sets (per-run state, not source).
 .jfc/audit/
 .jfc/changes/

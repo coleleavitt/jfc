@@ -121,7 +121,6 @@ pub fn total_cost(usage_by_model: &HashMap<String, ModelUsage>) -> f64 {
 /// Estimate per-agent cost from a `BackgroundTask`'s captured model and
 /// running token counts. Returns `0.0` when no model is recorded or no
 /// pricing entry matches.
-#[allow(dead_code)]
 pub fn cost_for_background_task(bt: &crate::app::BackgroundTask) -> f64 {
     let Some(model) = bt.model_used.as_deref() else {
         return 0.0;

@@ -94,7 +94,6 @@ impl DocKind {
     }
 
     /// Short label rendered in the slash autocomplete popup.
-    #[allow(dead_code)]
     pub fn description(self) -> &'static str {
         match self {
             Self::Plan => "draft or update PLAN.md (Atlas-compatible task contract)",

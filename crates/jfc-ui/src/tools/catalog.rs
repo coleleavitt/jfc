@@ -428,7 +428,10 @@ mod tests {
                 "post_bounty",
                 "register a coding bounty and let solver agents compete to win the reward",
             ),
-            tool("run_coverage", "annotate functions with test coverage hit counts"),
+            tool(
+                "run_coverage",
+                "annotate functions with test coverage hit counts",
+            ),
         ];
 
         // "reward" / "compete" only appear in post_bounty's DESCRIPTION, never

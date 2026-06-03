@@ -32,20 +32,17 @@ pub(crate) mod visual;
 mod tests;
 
 // Re-export the top-level entry point
+pub use agents::format_subagent_counters;
 pub use frame::frame;
 
 // Re-export utilities needed by other modules
 #[cfg(test)]
-pub(crate) use crate::message_view::task_view_body_lines;
+pub(crate) use crate::message_view::task_body::task_view_body_lines;
 pub(crate) use crate::message_view::{TASK_VIEW_COLLAPSE_BYTES, TASK_VIEW_COLLAPSE_LINES};
 pub(crate) use agents::fleet_ordered_task_ids;
-#[cfg(test)]
-pub(crate) use agents::format_subagent_counters;
 pub(crate) use agents::format_token_count;
 pub(crate) use overlays::{current_slash_prefix, slash_matches};
 pub use session_sidebar::ordered_sidebar_sessions;
-pub(crate) use visual::{DiffStats, collect_diff_stats, truncate_str};
-
 // Internal cross-module helpers — visible to all render submodules via `use super::*`
 pub use visual::*;
 

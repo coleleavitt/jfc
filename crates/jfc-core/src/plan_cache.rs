@@ -172,7 +172,10 @@ mod tests {
     fn normalize_folds_numbers_and_case_normal() {
         assert_eq!(normalize_signature("Fix bug #123"), "fix bug");
         assert_eq!(normalize_signature("fix  BUG #456!"), "fix bug");
-        assert_eq!(normalize_signature("Fix bug #123"), normalize_signature("fix bug #999"));
+        assert_eq!(
+            normalize_signature("Fix bug #123"),
+            normalize_signature("fix bug #999")
+        );
     }
 
     // Normal: a plan stored under one description is found for a sibling that
@@ -180,7 +183,10 @@ mod tests {
     #[test]
     fn exact_match_after_normalization_normal() {
         let mut cache = PlanCache::new(8);
-        cache.insert("Refactor the auth module (step 1)", vec!["a".into(), "b".into()]);
+        cache.insert(
+            "Refactor the auth module (step 1)",
+            vec!["a".into(), "b".into()],
+        );
         let hit = cache.get("refactor the AUTH module step 2").unwrap();
         assert_eq!(hit.steps, vec!["a".to_string(), "b".to_string()]);
     }
@@ -200,7 +206,11 @@ mod tests {
         let mut cache = PlanCache::new(8);
         cache.insert("add retry logic to the http client", vec!["s".into()]);
         // 5/6 tokens shared -> ~0.83 Jaccard.
-        assert!(cache.get_similar("add retry logic to the http server", 0.6).is_some());
+        assert!(
+            cache
+                .get_similar("add retry logic to the http server", 0.6)
+                .is_some()
+        );
         // Unrelated -> below threshold.
         assert!(cache.get_similar("write the release notes", 0.6).is_none());
     }

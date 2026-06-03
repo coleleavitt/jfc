@@ -22,7 +22,6 @@ use jfc_provider::{ModelId, Provider};
 /// the input was a teammate spawn (regardless of success/failure), meaning
 /// the caller should skip the normal subagent path. Returns `false` if this
 /// isn't a teammate spawn request.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn try_spawn_teammate(
     task_input: &TaskInput,
     task_id: &str,

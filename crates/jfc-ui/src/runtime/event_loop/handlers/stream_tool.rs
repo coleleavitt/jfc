@@ -26,190 +26,6 @@ fn maybe_show_sandbox_toast(app: &mut App) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
-
-    use super::*;
-
-    struct TestProvider;
-
-    #[async_trait::async_trait]
-    impl Provider for TestProvider {
-        fn name(&self) -> &str {
-            "test"
-        }
-
-        fn available_models(&self) -> Vec<ModelInfo> {
-            Vec::new()
-        }
-
-        async fn stream(
-            &self,
-            #[allow(dead_code)] _messages: Vec<ProviderMessage>,
-            #[allow(dead_code)] _options: &StreamOptions,
-        ) -> anyhow::Result<EventStream> {
-            Ok(Box::pin(futures::stream::empty()))
-        }
-    }
-
-    impl jfc_provider::seal::Sealed for TestProvider {}
-
-    struct StreamingToolExecGuard;
-
-    impl StreamingToolExecGuard {
-        fn enable() -> Self {
-            crate::feature_gates::set(crate::feature_gates::FeatureGate::StreamingToolExec, true);
-            Self
-        }
-    }
-
-    impl Drop for StreamingToolExecGuard {
-        fn drop(&mut self) {
-            crate::feature_gates::set(crate::feature_gates::FeatureGate::StreamingToolExec, false);
-        }
-    }
-
-    fn test_app() -> App {
-        let mut app = App::new(Arc::new(TestProvider), "test-model");
-        app.task_store = jfc_session::TaskStore::in_memory();
-        app
-    }
-
-    fn glob_tool(id: &str) -> ToolCall {
-        ToolCall::new_pending(
-            crate::ids::ToolId::from(id),
-            ToolKind::Glob,
-            ToolInput::Glob {
-                pattern: "Cargo.toml".to_owned(),
-                path: None,
-            },
-        )
-    }
-
-    fn bash_tool(id: &str) -> ToolCall {
-        ToolCall::new_pending(
-            crate::ids::ToolId::from(id),
-            ToolKind::Bash,
-            ToolInput::Bash {
-                command: "echo hi".to_owned(),
-                timeout: None,
-                workdir: None,
-                run_in_background: None,
-            },
-        )
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    #[serial_test::serial]
-    async fn eager_prefix_does_not_dispatch_unsafe_front_regression() {
-        let _guard = StreamingToolExecGuard::enable();
-        let mut app = test_app();
-        app.pending_tool_calls = vec![bash_tool("b1"), glob_tool("g1")];
-        let (tx, _rx) = tokio::sync::mpsc::channel(8);
-
-        let dispatched = dispatch_eager_safe_prefix(&mut app, &tx);
-
-        assert!(dispatched.is_empty());
-        assert_eq!(app.pending_tool_calls.len(), 2);
-        assert_eq!(app.in_flight_eager_dispatches, 0);
-        assert_eq!(app.in_flight_tool_batches, 0);
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    #[serial_test::serial]
-    async fn eager_prefix_drains_only_safe_prefix_before_unsafe_regression() {
-        let _guard = StreamingToolExecGuard::enable();
-        let mut app = test_app();
-        app.pending_tool_calls = vec![glob_tool("g1"), glob_tool("g2"), bash_tool("b1")];
-        let (tx, _rx) = tokio::sync::mpsc::channel(8);
-
-        let dispatched = dispatch_eager_safe_prefix(&mut app, &tx);
-
-        assert_eq!(dispatched, vec!["g1".to_owned(), "g2".to_owned()]);
-        assert_eq!(app.pending_tool_calls.len(), 1);
-        assert_eq!(app.pending_tool_calls[0].id.as_str(), "b1");
-        assert_eq!(app.in_flight_eager_dispatches, 1);
-        assert_eq!(app.in_flight_tool_batches, 1);
-        assert!(app.pre_dispatched_tool_ids.contains("g1"));
-        assert!(app.pre_dispatched_tool_ids.contains("g2"));
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    #[serial_test::serial]
-    async fn eager_prefix_waits_for_auto_mode_classifier_regression() {
-        let _guard = StreamingToolExecGuard::enable();
-        let mut app = test_app();
-        app.pending_classifications = 1;
-        app.pending_tool_calls = vec![glob_tool("g1")];
-        let (tx, _rx) = tokio::sync::mpsc::channel(8);
-
-        let dispatched = dispatch_eager_safe_prefix(&mut app, &tx);
-
-        assert!(dispatched.is_empty());
-        assert_eq!(app.pending_tool_calls.len(), 1);
-        assert_eq!(app.pending_tool_calls[0].id.as_str(), "g1");
-        assert_eq!(app.in_flight_eager_dispatches, 0);
-        assert_eq!(app.in_flight_tool_batches, 0);
-        assert!(app.pre_dispatched_tool_ids.is_empty());
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    #[serial_test::serial]
-    async fn classifier_decision_with_streaming_tool_exec_queues_while_streaming_regression() {
-        let _guard = StreamingToolExecGuard::enable();
-        let mut app = test_app();
-        app.auto_mode.enabled = true;
-        app.is_streaming = true;
-        app.pending_classifications = 1;
-        app.messages.push(ChatMessage::assistant_parts(Vec::new()));
-        app.streaming_assistant_idx = Some(0);
-        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
-
-        handle_classifier_decision(&mut app, &tx, glob_tool("g1"), false, "allowed".to_owned())
-            .await;
-
-        assert_eq!(app.pending_classifications, 0);
-        assert_eq!(app.pending_tool_calls.len(), 1);
-        assert_eq!(app.pending_tool_calls[0].id.as_str(), "g1");
-        assert_eq!(app.in_flight_eager_dispatches, 0);
-        assert_eq!(app.in_flight_tool_batches, 0);
-        assert!(app.pre_dispatched_tool_ids.is_empty());
-
-        let event = rx
-            .try_recv()
-            .expect("classifier should emit deferred tool use");
-        assert!(matches!(
-            event,
-            AppEvent::Tool(ToolEvent::DeferredToolUse { reason, .. })
-                if reason == "queued_for_stream_done"
-        ));
-        assert!(rx.try_recv().is_err());
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    #[serial_test::serial]
-    async fn classifier_decision_after_stream_dispatches_ordered_batch_not_eager_regression() {
-        let _guard = StreamingToolExecGuard::enable();
-        let mut app = test_app();
-        app.auto_mode.enabled = true;
-        app.is_streaming = false;
-        app.pending_classifications = 1;
-        let (tx, _rx) = tokio::sync::mpsc::channel(8);
-
-        handle_classifier_decision(&mut app, &tx, glob_tool("g1"), false, "allowed".to_owned())
-            .await;
-
-        assert_eq!(app.pending_classifications, 0);
-        assert!(app.pending_tool_calls.is_empty());
-        assert_eq!(app.in_flight_eager_dispatches, 0);
-        assert_eq!(app.in_flight_tool_batches, 1);
-        assert!(app.pre_dispatched_tool_ids.is_empty());
-    }
-}
-
 fn emit_in_progress(tx: &EventSender, action: &str, ids: Vec<String>) {
     if ids.is_empty() {
         return;
@@ -252,18 +68,21 @@ fn dispatch_tool_batch(app: &mut App, tx: &EventSender, calls: Vec<ToolCall>, ea
     crate::runtime::update_task_activities(app, &calls);
     crate::stream::dispatch_tools_batched(
         calls,
-        tx,
-        Arc::clone(&app.dedup_cache),
-        Some(Arc::clone(&app.task_store)),
-        app.team_context.team_name.clone(),
-        app.current_session_id
-            .as_ref()
-            .map(|id| id.as_str().to_owned()),
-        Arc::clone(&app.provider),
-        app.model.clone(),
-        app.teammate_event_tx.clone(),
-        crate::stream::LocalAdvisorDispatchContext::from_app(app),
-        app.cancel_token.clone(),
+        crate::stream::ToolBatchDispatch {
+            tx: tx.clone(),
+            dedup: Arc::clone(&app.dedup_cache),
+            task_store: Some(Arc::clone(&app.task_store)),
+            active_team_name: app.team_context.team_name.clone(),
+            current_session_id: app
+                .current_session_id
+                .as_ref()
+                .map(|id| id.as_str().to_owned()),
+            provider: Arc::clone(&app.provider),
+            model: app.model.clone(),
+            teammate_event_tx: app.teammate_event_tx.clone(),
+            local_advisor: crate::stream::LocalAdvisorDispatchContext::from_app(app),
+            cancel: app.cancel_token.clone(),
+        },
     );
 }
 
@@ -635,18 +454,21 @@ pub(crate) async fn handle_classifier_decision(
         );
         crate::stream::dispatch_tools_batched(
             calls,
-            tx,
-            Arc::clone(&app.dedup_cache),
-            Some(Arc::clone(&app.task_store)),
-            app.team_context.team_name.clone(),
-            app.current_session_id
-                .as_ref()
-                .map(|id| id.as_str().to_owned()),
-            Arc::clone(&app.provider),
-            app.model.clone(),
-            app.teammate_event_tx.clone(),
-            crate::stream::LocalAdvisorDispatchContext::from_app(app),
-            app.cancel_token.clone(),
+            crate::stream::ToolBatchDispatch {
+                tx: tx.clone(),
+                dedup: Arc::clone(&app.dedup_cache),
+                task_store: Some(Arc::clone(&app.task_store)),
+                active_team_name: app.team_context.team_name.clone(),
+                current_session_id: app
+                    .current_session_id
+                    .as_ref()
+                    .map(|id| id.as_str().to_owned()),
+                provider: Arc::clone(&app.provider),
+                model: app.model.clone(),
+                teammate_event_tx: app.teammate_event_tx.clone(),
+                local_advisor: crate::stream::LocalAdvisorDispatchContext::from_app(app),
+                cancel: app.cancel_token.clone(),
+            },
         );
     } else {
         // Every tool was blocked — no batch to run, but the loop must still
@@ -731,5 +553,189 @@ pub(crate) fn handle_server_tool_result(
             streaming_idx = ?app.streaming_assistant_idx,
             "server_tool_result arrived with no matching server_tool_use ToolCall on streaming message"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
+
+    use super::*;
+
+    struct TestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn available_models(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+
+        async fn stream(
+            &self,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
+        ) -> anyhow::Result<EventStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    impl jfc_provider::seal::Sealed for TestProvider {}
+
+    struct StreamingToolExecGuard;
+
+    impl StreamingToolExecGuard {
+        fn enable() -> Self {
+            crate::feature_gates::set(crate::feature_gates::FeatureGate::StreamingToolExec, true);
+            Self
+        }
+    }
+
+    impl Drop for StreamingToolExecGuard {
+        fn drop(&mut self) {
+            crate::feature_gates::set(crate::feature_gates::FeatureGate::StreamingToolExec, false);
+        }
+    }
+
+    fn test_app() -> App {
+        let mut app = App::new(Arc::new(TestProvider), "test-model");
+        app.task_store = jfc_session::TaskStore::in_memory();
+        app
+    }
+
+    fn glob_tool(id: &str) -> ToolCall {
+        ToolCall::new_pending(
+            crate::ids::ToolId::from(id),
+            ToolKind::Glob,
+            ToolInput::Glob {
+                pattern: "Cargo.toml".to_owned(),
+                path: None,
+            },
+        )
+    }
+
+    fn bash_tool(id: &str) -> ToolCall {
+        ToolCall::new_pending(
+            crate::ids::ToolId::from(id),
+            ToolKind::Bash,
+            ToolInput::Bash {
+                command: "echo hi".to_owned(),
+                timeout: None,
+                workdir: None,
+                run_in_background: None,
+            },
+        )
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn eager_prefix_does_not_dispatch_unsafe_front_regression() {
+        let _guard = StreamingToolExecGuard::enable();
+        let mut app = test_app();
+        app.pending_tool_calls = vec![bash_tool("b1"), glob_tool("g1")];
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        let dispatched = dispatch_eager_safe_prefix(&mut app, &tx);
+
+        assert!(dispatched.is_empty());
+        assert_eq!(app.pending_tool_calls.len(), 2);
+        assert_eq!(app.in_flight_eager_dispatches, 0);
+        assert_eq!(app.in_flight_tool_batches, 0);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn eager_prefix_drains_only_safe_prefix_before_unsafe_regression() {
+        let _guard = StreamingToolExecGuard::enable();
+        let mut app = test_app();
+        app.pending_tool_calls = vec![glob_tool("g1"), glob_tool("g2"), bash_tool("b1")];
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        let dispatched = dispatch_eager_safe_prefix(&mut app, &tx);
+
+        assert_eq!(dispatched, vec!["g1".to_owned(), "g2".to_owned()]);
+        assert_eq!(app.pending_tool_calls.len(), 1);
+        assert_eq!(app.pending_tool_calls[0].id.as_str(), "b1");
+        assert_eq!(app.in_flight_eager_dispatches, 1);
+        assert_eq!(app.in_flight_tool_batches, 1);
+        assert!(app.pre_dispatched_tool_ids.contains("g1"));
+        assert!(app.pre_dispatched_tool_ids.contains("g2"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn eager_prefix_waits_for_auto_mode_classifier_regression() {
+        let _guard = StreamingToolExecGuard::enable();
+        let mut app = test_app();
+        app.pending_classifications = 1;
+        app.pending_tool_calls = vec![glob_tool("g1")];
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        let dispatched = dispatch_eager_safe_prefix(&mut app, &tx);
+
+        assert!(dispatched.is_empty());
+        assert_eq!(app.pending_tool_calls.len(), 1);
+        assert_eq!(app.pending_tool_calls[0].id.as_str(), "g1");
+        assert_eq!(app.in_flight_eager_dispatches, 0);
+        assert_eq!(app.in_flight_tool_batches, 0);
+        assert!(app.pre_dispatched_tool_ids.is_empty());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn classifier_decision_with_streaming_tool_exec_queues_while_streaming_regression() {
+        let _guard = StreamingToolExecGuard::enable();
+        let mut app = test_app();
+        app.auto_mode.enabled = true;
+        app.is_streaming = true;
+        app.pending_classifications = 1;
+        app.messages.push(ChatMessage::assistant_parts(Vec::new()));
+        app.streaming_assistant_idx = Some(0);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+
+        handle_classifier_decision(&mut app, &tx, glob_tool("g1"), false, "allowed".to_owned())
+            .await;
+
+        assert_eq!(app.pending_classifications, 0);
+        assert_eq!(app.pending_tool_calls.len(), 1);
+        assert_eq!(app.pending_tool_calls[0].id.as_str(), "g1");
+        assert_eq!(app.in_flight_eager_dispatches, 0);
+        assert_eq!(app.in_flight_tool_batches, 0);
+        assert!(app.pre_dispatched_tool_ids.is_empty());
+
+        let event = rx
+            .try_recv()
+            .expect("classifier should emit deferred tool use");
+        assert!(matches!(
+            event,
+            AppEvent::Tool(ToolEvent::DeferredToolUse { reason, .. })
+                if reason == "queued_for_stream_done"
+        ));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn classifier_decision_after_stream_dispatches_ordered_batch_not_eager_regression() {
+        let _guard = StreamingToolExecGuard::enable();
+        let mut app = test_app();
+        app.auto_mode.enabled = true;
+        app.is_streaming = false;
+        app.pending_classifications = 1;
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+
+        handle_classifier_decision(&mut app, &tx, glob_tool("g1"), false, "allowed".to_owned())
+            .await;
+
+        assert_eq!(app.pending_classifications, 0);
+        assert!(app.pending_tool_calls.is_empty());
+        assert_eq!(app.in_flight_eager_dispatches, 0);
+        assert_eq!(app.in_flight_tool_batches, 1);
+        assert!(app.pre_dispatched_tool_ids.is_empty());
     }
 }

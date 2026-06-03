@@ -154,13 +154,6 @@ mod mcp_tests {
 #[cfg(test)]
 mod render_helpers_tests {
     use super::*;
-    use crate::theme::Theme;
-
-    #[allow(dead_code)]
-    fn t() -> Theme {
-        Theme::dark()
-    }
-
     // ─── pulse_color ───────────────────────────────────────────────
     // Normal: t=0 returns c1, t=1 returns c2, t=0.5 returns midpoint.
     #[test]
@@ -387,8 +380,8 @@ mod pure_helper_tests {
         }
         async fn stream(
             &self,
-            #[allow(dead_code)] _messages: Vec<ProviderMessage>,
-            #[allow(dead_code)] _options: &StreamOptions,
+            _messages: Vec<ProviderMessage>,
+            _options: &StreamOptions,
         ) -> anyhow::Result<EventStream> {
             Ok(Box::pin(futures::stream::empty()))
         }
@@ -978,8 +971,10 @@ mod pure_helper_tests {
     fn fit_segments_floor_constant_matches_alert_band_normal() {
         // Guard the contract the renderer relies on: cost(95)/approval(90)/
         // status(92)/mcp(93) are floor; activity(78)/mode(85)/cwd(45) are not.
-        assert!(95 >= STATUS_FLOOR_PRIO && 90 >= STATUS_FLOOR_PRIO);
-        assert!(85 < STATUS_FLOOR_PRIO && 78 < STATUS_FLOOR_PRIO);
+        const {
+            assert!(95 >= STATUS_FLOOR_PRIO && 90 >= STATUS_FLOOR_PRIO);
+            assert!(85 < STATUS_FLOOR_PRIO && 78 < STATUS_FLOOR_PRIO);
+        }
     }
 
     // --- provider_color / provider_label -----------------------------

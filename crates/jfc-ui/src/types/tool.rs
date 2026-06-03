@@ -83,8 +83,6 @@ mod cumulative_usage_tests {
         assert_eq!(u.cache_write_tokens, 100);
     }
 }
-
-#[allow(dead_code)]
 pub fn sample_tool_harness_message() -> ChatMessage {
     let diff = parse_unified_diff(
         "crates/jfc-ui/src/tools.rs",

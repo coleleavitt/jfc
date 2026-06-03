@@ -25,8 +25,6 @@ pub mod landlock {
 
 #[cfg(not(target_os = "linux"))]
 mod fallback;
-
-#[allow(unused_imports)]
 pub use landlock::{SandboxPolicy, SandboxResult};
 
 /// Global flag: set to `true` once the landlock sandbox has been

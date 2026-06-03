@@ -62,8 +62,16 @@ fn auto_seed_sources_sinks(graph: &CodeGraph) -> (Vec<NodeId>, Vec<NodeId>) {
     rank(&mut sources);
     rank(&mut sinks);
     (
-        sources.into_iter().take(AUTO_SEED_LIMIT).map(|(_, id)| id).collect(),
-        sinks.into_iter().take(AUTO_SEED_LIMIT).map(|(_, id)| id).collect(),
+        sources
+            .into_iter()
+            .take(AUTO_SEED_LIMIT)
+            .map(|(_, id)| id)
+            .collect(),
+        sinks
+            .into_iter()
+            .take(AUTO_SEED_LIMIT)
+            .map(|(_, id)| id)
+            .collect(),
     )
 }
 
@@ -90,12 +98,7 @@ fn render_node(graph: &CodeGraph, id: &NodeId) -> String {
 /// Backward program slice: every function whose behaviour can affect the value
 /// computed by `symbol`. Returns a source-annotated report, capped at
 /// `max_nodes` entries.
-pub fn program_slice(
-    graph: &CodeGraph,
-    symbol: &str,
-    backward: bool,
-    max_nodes: usize,
-) -> String {
+pub fn program_slice(graph: &CodeGraph, symbol: &str, backward: bool, max_nodes: usize) -> String {
     let seeds = resolve(graph, symbol);
     if seeds.is_empty() {
         return format!("No symbol matching `{symbol}` found in the code graph.");
@@ -127,7 +130,10 @@ pub fn program_slice(
         out.push_str(&format!("  - {}\n", render_node(graph, id)));
     }
     if total > max_nodes {
-        out.push_str(&format!("  ... and {} more (raise max_nodes)\n", total - max_nodes));
+        out.push_str(&format!(
+            "  ... and {} more (raise max_nodes)\n",
+            total - max_nodes
+        ));
     }
     out
 }
@@ -167,7 +173,10 @@ pub fn data_dependencies(graph: &CodeGraph, symbol: &str, max_nodes: usize) -> S
         out.push_str(&format!("  - {}\n", render_node(graph, id)));
     }
     if total > max_nodes {
-        out.push_str(&format!("  ... and {} more (raise max_nodes)\n", total - max_nodes));
+        out.push_str(&format!(
+            "  ... and {} more (raise max_nodes)\n",
+            total - max_nodes
+        ));
     }
     out
 }
@@ -265,7 +274,10 @@ pub fn taint_flow(
         }
     }
     if total > max_paths {
-        out.push_str(&format!("\n  ... and {} more flow(s) (raise max_paths)\n", total - max_paths));
+        out.push_str(&format!(
+            "\n  ... and {} more flow(s) (raise max_paths)\n",
+            total - max_paths
+        ));
     }
     out
 }
@@ -334,7 +346,11 @@ mod tests {
         g.add_edge(
             &caller,
             &helper,
-            EdgeData { kind: EdgeKind::Calls, source_span: g.get_node(&caller).unwrap().span.clone(), weight: 1.0 },
+            EdgeData {
+                kind: EdgeKind::Calls,
+                source_span: g.get_node(&caller).unwrap().span.clone(),
+                weight: 1.0,
+            },
         )
         .unwrap();
 

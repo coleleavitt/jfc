@@ -36,15 +36,16 @@ pub(crate) fn deserialize_part(part: SerializedPart) -> MessagePart {
     match part {
         SerializedPart::Text { content } => MessagePart::Text(content),
         SerializedPart::Reasoning { content } => MessagePart::Reasoning(content),
-        SerializedPart::Tool {
-            id,
-            kind,
-            status,
-            is_collapsed,
-            input,
-            output,
-            thought_signature,
-        } => {
+        SerializedPart::Tool { tool } => {
+            let SerializedToolPart {
+                id,
+                kind,
+                status,
+                is_collapsed,
+                input,
+                output,
+                thought_signature,
+            } = *tool;
             let tool_kind = ToolKind::from_name(&kind);
             MessagePart::Tool(ToolCall {
                 id: crate::ids::ToolId::from(id),

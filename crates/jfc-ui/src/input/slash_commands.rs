@@ -87,8 +87,7 @@ pub(super) async fn handle_slash_command(
 /// Pulling in `urlencoding` or `url` for the two callers (`/bug` form
 /// link generation) is overkill — the encoder only needs to handle ASCII
 /// + UTF-8 bytes that browsers reliably decode.
-#[allow(dead_code)]
-pub(super) fn url_encode(s: &str) -> String {
+pub fn url_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {

@@ -592,8 +592,7 @@ pub(super) async fn execute_bash_with_options(
 /// Execute bash with optional streaming progress. When `progress_tx` is
 /// provided, stdout/stderr chunks are streamed to the UI in real time via
 /// `ToolOutputChunk` events.
-#[allow(dead_code)]
-pub(super) async fn execute_bash_inner(
+pub async fn execute_bash_inner(
     command: &str,
     timeout_ms: Option<u64>,
     cwd: &Path,

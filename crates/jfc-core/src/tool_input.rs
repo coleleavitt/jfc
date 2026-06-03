@@ -350,6 +350,21 @@ macro_rules! for_each_regular_tool_input {
             ScratchpadRead => { key: req_str @ "key" }
             ScratchpadWrite => { key: req_str @ "key", value: req_str @ "value" }
             Workflow => { script: opt_str @ "script", name: opt_str @ "name", script_path: opt_str @ "scriptPath", args: raw_opt @ "args", resume_from_run_id: opt_str @ "resumeFromRunId" }
+            DesignProjectCreate => { title: req_str @ "title" }
+            DesignProjectList => {}
+            DesignProjectSetMeta => { project_id: req_str @ "project_id", title: opt_str @ "title", is_design_system: raw_bool_opt @ "is_design_system" }
+            DesignListFiles => { project_id: req_str @ "project_id" }
+            DesignReadFile => { project_id: req_str @ "project_id", path: req_str @ "path" }
+            DesignWriteFile => { project_id: req_str @ "project_id", path: req_str @ "path", content: req_str @ "content", asset_name: opt_str @ "asset_name" }
+            DesignDeleteFile => { project_id: req_str @ "project_id", path: req_str @ "path" }
+            DesignCopyFile => { project_id: req_str @ "project_id", from_path: req_str @ "from_path", to_path: req_str @ "to_path" }
+            DesignRegisterAsset => { project_id: req_str @ "project_id", name: req_str @ "name", path: req_str @ "path" }
+            DesignUnregisterAsset => { project_id: req_str @ "project_id", path: req_str @ "path" }
+            DesignBundleHtml => { input: req_str @ "input", output: opt_str @ "output", require_thumbnail: raw_bool_opt @ "require_thumbnail" }
+            DesignHandoff => { project_dir: req_str @ "project_dir", feature: req_str @ "feature", files: str_vec @ "files" }
+            DesignCheckSystem => { project_dir: req_str @ "project_dir" }
+            DesignCapabilities => { format: opt_str @ "format" }
+            DesignServe => { project_dir: req_str @ "project_dir", port: opt_u64_as_u32 @ "port", file: opt_str @ "file" }
         }
     };
 }
@@ -884,6 +899,67 @@ pub enum ToolInput {
     },
     Advisor {},
     ConnectGitHub {},
+    DesignProjectCreate {
+        title: String,
+    },
+    DesignProjectList {},
+    DesignProjectSetMeta {
+        project_id: String,
+        title: Option<String>,
+        is_design_system: Option<bool>,
+    },
+    DesignListFiles {
+        project_id: String,
+    },
+    DesignReadFile {
+        project_id: String,
+        path: String,
+    },
+    DesignWriteFile {
+        project_id: String,
+        path: String,
+        content: String,
+        asset_name: Option<String>,
+    },
+    DesignDeleteFile {
+        project_id: String,
+        path: String,
+    },
+    DesignCopyFile {
+        project_id: String,
+        from_path: String,
+        to_path: String,
+    },
+    DesignRegisterAsset {
+        project_id: String,
+        name: String,
+        path: String,
+    },
+    DesignUnregisterAsset {
+        project_id: String,
+        path: String,
+    },
+    DesignBundleHtml {
+        input: String,
+        output: Option<String>,
+        require_thumbnail: Option<bool>,
+    },
+    DesignHandoff {
+        project_dir: String,
+        feature: String,
+        files: Vec<String>,
+    },
+    DesignCheckSystem {
+        project_dir: String,
+    },
+    DesignCapabilities {
+        format: Option<String>,
+    },
+    DesignServe {
+        project_dir: String,
+        port: Option<u32>,
+        file: Option<String>,
+    },
     Generic {
         summary: String,
     },
@@ -1025,8 +1101,13 @@ impl ToolInput {
             Self::GraphFiles { path, .. } => {
                 format!("files({})", path.as_deref().unwrap_or("."))
             }
-            Self::GetProgramSlice { symbol, backward, .. } => {
-                format!("{} slice: {symbol}", if *backward { "backward" } else { "forward" })
+            Self::GetProgramSlice {
+                symbol, backward, ..
+            } => {
+                format!(
+                    "{} slice: {symbol}",
+                    if *backward { "backward" } else { "forward" }
+                )
             }
             Self::GetDataDependencies { symbol, .. } => format!("data_deps: {symbol}"),
             Self::TaintFlow { sources, sinks, .. } => {
@@ -1173,6 +1254,55 @@ impl ToolInput {
             Self::ReadMcpResource { uri, .. } => format!("reading MCP resource: {uri}"),
             Self::Advisor {} => "consulting advisor".into(),
             Self::ConnectGitHub {} => "connecting GitHub".into(),
+            Self::DesignProjectCreate { title } => format!("design project: {title}"),
+            Self::DesignProjectList {} => "list design projects".into(),
+            Self::DesignProjectSetMeta { project_id, .. } => {
+                format!("design project meta: {project_id}")
+            }
+            Self::DesignListFiles { project_id } => format!("design files: {project_id}"),
+            Self::DesignReadFile { project_id, path } => {
+                format!("design read: {project_id}/{path}")
+            }
+            Self::DesignWriteFile {
+                project_id, path, ..
+            } => {
+                format!("design write: {project_id}/{path}")
+            }
+            Self::DesignDeleteFile { project_id, path } => {
+                format!("design delete: {project_id}/{path}")
+            }
+            Self::DesignCopyFile {
+                project_id,
+                from_path,
+                to_path,
+            } => format!("design copy: {project_id}/{from_path} -> {to_path}"),
+            Self::DesignRegisterAsset {
+                project_id,
+                name,
+                path,
+            } => format!("design asset: {project_id}/{path} ({name})"),
+            Self::DesignUnregisterAsset { project_id, path } => {
+                format!("design unasset: {project_id}/{path}")
+            }
+            Self::DesignBundleHtml { input, output, .. } => match output {
+                Some(output) => format!("bundle html: {input} -> {output}"),
+                None => format!("bundle html: {input}"),
+            },
+            Self::DesignHandoff {
+                project_dir,
+                feature,
+                ..
+            } => format!("design handoff: {feature} in {project_dir}"),
+            Self::DesignCheckSystem { project_dir } => {
+                format!("check design system: {project_dir}")
+            }
+            Self::DesignCapabilities { .. } => "design capabilities".into(),
+            Self::DesignServe {
+                project_dir, file, ..
+            } => match file {
+                Some(file) => format!("serve design: {project_dir}/{file}"),
+                None => format!("serve design: {project_dir}"),
+            },
         }
     }
 
@@ -1817,6 +1947,51 @@ mod macro_equivalence_tests {
             ),
             ("ScratchpadRead", json!({"key":"k"})),
             ("ScratchpadWrite", json!({"key":"k","value":"v"})),
+            ("DesignProjectCreate", json!({"title":"Deck"})),
+            ("DesignProjectList", json!({})),
+            (
+                "DesignProjectSetMeta",
+                json!({"project_id":"p1","title":"Deck 2","is_design_system":true}),
+            ),
+            ("DesignListFiles", json!({"project_id":"p1"})),
+            (
+                "DesignReadFile",
+                json!({"project_id":"p1","path":"index.html"}),
+            ),
+            (
+                "DesignWriteFile",
+                json!({"project_id":"p1","path":"index.html","content":"<h1>x</h1>","asset_name":"Landing"}),
+            ),
+            (
+                "DesignDeleteFile",
+                json!({"project_id":"p1","path":"old.html"}),
+            ),
+            (
+                "DesignCopyFile",
+                json!({"project_id":"p1","from_path":"a.html","to_path":"b.html"}),
+            ),
+            (
+                "DesignRegisterAsset",
+                json!({"project_id":"p1","name":"Landing","path":"index.html"}),
+            ),
+            (
+                "DesignUnregisterAsset",
+                json!({"project_id":"p1","path":"index.html"}),
+            ),
+            (
+                "DesignBundleHtml",
+                json!({"input":"index.html","output":"standalone.html","require_thumbnail":false}),
+            ),
+            (
+                "DesignHandoff",
+                json!({"project_dir":".","feature":"Onboarding","files":["index.html"]}),
+            ),
+            ("DesignCheckSystem", json!({"project_dir":"."})),
+            ("DesignCapabilities", json!({"format":"markdown"})),
+            (
+                "DesignServe",
+                json!({"project_dir":".","port":4321,"file":"index.html"}),
+            ),
         ]
     }
 

@@ -25,16 +25,12 @@ use jfc_session::TaskStore;
 pub const MAX_CONCURRENCY: usize = 10;
 
 /// A scheduled batch of tool calls.
-// `Sequential(ToolCall)` is fatter than `Parallel(Vec<ToolCall>)` (Vec is a
-// 24-byte handle). Boxing would shrink the enum but every batch lives only
-// long enough to run once, so this is a non-issue in practice.
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum ToolBatch {
     /// Tools that can execute simultaneously (Read, Glob, Grep, Search).
     Parallel(Vec<ToolCall>),
     /// A single tool that must run alone (Edit, Write, Bash, ApplyPatch).
-    Sequential(ToolCall),
+    Sequential(Box<ToolCall>),
 }
 
 /// Whether a tool kind is safe to run concurrently with other tools.
@@ -59,6 +55,10 @@ pub fn is_concurrency_safe(kind: &ToolKind) -> bool {
             | ToolKind::TeamCreate
             | ToolKind::TeamDelete
             | ToolKind::SendMessage
+            | ToolKind::DesignProjectList
+            | ToolKind::DesignListFiles
+            | ToolKind::DesignReadFile
+            | ToolKind::DesignCapabilities
     )
 }
 
@@ -90,7 +90,7 @@ pub fn schedule_tools(calls: Vec<ToolCall>) -> Vec<ToolBatch> {
             safe_buf.push(call);
         } else {
             flush_safe(&mut safe_buf, &mut batches);
-            batches.push(ToolBatch::Sequential(call));
+            batches.push(ToolBatch::Sequential(Box::new(call)));
         }
     }
     flush_safe(&mut safe_buf, &mut batches);
@@ -147,7 +147,7 @@ fn emit_cancelled_batch(tx: &mpsc::Sender<AppEvent>, batch: ToolBatch) -> Vec<To
             .into_iter()
             .map(|call| emit_cancelled_result(tx, call.id))
             .collect(),
-        ToolBatch::Sequential(call) => vec![emit_cancelled_result(tx, call.id)],
+        ToolBatch::Sequential(call) => vec![emit_cancelled_result(tx, call.id.clone())],
     }
 }
 

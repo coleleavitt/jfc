@@ -154,3 +154,48 @@ ScratchpadRead
 ScratchpadWrite
   to_value={"key":"k","value":"v"}
   summary=scratchpad write: k
+DesignProjectCreate
+  to_value={"title":"Deck"}
+  summary=design project: Deck
+DesignProjectList
+  to_value={}
+  summary=list design projects
+DesignProjectSetMeta
+  to_value={"project_id":"p1","title":"Deck 2","is_design_system":true}
+  summary=design project meta: p1
+DesignListFiles
+  to_value={"project_id":"p1"}
+  summary=design files: p1
+DesignReadFile
+  to_value={"project_id":"p1","path":"index.html"}
+  summary=design read: p1/index.html
+DesignWriteFile
+  to_value={"project_id":"p1","path":"index.html","content":"<h1>x</h1>","asset_name":"Landing"}
+  summary=design write: p1/index.html
+DesignDeleteFile
+  to_value={"project_id":"p1","path":"old.html"}
+  summary=design delete: p1/old.html
+DesignCopyFile
+  to_value={"project_id":"p1","from_path":"a.html","to_path":"b.html"}
+  summary=design copy: p1/a.html -> b.html
+DesignRegisterAsset
+  to_value={"project_id":"p1","name":"Landing","path":"index.html"}
+  summary=design asset: p1/index.html (Landing)
+DesignUnregisterAsset
+  to_value={"project_id":"p1","path":"index.html"}
+  summary=design unasset: p1/index.html
+DesignBundleHtml
+  to_value={"input":"index.html","output":"standalone.html","require_thumbnail":false}
+  summary=bundle html: index.html -> standalone.html
+DesignHandoff
+  to_value={"project_dir":".","feature":"Onboarding","files":["index.html"]}
+  summary=design handoff: Onboarding in .
+DesignCheckSystem
+  to_value={"project_dir":"."}
+  summary=check design system: .
+DesignCapabilities
+  to_value={"format":"markdown"}
+  summary=design capabilities
+DesignServe
+  to_value={"project_dir":".","port":4321,"file":"index.html"}
+  summary=serve design: ./index.html

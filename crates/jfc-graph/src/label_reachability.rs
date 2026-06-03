@@ -71,19 +71,31 @@ pub struct PatternAtom {
 impl PatternAtom {
     /// Exactly one edge of `kind`.
     pub fn one(kind: EdgeKind) -> Self {
-        Self { matcher: EdgeMatcher::Exactly(kind), rep: Rep::One }
+        Self {
+            matcher: EdgeMatcher::Exactly(kind),
+            rep: Rep::One,
+        }
     }
     /// Zero or more edges of `kind`.
     pub fn star(kind: EdgeKind) -> Self {
-        Self { matcher: EdgeMatcher::Exactly(kind), rep: Rep::Star }
+        Self {
+            matcher: EdgeMatcher::Exactly(kind),
+            rep: Rep::Star,
+        }
     }
     /// One or more edges of `kind`.
     pub fn plus(kind: EdgeKind) -> Self {
-        Self { matcher: EdgeMatcher::Exactly(kind), rep: Rep::Plus }
+        Self {
+            matcher: EdgeMatcher::Exactly(kind),
+            rep: Rep::Plus,
+        }
     }
     /// Any-label atom with the given repetition.
     pub fn any(rep: Rep) -> Self {
-        Self { matcher: EdgeMatcher::Any, rep }
+        Self {
+            matcher: EdgeMatcher::Any,
+            rep,
+        }
     }
 }
 
@@ -135,7 +147,11 @@ fn compile(pattern: &[PatternAtom]) -> Nfa {
         }
         current = exit;
     }
-    Nfa { trans, start, accept: current }
+    Nfa {
+        trans,
+        start,
+        accept: current,
+    }
 }
 
 /// Product BFS over `(NodeId, nfa_state)`. Returns the set of graph nodes
@@ -276,7 +292,11 @@ mod tests {
     }
 
     fn ed(k: EdgeKind) -> EdgeData {
-        EdgeData { kind: k, source_span: span(), weight: 1.0 }
+        EdgeData {
+            kind: k,
+            source_span: span(),
+            weight: 1.0,
+        }
     }
 
     // Normal: (Calls)+ reaches the transitive callees but not the source.

@@ -17,7 +17,6 @@
 //! - **Extensions**: skill invoked, bounty posted, bounty settled
 
 /// Points in the lifecycle where hooks can fire.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HookPoint {
     // ── Tool lifecycle ──────────────────────────────────────────────────
@@ -26,16 +25,12 @@ pub enum HookPoint {
     /// After a tool completes successfully.
     AfterToolDispatch,
     /// Before a batch of tools is dispatched (multi-tool turn).
-    #[allow(dead_code)]
     BeforeToolBatch,
     /// After a batch of tools completes.
-    #[allow(dead_code)]
     AfterToolBatch,
     /// When a tool execution fails.
-    #[allow(dead_code)]
     OnToolError,
     /// When a tool requires permission approval.
-    #[allow(dead_code)]
     OnToolApproval,
 
     // ── Stream lifecycle ────────────────────────────────────────────────
@@ -119,24 +114,19 @@ pub enum HookAction {
     /// Continue to next hook / proceed with operation.
     Continue,
     /// Skip the operation (tool not executed, no error).
-    #[allow(dead_code)]
     Skip,
     /// Replace the tool input with a different one.
-    #[allow(dead_code)]
     Replace(String),
     /// Abort with an error message.
     Abort(String),
     /// Emit metadata (non-blocking, for telemetry/logging).
-    #[allow(dead_code)]
     Emit(HookMetadata),
 }
 
 /// Metadata emitted by a hook (non-blocking).
 #[derive(Debug, Clone)]
 pub struct HookMetadata {
-    #[allow(dead_code)]
     pub key: String,
-    #[allow(dead_code)]
     pub value: String,
 }
 
@@ -146,7 +136,6 @@ pub struct HookContext {
     pub tool_name: String,
     pub tool_input: String,
     pub session_id: String,
-    #[allow(dead_code)]
     pub intent: Option<String>,
     /// Name of file affected (for OnFileChanged, etc).
     pub file_path: Option<String>,
@@ -160,7 +149,6 @@ pub struct HookContext {
 
 impl HookContext {
     /// Create a minimal context for tool-related hooks.
-    #[allow(dead_code)]
     pub fn for_tool(tool_name: &str, tool_input: &str, session_id: impl AsRef<str>) -> Self {
         Self {
             tool_name: tool_name.to_string(),
@@ -175,7 +163,6 @@ impl HookContext {
     }
 
     /// Create a context for file-related hooks.
-    #[allow(dead_code)]
     pub fn for_file(file_path: &str, session_id: impl AsRef<str>) -> Self {
         Self {
             tool_name: String::new(),
@@ -190,7 +177,6 @@ impl HookContext {
     }
 
     /// Create a context for agent lifecycle hooks.
-    #[allow(dead_code)]
     pub fn for_agent(agent_name: &str, session_id: impl AsRef<str>) -> Self {
         Self {
             tool_name: String::new(),
@@ -237,7 +223,6 @@ pub enum HookHandler {
     /// Permission check (delegates to permission system).
     PermissionCheck,
     /// Intent enrichment (adds intent to context).
-    #[allow(dead_code)]
     IntentEnricher,
     /// Comment/slop checker.
     CommentChecker,
@@ -254,11 +239,9 @@ pub enum HookHandler {
     /// any blocking pre-tool veto behavior. `ShellCommand` is suitable
     /// only for informational side effects (notifications, log shipping,
     /// metrics).
-    #[allow(dead_code)]
     ShellCommand { command: String },
     /// Execute a shell command. Exit 0 = allow (Continue), non-zero = block
     /// (Abort with stdout as message). Optionally filter by tool name pattern.
-    #[allow(dead_code)]
     Shell {
         /// Shell command to execute.
         command: String,
@@ -270,7 +253,6 @@ pub enum HookHandler {
         matcher: Option<String>,
     },
     /// Custom function (for testing and extensibility).
-    #[allow(dead_code)]
     Custom { name: String, action: HookAction },
 }
 
@@ -303,7 +285,7 @@ impl HookHandler {
                     "// This function",
                     "// This method",
                     "// TODO: implement",
-                    "#[allow(unused)]",
+                    "",
                     "/* eslint-disable */",
                 ];
                 let has_slop = slop_patterns
@@ -436,7 +418,6 @@ impl HookRegistry {
     }
 
     /// Register a handler for multiple hook points at once.
-    #[allow(dead_code)]
     pub fn register_multi(&mut self, points: &[HookPoint], handler: HookHandler) {
         for &point in points {
             self.hooks.push((point, handler.clone()));
@@ -482,18 +463,14 @@ impl HookRegistry {
     }
 
     /// Number of registered hooks.
-    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.hooks.len()
     }
-
-    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.hooks.is_empty()
     }
 
     /// Get all registered hook points (unique).
-    #[allow(dead_code)]
     pub fn registered_points(&self) -> Vec<HookPoint> {
         let mut points: Vec<HookPoint> = self.hooks.iter().map(|(p, _)| *p).collect();
         points.dedup();
@@ -501,20 +478,17 @@ impl HookRegistry {
     }
 
     /// Remove all hooks for a specific point.
-    #[allow(dead_code)]
     pub fn clear_point(&mut self, point: HookPoint) {
         self.hooks.retain(|(p, _)| *p != point);
     }
 
     /// Remove all hooks.
-    #[allow(dead_code)]
     pub fn clear_all(&mut self) {
         self.hooks.clear();
     }
 
     /// Register shell hooks from the user config's `[hooks]` section.
     /// Call once during app initialization after the config is loaded.
-    #[allow(dead_code)]
     pub fn register_from_config(&mut self, config: &crate::config::Config) {
         let Some(hooks_cfg) = &config.hooks else {
             return;
@@ -669,8 +643,6 @@ pub fn fire_async(point: HookPoint, ctx: &HookContext) {
 //
 // Both systems are intentionally separate: the registry is process-local
 // and zero-cost; the runner spawns subprocesses and is opt-in per event.
-
-#[allow(dead_code)]
 pub mod runner;
 
 /// Lifecycle events that script hooks subscribe to.
@@ -678,7 +650,6 @@ pub mod runner;
 /// Distinct from `HookPoint` (the in-process registry's enum) because
 /// script hooks need the *payload* serialized to JSON, whereas registry
 /// hooks operate on a borrowed `HookContext`.
-#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum HookEvent {
@@ -712,7 +683,6 @@ pub enum HookEvent {
 impl HookEvent {
     /// Script-name stem used for filesystem matching (without extension).
     /// e.g. `pre-tool-use` → matches `.jfc/hooks/pre-tool-use.sh` (or `.json`).
-    #[allow(dead_code)]
     pub fn script_name(&self) -> &'static str {
         match self {
             HookEvent::PreToolUse { .. } => "pre-tool-use",
@@ -727,7 +697,6 @@ impl HookEvent {
 }
 
 /// Decision returned by a script hook (parsed from script stdout).
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum HookDecision {
     /// Continue with the original input.

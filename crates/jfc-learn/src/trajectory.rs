@@ -28,7 +28,10 @@ pub struct Turn {
 
 impl Turn {
     pub fn new(role: impl Into<String>, content: impl Into<String>) -> Self {
-        Self { role: role.into(), content: content.into() }
+        Self {
+            role: role.into(),
+            content: content.into(),
+        }
     }
 
     /// Token estimate for this turn: `ceil(chars / 4)`, the same cheap rule of
@@ -150,7 +153,10 @@ mod tests {
     // the input unchanged.
     #[test]
     fn oversized_protect_bounds_are_safe_robust() {
-        let traj = vec![turn("user", "xxxxxxxxxxxxxxxxxxxx"), turn("assistant", "yyyy")];
+        let traj = vec![
+            turn("user", "xxxxxxxxxxxxxxxxxxxx"),
+            turn("assistant", "yyyy"),
+        ];
         let out = compress(&traj, 1, 10, 10, count_summary);
         assert_eq!(out, traj);
     }

@@ -253,7 +253,9 @@ mod tests {
         let p = FanoutPredictor::default();
         let plan = plan(&[Effort::Low; 5], None, 2);
         match p.gate(&plan) {
-            FanoutDecision::Proceed { predicted_waves, .. } => assert_eq!(predicted_waves, 3),
+            FanoutDecision::Proceed {
+                predicted_waves, ..
+            } => assert_eq!(predicted_waves, 3),
             other => panic!("expected Proceed, got {other:?}"),
         }
     }

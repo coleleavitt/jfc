@@ -159,17 +159,6 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// Override the current directory to a temp dir for testing.
-    #[allow(dead_code)]
-    fn with_temp_project<F: FnOnce(&std::path::Path)>(f: F) {
-        let dir = TempDir::new().unwrap();
-        let plans_dir = dir.path().join(".jfc").join("plans");
-        std::fs::create_dir_all(&plans_dir).unwrap();
-        // We test using PlanStore::open_at directly since open_project(None)
-        // uses cwd, which is hard to control in tests.
-        f(dir.path());
-    }
-
     #[test]
     fn plan_create_tool_normal() {
         let dir = TempDir::new().unwrap();

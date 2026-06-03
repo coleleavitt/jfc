@@ -148,7 +148,6 @@ pub fn build_render_items_pub<'a>(ctx: &'a RenderCtx<'a>, inner_w: usize) -> Vec
 /// markdown rendering is cached in `RenderCache`, the rest is
 /// O(parts). The previous "fast-path predictor" was a premature
 /// optimization that traded ~ms per frame for permanent drift bugs.
-#[allow(dead_code)] // exercised by the test suite; the bin reaches it via the shared inner.
 pub fn message_view_total_lines(app: &App, inner_w: usize) -> usize {
     build_render_items_inner(&RenderCtx::from_app(app), inner_w)
         .iter()

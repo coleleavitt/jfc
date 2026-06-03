@@ -96,7 +96,10 @@ mod tests {
     use super::*;
 
     fn turns(costs: &[(u64, u64)]) -> Vec<TurnCost> {
-        costs.iter().map(|&(id, tokens)| TurnCost { id, tokens }).collect()
+        costs
+            .iter()
+            .map(|&(id, tokens)| TurnCost { id, tokens })
+            .collect()
     }
 
     // Normal: the newest turns within budget are kept, older ones masked.

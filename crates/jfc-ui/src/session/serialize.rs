@@ -26,16 +26,18 @@ pub(crate) fn serialize_part(part: &MessagePart) -> SerializedPart {
         MessagePart::Text(t) => SerializedPart::Text { content: t.clone() },
         MessagePart::Reasoning(t) => SerializedPart::Reasoning { content: t.clone() },
         MessagePart::Tool(tc) => SerializedPart::Tool {
-            id: tc.id.as_str().to_owned(),
-            kind: tc.kind.label().to_owned(),
-            status: serialize_tool_status(tc.status),
-            // Persist only the teaser bit — the only display state
-            // worth surviving a session reload (see
-            // `SerializedPart::Tool::is_collapsed` doc comment).
-            is_collapsed: tc.display.is_collapsed(),
-            input: Some(serialize_tool_input(&tc.input)),
-            output: Some(serialize_tool_output(&tc.output)),
-            thought_signature: tc.thought_signature.clone(),
+            tool: Box::new(SerializedToolPart {
+                id: tc.id.as_str().to_owned(),
+                kind: tc.kind.label().to_owned(),
+                status: serialize_tool_status(tc.status),
+                // Persist only the teaser bit — the only display state
+                // worth surviving a session reload (see
+                // `SerializedPart::Tool::is_collapsed` doc comment).
+                is_collapsed: tc.display.is_collapsed(),
+                input: Some(serialize_tool_input(&tc.input)),
+                output: Some(serialize_tool_output(&tc.output)),
+                thought_signature: tc.thought_signature.clone(),
+            }),
         },
         MessagePart::TaskStatus(ts) => SerializedPart::TaskStatus {
             task_id: ts.task_id.as_str().to_owned(),
@@ -342,7 +344,9 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::GraphFiles { path, .. } => SerializedToolInput::Generic {
             summary: format!("graph_files: {}", path.as_deref().unwrap_or(".")),
         },
-        ToolInput::GetProgramSlice { symbol, backward, .. } => SerializedToolInput::Generic {
+        ToolInput::GetProgramSlice {
+            symbol, backward, ..
+        } => SerializedToolInput::Generic {
             summary: format!(
                 "{} slice: {symbol}",
                 if *backward { "backward" } else { "forward" }
@@ -566,10 +570,23 @@ pub(crate) fn serialize_tool_input(input: &ToolInput) -> SerializedToolInput {
         ToolInput::ConnectGitHub {} => SerializedToolInput::Generic {
             summary: "ConnectGitHub".into(),
         },
+        ToolInput::DesignProjectCreate { .. }
+        | ToolInput::DesignProjectList {}
+        | ToolInput::DesignProjectSetMeta { .. }
+        | ToolInput::DesignListFiles { .. }
+        | ToolInput::DesignReadFile { .. }
+        | ToolInput::DesignWriteFile { .. }
+        | ToolInput::DesignDeleteFile { .. }
+        | ToolInput::DesignCopyFile { .. }
+        | ToolInput::DesignRegisterAsset { .. }
+        | ToolInput::DesignUnregisterAsset { .. }
+        | ToolInput::DesignBundleHtml { .. }
+        | ToolInput::DesignHandoff { .. }
+        | ToolInput::DesignCheckSystem { .. }
+        | ToolInput::DesignCapabilities { .. }
+        | ToolInput::DesignServe { .. } => serialize_generic_tool_input_json(input),
     }
 }
-
-#[allow(dead_code)]
 pub(crate) fn serialize_generic_tool_input_json(input: &ToolInput) -> SerializedToolInput {
     SerializedToolInput::Generic {
         summary: input.to_value().to_string(),

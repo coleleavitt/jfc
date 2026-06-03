@@ -14,8 +14,7 @@ pub(crate) fn format_token_count(n: u64) -> String {
 /// to show beyond the description). Mirrors v131's
 /// `(${z.toolUseCount} tools, ${z.tokenCount} tokens)` from
 /// cli.2.1.131.beautified.js.
-#[allow(dead_code)] // test-only helper
-pub(crate) fn format_subagent_counters(bt: &crate::app::BackgroundTask) -> String {
+pub fn format_subagent_counters(bt: &crate::app::BackgroundTask) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(model) = bt.model_used.as_deref() {
         let badge = model_fqn(model);

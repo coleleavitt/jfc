@@ -408,7 +408,8 @@ pub(super) fn execute_taint_flow(
 ) -> ExecutionResult {
     let session = get_or_build_graph_session(cwd);
     let n = max_paths.unwrap_or(20).clamp(1, 100);
-    let out = jfc_graph::analysis_tools::taint_flow(&session.graph, &sources, &sinks, &sanitizers, n);
+    let out =
+        jfc_graph::analysis_tools::taint_flow(&session.graph, &sources, &sinks, &sanitizers, n);
     ExecutionResult::success(out)
 }
 

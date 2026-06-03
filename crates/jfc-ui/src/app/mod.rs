@@ -2,7 +2,7 @@ mod events;
 mod impls;
 mod permissions;
 mod recent_models;
-mod shell_safety;
+pub mod shell_safety;
 mod state;
 
 pub use events::AppEvent;

@@ -118,6 +118,51 @@ pub(crate) fn ledger_detail_for(
         (ToolKind::Edit, ToolInput::Edit { file_path, .. })
         | (ToolKind::Write, ToolInput::Write { file_path, .. })
         | (ToolKind::MultiEdit, ToolInput::MultiEdit { file_path, .. }) => file_path.clone(),
+        (
+            ToolKind::DesignWriteFile
+            | ToolKind::DesignDeleteFile
+            | ToolKind::DesignRegisterAsset
+            | ToolKind::DesignUnregisterAsset,
+            ToolInput::DesignWriteFile {
+                project_id, path, ..
+            }
+            | ToolInput::DesignDeleteFile { project_id, path }
+            | ToolInput::DesignRegisterAsset {
+                project_id, path, ..
+            }
+            | ToolInput::DesignUnregisterAsset { project_id, path },
+        ) => format!("{project_id}/{path}"),
+        (
+            ToolKind::DesignCopyFile,
+            ToolInput::DesignCopyFile {
+                project_id,
+                from_path,
+                to_path,
+            },
+        ) => format!("{project_id}/{from_path} -> {to_path}"),
+        (ToolKind::DesignProjectCreate, ToolInput::DesignProjectCreate { title }) => title.clone(),
+        (ToolKind::DesignProjectSetMeta, ToolInput::DesignProjectSetMeta { project_id, .. }) => {
+            project_id.clone()
+        }
+        (ToolKind::DesignBundleHtml, ToolInput::DesignBundleHtml { input, output, .. }) => {
+            match output {
+                Some(output) => format!("{input} -> {output}"),
+                None => input.clone(),
+            }
+        }
+        (
+            ToolKind::DesignHandoff,
+            ToolInput::DesignHandoff {
+                project_dir,
+                feature,
+                ..
+            },
+        ) => {
+            format!("{project_dir}: {feature}")
+        }
+        (ToolKind::DesignCheckSystem, ToolInput::DesignCheckSystem { project_dir }) => {
+            project_dir.clone()
+        }
         _ => String::new(),
     }
 }

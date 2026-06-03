@@ -27,18 +27,11 @@ mod tool_height;
 mod tool_xml_guard;
 mod truncation;
 
-#[allow(unused_imports)]
 pub use assistant_parts::find_tool_at;
-#[allow(unused_imports)]
-pub use assistant_parts::pretty_model_badge;
-#[allow(unused_imports)]
 pub use core::{
-    MessageView, PrebuiltItems, RenderCtx, RenderItem, build_render_items_ctx,
-    build_render_items_pub, message_view_total_lines,
+    MessageView, PrebuiltItems, RenderCtx, build_render_items_ctx, build_render_items_pub,
+    message_view_total_lines,
 };
-#[allow(unused_imports)]
-pub use outputs::diff_lang;
-#[allow(unused_imports)]
 pub use task_body::{TASK_VIEW_COLLAPSE_BYTES, TASK_VIEW_COLLAPSE_LINES, task_view_body_lines};
-#[allow(unused_imports)]
-pub use tool_blocks::{tool_kind_color, tool_status_icon_animated};
+pub use tool_blocks::{border_color_for_status, tool_kind_color, tool_status_icon_animated};
+pub use tool_height::tool_block_height_pub;

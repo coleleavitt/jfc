@@ -226,7 +226,6 @@ pub fn parse_publish_diagnostics(
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-#[allow(dead_code)]
 pub struct RpcRequest {
     pub jsonrpc: String,
     pub id: u64,

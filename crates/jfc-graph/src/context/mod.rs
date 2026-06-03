@@ -541,7 +541,11 @@ mod tests {
         g.add_edge(
             &handler,
             &req,
-            EdgeData { kind: EdgeKind::UsesType, source_span: span_at(1, 1), weight: 1.0 },
+            EdgeData {
+                kind: EdgeKind::UsesType,
+                source_span: span_at(1, 1),
+                weight: 1.0,
+            },
         )
         .unwrap();
 
@@ -582,7 +586,11 @@ mod tests {
         g.add_edge(
             &a,
             &b,
-            EdgeData { kind: EdgeKind::Calls, source_span: span_at(1, 1), weight: 1.0 },
+            EdgeData {
+                kind: EdgeKind::Calls,
+                source_span: span_at(1, 1),
+                weight: 1.0,
+            },
         )
         .unwrap();
 

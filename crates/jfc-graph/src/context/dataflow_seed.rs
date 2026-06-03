@@ -56,7 +56,11 @@ pub fn seed_from_dataflow(graph: &CodeGraph, cursor_symbol: &str, max_depth: u8)
 pub fn seed_from_nodes(graph: &CodeGraph, roots: &[NodeId], max_depth: u8) -> Vec<NodeId> {
     let mut visited: HashSet<NodeId> = roots.iter().cloned().collect();
     let mut ordered: Vec<NodeId> = Vec::new();
-    let mut layer: Vec<NodeId> = roots.iter().filter(|n| graph.contains_node(n)).cloned().collect();
+    let mut layer: Vec<NodeId> = roots
+        .iter()
+        .filter(|n| graph.contains_node(n))
+        .cloned()
+        .collect();
 
     for _ in 0..max_depth {
         let mut next: Vec<NodeId> = Vec::new();
@@ -114,7 +118,11 @@ mod tests {
     }
 
     fn ed(k: EdgeKind) -> EdgeData {
-        EdgeData { kind: k, source_span: span(), weight: 1.0 }
+        EdgeData {
+            kind: k,
+            source_span: span(),
+            weight: 1.0,
+        }
     }
 
     // Normal: seeds follow type/dataflow edges out of the cursor symbol.
@@ -147,7 +155,11 @@ mod tests {
 
         let seeds = seed_from_dataflow(&g, "handler", 2);
         assert!(seeds.contains(&dep));
-        assert!(!seeds.iter().any(|n| *n == NodeId::new("t.rs", "handler_helper", NodeKind::Function)));
+        assert!(
+            !seeds
+                .iter()
+                .any(|n| *n == NodeId::new("t.rs", "handler_helper", NodeKind::Function))
+        );
     }
 
     // Normal: BFS visits transitive dependencies in dependency order (depth 1

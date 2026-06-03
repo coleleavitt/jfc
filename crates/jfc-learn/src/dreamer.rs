@@ -584,8 +584,14 @@ mod tests {
                 expected: "o".into(),
             }]),
             variants: vec![
-                PromptVariant { name: "a".into(), system_prompt: "pa".into() },
-                PromptVariant { name: "b".into(), system_prompt: "pb".into() },
+                PromptVariant {
+                    name: "a".into(),
+                    system_prompt: "pa".into(),
+                },
+                PromptVariant {
+                    name: "b".into(),
+                    system_prompt: "pb".into(),
+                },
             ],
             evaluator: Box::new(PickB),
         };

@@ -46,7 +46,10 @@ fn recency_preserve_floor(group_tokens: &[usize], window: usize) -> usize {
     let turns: Vec<jfc_core::TurnCost> = group_tokens
         .iter()
         .enumerate()
-        .map(|(i, &t)| jfc_core::TurnCost { id: i as u64, tokens: t as u64 })
+        .map(|(i, &t)| jfc_core::TurnCost {
+            id: i as u64,
+            tokens: t as u64,
+        })
         .collect();
     let retention = jfc_core::select_retained(&turns, budget);
     // Keep at least 1, and always leave at least 1 group to summarize.
@@ -92,9 +95,7 @@ impl RecencyMeasurement {
 #[cfg(test)]
 pub(crate) fn measure_recency_floor(group_tokens: &[usize], window: usize) -> RecencyMeasurement {
     let total = group_tokens.len();
-    let sum_newest = |count: usize| -> usize {
-        group_tokens.iter().rev().take(count).sum()
-    };
+    let sum_newest = |count: usize| -> usize { group_tokens.iter().rev().take(count).sum() };
     let floor_groups = recency_preserve_floor(group_tokens, window);
     RecencyMeasurement {
         tokens_preserved_with_floor: sum_newest(floor_groups),

@@ -25,6 +25,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::RwLock;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -43,20 +44,24 @@ pub enum KeyAction {
     ToggleHelp,
 }
 
-impl KeyAction {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for KeyAction {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "toggle_fast_mode" => Some(Self::ToggleFastMode),
-            "clear_history" => Some(Self::ClearHistory),
-            "compact" => Some(Self::Compact),
-            "open_model_picker" => Some(Self::OpenModelPicker),
-            "toggle_verbose" => Some(Self::ToggleVerbose),
-            "exit" => Some(Self::Exit),
-            "toggle_help" => Some(Self::ToggleHelp),
-            _ => None,
+            "toggle_fast_mode" => Ok(Self::ToggleFastMode),
+            "clear_history" => Ok(Self::ClearHistory),
+            "compact" => Ok(Self::Compact),
+            "open_model_picker" => Ok(Self::OpenModelPicker),
+            "toggle_verbose" => Ok(Self::ToggleVerbose),
+            "exit" => Ok(Self::Exit),
+            "toggle_help" => Ok(Self::ToggleHelp),
+            _ => Err(()),
         }
     }
+}
 
+impl KeyAction {
     pub fn description(&self) -> &'static str {
         match self {
             Self::ToggleFastMode => "Toggle fast mode",
@@ -237,14 +242,14 @@ pub fn load() {
 
     let mut bindings: Vec<(KeyEvent, KeyAction)> = Vec::new();
     for (key_str, action_str) in &file.keys {
-        match (parse_key(key_str), KeyAction::from_str(action_str)) {
-            (Some(key), Some(action)) => bindings.push((key, action)),
+        match (parse_key(key_str), action_str.parse::<KeyAction>()) {
+            (Some(key), Ok(action)) => bindings.push((key, action)),
             (None, _) => tracing::warn!(
                 target: "jfc::keybindings",
                 key = %key_str,
                 "Unrecognised key string — skipping binding"
             ),
-            (_, None) => tracing::warn!(
+            (_, Err(())) => tracing::warn!(
                 target: "jfc::keybindings",
                 action = %action_str,
                 "Unrecognised action name — skipping binding"
@@ -364,29 +369,14 @@ mod tests {
 
     #[test]
     fn key_action_from_str_normal() {
-        assert_eq!(
-            KeyAction::from_str("toggle_fast_mode"),
-            Some(KeyAction::ToggleFastMode)
-        );
-        assert_eq!(
-            KeyAction::from_str("clear_history"),
-            Some(KeyAction::ClearHistory)
-        );
-        assert_eq!(KeyAction::from_str("compact"), Some(KeyAction::Compact));
-        assert_eq!(
-            KeyAction::from_str("open_model_picker"),
-            Some(KeyAction::OpenModelPicker)
-        );
-        assert_eq!(
-            KeyAction::from_str("toggle_verbose"),
-            Some(KeyAction::ToggleVerbose)
-        );
-        assert_eq!(KeyAction::from_str("exit"), Some(KeyAction::Exit));
-        assert_eq!(
-            KeyAction::from_str("toggle_help"),
-            Some(KeyAction::ToggleHelp)
-        );
-        assert!(KeyAction::from_str("does_not_exist").is_none());
+        assert_eq!("toggle_fast_mode".parse(), Ok(KeyAction::ToggleFastMode));
+        assert_eq!("clear_history".parse(), Ok(KeyAction::ClearHistory));
+        assert_eq!("compact".parse(), Ok(KeyAction::Compact));
+        assert_eq!("open_model_picker".parse(), Ok(KeyAction::OpenModelPicker));
+        assert_eq!("toggle_verbose".parse(), Ok(KeyAction::ToggleVerbose));
+        assert_eq!("exit".parse(), Ok(KeyAction::Exit));
+        assert_eq!("toggle_help".parse(), Ok(KeyAction::ToggleHelp));
+        assert!("does_not_exist".parse::<KeyAction>().is_err());
     }
 
     #[test]

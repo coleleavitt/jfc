@@ -140,7 +140,6 @@ impl ToolCall {
     /// {Pending|Running} → Cancelled. Returns Err on a different
     /// terminal state. Used when the user denies a tool or moves on
     /// before it dispatches.
-    #[allow(dead_code)]
     pub fn mark_cancelled(&mut self) -> Result<(), InvalidToolTransition> {
         self.try_transition_to(ExecutionStatus::Cancelled)
     }

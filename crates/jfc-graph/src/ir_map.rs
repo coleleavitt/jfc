@@ -94,7 +94,7 @@ fn is_function_kind(kind: &str) -> bool {
             | "function_declaration" // go, js/ts
             | "method_declaration"   // go, ts
             | "method_definition"    // js/ts
-            | "arrow_function"       // js/ts
+            | "arrow_function" // js/ts
     )
 }
 
@@ -146,7 +146,11 @@ fn parse_source_file(path: &Path) -> Option<ParsedSource> {
     let source = std::fs::read_to_string(path).ok()?;
     let mut parser = parser_for(lang_id)?;
     let tree = parser.parse(&source, None)?;
-    Some(ParsedSource { tree, source, lang_id })
+    Some(ParsedSource {
+        tree,
+        source,
+        lang_id,
+    })
 }
 
 #[cfg(test)]
@@ -262,7 +266,16 @@ mod tests {
             dataflow: None,
         };
         let s_id = g.add_node(s);
-        g.add_edge(&f, &s_id, EdgeData { kind: EdgeKind::UsesType, source_span: g.get_node(&f).unwrap().span.clone(), weight: 1.0 }).ok();
+        g.add_edge(
+            &f,
+            &s_id,
+            EdgeData {
+                kind: EdgeKind::UsesType,
+                source_span: g.get_node(&f).unwrap().span.clone(),
+                weight: 1.0,
+            },
+        )
+        .ok();
 
         let ir_map = build_ir_map(&g);
         assert!(ir_map.contains_key(&f));

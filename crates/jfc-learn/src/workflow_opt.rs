@@ -64,7 +64,9 @@ impl WorkflowVariant {
     /// The minimal seed workflow: a single generation. AFlow starts from a
     /// trivial workflow and searches outward.
     pub fn seed() -> Self {
-        Self { ops: vec![WorkflowOp::Generate] }
+        Self {
+            ops: vec![WorkflowOp::Generate],
+        }
     }
 
     pub fn from_ops(ops: Vec<WorkflowOp>) -> Self {
@@ -78,7 +80,10 @@ impl WorkflowVariant {
 
     /// Number of review→revise refinement rounds (a `Revise` op).
     pub fn refinement_rounds(&self) -> usize {
-        self.ops.iter().filter(|o| matches!(o, WorkflowOp::Revise)).count()
+        self.ops
+            .iter()
+            .filter(|o| matches!(o, WorkflowOp::Revise))
+            .count()
     }
 
     /// The first ensemble width, if any.
@@ -229,7 +234,11 @@ impl<'a> WorkflowOptimizer<'a> {
         evaluator: &'a dyn WorkflowEvaluator,
         cost_per_call: f64,
     ) -> Self {
-        Self { tasks, evaluator, cost_per_call }
+        Self {
+            tasks,
+            evaluator,
+            cost_per_call,
+        }
     }
 
     /// AFlow objective for one variant: mean quality across the task set minus
@@ -254,11 +263,7 @@ impl<'a> WorkflowOptimizer<'a> {
     /// best workflow found plus the experience log. Deterministic: uses
     /// [`jfc_core::workflow_search::argmax`] selection (pure exploitation over
     /// the soft-mixed weights).
-    pub fn optimize(
-        &self,
-        seed: WorkflowVariant,
-        iters: usize,
-    ) -> SearchResult<WorkflowVariant> {
+    pub fn optimize(&self, seed: WorkflowVariant, iters: usize) -> SearchResult<WorkflowVariant> {
         let mut mutator = StructuralMutator::new();
         search(
             seed,
@@ -398,7 +403,10 @@ mod tests {
         fn run(&self, variant: &WorkflowVariant, _task: &WorkflowTask) -> WorkflowOutcome {
             let rounds = variant.refinement_rounds() as i32;
             let quality = 1.0 - 0.5 * 0.5_f64.powi(rounds);
-            WorkflowOutcome { quality, llm_calls: variant.llm_calls() }
+            WorkflowOutcome {
+                quality,
+                llm_calls: variant.llm_calls(),
+            }
         }
     }
 
@@ -577,7 +585,10 @@ mod tests {
         // The raw unescaped sequence must not appear; the escaped form must.
         assert!(script.contains("const task = 'it\\'s a \\\\ test\\nwith newline'"));
         // Exactly one task assignment line, and it is single-quote balanced.
-        let task_line = script.lines().find(|l| l.starts_with("const task = ")).unwrap();
+        let task_line = script
+            .lines()
+            .find(|l| l.starts_with("const task = "))
+            .unwrap();
         // Unescaped single quotes (not preceded by a backslash) only at the two
         // delimiters.
         let raw_quotes = task_line

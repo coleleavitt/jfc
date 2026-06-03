@@ -225,7 +225,9 @@ pub fn detect_routes(file: &Path, source: &str) -> Vec<Route> {
                 let parsed = HttpMethod::parse(method_seg);
                 if parsed.is_some() || method_seg == "route" {
                     if let Some((path, _)) = first_string_literal(body) {
-                        let method = parsed.or_else(|| flask_method(body)).unwrap_or(HttpMethod::Any);
+                        let method = parsed
+                            .or_else(|| flask_method(body))
+                            .unwrap_or(HttpMethod::Any);
                         out.push(Route {
                             style: RouteStyle::PyDecorator,
                             method,
@@ -289,10 +291,11 @@ pub fn annotate_graph_with_routes(graph: &mut CodeGraph, project_root: &Path) ->
     // Group function spans by file so each file is read at most once.
     let mut by_file: HashMap<PathBuf, Vec<(crate::nodes::NodeId, u32, u32)>> = HashMap::new();
     for n in graph.nodes_by_kind(NodeKind::Function) {
-        by_file
-            .entry(n.file_path.clone())
-            .or_default()
-            .push((n.id.clone(), n.span.start_line, n.span.end_line));
+        by_file.entry(n.file_path.clone()).or_default().push((
+            n.id.clone(),
+            n.span.start_line,
+            n.span.end_line,
+        ));
     }
 
     let mut annotated = 0usize;
@@ -522,7 +525,10 @@ let v = items.get("key");    // map lookup with a string — acceptable edge
         let node = graph.get_node(&id).unwrap();
         assert_eq!(node.metadata.get("route.method").unwrap(), "GET");
         assert_eq!(node.metadata.get("route.path").unwrap(), "/ping");
-        assert_eq!(node.metadata.get("route.framework").unwrap(), "python-decorator");
+        assert_eq!(
+            node.metadata.get("route.framework").unwrap(),
+            "python-decorator"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

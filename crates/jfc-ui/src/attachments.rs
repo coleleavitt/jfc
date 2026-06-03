@@ -504,7 +504,6 @@ pub fn to_anthropic_content_block(att: &Attachment) -> serde_json::Value {
 /// attachments and return a FileID-referenced content block instead of
 /// inlining base64. Falls back to `to_anthropic_content_block` on any
 /// failure (network, auth, size limit) so the request is never lost.
-#[allow(dead_code)]
 pub async fn to_anthropic_content_block_async(
     att: &Attachment,
     client: Option<&jfc_anthropic_sdk::Client>,
@@ -886,9 +885,10 @@ mod tests {
     // we documented in the read_clipboard_image rationale — pin it so
     // a careless raise doesn't slip past code review.
     #[test]
-    #[allow(clippy::assertions_on_constants)]
     fn max_image_bytes_is_conservative_anthropic_cap_normal() {
-        assert!(MAX_IMAGE_BYTES <= 3_750_000); // raw bytes for 5MB base64
-        assert!(MAX_IMAGE_BYTES >= 1_000_000); // big enough for typical screenshots
+        const {
+            assert!(MAX_IMAGE_BYTES <= 3_750_000); // raw bytes for 5MB base64
+            assert!(MAX_IMAGE_BYTES >= 1_000_000); // big enough for typical screenshots
+        }
     }
 }

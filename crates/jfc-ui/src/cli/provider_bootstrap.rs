@@ -308,17 +308,17 @@ pub(crate) fn resolve_provider_model(
     }
     // Try parsing as ModelSpec — if qualified, route directly by provider name
     // and strip the prefix before the model id is sent to the provider.
-    if let Ok(spec) = model_id.parse::<ModelSpec>() {
-        if let Some(prefix) = spec.provider() {
-            return providers
-                .iter()
-                .find(|p| p.name() == prefix.as_str())
-                .cloned()
-                .map(|provider| ProviderModelResolution {
-                    provider,
-                    model: spec.model().clone(),
-                });
-        }
+    if let Ok(spec) = model_id.parse::<ModelSpec>()
+        && let Some(prefix) = spec.provider()
+    {
+        return providers
+            .iter()
+            .find(|p| p.name() == prefix.as_str())
+            .cloned()
+            .map(|provider| ProviderModelResolution {
+                provider,
+                model: spec.model().clone(),
+            });
     }
     let model = ModelId::new(model_id);
     // Tier 2: static catalogue lookup

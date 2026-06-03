@@ -26,7 +26,6 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 /// Caller-tunable knobs for [`run_headless`].
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct HeadlessConfig {
     /// Stop after this many turns even if stdin still has input.
@@ -68,7 +67,6 @@ struct ToolCallRecord {
 }
 
 /// Drive the headless loop until stdin EOF or `max_turns` is reached.
-#[allow(dead_code)]
 pub async fn run_headless(
     config: HeadlessConfig,
     provider: Arc<dyn jfc_provider::Provider>,

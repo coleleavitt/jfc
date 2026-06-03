@@ -6,8 +6,6 @@
 //!
 //! The types here are fully implemented but some are not yet wired into the
 //! event loop (pending t154/t156). Suppress dead_code until the wiring lands.
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 

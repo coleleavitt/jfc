@@ -194,7 +194,6 @@ pub enum UiEvent {
 // trade a one-time heap alloc per tool for shrinking the *common* path's
 // variant size — net-negative when Tool is the most-constructed variant.
 // Same rationale on `ToolEvent` below.
-#[allow(clippy::large_enum_variant)]
 pub enum StreamEvent {
     Chunk {
         text: Option<String>,
@@ -260,8 +259,6 @@ pub enum StreamEvent {
     /// looking like a frozen UI.
     Lifecycle(StreamLifecycleStatus),
 }
-
-#[allow(clippy::large_enum_variant)]
 pub enum ToolEvent {
     Result {
         tool_id: crate::ids::ToolId,
@@ -424,11 +421,9 @@ pub enum ProviderEvent {
     /// provider stream errors so the UI can show both the immediate HTTP
     /// retry state and the broader Anthropic service state.
     ClaudeStatusUpdated(crate::claude_status::ClaudeStatusUpdate),
-    #[allow(dead_code)]
     McpUpdated {
         servers: Vec<crate::types::McpServerInfo>,
     },
-    #[allow(dead_code)]
     LspUpdated {
         servers: Vec<crate::types::LspServerInfo>,
     },

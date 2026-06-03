@@ -132,6 +132,10 @@ impl PermissionMode {
                 | ToolKind::ScratchpadWrite
                 | ToolKind::AskUserQuestion
                 | ToolKind::EnterPlanMode
+                | ToolKind::DesignProjectList
+                | ToolKind::DesignListFiles
+                | ToolKind::DesignReadFile
+                | ToolKind::DesignCapabilities
                 // ExitPlanMode is the *only* way the agent can leave
                 // plan mode programmatically. Auto-approving it lets
                 // the model surface a plan whenever it's ready —
@@ -206,7 +210,22 @@ impl PermissionMode {
                 | ToolKind::EnterPlanMode
                 | ToolKind::ExitPlanMode
                 | ToolKind::EnterWorktree
-                | ToolKind::ExitWorktree => PermissionDecision::Approved,
+                | ToolKind::ExitWorktree
+                | ToolKind::DesignProjectCreate
+                | ToolKind::DesignProjectList
+                | ToolKind::DesignProjectSetMeta
+                | ToolKind::DesignListFiles
+                | ToolKind::DesignReadFile
+                | ToolKind::DesignWriteFile
+                | ToolKind::DesignDeleteFile
+                | ToolKind::DesignCopyFile
+                | ToolKind::DesignRegisterAsset
+                | ToolKind::DesignUnregisterAsset
+                | ToolKind::DesignBundleHtml
+                | ToolKind::DesignHandoff
+                | ToolKind::DesignCheckSystem
+                | ToolKind::DesignCapabilities
+                | ToolKind::DesignServe => PermissionDecision::Approved,
                 _ => PermissionDecision::NeedsPrompt,
             },
             Self::BypassPermissions => PermissionDecision::Approved,
@@ -378,7 +397,6 @@ impl PendingQuestion {
 
     /// True once every question has a committed answer. (Exercised by tests;
     /// the runtime path uses `advance_to_next_unanswered`'s return instead.)
-    #[allow(dead_code)]
     pub fn all_committed(&self) -> bool {
         self.items.iter().all(|i| i.answer.is_some())
     }

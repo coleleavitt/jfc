@@ -464,7 +464,6 @@ pub async fn run_workflow(config: WorkflowRunConfig) -> WorkflowOutcome {
 }
 
 /// Dispatch one agent through `execute_task`, write the journal, and reply.
-#[allow(clippy::too_many_arguments)]
 async fn run_one_agent(
     req: AgentRequest,
     key: String,

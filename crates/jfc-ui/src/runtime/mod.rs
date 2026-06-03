@@ -21,11 +21,11 @@ pub use events::{
     StreamRequestOverrides, StreamToolChoice, TaskEvent, TeamEvent, ToolEvent, UiEvent,
     WorkflowProgressEvent, send_critical,
 };
-#[cfg(test)]
-pub use execution::{DiagnosticLevel, ToolOutcome};
 pub use execution::{ExecutionResult, ToolProvenance, ToolSource};
 pub(crate) use factory::{factory_mode_enabled, maybe_continue_task_factory};
 pub(crate) use goal_loop::{dispatch_goal_evaluator_if_active, handle_goal_verdict};
+#[cfg(test)]
+pub use jfc_core::{DiagnosticLevel, ToolOutcome};
 pub(crate) use network::record_network_recovery;
 pub(crate) use queue::drain_queued_prompts;
 pub(crate) use stream_control::restart_stream_in_place;

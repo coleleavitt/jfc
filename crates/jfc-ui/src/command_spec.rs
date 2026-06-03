@@ -136,6 +136,45 @@ pub(crate) fn tool_spec(kind: crate::types::ToolKind) -> StaticSpec {
             Permission::ReadOnly,
         ),
         ToolKind::TaskCreate => ("TaskCreate", "create a task", Permission::Management),
+        ToolKind::DesignProjectList => (
+            "DesignProjectList",
+            "list design projects",
+            Permission::ReadOnly,
+        ),
+        ToolKind::DesignListFiles => (
+            "DesignListFiles",
+            "list design project files",
+            Permission::ReadOnly,
+        ),
+        ToolKind::DesignReadFile => (
+            "DesignReadFile",
+            "read a design project file",
+            Permission::ReadOnly,
+        ),
+        ToolKind::DesignCapabilities => (
+            "DesignCapabilities",
+            "show design parity matrix",
+            Permission::ReadOnly,
+        ),
+        ToolKind::DesignProjectCreate
+        | ToolKind::DesignProjectSetMeta
+        | ToolKind::DesignWriteFile
+        | ToolKind::DesignDeleteFile
+        | ToolKind::DesignCopyFile
+        | ToolKind::DesignRegisterAsset
+        | ToolKind::DesignUnregisterAsset
+        | ToolKind::DesignBundleHtml
+        | ToolKind::DesignHandoff
+        | ToolKind::DesignCheckSystem => (
+            "Design",
+            "mutate design project state",
+            Permission::Mutating,
+        ),
+        ToolKind::DesignServe => (
+            "DesignServe",
+            "start a local design preview server",
+            Permission::Management,
+        ),
         _ => ("tool", "model tool", Permission::Management),
     };
     StaticSpec {
@@ -191,6 +230,9 @@ pub(crate) fn all_specs() -> Vec<StaticSpec> {
         ToolKind::Bash,
         ToolKind::Grep,
         ToolKind::TaskCreate,
+        ToolKind::DesignProjectList,
+        ToolKind::DesignReadFile,
+        ToolKind::DesignWriteFile,
     ] {
         specs.push(tool_spec(kind));
     }
@@ -383,6 +425,16 @@ mod tests {
             ToolKind::MultiEdit,
             ToolKind::Bash,
             ToolKind::ApplyPatch,
+            ToolKind::DesignProjectCreate,
+            ToolKind::DesignProjectSetMeta,
+            ToolKind::DesignWriteFile,
+            ToolKind::DesignDeleteFile,
+            ToolKind::DesignCopyFile,
+            ToolKind::DesignRegisterAsset,
+            ToolKind::DesignUnregisterAsset,
+            ToolKind::DesignBundleHtml,
+            ToolKind::DesignHandoff,
+            ToolKind::DesignCheckSystem,
         ] {
             assert!(tool_is_mutating(kind.clone()), "{kind:?} must be mutating");
         }
@@ -392,6 +444,11 @@ mod tests {
             ToolKind::Grep,
             ToolKind::Search,
             ToolKind::TaskCreate,
+            ToolKind::DesignProjectList,
+            ToolKind::DesignListFiles,
+            ToolKind::DesignReadFile,
+            ToolKind::DesignCapabilities,
+            ToolKind::DesignServe,
         ] {
             assert!(
                 !tool_is_mutating(kind.clone()),

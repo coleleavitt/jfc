@@ -34,8 +34,6 @@ impl Toast {
             ttl: default_ttl_for(kind),
         }
     }
-
-    #[allow(dead_code)]
     pub fn with_ttl(mut self, ttl: Duration) -> Self {
         self.ttl = ttl;
         self

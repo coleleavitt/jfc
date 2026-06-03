@@ -118,7 +118,9 @@ mod tests {
             if ok(v) {
                 AssertionOutcome::Pass
             } else {
-                AssertionOutcome::Hard { msg: msg.to_string() }
+                AssertionOutcome::Hard {
+                    msg: msg.to_string(),
+                }
             }
         })
     }
@@ -140,7 +142,13 @@ mod tests {
     fn retries_until_feedback_makes_it_pass_normal() {
         let run = run_with_assertions(
             3,
-            |fb| if fb.is_some() { "good".to_string() } else { "bad".to_string() },
+            |fb| {
+                if fb.is_some() {
+                    "good".to_string()
+                } else {
+                    "bad".to_string()
+                }
+            },
             &[hard_unless("must be good", |v| v == "good")],
         );
         assert!(run.passed);
@@ -173,8 +181,9 @@ mod tests {
     // Robust: a soft violation is recorded but accepted — no retry, run passes.
     #[test]
     fn soft_violation_is_accepted_not_retried_robust() {
-        let soft_only: Box<dyn Assertion<String>> =
-            Box::new(|_: &String| AssertionOutcome::Soft { msg: "style nit".into() });
+        let soft_only: Box<dyn Assertion<String>> = Box::new(|_: &String| AssertionOutcome::Soft {
+            msg: "style nit".into(),
+        });
         let mut calls = 0;
         let run = run_with_assertions(
             5,

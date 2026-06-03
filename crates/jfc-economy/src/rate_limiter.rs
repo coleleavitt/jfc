@@ -207,7 +207,8 @@ mod tests {
     // Robust: a far-out exponent saturates at max instead of overflowing.
     #[test]
     fn item_backoff_saturates_at_max_robust() {
-        let mut rl = ItemExponentialBackoff::new(Duration::from_millis(5), Duration::from_secs(1000));
+        let mut rl =
+            ItemExponentialBackoff::new(Duration::from_millis(5), Duration::from_secs(1000));
         let key = "hot";
         for _ in 0..200 {
             // 5ms * 2^200 is astronomically large — must clamp, never panic.
@@ -288,7 +289,10 @@ mod tests {
         assert_eq!(rl.when_at(&"a", 0.0), Duration::from_nanos(1)); // bucket free -> item wins
         // Bucket now empty; the 1 qps reservation (1s) dwarfs the 1ns backoff.
         let d = rl.when_at(&"b", 0.0);
-        assert!((d.as_secs_f64() - 1.0).abs() < 1e-9, "bucket should dominate, got {d:?}");
+        assert!(
+            (d.as_secs_f64() - 1.0).abs() < 1e-9,
+            "bucket should dominate, got {d:?}"
+        );
     }
 
     // Normal: the documented default controller params are wired correctly.

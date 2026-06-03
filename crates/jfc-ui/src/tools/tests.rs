@@ -23,7 +23,8 @@ use super::search::{execute_glob, execute_grep};
 use super::subagent::{execute_skill_in, filter_tools_for_agent};
 use super::swarm::execute_team_member_mode;
 use super::tasks::{
-    execute_task_create, execute_task_done, execute_task_list, execute_task_update,
+    TaskCreateRequest, TaskUpdateRequest, execute_task_create, execute_task_done,
+    execute_task_list, execute_task_update,
 };
 use super::worktree::{execute_enter_plan_mode, execute_enter_worktree, execute_exit_worktree};
 use super::*;
@@ -36,6 +37,47 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use tokio::process::Command;
 use tokio::sync::Mutex;
+
+fn task_create_request(
+    subject: impl Into<String>,
+    description: impl Into<String>,
+) -> TaskCreateRequest {
+    TaskCreateRequest {
+        subject: subject.into(),
+        description: description.into(),
+        active_form: None,
+        blocked_by: Vec::new(),
+        acceptance_criteria: None,
+        verification_command: None,
+        risk: None,
+        parent_id: None,
+        kind: None,
+        tags: Vec::new(),
+        priority: None,
+        effort: None,
+        model: None,
+    }
+}
+
+fn task_update_request(task_id: impl Into<String>) -> TaskUpdateRequest {
+    TaskUpdateRequest {
+        task_id: task_id.into(),
+        status: None,
+        subject: None,
+        description: None,
+        owner: None,
+        acceptance_criteria: None,
+        verification_command: None,
+        risk: None,
+        parent_id: None,
+        kind: None,
+        blocked_by: Vec::new(),
+        tags: Vec::new(),
+        priority: None,
+        effort: None,
+        model: None,
+    }
+}
 
 #[test]
 fn execution_result_failure_carries_diagnostic() {
@@ -802,10 +844,6 @@ async fn post_bounty_default_returns_actionable_message_normal() {
 /// validator outcomes without hitting any network. Each call
 /// records the prompt for assertion.
 struct StubInvoker {
-    #[allow(dead_code)]
-    solutions: std::sync::Mutex<Vec<jfc_economy::types::Solution>>,
-    #[allow(dead_code)]
-    validator_outcomes: std::sync::Mutex<Vec<jfc_economy::reporting::ValidatorOutcome>>,
     solver_calls: std::sync::Mutex<usize>,
     validator_calls: std::sync::Mutex<usize>,
 }
@@ -813,8 +851,6 @@ struct StubInvoker {
 impl StubInvoker {
     fn new() -> Self {
         Self {
-            solutions: std::sync::Mutex::new(Vec::new()),
-            validator_outcomes: std::sync::Mutex::new(Vec::new()),
             solver_calls: std::sync::Mutex::new(0),
             validator_calls: std::sync::Mutex::new(0),
         }
@@ -842,7 +878,7 @@ impl jfc_economy::reporting::AgentInvoker for StubInvoker {
     }
     async fn invoke_validator(
         &self,
-        #[allow(dead_code)] _prompt: jfc_economy::reporting::ValidatorPrompt,
+        _prompt: jfc_economy::reporting::ValidatorPrompt,
     ) -> Result<jfc_economy::reporting::ValidatorOutcome, String> {
         *self.validator_calls.lock().unwrap() += 1;
         Ok(jfc_economy::reporting::ValidatorOutcome {
@@ -2053,22 +2089,7 @@ async fn execute_grep_files_with_matches_mode_normal() {
 
 #[test]
 fn execute_task_create_without_store_fails_robust() {
-    let r = execute_task_create(
-        None,
-        "subj".into(),
-        "desc".into(),
-        None,
-        vec![],
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-        None,
-    );
+    let r = execute_task_create(None, task_create_request("subj", "desc"));
     assert!(r.is_error());
     assert!(r.output.contains("Task store not available"));
 }
@@ -2078,19 +2099,7 @@ fn execute_task_create_with_store_returns_task_json_normal() {
     let store = TaskStore::in_memory();
     let r = execute_task_create(
         Some(store.clone()),
-        "ship".into(),
-        "release v1".into(),
-        None,
-        vec![],
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-        None,
+        task_create_request("ship", "release v1"),
     );
     assert!(!r.is_error(), "{:?}", r);
     // The output is the JSON of the created task — should mention the
@@ -2102,22 +2111,7 @@ fn execute_task_create_with_store_returns_task_json_normal() {
 #[test]
 fn execute_task_create_rejects_placeholder_fixture_robust() {
     let store = TaskStore::in_memory();
-    let r = execute_task_create(
-        Some(store.clone()),
-        "subj".into(),
-        "desc".into(),
-        None,
-        vec![],
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-        None,
-    );
+    let r = execute_task_create(Some(store.clone()), task_create_request("subj", "desc"));
     assert!(r.is_error(), "{:?}", r);
     assert!(r.output.contains("placeholder"), "{}", r.output);
     assert!(store.list(DeletedFilter::Include).is_empty());
@@ -2126,45 +2120,15 @@ fn execute_task_create_rejects_placeholder_fixture_robust() {
 #[test]
 fn execute_task_create_with_unknown_dependency_fails_robust() {
     let store = TaskStore::in_memory();
-    let r = execute_task_create(
-        Some(store),
-        "x".into(),
-        "y".into(),
-        None,
-        vec!["t999".into()],
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-        None,
-    );
+    let mut request = task_create_request("x", "y");
+    request.blocked_by = vec!["t999".into()];
+    let r = execute_task_create(Some(store), request);
     assert!(r.is_error(), "{:?}", r);
 }
 
 #[test]
 fn execute_task_update_without_store_fails_robust() {
-    let r = execute_task_update(
-        None,
-        "t1",
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        vec![],
-        None,
-        None,
-        None,
-    );
+    let r = execute_task_update(None, task_update_request("t1"));
     assert!(r.is_error());
 }
 
@@ -2173,40 +2137,13 @@ fn execute_task_update_changes_status_normal() {
     let store = TaskStore::in_memory();
     let create = execute_task_create(
         Some(store.clone()),
-        "alpha".into(),
-        "do alpha".into(),
-        None,
-        vec![],
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-        None,
+        task_create_request("alpha", "do alpha"),
     );
     assert!(!create.is_error());
     // First-created task gets id `t1`.
-    let r = execute_task_update(
-        Some(store.clone()),
-        "t1",
-        Some("in_progress".into()),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        vec![],
-        None,
-        None,
-        None,
-    );
+    let mut request = task_update_request("t1");
+    request.status = Some("in_progress".into());
+    let r = execute_task_update(Some(store.clone()), request);
     assert!(!r.is_error(), "{}", r.output);
     assert!(r.output.contains("in_progress"), "{}", r.output);
 }
@@ -2214,40 +2151,11 @@ fn execute_task_update_changes_status_normal() {
 #[test]
 fn execute_task_update_invalid_status_fails_robust() {
     let store = TaskStore::in_memory();
-    execute_task_create(
-        Some(store.clone()),
-        "x".into(),
-        "y".into(),
-        None,
-        vec![],
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-        None,
-    );
-    let r = execute_task_update(
-        Some(store),
-        "t1",
-        Some("not_a_status".into()),
-        Some("renamed".into()),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        vec![],
-        None,
-        None,
-        None,
-    );
+    execute_task_create(Some(store.clone()), task_create_request("x", "y"));
+    let mut request = task_update_request("t1");
+    request.status = Some("not_a_status".into());
+    request.subject = Some("renamed".into());
+    let r = execute_task_update(Some(store), request);
     assert!(r.is_error(), "{}", r.output);
     assert!(r.output.contains("Invalid task status"), "{}", r.output);
 }
@@ -2255,22 +2163,7 @@ fn execute_task_update_invalid_status_fails_robust() {
 #[test]
 fn execute_task_done_marks_completed_normal() {
     let store = TaskStore::in_memory();
-    execute_task_create(
-        Some(store.clone()),
-        "do".into(),
-        "it".into(),
-        None,
-        vec![],
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-        None,
-    );
+    execute_task_create(Some(store.clone()), task_create_request("do", "it"));
     let r = execute_task_done(Some(store), "t1");
     assert!(!r.is_error(), "{}", r.output);
     assert!(r.output.contains("completed"), "{}", r.output);
@@ -2292,38 +2185,8 @@ fn execute_task_list_without_store_fails_robust() {
 #[test]
 fn execute_task_list_returns_tasks_normal() {
     let store = TaskStore::in_memory();
-    execute_task_create(
-        Some(store.clone()),
-        "alpha".into(),
-        "first".into(),
-        None,
-        vec![],
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-        None,
-    );
-    execute_task_create(
-        Some(store.clone()),
-        "bravo".into(),
-        "second".into(),
-        None,
-        vec![],
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-        None,
-    );
+    execute_task_create(Some(store.clone()), task_create_request("alpha", "first"));
+    execute_task_create(Some(store.clone()), task_create_request("bravo", "second"));
     let r = execute_task_list(Some(store), None, None, false, None);
     assert!(!r.is_error(), "{}", r.output);
     assert!(r.output.contains("alpha"), "{}", r.output);
@@ -2333,40 +2196,10 @@ fn execute_task_list_returns_tasks_normal() {
 #[test]
 fn execute_task_list_filters_by_owner_robust() {
     let store = TaskStore::in_memory();
-    execute_task_create(
-        Some(store.clone()),
-        "x".into(),
-        "y".into(),
-        None,
-        vec![],
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-        None,
-    );
-    execute_task_update(
-        Some(store.clone()),
-        "t1",
-        None,
-        None,
-        None,
-        Some("alice".into()),
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec![],
-        vec![],
-        None,
-        None,
-        None,
-    );
+    execute_task_create(Some(store.clone()), task_create_request("x", "y"));
+    let mut request = task_update_request("t1");
+    request.owner = Some("alice".into());
+    execute_task_update(Some(store.clone()), request);
     let only_alice = execute_task_list(Some(store.clone()), None, Some("alice"), false, None);
     assert!(only_alice.output.contains("alice"), "{}", only_alice.output);
 

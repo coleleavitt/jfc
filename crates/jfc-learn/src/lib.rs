@@ -36,8 +36,8 @@ pub use variant_selector::{
     CaseOutcome, CompileReport, EvalCase, PromptVariant, Teleprompter, VariantEvaluator,
     VariantScore,
 };
+pub use verifier::{LlmVerifier, PromotionVerifier, VerifierContract, VerifierVerdict};
 pub use workflow_opt::{
     WorkflowEvaluator, WorkflowOp, WorkflowOptimizer, WorkflowOutcome, WorkflowTask,
     WorkflowVariant,
 };
-pub use verifier::{LlmVerifier, PromotionVerifier, VerifierContract, VerifierVerdict};

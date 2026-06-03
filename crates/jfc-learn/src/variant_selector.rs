@@ -211,7 +211,11 @@ mod tests {
         let report = tp.compile(&[variant("a"), variant("b"), variant("c")], &ev);
         assert_eq!(report.winner.as_deref(), Some("b"));
         assert_eq!(
-            report.ranked.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+            report
+                .ranked
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["b", "c", "a"]
         );
         assert!((report.ranked[0].mean_score - 0.9).abs() < 1e-9);
@@ -230,7 +234,14 @@ mod tests {
         let report = tp.compile(&[variant("hi"), variant("safe")], &ev);
         // "hi" scores higher but is disqualified -> "safe" wins.
         assert_eq!(report.winner.as_deref(), Some("safe"));
-        assert!(report.ranked.iter().find(|s| s.name == "hi").unwrap().disqualified);
+        assert!(
+            report
+                .ranked
+                .iter()
+                .find(|s| s.name == "hi")
+                .unwrap()
+                .disqualified
+        );
     }
 
     // Robust: when every variant is disqualified there is no winner.

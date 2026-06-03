@@ -19,9 +19,7 @@
 //!   4. **Per-segment classifier** — head command must be in the positive
 //!      allowlist; flags must satisfy the per-tool guards (`find`
 //!      write-actions, `sed -i`, `git -c`, etc.).
-
-#[allow(dead_code)]
-pub(super) fn is_readonly_bash(cmd: &str) -> bool {
+pub fn is_readonly_bash(cmd: &str) -> bool {
     classify_readonly_bash(cmd).is_ok()
 }
 
@@ -89,8 +87,7 @@ pub(super) const REASON_SSH_INTERACTIVE: &str = "Plan mode: ssh without an expli
 pub(super) const REASON_SUDO_BARE: &str = "Plan mode: sudo / doas without a command to elevate";
 pub(super) const REASON_REDIRECT: &str =
     "Plan mode: redirect target is not /dev/null or another FD";
-#[allow(dead_code)]
-pub(super) const REASON_FIND_NO_ACTION: &str =
+pub const REASON_FIND_NO_ACTION: &str =
     "Plan mode: find without any allowlisted action (or with unknown flag)";
 
 /// First-match raw-byte deny scan; returns the reason constant for
@@ -497,12 +494,6 @@ fn split_readonly_shell_segments(cmd: &str) -> Vec<String> {
     segments.push(segment);
     segments
 }
-
-#[allow(dead_code)]
-fn is_readonly_bash_segment(segment: &str) -> bool {
-    classify_readonly_segment(segment).is_ok()
-}
-
 fn classify_readonly_segment(segment: &str) -> Result<(), &'static str> {
     if !redirections_are_readonly(segment) {
         return Err(REASON_REDIRECT);
@@ -1061,84 +1052,6 @@ fn is_readonly_sudo_reasoned(args: &[String]) -> Result<(), &'static str> {
         return Err(REASON_SUDO_BARE);
     }
     classify_readonly_bash(&elevated)
-}
-
-/// Is `ssh <args>` a read-only invocation? Allowed when args resolve
-/// to `host` + a single quoted command string AND that command itself
-/// classifies as read-only via the same pipeline. Anything more
-/// complex (port-forward setup `-L`/`-R`/`-D`, agent forwarding `-A`,
-/// `scp`-like or file-transfer wrappers) is denied — those have
-/// write-side effects (open listening sockets / mutate ssh-agent
-/// state / copy files).
-#[allow(dead_code)]
-fn is_readonly_ssh(args: &[String]) -> bool {
-    // Reject if any port-forwarding or write-mode flag is present.
-    for a in args {
-        let lower = a.to_ascii_lowercase();
-        if matches!(
-            lower.as_str(),
-            "-l" | "-r" | "-d" | "-w" | "-a" | "-x" | "-y" | "-m" | "-n" | "-q" | "-tt"
-        ) || lower.starts_with("-l")
-            || lower.starts_with("-r")
-            || lower.starts_with("-d")
-            || lower.starts_with("-w=")
-        {
-            return false;
-        }
-    }
-    // Find the remote command — the first arg that's not a flag and not
-    // the host. Skip flag args (-i KEYFILE, -p PORT, -o OPT take a value
-    // — we accept those silently because they don't change classification).
-    let mut iter = args.iter().peekable();
-    let mut host: Option<&str> = None;
-    while let Some(a) = iter.next() {
-        if a.starts_with('-') {
-            // Skip flags that take a value.
-            if matches!(
-                a.as_str(),
-                "-i" | "-p" | "-o" | "-F" | "-c" | "-J" | "-b" | "-B"
-            ) {
-                let _ = iter.next();
-            }
-            continue;
-        }
-        host = Some(a.as_str());
-        break;
-    }
-    if host.is_none() {
-        return false;
-    }
-    // Anything left is the remote command. Join + recursively classify.
-    let remote: String = iter.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
-    if remote.trim().is_empty() {
-        // Bare `ssh host` opens an interactive shell — not classifiable.
-        return false;
-    }
-    is_readonly_bash(&remote)
-}
-
-/// Is `sudo <args>` a read-only invocation? Recursively classifies the
-/// command after stripping `-u USER`, `-E`, `-n`, `-S` flags.
-#[allow(dead_code)]
-fn is_readonly_sudo(args: &[String]) -> bool {
-    let mut iter = args.iter().peekable();
-    while let Some(a) = iter.peek() {
-        if matches!(a.as_str(), "-u" | "-g" | "-h" | "-U") {
-            let _ = iter.next();
-            let _ = iter.next(); // value
-            continue;
-        }
-        if a.starts_with('-') {
-            let _ = iter.next();
-            continue;
-        }
-        break;
-    }
-    let elevated: String = iter.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
-    if elevated.trim().is_empty() {
-        return false;
-    }
-    is_readonly_bash(&elevated)
 }
 
 fn is_readonly_cd(args: &[String]) -> bool {

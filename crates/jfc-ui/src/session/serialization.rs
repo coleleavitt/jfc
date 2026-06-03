@@ -66,10 +66,6 @@ pub struct SerializedMessage {
     pub parts: Vec<SerializedPart>,
 }
 
-// Mirrors `MessagePart`'s shape for on-disk session round-tripping. Same
-// rationale as MessagePart — the Tool variant is the dominant payload, and
-// this enum exists for one purpose (serde) where size doesn't drive perf.
-#[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SerializedPart {
@@ -80,38 +76,8 @@ pub enum SerializedPart {
         content: String,
     },
     Tool {
-        id: String,
-        kind: String,
-        status: String,
-        /// Legacy on-disk field — kept for backward compatibility.
-        /// Old session files wrote `is_collapsed: bool`; new writes
-        /// emit it as `tc.display.is_collapsed()`. Loading
-        /// reconstructs the new `ToolDisplayState`: `is_collapsed=true`
-        /// → `Collapsed`, otherwise → `Default { pinned: false }`.
-        /// `expanded` and `pinned` were never persisted (stale on
-        /// reload), so the migration here is one-way and lossless for
-        /// the only state we ever stored.
-        #[serde(default)]
-        is_collapsed: bool,
-        /// Optional + serde(default): old session files (pre-tool-input
-        /// schema landed) wrote tool entries without an `input` field.
-        /// The deserializer used to fail the entire session if any
-        /// single Tool entry was missing this — surfacing as
-        /// "missing field `input`" warnings in the log and the picker
-        /// silently dropping that session. Now we tolerate the gap and
-        /// reconstruct an unknown-input stub at message-rebuild time.
-        #[serde(default)]
-        input: Option<SerializedToolInput>,
-        #[serde(default)]
-        output: Option<SerializedToolOutput>,
-        /// Gemini 3.x opaque thought signature captured from the stream.
-        /// Must round-trip so `--continue` doesn't lose provider
-        /// continuity — without it, the first replayed functionCall on a
-        /// resumed session falls back to the synthetic token (or 400s).
-        /// Optional + serde(default + skip-if-None) keeps old/non-Gemini
-        /// session files byte-identical.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        thought_signature: Option<String>,
+        #[serde(flatten)]
+        tool: Box<SerializedToolPart>,
     },
     TaskStatus {
         task_id: String,
@@ -136,6 +102,42 @@ pub enum SerializedPart {
     RedactedThinking {
         data: String,
     },
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SerializedToolPart {
+    pub id: String,
+    pub kind: String,
+    pub status: String,
+    /// Legacy on-disk field — kept for backward compatibility.
+    /// Old session files wrote `is_collapsed: bool`; new writes
+    /// emit it as `tc.display.is_collapsed()`. Loading
+    /// reconstructs the new `ToolDisplayState`: `is_collapsed=true`
+    /// → `Collapsed`, otherwise → `Default { pinned: false }`.
+    /// `expanded` and `pinned` were never persisted (stale on
+    /// reload), so the migration here is one-way and lossless for
+    /// the only state we ever stored.
+    #[serde(default)]
+    pub is_collapsed: bool,
+    /// Optional + serde(default): old session files (pre-tool-input
+    /// schema landed) wrote tool entries without an `input` field.
+    /// The deserializer used to fail the entire session if any
+    /// single Tool entry was missing this — surfacing as
+    /// "missing field `input`" warnings in the log and the picker
+    /// silently dropping that session. Now we tolerate the gap and
+    /// reconstruct an unknown-input stub at message-rebuild time.
+    #[serde(default)]
+    pub input: Option<SerializedToolInput>,
+    #[serde(default)]
+    pub output: Option<SerializedToolOutput>,
+    /// Gemini 3.x opaque thought signature captured from the stream.
+    /// Must round-trip so `--continue` doesn't lose provider
+    /// continuity — without it, the first replayed functionCall on a
+    /// resumed session falls back to the synthetic token (or 400s).
+    /// Optional + serde(default + skip-if-None) keeps old/non-Gemini
+    /// session files byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 /// Full tool input serialization - preserves all fields for proper resume

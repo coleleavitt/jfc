@@ -88,13 +88,11 @@ impl Intent {
 #[derive(Debug, Clone)]
 pub struct Classification {
     pub intent: Intent,
-    #[allow(dead_code)]
     pub confidence: f32,
 }
 
 /// Tool kind for availability mapping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum ToolKind {
     Read,
     Write,
@@ -111,5 +109,6 @@ mod graph_context;
 pub use classifier::classify;
 pub(crate) use graph_context::clear_auto_context_cache;
 pub use graph_context::{
-    auto_doc_suggest_enabled, auto_inject_graph_context, auto_plan_mode_enabled, is_graph_intent,
+    auto_doc_suggest_enabled, auto_inject_graph_context, auto_plan_mode_enabled, discouraged_tools,
+    is_graph_intent, suggested_tools,
 };

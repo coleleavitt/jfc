@@ -54,7 +54,10 @@ impl GateMeasurement {
 pub fn measure_gate(graph: &CodeGraph, task: &str) -> GateMeasurement {
     let with_gate = build_context(graph, None, task, ContextOptions::default());
 
-    let forced = ContextOptions { force_expand: true, ..ContextOptions::default() };
+    let forced = ContextOptions {
+        force_expand: true,
+        ..ContextOptions::default()
+    };
     let without_gate = build_context(graph, None, task, forced);
 
     GateMeasurement {
@@ -91,7 +94,10 @@ mod tests {
             name: name.to_string(),
             qualified_name: format!("crate::{name}"),
             file_path: PathBuf::from(file),
-            span: Span { file: PathBuf::from(file), ..span() },
+            span: Span {
+                file: PathBuf::from(file),
+                ..span()
+            },
             visibility: Visibility::Public,
             metadata: HashMap::new(),
             birth_revision: 0,
@@ -130,7 +136,11 @@ mod tests {
         g.add_edge(
             &a,
             &b,
-            EdgeData { kind: EdgeKind::Calls, source_span: span(), weight: 1.0 },
+            EdgeData {
+                kind: EdgeKind::Calls,
+                source_span: span(),
+                weight: 1.0,
+            },
         )
         .unwrap();
 

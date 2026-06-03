@@ -29,9 +29,7 @@ pub use agent_def::{AgentCost, AgentDef, Effort, MemoryScope, PermissionMode};
 pub use assertions::{Assertion, AssertionOutcome, AssertionRun, run_with_assertions};
 pub use attachment::{Attachment, AttachmentKind, PastedContent};
 pub use compaction::{Retention, TurnCost, select_retained, select_retained_hybrid};
-pub use decision_quality::{
-    ChainOutput, DecisionQuality, DqWeights, SpecialistChain, Stage,
-};
+pub use decision_quality::{ChainOutput, DecisionQuality, DqWeights, SpecialistChain, Stage};
 pub use diff::{
     DiffHunk, DiffLine, DiffLineKind, DiffView, parse_hunk_header, parse_hunk_start,
     parse_unified_diff, truncate_lines,
@@ -52,9 +50,7 @@ pub use task_store::{
 };
 pub use tool_input::{ReplacementMode, ToolInput, ToolInputError};
 pub use tool_kind::ToolKind;
-pub use tool_retrieval::{
-    IdentityQueryGen, QueryGen, ToolIndex, retrieve_multi, should_defer,
-};
+pub use tool_retrieval::{IdentityQueryGen, QueryGen, ToolIndex, retrieve_multi, should_defer};
 pub use usage::ModelUsage;
 pub use workflow_search::{
     Evaluator, Experience, Mutator, SearchResult, argmax, search, soft_mixed_probability,

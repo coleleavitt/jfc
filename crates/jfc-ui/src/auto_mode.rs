@@ -36,7 +36,6 @@ use jfc_provider::{
 pub struct ClassifyResult {
     pub decision: AutoDecision,
     pub reason: String,
-    #[allow(dead_code)]
     pub thinking: String,
 }
 

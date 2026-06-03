@@ -6,7 +6,6 @@ use super::navigation::{scan_path_refs, user_prompts};
 use super::*;
 use crate::app::App;
 use crate::runtime::{AppEvent, ToolEvent};
-#[allow(unused_imports)]
 use crate::types::*;
 use jfc_provider::{EventStream, ModelInfo, Provider, ProviderMessage, StreamOptions};
 
@@ -24,8 +23,8 @@ impl Provider for TestProvider {
 
     async fn stream(
         &self,
-        #[allow(dead_code)] _messages: Vec<ProviderMessage>,
-        #[allow(dead_code)] _options: &StreamOptions,
+        _messages: Vec<ProviderMessage>,
+        _options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
         Ok(Box::pin(futures::stream::empty()))
     }
@@ -46,8 +45,8 @@ impl Provider for StaticModelProvider {
 
     async fn stream(
         &self,
-        #[allow(dead_code)] _messages: Vec<ProviderMessage>,
-        #[allow(dead_code)] _options: &StreamOptions,
+        _messages: Vec<ProviderMessage>,
+        _options: &StreamOptions,
     ) -> anyhow::Result<EventStream> {
         Ok(Box::pin(futures::stream::empty()))
     }

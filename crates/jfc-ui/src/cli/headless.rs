@@ -2,31 +2,21 @@ use std::{collections::HashMap, io::Write};
 
 use clap::ValueEnum;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
 pub(super) enum HeadlessOutputFormat {
+    #[default]
     Text,
     Json,
     #[value(name = "stream-json")]
     StreamJson,
 }
 
-impl Default for HeadlessOutputFormat {
-    fn default() -> Self {
-        Self::Text
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
 pub(super) enum HeadlessInputFormat {
+    #[default]
     Text,
     #[value(name = "stream-json")]
     StreamJson,
-}
-
-impl Default for HeadlessInputFormat {
-    fn default() -> Self {
-        Self::Text
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1223,6 +1213,36 @@ fn content_text(value: &serde_json::Value) -> Option<String> {
     }
 }
 
+/// `--remote-session <id>` entry. Streams events from a managed-agent
+/// session to stdout. Minimal first cut — full TUI integration with
+/// rendering of v132's 17 event types lives in `managed_session.rs`
+/// and ships behind a follow-on flag once the eventer is verified.
+pub(super) async fn run_remote_session(
+    client: jfc_anthropic_sdk::Client,
+    session_id: String,
+) -> anyhow::Result<()> {
+    use futures::StreamExt;
+
+    let session = crate::managed_session::ManagedSession::new(client, session_id.clone());
+    eprintln!("--remote-session: subscribing to session {session_id}");
+    let mut stream = session
+        .connect()
+        .await
+        .map_err(|e| anyhow::anyhow!("session connect: {e}"))?;
+    while let Some(event) = stream.next().await {
+        match event {
+            Ok(ev) => {
+                println!("{}", crate::managed_session::render_event_line(&ev));
+            }
+            Err(e) => {
+                eprintln!("[stream error: {e}]");
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1258,34 +1278,4 @@ mod tests {
             parsed.permission_responses.get("toolu_1").unwrap()
         ));
     }
-}
-
-/// `--remote-session <id>` entry. Streams events from a managed-agent
-/// session to stdout. Minimal first cut — full TUI integration with
-/// rendering of v132's 17 event types lives in `managed_session.rs`
-/// and ships behind a follow-on flag once the eventer is verified.
-pub(super) async fn run_remote_session(
-    client: jfc_anthropic_sdk::Client,
-    session_id: String,
-) -> anyhow::Result<()> {
-    use futures::StreamExt;
-
-    let session = crate::managed_session::ManagedSession::new(client, session_id.clone());
-    eprintln!("--remote-session: subscribing to session {session_id}");
-    let mut stream = session
-        .connect()
-        .await
-        .map_err(|e| anyhow::anyhow!("session connect: {e}"))?;
-    while let Some(event) = stream.next().await {
-        match event {
-            Ok(ev) => {
-                println!("{}", crate::managed_session::render_event_line(&ev));
-            }
-            Err(e) => {
-                eprintln!("[stream error: {e}]");
-                break;
-            }
-        }
-    }
-    Ok(())
 }

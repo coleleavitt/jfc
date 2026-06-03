@@ -89,14 +89,20 @@ mod tests {
     // Normal: a cross-module reference triggers retrieval.
     #[test]
     fn cross_module_triggers_retrieval_normal() {
-        let s = RetrievalSignal { cross_module_refs: 2, ..Default::default() };
+        let s = RetrievalSignal {
+            cross_module_refs: 2,
+            ..Default::default()
+        };
         assert!(should_retrieve(&s));
     }
 
     // Normal: an unresolved type triggers retrieval.
     #[test]
     fn unresolved_type_triggers_retrieval_normal() {
-        let s = RetrievalSignal { unresolved_types: 1, ..Default::default() };
+        let s = RetrievalSignal {
+            unresolved_types: 1,
+            ..Default::default()
+        };
         assert!(should_retrieve(&s));
     }
 
@@ -114,7 +120,10 @@ mod tests {
     // Robust: an external-symbol reference alone triggers retrieval.
     #[test]
     fn external_symbol_triggers_retrieval_robust() {
-        let s = RetrievalSignal { references_external_symbol: true, ..Default::default() };
+        let s = RetrievalSignal {
+            references_external_symbol: true,
+            ..Default::default()
+        };
         assert!(should_retrieve(&s));
     }
 

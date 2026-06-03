@@ -102,8 +102,7 @@ pub fn notify_compact_failed(reason: &str) {
 
 /// Build the body string a `notify_turn_complete` call would produce — split out
 /// so tests can verify the gating + format without going near the OS daemon.
-#[allow(dead_code)]
-fn build_turn_complete_body(elapsed: Duration, summary: &str) -> Option<String> {
+pub fn build_turn_complete_body(elapsed: Duration, summary: &str) -> Option<String> {
     if elapsed < LONG_TURN_THRESHOLD {
         return None;
     }

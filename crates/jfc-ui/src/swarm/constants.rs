@@ -13,7 +13,6 @@ pub const POLL_INTERVAL_MS: u64 = 500;
 pub const DEFAULT_TEAM_NAME: &str = "default";
 
 /// How often (in ms) the leader polls its inbox for teammate messages.
-#[allow(dead_code)]
 pub const LEADER_POLL_INTERVAL_MS: u64 = 1000;
 
 /// System prompt addendum appended to teammate conversations.

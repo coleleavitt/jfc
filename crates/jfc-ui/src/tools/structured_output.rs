@@ -32,7 +32,6 @@ thread_local! {
 /// `validate_output` will check against it. Pass `None` to clear.
 ///
 /// Returns an error if the provided schema is malformed.
-#[allow(dead_code)]
 pub fn set_active_schema(schema: Option<&Value>) -> Result<(), String> {
     let validator = match schema {
         Some(s) => {
@@ -77,7 +76,6 @@ pub fn validate_output(data: &Value) -> Result<(), String> {
 }
 
 /// Clear the active schema for this thread.
-#[allow(dead_code)]
 pub fn clear_active_schema() {
     ACTIVE_SCHEMA.with(|cell| {
         *cell.borrow_mut() = None;

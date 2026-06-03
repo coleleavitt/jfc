@@ -71,4 +71,5 @@ pub use key_dispatch::handle_key;
 pub(crate) use question::build_pending_question;
 pub(crate) use slash_commands::SLASH_COMMANDS;
 pub use slash_commands::run_slash_command;
+pub use slash_commands::url_encode;
 pub use submit::handle_submit_text;

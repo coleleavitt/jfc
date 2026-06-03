@@ -56,18 +56,21 @@ fn dispatch_approved_tools(app: &mut App, tools: Vec<ToolCall>, tx: &mpsc::Sende
     app.in_flight_tool_batches += 1;
     stream::dispatch_tools_batched(
         tools,
-        tx,
-        Arc::clone(&app.dedup_cache),
-        Some(Arc::clone(&app.task_store)),
-        app.team_context.team_name.clone(),
-        app.current_session_id
-            .as_ref()
-            .map(|id| id.as_str().to_owned()),
-        Arc::clone(&app.provider),
-        app.model.clone(),
-        app.teammate_event_tx.clone(),
-        stream::LocalAdvisorDispatchContext::from_app(app),
-        app.cancel_token.clone(),
+        stream::ToolBatchDispatch {
+            tx: tx.clone(),
+            dedup: Arc::clone(&app.dedup_cache),
+            task_store: Some(Arc::clone(&app.task_store)),
+            active_team_name: app.team_context.team_name.clone(),
+            current_session_id: app
+                .current_session_id
+                .as_ref()
+                .map(|id| id.as_str().to_owned()),
+            provider: Arc::clone(&app.provider),
+            model: app.model.clone(),
+            teammate_event_tx: app.teammate_event_tx.clone(),
+            local_advisor: stream::LocalAdvisorDispatchContext::from_app(app),
+            cancel: app.cancel_token.clone(),
+        },
     );
 }
 

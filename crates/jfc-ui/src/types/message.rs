@@ -15,11 +15,6 @@ impl std::fmt::Display for Role {
     }
 }
 
-// `MessagePart::Tool(ToolCall)` is the heaviest variant but also the central
-// payload of the transcript model. Boxing it would add an alloc per tool
-// message and a deref on every render frame (which walks every part) — net
-// pessimization when tools are the *common* part on agentic turns.
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum MessagePart {
     Text(String),

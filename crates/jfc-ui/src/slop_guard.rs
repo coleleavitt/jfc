@@ -146,7 +146,6 @@ pub fn check_duplication(new_content: &str, file_path: &Path, cwd: &Path) -> Vec
 
 /// Run `cargo check --message-format=json` and extract dead_code warnings.
 /// Returns quickly — uses cached incremental compilation.
-#[allow(dead_code)]
 pub fn check_dead_code(cwd: &Path) -> Vec<SlopFinding> {
     let output = std::process::Command::new("cargo")
         .args(["check", "--message-format=json", "-q"])
@@ -1132,7 +1131,6 @@ pub fn check_premature_abstraction(file_content: &str) -> Vec<SlopFinding> {
 
 /// Run `cargo check --message-format=json` and extract unused_imports warnings.
 /// Similar to check_dead_code but specifically for imports.
-#[allow(dead_code)]
 pub fn check_unused_imports(cwd: &Path) -> Vec<SlopFinding> {
     let output = std::process::Command::new("cargo")
         .args(["check", "--message-format=json", "-q"])

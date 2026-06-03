@@ -19,16 +19,55 @@
 
 /// Source-ish sub-tokens: untrusted / externally-influenced data.
 const SOURCE_TOKENS: &[&str] = &[
-    "input", "request", "req", "param", "params", "arg", "args", "argv", "recv",
-    "read", "env", "user", "untrusted", "stdin", "body", "query", "cookie",
-    "header", "payload", "form", "upload", "external", "remote", "raw",
+    "input",
+    "request",
+    "req",
+    "param",
+    "params",
+    "arg",
+    "args",
+    "argv",
+    "recv",
+    "read",
+    "env",
+    "user",
+    "untrusted",
+    "stdin",
+    "body",
+    "query",
+    "cookie",
+    "header",
+    "payload",
+    "form",
+    "upload",
+    "external",
+    "remote",
+    "raw",
 ];
 
 /// Sink-ish sub-tokens: operations that are dangerous with tainted data.
 const SINK_TOKENS: &[&str] = &[
-    "exec", "execute", "query", "system", "eval", "write", "command", "cmd",
-    "render", "html", "sql", "spawn", "shell", "popen", "deserialize", "load",
-    "send", "open", "delete", "remove", "run",
+    "exec",
+    "execute",
+    "query",
+    "system",
+    "eval",
+    "write",
+    "command",
+    "cmd",
+    "render",
+    "html",
+    "sql",
+    "spawn",
+    "shell",
+    "popen",
+    "deserialize",
+    "load",
+    "send",
+    "open",
+    "delete",
+    "remove",
+    "run",
 ];
 
 /// The name-based classification of one identifier.
@@ -98,11 +137,20 @@ pub fn split_identifier(name: &str) -> Vec<String> {
 pub fn classify_name(name: &str) -> NameClass {
     let tokens = split_identifier(name);
     if tokens.is_empty() {
-        return NameClass { source_score: 0.0, sink_score: 0.0 };
+        return NameClass {
+            source_score: 0.0,
+            sink_score: 0.0,
+        };
     }
     let n = tokens.len() as f64;
-    let src = tokens.iter().filter(|t| SOURCE_TOKENS.contains(&t.as_str())).count();
-    let sink = tokens.iter().filter(|t| SINK_TOKENS.contains(&t.as_str())).count();
+    let src = tokens
+        .iter()
+        .filter(|t| SOURCE_TOKENS.contains(&t.as_str()))
+        .count();
+    let sink = tokens
+        .iter()
+        .filter(|t| SINK_TOKENS.contains(&t.as_str()))
+        .count();
     NameClass {
         source_score: src as f64 / n,
         sink_score: sink as f64 / n,
@@ -143,7 +191,11 @@ pub fn flow_priority(source_name: &str, sink_name: &str) -> f64 {
     let k = classify_name(sink_name);
     // Evidence ∈ [0, 2]: how strongly the names themselves suggest a src→sink.
     let evidence = s.source_score + k.sink_score;
-    let surprise = if is_surprising(source_name, sink_name) { SURPRISE_BOOST } else { 0.0 };
+    let surprise = if is_surprising(source_name, sink_name) {
+        SURPRISE_BOOST
+    } else {
+        0.0
+    };
     evidence + surprise
 }
 
@@ -154,10 +206,19 @@ mod tests {
     // Normal: identifier splitting handles snake, camel, Pascal, acronyms.
     #[test]
     fn split_identifier_cases_normal() {
-        assert_eq!(split_identifier("read_user_input"), vec!["read", "user", "input"]);
-        assert_eq!(split_identifier("execSqlQuery"), vec!["exec", "sql", "query"]);
+        assert_eq!(
+            split_identifier("read_user_input"),
+            vec!["read", "user", "input"]
+        );
+        assert_eq!(
+            split_identifier("execSqlQuery"),
+            vec!["exec", "sql", "query"]
+        );
         assert_eq!(split_identifier("HTTPRequest"), vec!["http", "request"]);
-        assert_eq!(split_identifier("render-html.now"), vec!["render", "html", "now"]);
+        assert_eq!(
+            split_identifier("render-html.now"),
+            vec!["render", "html", "now"]
+        );
     }
 
     // Normal: a source-ish name scores source, a sink-ish name scores sink.

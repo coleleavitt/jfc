@@ -44,7 +44,6 @@ impl HomeOverride {
     }
 
     /// Path of the temp directory standing in for `$HOME`.
-    #[allow(dead_code)]
     pub(crate) fn home(&self) -> PathBuf {
         self._dir.path().to_path_buf()
     }

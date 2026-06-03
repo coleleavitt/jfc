@@ -156,7 +156,11 @@ mod tests {
     fn custom_weights_normalised_normal() {
         let dq = DecisionQuality::new(1.0, 0.0, 0.0);
         // all weight on validity -> score == validity regardless of magnitude.
-        let w = DqWeights { validity: 2.0, specificity: 0.0, correctness: 0.0 };
+        let w = DqWeights {
+            validity: 2.0,
+            specificity: 0.0,
+            correctness: 0.0,
+        };
         assert!((dq.score(w) - 1.0).abs() < 1e-9);
     }
 
@@ -173,7 +177,11 @@ mod tests {
     #[test]
     fn zero_weights_is_zero_not_nan_robust() {
         let dq = DecisionQuality::new(1.0, 1.0, 1.0);
-        let w = DqWeights { validity: 0.0, specificity: 0.0, correctness: 0.0 };
+        let w = DqWeights {
+            validity: 0.0,
+            specificity: 0.0,
+            correctness: 0.0,
+        };
         assert_eq!(dq.score(w), 0.0);
     }
 
@@ -188,7 +196,10 @@ mod tests {
         ]);
         let out = chain.run("INC");
         assert_eq!(
-            out.steps.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            out.steps
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect::<Vec<_>>(),
             vec!["diagnosis", "plan", "risk"]
         );
         assert_eq!(

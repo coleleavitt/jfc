@@ -34,8 +34,6 @@ impl ManagedSession {
             session_id: session_id.into(),
         }
     }
-
-    #[allow(dead_code)]
     pub fn id(&self) -> &str {
         &self.session_id
     }
@@ -50,7 +48,6 @@ impl ManagedSession {
 
     /// Forward a user-typed prompt to the session. The agent's response
     /// arrives via the event stream returned by `connect`.
-    #[allow(dead_code)]
     pub async fn send(&self, content: serde_json::Value) -> Result<()> {
         self.service
             .send_user_message(&self.session_id, content)
@@ -59,7 +56,6 @@ impl ManagedSession {
 
     /// Attach a Resource (file or repo) to the session. Mirrors v132's
     /// `BetaSessionsResourcesService.Add`.
-    #[allow(dead_code)]
     pub async fn attach_resource(
         &self,
         resource: jfc_anthropic_sdk::sessions::ResourceRef,

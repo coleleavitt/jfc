@@ -1437,8 +1437,7 @@ fn cmp_priority_then_creation(a: &Task, b: &Task) -> std::cmp::Ordering {
     let pa = a.priority.unwrap_or(5);
     let pb = b.priority.unwrap_or(5);
     let seq = |t: &Task| {
-        t.id
-            .as_str()
+        t.id.as_str()
             .strip_prefix('t')
             .and_then(|n| n.parse::<u64>().ok())
             .unwrap_or(0)
@@ -1484,9 +1483,7 @@ fn retry_backoff_ms(attempt: u32) -> u64 {
 
 /// Stamp a task with its next-retry deadline (epoch ms).
 fn set_retry_after(task: &mut Task, deadline_ms: u64) {
-    let obj = task
-        .metadata
-        .get_or_insert_with(|| serde_json::json!({}));
+    let obj = task.metadata.get_or_insert_with(|| serde_json::json!({}));
     if let Some(map) = obj.as_object_mut() {
         map.insert(RETRY_AFTER_KEY.into(), serde_json::json!(deadline_ms));
     } else {
@@ -2655,9 +2652,11 @@ mod tests {
         assert_eq!(claimed.id, t.id);
         // The retry deadline was forgotten on claim.
         assert!(!in_retry_backoff(&claimed, now_ms()));
-        assert!(store.get(t.id.as_str()).unwrap().metadata.is_none() || {
-            let m = store.get(t.id.as_str()).unwrap();
-            !in_retry_backoff(&m, now_ms())
-        });
+        assert!(
+            store.get(t.id.as_str()).unwrap().metadata.is_none() || {
+                let m = store.get(t.id.as_str()).unwrap();
+                !in_retry_backoff(&m, now_ms())
+            }
+        );
     }
 }

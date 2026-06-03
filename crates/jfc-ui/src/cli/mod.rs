@@ -1,5 +1,3 @@
-#![allow(clippy::all)]
-
 use std::io;
 use std::path::PathBuf;
 

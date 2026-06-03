@@ -10,11 +10,6 @@ pub(crate) mod registry {
     pub use jfc_agents::{find_skill_by_name, load_agents, load_skills};
 }
 
-pub(crate) mod state {
-    #[allow(unused_imports)]
-    pub use jfc_agents::Skill;
-}
-
 // Public items used via `crate::agents::` by callers outside this module.
 pub use jfc_agents::AgentDef;
 pub(crate) use lifecycle::{

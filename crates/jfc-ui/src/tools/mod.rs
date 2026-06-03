@@ -2,6 +2,7 @@ mod bash;
 mod catalog;
 mod daemon;
 mod defs;
+mod design;
 mod dispatch;
 mod dispatch_heavy;
 mod economy;
@@ -32,6 +33,7 @@ mod worktree;
 pub use crate::runtime::{ExecutionResult, ToolProvenance, ToolSource};
 
 // main dispatcher
+pub use bash::execute_bash_inner;
 pub use dispatch::execute_tool;
 
 // plan↔task linkage hook, shared by the manual TaskDone path and the
@@ -79,7 +81,6 @@ pub(crate) use subagent::{execute_task, selected_subagent_model};
 pub(crate) use swarm::CURRENT_AGENT_NAME;
 
 // registry
-#[allow(unused_imports)]
 pub(crate) use registry::get_or_build_graph_session;
 #[cfg(test)]
 pub(crate) use registry::invalidate_graph_session_cache;

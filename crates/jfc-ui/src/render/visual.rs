@@ -360,7 +360,6 @@ pub fn truncate_cells(s: &str, max: usize) -> String {
 /// long namespace) survives. Used by the sidebar's cwd display so
 /// the user sees `…/active/jfc` on a narrow column rather than the
 /// useless `~/RustProjec…` head.
-#[allow(dead_code)] // test-only helper (sidebar tail-trunc path)
 pub fn tail_truncate(s: &str, max: usize) -> String {
     if max == 0 {
         return String::new();

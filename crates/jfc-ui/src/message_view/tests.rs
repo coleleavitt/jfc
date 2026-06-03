@@ -1,20 +1,23 @@
 #![cfg(all(test, feature = "anthropic-oauth-sensitive"))]
 use super::assistant_parts::{find_tool_at, sanitize_terminal_text, truncate_str};
 use super::bash::{BashCmdKind, classify_bash_cmd};
-use super::core::{RenderCtx, build_render_items_ctx, is_groupable, severity_rank};
+use super::core::{
+    RenderCtx, build_render_items_ctx, is_groupable, message_view_total_lines, severity_rank,
+};
 use super::detection::{looks_like_difftastic_output, looks_like_git_diff_output};
 use super::formatters::{
     produce_command_output_lines, produce_git_diff_output_lines, produce_grep_output_lines,
 };
 use super::output_style::path_color;
-use super::outputs::produce_diff_view_lines;
+use super::outputs::{diff_lang, produce_diff_view_lines};
 use super::syntax::{
     infer_lang_from_bash, infer_lang_from_tool, lang_from_path, looks_like_markdown, redact_quoted,
 };
 use super::tool_blocks::{
     bash_continuation_lines, border_color_for_status, build_collapsed_header,
     build_header_inner_spans, build_title_spans, format_elapsed_badge, produce_text_block_lines,
-    render_tool_block, tool_body_lines_themed, tool_title_width_cap,
+    render_tool_block, tool_body_lines_themed, tool_kind_color, tool_status_icon_animated,
+    tool_title_width_cap,
 };
 use super::tool_height::{tool_block_height, tool_block_height_pub, tool_content_height_with_tool};
 use super::truncation::{

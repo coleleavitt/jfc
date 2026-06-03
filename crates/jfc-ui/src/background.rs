@@ -5,12 +5,6 @@
 
 use std::collections::HashMap;
 
-#[allow(unused_imports)]
-use std::sync::Arc;
-
-#[allow(unused_imports)]
-use tokio::sync::{Mutex, oneshot};
-
 /// Unique identifier for a background agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AgentId(u64);

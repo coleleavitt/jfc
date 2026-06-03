@@ -93,10 +93,8 @@ pub enum QueuePriority {
     /// Drain at end of turn (default for normal user submissions).
     Later = 0,
     /// Drain between tool batches (mid-loop steering).
-    #[allow(dead_code)]
     Next = 1,
     /// Immediate — jump the queue, used by interrupt-on-submit.
-    #[allow(dead_code)]
     Now = 2,
 }
 
@@ -105,7 +103,6 @@ pub struct QueuedPrompt {
     pub text: String,
     pub is_meta: bool,
     /// Priority level controlling when this prompt is drained.
-    #[allow(dead_code)]
     pub priority: QueuePriority,
     /// Image/PDF attachments captured at queue time. If the user pasted
     /// an image and then typed a prompt while another turn was already
@@ -125,7 +122,6 @@ pub struct DeferredToolUse {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ToolUseSummary {
     pub summary: String,
     pub preceding_tool_use_ids: Vec<String>,
@@ -153,7 +149,6 @@ impl MessageQueue {
     }
 
     /// Convenience: push with Later priority (default for user submissions).
-    #[allow(dead_code)]
     pub fn push_later(
         &mut self,
         text: String,
@@ -170,7 +165,6 @@ impl MessageQueue {
 
     /// Dequeue the highest-priority entry. Among same-priority entries,
     /// FIFO order is preserved (front of the deque wins).
-    #[allow(dead_code)]
     pub fn pop_max_priority(&mut self) -> Option<QueuedPrompt> {
         if self.entries.is_empty() {
             return None;
@@ -186,7 +180,6 @@ impl MessageQueue {
 
     /// Dequeue entries matching a minimum priority level (inclusive).
     /// Returns entries sorted highest-priority-first, FIFO within same level.
-    #[allow(dead_code)]
     pub fn drain_at_least(&mut self, min_priority: QueuePriority) -> Vec<QueuedPrompt> {
         let mut drained = Vec::new();
         let mut remaining = std::collections::VecDeque::new();
@@ -222,7 +215,6 @@ impl MessageQueue {
     }
 
     /// Pop the first entry (FIFO drain for legacy compat).
-    #[allow(dead_code)]
     pub fn pop_front(&mut self) -> Option<QueuedPrompt> {
         self.entries.pop_front()
     }
@@ -234,9 +226,6 @@ impl MessageQueue {
     pub fn len(&self) -> usize {
         self.entries.len()
     }
-
-    #[allow(dead_code)]
-    /// Index access (for test assertions).
     pub fn get(&self, index: usize) -> Option<&QueuedPrompt> {
         self.entries.get(index)
     }
@@ -424,7 +413,6 @@ pub struct BackgroundTask {
     /// from the swarm runner. Used for transcript foregrounding (when
     /// the user presses Enter on an agent in Ctrl+X, we render these
     /// instead of app.messages).
-    #[allow(dead_code)]
     pub agent_messages: Vec<crate::types::ChatMessage>,
     /// Per-agent token budget. When set and `latest_input + cumulative_output`
     /// exceeds it, the agent is forcibly terminated and an error toast
@@ -581,7 +569,6 @@ pub struct App {
     pub empty_billed_resend_count: u32,
     /// Text saved by Esc-clear so Up-arrow can recall it. Single slot —
     /// each Esc-clear overwrites. None when no text has been cleared.
-    #[allow(dead_code)]
     pub esc_saved_text: Option<String>,
     /// Index into `messages` of the user-prompt the up-arrow recall is
     /// currently displaying, counting backwards from the end. `None`
@@ -1097,9 +1084,6 @@ pub struct App {
     /// tool runs. Capped at 100 entries (the oldest gets dropped). New
     /// entries push to the back; /undo pops the back (most recent
     /// first).
-    #[allow(dead_code)]
-
-    /// v132 Marsh (mid-stream bash → model) buffer. Each entry is
     /// `(tool_id, line)` captured from `ToolOutputChunk`. `stream.rs`
     /// drains this on the next outbound request so the model sees what
     /// Highest budget threshold the user has been warned about so far this
@@ -1271,10 +1255,8 @@ pub struct App {
     pub autonomous_loop: Option<crate::autonomous_loop::AutonomousLoopState>,
     /// Active speculation session — set when prompt-suggestion speculation
     /// is running, cleared on accept/discard. See `crate::speculation`.
-    #[allow(dead_code)]
     pub active_speculation_id: Option<String>,
     /// Per-session accumulated speculation stats (time saved, accept/discard counts).
-    #[allow(dead_code)]
     pub speculation_stats: crate::speculation::SpeculationStats,
     /// Bash sandbox configuration (bwrap network/filesystem isolation).
     /// When `enabled = true` and bwrap is present, bash commands are wrapped.
@@ -1306,11 +1288,9 @@ pub struct App {
     /// Used by the session recap feature: when the user returns after
     /// `session_recap::AWAY_THRESHOLD`, a recap is generated from messages
     /// that arrived after this instant.
-    #[allow(dead_code)]
     pub last_user_interaction_at: std::time::Instant,
     /// Message index at the time of the last user interaction. Messages
     /// after this index are candidates for the "while you were away" recap.
-    #[allow(dead_code)]
     pub interaction_message_idx: usize,
     /// Whether the idle-return toast has been shown this idle period.
     pub idle_return_shown: bool,
@@ -1321,7 +1301,6 @@ pub struct App {
     pub away_recap: Option<String>,
     /// Files pinned into the system prompt (survive compaction).
     /// Auto-populated from files that are re-read after every compaction.
-    #[allow(dead_code)]
     pub pinned_files: Vec<std::path::PathBuf>,
     /// Tracks how many times each file is re-read after compaction.
     /// When a file exceeds 3 re-reads post-compact, it's promoted to pinned_files.
@@ -1345,21 +1324,17 @@ pub struct App {
     // and threaded into `App` before the first event-loop tick. The
     // callers that *consume* these values (stream builder, permission
     // gate, session save, …) are wired in follow-on work — marking
-    // `#[allow(dead_code)]` until then keeps the build clean.
+    // `` until then keeps the build clean.
     /// `--max-turns`: ceiling on agentic-loop iterations per user turn.
-    #[allow(dead_code)]
     pub max_turns: Option<u32>,
 
     /// `--max-budget-usd`: hard session spend cap in USD.
-    #[allow(dead_code)]
     pub max_budget_usd: Option<f64>,
 
     /// `--allowed-tools`: parsed allowlist of tool names.
-    #[allow(dead_code)]
     pub allowed_tools: Vec<String>,
 
     /// `--disallowed-tools`: parsed denylist of tool names.
-    #[allow(dead_code)]
     pub disallowed_tools: Vec<String>,
 
     /// Tools disallowed by CLAUDE.md frontmatter (`disallowed-tools` key).
@@ -1368,57 +1343,44 @@ pub struct App {
 
     /// Additional system-prompt text injected via `--system-prompt` or
     /// `--system-prompt-file`.
-    #[allow(dead_code)]
     pub cli_system_prompt: Option<String>,
 
     /// `--dangerously-skip-permissions`: bypass every permission gate.
-    #[allow(dead_code)]
     pub dangerously_skip_permissions: bool,
 
     /// `--json`: structured JSON output mode for CI.
-    #[allow(dead_code)]
     pub json_mode: bool,
 
     /// `--add-dir`: extra directories added to the search context.
-    #[allow(dead_code)]
     pub extra_dirs: Vec<std::path::PathBuf>,
 
     /// `--max-thinking-tokens`: per-turn thinking budget cap.
-    #[allow(dead_code)]
     pub cli_max_thinking_tokens: Option<u32>,
 
     /// `--thinking-display`: thinking visibility mode (`show`/`hide`/`summarize`).
-    #[allow(dead_code)]
     pub cli_thinking_display: Option<String>,
 
     /// `--no-session-persistence`: when true, skip all disk persistence.
-    #[allow(dead_code)]
     pub no_session_persistence: bool,
 
     /// `--task-budget`: token budget per task for the beta task-budgets API.
-    #[allow(dead_code)]
     pub cli_task_budget: Option<u64>,
 
     /// `--betas`: custom Anthropic beta tokens appended to native requests.
-    #[allow(dead_code)]
     pub custom_betas: Vec<String>,
 
     /// `--fine-grained-tool-streaming`: attach `eager_input_streaming` to
     /// Anthropic native tool schemas.
-    #[allow(dead_code)]
     pub fine_grained_tool_streaming: bool,
 
     /// `--strict-tool-schemas`: attach `strict: true` to Anthropic native
     /// tool schemas.
-    #[allow(dead_code)]
     pub strict_tool_schemas: bool,
 
     /// `--mcp-config`: path to an MCP configuration file.
-    #[allow(dead_code)]
     pub mcp_config_path: Option<std::path::PathBuf>,
 
     /// `--cowork`: IDE pairing mode flag.
-    #[allow(dead_code)]
     pub cowork: bool,
 
     /// ID of an active cron job created by `/babysit-prs <schedule>`.

@@ -3,10 +3,7 @@ use super::visual::*;
 use super::*;
 
 // Re-export from message_view — the canonical definitions now live there.
-#[allow(unused_imports)]
-pub(crate) use crate::message_view::task_body::{
-    TASK_VIEW_COLLAPSE_BYTES, TASK_VIEW_COLLAPSE_LINES, task_view_body_lines,
-};
+pub(crate) use crate::message_view::task_body::task_view_body_lines;
 
 pub(super) fn messages(f: &mut Frame, app: &mut App, area: Rect) {
     use crate::message_view::MessageView;
