@@ -79,7 +79,7 @@ impl RemoteHost {
         // inbound forwarder task.
         tokio::spawn(accept_clients(
             client_rx,
-            mirror_tx.clone(),
+            mirror_tx,
             event_tx,
             token,
             client_count,

@@ -124,7 +124,7 @@ pub(crate) fn handle_task_started(
             agent_messages: Vec::new(),
             max_input_tokens,
             budget_killed: false,
-            parent_task_id: parent_task_id.clone(),
+            parent_task_id,
             workflow_progress: None,
             last_activity_at: std::time::Instant::now(),
         },
@@ -427,7 +427,7 @@ pub(crate) async fn handle_task_failed(
         let subject = app
             .task_store
             .get(recover_id)
-            .map(|t| t.subject.clone())
+            .map(|t| t.subject)
             .unwrap_or_default();
 
         let recovery = app.task_store.recover_from_failure(recover_id, &error);

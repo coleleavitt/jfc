@@ -769,7 +769,7 @@ pub(crate) fn apply_winning_solution(
                     "git apply succeeded"
                 );
                 return AppliedSolution {
-                    files: vec![patch_path.clone()],
+                    files: vec![patch_path],
                     summary: format!(
                         "Applied unified diff via `git apply` (audit: {}).",
                         audit_dir.display()

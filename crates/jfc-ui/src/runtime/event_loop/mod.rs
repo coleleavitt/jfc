@@ -717,7 +717,7 @@ pub(crate) async fn run(
                 session::save_session(&sid, &msgs, Some(cwd.as_str()), Some(model.as_str())).await;
             });
         }
-        app.current_session_id = Some(session_id.clone());
+        app.current_session_id = Some(session_id);
 
         let provider = app.provider.clone();
         let messages = stream::build_provider_messages(&app.messages[..assistant_idx]);

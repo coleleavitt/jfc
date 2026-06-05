@@ -314,7 +314,7 @@ impl SlateRouter {
         buckets: u32,
     ) -> (ModelId, Option<String>) {
         let class = QueryClass::from_query(query);
-        let (base_model, rule_idx) = self.route_class_explained(class, default_model.clone());
+        let (base_model, rule_idx) = self.route_class_explained(class, default_model);
         let Some(idx) = rule_idx else {
             // No rule matched — no experiment to run.
             return (base_model, None);

@@ -138,9 +138,9 @@ pub(crate) fn try_spawn_teammate(
         &tx_task,
         AppEvent::Team(TeamEvent::Spawned {
             name: name.clone(),
-            team_name: team_name.clone(),
-            agent_id: agent_id.clone(),
-            color: Some(color.clone()),
+            team_name,
+            agent_id,
+            color: Some(color),
             agent_type: task_input.subagent_type.clone(),
             cwd: std::env::current_dir()
                 .ok()
@@ -152,9 +152,9 @@ pub(crate) fn try_spawn_teammate(
     send_critical(
         &tx_task,
         AppEvent::Task(TaskEvent::Started {
-            task_id: TaskId::from(runner_task_id.clone()),
+            task_id: TaskId::from(runner_task_id),
             description: format!("spawn teammate: {name}"),
-            model_used: Some(teammate_model_name.clone()),
+            model_used: Some(teammate_model_name),
             max_input_tokens: agent_def.and_then(|a| a.max_input_tokens),
             is_detached: false,
             parent_task_id: task_input.parent_task_id.clone(),

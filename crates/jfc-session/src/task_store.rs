@@ -1877,7 +1877,7 @@ mod tests {
             .unwrap();
         let t1_after = store.get(&t1.id).unwrap();
         let expected_blocks: BTreeSet<TaskId> = std::iter::once(t2.id.clone()).collect();
-        let expected_blocked_by: BTreeSet<TaskId> = std::iter::once(t1.id.clone()).collect();
+        let expected_blocked_by: BTreeSet<TaskId> = std::iter::once(t1.id).collect();
         assert_eq!(t1_after.blocks, expected_blocks);
         assert_eq!(t2.blocked_by, expected_blocked_by);
     }
@@ -2143,7 +2143,7 @@ mod tests {
         // Reader handle: opened before any further writes, sees nothing yet.
         let reader = TaskStore {
             inner: Mutex::new(TaskStoreInner::default()),
-            path: path.clone(),
+            path,
             disk_mtime: Mutex::new(None),
         };
         // mtime starts unset, so the first reload always pulls the file in.
@@ -2497,7 +2497,7 @@ mod tests {
             .create("a".into(), "".into(), None, Vec::<TaskId>::new())
             .unwrap();
         let _t2 = store
-            .create("b".into(), "".into(), None, vec![t1.id.clone()])
+            .create("b".into(), "".into(), None, vec![t1.id])
             .unwrap();
 
         // Only the unblocked root is ready initially.
@@ -2542,10 +2542,10 @@ mod tests {
             .create("root".into(), "".into(), None, Vec::<TaskId>::new())
             .unwrap();
         let t2 = store
-            .create("mid".into(), "".into(), None, vec![t1.id.clone()])
+            .create("mid".into(), "".into(), None, vec![t1.id])
             .unwrap();
         let _t3 = store
-            .create("leaf".into(), "".into(), None, vec![t2.id.clone()])
+            .create("leaf".into(), "".into(), None, vec![t2.id])
             .unwrap();
 
         fail(&store, "t1");
@@ -2580,7 +2580,7 @@ mod tests {
                 .get_mut(t1.id.as_str())
                 .unwrap()
                 .blocked_by
-                .insert(t2.id.clone());
+                .insert(t2.id);
         }
         let v = store.validate();
         assert_eq!(v.dependency_cycles.len(), 1, "exactly one cycle");
@@ -2598,7 +2598,7 @@ mod tests {
             .create("a".into(), "".into(), None, Vec::<TaskId>::new())
             .unwrap();
         store
-            .create("b".into(), "".into(), None, vec![t1.id.clone()])
+            .create("b".into(), "".into(), None, vec![t1.id])
             .unwrap();
         assert!(store.validate().dependency_cycles.is_empty());
     }

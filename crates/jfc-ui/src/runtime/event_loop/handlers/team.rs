@@ -273,10 +273,10 @@ async fn handle_runner(
                 let recipient = to.clone();
                 let msg = crate::swarm::types::MailboxMessage {
                     from: from.clone(),
-                    text: text.clone(),
+                    text,
                     timestamp: chrono::Utc::now().to_rfc3339(),
                     color: None,
-                    summary: summary.clone(),
+                    summary,
                     read: false,
                 };
                 tokio::spawn(async move {
@@ -406,9 +406,9 @@ fn handle_spawned(
     // Without storing it here, every teammate was marked
     // "Done" on its first poll.
     app.team_context.teammates.insert(
-        agent_id.clone(),
+        agent_id,
         crate::swarm::types::TeammateInfo {
-            name: name.clone(),
+            name,
             agent_type,
             color,
             cwd,

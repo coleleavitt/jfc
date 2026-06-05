@@ -681,7 +681,7 @@ mod tests {
             MemoryRecord {
                 path: "mem3.md".to_string(),
                 category: Some("CONSTRAINTS".to_string()),
-                normalized_hash: Some(hash.clone()),
+                normalized_hash: Some(hash),
                 content: "The project uses serde".to_string(),
                 last_seen_at: Some(now_ms()),
                 memory_status: Some("active".to_string()),

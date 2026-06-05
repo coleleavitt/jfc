@@ -671,7 +671,7 @@ mod cancellation_token_tests {
 
         // And cloning the fresh token doesn't observe the prior one's
         // cancelled state -- they're independent.
-        let fresh_clone = fresh.clone();
+        let fresh_clone = fresh;
         assert!(!fresh_clone.is_cancelled());
     }
 }

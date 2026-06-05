@@ -279,7 +279,7 @@ pub fn auto_commit_sprint_progress(
     // Write handoff summary
     let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let summary = HandoffSummary {
-        timestamp: timestamp.clone(),
+        timestamp,
         completed_work: completed.iter().map(|s| s.to_string()).collect(),
         in_progress: in_progress.iter().map(|s| s.to_string()).collect(),
         remaining_tasks: tasks

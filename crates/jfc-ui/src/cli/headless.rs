@@ -600,7 +600,7 @@ async fn execute_headless_tool(
                 serde_json::json!({
                     "type": "tool_result",
                     "tool_use_id": &tool.id,
-                    "content": output.clone(),
+                    "content": output,
                     "is_error": true,
                 }),
             )?;
@@ -625,7 +625,7 @@ async fn execute_headless_tool(
                 serde_json::json!({
                     "type": "tool_result",
                     "tool_use_id": &tool.id,
-                    "content": output.clone(),
+                    "content": output,
                     "is_error": true,
                 }),
             )?;

@@ -180,7 +180,7 @@ fn plan_e2e_cross_session_lifecycle() {
         assert_eq!(ids.len(), 3, "expected 3 tasks materialized, got {:?}", ids);
 
         let after_materialize = store.get("design-auth-flow").unwrap();
-        let last_advanced_before = after_materialize.frontmatter.last_advanced.clone();
+        let last_advanced_before = after_materialize.frontmatter.last_advanced;
 
         // Complete the first task → plan must advance but stay Active.
         complete_task_and_notify(&store, &task_store, &ids[0], "Picked JWT");
@@ -205,7 +205,7 @@ fn plan_e2e_cross_session_lifecycle() {
         // Run a dreamer cycle. PlanDreamer is currently lease-only + stubs for
         // the LLM-driven passes, so a no-LLM cycle is enough to prove it runs
         // against a real on-disk store without panicking.
-        let dreamer = PlanDreamer::new(store.clone());
+        let dreamer = PlanDreamer::new(store);
         let report = dreamer.run_cycle().expect("dreamer cycle");
         assert!(
             !report.tasks_run.is_empty(),
@@ -248,7 +248,7 @@ fn plan_e2e_cross_session_lifecycle() {
         );
 
         let last_advanced_s1 = plan.frontmatter.last_advanced.clone();
-        let ids = plan.frontmatter.linked_task_ids.clone();
+        let ids = plan.frontmatter.linked_task_ids;
 
         // Reconstitute a TaskStore that mirrors completion of task 1. We
         // can't share the session-1 TaskStore (in-memory), so we mark task 1

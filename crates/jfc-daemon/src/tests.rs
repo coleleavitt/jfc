@@ -624,7 +624,7 @@ fn background_agent_state_roundtrip_normal() {
             takeover_count: 0,
             model: Some("claude-sonnet-4-5".to_owned()),
             worktree_path: Some(tmp.path().join("wt")),
-            log_path: log_path.clone(),
+            log_path,
             launch_path: None,
             cancel_requested: false,
             respawn_count: 0,

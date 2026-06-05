@@ -84,7 +84,7 @@ pub fn list_teleport_targets(repo_root: &Path) -> Vec<TeleportTarget> {
         .map(|branch| {
             let session_id = branch.strip_prefix("jfc/").map(String::from);
             TeleportTarget {
-                branch: branch.clone(),
+                branch,
                 session_id,
                 is_current: false, // Caller should check
             }

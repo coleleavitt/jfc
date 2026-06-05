@@ -377,7 +377,7 @@ pub(super) async fn cmd_undo(
                 )));
             }
             Err(e) => {
-                crate::tools::restore_undo_entry(entry.clone());
+                crate::tools::restore_undo_entry(entry);
                 app.messages.push(ChatMessage::assistant(format!(
                     "Failed to write `{}`: {e} (kept the entry, run /undo again after fixing)",
                     path.display(),
@@ -393,7 +393,7 @@ pub(super) async fn cmd_undo(
                 )));
             }
             Err(e) => {
-                crate::tools::restore_undo_entry(entry.clone());
+                crate::tools::restore_undo_entry(entry);
                 app.messages.push(ChatMessage::assistant(format!(
                     "Failed to remove `{}`: {e}",
                     path.display(),

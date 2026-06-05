@@ -73,7 +73,7 @@ fn spawn_watcher() -> Result<(), String> {
         .cloned()
         .collect();
 
-    let keybindings_path_clone = keybindings_path.clone();
+    let keybindings_path_clone = keybindings_path;
     let mut watcher =
         notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| match res {
             Ok(event) => {

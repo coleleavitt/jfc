@@ -440,8 +440,8 @@ fn approval_queue_is_fifo_normal() {
     let mut app = new_app();
     let t1 = make_tool(ToolKind::Bash, "b1");
     let t2 = make_tool(ToolKind::Bash, "b2");
-    app.approval_queue.push_back(t1.clone());
-    app.approval_queue.push_back(t2.clone());
+    app.approval_queue.push_back(t1);
+    app.approval_queue.push_back(t2);
     let first = app.approval_queue.pop_front().expect("first");
     let second = app.approval_queue.pop_front().expect("second");
     assert_eq!(first.id, "b1");
@@ -987,7 +987,7 @@ fn selected_model_info_finds_in_cache_normal() {
     let info =
         ModelInfo::new("test-model", "Test", "test").with_context_window_tokens(Some(50_000));
     app.provider_models
-        .insert(jfc_provider::ProviderId::from("test"), vec![info.clone()]);
+        .insert(jfc_provider::ProviderId::from("test"), vec![info]);
     let got = app.selected_model_info().expect("found");
     assert_eq!(got.id.as_str(), "test-model");
     assert_eq!(got.context_window_tokens, Some(50_000));

@@ -669,14 +669,14 @@ pub(crate) fn dispatch_tools_batched(tool_calls: Vec<ToolCall>, dispatch: ToolBa
             "dispatch_tools_batched: scheduled regular tool batches"
         );
         let tx_clone = tx.clone();
-        let done = send_all_complete.clone();
+        let done = send_all_complete;
         // Let the scheduler settle every started tool before emitting
         // AllComplete. Dropping this future on cancellation drops its
         // JoinHandles, and Tokio treats that as detach rather than abort:
         // stale tool tasks can keep running and report after the turn was
         // announced complete. ESCx2 still SIGTERMs tracked bash subprocesses;
         // this await keeps the transcript/event ordering coherent.
-        let cancel_batch = cancel.clone();
+        let cancel_batch = cancel;
         tokio::spawn(async move {
             scheduler::execute_batches(
                 batches,
@@ -736,7 +736,7 @@ where
         }
     };
 
-    let tool_id = tc.id.clone();
+    let tool_id = tc.id;
     let tx = tx.clone();
     let cwd = std::env::current_dir().unwrap_or_default();
 

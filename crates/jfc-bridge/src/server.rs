@@ -273,7 +273,7 @@ async fn stream_session_events(
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
     require_session_access(&state, &headers, &session_id)?;
     let mut rx = state.store.subscribe();
-    let stream_session_id = session_id.clone();
+    let stream_session_id = session_id;
     let stream = async_stream::stream! {
         loop {
             match rx.recv().await {

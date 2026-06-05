@@ -351,7 +351,7 @@ pub fn built_in_agents() -> Vec<AgentDef> {
         },
         {
             let mut a = builtin("Plan", include_str!("builtin_prompts/plan.txt"));
-            a.allowed_tools = read_only_tools.clone();
+            a.allowed_tools = read_only_tools;
             a.disallowed_tools = no_write_tools.clone();
             a.key_trigger = Some(
                 "multi-step / risky / cross-cutting change → fire Plan before any destructive edit"

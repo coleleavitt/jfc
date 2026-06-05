@@ -393,7 +393,7 @@ pub fn handle_key(
     key: crossterm::event::KeyEvent,
 ) {
     let input: Input = key.into();
-    match transition(state, input.clone(), textarea) {
+    match transition(state, input, textarea) {
         Transition::Mode(mode) => {
             state.mode = mode;
             state.pending = Input::default();

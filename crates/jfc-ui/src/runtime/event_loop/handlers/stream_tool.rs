@@ -538,7 +538,7 @@ pub(crate) fn handle_server_tool_result(
                 }
                 tc.output = ToolOutput::ServerToolResult {
                     tool_kind: tool_kind.clone(),
-                    content: content.clone(),
+                    content,
                 };
                 applied = true;
                 break;

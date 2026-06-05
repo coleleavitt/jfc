@@ -456,7 +456,7 @@ pub(super) async fn cmd_model(
         app.model = resolved.model;
         recent_model = crate::qualified_model_id(app.provider.as_ref(), &app.model);
     } else {
-        app.model = jfc_provider::ModelId::new(requested_model.clone());
+        app.model = jfc_provider::ModelId::new(requested_model);
     }
     crate::app::push_recent_model(&mut app.recent_models, &recent_model);
     app.sync_selected_context_window();

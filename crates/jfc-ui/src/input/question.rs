@@ -275,7 +275,7 @@ fn decline_question(app: &mut App, tx: &mpsc::Sender<AppEvent>) {
     let Some(pending) = app.pending_question.take() else {
         return;
     };
-    let tool_id = pending.tool_id.clone();
+    let tool_id = pending.tool_id;
     tracing::info!(target: "jfc::ui::question", tool_id = %tool_id, "AskUserQuestion declined");
     let _ = tx.try_send(AppEvent::Tool(ToolEvent::Result {
         tool_id,

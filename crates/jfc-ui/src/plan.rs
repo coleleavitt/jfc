@@ -239,7 +239,7 @@ impl PlanStore {
 
         let now = Utc::now().to_rfc3339();
         let frontmatter = PlanFrontmatter {
-            slug: slug.clone(),
+            slug,
             title: title.to_owned(),
             status: PlanStatus::Draft,
             created: Some(now),
@@ -254,7 +254,7 @@ impl PlanStore {
             .with_context(|| format!("failed to write plan: {}", path.display()))?;
 
         let plan = Plan {
-            path: path.clone(),
+            path,
             frontmatter,
             body: body.to_owned(),
         };
@@ -790,7 +790,7 @@ mod tests {
         assert_eq!(ids.len(), 3, "expected 3 materialized tasks");
         let plan = store.get("reverse-linkage-plan").unwrap();
         assert_eq!(plan.frontmatter.linked_task_ids.len(), 3);
-        let initial_last_advanced = plan.frontmatter.last_advanced.clone();
+        let initial_last_advanced = plan.frontmatter.last_advanced;
 
         // 4. Complete the first task and call on_task_done.
         task_store

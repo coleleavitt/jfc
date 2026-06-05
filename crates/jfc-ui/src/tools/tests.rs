@@ -1008,7 +1008,7 @@ fn register_active_provider_round_trip_normal() {
     impl jfc_provider::seal::Sealed for NoopProvider {}
     let p: std::sync::Arc<dyn jfc_provider::Provider> = std::sync::Arc::new(NoopProvider);
     let m = jfc_provider::ModelId::new("noop-model");
-    register_active_provider(p, m.clone());
+    register_active_provider(p, m);
     let snap = snapshot_active_provider().expect("provider should be registered");
     assert_eq!(snap.0.name(), "noop");
     assert_eq!(snap.1.as_str(), "noop-model");
@@ -2097,10 +2097,7 @@ fn execute_task_create_without_store_fails_robust() {
 #[test]
 fn execute_task_create_with_store_returns_task_json_normal() {
     let store = TaskStore::in_memory();
-    let r = execute_task_create(
-        Some(store.clone()),
-        task_create_request("ship", "release v1"),
-    );
+    let r = execute_task_create(Some(store), task_create_request("ship", "release v1"));
     assert!(!r.is_error(), "{:?}", r);
     // The output is the JSON of the created task — should mention the
     // subject and a `t1` id.
@@ -2143,7 +2140,7 @@ fn execute_task_update_changes_status_normal() {
     // First-created task gets id `t1`.
     let mut request = task_update_request("t1");
     request.status = Some("in_progress".into());
-    let r = execute_task_update(Some(store.clone()), request);
+    let r = execute_task_update(Some(store), request);
     assert!(!r.is_error(), "{}", r.output);
     assert!(r.output.contains("in_progress"), "{}", r.output);
 }

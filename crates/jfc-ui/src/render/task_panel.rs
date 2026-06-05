@@ -169,7 +169,7 @@ pub(super) fn task_panel(f: &mut Frame, app: &mut App) {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(t.style_border)
-            .title(Span::styled(title.clone(), t.style_accent_bold))
+            .title(Span::styled(title, t.style_accent_bold))
             .title_bottom(Span::styled(" Esc close ", t.style_text_muted))
             .style(Style::default().bg(t.surface));
         let inner = block.inner(popup);

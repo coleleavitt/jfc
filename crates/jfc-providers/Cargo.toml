@@ -40,3 +40,6 @@ tokio = { workspace = true, features = ["full"] }
 [features]
 default = ["anthropic-oauth-sensitive"]
 anthropic-oauth-sensitive = []
+
+[lints]
+workspace = true

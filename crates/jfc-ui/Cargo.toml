@@ -144,3 +144,6 @@ profiling = ["pprof", "console-subscriber"]
 [[bench]]
 name = "hooks"
 harness = false
+
+[lints]
+workspace = true
