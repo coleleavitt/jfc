@@ -22,8 +22,9 @@ jobs:
       - name: Install system deps (dbus for notify-rust)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libdbus-1-dev pkg-config
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # nightly
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
+          toolchain: nightly
           components: rustfmt
       - name: Check formatting
         run: cargo fmt --all --check
@@ -36,8 +37,9 @@ jobs:
       - name: Install system deps (dbus for notify-rust)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libdbus-1-dev pkg-config
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # nightly
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
+          toolchain: nightly
           components: clippy
       - name: Cache cargo
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.8.1
@@ -52,7 +54,9 @@ jobs:
       - name: Install system deps (dbus for notify-rust)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libdbus-1-dev pkg-config
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # nightly
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: nightly
       - name: Cache cargo
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.8.1
       - name: Build
@@ -68,7 +72,9 @@ jobs:
       - name: Install system deps (dbus for notify-rust)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libdbus-1-dev pkg-config
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # nightly
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: nightly
       - name: Cache cargo
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.8.1
       - name: Build without anthropic-oauth-sensitive
@@ -82,7 +88,9 @@ jobs:
       - name: Install system deps (dbus for notify-rust)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libdbus-1-dev pkg-config
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # nightly
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: nightly
       - name: Cache cargo
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.8.1
       - name: Configure git (e2e tests shell out to git)
@@ -103,7 +111,9 @@ jobs:
       - name: Install system deps (dbus for notify-rust)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libdbus-1-dev pkg-config
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # nightly
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: nightly
       - name: Cache cargo
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.8.1
       # Order-of-magnitude regression gate on the hot persistence paths
